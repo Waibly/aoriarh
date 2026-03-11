@@ -22,6 +22,7 @@ ALLOWED_FORMATS = {
 }
 
 MAX_FILE_SIZE = 10 * 1024 * 1024  # 10 Mo
+MAX_FILE_SIZE_ADMIN = 20 * 1024 * 1024  # 20 Mo
 
 storage = StorageService()
 
@@ -67,6 +68,7 @@ class DocumentService:
         date_decision: date | None = None,
         solution: str | None = None,
         publication: str | None = None,
+        max_file_size: int = MAX_FILE_SIZE,
     ) -> Document:
         # Validate format
         content_type = file.content_type or ""
@@ -89,11 +91,11 @@ class DocumentService:
         await file.seek(0)
         contents = await file.read()
         file_size = len(contents)
-        if file_size > MAX_FILE_SIZE:
+        if file_size > max_file_size:
             raise HTTPException(
                 status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
                 detail=f"Fichier trop volumineux ({file_size / (1024 * 1024):.1f} Mo). "
-                f"Taille maximale : {MAX_FILE_SIZE // (1024 * 1024)} Mo",
+                f"Taille maximale : {max_file_size // (1024 * 1024)} Mo",
             )
         file_hash = hashlib.sha256(contents).hexdigest()
 
@@ -232,6 +234,7 @@ class DocumentService:
         file: UploadFile,
         user_id: uuid.UUID,
         org_id: uuid.UUID | None = None,
+        max_file_size: int = MAX_FILE_SIZE,
     ) -> Document:
         """Replace a document's file while keeping the same ID.
 
@@ -256,11 +259,11 @@ class DocumentService:
         await file.seek(0)
         contents = await file.read()
         file_size = len(contents)
-        if file_size > MAX_FILE_SIZE:
+        if file_size > max_file_size:
             raise HTTPException(
                 status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
                 detail=f"Fichier trop volumineux ({file_size / (1024 * 1024):.1f} Mo). "
-                f"Taille maximale : {MAX_FILE_SIZE // (1024 * 1024)} Mo",
+                f"Taille maximale : {max_file_size // (1024 * 1024)} Mo",
             )
         file_hash = hashlib.sha256(contents).hexdigest()
 

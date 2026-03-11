@@ -13,7 +13,7 @@ from app.models.user import User
 from app.rag.tasks import enqueue_ingestion
 from app.schemas.document import AdminDocumentRead, DocumentDownload, DocumentRead
 from app.services.audit_service import log_admin_action
-from app.services.document_service import DocumentService
+from app.services.document_service import MAX_FILE_SIZE_ADMIN, DocumentService
 
 router = APIRouter()
 
@@ -114,6 +114,7 @@ async def upload_common_document(
         date_decision=date_decision,
         solution=solution,
         publication=publication,
+        max_file_size=MAX_FILE_SIZE_ADMIN,
     )
     await log_admin_action(
         db,
@@ -163,6 +164,7 @@ async def replace_common_document(
         file=file,
         user_id=user.id,
         org_id=None,
+        max_file_size=MAX_FILE_SIZE_ADMIN,
     )
     await log_admin_action(
         db,
