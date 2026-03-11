@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSession } from "next-auth/react";
 import {
   Download,
@@ -130,11 +130,6 @@ function formatFileSize(bytes: number | null): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} Mo`;
 }
 
-function formatDuration(ms: number | null): string {
-  if (ms === null) return "—";
-  if (ms < 1000) return `${ms}ms`;
-  return `${(ms / 1000).toFixed(1)}s`;
-}
 
 export default function DocumentsCommunsPage() {
   const { data: session } = useSession();
@@ -143,6 +138,8 @@ export default function DocumentsCommunsPage() {
   const [documents, setDocuments] = useState<Document[]>([]);
   const [loading, setLoading] = useState(false);
   const [uploadOpen, setUploadOpen] = useState(false);
+  const [page, setPage] = useState(1);
+  const PAGE_SIZE = 50;
 
   const initialLoadDone = useRef(false);
 
@@ -241,6 +238,17 @@ export default function DocumentsCommunsPage() {
     }
   };
 
+  const totalPages = Math.max(1, Math.ceil(documents.length / PAGE_SIZE));
+  const paginatedDocs = useMemo(
+    () => documents.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE),
+    [documents, page],
+  );
+
+  // Reset to page 1 when documents change (e.g. after upload/delete)
+  useEffect(() => {
+    if (page > totalPages) setPage(1);
+  }, [totalPages, page]);
+
   return (
     <div className="space-y-6">
       <h1 className="text-2xl font-semibold tracking-tight">Documents communs</h1>
@@ -272,33 +280,62 @@ export default function DocumentsCommunsPage() {
               convention collective.
             </p>
           ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Nom</TableHead>
-                  <TableHead>Type</TableHead>
-                  <TableHead>Niveau</TableHead>
-                  <TableHead>Statut</TableHead>
-                  <TableHead>Indexation</TableHead>
-                  <TableHead>Format</TableHead>
-                  <TableHead>Taille</TableHead>
-                  <TableHead>Date</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {documents.map((doc) => (
-                  <CommonDocRow
-                    key={doc.id}
-                    doc={doc}
-                    onDownload={handleDownload}
-                    onDelete={handleDelete}
-                    onReindex={handleReindex}
-                    onReplace={handleReplace}
-                  />
-                ))}
-              </TableBody>
-            </Table>
+            <>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="w-[40%]">Nom</TableHead>
+                    <TableHead>Type</TableHead>
+                    <TableHead>Statut</TableHead>
+                    <TableHead>Format</TableHead>
+                    <TableHead>Taille</TableHead>
+                    <TableHead>Date</TableHead>
+                    <TableHead className="text-right">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {paginatedDocs.map((doc) => (
+                    <CommonDocRow
+                      key={doc.id}
+                      doc={doc}
+                      onDownload={handleDownload}
+                      onDelete={handleDelete}
+                      onReindex={handleReindex}
+                      onReplace={handleReplace}
+                    />
+                  ))}
+                </TableBody>
+              </Table>
+
+              {totalPages > 1 && (
+                <div className="flex items-center justify-between border-t pt-4 mt-4">
+                  <p className="text-sm text-muted-foreground">
+                    {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, documents.length)} sur {documents.length}
+                  </p>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={page <= 1}
+                      onClick={() => setPage((p) => p - 1)}
+                    >
+                      Précédent
+                    </Button>
+                    <span className="text-sm text-muted-foreground">
+                      {page} / {totalPages}
+                    </span>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={page >= totalPages}
+                      onClick={() => setPage((p) => p + 1)}
+                    >
+                      Suivant
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </>
           )}
         </CardContent>
       </Card>
@@ -335,13 +372,10 @@ function CommonDocRow({
 
   return (
     <TableRow>
-      <TableCell className="max-w-[200px] truncate font-medium">
+      <TableCell className="truncate font-medium">
         {doc.name}
       </TableCell>
       <TableCell className="text-sm">{sourceLabel}</TableCell>
-      <TableCell className="text-sm">
-        {doc.norme_niveau ? `N${doc.norme_niveau}` : "—"}
-      </TableCell>
       <TableCell>
         <Badge
           variant={STATUS_VARIANT[doc.indexation_status] ?? "outline"}
@@ -352,20 +386,6 @@ function CommonDocRow({
           )}
           {STATUS_LABEL[doc.indexation_status] ?? doc.indexation_status}
         </Badge>
-      </TableCell>
-      <TableCell className="text-sm text-muted-foreground">
-        {doc.indexation_status === "indexing" ? (
-          <span className="flex items-center gap-1 text-orange-600 dark:text-orange-400">
-            <Loader2 className="h-3 w-3 animate-spin" />
-            {doc.indexation_progress != null ? `${doc.indexation_progress}%` : "En cours"}
-          </span>
-        ) : doc.indexation_status === "error" && doc.indexation_error ? (
-          <span className="text-destructive" title={doc.indexation_error}>
-            Échoué
-          </span>
-        ) : (
-          formatDuration(doc.indexation_duration_ms)
-        )}
       </TableCell>
       <TableCell className="text-sm uppercase">
         {doc.file_format ?? "—"}
