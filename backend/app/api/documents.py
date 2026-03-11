@@ -33,45 +33,6 @@ async def list_common_documents(
 
 
 @router.post(
-    "/{organisation_id}/",
-    response_model=DocumentRead,
-    status_code=status.HTTP_201_CREATED,
-)
-@limiter.limit("30/hour")
-async def upload_document(
-    request: Request,
-    organisation_id: uuid.UUID,
-    file: UploadFile,
-    source_type: str = Form(...),
-    juridiction: str | None = Form(None),
-    chambre: str | None = Form(None),
-    formation: str | None = Form(None),
-    numero_pourvoi: str | None = Form(None),
-    date_decision: date | None = Form(None),
-    solution: str | None = Form(None),
-    publication: str | None = Form(None),
-    user: User = Depends(require_org_role(["manager", "user"])),
-    db: AsyncSession = Depends(get_db),
-) -> DocumentRead:
-    service = DocumentService(db)
-    doc = await service.upload_document(
-        file=file,
-        source_type=source_type,
-        org_id=organisation_id,
-        user_id=user.id,
-        juridiction=juridiction,
-        chambre=chambre,
-        formation=formation,
-        numero_pourvoi=numero_pourvoi,
-        date_decision=date_decision,
-        solution=solution,
-        publication=publication,
-    )
-    await enqueue_ingestion(str(doc.id))
-    return doc  # type: ignore[return-value]
-
-
-@router.post(
     "/{organisation_id}/batch",
     response_model=BatchUploadResponse,
 )
@@ -118,6 +79,45 @@ async def upload_documents_batch(
         failed=len(results) - succeeded,
         results=results,
     )
+
+
+@router.post(
+    "/{organisation_id}/",
+    response_model=DocumentRead,
+    status_code=status.HTTP_201_CREATED,
+)
+@limiter.limit("30/hour")
+async def upload_document(
+    request: Request,
+    organisation_id: uuid.UUID,
+    file: UploadFile,
+    source_type: str = Form(...),
+    juridiction: str | None = Form(None),
+    chambre: str | None = Form(None),
+    formation: str | None = Form(None),
+    numero_pourvoi: str | None = Form(None),
+    date_decision: date | None = Form(None),
+    solution: str | None = Form(None),
+    publication: str | None = Form(None),
+    user: User = Depends(require_org_role(["manager", "user"])),
+    db: AsyncSession = Depends(get_db),
+) -> DocumentRead:
+    service = DocumentService(db)
+    doc = await service.upload_document(
+        file=file,
+        source_type=source_type,
+        org_id=organisation_id,
+        user_id=user.id,
+        juridiction=juridiction,
+        chambre=chambre,
+        formation=formation,
+        numero_pourvoi=numero_pourvoi,
+        date_decision=date_decision,
+        solution=solution,
+        publication=publication,
+    )
+    await enqueue_ingestion(str(doc.id))
+    return doc  # type: ignore[return-value]
 
 
 @router.get("/{organisation_id}/", response_model=list[DocumentRead])
