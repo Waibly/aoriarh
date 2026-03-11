@@ -126,12 +126,6 @@ function formatFileSize(bytes: number | null): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} Mo`;
 }
 
-function formatDuration(ms: number | null): string {
-  if (ms === null) return "—";
-  if (ms < 1000) return `${ms}ms`;
-  return `${(ms / 1000).toFixed(1)}s`;
-}
-
 export default function DocumentsPage() {
   const { data: session } = useSession();
   const { currentOrg } = useOrg();
