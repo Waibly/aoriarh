@@ -104,7 +104,10 @@ class Settings(BaseSettings):
     def cors_origins(self) -> list[str]:
         import json
 
-        return json.loads(self.backend_cors_origins)
+        value = self.backend_cors_origins.strip()
+        if value.startswith("["):
+            return json.loads(value)
+        return [origin.strip() for origin in value.split(",") if origin.strip()]
 
 
 settings = Settings()
