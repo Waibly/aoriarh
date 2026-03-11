@@ -84,6 +84,7 @@ async def _get_embeddings_with_progress(
     total_batches = math.ceil(len(texts) / EMBEDDING_BATCH_SIZE)
     results: list[list[list[float]]] = [[] for _ in range(total_batches)]
     semaphore = asyncio.Semaphore(EMBEDDING_CONCURRENCY)
+    db_lock = asyncio.Lock()
     done_count = 0
 
     async def _process_batch(
@@ -94,11 +95,12 @@ async def _get_embeddings_with_progress(
         batch = texts[start : start + EMBEDDING_BATCH_SIZE]
         async with semaphore:
             results[batch_idx] = await _get_embeddings_batch(batch, api_key, client)
-        done_count += 1
-        # Update progress: 15% → 80% proportional to batches done
-        progress = 15 + int(65 * done_count / total_batches)
-        doc.indexation_progress = progress
-        await db.commit()
+        async with db_lock:
+            done_count += 1
+            # Update progress: 15% → 80% proportional to batches done
+            progress = 15 + int(65 * done_count / total_batches)
+            doc.indexation_progress = progress
+            await db.commit()
 
     async with httpx.AsyncClient() as client:
         await asyncio.gather(
