@@ -1,0 +1,467 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AORIA RH — Flux Question → Réponse</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: #f8fafc;
+    color: #1e293b;
+    min-height: 100vh;
+    padding: 40px 20px;
+  }
+  h1 {
+    text-align: center;
+    font-size: 1.8rem;
+    margin-bottom: 8px;
+    color: #0f172a;
+  }
+  .subtitle {
+    text-align: center;
+    color: #64748b;
+    margin-bottom: 48px;
+    font-size: 0.95rem;
+  }
+  .pipeline {
+    max-width: 720px;
+    margin: 0 auto;
+    position: relative;
+  }
+  .pipeline::before {
+    content: '';
+    position: absolute;
+    left: 28px;
+    top: 0;
+    bottom: 0;
+    width: 3px;
+    background: linear-gradient(to bottom, #6366f1, #8b5cf6, #a78bfa, #6366f1);
+    border-radius: 2px;
+  }
+
+  .step {
+    position: relative;
+    margin-bottom: 16px;
+    padding-left: 68px;
+  }
+
+  .step-dot {
+    position: absolute;
+    left: 16px;
+    top: 16px;
+    width: 27px;
+    height: 27px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.75rem;
+    font-weight: 700;
+    color: #fff;
+    z-index: 2;
+    transition: transform 0.2s;
+  }
+  .step.open .step-dot { transform: scale(1.15); }
+
+  .zone-frontend .step-dot { background: #3b82f6; }
+  .zone-api .step-dot { background: #10b981; }
+  .zone-rag .step-dot { background: #7c3aed; }
+  .zone-db .step-dot { background: #f59e0b; }
+
+  .step-header {
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    padding: 14px 20px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    transition: border-color 0.2s, box-shadow 0.2s;
+    user-select: none;
+  }
+  .step-header:hover { border-color: #6366f1; box-shadow: 0 2px 8px #6366f110; }
+  .step.open .step-header { border-color: #6366f1; border-bottom-left-radius: 0; border-bottom-right-radius: 0; }
+
+  .step-zone-tag {
+    font-size: 0.65rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-weight: 600;
+    flex-shrink: 0;
+  }
+  .zone-frontend .step-zone-tag { background: #dbeafe; color: #2563eb; }
+  .zone-api .step-zone-tag { background: #d1fae5; color: #059669; }
+  .zone-rag .step-zone-tag { background: #ede9fe; color: #7c3aed; }
+  .zone-db .step-zone-tag { background: #fef3c7; color: #d97706; }
+
+  .step-title {
+    flex: 1;
+    font-weight: 600;
+    font-size: 0.95rem;
+  }
+  .step-timing {
+    font-size: 0.75rem;
+    color: #94a3b8;
+    flex-shrink: 0;
+  }
+  .step-chevron {
+    font-size: 0.8rem;
+    color: #94a3b8;
+    transition: transform 0.25s;
+    flex-shrink: 0;
+  }
+  .step.open .step-chevron { transform: rotate(90deg); }
+
+  .step-body {
+    max-height: 0;
+    overflow: hidden;
+    transition: max-height 0.35s ease;
+    background: #ffffff;
+    border: 1px solid #6366f1;
+    border-top: none;
+    border-radius: 0 0 12px 12px;
+  }
+  .step.open .step-body { max-height: 800px; }
+
+  .step-content {
+    padding: 18px 20px;
+    font-size: 0.88rem;
+    line-height: 1.7;
+    color: #334155;
+  }
+  .step-content strong { color: #0f172a; }
+  .step-content code {
+    background: #f1f5f9;
+    padding: 1px 6px;
+    border-radius: 4px;
+    font-size: 0.82rem;
+    color: #7c3aed;
+  }
+  .step-content ul { padding-left: 18px; margin: 6px 0; }
+  .step-content li { margin-bottom: 4px; }
+  .step-content .detail-label {
+    display: inline-block;
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #94a3b8;
+    margin-top: 10px;
+    margin-bottom: 2px;
+  }
+
+  .arrow {
+    text-align: center;
+    padding: 2px 0;
+    padding-left: 68px;
+    color: #cbd5e1;
+    font-size: 1.2rem;
+  }
+
+  .section-label {
+    padding-left: 68px;
+    margin-bottom: 12px;
+    margin-top: 28px;
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    font-weight: 700;
+  }
+  .section-label.frontend { color: #2563eb; }
+  .section-label.api { color: #059669; }
+  .section-label.rag { color: #7c3aed; }
+  .section-label.db { color: #d97706; }
+
+  .legend {
+    max-width: 720px;
+    margin: 40px auto 0;
+    display: flex;
+    gap: 24px;
+    justify-content: center;
+    flex-wrap: wrap;
+  }
+  .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.78rem;
+    color: #64748b;
+  }
+  .legend-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+  }
+</style>
+</head>
+<body>
+
+<h1>Flux Question → Reponse</h1>
+<p class="subtitle">Cliquez sur une etape pour voir le detail</p>
+
+<div class="pipeline">
+
+  <div class="section-label frontend">Frontend — Envoi</div>
+
+  <div class="step zone-frontend" onclick="toggle(this)">
+    <div class="step-dot">1</div>
+    <div class="step-header">
+      <span class="step-zone-tag">Front</span>
+      <span class="step-title">L'utilisateur envoie sa question</span>
+      <span class="step-timing">instantane</span>
+      <span class="step-chevron">▶</span>
+    </div>
+    <div class="step-body"><div class="step-content">
+      <ul>
+        <li>L'utilisateur tape sa question et clique sur Envoyer</li>
+        <li>Le message s'affiche tout de suite dans le chat (sans attendre le serveur)</li>
+        <li>Le champ de saisie se desactive et un indicateur "en cours" apparait</li>
+      </ul>
+    </div></div>
+  </div>
+
+  <div class="arrow">↓</div>
+
+  <div class="step zone-frontend" onclick="toggle(this)">
+    <div class="step-dot">2</div>
+    <div class="step-header">
+      <span class="step-zone-tag">Front</span>
+      <span class="step-title">Connexion streaming avec le serveur</span>
+      <span class="step-timing">~50 ms</span>
+      <span class="step-chevron">▶</span>
+    </div>
+    <div class="step-body"><div class="step-content">
+      <ul>
+        <li>Le navigateur ouvre une connexion continue avec le serveur (SSE)</li>
+        <li>Ca permet de recevoir la reponse <strong>mot par mot</strong> au fur et a mesure qu'elle est generee</li>
+        <li>Le token d'authentification est envoye dans la requete</li>
+      </ul>
+    </div></div>
+  </div>
+
+  <div class="section-label api">Backend — API</div>
+
+  <div class="arrow">↓</div>
+
+  <div class="step zone-api" onclick="toggle(this)">
+    <div class="step-dot">3</div>
+    <div class="step-header">
+      <span class="step-zone-tag">API</span>
+      <span class="step-title">Verification de l'identite et des droits</span>
+      <span class="step-timing">~20 ms</span>
+      <span class="step-chevron">▶</span>
+    </div>
+    <div class="step-body"><div class="step-content">
+      <ul>
+        <li>Le serveur verifie que l'utilisateur est bien connecte (token JWT valide)</li>
+        <li>Il verifie que l'utilisateur a le droit d'acceder a cette conversation</li>
+        <li>Limite de securite : maximum <strong>15 questions par minute</strong></li>
+      </ul>
+    </div></div>
+  </div>
+
+  <div class="section-label rag">Intelligence — Pipeline RAG</div>
+
+  <div class="arrow">↓</div>
+
+  <div class="step zone-rag" onclick="toggle(this)">
+    <div class="step-dot">4</div>
+    <div class="step-header">
+      <span class="step-zone-tag">RAG</span>
+      <span class="step-title">Comprehension de la question</span>
+      <span class="step-timing">100–500 ms</span>
+      <span class="step-chevron">▶</span>
+    </div>
+    <div class="step-body"><div class="step-content">
+      Si l'utilisateur pose une question de suivi (ex: "Et pour le licenciement ?"), le systeme la transforme en question complete et autonome en tenant compte de l'historique de la conversation.
+      <br><br>
+      <strong>Exemple :</strong><br>
+      "Et pour le licenciement ?" → "Quelles sont les regles du licenciement economique en France ?"
+    </div></div>
+  </div>
+
+  <div class="arrow">↓</div>
+
+  <div class="step zone-rag" onclick="toggle(this)">
+    <div class="step-dot">5</div>
+    <div class="step-header">
+      <span class="step-zone-tag">RAG</span>
+      <span class="step-title">Creation de 3 variantes de la question</span>
+      <span class="step-timing">300–800 ms</span>
+      <span class="step-chevron">▶</span>
+    </div>
+    <div class="step-body"><div class="step-content">
+      Pour maximiser les chances de trouver les bons documents, la question est reformulee de 3 facons differentes :
+      <ul>
+        <li><strong>Langage courant</strong> : reformulation naturelle</li>
+        <li><strong>Termes juridiques</strong> : vocabulaire du droit du travail</li>
+        <li><strong>Mots-cles</strong> : synonymes et termes associes</li>
+      </ul>
+    </div></div>
+  </div>
+
+  <div class="arrow">↓</div>
+
+  <div class="step zone-rag" onclick="toggle(this)">
+    <div class="step-dot">6</div>
+    <div class="step-header">
+      <span class="step-zone-tag">RAG</span>
+      <span class="step-title">Recherche dans les documents</span>
+      <span class="step-timing">500–1500 ms</span>
+      <span class="step-chevron">▶</span>
+    </div>
+    <div class="step-body"><div class="step-content">
+      3 recherches sont lancees en parallele (une par variante), chacune combinant deux approches :
+      <ul>
+        <li><strong>Recherche semantique</strong> : trouve les passages dont le <em>sens</em> est proche de la question</li>
+        <li><strong>Recherche par mots</strong> : trouve les passages contenant les <em>memes mots</em></li>
+      </ul>
+      Les resultats sont fusionnes et ponderes : les textes de loi pesent plus lourd que les accords d'entreprise.
+      <br><br>
+      Seuls les documents de l'organisation de l'utilisateur (+ les documents communs) sont retournes. <strong>Aucun acces aux donnees d'une autre entreprise.</strong>
+    </div></div>
+  </div>
+
+  <div class="arrow">↓</div>
+
+  <div class="step zone-rag" onclick="toggle(this)">
+    <div class="step-dot">7</div>
+    <div class="step-header">
+      <span class="step-zone-tag">RAG</span>
+      <span class="step-title">Tri fin des resultats par pertinence</span>
+      <span class="step-timing">200–600 ms</span>
+      <span class="step-chevron">▶</span>
+    </div>
+    <div class="step-body"><div class="step-content">
+      Les 20 passages trouves sont reclasses par un modele specialise (cross-encoder) qui evalue precisement la pertinence de chaque passage par rapport a la question.
+      <br><br>
+      Seuls les <strong>5 meilleurs passages</strong> sont conserves.
+      <br><br>
+      Si moins de 2 resultats sont juges pertinents, une nouvelle recherche est lancee automatiquement (max 2 tentatives).
+    </div></div>
+  </div>
+
+  <div class="arrow">↓</div>
+
+  <div class="step zone-rag" onclick="toggle(this)">
+    <div class="step-dot">8</div>
+    <div class="step-header">
+      <span class="step-zone-tag">RAG</span>
+      <span class="step-title">Application de la hierarchie des normes</span>
+      <span class="step-timing">~10 ms</span>
+      <span class="step-chevron">▶</span>
+    </div>
+    <div class="step-body"><div class="step-content">
+      Deux ajustements finaux :
+      <ul>
+        <li>Si un meme document revient plusieurs fois, son importance est renforcee</li>
+        <li>Les normes superieures (Constitution, lois) sont privilegiees par rapport aux normes inferieures (accords d'entreprise, usages)</li>
+      </ul>
+      C'est le respect de la <strong>hierarchie des normes du droit social francais</strong> (9 niveaux).
+    </div></div>
+  </div>
+
+  <div class="arrow">↓</div>
+
+  <div class="step zone-rag" onclick="toggle(this)">
+    <div class="step-dot">9</div>
+    <div class="step-header">
+      <span class="step-zone-tag">RAG</span>
+      <span class="step-title">Envoi des sources au navigateur</span>
+      <span class="step-timing">instantane</span>
+      <span class="step-chevron">▶</span>
+    </div>
+    <div class="step-body"><div class="step-content">
+      Avant meme de commencer a rediger la reponse, les documents sources sont envoyes au navigateur :
+      <ul>
+        <li>Nom du document, type (loi, convention, jurisprudence...)</li>
+        <li>Extrait du contenu pertinent</li>
+        <li>Pour la jurisprudence : tribunal, date, numero de pourvoi</li>
+      </ul>
+      L'utilisateur voit les sources apparaitre sous la bulle de reponse pendant que celle-ci se genere.
+    </div></div>
+  </div>
+
+  <div class="arrow">↓</div>
+
+  <div class="step zone-rag" onclick="toggle(this)">
+    <div class="step-dot">10</div>
+    <div class="step-header">
+      <span class="step-zone-tag">RAG</span>
+      <span class="step-title">Redaction de la reponse par l'IA</span>
+      <span class="step-timing">2–8 s</span>
+      <span class="step-chevron">▶</span>
+    </div>
+    <div class="step-body"><div class="step-content">
+      L'IA redige la reponse en s'appuyant uniquement sur les sources trouvees :
+      <ul>
+        <li>Elle respecte le <strong>principe de faveur</strong> (norme la plus favorable au salarie)</li>
+        <li>Elle cite ses sources et ne peut pas inventer d'information</li>
+        <li>Elle adapte le format selon le type de question (procedure, oui/non, comparaison...)</li>
+      </ul>
+      La reponse s'affiche <strong>mot par mot en temps reel</strong> dans le chat, avec un curseur anime.
+    </div></div>
+  </div>
+
+  <div class="section-label db">Sauvegarde</div>
+
+  <div class="arrow">↓</div>
+
+  <div class="step zone-db" onclick="toggle(this)">
+    <div class="step-dot">11</div>
+    <div class="step-header">
+      <span class="step-zone-tag">BDD</span>
+      <span class="step-title">Enregistrement en base de donnees</span>
+      <span class="step-timing">50–200 ms</span>
+      <span class="step-chevron">▶</span>
+    </div>
+    <div class="step-body"><div class="step-content">
+      La question et la reponse sont sauvegardees dans PostgreSQL pour que l'utilisateur puisse les retrouver plus tard.
+      <br><br>
+      Si c'est la premiere question de la conversation, un titre est genere automatiquement.
+    </div></div>
+  </div>
+
+  <div class="section-label frontend">Frontend — Affichage final</div>
+
+  <div class="arrow">↓</div>
+
+  <div class="step zone-frontend" onclick="toggle(this)">
+    <div class="step-dot">12</div>
+    <div class="step-header">
+      <span class="step-zone-tag">Front</span>
+      <span class="step-title">Reponse finale affichee</span>
+      <span class="step-timing">instantane</span>
+      <span class="step-chevron">▶</span>
+    </div>
+    <div class="step-body"><div class="step-content">
+      <ul>
+        <li>La reponse complete est affichee en Markdown (titres, listes, tableaux...)</li>
+        <li>Les <strong>sources</strong> sont listees sous la reponse — cliquer dessus ouvre le texte complet</li>
+        <li>L'utilisateur peut copier la reponse ou donner un feedback (pouce haut/bas)</li>
+        <li>Le champ de saisie est reactive pour poser la question suivante</li>
+      </ul>
+    </div></div>
+  </div>
+
+</div>
+
+<div class="legend">
+  <div class="legend-item"><div class="legend-dot" style="background:#3b82f6"></div> Frontend (Next.js)</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#10b981"></div> API (FastAPI)</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#7c3aed"></div> Pipeline RAG</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#f59e0b"></div> Base de donnees</div>
+</div>
+
+<script>
+function toggle(el) {
+  el.classList.toggle('open');
+}
+</script>
+
+</body>
+</html>

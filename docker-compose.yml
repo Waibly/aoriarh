@@ -128,22 +128,8 @@ services:
     networks:
       - aoriarh
 
-  frontend:
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile
-    environment:
-      NEXT_PUBLIC_API_URL: http://localhost:8000/api/v1
-      INTERNAL_API_URL: http://backend:8000/api/v1
-      NEXTAUTH_URL: http://localhost:3000
-      NEXTAUTH_SECRET: ${NEXTAUTH_SECRET:-dev-nextauth-secret}
-      AUTH_TRUST_HOST: "true"
-    ports:
-      - "3000:3000"
-    depends_on:
-      - backend
-    networks:
-      - aoriarh
+  # Frontend lancé en local (npm run dev) pour le hot reload.
+  # Voir frontend/.env.local pour les variables d'environnement.
 
 volumes:
   postgres_data:

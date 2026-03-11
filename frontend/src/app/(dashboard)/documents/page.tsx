@@ -464,11 +464,9 @@ function DocumentTable({
     <Table>
       <TableHeader>
         <TableRow>
-          <TableHead>Nom</TableHead>
+          <TableHead className="w-[40%]">Nom</TableHead>
           <TableHead>Type</TableHead>
-          <TableHead>Niveau</TableHead>
           <TableHead>Statut</TableHead>
-          <TableHead>Indexation</TableHead>
           <TableHead>Format</TableHead>
           <TableHead>Taille</TableHead>
           <TableHead>Date</TableHead>
@@ -514,13 +512,10 @@ function DocumentRow({
 
   return (
     <TableRow>
-      <TableCell className="max-w-[200px] truncate font-medium">
+      <TableCell className="truncate font-medium">
         {doc.name}
       </TableCell>
       <TableCell className="text-sm">{sourceLabel}</TableCell>
-      <TableCell className="text-sm">
-        {doc.norme_niveau ? `N${doc.norme_niveau}` : "—"}
-      </TableCell>
       <TableCell>
         <Badge
           variant={STATUS_VARIANT[doc.indexation_status] ?? "outline"}
@@ -531,20 +526,6 @@ function DocumentRow({
           )}
           {STATUS_LABEL[doc.indexation_status] ?? doc.indexation_status}
         </Badge>
-      </TableCell>
-      <TableCell className="text-sm text-muted-foreground">
-        {doc.indexation_status === "indexing" ? (
-          <span className="flex items-center gap-1 text-orange-600 dark:text-orange-400">
-            <Loader2 className="h-3 w-3 animate-spin" />
-            {doc.indexation_progress != null ? `${doc.indexation_progress}%` : "En cours"}
-          </span>
-        ) : doc.indexation_status === "error" && doc.indexation_error ? (
-          <span className="text-destructive" title={doc.indexation_error}>
-            Échoué
-          </span>
-        ) : (
-          formatDuration(doc.indexation_duration_ms)
-        )}
       </TableCell>
       <TableCell className="text-sm uppercase">
         {doc.file_format ?? "—"}
@@ -619,11 +600,9 @@ function CommonDocTable({ documents }: { documents: Document[] }) {
     <Table>
       <TableHeader>
         <TableRow>
-          <TableHead>Nom</TableHead>
+          <TableHead className="w-[40%]">Nom</TableHead>
           <TableHead>Type</TableHead>
-          <TableHead>Niveau</TableHead>
           <TableHead>Statut</TableHead>
-          <TableHead>Indexation</TableHead>
           <TableHead>Format</TableHead>
           <TableHead>Taille</TableHead>
           <TableHead>Date</TableHead>
@@ -636,13 +615,10 @@ function CommonDocTable({ documents }: { documents: Document[] }) {
               ?.label ?? doc.source_type;
           return (
             <TableRow key={doc.id}>
-              <TableCell className="max-w-[200px] truncate font-medium">
+              <TableCell className="truncate font-medium">
                 {doc.name}
               </TableCell>
               <TableCell className="text-sm">{sourceLabel}</TableCell>
-              <TableCell className="text-sm">
-                {doc.norme_niveau ? `N${doc.norme_niveau}` : "—"}
-              </TableCell>
               <TableCell>
                 <Badge
                   variant={
@@ -656,20 +632,6 @@ function CommonDocTable({ documents }: { documents: Document[] }) {
                   {STATUS_LABEL[doc.indexation_status] ??
                     doc.indexation_status}
                 </Badge>
-              </TableCell>
-              <TableCell className="text-sm text-muted-foreground">
-                {doc.indexation_status === "indexing" ? (
-                  <span className="flex items-center gap-1 text-orange-600 dark:text-orange-400">
-                    <Loader2 className="h-3 w-3 animate-spin" />
-                    {doc.indexation_progress != null ? `${doc.indexation_progress}%` : "En cours"}
-                  </span>
-                ) : doc.indexation_status === "error" && doc.indexation_error ? (
-                  <span className="text-destructive" title={doc.indexation_error}>
-                    Échoué
-                  </span>
-                ) : (
-                  formatDuration(doc.indexation_duration_ms)
-                )}
               </TableCell>
               <TableCell className="text-sm uppercase">
                 {doc.file_format ?? "—"}
