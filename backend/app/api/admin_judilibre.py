@@ -12,6 +12,7 @@ from app.core.database import get_db
 from app.core.dependencies import require_role
 from app.models.document import Document
 from app.models.user import User
+from app.rag.tasks import enqueue_judilibre_sync
 from app.schemas.document import DocumentRead
 from app.services.judilibre_service import JudilibreService, SyncResult
 
@@ -27,11 +28,8 @@ class SyncRequest(BaseModel):
 
 
 class SyncResponse(BaseModel):
-    total_fetched: int
-    new_ingested: int
-    already_exists: int
-    errors: int
-    error_messages: list[str] | None = None
+    status: str
+    message: str
 
 
 class JurisprudenceStats(BaseModel):
@@ -60,29 +58,22 @@ async def get_jurisprudence_stats(
 async def sync_judilibre(
     body: SyncRequest,
     user: User = Depends(require_role(["admin"])),
-    db: AsyncSession = Depends(get_db),
 ) -> SyncResponse:
-    """Launch a synchronization with the Judilibre API.
+    """Enqueue a Judilibre synchronization job to the background worker.
 
-    Fetches decisions matching the filters and ingests new ones
-    as common documents.
+    The sync runs asynchronously — check the stats endpoint to follow progress.
     """
-    service = JudilibreService()
-    result = await service.sync(
-        db=db,
-        user_id=user.id,
-        date_start=body.date_start,
-        date_end=body.date_end,
+    await enqueue_judilibre_sync(
+        user_id=str(user.id),
+        date_start=body.date_start.isoformat() if body.date_start else None,
+        date_end=body.date_end.isoformat() if body.date_end else None,
         chamber=body.chamber,
         publication=body.publication,
         max_decisions=body.max_decisions,
     )
     return SyncResponse(
-        total_fetched=result.total_fetched,
-        new_ingested=result.new_ingested,
-        already_exists=result.already_exists,
-        errors=result.errors,
-        error_messages=result.error_messages,
+        status="queued",
+        message="Synchronisation lancée en arrière-plan. Consultez les statistiques pour suivre la progression.",
     )
 
 

@@ -7,12 +7,10 @@ import {
   CheckCircle,
   ChevronLeft,
   ChevronRight,
-  Clock,
   Download,
   Loader2,
   RefreshCw,
   Scale,
-  XCircle,
 } from "lucide-react";
 import { toast } from "sonner";
 import { authFetch } from "@/lib/api";
@@ -65,11 +63,8 @@ interface JurisprudenceStats {
 }
 
 interface SyncResponse {
-  total_fetched: number;
-  new_ingested: number;
-  already_exists: number;
-  errors: number;
-  error_messages: string[] | null;
+  status: string;
+  message: string;
 }
 
 const STATUS_VARIANT: Record<
@@ -428,17 +423,7 @@ function SyncDialog({ open, onOpenChange, token, onComplete }: SyncDialogProps) 
 
       const data: SyncResponse = await res.json();
       setResult(data);
-
-      if (data.new_ingested > 0) {
-        toast.success(
-          `${data.new_ingested} nouveau${data.new_ingested > 1 ? "x" : ""} arrêt${data.new_ingested > 1 ? "s" : ""} importé${data.new_ingested > 1 ? "s" : ""}`
-        );
-      } else if (data.already_exists > 0) {
-        toast.info("Tous les arrêts sont déjà importés");
-      } else {
-        toast.info("Aucun arrêt trouvé pour ces critères");
-      }
-
+      toast.success(data.message);
       onComplete();
     } catch (err) {
       toast.error(
@@ -531,34 +516,10 @@ function SyncDialog({ open, onOpenChange, token, onComplete }: SyncDialogProps) 
           {result && (
             <div className="rounded-md border p-4 space-y-2 text-sm">
               <div className="flex items-center gap-2">
-                {result.errors === 0 ? (
-                  <CheckCircle className="h-4 w-4 text-green-500" />
-                ) : (
-                  <XCircle className="h-4 w-4 text-destructive" />
-                )}
-                <span className="font-medium">Synchronisation terminée</span>
+                <CheckCircle className="h-4 w-4 text-green-500" />
+                <span className="font-medium">Synchronisation lancée</span>
               </div>
-              <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-muted-foreground">
-                <span>Arrêts trouvés :</span>
-                <span className="font-medium text-foreground">{result.total_fetched}</span>
-                <span>Nouveaux importés :</span>
-                <span className="font-medium text-foreground">{result.new_ingested}</span>
-                <span>Déjà existants :</span>
-                <span className="font-medium text-foreground">{result.already_exists}</span>
-                {result.errors > 0 && (
-                  <>
-                    <span>Erreurs :</span>
-                    <span className="font-medium text-destructive">{result.errors}</span>
-                  </>
-                )}
-              </div>
-              {result.error_messages && result.error_messages.length > 0 && (
-                <div className="mt-2 max-h-24 overflow-y-auto rounded bg-destructive/10 p-2 text-xs text-destructive">
-                  {result.error_messages.map((msg, i) => (
-                    <p key={i}>{msg}</p>
-                  ))}
-                </div>
-              )}
+              <p className="text-muted-foreground">{result.message}</p>
             </div>
           )}
         </div>

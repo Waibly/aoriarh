@@ -36,3 +36,27 @@ async def enqueue_ingestion(document_id: str) -> None:
     pool = await get_arq_pool()
     await pool.enqueue_job("run_ingestion", document_id)
     logger.info("Ingestion job enqueued for document %s", document_id)
+
+
+async def enqueue_judilibre_sync(
+    user_id: str,
+    *,
+    date_start: str | None = None,
+    date_end: str | None = None,
+    chamber: str = "soc",
+    publication: str = "b",
+    max_decisions: int | None = None,
+) -> None:
+    """Enqueue a Judilibre sync job to the ARQ worker."""
+    pool = await get_arq_pool()
+    await pool.enqueue_job(
+        "run_judilibre_sync",
+        user_id,
+        date_start=date_start,
+        date_end=date_end,
+        chamber=chamber,
+        publication=publication,
+        max_decisions=max_decisions,
+        _job_id="judilibre_sync",  # single job — prevent duplicates
+    )
+    logger.info("Judilibre sync job enqueued")

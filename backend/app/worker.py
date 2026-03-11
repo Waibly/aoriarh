@@ -1,4 +1,4 @@
-"""ARQ worker — processus séparé pour les tâches lourdes (ingestion documents).
+"""ARQ worker — processus séparé pour les tâches lourdes (ingestion, sync Judilibre).
 
 Lancer avec :
     arq app.worker.WorkerSettings
@@ -6,6 +6,7 @@ Lancer avec :
 
 import os
 import uuid
+from datetime import date
 
 from app.core.logging import setup_logging
 
@@ -59,6 +60,42 @@ async def run_ingestion(ctx: dict, document_id: str) -> None:
         logger.exception("Worker: ingestion failed for document %s", document_id)
 
 
+async def run_judilibre_sync(
+    ctx: dict,
+    user_id: str,
+    *,
+    date_start: str | None = None,
+    date_end: str | None = None,
+    chamber: str = "soc",
+    publication: str = "b",
+    max_decisions: int | None = None,
+) -> None:
+    """Tâche de synchronisation Judilibre exécutée par le worker ARQ."""
+    logger.info("Worker: Judilibre sync started (chamber=%s, pub=%s)", chamber, publication)
+    session_factory = ctx["session_factory"]
+    try:
+        from app.services.judilibre_service import JudilibreService
+
+        service = JudilibreService()
+        async with session_factory() as db:
+            result = await service.sync(
+                db=db,
+                user_id=uuid.UUID(user_id),
+                date_start=date.fromisoformat(date_start) if date_start else None,
+                date_end=date.fromisoformat(date_end) if date_end else None,
+                chamber=chamber,
+                publication=publication,
+                max_decisions=max_decisions,
+            )
+        logger.info(
+            "Worker: Judilibre sync completed — %d fetched, %d new, %d existing, %d errors",
+            result.total_fetched, result.new_ingested,
+            result.already_exists, result.errors,
+        )
+    except Exception:
+        logger.exception("Worker: Judilibre sync failed")
+
+
 def _parse_redis_settings() -> RedisSettings:
     """Parse REDIS_URL into ARQ RedisSettings."""
     from urllib.parse import urlparse
@@ -73,7 +110,7 @@ def _parse_redis_settings() -> RedisSettings:
 
 
 class WorkerSettings:
-    functions = [run_ingestion]
+    functions = [run_ingestion, run_judilibre_sync]
     redis_settings = _parse_redis_settings()
     max_jobs = 4
     job_timeout = 1800  # 30 min max par ingestion (gros PDFs comme le Code du travail)
