@@ -1,10 +1,10 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef } from "react";
 import ReactMarkdown from "react-markdown";
 import rehypeSanitize from "rehype-sanitize";
 import remarkGfm from "remark-gfm";
-import { Copy, Check, ThumbsUp, ThumbsDown } from "lucide-react";
+import { Copy, Check, ThumbsUp, ThumbsDown, Send } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { MessageSources } from "./message-sources";
 import { cn } from "@/lib/utils";
@@ -12,7 +12,7 @@ import type { Message } from "@/types/api";
 
 interface MessageBubbleProps {
   message: Message;
-  onFeedback?: (messageId: string, feedback: "up" | "down" | null) => void;
+  onFeedback?: (messageId: string, feedback: "up" | "down" | null, comment?: string | null) => void;
 }
 
 function formatTime(dateString: string): string {
@@ -25,6 +25,9 @@ function formatTime(dateString: string): string {
 export function MessageBubble({ message, onFeedback }: MessageBubbleProps) {
   const isUser = message.role === "user";
   const [copied, setCopied] = useState(false);
+  const [showCommentInput, setShowCommentInput] = useState(false);
+  const [comment, setComment] = useState("");
+  const commentRef = useRef<HTMLInputElement>(null);
 
   const handleCopy = useCallback(async () => {
     try {
@@ -40,10 +43,31 @@ export function MessageBubble({ message, onFeedback }: MessageBubbleProps) {
     (value: "up" | "down") => {
       if (!onFeedback) return;
       const current = message.feedback as "up" | "down" | null;
-      onFeedback(message.id, current === value ? null : value);
+      if (current === value) {
+        // Toggle off
+        setShowCommentInput(false);
+        setComment("");
+        onFeedback(message.id, null);
+      } else if (value === "down") {
+        // Show comment input
+        setShowCommentInput(true);
+        setComment("");
+        onFeedback(message.id, "down");
+        setTimeout(() => commentRef.current?.focus(), 50);
+      } else {
+        setShowCommentInput(false);
+        setComment("");
+        onFeedback(message.id, "up");
+      }
     },
     [message.id, message.feedback, onFeedback],
   );
+
+  const handleSubmitComment = useCallback(() => {
+    if (!onFeedback || !comment.trim()) return;
+    onFeedback(message.id, "down", comment.trim());
+    setShowCommentInput(false);
+  }, [message.id, comment, onFeedback]);
 
   const isTemp = message.id.startsWith("temp-") || message.id.startsWith("partial-");
 
@@ -119,6 +143,32 @@ export function MessageBubble({ message, onFeedback }: MessageBubbleProps) {
             {formatTime(message.created_at)}
           </span>
         </div>
+        {showCommentInput && (
+          <div className="mt-2 flex items-center gap-2">
+            <input
+              ref={commentRef}
+              type="text"
+              value={comment}
+              onChange={(e) => setComment(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") handleSubmitComment();
+                if (e.key === "Escape") { setShowCommentInput(false); setComment(""); }
+              }}
+              placeholder="Qu'est-ce qui n'allait pas ?"
+              className="flex-1 rounded-md border border-input bg-background px-3 py-1.5 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+              maxLength={1000}
+            />
+            <Button
+              size="icon-xs"
+              variant="ghost"
+              onClick={handleSubmitComment}
+              disabled={!comment.trim()}
+              className="text-muted-foreground hover:text-foreground"
+            >
+              <Send className="size-3.5" />
+            </Button>
+          </div>
+        )}
       </div>
     </div>
   );

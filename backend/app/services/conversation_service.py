@@ -147,6 +147,7 @@ class ConversationService:
         message_id: uuid.UUID,
         user: User,
         feedback: str | None,
+        comment: str | None = None,
     ) -> Message:
         """Update feedback on an assistant message."""
         result = await self.db.execute(
@@ -175,6 +176,7 @@ class ConversationService:
             )
 
         message.feedback = feedback
+        message.feedback_comment = comment if feedback == "down" else None
         await self.db.commit()
         await self.db.refresh(message)
         return message

@@ -10,10 +10,10 @@ interface WelcomeScreenProps {
 }
 
 const suggestions = [
-  "Quels sont les délais de préavis ?",
-  "Quelle est la procédure de licenciement ?",
-  "Comment calculer les congés payés ?",
-  "Qu'est-ce qu'une rupture conventionnelle ?",
+  "Un salarié en arrêt maladie peut-il être licencié ?",
+  "Quelles sont les indemnités dues en cas de rupture conventionnelle ?",
+  "Un employeur peut-il refuser une demande de télétravail ?",
+  "Quelles sont les obligations lors d'un entretien préalable au licenciement ?",
 ];
 
 export function WelcomeScreen({ onSend }: WelcomeScreenProps) {
@@ -90,7 +90,7 @@ export function WelcomeScreen({ onSend }: WelcomeScreenProps) {
       </div>
 
       {/* Suggestions */}
-      <div className="mt-6 grid w-full max-w-lg grid-cols-1 gap-3 sm:grid-cols-2">
+      <div className="mt-6 grid w-full max-w-2xl grid-cols-1 gap-3 sm:grid-cols-2">
         {suggestions.map((suggestion) => (
           <Button
             key={suggestion}

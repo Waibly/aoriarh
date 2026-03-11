@@ -35,7 +35,6 @@ import {
 } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Table,
   TableBody,
@@ -132,9 +131,7 @@ export default function DocumentsPage() {
   const token = session?.access_token;
 
   const [documents, setDocuments] = useState<Document[]>([]);
-  const [commonDocs, setCommonDocs] = useState<Document[]>([]);
   const [loading, setLoading] = useState(false);
-  const [loadingCommon, setLoadingCommon] = useState(false);
   const [uploadOpen, setUploadOpen] = useState(false);
   const [isManager, setIsManager] = useState(false);
   const [dragging, setDragging] = useState(false);
@@ -158,31 +155,10 @@ export default function DocumentsPage() {
     }
   }, [currentOrg, token]);
 
-  const initialCommonLoadDone = useRef(false);
-
-  const fetchCommonDocs = useCallback(async () => {
-    if (!token) return;
-    if (!initialCommonLoadDone.current) setLoadingCommon(true);
-    try {
-      const docs = await apiFetch<Document[]>("/documents/common/", { token });
-      setCommonDocs(docs);
-      initialCommonLoadDone.current = true;
-    } catch {
-      toast.error("Erreur lors du chargement des documents communs");
-    } finally {
-      setLoadingCommon(false);
-    }
-  }, [token]);
-
   useEffect(() => {
     initialLoadDone.current = false;
     fetchDocuments();
   }, [fetchDocuments]);
-
-  useEffect(() => {
-    initialCommonLoadDone.current = false;
-    fetchCommonDocs();
-  }, [fetchCommonDocs]);
 
   // Polling : rafraîchir tant qu'un document est en cours de traitement
   useEffect(() => {
@@ -345,86 +321,43 @@ export default function DocumentsPage() {
         </p>
       </div>
 
-      <Tabs defaultValue="org">
-        <TabsList>
-          <TabsTrigger value="org">
-            Documents de {currentOrg.name}
-          </TabsTrigger>
-          <TabsTrigger value="common">Documents communs</TabsTrigger>
-        </TabsList>
-
-        {/* ---- Org documents tab ---- */}
-        <TabsContent value="org">
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between">
-              <div className="space-y-1.5">
-                <CardTitle>Documents de {currentOrg.name}</CardTitle>
-                <CardDescription>
-                  {documents.length} document
-                  {documents.length !== 1 ? "s" : ""}
-                </CardDescription>
-              </div>
-              <Button size="sm" onClick={() => setUploadOpen(true)}>
-                <FileUp className="mr-2 h-4 w-4" />
-                Ajouter un document
-              </Button>
-            </CardHeader>
-            <CardContent>
-              {loading ? (
-                <div className="space-y-3">
-                  {[1, 2, 3].map((i) => (
-                    <Skeleton key={i} className="h-12 w-full" />
-                  ))}
-                </div>
-              ) : documents.length === 0 ? (
-                <p className="py-8 text-center text-muted-foreground">
-                  Aucun document. Ajoutez votre premier document juridique.
-                </p>
-              ) : (
-                <DocumentTable
-                  documents={documents}
-                  isManager={isManager}
-                  onDownload={handleDownload}
-                  onDelete={handleDelete}
-                  onReindex={handleReindex}
-                  onReplace={handleReplace}
-                />
-              )}
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        {/* ---- Common documents tab ---- */}
-        <TabsContent value="common">
-          <Card>
-            <CardHeader>
-              <div className="space-y-1.5">
-                <CardTitle>Documents communs</CardTitle>
-                <CardDescription>
-                  {commonDocs.length} document
-                  {commonDocs.length !== 1 ? "s" : ""} — partagés avec toutes
-                  les organisations
-                </CardDescription>
-              </div>
-            </CardHeader>
-            <CardContent>
-              {loadingCommon ? (
-                <div className="space-y-3">
-                  {[1, 2, 3].map((i) => (
-                    <Skeleton key={i} className="h-12 w-full" />
-                  ))}
-                </div>
-              ) : commonDocs.length === 0 ? (
-                <p className="py-8 text-center text-muted-foreground">
-                  Aucun document commun disponible.
-                </p>
-              ) : (
-                <CommonDocTable documents={commonDocs} />
-              )}
-            </CardContent>
-          </Card>
-        </TabsContent>
-      </Tabs>
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between">
+          <div className="space-y-1.5">
+            <CardTitle>Documents de {currentOrg.name}</CardTitle>
+            <CardDescription>
+              {documents.length} document
+              {documents.length !== 1 ? "s" : ""}
+            </CardDescription>
+          </div>
+          <Button size="sm" onClick={() => setUploadOpen(true)}>
+            <FileUp className="mr-2 h-4 w-4" />
+            Ajouter un document
+          </Button>
+        </CardHeader>
+        <CardContent>
+          {loading ? (
+            <div className="space-y-3">
+              {[1, 2, 3].map((i) => (
+                <Skeleton key={i} className="h-12 w-full" />
+              ))}
+            </div>
+          ) : documents.length === 0 ? (
+            <p className="py-8 text-center text-muted-foreground">
+              Aucun document. Ajoutez votre premier document juridique.
+            </p>
+          ) : (
+            <DocumentTable
+              documents={documents}
+              isManager={isManager}
+              onDownload={handleDownload}
+              onDelete={handleDelete}
+              onReindex={handleReindex}
+              onReplace={handleReplace}
+            />
+          )}
+        </CardContent>
+      </Card>
 
       <UploadDialog
         open={uploadOpen}
@@ -584,63 +517,6 @@ function DocumentRow({
         </div>
       </TableCell>
     </TableRow>
-  );
-}
-
-/* ---- Common Documents Table (read-only) ---- */
-
-function CommonDocTable({ documents }: { documents: Document[] }) {
-  return (
-    <Table>
-      <TableHeader>
-        <TableRow>
-          <TableHead className="w-[40%]">Nom</TableHead>
-          <TableHead>Type</TableHead>
-          <TableHead>Statut</TableHead>
-          <TableHead>Format</TableHead>
-          <TableHead>Taille</TableHead>
-          <TableHead>Date</TableHead>
-        </TableRow>
-      </TableHeader>
-      <TableBody>
-        {documents.map((doc) => {
-          const sourceLabel =
-            SOURCE_TYPE_OPTIONS.find((s) => s.value === doc.source_type)
-              ?.label ?? doc.source_type;
-          return (
-            <TableRow key={doc.id}>
-              <TableCell className="truncate font-medium">
-                {doc.name}
-              </TableCell>
-              <TableCell className="text-sm">{sourceLabel}</TableCell>
-              <TableCell>
-                <Badge
-                  variant={
-                    STATUS_VARIANT[doc.indexation_status] ?? "outline"
-                  }
-                  className={doc.indexation_status === "indexing" ? "border-orange-400 text-orange-600 dark:text-orange-400" : undefined}
-                >
-                  {doc.indexation_status === "indexing" && (
-                    <Loader2 className="mr-1 h-3 w-3 animate-spin" />
-                  )}
-                  {STATUS_LABEL[doc.indexation_status] ??
-                    doc.indexation_status}
-                </Badge>
-              </TableCell>
-              <TableCell className="text-sm uppercase">
-                {doc.file_format ?? "—"}
-              </TableCell>
-              <TableCell className="text-sm">
-                {formatFileSize(doc.file_size)}
-              </TableCell>
-              <TableCell className="text-sm">
-                {new Date(doc.created_at).toLocaleDateString("fr-FR")}
-              </TableCell>
-            </TableRow>
-          );
-        })}
-      </TableBody>
-    </Table>
   );
 }
 

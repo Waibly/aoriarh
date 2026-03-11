@@ -35,5 +35,6 @@ class Message(TimestampMixin, Base):
     content: Mapped[str] = mapped_column(Text, nullable=False)
     sources: Mapped[dict | None] = mapped_column(JSON)
     feedback: Mapped[str | None] = mapped_column(String(20))
+    feedback_comment: Mapped[str | None] = mapped_column(Text)
 
     conversation = relationship("Conversation", back_populates="messages")

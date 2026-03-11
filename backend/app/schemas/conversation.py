@@ -29,6 +29,7 @@ class MessageRead(BaseModel):
     content: str
     sources: list[dict] | None
     feedback: str | None
+    feedback_comment: str | None
     created_at: datetime
 
 
@@ -38,6 +39,7 @@ class ConversationReadWithMessages(ConversationRead):
 
 class MessageFeedback(BaseModel):
     feedback: str | None = Field(None, pattern=r"^(up|down)$")
+    comment: str | None = Field(None, max_length=1000)
 
 
 class ChatRequest(BaseModel):

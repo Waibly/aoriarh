@@ -67,10 +67,11 @@ export async function updateMessageFeedback(
   messageId: string,
   feedback: "up" | "down" | null,
   token: string,
+  comment?: string | null,
 ): Promise<void> {
   await apiFetch(`/conversations/messages/${messageId}/feedback`, {
     method: "PATCH",
-    body: JSON.stringify({ feedback }),
+    body: JSON.stringify({ feedback, comment: comment ?? null }),
     token,
   });
 }

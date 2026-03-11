@@ -74,6 +74,7 @@ export interface Message {
   content: string;
   sources: MessageSource[] | null;
   feedback: string | null;
+  feedback_comment: string | null;
   created_at: string;
 }
 

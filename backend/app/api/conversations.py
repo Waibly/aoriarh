@@ -97,6 +97,7 @@ async def update_message_feedback(
         message_id=message_id,
         user=user,
         feedback=data.feedback,
+        comment=data.comment,
     )
     return message  # type: ignore[return-value]
 

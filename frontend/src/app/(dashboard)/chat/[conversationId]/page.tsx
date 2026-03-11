@@ -67,6 +67,7 @@ export default function ConversationPage() {
         content,
         sources: null,
         feedback: null,
+        feedback_comment: null,
         created_at: new Date().toISOString(),
       };
 
@@ -113,6 +114,7 @@ export default function ConversationPage() {
                     content: accumulatedContent,
                     sources: accumulatedSources,
                     feedback: null,
+                    feedback_comment: null,
                     created_at: new Date().toISOString(),
                   },
                 ];
@@ -142,6 +144,7 @@ export default function ConversationPage() {
                       content: accumulatedContent,
                       sources: accumulatedSources,
                       feedback: null,
+                      feedback_comment: null,
                       created_at: new Date().toISOString(),
                     },
                   ];
@@ -176,17 +179,17 @@ export default function ConversationPage() {
   );
 
   const handleFeedback = useCallback(
-    async (messageId: string, feedback: "up" | "down" | null) => {
+    async (messageId: string, feedback: "up" | "down" | null, comment?: string | null) => {
       if (!token) return;
       setMessages((prev) =>
-        prev.map((m) => (m.id === messageId ? { ...m, feedback } : m)),
+        prev.map((m) => (m.id === messageId ? { ...m, feedback, feedback_comment: comment ?? null } : m)),
       );
       try {
-        await updateMessageFeedback(messageId, feedback, token);
+        await updateMessageFeedback(messageId, feedback, token, comment);
       } catch {
         setMessages((prev) =>
           prev.map((m) =>
-            m.id === messageId ? { ...m, feedback: null } : m,
+            m.id === messageId ? { ...m, feedback: null, feedback_comment: null } : m,
           ),
         );
         toast.error("Impossible d'enregistrer votre retour.");
