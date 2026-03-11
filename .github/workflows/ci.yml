@@ -1,0 +1,121 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  backend-lint:
+    name: Backend Lint
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install ruff
+      - run: ruff check .
+      - run: ruff format --check .
+
+  backend-test:
+    name: Backend Tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: aoriarh_test
+          POSTGRES_USER: aoriarh
+          POSTGRES_PASSWORD: testpassword
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U aoriarh"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      POSTGRES_HOST: localhost
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: aoriarh_test
+      POSTGRES_USER: aoriarh
+      POSTGRES_PASSWORD: testpassword
+      SECRET_KEY: ci-test-secret-key-that-is-long-enough-for-validation-purposes-only
+      OPENAI_API_KEY: sk-fake-ci-key
+      VOYAGE_API_KEY: pa-fake-ci-key
+      MINIO_ACCESS_KEY: minioadmin
+      MINIO_SECRET_KEY: minioadmin
+      BREVO_API_KEY: xkeysib-fake-ci-key
+      REDIS_URL: redis://localhost:6379
+      LOG_FORMAT: text
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -e ".[dev]"
+      - run: pytest --cov=app --cov-report=term-missing -x
+
+  frontend-lint:
+    name: Frontend Lint
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npx next lint
+      - run: npx tsc --noEmit
+
+  frontend-test:
+    name: Frontend Tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npm test -- --ci --coverage
+
+  check-nextauth:
+    name: Check NextAuth Stable
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          LATEST=$(npm view next-auth version 2>/dev/null)
+          echo "Latest next-auth version: $LATEST"
+          if echo "$LATEST" | grep -q "beta"; then
+            echo "::notice::next-auth stable n'est pas encore sorti (latest=$LATEST). Version verrouillée à 5.0.0-beta.25."
+          else
+            echo "::warning::next-auth $LATEST stable est disponible ! Mettre à jour package.json et tester."
+          fi
+
+  docker-build:
+    name: Docker Build
+    runs-on: ubuntu-latest
+    needs: [backend-lint, frontend-lint]
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -t aoriarh-backend ./backend
+      - run: docker build -t aoriarh-frontend ./frontend

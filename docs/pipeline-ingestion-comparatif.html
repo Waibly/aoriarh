@@ -1,0 +1,860 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AORIA RH — Pipeline d'Ingestion Documentaire</title>
+  <style>
+    :root {
+      --primary: #4f46e5;
+      --primary-light: #e0e7ff;
+      --success: #059669;
+      --success-light: #d1fae5;
+      --danger: #dc2626;
+      --danger-light: #fee2e2;
+      --warning: #d97706;
+      --warning-light: #fef3c7;
+      --gray-50: #f9fafb;
+      --gray-100: #f3f4f6;
+      --gray-200: #e5e7eb;
+      --gray-300: #d1d5db;
+      --gray-500: #6b7280;
+      --gray-600: #4b5563;
+      --gray-700: #374151;
+      --gray-800: #1f2937;
+      --gray-900: #111827;
+      --radius: 12px;
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
+      color: var(--gray-800);
+      background: var(--gray-50);
+      line-height: 1.6;
+    }
+
+    /* ---- HEADER ---- */
+    .hero {
+      background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
+      color: white;
+      padding: 60px 24px 48px;
+      text-align: center;
+    }
+    .hero h1 { font-size: 2.4rem; font-weight: 800; margin-bottom: 12px; }
+    .hero p { font-size: 1.15rem; opacity: 0.9; max-width: 680px; margin: 0 auto; }
+    .hero .badge {
+      display: inline-block;
+      background: rgba(255,255,255,0.2);
+      border: 1px solid rgba(255,255,255,0.3);
+      padding: 4px 14px;
+      border-radius: 20px;
+      font-size: 0.85rem;
+      margin-bottom: 18px;
+      letter-spacing: 0.5px;
+    }
+
+    /* ---- LAYOUT ---- */
+    .container { max-width: 1100px; margin: 0 auto; padding: 0 24px; }
+
+    section { margin: 48px 0; }
+    section > h2 {
+      font-size: 1.6rem;
+      font-weight: 700;
+      color: var(--gray-900);
+      margin-bottom: 8px;
+    }
+    section > .subtitle {
+      color: var(--gray-500);
+      margin-bottom: 28px;
+      font-size: 1rem;
+    }
+
+    /* ---- CARDS ---- */
+    .card {
+      background: white;
+      border: 1px solid var(--gray-200);
+      border-radius: var(--radius);
+      padding: 28px;
+      margin-bottom: 20px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+    }
+    .card h3 {
+      font-size: 1.15rem;
+      font-weight: 700;
+      margin-bottom: 12px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .card h3 .step-num {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 32px;
+      height: 32px;
+      background: var(--primary);
+      color: white;
+      border-radius: 50%;
+      font-size: 0.85rem;
+      font-weight: 700;
+      flex-shrink: 0;
+    }
+
+    /* ---- SUMMARY BOXES ---- */
+    .summary-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 16px;
+      margin-bottom: 32px;
+    }
+    .summary-box {
+      background: white;
+      border: 1px solid var(--gray-200);
+      border-radius: var(--radius);
+      padding: 24px;
+      text-align: center;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+    }
+    .summary-box .number {
+      font-size: 2rem;
+      font-weight: 800;
+      color: var(--primary);
+    }
+    .summary-box .label {
+      font-size: 0.9rem;
+      color: var(--gray-500);
+      margin-top: 4px;
+    }
+
+    /* ---- EN BREF (non-tech) ---- */
+    .tldr {
+      background: var(--primary-light);
+      border: 1px solid #c7d2fe;
+      border-radius: var(--radius);
+      padding: 28px;
+      margin-bottom: 40px;
+    }
+    .tldr h2 {
+      color: var(--primary);
+      font-size: 1.25rem;
+      margin-bottom: 12px;
+    }
+    .tldr ul { padding-left: 20px; }
+    .tldr li { margin-bottom: 6px; color: var(--gray-700); }
+
+    /* ---- COMPARISON TABLE ---- */
+    .comparison-table {
+      width: 100%;
+      border-collapse: separate;
+      border-spacing: 0;
+      border-radius: var(--radius);
+      overflow: hidden;
+      border: 1px solid var(--gray-200);
+      font-size: 0.95rem;
+    }
+    .comparison-table thead th {
+      background: var(--gray-800);
+      color: white;
+      padding: 14px 18px;
+      text-align: left;
+      font-weight: 600;
+    }
+    .comparison-table thead th:first-child { width: 28%; }
+    .comparison-table tbody td {
+      padding: 12px 18px;
+      border-bottom: 1px solid var(--gray-100);
+      vertical-align: top;
+    }
+    .comparison-table tbody tr:last-child td { border-bottom: none; }
+    .comparison-table tbody tr:nth-child(even) { background: var(--gray-50); }
+    .comparison-table .old { color: var(--gray-500); }
+    .comparison-table .new { color: var(--success); font-weight: 600; }
+    .comparison-table .highlight-row { background: var(--success-light) !important; }
+
+    /* ---- TAG ---- */
+    .tag {
+      display: inline-block;
+      padding: 2px 10px;
+      border-radius: 6px;
+      font-size: 0.78rem;
+      font-weight: 600;
+      letter-spacing: 0.3px;
+    }
+    .tag-old { background: var(--danger-light); color: var(--danger); }
+    .tag-new { background: var(--success-light); color: var(--success); }
+    .tag-optim { background: var(--warning-light); color: var(--warning); }
+
+    /* ---- FLOW DIAGRAM ---- */
+    .flow {
+      display: flex;
+      flex-direction: column;
+      gap: 0;
+      position: relative;
+    }
+    .flow-phase {
+      padding: 12px 0;
+    }
+    .flow-phase-title {
+      font-size: 0.8rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: var(--primary);
+      margin-bottom: 12px;
+    }
+    .flow-steps {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+    .flow-step {
+      background: white;
+      border: 2px solid var(--gray-200);
+      border-radius: 10px;
+      padding: 14px 18px;
+      flex: 1 1 200px;
+      min-width: 200px;
+      position: relative;
+      transition: border-color 0.2s;
+    }
+    .flow-step:hover { border-color: var(--primary); }
+    .flow-step .fs-num {
+      font-size: 0.75rem;
+      font-weight: 700;
+      color: var(--primary);
+      margin-bottom: 4px;
+    }
+    .flow-step .fs-title { font-weight: 700; font-size: 0.95rem; margin-bottom: 4px; }
+    .flow-step .fs-desc { font-size: 0.82rem; color: var(--gray-500); }
+    .flow-step.async-step { border-color: #a78bfa; background: #faf5ff; }
+
+    .flow-arrow {
+      text-align: center;
+      padding: 6px 0;
+      color: var(--gray-300);
+      font-size: 1.5rem;
+      line-height: 1;
+    }
+
+    .flow-divider {
+      border: none;
+      border-top: 2px dashed var(--gray-300);
+      margin: 16px 0;
+      position: relative;
+    }
+    .flow-divider-label {
+      position: absolute;
+      top: -10px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: var(--gray-50);
+      padding: 0 12px;
+      font-size: 0.78rem;
+      font-weight: 700;
+      color: var(--warning);
+      white-space: nowrap;
+    }
+
+    /* ---- GAINS ---- */
+    .gains-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 20px;
+    }
+    .gain-card {
+      background: white;
+      border-radius: var(--radius);
+      border: 1px solid var(--gray-200);
+      padding: 28px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+    }
+    .gain-card .gain-icon {
+      width: 44px;
+      height: 44px;
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.4rem;
+      margin-bottom: 14px;
+    }
+    .gain-card h4 { font-size: 1.05rem; margin-bottom: 8px; }
+    .gain-card p { font-size: 0.9rem; color: var(--gray-600); }
+    .gain-card .gain-metric {
+      margin-top: 12px;
+      padding: 8px 12px;
+      background: var(--success-light);
+      border-radius: 8px;
+      font-size: 0.85rem;
+      color: var(--success);
+      font-weight: 600;
+    }
+
+    /* ---- TECH DETAIL ---- */
+    .tech-detail {
+      background: var(--gray-800);
+      color: #e2e8f0;
+      border-radius: var(--radius);
+      padding: 24px;
+      font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+      font-size: 0.85rem;
+      overflow-x: auto;
+      line-height: 1.7;
+      margin-top: 16px;
+    }
+    .tech-detail .comment { color: #64748b; }
+    .tech-detail .key { color: #93c5fd; }
+    .tech-detail .val { color: #86efac; }
+    .tech-detail .str { color: #fde68a; }
+
+    /* ---- ARCHITECTURE DIAGRAM ---- */
+    .arch-diagram {
+      background: white;
+      border: 1px solid var(--gray-200);
+      border-radius: var(--radius);
+      padding: 32px;
+      text-align: center;
+      overflow-x: auto;
+    }
+    .arch-diagram svg { max-width: 100%; height: auto; }
+
+    /* ---- FOOTER ---- */
+    footer {
+      text-align: center;
+      padding: 40px 24px;
+      color: var(--gray-500);
+      font-size: 0.85rem;
+      border-top: 1px solid var(--gray-200);
+      margin-top: 60px;
+    }
+
+    /* ---- RESPONSIVE ---- */
+    @media (max-width: 768px) {
+      .hero h1 { font-size: 1.7rem; }
+      .flow-step { flex: 1 1 100%; }
+      .comparison-table { font-size: 0.82rem; }
+      .comparison-table thead th,
+      .comparison-table tbody td { padding: 10px 12px; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- ============================================================ -->
+<!-- HERO -->
+<!-- ============================================================ -->
+<header class="hero">
+  <div class="badge">Documentation technique &amp; fonctionnelle</div>
+  <h1>Pipeline d'Ingestion Documentaire</h1>
+  <p>Comment AORIA RH transforme les documents juridiques en connaissances interrogeables par l'IA &mdash; et pourquoi la nouvelle version change tout.</p>
+</header>
+
+<div class="container">
+
+<!-- ============================================================ -->
+<!-- EN BREF (NON-TECH) -->
+<!-- ============================================================ -->
+<section>
+  <div class="tldr">
+    <h2>En bref &mdash; ce qu'il faut retenir</h2>
+    <p style="margin-bottom: 14px;">Quand on uploade un document (Code du travail, convention collective, accord d'entreprise&hellip;), AORIA RH le d&eacute;coupe intelligemment et le rend interrogeable par l'IA. Voici ce que la <strong>nouvelle pipeline</strong> apporte :</p>
+    <ul>
+      <li><strong>~7.7&times; plus rapide</strong> &mdash; un gros document (Code du travail, 7.5 Mo) passe de 18 minutes &agrave; ~2 min 20s.</li>
+      <li><strong>Formats multiples</strong> &mdash; PDF, DOCX et TXT sont accept&eacute;s (avant : PDF uniquement).</li>
+      <li><strong>Aucune attente</strong> &mdash; le traitement est asynchrone : on re&ccedil;oit une confirmation imm&eacute;diate et on peut suivre la progression en temps r&eacute;el.</li>
+      <li><strong>Z&eacute;ro interruption</strong> &mdash; la mise &agrave; jour d'un document ne coupe jamais la recherche (insert-then-swap).</li>
+      <li><strong>D&eacute;doublonnage automatique</strong> &mdash; impossible d'importer deux fois le m&ecirc;me fichier par erreur.</li>
+      <li><strong>D&eacute;coupage juridique intelligent</strong> &mdash; le syst&egrave;me reconna&icirc;t les articles de loi, sections et chapitres pour un d&eacute;coupage plus pertinent.</li>
+      <li><strong>Plus &eacute;conomique</strong> &mdash; moins d'appels API, pas de GPU requis.</li>
+    </ul>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<!-- CHIFFRES CLES -->
+<!-- ============================================================ -->
+<section>
+  <h2>Les gains en chiffres</h2>
+  <p class="subtitle">Mesur&eacute;s sur l'indexation du Code du travail (7.5 Mo, ~3 484 pages)</p>
+  <div class="summary-grid">
+    <div class="summary-box">
+      <div class="number">~7.7x</div>
+      <div class="label">Plus rapide<br><small>1 080s (18 min) &rarr; 140,5s (~2 min 20s)</small></div>
+    </div>
+    <div class="summary-box">
+      <div class="number">-50%</div>
+      <div class="label">D'appels API<br><small>121 &rarr; ~60</small></div>
+    </div>
+    <div class="summary-box">
+      <div class="number">3</div>
+      <div class="label">Formats support&eacute;s<br><small>PDF, DOCX, TXT</small></div>
+    </div>
+    <div class="summary-box">
+      <div class="number">0</div>
+      <div class="label">GPU requis<br><small>CPU uniquement</small></div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<!-- COMPARAISON AVANT / APRES -->
+<!-- ============================================================ -->
+<section>
+  <h2>Comparaison : ancienne vs nouvelle pipeline</h2>
+  <p class="subtitle">Les diff&eacute;rences cl&eacute;s point par point</p>
+  <div style="overflow-x: auto;">
+    <table class="comparison-table">
+      <thead>
+        <tr>
+          <th>Crit&egrave;re</th>
+          <th><span class="tag tag-old">Ancienne</span></th>
+          <th><span class="tag tag-new">Nouvelle</span></th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><strong>Formats accept&eacute;s</strong></td>
+          <td class="old">PDF uniquement</td>
+          <td class="new">PDF, DOCX, TXT</td>
+        </tr>
+        <tr>
+          <td><strong>Traitement</strong></td>
+          <td class="old">Synchrone (l'utilisateur attend)</td>
+          <td class="new">Asynchrone (r&eacute;ponse imm&eacute;diate + suivi progression)</td>
+        </tr>
+        <tr>
+          <td><strong>Orchestration</strong></td>
+          <td class="old">LangGraph (graphe s&eacute;quentiel)</td>
+          <td class="new">ARQ + Redis (queue de jobs)</td>
+        </tr>
+        <tr>
+          <td><strong>Stockage fichiers</strong></td>
+          <td class="old">Syst&egrave;me de fichiers local (/documents/)</td>
+          <td class="new">MinIO (compatible S3, distribu&eacute;)</td>
+        </tr>
+        <tr>
+          <td><strong>Suivi m&eacute;tadonn&eacute;es</strong></td>
+          <td class="old">Aucun (pas de base relationnelle)</td>
+          <td class="new">PostgreSQL (status, progression, historique)</td>
+        </tr>
+        <tr>
+          <td><strong>D&eacute;doublonnage</strong></td>
+          <td class="old">Aucun</td>
+          <td class="new">Hash SHA-256 par organisation</td>
+        </tr>
+        <tr>
+          <td><strong>Extraction PDF</strong></td>
+          <td class="old">Docling + OCR Tesseract (GPU)</td>
+          <td class="new">pymupdf4llm + fast path gros fichiers (CPU)</td>
+        </tr>
+        <tr>
+          <td><strong>Classification juridique</strong></td>
+          <td class="old">LLM (Claude Sonnet) &mdash; co&ucirc;t API</td>
+          <td class="new">M&eacute;tadonn&eacute;es fournies &agrave; l'upload (source_type)</td>
+        </tr>
+        <tr>
+          <td><strong>Chunking</strong></td>
+          <td class="old">LangChain : headers Markdown + d&eacute;coupage caract&egrave;res<br>1024 caract&egrave;res / 136 overlap</td>
+          <td class="new">LegalChunker : articles juridiques + headings + phrases<br>1024 tokens / 100 overlap</td>
+        </tr>
+        <tr>
+          <td><strong>Embeddings denses</strong></td>
+          <td class="old">VoyageAI voyage-3-large (s&eacute;quentiel)</td>
+          <td class="new">VoyageAI voyage-law-2 (4 requ&ecirc;tes concurrentes)</td>
+        </tr>
+        <tr>
+          <td><strong>Embeddings sparse</strong></td>
+          <td class="old">SPLADE legal-french (GPU requis)</td>
+          <td class="new">fastembed BM25 local (CPU)</td>
+        </tr>
+        <tr>
+          <td><strong>Infra requise</strong></td>
+          <td class="old">Docker + CUDA 11.8 (GPU)</td>
+          <td class="new">Docker (CPU uniquement)</td>
+        </tr>
+        <tr class="highlight-row">
+          <td><strong>Temps (Code du travail)</strong></td>
+          <td class="old">~1 080 secondes (18 min)</td>
+          <td class="new">~140,5 secondes (~2 min 20s)</td>
+        </tr>
+        <tr>
+          <td><strong>Re-indexation</strong></td>
+          <td class="old">Remplacement destructif (downtime)</td>
+          <td class="new">Insert-then-swap (z&eacute;ro downtime)</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<!-- SCHEMA NOUVELLE PIPELINE -->
+<!-- ============================================================ -->
+<section>
+  <h2>Le nouveau processus, &eacute;tape par &eacute;tape</h2>
+  <p class="subtitle">Le pipeline se divise en deux phases : une r&eacute;ponse imm&eacute;diate &agrave; l'utilisateur, puis un traitement en arri&egrave;re-plan.</p>
+
+  <div class="flow">
+
+    <!-- PHASE 1 : SYNCHRONE -->
+    <div class="flow-phase">
+      <div class="flow-phase-title">Phase 1 &mdash; R&eacute;ception (r&eacute;ponse imm&eacute;diate)</div>
+      <div class="flow-steps">
+        <div class="flow-step">
+          <div class="fs-num">&Eacute;tape 1</div>
+          <div class="fs-title">Validation</div>
+          <div class="fs-desc">V&eacute;rification du format (PDF, DOCX, TXT), de la taille (&le; 10 Mo) et d&eacute;doublonnage par hash SHA-256.</div>
+        </div>
+        <div class="flow-step">
+          <div class="fs-num">&Eacute;tape 2</div>
+          <div class="fs-title">Stockage fichier</div>
+          <div class="fs-desc">Upload vers MinIO (S3). Chemin : <code>{org_id}/{uuid}_{filename}</code>. Cloisonnement multi-tenant natif.</div>
+        </div>
+        <div class="flow-step">
+          <div class="fs-num">&Eacute;tape 3</div>
+          <div class="fs-title">Enregistrement DB</div>
+          <div class="fs-desc">Cr&eacute;ation du document en PostgreSQL avec status <code>pending</code>. Tra&ccedil;abilit&eacute; compl&egrave;te.</div>
+        </div>
+        <div class="flow-step">
+          <div class="fs-num">&Eacute;tape 4</div>
+          <div class="fs-title">Dispatch asynchrone</div>
+          <div class="fs-desc">Job envoy&eacute; dans la queue Redis (ARQ). R&eacute;ponse <code>201 Created</code> renvoy&eacute;e imm&eacute;diatement au client.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- SEPARATEUR -->
+    <div style="position: relative; margin: 20px 0;">
+      <hr class="flow-divider">
+      <div class="flow-divider-label">L'utilisateur n'attend plus &mdash; traitement en arri&egrave;re-plan</div>
+    </div>
+
+    <!-- PHASE 2 : ASYNC -->
+    <div class="flow-phase">
+      <div class="flow-phase-title">Phase 2 &mdash; Indexation (worker asynchrone)</div>
+      <div class="flow-steps">
+        <div class="flow-step async-step">
+          <div class="fs-num">&Eacute;tapes 5-6</div>
+          <div class="fs-title">Download &amp; Extraction</div>
+          <div class="fs-desc">R&eacute;cup&eacute;ration depuis MinIO. Extraction intelligente selon le format et la taille (fast path pour les gros PDF &gt; 2 Mo).</div>
+        </div>
+        <div class="flow-step async-step">
+          <div class="fs-num">&Eacute;tape 7</div>
+          <div class="fs-title">Nettoyage</div>
+          <div class="fs-desc">Suppression en-t&ecirc;tes/pieds de page, normalisation typographique, fusion des lignes coup&eacute;es.</div>
+        </div>
+        <div class="flow-step async-step">
+          <div class="fs-num">&Eacute;tape 8</div>
+          <div class="fs-title">D&eacute;coupage intelligent</div>
+          <div class="fs-desc">3 strat&eacute;gies en cascade : articles juridiques, headings Markdown, phrases. 1024 tokens par chunk.</div>
+        </div>
+      </div>
+      <div class="flow-arrow">&darr;</div>
+      <div class="flow-steps">
+        <div class="flow-step async-step">
+          <div class="fs-num">&Eacute;tape 9</div>
+          <div class="fs-title">Embeddings denses</div>
+          <div class="fs-desc">API Voyage AI (<code>voyage-law-2</code>), 1024 dimensions, batchs de 128, <strong>4 requ&ecirc;tes en parall&egrave;le</strong>.</div>
+        </div>
+        <div class="flow-step async-step">
+          <div class="fs-num">&Eacute;tape 10</div>
+          <div class="fs-title">Vecteurs sparse</div>
+          <div class="fs-desc">BM25 via <code>fastembed</code> en local (CPU). Aucun appel API &mdash; rapide et gratuit.</div>
+        </div>
+      </div>
+      <div class="flow-arrow">&darr;</div>
+      <div class="flow-steps">
+        <div class="flow-step async-step">
+          <div class="fs-num">&Eacute;tape 11</div>
+          <div class="fs-title">Upsert Qdrant</div>
+          <div class="fs-desc">Insertion par batchs de 100 points avec vecteurs dense + sparse et toutes les m&eacute;tadonn&eacute;es (org_id, norme, poids&hellip;).</div>
+        </div>
+        <div class="flow-step async-step">
+          <div class="fs-num">&Eacute;tape 12</div>
+          <div class="fs-title">Insert-then-swap</div>
+          <div class="fs-desc">Les anciens chunks ne sont supprim&eacute;s qu'<strong>apr&egrave;s</strong> l'insertion des nouveaux &rarr; z&eacute;ro downtime.</div>
+        </div>
+        <div class="flow-step async-step">
+          <div class="fs-num">&Eacute;tape 13</div>
+          <div class="fs-title">Finalisation</div>
+          <div class="fs-desc">Status &rarr; <code>indexed</code>. Nombre de chunks et dur&eacute;e enregistr&eacute;s. Progression : 100%.</div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<!-- ARCHITECTURE -->
+<!-- ============================================================ -->
+<section>
+  <h2>Architecture des composants</h2>
+  <p class="subtitle">Vue d'ensemble des services impliqu&eacute;s dans le nouveau pipeline</p>
+  <div class="arch-diagram">
+    <svg viewBox="0 0 800 420" xmlns="http://www.w3.org/2000/svg" font-family="-apple-system, BlinkMacSystemFont, sans-serif">
+      <!-- Frontend -->
+      <rect x="20" y="30" width="160" height="70" rx="10" fill="#e0e7ff" stroke="#4f46e5" stroke-width="2"/>
+      <text x="100" y="60" text-anchor="middle" font-weight="700" font-size="14" fill="#4f46e5">Frontend</text>
+      <text x="100" y="80" text-anchor="middle" font-size="11" fill="#6b7280">Next.js</text>
+
+      <!-- Arrow -->
+      <line x1="180" y1="65" x2="260" y2="65" stroke="#4f46e5" stroke-width="2" marker-end="url(#arrow)"/>
+      <text x="220" y="55" text-anchor="middle" font-size="10" fill="#6b7280">POST</text>
+
+      <!-- FastAPI -->
+      <rect x="260" y="30" width="160" height="70" rx="10" fill="#dbeafe" stroke="#2563eb" stroke-width="2"/>
+      <text x="340" y="60" text-anchor="middle" font-weight="700" font-size="14" fill="#2563eb">FastAPI</text>
+      <text x="340" y="80" text-anchor="middle" font-size="11" fill="#6b7280">API REST</text>
+
+      <!-- Arrow to Redis -->
+      <line x1="420" y1="65" x2="500" y2="65" stroke="#d97706" stroke-width="2" marker-end="url(#arrow-orange)"/>
+      <text x="460" y="55" text-anchor="middle" font-size="10" fill="#d97706">job</text>
+
+      <!-- Redis -->
+      <rect x="500" y="30" width="130" height="70" rx="10" fill="#fef3c7" stroke="#d97706" stroke-width="2"/>
+      <text x="565" y="60" text-anchor="middle" font-weight="700" font-size="14" fill="#d97706">Redis</text>
+      <text x="565" y="80" text-anchor="middle" font-size="11" fill="#6b7280">Queue (ARQ)</text>
+
+      <!-- Arrow to Worker -->
+      <line x1="565" y1="100" x2="565" y2="160" stroke="#d97706" stroke-width="2" marker-end="url(#arrow-orange)"/>
+
+      <!-- Worker -->
+      <rect x="480" y="160" width="170" height="70" rx="10" fill="#fef3c7" stroke="#d97706" stroke-width="2"/>
+      <text x="565" y="190" text-anchor="middle" font-weight="700" font-size="14" fill="#d97706">ARQ Worker</text>
+      <text x="565" y="210" text-anchor="middle" font-size="11" fill="#6b7280">Pipeline d'ingestion</text>
+
+      <!-- Arrow to MinIO -->
+      <line x1="340" y1="100" x2="340" y2="160" stroke="#6b7280" stroke-width="2" marker-end="url(#arrow-gray)"/>
+
+      <!-- MinIO -->
+      <rect x="260" y="160" width="160" height="70" rx="10" fill="#f3f4f6" stroke="#6b7280" stroke-width="2"/>
+      <text x="340" y="190" text-anchor="middle" font-weight="700" font-size="14" fill="#374151">MinIO</text>
+      <text x="340" y="210" text-anchor="middle" font-size="11" fill="#6b7280">Stockage S3</text>
+
+      <!-- Arrow Worker to MinIO -->
+      <line x1="480" y1="195" x2="420" y2="195" stroke="#6b7280" stroke-width="2" marker-end="url(#arrow-gray)"/>
+
+      <!-- Arrow Worker to Voyage -->
+      <line x1="565" y1="230" x2="565" y2="280" stroke="#059669" stroke-width="2" marker-end="url(#arrow-green)"/>
+
+      <!-- Voyage AI -->
+      <rect x="480" y="280" width="170" height="60" rx="10" fill="#d1fae5" stroke="#059669" stroke-width="2"/>
+      <text x="565" y="305" text-anchor="middle" font-weight="700" font-size="13" fill="#059669">Voyage AI</text>
+      <text x="565" y="322" text-anchor="middle" font-size="11" fill="#6b7280">voyage-law-2</text>
+
+      <!-- Arrow Worker to Qdrant -->
+      <line x1="565" y1="340" x2="565" y2="370" stroke="#7c3aed" stroke-width="2" marker-end="url(#arrow-purple)"/>
+
+      <!-- Qdrant -->
+      <rect x="470" y="370" width="190" height="45" rx="10" fill="#ede9fe" stroke="#7c3aed" stroke-width="2"/>
+      <text x="565" y="398" text-anchor="middle" font-weight="700" font-size="14" fill="#7c3aed">Qdrant (vecteurs)</text>
+
+      <!-- PostgreSQL -->
+      <rect x="50" y="160" width="160" height="70" rx="10" fill="#dbeafe" stroke="#2563eb" stroke-width="2"/>
+      <text x="130" y="190" text-anchor="middle" font-weight="700" font-size="14" fill="#2563eb">PostgreSQL</text>
+      <text x="130" y="210" text-anchor="middle" font-size="11" fill="#6b7280">M&eacute;tadonn&eacute;es</text>
+
+      <!-- Arrow FastAPI to PostgreSQL -->
+      <line x1="280" y1="100" x2="190" y2="160" stroke="#2563eb" stroke-width="2" marker-end="url(#arrow-blue)"/>
+
+      <!-- Arrow defs -->
+      <defs>
+        <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+          <path d="M 0 0 L 10 5 L 0 10 z" fill="#4f46e5"/>
+        </marker>
+        <marker id="arrow-orange" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+          <path d="M 0 0 L 10 5 L 0 10 z" fill="#d97706"/>
+        </marker>
+        <marker id="arrow-gray" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+          <path d="M 0 0 L 10 5 L 0 10 z" fill="#6b7280"/>
+        </marker>
+        <marker id="arrow-green" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+          <path d="M 0 0 L 10 5 L 0 10 z" fill="#059669"/>
+        </marker>
+        <marker id="arrow-purple" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+          <path d="M 0 0 L 10 5 L 0 10 z" fill="#7c3aed"/>
+        </marker>
+        <marker id="arrow-blue" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+          <path d="M 0 0 L 10 5 L 0 10 z" fill="#2563eb"/>
+        </marker>
+      </defs>
+    </svg>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<!-- GAINS DETAILLES -->
+<!-- ============================================================ -->
+<section>
+  <h2>Les am&eacute;liorations en d&eacute;tail</h2>
+  <p class="subtitle">Pourquoi la nouvelle pipeline est un changement majeur</p>
+  <div class="gains-grid">
+
+    <div class="gain-card">
+      <div class="gain-icon" style="background: #dbeafe; color: #2563eb;">&#9889;</div>
+      <h4>Traitement asynchrone</h4>
+      <p><strong>Avant :</strong> l'utilisateur envoyait son PDF et devait attendre la fin du traitement (jusqu'&agrave; 18 minutes) avant d'obtenir une r&eacute;ponse.</p>
+      <p style="margin-top:8px"><strong>Apr&egrave;s :</strong> la r&eacute;ponse est imm&eacute;diate (<code>201 Created</code>). Le traitement tourne en arri&egrave;re-plan via un worker ARQ, et le frontend peut afficher la progression en temps r&eacute;el par polling.</p>
+    </div>
+
+    <div class="gain-card">
+      <div class="gain-icon" style="background: #d1fae5; color: #059669;">&#128202;</div>
+      <h4>Extraction rapide des gros PDF</h4>
+      <p><strong>Avant :</strong> Docling effectuait une analyse de layout co&ucirc;teuse (colonnes, tableaux) sur tous les PDF, m&ecirc;me les tr&egrave;s gros. Le Code du travail prenait &gt; 60 secondes rien que pour l'extraction.</p>
+      <p style="margin-top:8px"><strong>Apr&egrave;s :</strong> pour les PDF &gt; 2 Mo, <code>pymupdf</code> extrait le texte brut directement &mdash; ~5 secondes au lieu de 60+.</p>
+      <div class="gain-metric">Extraction : 60s &rarr; 5s (12x plus rapide)</div>
+    </div>
+
+    <div class="gain-card">
+      <div class="gain-icon" style="background: #fef3c7; color: #d97706;">&#9986;</div>
+      <h4>D&eacute;coupage juridique intelligent</h4>
+      <p><strong>Avant :</strong> d&eacute;coupage g&eacute;n&eacute;rique par headers Markdown + taille en caract&egrave;res. Les articles de loi pouvaient &ecirc;tre coup&eacute;s au milieu.</p>
+      <p style="margin-top:8px"><strong>Apr&egrave;s :</strong> le <code>LegalChunker</code> reconna&icirc;t les patterns juridiques fran&ccedil;ais (<code>Article L1234-5</code>, <code>Section</code>, <code>Chapitre</code>, <code>Titre</code>) et d&eacute;coupe aux bonnes fronti&egrave;res. Les en-t&ecirc;tes sont r&eacute;p&eacute;t&eacute;s dans chaque sous-chunk pour conserver le contexte.</p>
+    </div>
+
+    <div class="gain-card">
+      <div class="gain-icon" style="background: #ede9fe; color: #7c3aed;">&#128640;</div>
+      <h4>Embeddings 4x plus rapides</h4>
+      <p><strong>Avant :</strong> les appels Voyage AI &eacute;taient s&eacute;quentiels. 121 appels &times; ~2s = ~240s d'attente.</p>
+      <p style="margin-top:8px"><strong>Apr&egrave;s :</strong> 4 requ&ecirc;tes concurrentes via <code>asyncio.Semaphore</code> + taille de chunks doubl&eacute;e = 2x moins d'appels, 4x plus rapides.</p>
+      <div class="gain-metric">Embeddings : 240s &rarr; ~30s</div>
+    </div>
+
+    <div class="gain-card">
+      <div class="gain-icon" style="background: #fee2e2; color: #dc2626;">&#128274;</div>
+      <h4>Plus de GPU requis</h4>
+      <p><strong>Avant :</strong> SPLADE (vecteurs sparse) et Tesseract (OCR) n&eacute;cessitaient CUDA 11.8. Co&ucirc;t d'infrastructure &eacute;lev&eacute;, d&eacute;ploiement complexe.</p>
+      <p style="margin-top:8px"><strong>Apr&egrave;s :</strong> <code>fastembed</code> (BM25) tourne sur CPU. <code>pymupdf</code> remplace l'OCR. L'infrastructure est plus simple et moins ch&egrave;re.</p>
+    </div>
+
+    <div class="gain-card">
+      <div class="gain-icon" style="background: #d1fae5; color: #059669;">&#128737;</div>
+      <h4>Fiabilit&eacute; &amp; tra&ccedil;abilit&eacute;</h4>
+      <p><strong>Avant :</strong> pas de base de donn&eacute;es relationnelle, pas de suivi d'&eacute;tat, pas de d&eacute;doublonnage. Un &eacute;chec &eacute;tait silencieux.</p>
+      <p style="margin-top:8px"><strong>Apr&egrave;s :</strong> chaque document a un cycle de vie complet en PostgreSQL (<code>pending</code> &rarr; <code>indexed</code>), un hash SHA-256 anti-doublon, et un insert-then-swap qui garantit z&eacute;ro downtime.</p>
+    </div>
+
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<!-- DETAILS TECHNIQUES -->
+<!-- ============================================================ -->
+<section>
+  <h2>Configuration technique</h2>
+  <p class="subtitle">Pour les d&eacute;veloppeurs et ops</p>
+
+  <div class="card">
+    <h3>Param&egrave;tres cl&eacute;s</h3>
+    <div class="tech-detail">
+<span class="comment"># rag/config.py</span>
+<span class="key">CHUNK_SIZE</span>         = <span class="val">1024</span>    <span class="comment"># tokens (tiktoken cl100k_base)</span>
+<span class="key">CHUNK_OVERLAP</span>       = <span class="val">100</span>     <span class="comment"># tokens</span>
+<span class="key">EMBEDDING_MODEL</span>     = <span class="str">"voyage-law-2"</span>
+<span class="key">DENSE_VECTOR_SIZE</span>   = <span class="val">1024</span>
+
+<span class="comment"># rag/ingestion.py</span>
+<span class="key">EMBEDDING_BATCH_SIZE</span>   = <span class="val">128</span>
+<span class="key">EMBEDDING_CONCURRENCY</span>  = <span class="val">4</span>
+
+<span class="comment"># rag/text_extractor.py</span>
+<span class="key">_LARGE_PDF_THRESHOLD</span>   = <span class="val">2 Mo</span>   <span class="comment"># au-del&agrave; : extraction texte brut</span>
+
+<span class="comment"># services/document_service.py</span>
+<span class="key">MAX_FILE_SIZE</span>          = <span class="val">10 Mo</span>
+
+<span class="comment"># worker.py</span>
+<span class="key">job_timeout</span>            = <span class="val">1800</span>   <span class="comment"># 30 minutes max par document</span>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>Structure d'un point Qdrant</h3>
+    <div class="tech-detail">
+<span class="comment">// Collection : aoriarh_documents</span>
+{
+  <span class="key">"id"</span>: <span class="str">"uuid-unique"</span>,
+  <span class="key">"vectors"</span>: {
+    <span class="key">"dense"</span>:      <span class="val">[float x 1024]</span>,      <span class="comment">// Voyage AI voyage-law-2</span>
+    <span class="key">"sparse-bm25"</span>: <span class="val">{indices, values}</span>  <span class="comment">// fastembed local</span>
+  },
+  <span class="key">"payload"</span>: {
+    <span class="key">"text"</span>:             <span class="str">"contenu du chunk..."</span>,
+    <span class="key">"organisation_id"</span>:  <span class="str">"uuid-org"</span>,
+    <span class="key">"document_id"</span>:      <span class="str">"uuid-doc"</span>,
+    <span class="key">"doc_name"</span>:         <span class="str">"Convention collective Syntec"</span>,
+    <span class="key">"source_type"</span>:      <span class="str">"ccn"</span>,
+    <span class="key">"norme_niveau"</span>:     <span class="val">5</span>,
+    <span class="key">"norme_poids"</span>:      <span class="val">0.7</span>,
+    <span class="key">"chunk_index"</span>:      <span class="val">42</span>
+  }
+}
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>Fichiers source (nouvelle pipeline)</h3>
+    <div style="overflow-x:auto;">
+      <table class="comparison-table" style="margin-top: 12px;">
+        <thead>
+          <tr><th>Fichier</th><th>R&ocirc;le</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><code>api/documents.py</code></td><td>Endpoints API (upload, status, liste)</td></tr>
+          <tr><td><code>services/document_service.py</code></td><td>Validation, stockage MinIO, enregistrement DB</td></tr>
+          <tr><td><code>rag/tasks.py</code></td><td>D&eacute;finition des jobs ARQ</td></tr>
+          <tr><td><code>worker.py</code></td><td>Worker ARQ (consomme la queue Redis)</td></tr>
+          <tr><td><code>rag/ingestion.py</code></td><td>Orchestration du pipeline d'indexation</td></tr>
+          <tr><td><code>rag/text_extractor.py</code></td><td>Extraction texte multi-format (PDF, DOCX, TXT)</td></tr>
+          <tr><td><code>rag/text_cleaner.py</code></td><td>Nettoyage et normalisation du texte</td></tr>
+          <tr><td><code>rag/chunker.py</code></td><td>LegalChunker (3 strat&eacute;gies de d&eacute;coupage)</td></tr>
+          <tr><td><code>rag/qdrant_store.py</code></td><td>Gestion collection Qdrant + upsert</td></tr>
+          <tr><td><code>rag/config.py</code></td><td>Configuration (tailles, mod&egrave;les, seuils)</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<!-- PROGRESSION -->
+<!-- ============================================================ -->
+<section>
+  <h2>Suivi de progression</h2>
+  <p class="subtitle">Le frontend peut afficher la progression en temps r&eacute;el via polling sur <code>GET /documents/{id}</code></p>
+  <div class="card">
+    <div style="display: flex; flex-wrap: wrap; gap: 8px; font-size: 0.85rem;">
+      <div style="flex: 1 1 100%; background: var(--gray-100); border-radius: 8px; overflow: hidden; height: 28px; position: relative;">
+        <div style="position: absolute; left: 0; top: 0; height: 100%; width: 5%; background: #93c5fd; border-radius: 8px 0 0 8px;"></div>
+        <div style="position: absolute; left: 5%; top: 0; height: 100%; width: 5%; background: #60a5fa;"></div>
+        <div style="position: absolute; left: 10%; top: 0; height: 100%; width: 5%; background: #3b82f6;"></div>
+        <div style="position: absolute; left: 15%; top: 0; height: 100%; width: 65%; background: #818cf8;"></div>
+        <div style="position: absolute; left: 80%; top: 0; height: 100%; width: 5%; background: #a78bfa;"></div>
+        <div style="position: absolute; left: 85%; top: 0; height: 100%; width: 10%; background: #7c3aed;"></div>
+        <div style="position: absolute; left: 95%; top: 0; height: 100%; width: 5%; background: #059669; border-radius: 0 8px 8px 0;"></div>
+      </div>
+    </div>
+    <div style="display: flex; flex-wrap: wrap; gap: 12px; margin-top: 12px; font-size: 0.8rem; color: var(--gray-600);">
+      <span>0-5% Download</span>
+      <span>5-10% Extraction</span>
+      <span>10-15% Chunking</span>
+      <span style="font-weight:700; color: var(--primary);">15-80% Embeddings</span>
+      <span>80-85% Sparse</span>
+      <span>85-95% Qdrant</span>
+      <span style="color: var(--success);">95-100% Finalisation</span>
+    </div>
+  </div>
+</section>
+
+</div><!-- /.container -->
+
+<footer>
+  <p><strong>AORIA RH</strong> &mdash; Pipeline d'ingestion documentaire v2</p>
+  <p>Document g&eacute;n&eacute;r&eacute; le 6 mars 2026</p>
+</footer>
+
+</body>
+</html>

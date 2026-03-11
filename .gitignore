@@ -1,0 +1,70 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+*.egg
+dist/
+build/
+.eggs/
+*.whl
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Python tools
+.ruff_cache/
+.mypy_cache/
+.pytest_cache/
+htmlcov/
+.coverage
+.coverage.*
+coverage.xml
+
+# Node.js
+node_modules/
+.next/
+out/
+.turbo/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Docker
+docker-compose.override.yml
+
+# Data (local volumes)
+data/
+*.sql.bak
+
+# MinIO local data
+minio_data/
+
+# Alembic
+alembic/versions/*.py
+!alembic/versions/.gitkeep
+
+# Credentials / sensitive docs
+ACCES_PROD.md
+SECURISATION_VPS.md
+SECURISATION_VPS.html
+
+# Misc
+*.log
+tmp/

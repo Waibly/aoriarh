@@ -1,0 +1,17 @@
+# AORIA RH — Reverse proxy production
+# Caddy obtient et renouvelle les certificats SSL automatiquement via Let's Encrypt.
+# Remplacer les domaines ci-dessous par vos vrais domaines.
+
+app.aoriarh.fr {
+	header X-Robots-Tag "noindex, nofollow"
+	reverse_proxy frontend:3000
+}
+
+api.aoriarh.fr {
+	header X-Robots-Tag "noindex, nofollow"
+	reverse_proxy backend:8000
+}
+
+monitoring.aoriarh.fr {
+	reverse_proxy grafana:3000
+}
