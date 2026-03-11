@@ -2,7 +2,8 @@ import { auth } from "@/lib/auth";
 import { NextResponse } from "next/server";
 
 export default auth((req) => {
-  const isLoggedIn = !!req.auth;
+  const session = req.auth;
+  const isLoggedIn = !!session?.user?.email;
   const isAuthPage =
     req.nextUrl.pathname.startsWith("/login") ||
     req.nextUrl.pathname.startsWith("/register");
@@ -30,7 +31,7 @@ export default auth((req) => {
   }
 
   if (req.nextUrl.pathname.startsWith("/admin")) {
-    const role = (req.auth as { user?: { role?: string } })?.user?.role;
+    const role = session?.user?.role;
     if (role !== "admin") {
       return NextResponse.redirect(new URL("/chat", req.nextUrl.origin));
     }
@@ -40,5 +41,5 @@ export default auth((req) => {
 });
 
 export const config = {
-  matcher: ["/((?!api|_next/static|_next/image|favicon.ico).*)"],
+  matcher: ["/((?!api|_next/static|_next/image|favicon.ico|icon.svg|robots.txt).*)"],
 };

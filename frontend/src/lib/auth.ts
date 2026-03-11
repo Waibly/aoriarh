@@ -116,6 +116,15 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
     }),
   ],
   callbacks: {
+    authorized({ auth, request }) {
+      const isLoggedIn = !!auth?.user?.email;
+      const isAuthPage =
+        request.nextUrl.pathname.startsWith("/login") ||
+        request.nextUrl.pathname.startsWith("/register");
+      const isInvitePage = request.nextUrl.pathname.startsWith("/invite");
+      if (isInvitePage || isAuthPage) return true;
+      return isLoggedIn;
+    },
     async jwt({ token, user }) {
       // Initial sign-in: store all token data
       if (user) {
