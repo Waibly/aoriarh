@@ -39,5 +39,19 @@ class AdminDocumentRead(DocumentRead):
     organisation_name: str | None = None
 
 
+class BatchUploadFileResult(BaseModel):
+    filename: str
+    success: bool
+    document: DocumentRead | None = None
+    error: str | None = None
+
+
+class BatchUploadResponse(BaseModel):
+    total: int
+    succeeded: int
+    failed: int
+    results: list[BatchUploadFileResult]
+
+
 class DocumentDownload(BaseModel):
     url: str

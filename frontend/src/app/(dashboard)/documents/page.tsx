@@ -290,14 +290,20 @@ export default function DocumentsPage() {
     e.preventDefault();
     e.stopPropagation();
     setDragging(false);
-    const droppedFile = e.dataTransfer.files?.[0];
-    if (droppedFile) {
+    const droppedFiles = e.dataTransfer.files;
+    if (droppedFiles && droppedFiles.length > 0) {
       setUploadOpen(true);
-      // Small delay to let the dialog mount before setting the file
+      // Small delay to let the dialog mount before setting the files
       setTimeout(() => {
-        window.dispatchEvent(
-          new CustomEvent("dropped-file", { detail: droppedFile })
-        );
+        if (droppedFiles.length === 1) {
+          window.dispatchEvent(
+            new CustomEvent("dropped-file", { detail: droppedFiles[0] })
+          );
+        } else {
+          window.dispatchEvent(
+            new CustomEvent("dropped-files", { detail: Array.from(droppedFiles) })
+          );
+        }
       }, 100);
     }
   };
@@ -331,7 +337,7 @@ export default function DocumentsPage() {
       >
         <Upload className="mb-2 h-8 w-8 text-muted-foreground" />
         <p className="text-sm text-muted-foreground">
-          Glissez-déposez un fichier ici ou{" "}
+          Glissez-déposez un ou plusieurs fichiers ici ou{" "}
           <button
             type="button"
             onClick={() => setUploadOpen(true)}
@@ -700,7 +706,7 @@ function UploadDialog({
   onUploaded,
 }: UploadDialogProps) {
   const fileRef = useRef<HTMLInputElement>(null);
-  const [file, setFile] = useState<File | null>(null);
+  const [files, setFiles] = useState<File[]>([]);
   const [sourceType, setSourceType] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -715,6 +721,7 @@ function UploadDialog({
   const [publication, setPublication] = useState("");
 
   const isJurisprudence = JURISPRUDENCE_SOURCE_TYPES.has(sourceType);
+  const isBatch = files.length > 1;
 
   const selectedOption = SOURCE_TYPE_OPTIONS.find(
     (s) => s.value === sourceType
@@ -724,7 +731,7 @@ function UploadDialog({
 
   useEffect(() => {
     if (open) {
-      setFile(null);
+      setFiles([]);
       setSourceType("");
       setError(null);
       setJuridiction("");
@@ -738,49 +745,91 @@ function UploadDialog({
     }
   }, [open]);
 
-  // Listen for dropped file from drag & drop zone
+  // Listen for dropped files from drag & drop zone
   useEffect(() => {
-    const handler = (e: Event) => {
+    const handleOne = (e: Event) => {
       const droppedFile = (e as CustomEvent<File>).detail;
-      if (droppedFile) setFile(droppedFile);
+      if (droppedFile) setFiles([droppedFile]);
     };
-    window.addEventListener("dropped-file", handler);
-    return () => window.removeEventListener("dropped-file", handler);
+    const handleMany = (e: Event) => {
+      const droppedFiles = (e as CustomEvent<File[]>).detail;
+      if (droppedFiles?.length) setFiles(droppedFiles);
+    };
+    window.addEventListener("dropped-file", handleOne);
+    window.addEventListener("dropped-files", handleMany);
+    return () => {
+      window.removeEventListener("dropped-file", handleOne);
+      window.removeEventListener("dropped-files", handleMany);
+    };
   }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!file || !sourceType) return;
+    if (files.length === 0 || !sourceType) return;
 
     setSubmitting(true);
     setError(null);
 
-    const formData = new FormData();
-    formData.append("file", file);
-    formData.append("source_type", sourceType);
-    if (isJurisprudence) {
-      if (juridiction) formData.append("juridiction", juridiction);
-      if (chambre) formData.append("chambre", chambre);
-      if (formation) formData.append("formation", formation);
-      if (numeroPourvoi) formData.append("numero_pourvoi", numeroPourvoi);
-      if (dateDecision) formData.append("date_decision", dateDecision);
-      if (solution) formData.append("solution", solution);
-      if (publication) formData.append("publication", publication);
-    }
-
     try {
-      const res = await authFetch(`/documents/${orgId}/`, {
-        method: "POST",
-        body: formData,
-        token: token ?? undefined,
-      });
+      if (isBatch) {
+        // Batch upload — multiple files, same source_type, no jurisprudence metadata
+        const formData = new FormData();
+        for (const f of files) formData.append("files", f);
+        formData.append("source_type", sourceType);
 
-      if (!res.ok) {
-        const data = await res.json().catch(() => null);
-        throw new Error(data?.detail ?? "Erreur lors de l'upload");
+        const res = await authFetch(`/documents/${orgId}/batch`, {
+          method: "POST",
+          body: formData,
+          token: token ?? undefined,
+        });
+
+        if (!res.ok) {
+          const data = await res.json().catch(() => null);
+          throw new Error(data?.detail ?? "Erreur lors de l'upload");
+        }
+
+        const data = await res.json();
+        if (data.failed > 0) {
+          const failedNames = data.results
+            .filter((r: { success: boolean }) => !r.success)
+            .map((r: { filename: string; error: string }) => `${r.filename}: ${r.error}`)
+            .join("\n");
+          toast.warning(
+            `${data.succeeded} ajouté${data.succeeded > 1 ? "s" : ""}, ${data.failed} échoué${data.failed > 1 ? "s" : ""}`,
+            { description: failedNames, duration: 8000 }
+          );
+        } else {
+          toast.success(`${data.succeeded} document${data.succeeded > 1 ? "s" : ""} ajouté${data.succeeded > 1 ? "s" : ""}`);
+        }
+      } else {
+        // Single upload — with full metadata support
+        const formData = new FormData();
+        formData.append("file", files[0]);
+        formData.append("source_type", sourceType);
+        if (isJurisprudence) {
+          if (juridiction) formData.append("juridiction", juridiction);
+          if (chambre) formData.append("chambre", chambre);
+          if (formation) formData.append("formation", formation);
+          if (numeroPourvoi) formData.append("numero_pourvoi", numeroPourvoi);
+          if (dateDecision) formData.append("date_decision", dateDecision);
+          if (solution) formData.append("solution", solution);
+          if (publication) formData.append("publication", publication);
+        }
+
+        const res = await authFetch(`/documents/${orgId}/`, {
+          method: "POST",
+          body: formData,
+          token: token ?? undefined,
+        });
+
+        if (!res.ok) {
+          const data = await res.json().catch(() => null);
+          throw new Error(data?.detail ?? "Erreur lors de l'upload");
+        }
+
+        toast.success("Document ajouté");
       }
 
-      toast.success("Document ajouté");
       onOpenChange(false);
       onUploaded();
     } catch (err) {
@@ -790,6 +839,10 @@ function UploadDialog({
     } finally {
       setSubmitting(false);
     }
+  };
+
+  const removeFile = (index: number) => {
+    setFiles((prev) => prev.filter((_, i) => i !== index));
   };
 
   // Group options by niveau
@@ -804,25 +857,48 @@ function UploadDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>Ajouter un document</DialogTitle>
+          <DialogTitle>Ajouter des documents</DialogTitle>
           <DialogDescription>
-            Formats acceptés : PDF, Word (.docx), Texte (.txt)
+            Sélectionnez un ou plusieurs fichiers du même type. Formats
+            acceptés : PDF, Word (.docx), Texte (.txt)
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-2">
             <Label htmlFor="doc-file">
-              Fichier * {file && <span className="text-muted-foreground">({file.name})</span>}
+              Fichier{files.length > 1 ? "s" : ""} *
+              {files.length > 0 && (
+                <span className="text-muted-foreground ml-1">
+                  ({files.length} sélectionné{files.length > 1 ? "s" : ""})
+                </span>
+              )}
             </Label>
             <input
               ref={fileRef}
               id="doc-file"
               type="file"
+              multiple
               accept=".pdf,.docx,.txt,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain"
-              onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+              onChange={(e) => setFiles(Array.from(e.target.files ?? []))}
               className="block w-full text-sm file:mr-4 file:rounded-md file:border-0 file:bg-primary file:px-4 file:py-2 file:text-sm file:font-medium file:text-primary-foreground hover:file:bg-primary/90"
-              required={!file}
+              required={files.length === 0}
             />
+            {files.length > 1 && (
+              <div className="max-h-32 overflow-y-auto rounded-md border p-2 space-y-1">
+                {files.map((f, i) => (
+                  <div key={i} className="flex items-center justify-between text-xs">
+                    <span className="truncate mr-2">{f.name}</span>
+                    <button
+                      type="button"
+                      onClick={() => removeFile(i)}
+                      className="text-destructive hover:underline shrink-0"
+                    >
+                      Retirer
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
           <div className="space-y-2">
@@ -863,7 +939,7 @@ function UploadDialog({
             </div>
           )}
 
-          {isJurisprudence && (
+          {isJurisprudence && !isBatch && (
             <div className="space-y-3 rounded-md border border-border bg-muted/50 p-4">
               <p className="text-sm font-medium">Métadonnées jurisprudence</p>
 
@@ -961,14 +1037,24 @@ function UploadDialog({
             </div>
           )}
 
+          {isBatch && isJurisprudence && (
+            <p className="text-xs text-muted-foreground">
+              Les métadonnées de jurisprudence ne sont pas disponibles en upload par lot.
+            </p>
+          )}
+
           {error && <p className="text-sm text-destructive">{error}</p>}
 
           <DialogFooter>
             <Button
               type="submit"
-              disabled={submitting || !file || !sourceType}
+              disabled={submitting || files.length === 0 || !sourceType}
             >
-              {submitting ? "Upload en cours..." : "Ajouter"}
+              {submitting
+                ? "Upload en cours..."
+                : files.length > 1
+                  ? `Ajouter ${files.length} documents`
+                  : "Ajouter"}
             </Button>
           </DialogFooter>
         </form>

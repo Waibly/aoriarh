@@ -1,3 +1,4 @@
+import logging
 import uuid
 from datetime import date
 
@@ -9,8 +10,15 @@ from app.core.dependencies import get_current_user, require_org_role, require_ro
 from app.core.limiter import limiter
 from app.models.user import User
 from app.rag.tasks import enqueue_ingestion
-from app.schemas.document import DocumentDownload, DocumentRead
+from app.schemas.document import (
+    BatchUploadFileResult,
+    BatchUploadResponse,
+    DocumentDownload,
+    DocumentRead,
+)
 from app.services.document_service import DocumentService
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -61,6 +69,55 @@ async def upload_document(
     )
     await enqueue_ingestion(str(doc.id))
     return doc  # type: ignore[return-value]
+
+
+@router.post(
+    "/{organisation_id}/batch",
+    response_model=BatchUploadResponse,
+)
+@limiter.limit("30/hour")
+async def upload_documents_batch(
+    request: Request,
+    organisation_id: uuid.UUID,
+    files: list[UploadFile],
+    source_type: str = Form(...),
+    user: User = Depends(require_org_role(["manager", "user"])),
+    db: AsyncSession = Depends(get_db),
+) -> BatchUploadResponse:
+    """Upload multiple documents of the same type to an organisation."""
+    service = DocumentService(db)
+    results: list[BatchUploadFileResult] = []
+
+    for file in files:
+        try:
+            doc = await service.upload_document(
+                file=file,
+                source_type=source_type,
+                org_id=organisation_id,
+                user_id=user.id,
+            )
+            await enqueue_ingestion(str(doc.id))
+            results.append(BatchUploadFileResult(
+                filename=file.filename or "unknown",
+                success=True,
+                document=DocumentRead.model_validate(doc),
+            ))
+        except Exception as exc:
+            detail = getattr(exc, "detail", str(exc))
+            logger.warning("Batch upload failed for %s: %s", file.filename, detail)
+            results.append(BatchUploadFileResult(
+                filename=file.filename or "unknown",
+                success=False,
+                error=detail,
+            ))
+
+    succeeded = sum(1 for r in results if r.success)
+    return BatchUploadResponse(
+        total=len(results),
+        succeeded=succeeded,
+        failed=len(results) - succeeded,
+        results=results,
+    )
 
 
 @router.get("/{organisation_id}/", response_model=list[DocumentRead])

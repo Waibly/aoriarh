@@ -1,3 +1,4 @@
+import logging
 import uuid
 from datetime import date
 
@@ -11,9 +12,17 @@ from app.core.dependencies import require_role
 from app.models.document import Document
 from app.models.user import User
 from app.rag.tasks import enqueue_ingestion
-from app.schemas.document import AdminDocumentRead, DocumentDownload, DocumentRead
+from app.schemas.document import (
+    AdminDocumentRead,
+    BatchUploadFileResult,
+    BatchUploadResponse,
+    DocumentDownload,
+    DocumentRead,
+)
 from app.services.audit_service import log_admin_action
 from app.services.document_service import MAX_FILE_SIZE_ADMIN, DocumentService
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -128,6 +137,60 @@ async def upload_common_document(
     await db.commit()
     await enqueue_ingestion(str(doc.id))
     return doc  # type: ignore[return-value]
+
+
+@router.post("/batch", response_model=BatchUploadResponse)
+async def upload_common_documents_batch(
+    request: Request,
+    files: list[UploadFile],
+    source_type: str = Form(...),
+    user: User = Depends(require_role(["admin"])),
+    db: AsyncSession = Depends(get_db),
+) -> BatchUploadResponse:
+    """Upload multiple common documents of the same type in one request."""
+    service = DocumentService(db)
+    results: list[BatchUploadFileResult] = []
+
+    for file in files:
+        try:
+            doc = await service.upload_common_document(
+                file=file,
+                source_type=source_type,
+                user_id=user.id,
+                max_file_size=MAX_FILE_SIZE_ADMIN,
+            )
+            await log_admin_action(
+                db,
+                user_id=user.id,
+                action="upload_common_document",
+                resource_type="document",
+                resource_id=str(doc.id),
+                ip_address=request.client.host if request.client else None,
+                details=f"file={file.filename} source_type={source_type} batch=true",
+            )
+            await db.commit()
+            await enqueue_ingestion(str(doc.id))
+            results.append(BatchUploadFileResult(
+                filename=file.filename or "unknown",
+                success=True,
+                document=DocumentRead.model_validate(doc),
+            ))
+        except Exception as exc:
+            detail = getattr(exc, "detail", str(exc))
+            logger.warning("Batch upload failed for %s: %s", file.filename, detail)
+            results.append(BatchUploadFileResult(
+                filename=file.filename or "unknown",
+                success=False,
+                error=detail,
+            ))
+
+    succeeded = sum(1 for r in results if r.success)
+    return BatchUploadResponse(
+        total=len(results),
+        succeeded=succeeded,
+        failed=len(results) - succeeded,
+        results=results,
+    )
 
 
 @router.get("/", response_model=list[DocumentRead])
