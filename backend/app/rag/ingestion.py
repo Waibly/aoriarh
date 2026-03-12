@@ -54,6 +54,21 @@ async def _get_embeddings_batch(
             logger.warning("Voyage AI rate limit, retrying in %.1fs...", delay)
             await asyncio.sleep(delay)
             continue
+        if response.status_code != 200:
+            char_lengths = [len(t) for t in texts]
+            total_chars = sum(char_lengths)
+            logger.error(
+                "Voyage AI error %d on batch of %d texts: "
+                "total_chars=%d, min_chars=%d, max_chars=%d, avg_chars=%d, "
+                "response=%s",
+                response.status_code,
+                len(texts),
+                total_chars,
+                min(char_lengths),
+                max(char_lengths),
+                total_chars // len(texts),
+                response.text[:500],
+            )
         response.raise_for_status()
         data = response.json()
         return [item["embedding"] for item in data["data"]]
@@ -199,7 +214,18 @@ class IngestionPipeline:
                 await db.commit()
                 return
 
-            logger.info("Document %s: %d chunks produced", document_id, len(chunks))
+            chunk_char_lengths = [len(c) for c in chunks]
+            total_chars = sum(chunk_char_lengths)
+            logger.info(
+                "Document %s: %d chunks produced — "
+                "total_chars=%d, min=%d, max=%d, avg=%d",
+                document_id,
+                len(chunks),
+                total_chars,
+                min(chunk_char_lengths),
+                max(chunk_char_lengths),
+                total_chars // len(chunks),
+            )
             await self._update_progress(doc, db, 15)
 
             # 7. Generate embeddings (dense + sparse) — 15% → 80%
