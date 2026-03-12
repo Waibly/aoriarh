@@ -3,6 +3,7 @@ import uuid
 from datetime import date
 
 from fastapi import APIRouter, Depends, Form, Request, UploadFile, status
+from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -42,7 +43,7 @@ async def upload_documents_batch(
     organisation_id: uuid.UUID,
     files: list[UploadFile],
     source_type: str = Form(...),
-    user: User = Depends(require_org_role(["manager", "user"])),
+    user: User = Depends(require_org_role(["manager"])),
     db: AsyncSession = Depends(get_db),
 ) -> BatchUploadResponse:
     """Upload multiple documents of the same type to an organisation."""
@@ -99,7 +100,7 @@ async def upload_document(
     date_decision: date | None = Form(None),
     solution: str | None = Form(None),
     publication: str | None = Form(None),
-    user: User = Depends(require_org_role(["manager", "user"])),
+    user: User = Depends(require_org_role(["manager"])),
     db: AsyncSession = Depends(get_db),
 ) -> DocumentRead:
     service = DocumentService(db)
@@ -145,17 +146,34 @@ async def get_document(
 
 @router.get(
     "/{organisation_id}/{document_id}/download",
-    response_model=DocumentDownload,
 )
 async def download_document(
     organisation_id: uuid.UUID,
     document_id: uuid.UUID,
     user: User = Depends(require_org_role(["manager", "user"])),
     db: AsyncSession = Depends(get_db),
-) -> DocumentDownload:
+) -> Response:
     service = DocumentService(db)
-    url = await service.get_download_url(document_id, organisation_id)
-    return DocumentDownload(url=url)
+    doc = await service.get_document(document_id, organisation_id)
+    from app.services.storage_service import StorageService
+    storage = StorageService()
+    file_bytes = storage.get_file_bytes(doc.storage_path)
+
+    content_type = "application/octet-stream"
+    if doc.file_format == "pdf":
+        content_type = "application/pdf"
+    elif doc.file_format == "docx":
+        content_type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    elif doc.file_format == "txt":
+        content_type = "text/plain"
+
+    return Response(
+        content=file_bytes,
+        media_type=content_type,
+        headers={
+            "Content-Disposition": f'attachment; filename="{doc.name}"',
+        },
+    )
 
 
 @router.put(

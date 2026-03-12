@@ -3,6 +3,7 @@ import uuid
 from datetime import date
 
 from fastapi import APIRouter, Depends, Form, Request, UploadFile, status
+from fastapi.responses import Response
 from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -202,15 +203,33 @@ async def list_common_documents(
     return await service.list_common_documents()  # type: ignore[return-value]
 
 
-@router.get("/{document_id}/download", response_model=DocumentDownload)
+@router.get("/{document_id}/download")
 async def download_common_document(
     document_id: uuid.UUID,
     user: User = Depends(require_role(["admin"])),
     db: AsyncSession = Depends(get_db),
-) -> DocumentDownload:
+) -> Response:
     service = DocumentService(db)
-    url = await service.get_common_download_url(document_id)
-    return DocumentDownload(url=url)
+    doc = await service.get_common_document(document_id)
+    from app.services.storage_service import StorageService
+    storage = StorageService()
+    file_bytes = storage.get_file_bytes(doc.storage_path)
+
+    content_type = "application/octet-stream"
+    if doc.file_format == "pdf":
+        content_type = "application/pdf"
+    elif doc.file_format == "docx":
+        content_type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    elif doc.file_format == "txt":
+        content_type = "text/plain"
+
+    return Response(
+        content=file_bytes,
+        media_type=content_type,
+        headers={
+            "Content-Disposition": f'attachment; filename="{doc.name}"',
+        },
+    )
 
 
 @router.put("/{document_id}", response_model=DocumentRead)

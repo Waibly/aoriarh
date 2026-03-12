@@ -69,7 +69,6 @@ DOCUMENT_TYPE_HIERARCHY: dict[str, dict] = {
     "accord_national_interprofessionnel": {"niveau": 6, "poids": 0.75},
     "accord_branche": {"niveau": 6, "poids": 0.70},
     "convention_collective_nationale": {"niveau": 6, "poids": 0.70},
-    "convention_collective_branche": {"niveau": 6, "poids": 0.70},
     "accord_entreprise": {"niveau": 6, "poids": 0.65},
     "accord_performance_collective": {"niveau": 6, "poids": 0.60},
     # Niveau 7 — Usages & Engagements

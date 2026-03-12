@@ -192,7 +192,6 @@ export const SOURCE_TYPE_OPTIONS: {
   { value: "accord_national_interprofessionnel", label: "Accord national interprofessionnel (ANI)", niveau: 6 },
   { value: "accord_branche", label: "Accord de branche", niveau: 6 },
   { value: "convention_collective_nationale", label: "Convention collective nationale (CCN)", niveau: 6 },
-  { value: "convention_collective_branche", label: "Convention collective de branche", niveau: 6 },
   { value: "accord_entreprise", label: "Accord d'entreprise", niveau: 6 },
   { value: "accord_performance_collective", label: "Accord de performance collective (APC)", niveau: 6 },
   // Niveau 7 — Usages & Engagements

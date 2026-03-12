@@ -191,11 +191,19 @@ export default function DocumentsCommunsPage() {
   const handleDownload = async (docId: string) => {
     if (!token) return;
     try {
-      const { url } = await apiFetch<{ url: string }>(
-        `/admin/documents/${docId}/download`,
-        { token }
-      );
-      window.open(url, "_blank");
+      const res = await authFetch(`/admin/documents/${docId}/download`, {
+        token,
+      });
+      if (!res.ok) throw new Error("Erreur");
+      const blob = await res.blob();
+      const disposition = res.headers.get("Content-Disposition");
+      const filename = disposition?.match(/filename="(.+)"/)?.[1] ?? "document";
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      a.click();
+      URL.revokeObjectURL(url);
     } catch {
       toast.error("Erreur lors du téléchargement");
     }

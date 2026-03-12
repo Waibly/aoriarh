@@ -1,8 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSession } from "next-auth/react";
-import { Download, FileUp, Loader2, RefreshCw, Replace, Search, Trash2, Upload } from "lucide-react";
+import { ChevronDown, Download, FileUp, Loader2, RefreshCw, Replace, Search, Trash2, Upload, X } from "lucide-react";
 import { toast } from "sonner";
 import { useOrg } from "@/lib/org-context";
 import { apiFetch, authFetch } from "@/lib/api";
@@ -43,6 +43,11 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
@@ -196,11 +201,19 @@ export default function DocumentsPage() {
   const handleDownload = async (docId: string) => {
     if (!currentOrg || !token) return;
     try {
-      const { url } = await apiFetch<{ url: string }>(
-        `/documents/${currentOrg.id}/${docId}/download`,
-        { token }
-      );
-      window.open(url, "_blank");
+      const res = await authFetch(`/documents/${currentOrg.id}/${docId}/download`, {
+        token,
+      });
+      if (!res.ok) throw new Error("Erreur");
+      const blob = await res.blob();
+      const disposition = res.headers.get("Content-Disposition");
+      const filename = disposition?.match(/filename="(.+)"/)?.[1] ?? "document";
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      a.click();
+      URL.revokeObjectURL(url);
     } catch {
       toast.error("Erreur lors du téléchargement");
     }
@@ -294,33 +307,35 @@ export default function DocumentsPage() {
     <div className="space-y-6">
       <h1 className="text-2xl font-semibold tracking-tight">Documents</h1>
 
-      {/* Drop zone */}
-      <div
-        onDragOver={handleDragOver}
-        onDragLeave={handleDragLeave}
-        onDrop={handleDrop}
-        className={cn(
-          "flex flex-col items-center justify-center rounded-lg border-2 border-dashed bg-white p-8 transition-colors dark:bg-card",
-          dragging
-            ? "border-primary bg-primary/5"
-            : "border-muted-foreground/25"
-        )}
-      >
-        <Upload className="mb-2 h-8 w-8 text-muted-foreground" />
-        <p className="text-sm text-muted-foreground">
-          Glissez-déposez un ou plusieurs fichiers ici ou{" "}
-          <button
-            type="button"
-            onClick={() => setUploadOpen(true)}
-            className="font-medium text-primary underline-offset-4 hover:underline"
-          >
-            parcourez vos fichiers
-          </button>
-        </p>
-        <p className="mt-1 text-xs text-muted-foreground">
-          PDF, Word (.docx), Texte (.txt)
-        </p>
-      </div>
+      {/* Drop zone (manager only) */}
+      {isManager && (
+        <div
+          onDragOver={handleDragOver}
+          onDragLeave={handleDragLeave}
+          onDrop={handleDrop}
+          className={cn(
+            "flex flex-col items-center justify-center rounded-lg border-2 border-dashed bg-white p-8 transition-colors dark:bg-card",
+            dragging
+              ? "border-primary bg-primary/5"
+              : "border-muted-foreground/25"
+          )}
+        >
+          <Upload className="mb-2 h-8 w-8 text-muted-foreground" />
+          <p className="text-sm text-muted-foreground">
+            Glissez-déposez un ou plusieurs fichiers ici ou{" "}
+            <button
+              type="button"
+              onClick={() => setUploadOpen(true)}
+              className="font-medium text-primary underline-offset-4 hover:underline"
+            >
+              parcourez vos fichiers
+            </button>
+          </p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            PDF, Word (.docx), Texte (.txt)
+          </p>
+        </div>
+      )}
 
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
@@ -331,10 +346,12 @@ export default function DocumentsPage() {
               {documents.length !== 1 ? "s" : ""}
             </CardDescription>
           </div>
-          <Button size="sm" onClick={() => setUploadOpen(true)}>
-            <FileUp className="mr-2 h-4 w-4" />
-            Ajouter un document
-          </Button>
+          {isManager && (
+            <Button size="sm" onClick={() => setUploadOpen(true)}>
+              <FileUp className="mr-2 h-4 w-4" />
+              Ajouter un document
+            </Button>
+          )}
         </CardHeader>
         <CardContent>
           {!loading && documents.length > 0 && (
@@ -364,15 +381,27 @@ export default function DocumentsPage() {
             <DocumentTable
               documents={
                 search.trim()
-                  ? documents.filter((d) => {
-                      const q = search.toLowerCase();
-                      const sourceLabel =
-                        SOURCE_TYPE_OPTIONS.find((s) => s.value === d.source_type)?.label ?? d.source_type;
-                      return (
-                        d.name.toLowerCase().includes(q) ||
-                        sourceLabel.toLowerCase().includes(q)
-                      );
-                    })
+                  ? documents
+                      .filter((d) => {
+                        const q = search.toLowerCase();
+                        const sourceLabel =
+                          SOURCE_TYPE_OPTIONS.find((s) => s.value === d.source_type)?.label ?? d.source_type;
+                        return (
+                          d.name.toLowerCase().includes(q) ||
+                          sourceLabel.toLowerCase().includes(q)
+                        );
+                      })
+                      .sort((a, b) => {
+                        const q = search.toLowerCase();
+                        const scoreDoc = (d: Document) => {
+                          const name = d.name.toLowerCase();
+                          if (name === q) return 0;            // exact match
+                          if (name.startsWith(q)) return 1;    // starts with
+                          if (name.includes(q)) return 2;      // contains in name
+                          return 3;                              // match in type label only
+                        };
+                        return scoreDoc(a) - scoreDoc(b);
+                      })
                   : documents
               }
               isManager={isManager}
@@ -398,6 +427,66 @@ export default function DocumentsPage() {
 
 /* ---- Shared Document Table ---- */
 
+function ColumnFilter({
+  label,
+  value,
+  options,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  options: { value: string; label: string }[];
+  onChange: (value: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const isActive = value !== "";
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button
+          className={cn(
+            "flex items-center gap-1 text-xs font-medium transition-colors hover:text-foreground",
+            isActive ? "text-primary" : "text-muted-foreground"
+          )}
+        >
+          {isActive ? options.find((o) => o.value === value)?.label ?? label : label}
+          {isActive ? (
+            <X
+              className="h-3 w-3 shrink-0"
+              onClick={(e) => {
+                e.stopPropagation();
+                onChange("");
+              }}
+            />
+          ) : (
+            <ChevronDown className="h-3 w-3 shrink-0" />
+          )}
+        </button>
+      </PopoverTrigger>
+      <PopoverContent className="w-48 p-1" align="start">
+        <div className="max-h-64 overflow-y-auto">
+          {options.map((opt) => (
+            <button
+              key={opt.value}
+              onClick={() => {
+                onChange(opt.value === value ? "" : opt.value);
+                setOpen(false);
+              }}
+              className={cn(
+                "flex w-full items-center rounded-sm px-2 py-1.5 text-sm transition-colors hover:bg-accent",
+                opt.value === value && "bg-accent font-medium"
+              )}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
 function DocumentTable({
   documents,
   isManager,
@@ -413,33 +502,91 @@ function DocumentTable({
   onReindex: (id: string) => void;
   onReplace: (id: string, file: File) => void;
 }) {
+  const [filterType, setFilterType] = useState("");
+  const [filterStatus, setFilterStatus] = useState("");
+  const [filterFormat, setFilterFormat] = useState("");
+
+  // Build filter options from actual data
+  const typeOptions = useMemo(() => {
+    const types = new Set(documents.map((d) => d.source_type));
+    return Array.from(types)
+      .map((t) => ({
+        value: t,
+        label: SOURCE_TYPE_OPTIONS.find((s) => s.value === t)?.label ?? t,
+      }))
+      .sort((a, b) => a.label.localeCompare(b.label));
+  }, [documents]);
+
+  const statusOptions = useMemo(() => {
+    const statuses = new Set(documents.map((d) => d.indexation_status));
+    return Array.from(statuses).map((s) => ({
+      value: s,
+      label: STATUS_LABEL[s] ?? s,
+    }));
+  }, [documents]);
+
+  const formatOptions = useMemo(() => {
+    const formats = new Set(documents.map((d) => d.file_format ?? "—"));
+    return Array.from(formats)
+      .map((f) => ({ value: f, label: f.toUpperCase() }))
+      .sort((a, b) => a.label.localeCompare(b.label));
+  }, [documents]);
+
+  const filtered = documents.filter((doc) => {
+    if (filterType && doc.source_type !== filterType) return false;
+    if (filterStatus && doc.indexation_status !== filterStatus) return false;
+    if (filterFormat && (doc.file_format ?? "—") !== filterFormat) return false;
+    return true;
+  });
+
   return (
-    <Table>
-      <TableHeader>
-        <TableRow>
-          <TableHead className="w-[40%]">Nom</TableHead>
-          <TableHead>Type</TableHead>
-          <TableHead>Statut</TableHead>
-          <TableHead>Format</TableHead>
-          <TableHead>Taille</TableHead>
-          <TableHead>Date</TableHead>
-          <TableHead className="text-right">Actions</TableHead>
-        </TableRow>
-      </TableHeader>
-      <TableBody>
-        {documents.map((doc) => (
-          <DocumentRow
-            key={doc.id}
-            doc={doc}
-            isManager={isManager}
-            onDownload={onDownload}
-            onDelete={onDelete}
-            onReindex={onReindex}
-            onReplace={onReplace}
-          />
-        ))}
-      </TableBody>
-    </Table>
+    <>
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead className="w-[40%]">Nom</TableHead>
+            <TableHead>
+              <ColumnFilter label="Type" value={filterType} options={typeOptions} onChange={setFilterType} />
+            </TableHead>
+            <TableHead>
+              <ColumnFilter label="Statut" value={filterStatus} options={statusOptions} onChange={setFilterStatus} />
+            </TableHead>
+            <TableHead>
+              <ColumnFilter label="Format" value={filterFormat} options={formatOptions} onChange={setFilterFormat} />
+            </TableHead>
+            <TableHead>Taille</TableHead>
+            <TableHead>Date</TableHead>
+            <TableHead className="text-right">Actions</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {filtered.length === 0 ? (
+            <TableRow>
+              <TableCell colSpan={7} className="py-6 text-center text-muted-foreground">
+                Aucun document ne correspond aux filtres.
+              </TableCell>
+            </TableRow>
+          ) : (
+            filtered.map((doc) => (
+              <DocumentRow
+                key={doc.id}
+                doc={doc}
+                isManager={isManager}
+                onDownload={onDownload}
+                onDelete={onDelete}
+                onReindex={onReindex}
+                onReplace={onReplace}
+              />
+            ))
+          )}
+        </TableBody>
+      </Table>
+      {(filterType || filterStatus || filterFormat) && (
+        <p className="mt-2 text-xs text-muted-foreground">
+          {filtered.length} / {documents.length} document{documents.length !== 1 ? "s" : ""}
+        </p>
+      )}
+    </>
   );
 }
 
@@ -647,14 +794,19 @@ function UploadDialog({
         }
 
         const data = await res.json();
-        if (data.failed > 0) {
-          const failedNames = data.results
-            .filter((r: { success: boolean }) => !r.success)
-            .map((r: { filename: string; error: string }) => `${r.filename}: ${r.error}`)
-            .join("\n");
+        if (data.failed > 0 && data.succeeded === 0) {
+          // All failed (likely all duplicates)
           toast.warning(
-            `${data.succeeded} ajouté${data.succeeded > 1 ? "s" : ""}, ${data.failed} échoué${data.failed > 1 ? "s" : ""}`,
-            { description: failedNames, duration: 8000 }
+            `${data.failed} document${data.failed > 1 ? "s" : ""} déjà présent${data.failed > 1 ? "s" : ""}`,
+            { description: "Aucun nouveau document ajouté.", duration: 5000 }
+          );
+        } else if (data.failed > 0) {
+          toast.success(
+            `${data.succeeded} document${data.succeeded > 1 ? "s" : ""} ajouté${data.succeeded > 1 ? "s" : ""}`,
+            {
+              description: `${data.failed} ignoré${data.failed > 1 ? "s" : ""} (déjà présent${data.failed > 1 ? "s" : ""}).`,
+              duration: 5000,
+            }
           );
         } else {
           toast.success(`${data.succeeded} document${data.succeeded > 1 ? "s" : ""} ajouté${data.succeeded > 1 ? "s" : ""}`);

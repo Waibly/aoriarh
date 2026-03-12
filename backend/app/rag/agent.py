@@ -87,7 +87,6 @@ _SOURCE_TYPE_LABELS: dict[str, str] = {
     "accord_national_interprofessionnel": "Accord national interprofessionnel",
     "accord_branche": "Accord de branche",
     "convention_collective_nationale": "Convention collective nationale",
-    "convention_collective_branche": "Convention collective de branche",
     "accord_entreprise": "Accord d'entreprise",
     "accord_performance_collective": "Accord de performance collective",
     "usage_entreprise": "Usage d'entreprise",
