@@ -20,6 +20,7 @@ from app.api import (
     admin_feedbacks,
     admin_judilibre,
     admin_qdrant,
+    admin_users,
     auth,
     conversations,
     documents,
@@ -174,6 +175,9 @@ app.include_router(
 )
 app.include_router(
     admin_judilibre.router, prefix="/api/v1/admin/jurisprudence", tags=["admin-jurisprudence"]
+)
+app.include_router(
+    admin_users.router, prefix="/api/v1/admin/users", tags=["admin-users"]
 )
 app.include_router(invitations.router, prefix="/api/v1", tags=["invitations"])
 app.include_router(conversations.router, prefix="/api/v1/conversations", tags=["conversations"])

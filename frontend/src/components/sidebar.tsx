@@ -14,6 +14,7 @@ import {
   Database,
   Scale,
   MessageSquareQuote,
+  Users,
   ChevronRight,
   ChevronsUpDown,
   Settings,
@@ -304,6 +305,21 @@ export function Sidebar() {
                 </Button>
               </CollapsibleTrigger>
               <CollapsibleContent className="space-y-1 pl-4 pt-1">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className={cn(
+                    "w-full justify-start font-normal",
+                    pathname.startsWith("/admin/users") &&
+                      "bg-accent text-accent-foreground font-medium",
+                  )}
+                  asChild
+                >
+                  <Link href="/admin/users">
+                    <Users className="mr-2 h-5 w-5" />
+                    Utilisateurs
+                  </Link>
+                </Button>
                 <Button
                   variant="ghost"
                   size="sm"

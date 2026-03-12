@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useSession } from "next-auth/react";
-import { Download, FileUp, Loader2, RefreshCw, Replace, Trash2, Upload } from "lucide-react";
+import { Download, FileUp, Loader2, RefreshCw, Replace, Search, Trash2, Upload } from "lucide-react";
 import { toast } from "sonner";
 import { useOrg } from "@/lib/org-context";
 import { apiFetch, authFetch } from "@/lib/api";
@@ -135,6 +135,7 @@ export default function DocumentsPage() {
   const [uploadOpen, setUploadOpen] = useState(false);
   const [isManager, setIsManager] = useState(false);
   const [dragging, setDragging] = useState(false);
+  const [search, setSearch] = useState("");
 
   const initialLoadDone = useRef(false);
 
@@ -336,6 +337,19 @@ export default function DocumentsPage() {
           </Button>
         </CardHeader>
         <CardContent>
+          {!loading && documents.length > 0 && (
+            <div className="mb-4">
+              <div className="relative max-w-sm">
+                <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  placeholder="Rechercher un document..."
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  className="pl-9"
+                />
+              </div>
+            </div>
+          )}
           {loading ? (
             <div className="space-y-3">
               {[1, 2, 3].map((i) => (
@@ -348,7 +362,19 @@ export default function DocumentsPage() {
             </p>
           ) : (
             <DocumentTable
-              documents={documents}
+              documents={
+                search.trim()
+                  ? documents.filter((d) => {
+                      const q = search.toLowerCase();
+                      const sourceLabel =
+                        SOURCE_TYPE_OPTIONS.find((s) => s.value === d.source_type)?.label ?? d.source_type;
+                      return (
+                        d.name.toLowerCase().includes(q) ||
+                        sourceLabel.toLowerCase().includes(q)
+                      );
+                    })
+                  : documents
+              }
               isManager={isManager}
               onDownload={handleDownload}
               onDelete={handleDelete}
