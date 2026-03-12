@@ -30,7 +30,16 @@ logger = logging.getLogger(__name__)
 # Retry config for Voyage AI rate limits
 MAX_RETRIES = 3
 RETRY_BASE_DELAY = 2.0
-EMBEDDING_BATCH_SIZE = 128
+EMBEDDING_BATCH_SIZE = 64
+
+# voyage-law-2 limits: 16K tokens per text, 320K tokens per request
+# Truncate to ~16000 chars as safety margin
+MAX_TEXT_CHARS = 16000
+
+
+def _truncate_texts(texts: list[str]) -> list[str]:
+    """Truncate texts that exceed Voyage AI per-text token limit."""
+    return [t[:MAX_TEXT_CHARS] if len(t) > MAX_TEXT_CHARS else t for t in texts]
 
 
 async def _get_embeddings_batch(
@@ -38,9 +47,10 @@ async def _get_embeddings_batch(
     api_key: str,
     client: httpx.AsyncClient,
 ) -> list[list[float]]:
-    """Get dense embeddings for a single batch (max 128 texts) with retry on 429."""
+    """Get dense embeddings for a single batch with retry on 429/400."""
     url = "https://api.voyageai.com/v1/embeddings"
     headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+    texts = _truncate_texts(texts)
 
     for attempt in range(MAX_RETRIES):
         response = await client.post(
@@ -54,6 +64,15 @@ async def _get_embeddings_batch(
             logger.warning("Voyage AI rate limit, retrying in %.1fs...", delay)
             await asyncio.sleep(delay)
             continue
+        if response.status_code == 400 and len(texts) > 1:
+            # Batch too large — split in half and retry recursively
+            mid = len(texts) // 2
+            logger.warning(
+                "Voyage AI 400 on batch of %d texts, splitting in half", len(texts)
+            )
+            left = await _get_embeddings_batch(texts[:mid], api_key, client)
+            right = await _get_embeddings_batch(texts[mid:], api_key, client)
+            return left + right
         response.raise_for_status()
         data = response.json()
         return [item["embedding"] for item in data["data"]]
