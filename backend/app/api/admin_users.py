@@ -142,6 +142,34 @@ async def update_account_plan(
     return AccountRead.model_validate(updated)
 
 
+class RoleUpdate(BaseModel):
+    role: str
+
+
+@router.put("/{user_id}/role")
+async def update_user_role(
+    user_id: uuid.UUID,
+    body: RoleUpdate,
+    current_user: User = Depends(get_current_user),
+    _admin: User = Depends(require_role(["admin"])),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Change a user's role (admin, manager, user). Admin-only."""
+    if body.role not in ("admin", "manager", "user"):
+        raise HTTPException(status_code=400, detail="Rôle invalide")
+
+    if current_user.id == user_id:
+        raise HTTPException(status_code=400, detail="Impossible de modifier votre propre rôle")
+
+    user = await db.get(User, user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="Utilisateur non trouvé")
+
+    user.role = body.role
+    await db.commit()
+    return {"detail": f"Rôle mis à jour : {body.role}"}
+
+
 @router.delete("/{user_id}")
 async def delete_user(
     user_id: uuid.UUID,

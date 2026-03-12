@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
-import { Search, Users, Building2, Crown, Gift, User as UserIcon, Trash2 } from "lucide-react";
+import { Search, Users, Building2, Crown, Gift, User as UserIcon, Trash2, ShieldAlert } from "lucide-react";
 import { toast } from "sonner";
 import { apiFetch } from "@/lib/api";
 import { Input } from "@/components/ui/input";
@@ -119,6 +119,12 @@ export default function AdminUsersPage() {
   const [userToDelete, setUserToDelete] = useState<AdminUserItem | null>(null);
   const [deleting, setDeleting] = useState(false);
 
+  // Role dialog state
+  const [roleDialogOpen, setRoleDialogOpen] = useState(false);
+  const [roleTarget, setRoleTarget] = useState<AdminUserItem | null>(null);
+  const [selectedRole, setSelectedRole] = useState<string>("user");
+  const [roleSaving, setRoleSaving] = useState(false);
+
   // Plan dialog state
   const [planDialogOpen, setPlanDialogOpen] = useState(false);
   const [selectedAccountId, setSelectedAccountId] = useState<string | null>(null);
@@ -187,6 +193,32 @@ export default function AdminUsersPage() {
       toast.error("Erreur lors de la mise à jour du plan");
     } finally {
       setPlanSaving(false);
+    }
+  }
+
+  function openRoleDialog(user: AdminUserItem) {
+    setRoleTarget(user);
+    setSelectedRole(user.role);
+    setRoleDialogOpen(true);
+  }
+
+  async function handleRoleSubmit() {
+    if (!token || !roleTarget || selectedRole === roleTarget.role) return;
+    setRoleSaving(true);
+    try {
+      await apiFetch(`/admin/users/${roleTarget.id}/role`, {
+        token,
+        method: "PUT",
+        body: JSON.stringify({ role: selectedRole }),
+      });
+      toast.success(`Rôle de ${roleTarget.full_name} mis à jour`);
+      setRoleDialogOpen(false);
+      setRoleTarget(null);
+      fetchUsers();
+    } catch {
+      toast.error("Erreur lors de la mise à jour du rôle");
+    } finally {
+      setRoleSaving(false);
     }
   }
 
@@ -278,7 +310,9 @@ export default function AdminUsersPage() {
                           {user.email}
                         </TableCell>
                         <TableCell>
-                          <Badge variant="outline" className={badge.className}>{badge.label}</Badge>
+                          <button onClick={() => openRoleDialog(user)} className="cursor-pointer" title="Modifier le rôle">
+                            <Badge variant="outline" className={badge.className}>{badge.label}</Badge>
+                          </button>
                         </TableCell>
                         <TableCell className="text-sm">
                           {user.organisations.length === 0 ? (
@@ -448,6 +482,66 @@ export default function AdminUsersPage() {
             </Button>
             <Button onClick={handlePlanSubmit} disabled={planSaving}>
               {planSaving ? "Enregistrement..." : "Enregistrer"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Role Change Dialog */}
+      <Dialog open={roleDialogOpen} onOpenChange={setRoleDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Modifier le rôle</DialogTitle>
+            <DialogDescription>
+              Changer le rôle de <strong>{roleTarget?.full_name}</strong> ({roleTarget?.email})
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="flex gap-2.5">
+              {([
+                { value: "user", label: "Utilisateur", icon: UserIcon },
+                { value: "manager", label: "Manager", icon: UserIcon },
+                { value: "admin", label: "Admin", icon: ShieldAlert },
+              ] as const).map((r) => {
+                const isActive = selectedRole === r.value;
+                const Icon = r.icon;
+                const style = roleBadge[r.value] || roleBadge.user;
+                return (
+                  <button
+                    key={r.value}
+                    type="button"
+                    onClick={() => setSelectedRole(r.value)}
+                    className={`inline-flex items-center gap-1.5 rounded-full border px-4 py-2 text-sm font-medium transition-colors ${
+                      isActive
+                        ? style.className
+                        : "border-border text-muted-foreground hover:border-foreground/30 hover:text-foreground"
+                    }`}
+                  >
+                    <Icon className="size-3.5" />
+                    {r.label}
+                  </button>
+                );
+              })}
+            </div>
+            {selectedRole === "admin" && selectedRole !== roleTarget?.role && (
+              <div className="flex items-start gap-2 rounded-md border border-amber-400 bg-amber-50 p-3 dark:bg-amber-950">
+                <ShieldAlert className="mt-0.5 size-4 text-amber-600 dark:text-amber-400" />
+                <p className="text-sm text-amber-700 dark:text-amber-300">
+                  Ce rôle donne un accès total au back-office, à tous les utilisateurs et à toutes les données. Cette action est sensible.
+                </p>
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setRoleDialogOpen(false)}>
+              Annuler
+            </Button>
+            <Button
+              onClick={handleRoleSubmit}
+              disabled={roleSaving || selectedRole === roleTarget?.role}
+              variant={selectedRole === "admin" && selectedRole !== roleTarget?.role ? "destructive" : "default"}
+            >
+              {roleSaving ? "Enregistrement..." : "Confirmer"}
             </Button>
           </DialogFooter>
         </DialogContent>
