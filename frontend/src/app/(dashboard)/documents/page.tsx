@@ -946,7 +946,7 @@ function UploadDialog({
                     value={typeSearch}
                     onValueChange={setTypeSearch}
                   />
-                  <CommandList className="max-h-[400px]">
+                  <CommandList className="max-h-none">
                     <CommandEmpty>Aucun type trouvé.</CommandEmpty>
                     {Array.from(grouped.entries()).map(([niv, options]) => {
                       const filtered = typeSearch
