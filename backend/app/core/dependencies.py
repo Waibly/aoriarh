@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.security import decode_access_token
+from app.models.account import Account
 from app.models.membership import Membership
 from app.models.user import User
 
@@ -97,3 +98,25 @@ def require_role(allowed_roles: list[str]):
         return user
 
     return role_checker
+
+
+async def require_account_owner(
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> tuple[User, Account]:
+    """Verify user owns an account. Returns (user, account)."""
+    if user.role == "admin":
+        # Admin can act on behalf — but needs an account_id from elsewhere
+        # For now, admins without owned_account are rejected
+        pass
+
+    result = await db.execute(
+        select(Account).where(Account.owner_id == user.id)
+    )
+    account = result.scalar_one_or_none()
+    if not account:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Vous devez être propriétaire d'un compte pour accéder à cette ressource",
+        )
+    return user, account

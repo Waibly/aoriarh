@@ -15,6 +15,7 @@ import {
   Scale,
   MessageSquareQuote,
   Users,
+  UsersRound,
   ChevronRight,
   ChevronsUpDown,
   Settings,
@@ -63,6 +64,7 @@ const navigation = [
   { name: "Chat", href: "/chat", icon: MessageSquare },
   { name: "Documents", href: "/documents", icon: FileText },
   { name: "Organisation", href: "/organisation", icon: Building2 },
+  { name: "Équipe", href: "/team", icon: UsersRound, managerOnly: true },
 ];
 
 function getInitials(name: string) {
@@ -289,7 +291,9 @@ export function Sidebar() {
 
         {/* Navigation principale */}
         <nav className="space-y-1 px-2 py-2">
-          {navigation.map((item) => {
+          {navigation
+            .filter((item) => !item.managerOnly || session?.user?.role === "manager" || session?.user?.role === "admin")
+            .map((item) => {
             const isActive =
               item.href === "/chat"
                 ? pathname === "/chat"

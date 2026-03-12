@@ -26,6 +26,7 @@ from app.api import (
     documents,
     invitations,
     organisations,
+    team,
     users,
 )
 from app.core.config import settings
@@ -180,6 +181,7 @@ app.include_router(
     admin_users.router, prefix="/api/v1/admin/users", tags=["admin-users"]
 )
 app.include_router(invitations.router, prefix="/api/v1", tags=["invitations"])
+app.include_router(team.router, prefix="/api/v1/team", tags=["team"])
 app.include_router(conversations.router, prefix="/api/v1/conversations", tags=["conversations"])
 
 

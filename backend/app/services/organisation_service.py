@@ -47,6 +47,15 @@ class OrganisationService:
             role_in_org="manager",
         )
         self.db.add(membership)
+        await self.db.flush()
+
+        # Sync account members with access_all=true into this new org
+        if org.account_id:
+            from app.services.account_member_service import AccountMemberService
+
+            account_service = AccountMemberService(self.db)
+            await account_service.sync_memberships_for_new_org(org)
+
         await self.db.commit()
         await self.db.refresh(org)
         return org

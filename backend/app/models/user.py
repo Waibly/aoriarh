@@ -20,3 +20,4 @@ class User(TimestampMixin, Base):
     memberships = relationship("Membership", back_populates="user", lazy="selectin")
     conversations = relationship("Conversation", back_populates="user", lazy="selectin")
     owned_account = relationship("Account", back_populates="owner", uselist=False, lazy="selectin")
+    account_memberships = relationship("AccountMember", back_populates="user", lazy="selectin")

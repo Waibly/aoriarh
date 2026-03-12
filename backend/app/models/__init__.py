@@ -1,4 +1,5 @@
 from app.models.account import Account
+from app.models.account_member import AccountMember
 from app.models.base import Base
 from app.models.conversation import Conversation, Message
 from app.models.document import Document
@@ -9,6 +10,7 @@ from app.models.user import User
 
 __all__ = [
     "Account",
+    "AccountMember",
     "Base",
     "Conversation",
     "Document",

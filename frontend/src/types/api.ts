@@ -91,20 +91,35 @@ export interface ChatApiResponse {
 export interface Invitation {
   id: string;
   email: string;
-  organisation_id: string;
+  organisation_id: string | null;
+  account_id: string | null;
   invited_by: string;
   role_in_org: "manager" | "user";
   token: string;
   status: "pending" | "accepted" | "cancelled" | "expired";
   expires_at: string;
   created_at: string;
+  access_all: boolean;
 }
 
 export interface InvitationValidateResponse {
   valid: boolean;
   email: string | null;
   organisation_name: string | null;
+  account_name: string | null;
   status: string | null;
+}
+
+export interface AccountMember {
+  id: string;
+  account_id: string;
+  user_id: string;
+  role_in_org: "manager" | "user";
+  access_all: boolean;
+  created_at: string;
+  user_email: string | null;
+  user_full_name: string | null;
+  organisation_names: string[];
 }
 
 export interface Membership {

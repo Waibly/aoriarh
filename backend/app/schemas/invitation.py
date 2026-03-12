@@ -16,13 +16,15 @@ class InvitationRead(BaseModel):
 
     id: uuid.UUID
     email: str
-    organisation_id: uuid.UUID
+    organisation_id: uuid.UUID | None = None
+    account_id: uuid.UUID | None = None
     invited_by: uuid.UUID
     role_in_org: str
     token: uuid.UUID
     status: str
     expires_at: datetime
     created_at: datetime
+    access_all: bool = True
     organisation_name: str | None = None
     inviter_name: str | None = None
 
@@ -31,4 +33,5 @@ class InvitationValidateResponse(BaseModel):
     valid: bool
     email: str | None = None
     organisation_name: str | None = None
+    account_name: str | None = None
     status: str | None = None

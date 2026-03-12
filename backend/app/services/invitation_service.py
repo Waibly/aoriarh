@@ -6,6 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
+from app.models.account import Account
 from app.models.invitation import Invitation
 from app.models.membership import Membership
 from app.models.organisation import Organisation
@@ -185,22 +186,34 @@ class InvitationService:
         )
         invitation = result.scalar_one_or_none()
         if not invitation:
-            return {"valid": False, "status": None, "email": None, "organisation_name": None}
+            return {"valid": False, "status": None, "email": None, "organisation_name": None, "account_name": None}
 
         if invitation.status == "pending" and _is_expired(invitation.expires_at):
             invitation.status = "expired"
             await self.db.commit()
 
-        org_result = await self.db.execute(
-            select(Organisation).where(Organisation.id == invitation.organisation_id)
-        )
-        org = org_result.scalar_one()
+        organisation_name = None
+        account_name = None
+
+        if invitation.account_id:
+            account_result = await self.db.execute(
+                select(Account).where(Account.id == invitation.account_id)
+            )
+            account = account_result.scalar_one_or_none()
+            account_name = account.name if account else None
+        elif invitation.organisation_id:
+            org_result = await self.db.execute(
+                select(Organisation).where(Organisation.id == invitation.organisation_id)
+            )
+            org = org_result.scalar_one_or_none()
+            organisation_name = org.name if org else None
 
         return {
             "valid": invitation.status == "pending",
             "status": invitation.status,
             "email": invitation.email,
-            "organisation_name": org.name,
+            "organisation_name": organisation_name,
+            "account_name": account_name,
         }
 
     async def accept_invitation(self, token: uuid.UUID, user: User) -> dict:
@@ -231,7 +244,14 @@ class InvitationService:
                 detail="Cette invitation a été envoyée à une autre adresse email",
             )
 
-        # Check if already member
+        # Account-level invitation
+        if invitation.account_id:
+            from app.services.account_member_service import AccountMemberService
+
+            account_service = AccountMemberService(self.db)
+            return await account_service.accept_account_invitation(invitation, user)
+
+        # Org-level invitation (existing behavior)
         existing = await self.db.execute(
             select(Membership).where(
                 Membership.organisation_id == invitation.organisation_id,

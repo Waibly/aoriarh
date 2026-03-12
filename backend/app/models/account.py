@@ -32,3 +32,6 @@ class Account(TimestampMixin, Base):
     organisations: Mapped[list["Organisation"]] = relationship(  # noqa: F821
         "Organisation", back_populates="account"
     )
+    members: Mapped[list["AccountMember"]] = relationship(  # noqa: F821
+        "AccountMember", back_populates="account", lazy="selectin"
+    )
