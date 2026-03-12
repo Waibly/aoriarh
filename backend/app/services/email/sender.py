@@ -21,7 +21,7 @@ async def send_email(
         return False
 
     payload = {
-        "sender": {"name": "AORIA RH", "email": "noreply@aoriarh.fr"},
+        "sender": {"name": "AORIA RH", "email": "hello@aoriarh.fr"},
         "to": [{"email": to_email, "name": to_name or to_email}],
         "subject": subject,
         "htmlContent": html_content,
