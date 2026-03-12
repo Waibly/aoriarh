@@ -446,8 +446,8 @@ function ColumnFilter({
       <PopoverTrigger asChild>
         <button
           className={cn(
-            "flex items-center gap-1 text-xs font-medium transition-colors hover:text-foreground",
-            isActive ? "text-primary" : "text-muted-foreground"
+            "flex items-center gap-1 font-medium transition-colors hover:text-foreground",
+            isActive ? "text-primary" : "text-foreground"
           )}
         >
           {isActive ? options.find((o) => o.value === value)?.label ?? label : label}
