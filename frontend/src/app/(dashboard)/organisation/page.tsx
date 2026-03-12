@@ -3,11 +3,11 @@
 import { useCallback, useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
-import { Pencil, Plus, Trash2, UserCog, RotateCw, X } from "lucide-react";
+import { Pencil, Trash2, Info } from "lucide-react";
 import { toast } from "sonner";
 import { useOrg } from "@/lib/org-context";
 import { apiFetch } from "@/lib/api";
-import type { Invitation, Membership } from "@/types/api";
+import type { Membership } from "@/types/api";
 import { FORME_JURIDIQUE_OPTIONS, TAILLE_OPTIONS } from "@/types/api";
 import { Button } from "@/components/ui/button";
 import {
@@ -52,10 +52,8 @@ export default function OrganisationPage() {
   const router = useRouter();
 
   const [members, setMembers] = useState<Membership[]>([]);
-  const [invitations, setInvitations] = useState<Invitation[]>([]);
   const [loadingMembers, setLoadingMembers] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
-  const [inviteOpen, setInviteOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [isOrgManager, setIsOrgManager] = useState(false);
 
@@ -63,19 +61,6 @@ export default function OrganisationPage() {
     await refetchOrgs();
     router.push("/chat");
   }, [refetchOrgs, router]);
-
-  const fetchInvitations = useCallback(async () => {
-    if (!currentOrg || !token) return;
-    try {
-      const data = await apiFetch<Invitation[]>(
-        `/organisations/${currentOrg.id}/invitations`,
-        { token }
-      );
-      setInvitations(data.filter((inv) => inv.status === "pending"));
-    } catch {
-      setInvitations([]);
-    }
-  }, [currentOrg, token]);
 
   const fetchMembers = useCallback(async () => {
     if (!currentOrg || !token) return;
@@ -102,8 +87,7 @@ export default function OrganisationPage() {
 
   useEffect(() => {
     fetchMembers();
-    fetchInvitations();
-  }, [fetchMembers, fetchInvitations]);
+  }, [fetchMembers]);
 
   if (!currentOrg) {
     return (
@@ -160,18 +144,27 @@ export default function OrganisationPage() {
         </CardContent>
       </Card>
 
-      {/* Members section */}
+      {/* Members section (read-only) */}
       <Card>
-        <CardHeader className="flex flex-row items-center justify-between">
+        <CardHeader>
           <div className="space-y-1.5">
             <CardTitle>Membres</CardTitle>
-            <CardDescription>{members.length} membre(s)</CardDescription>
+            <CardDescription>{members.length} membre(s) dans cette organisation</CardDescription>
           </div>
           {isOrgManager && (
-            <Button size="sm" onClick={() => setInviteOpen(true)}>
-              <Plus className="mr-2 h-4 w-4" />
-              Inviter un membre
-            </Button>
+            <div className="flex items-start gap-2 rounded-md border border-border bg-muted/50 p-3 mt-3">
+              <Info className="h-4 w-4 text-muted-foreground mt-0.5 shrink-0" />
+              <p className="text-sm text-muted-foreground">
+                La gestion des membres (ajout, modification, suppression) se fait depuis la page{" "}
+                <Button
+                  variant="link"
+                  className="h-auto p-0 text-sm"
+                  onClick={() => router.push("/team")}
+                >
+                  Équipe
+                </Button>.
+              </p>
+            </div>
           )}
         </CardHeader>
         <CardContent>
@@ -187,64 +180,30 @@ export default function OrganisationPage() {
                   <TableHead>Nom</TableHead>
                   <TableHead>Email</TableHead>
                   <TableHead>Rôle</TableHead>
-                  {isOrgManager && (
-                    <TableHead className="text-right">Actions</TableHead>
-                  )}
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {members.map((member) => (
-                  <MemberRow
-                    key={member.id}
-                    member={member}
-                    isOrgManager={isOrgManager}
-                    orgId={currentOrg.id}
-                    token={token!}
-                    onUpdated={fetchMembers}
-                    currentUserId={session?.user?.id ?? ""}
-                  />
+                  <TableRow key={member.id}>
+                    <TableCell className="font-medium">
+                      {member.user_full_name ?? "—"}
+                    </TableCell>
+                    <TableCell>{member.user_email}</TableCell>
+                    <TableCell>
+                      <Badge
+                        variant="outline"
+                        className={member.role_in_org === "manager" ? "rounded-full border-[#9952b8] bg-[#9952b8]/10 text-[#9952b8]" : "rounded-full"}
+                      >
+                        {member.role_in_org === "manager" ? "Manager" : "Utilisateur"}
+                      </Badge>
+                    </TableCell>
+                  </TableRow>
                 ))}
               </TableBody>
             </Table>
           )}
         </CardContent>
       </Card>
-
-      {/* Pending invitations section */}
-      {isOrgManager && invitations.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Invitations en attente</CardTitle>
-            <CardDescription>
-              {invitations.length} invitation(s) en attente
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Email</TableHead>
-                  <TableHead>Rôle</TableHead>
-                  <TableHead>Envoyé le</TableHead>
-                  <TableHead>Expire le</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {invitations.map((inv) => (
-                  <InvitationRow
-                    key={inv.id}
-                    invitation={inv}
-                    orgId={currentOrg.id}
-                    token={token!}
-                    onUpdated={fetchInvitations}
-                  />
-                ))}
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
-      )}
 
       {/* Danger zone */}
       {isOrgManager && (
@@ -278,13 +237,6 @@ export default function OrganisationPage() {
             token={token!}
             onUpdated={refetchOrgs}
           />
-          <InviteMemberDialog
-            open={inviteOpen}
-            onOpenChange={setInviteOpen}
-            orgId={currentOrg.id}
-            token={token!}
-            onInvited={fetchInvitations}
-          />
           <DeleteOrgDialog
             open={deleteOpen}
             onOpenChange={setDeleteOpen}
@@ -295,86 +247,6 @@ export default function OrganisationPage() {
         </>
       )}
     </div>
-  );
-}
-
-// --- MemberRow ---
-
-function MemberRow({
-  member,
-  isOrgManager,
-  orgId,
-  token,
-  onUpdated,
-  currentUserId,
-}: {
-  member: Membership;
-  isOrgManager: boolean;
-  orgId: string;
-  token: string;
-  onUpdated: () => void;
-  currentUserId: string;
-}) {
-  const isSelf = member.user_id === currentUserId;
-
-  async function toggleRole() {
-    const newRole =
-      member.role_in_org === "manager" ? "user" : "manager";
-    await apiFetch(`/organisations/${orgId}/members/${member.id}`, {
-      method: "PATCH",
-      token,
-      body: JSON.stringify({ role_in_org: newRole }),
-    });
-    onUpdated();
-  }
-
-  async function removeMember() {
-    await apiFetch(`/organisations/${orgId}/members/${member.id}`, {
-      method: "DELETE",
-      token,
-    });
-    onUpdated();
-  }
-
-  return (
-    <TableRow>
-      <TableCell className="font-medium">
-        {member.user_full_name ?? "—"}
-      </TableCell>
-      <TableCell>{member.user_email}</TableCell>
-      <TableCell>
-        <Badge
-          variant="outline"
-          className={member.role_in_org === "manager" ? "rounded-full border-[#9952b8] bg-[#9952b8]/10 text-[#9952b8]" : "rounded-full"}
-        >
-          {member.role_in_org === "manager" ? "Manager" : "Utilisateur"}
-        </Badge>
-      </TableCell>
-      {isOrgManager && (
-        <TableCell className="text-right">
-          {!isSelf && (
-            <div className="flex justify-end gap-1">
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={toggleRole}
-                title="Changer le rôle"
-              >
-                <UserCog className="h-4 w-4" />
-              </Button>
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={removeMember}
-                title="Retirer"
-              >
-                <Trash2 className="h-4 w-4" />
-              </Button>
-            </div>
-          )}
-        </TableCell>
-      )}
-    </TableRow>
   );
 }
 
@@ -569,166 +441,3 @@ function DeleteOrgDialog({
   );
 }
 
-// --- InviteMemberDialog ---
-
-function InviteMemberDialog({
-  open,
-  onOpenChange,
-  orgId,
-  token,
-  onInvited,
-}: {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  orgId: string;
-  token: string;
-  onInvited: () => void;
-}) {
-  const [email, setEmail] = useState("");
-  const [role, setRole] = useState("user");
-  const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    setSubmitting(true);
-    setError(null);
-    try {
-      await apiFetch(`/organisations/${orgId}/invitations`, {
-        method: "POST",
-        token,
-        body: JSON.stringify({ email, role_in_org: role }),
-      });
-      onInvited();
-      onOpenChange(false);
-      setEmail("");
-      setRole("user");
-    } catch {
-      setError("Déjà membre ou invitation en attente pour cet email.");
-    } finally {
-      setSubmitting(false);
-    }
-  }
-
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle>Inviter un membre</DialogTitle>
-          <DialogDescription>
-            Un email d&apos;invitation sera envoyé à cette adresse.
-          </DialogDescription>
-        </DialogHeader>
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor="invite-email">Email *</Label>
-            <Input
-              id="invite-email"
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="email@exemple.fr"
-              required
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="invite-role">Rôle</Label>
-            <Select value={role} onValueChange={setRole}>
-              <SelectTrigger id="invite-role">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="user">Utilisateur</SelectItem>
-                <SelectItem value="manager">Manager</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-          {error && <p className="text-sm text-destructive">{error}</p>}
-          <DialogFooter>
-            <Button type="submit" disabled={submitting || !email.trim()}>
-              {submitting ? "Invitation..." : "Inviter"}
-            </Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-// --- InvitationRow ---
-
-function InvitationRow({
-  invitation,
-  orgId,
-  token,
-  onUpdated,
-}: {
-  invitation: Invitation;
-  orgId: string;
-  token: string;
-  onUpdated: () => void;
-}) {
-  const [resending, setResending] = useState(false);
-
-  async function handleResend() {
-    setResending(true);
-    try {
-      await apiFetch(
-        `/organisations/${orgId}/invitations/${invitation.id}/resend`,
-        { method: "POST", token }
-      );
-      onUpdated();
-    } finally {
-      setResending(false);
-    }
-  }
-
-  async function handleCancel() {
-    await apiFetch(
-      `/organisations/${orgId}/invitations/${invitation.id}`,
-      { method: "DELETE", token }
-    );
-    onUpdated();
-  }
-
-  return (
-    <TableRow>
-      <TableCell>{invitation.email}</TableCell>
-      <TableCell>
-        <Badge
-          variant="outline"
-          className={invitation.role_in_org === "manager" ? "rounded-full border-[#9952b8] bg-[#9952b8]/10 text-[#9952b8]" : "rounded-full"}
-        >
-          {invitation.role_in_org === "manager" ? "Manager" : "Utilisateur"}
-        </Badge>
-      </TableCell>
-      <TableCell>
-        {new Date(invitation.created_at).toLocaleDateString("fr-FR")}
-      </TableCell>
-      <TableCell>
-        {new Date(invitation.expires_at).toLocaleDateString("fr-FR")}
-      </TableCell>
-      <TableCell className="text-right">
-        <div className="flex justify-end gap-1">
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={handleResend}
-            disabled={resending}
-            title="Renvoyer l'invitation"
-          >
-            <RotateCw className={`h-4 w-4 ${resending ? "animate-spin" : ""}`} />
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={handleCancel}
-            title="Annuler l'invitation"
-          >
-            <X className="h-4 w-4" />
-          </Button>
-        </div>
-      </TableCell>
-    </TableRow>
-  );
-}
