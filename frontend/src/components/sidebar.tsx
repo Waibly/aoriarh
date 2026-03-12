@@ -246,7 +246,7 @@ export function Sidebar() {
 
   const [userPlan, setUserPlan] = useState<{ plan: string; plan_expires_at: string | null } | null>(null);
 
-  useEffect(() => {
+  const fetchPlan = useCallback(() => {
     if (!token) return;
     apiFetch<{ plan: string | null; plan_expires_at: string | null }>("/users/me", { token })
       .then((data) => {
@@ -254,6 +254,16 @@ export function Sidebar() {
       })
       .catch(() => {});
   }, [token]);
+
+  useEffect(() => {
+    fetchPlan();
+  }, [fetchPlan]);
+
+  useEffect(() => {
+    const handler = () => fetchPlan();
+    window.addEventListener("plan-updated", handler);
+    return () => window.removeEventListener("plan-updated", handler);
+  }, [fetchPlan]);
 
   const planDisplay = {
     gratuit: { label: "Gratuit", icon: UserCheck, gradient: "from-muted/50 to-muted", textClass: "text-muted-foreground" },

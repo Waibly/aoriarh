@@ -185,6 +185,7 @@ export default function AdminUsersPage() {
       toast.success("Plan mis à jour");
       setPlanDialogOpen(false);
       fetchUsers();
+      window.dispatchEvent(new Event("plan-updated"));
     } catch {
       toast.error("Erreur lors de la mise à jour du plan");
     } finally {
