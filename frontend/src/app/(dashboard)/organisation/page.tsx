@@ -695,7 +695,10 @@ function InvitationRow({
     <TableRow>
       <TableCell>{invitation.email}</TableCell>
       <TableCell>
-        <Badge variant={invitation.role_in_org === "manager" ? "secondary" : "outline"}>
+        <Badge
+          variant="outline"
+          className={invitation.role_in_org === "manager" ? "rounded-full border-[#9952b8] bg-[#9952b8]/10 text-[#9952b8]" : "rounded-full"}
+        >
           {invitation.role_in_org === "manager" ? "Manager" : "Utilisateur"}
         </Badge>
       </TableCell>
