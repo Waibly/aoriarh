@@ -123,18 +123,31 @@ export default function AccountPage() {
         </CardContent>
       </Card>
 
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between">
-          <div className="space-y-1.5">
-            <CardTitle>Sécurité</CardTitle>
-            <CardDescription>Gérez votre mot de passe</CardDescription>
-          </div>
-          <Button variant="outline" size="sm" onClick={() => setPasswordOpen(true)}>
-            <KeyRound className="mr-2 h-4 w-4" />
-            Changer le mot de passe
-          </Button>
-        </CardHeader>
-      </Card>
+      {user.auth_provider === "credentials" && (
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between">
+            <div className="space-y-1.5">
+              <CardTitle>Sécurité</CardTitle>
+              <CardDescription>Gérez votre mot de passe</CardDescription>
+            </div>
+            <Button variant="outline" size="sm" onClick={() => setPasswordOpen(true)}>
+              <KeyRound className="mr-2 h-4 w-4" />
+              Changer le mot de passe
+            </Button>
+          </CardHeader>
+        </Card>
+      )}
+
+      {user.auth_provider === "google" && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Connexion</CardTitle>
+            <CardDescription>
+              Vous êtes connecté via Google. Aucun mot de passe à gérer.
+            </CardDescription>
+          </CardHeader>
+        </Card>
+      )}
 
       <EditProfileDialog
         open={editOpen}

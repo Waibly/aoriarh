@@ -36,3 +36,9 @@ class TokenResponse(BaseModel):
 
 class RefreshRequest(BaseModel):
     refresh_token: str
+
+
+class GoogleAuthRequest(BaseModel):
+    email: EmailStr
+    full_name: str
+    google_sub: str

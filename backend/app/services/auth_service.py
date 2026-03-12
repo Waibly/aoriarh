@@ -11,7 +11,7 @@ from app.core.security import (
 )
 from app.models.account import Account
 from app.models.user import User
-from app.schemas.auth import LoginRequest, RegisterRequest, TokenResponse
+from app.schemas.auth import GoogleAuthRequest, LoginRequest, RegisterRequest, TokenResponse
 
 
 def _build_token_response(user_id: str) -> TokenResponse:
@@ -54,8 +54,45 @@ class AuthService:
     async def login(self, data: LoginRequest) -> TokenResponse | None:
         result = await self.db.execute(select(User).where(User.email == data.email))
         user = result.scalar_one_or_none()
-        if not user or not verify_password(data.password, user.hashed_password):
+        if not user or not user.hashed_password or not verify_password(data.password, user.hashed_password):
             return None
         if not user.is_active:
             return None
+        return _build_token_response(str(user.id))
+
+    async def google_auth(self, data: GoogleAuthRequest) -> TokenResponse:
+        """Login or register a user via Google OAuth."""
+        result = await self.db.execute(select(User).where(User.email == data.email))
+        user = result.scalar_one_or_none()
+
+        if user:
+            # Existing user — update provider if needed and return tokens
+            if not user.is_active:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Compte désactivé",
+                )
+            if user.auth_provider == "credentials":
+                # Link Google to existing credentials account
+                user.auth_provider = "google"
+                await self.db.commit()
+            return _build_token_response(str(user.id))
+
+        # New user — create account
+        user = User(
+            email=data.email,
+            hashed_password=None,
+            full_name=data.full_name,
+            auth_provider="google",
+        )
+        self.db.add(user)
+        await self.db.flush()
+
+        account = Account(
+            name=f"Compte de {user.full_name}",
+            owner_id=user.id,
+        )
+        self.db.add(account)
+        await self.db.commit()
+        await self.db.refresh(user)
         return _build_token_response(str(user.id))

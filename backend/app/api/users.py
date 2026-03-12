@@ -20,6 +20,7 @@ async def get_me(user: User = Depends(get_current_user)) -> UserRead:
         role=user.role,
         is_active=user.is_active,
         created_at=user.created_at,
+        auth_provider=user.auth_provider,
         plan=account.plan if account else None,
         plan_expires_at=account.plan_expires_at if account else None,
     )

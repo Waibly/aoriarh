@@ -5,6 +5,7 @@ export interface User {
   role: "admin" | "manager" | "user";
   is_active: boolean;
   created_at: string;
+  auth_provider: "credentials" | "google";
 }
 
 export interface Organisation {

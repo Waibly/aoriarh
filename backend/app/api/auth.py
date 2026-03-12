@@ -15,6 +15,7 @@ from app.core.security import (
 from app.core.limiter import limiter
 from app.models.user import User
 from app.schemas.auth import (
+    GoogleAuthRequest,
     LoginRequest,
     RefreshRequest,
     RegisterRequest,
@@ -44,6 +45,15 @@ async def login(
     if not token:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
     return token
+
+
+@router.post("/google", response_model=TokenResponse)
+@limiter.limit("10/minute")
+async def google_auth(
+    request: Request, data: GoogleAuthRequest, db: AsyncSession = Depends(get_db)
+) -> TokenResponse:
+    service = AuthService(db)
+    return await service.google_auth(data)
 
 
 @router.post("/refresh", response_model=TokenResponse)
