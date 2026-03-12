@@ -266,9 +266,9 @@ export function Sidebar() {
   }, [fetchPlan]);
 
   const planDisplay = {
-    gratuit: { label: "Gratuit", icon: UserCheck, gradient: "from-muted/50 to-muted", textClass: "text-muted-foreground" },
-    invite: { label: "Invité", icon: Gift, gradient: "from-blue-500/10 to-blue-600/10", textClass: "text-blue-600 dark:text-blue-400" },
-    vip: { label: "VIP", icon: Crown, gradient: "from-amber-500/10 to-amber-600/10", textClass: "text-amber-600 dark:text-amber-400" },
+    gratuit: { label: "Gratuit", icon: UserCheck, gradient: "from-muted/50 to-muted", textClass: "text-muted-foreground", iconBg: "bg-muted" },
+    invite: { label: "Invité", icon: Gift, gradient: "from-[#9952b8]/5 to-[#9952b8]/10", textClass: "text-[#9952b8]", iconBg: "bg-[#9952b8]/15" },
+    vip: { label: "VIP", icon: Crown, gradient: "from-amber-50 to-amber-50 dark:from-amber-950 dark:to-amber-950", textClass: "text-amber-700 dark:text-amber-300", iconBg: "bg-amber-400/20 dark:bg-amber-500/20" },
   } as const;
 
   const currentPlanConfig = planDisplay[(userPlan?.plan ?? "gratuit") as keyof typeof planDisplay] ?? planDisplay.gratuit;
@@ -440,7 +440,7 @@ export function Sidebar() {
               <div className="flex items-center gap-2">
                 <div className={cn(
                   "flex h-8 w-8 items-center justify-center rounded-md",
-                  userPlan.plan === "vip" ? "bg-amber-500/20" : userPlan.plan === "invite" ? "bg-blue-500/20" : "bg-muted",
+                  currentPlanConfig.iconBg,
                 )}>
                   <PlanIcon className={cn("h-4 w-4", currentPlanConfig.textClass)} />
                 </div>

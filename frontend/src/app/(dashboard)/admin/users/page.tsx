@@ -71,10 +71,10 @@ const roleBadge: Record<string, { label: string; variant: "default" | "secondary
   user: { label: "Utilisateur", variant: "outline" },
 };
 
-const planConfig: Record<string, { label: string; variant: "default" | "secondary" | "outline"; icon: typeof Crown }> = {
-  gratuit: { label: "Gratuit", variant: "outline", icon: UserIcon },
-  invite: { label: "Invité", variant: "secondary", icon: Gift },
-  vip: { label: "VIP", variant: "outline", icon: Crown },
+const planStyles: Record<string, { label: string; icon: typeof Crown; badgeClass: string }> = {
+  gratuit: { label: "Gratuit", icon: UserIcon, badgeClass: "" },
+  invite: { label: "Invité", icon: Gift, badgeClass: "border-[#9952b8] bg-[#9952b8]/10 text-[#9952b8]" },
+  vip: { label: "VIP", icon: Crown, badgeClass: "border-amber-400 bg-amber-50 text-amber-700 dark:border-amber-500 dark:bg-amber-950 dark:text-amber-300" },
 };
 
 function orgRoleLabel(role: string): string {
@@ -86,17 +86,14 @@ function orgRoleLabel(role: string): string {
 }
 
 function PlanBadge({ plan, planExpiresAt }: { plan: string | null; planExpiresAt: string | null }) {
-  const config = planConfig[plan ?? "gratuit"] ?? planConfig.gratuit;
-  const Icon = config.icon;
+  const style = planStyles[plan ?? "gratuit"] ?? planStyles.gratuit;
+  const Icon = style.icon;
 
   return (
     <span className="inline-flex items-center gap-1">
-      <Badge
-        variant={config.variant}
-        className={plan === "vip" ? "border-amber-400 bg-amber-50 text-amber-700 dark:border-amber-500 dark:bg-amber-950 dark:text-amber-300" : ""}
-      >
+      <Badge variant="outline" className={style.badgeClass}>
         <Icon className="mr-1 size-3" />
-        {config.label}
+        {style.label}
       </Badge>
       {plan === "invite" && planExpiresAt && (
         <span className="text-xs text-muted-foreground">
