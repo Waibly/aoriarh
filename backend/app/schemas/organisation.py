@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 from enum import StrEnum
 
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, model_validator
 
 
 class FormeJuridique(StrEnum):
@@ -28,6 +28,12 @@ class Taille(StrEnum):
     XXL = "1000+"
 
 
+class PlanType(StrEnum):
+    GRATUIT = "gratuit"
+    INVITE = "invite"
+    VIP = "vip"
+
+
 class RoleInOrg(StrEnum):
     MANAGER = "manager"
     USER = "user"
@@ -46,6 +52,7 @@ class OrganisationRead(BaseModel):
     name: str
     forme_juridique: str | None
     taille: str | None
+    account_id: uuid.UUID | None = None
     created_at: datetime
 
 
@@ -74,3 +81,17 @@ class MembershipCreate(BaseModel):
 
 class MembershipUpdate(BaseModel):
     role_in_org: RoleInOrg
+
+
+class PlanAssign(BaseModel):
+    plan: PlanType
+    duration_months: int | None = None
+
+    @model_validator(mode="after")
+    def validate_duration(self) -> "PlanAssign":
+        if self.plan == PlanType.INVITE:
+            if self.duration_months not in (1, 2, 3):
+                raise ValueError("duration_months doit être 1, 2 ou 3 pour le plan invité")
+        else:
+            self.duration_months = None
+        return self

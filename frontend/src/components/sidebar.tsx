@@ -21,7 +21,11 @@ import {
   User,
   LogOut,
   Trash2,
+  Crown,
+  Gift,
+  UserCheck,
 } from "lucide-react";
+import { apiFetch } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import {
   Collapsible,
@@ -238,6 +242,27 @@ export function Sidebar() {
   const [settingsOpen, setSettingsOpen] = useState(false);
 
   const fullName = session?.user?.full_name ?? "Utilisateur";
+  const token = session?.access_token;
+
+  const [userPlan, setUserPlan] = useState<{ plan: string; plan_expires_at: string | null } | null>(null);
+
+  useEffect(() => {
+    if (!token) return;
+    apiFetch<{ plan: string | null; plan_expires_at: string | null }>("/users/me", { token })
+      .then((data) => {
+        setUserPlan({ plan: data.plan ?? "gratuit", plan_expires_at: data.plan_expires_at });
+      })
+      .catch(() => {});
+  }, [token]);
+
+  const planDisplay = {
+    gratuit: { label: "Gratuit", icon: UserCheck, gradient: "from-muted/50 to-muted", textClass: "text-muted-foreground" },
+    invite: { label: "Invité", icon: Gift, gradient: "from-blue-500/10 to-blue-600/10", textClass: "text-blue-600 dark:text-blue-400" },
+    vip: { label: "VIP", icon: Crown, gradient: "from-amber-500/10 to-amber-600/10", textClass: "text-amber-600 dark:text-amber-400" },
+  } as const;
+
+  const currentPlanConfig = planDisplay[(userPlan?.plan ?? "gratuit") as keyof typeof planDisplay] ?? planDisplay.gratuit;
+  const PlanIcon = currentPlanConfig.icon;
 
   return (
     <>
@@ -394,6 +419,38 @@ export function Sidebar() {
 
         {/* Spacer */}
         <div className="flex-1" />
+
+        {/* Plan */}
+        {userPlan && (
+          <div className="px-3 pb-2">
+            <div className={cn(
+              "rounded-lg bg-gradient-to-r p-3",
+              currentPlanConfig.gradient,
+            )}>
+              <div className="flex items-center gap-2">
+                <div className={cn(
+                  "flex h-8 w-8 items-center justify-center rounded-md",
+                  userPlan.plan === "vip" ? "bg-amber-500/20" : userPlan.plan === "invite" ? "bg-blue-500/20" : "bg-muted",
+                )}>
+                  <PlanIcon className={cn("h-4 w-4", currentPlanConfig.textClass)} />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className={cn("text-xs font-semibold", currentPlanConfig.textClass)}>
+                    Plan {currentPlanConfig.label}
+                  </p>
+                  {userPlan.plan === "invite" && userPlan.plan_expires_at && (
+                    <p className="text-[10px] text-muted-foreground truncate">
+                      Expire le {new Date(userPlan.plan_expires_at).toLocaleDateString("fr-FR")}
+                    </p>
+                  )}
+                  {userPlan.plan === "vip" && (
+                    <p className="text-[11px] text-foreground">Accès illimité</p>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Utilisateur */}
         <div className="px-4"><Separator /></div>

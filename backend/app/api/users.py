@@ -11,8 +11,18 @@ router = APIRouter()
 
 
 @router.get("/me", response_model=UserRead)
-async def get_me(user: User = Depends(get_current_user)) -> User:
-    return user
+async def get_me(user: User = Depends(get_current_user)) -> UserRead:
+    account = user.owned_account
+    return UserRead(
+        id=user.id,
+        email=user.email,
+        full_name=user.full_name,
+        role=user.role,
+        is_active=user.is_active,
+        created_at=user.created_at,
+        plan=account.plan if account else None,
+        plan_expires_at=account.plan_expires_at if account else None,
+    )
 
 
 @router.patch("/me", response_model=UserRead)

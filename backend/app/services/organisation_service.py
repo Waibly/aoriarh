@@ -36,6 +36,7 @@ class OrganisationService:
             name=data.name,
             forme_juridique=data.forme_juridique.value if data.forme_juridique else None,
             taille=data.taille.value if data.taille else None,
+            account_id=user.owned_account.id if user.owned_account else None,
         )
         self.db.add(org)
         await self.db.flush()

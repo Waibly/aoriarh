@@ -20,6 +20,8 @@ class UserRead(BaseModel):
     role: str
     is_active: bool
     created_at: datetime
+    plan: str | None = None
+    plan_expires_at: datetime | None = None
 
 
 class UserUpdate(BaseModel):

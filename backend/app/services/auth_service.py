@@ -9,6 +9,7 @@ from app.core.security import (
     hash_password,
     verify_password,
 )
+from app.models.account import Account
 from app.models.user import User
 from app.schemas.auth import LoginRequest, RegisterRequest, TokenResponse
 
@@ -39,6 +40,13 @@ class AuthService:
             full_name=data.full_name,
         )
         self.db.add(user)
+        await self.db.flush()
+
+        account = Account(
+            name=f"Compte de {user.full_name}",
+            owner_id=user.id,
+        )
+        self.db.add(account)
         await self.db.commit()
         await self.db.refresh(user)
         return _build_token_response(str(user.id))
