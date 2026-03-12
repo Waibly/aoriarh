@@ -54,14 +54,11 @@ interface StorageStats {
   org_documents: number;
 }
 
-const STATUS_VARIANT: Record<
-  string,
-  "secondary" | "outline" | "destructive" | "default"
-> = {
-  pending: "outline",
-  indexing: "outline",
-  indexed: "secondary",
-  error: "destructive",
+const STATUS_CLASSES: Record<string, string> = {
+  pending: "rounded-full",
+  indexing: "rounded-full border-orange-400 bg-orange-500/10 text-orange-600 dark:text-orange-400",
+  indexed: "rounded-full border-green-500 bg-green-500/10 text-green-600 dark:text-green-400",
+  error: "rounded-full border-red-500 bg-red-500/10 text-red-600 dark:text-red-400",
 };
 
 const STATUS_LABEL: Record<string, string> = {
@@ -264,7 +261,7 @@ function DocRow({ doc }: { doc: AdminDocument }) {
             {doc.organisation_name}
           </span>
         ) : (
-          <Badge variant="secondary" className="text-xs">
+          <Badge variant="outline" className="rounded-full border-[#9952b8] bg-[#9952b8]/10 text-[#9952b8] text-xs">
             Commun
           </Badge>
         )}
@@ -272,12 +269,8 @@ function DocRow({ doc }: { doc: AdminDocument }) {
       <TableCell className="text-sm">{sourceLabel}</TableCell>
       <TableCell>
         <Badge
-          variant={STATUS_VARIANT[doc.indexation_status] ?? "outline"}
-          className={
-            doc.indexation_status === "indexing"
-              ? "border-orange-400 text-orange-600 dark:text-orange-400"
-              : undefined
-          }
+          variant="outline"
+          className={STATUS_CLASSES[doc.indexation_status] ?? "rounded-full"}
         >
           {doc.indexation_status === "indexing" && (
             <Loader2 className="mr-1 h-3 w-3 animate-spin" />

@@ -99,19 +99,19 @@ export function MessageSources({ sources }: MessageSourcesProps) {
                   {selectedSource && (formatJurisprudenceRef(selectedSource) || selectedSource.document_name)}
                 </DialogTitle>
                 <div className="mt-1 flex flex-wrap items-center gap-2">
-                  <Badge className="bg-[#9952b8]/10 text-[#9952b8] hover:bg-[#9952b8]/10 dark:bg-[#9952b8]/20 dark:text-[#9952b8] dark:hover:bg-[#9952b8]/20 text-xs">
+                  <Badge variant="outline" className="rounded-full border-[#9952b8] bg-[#9952b8]/10 text-[#9952b8] hover:bg-[#9952b8]/10 dark:bg-[#9952b8]/20 dark:text-[#9952b8] dark:hover:bg-[#9952b8]/20 text-xs">
                     {selectedSource?.source_type_label}
                   </Badge>
                   <span className="text-muted-foreground text-xs">
                     Niveau {selectedSource?.norme_niveau}
                   </span>
                   {selectedSource?.solution && (
-                    <Badge variant="outline" className="text-xs">
+                    <Badge variant="outline" className="rounded-full text-xs">
                       {selectedSource.solution}
                     </Badge>
                   )}
                   {selectedSource?.publication && (
-                    <Badge variant="outline" className="text-xs">
+                    <Badge variant="outline" className="rounded-full text-xs">
                       {selectedSource.publication}
                     </Badge>
                   )}

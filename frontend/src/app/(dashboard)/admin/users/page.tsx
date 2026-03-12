@@ -65,16 +65,16 @@ interface UserListResponse {
   page_size: number;
 }
 
-const roleBadge: Record<string, { label: string; variant: "default" | "secondary" | "outline" }> = {
-  admin: { label: "Admin", variant: "default" },
-  manager: { label: "Manager", variant: "secondary" },
-  user: { label: "Utilisateur", variant: "outline" },
+const roleBadge: Record<string, { label: string; className: string }> = {
+  admin: { label: "Admin", className: "rounded-full border-amber-400 bg-amber-50 text-amber-700 dark:border-amber-500 dark:bg-amber-950 dark:text-amber-300" },
+  manager: { label: "Manager", className: "rounded-full border-[#9952b8] bg-[#9952b8]/10 text-[#9952b8]" },
+  user: { label: "Utilisateur", className: "rounded-full" },
 };
 
 const planStyles: Record<string, { label: string; icon: typeof Crown; badgeClass: string }> = {
-  gratuit: { label: "Gratuit", icon: UserIcon, badgeClass: "" },
-  invite: { label: "Invité", icon: Gift, badgeClass: "border-[#9952b8] bg-[#9952b8]/10 text-[#9952b8]" },
-  vip: { label: "VIP", icon: Crown, badgeClass: "border-amber-400 bg-amber-50 text-amber-700 dark:border-amber-500 dark:bg-amber-950 dark:text-amber-300" },
+  gratuit: { label: "Gratuit", icon: UserIcon, badgeClass: "rounded-full" },
+  invite: { label: "Invité", icon: Gift, badgeClass: "rounded-full border-[#9952b8] bg-[#9952b8]/10 text-[#9952b8]" },
+  vip: { label: "VIP", icon: Crown, badgeClass: "rounded-full border-amber-400 bg-amber-50 text-amber-700 dark:border-amber-500 dark:bg-amber-950 dark:text-amber-300" },
 };
 
 function orgRoleLabel(role: string): string {
@@ -278,7 +278,7 @@ export default function AdminUsersPage() {
                           {user.email}
                         </TableCell>
                         <TableCell>
-                          <Badge variant={badge.variant}>{badge.label}</Badge>
+                          <Badge variant="outline" className={badge.className}>{badge.label}</Badge>
                         </TableCell>
                         <TableCell className="text-sm">
                           {user.organisations.length === 0 ? (
@@ -319,9 +319,9 @@ export default function AdminUsersPage() {
                         </TableCell>
                         <TableCell>
                           {user.is_active ? (
-                            <Badge variant="outline" className="border-green-500 text-green-600">Actif</Badge>
+                            <Badge variant="outline" className="rounded-full border-green-500 bg-green-500/10 text-green-600 dark:text-green-400">Actif</Badge>
                           ) : (
-                            <Badge variant="outline" className="border-red-500 text-red-600">Inactif</Badge>
+                            <Badge variant="outline" className="rounded-full border-red-500 bg-red-500/10 text-red-600 dark:text-red-400">Inactif</Badge>
                           )}
                         </TableCell>
                         <TableCell className="text-sm text-muted-foreground whitespace-nowrap">

@@ -344,7 +344,8 @@ function MemberRow({
       <TableCell>{member.user_email}</TableCell>
       <TableCell>
         <Badge
-          variant={member.role_in_org === "manager" ? "secondary" : "outline"}
+          variant="outline"
+          className={member.role_in_org === "manager" ? "rounded-full border-[#9952b8] bg-[#9952b8]/10 text-[#9952b8]" : "rounded-full"}
         >
           {member.role_in_org === "manager" ? "Manager" : "Utilisateur"}
         </Badge>

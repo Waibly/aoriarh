@@ -279,13 +279,13 @@ export default function QdrantPage() {
                           {point.doc_name ?? "—"}
                         </TableCell>
                         <TableCell>
-                          <Badge variant="outline" className="text-xs">
+                          <Badge variant="outline" className="rounded-full text-xs">
                             {point.source_type ?? "—"}
                           </Badge>
                         </TableCell>
                         <TableCell className="text-xs font-mono">
                           {point.organisation_id === "common" ? (
-                            <Badge variant="secondary" className="text-xs">
+                            <Badge variant="outline" className="rounded-full border-[#9952b8] bg-[#9952b8]/10 text-[#9952b8] text-xs">
                               commun
                             </Badge>
                           ) : (

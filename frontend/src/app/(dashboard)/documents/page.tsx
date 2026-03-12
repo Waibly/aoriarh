@@ -61,11 +61,11 @@ const NIVEAU_LABELS: Record<number, string> = {
   9: "Contrat de travail",
 };
 
-const STATUS_VARIANT: Record<string, "secondary" | "outline" | "destructive" | "default"> = {
-  pending: "outline",
-  indexing: "outline",
-  indexed: "secondary",
-  error: "destructive",
+const STATUS_CLASSES: Record<string, string> = {
+  pending: "rounded-full",
+  indexing: "rounded-full border-orange-400 bg-orange-500/10 text-orange-600 dark:text-orange-400",
+  indexed: "rounded-full border-green-500 bg-green-500/10 text-green-600 dark:text-green-400",
+  error: "rounded-full border-red-500 bg-red-500/10 text-red-600 dark:text-red-400",
 };
 
 const JURISPRUDENCE_SOURCE_TYPES = new Set([
@@ -471,8 +471,8 @@ function DocumentRow({
       <TableCell className="text-sm">{sourceLabel}</TableCell>
       <TableCell>
         <Badge
-          variant={STATUS_VARIANT[doc.indexation_status] ?? "outline"}
-          className={doc.indexation_status === "indexing" ? "border-orange-400 text-orange-600 dark:text-orange-400" : undefined}
+          variant="outline"
+          className={STATUS_CLASSES[doc.indexation_status] ?? "rounded-full"}
         >
           {doc.indexation_status === "indexing" && (
             <Loader2 className="mr-1 h-3 w-3 animate-spin" />
