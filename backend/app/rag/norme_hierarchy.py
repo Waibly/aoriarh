@@ -16,6 +16,7 @@ class NormeNiveau(IntEnum):
     USAGES_ENGAGEMENTS = 7
     REGLEMENT_INTERIEUR = 8
     CONTRAT_TRAVAIL = 9
+    DIVERS = 10
 
 
 NORME_POIDS: dict[int, float] = {
@@ -28,6 +29,7 @@ NORME_POIDS: dict[int, float] = {
     7: 0.65,
     8: 0.55,
     9: 0.50,
+    10: 0.40,
 }
 
 
@@ -78,6 +80,8 @@ DOCUMENT_TYPE_HIERARCHY: dict[str, dict] = {
     "reglement_interieur": {"niveau": 8, "poids": 0.55},
     # Niveau 9 — Contrat de travail
     "contrat_travail": {"niveau": 9, "poids": 0.50},
+    # Niveau 10 — Divers
+    "divers": {"niveau": 10, "poids": 0.40},
 }
 
 SOURCE_TYPES = list(DOCUMENT_TYPE_HIERARCHY.keys())

@@ -201,11 +201,13 @@ export const SOURCE_TYPE_OPTIONS: {
   { value: "reglement_interieur", label: "Règlement intérieur", niveau: 8 },
   // Niveau 9 — Contrat de travail
   { value: "contrat_travail", label: "Contrat de travail", niveau: 9 },
+  // Niveau 10 — Divers
+  { value: "divers", label: "Divers", niveau: 10 },
 ];
 
 export const NORME_POIDS: Record<number, number> = {
   1: 1.0, 2: 0.95, 3: 0.90, 4: 0.85, 5: 0.80,
-  6: 0.75, 7: 0.65, 8: 0.55, 9: 0.50,
+  6: 0.75, 7: 0.65, 8: 0.55, 9: 0.50, 10: 0.40,
 };
 
 export interface ChatResponse {

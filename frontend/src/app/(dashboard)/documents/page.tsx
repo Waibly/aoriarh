@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSession } from "next-auth/react";
-import { ChevronDown, Download, FileUp, Loader2, RefreshCw, Replace, Search, Trash2, Upload, X } from "lucide-react";
+import { Check, ChevronDown, ChevronsUpDown, Download, FileUp, Loader2, RefreshCw, Replace, Search, Trash2, Upload, X } from "lucide-react";
 import { toast } from "sonner";
 import { useOrg } from "@/lib/org-context";
 import { apiFetch, authFetch } from "@/lib/api";
@@ -27,9 +27,7 @@ import {
 import {
   Select,
   SelectContent,
-  SelectGroup,
   SelectItem,
-  SelectLabel,
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
@@ -48,6 +46,14 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
@@ -64,6 +70,7 @@ const NIVEAU_LABELS: Record<number, string> = {
   7: "Usages & Engagements",
   8: "Règlement intérieur",
   9: "Contrat de travail",
+  10: "Divers",
 };
 
 const STATUS_CLASSES: Record<string, string> = {
@@ -855,13 +862,16 @@ function UploadDialog({
     setFiles((prev) => prev.filter((_, i) => i !== index));
   };
 
-  // Group options by niveau
+  // Filter to org-relevant types (niveaux 6+) and group by niveau
+  const orgTypeOptions = SOURCE_TYPE_OPTIONS.filter((o) => o.niveau >= 6);
   const grouped = new Map<number, typeof SOURCE_TYPE_OPTIONS>();
-  for (const opt of SOURCE_TYPE_OPTIONS) {
+  for (const opt of orgTypeOptions) {
     const group = grouped.get(opt.niveau) ?? [];
     group.push(opt);
     grouped.set(opt.niveau, group);
   }
+  const [typeSearchOpen, setTypeSearchOpen] = useState(false);
+  const [typeSearch, setTypeSearch] = useState("");
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -912,26 +922,66 @@ function UploadDialog({
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="source-type">Type de document *</Label>
-            <Select value={sourceType} onValueChange={setSourceType}>
-              <SelectTrigger id="source-type">
-                <SelectValue placeholder="Sélectionner le type..." />
-              </SelectTrigger>
-              <SelectContent>
-                {Array.from(grouped.entries()).map(([niv, options]) => (
-                  <SelectGroup key={niv}>
-                    <SelectLabel>
-                      Niveau {niv} — {NIVEAU_LABELS[niv]}
-                    </SelectLabel>
-                    {options.map((opt) => (
-                      <SelectItem key={opt.value} value={opt.value}>
-                        {opt.label}
-                      </SelectItem>
-                    ))}
-                  </SelectGroup>
-                ))}
-              </SelectContent>
-            </Select>
+            <Label>Type de document *</Label>
+            <Popover open={typeSearchOpen} onOpenChange={setTypeSearchOpen}>
+              <PopoverTrigger asChild>
+                <Button
+                  variant="outline"
+                  role="combobox"
+                  aria-expanded={typeSearchOpen}
+                  className="w-full justify-between font-normal"
+                >
+                  <span className={cn(!sourceType && "text-muted-foreground")}>
+                    {sourceType
+                      ? orgTypeOptions.find((o) => o.value === sourceType)?.label ?? sourceType
+                      : "Sélectionner le type..."}
+                  </span>
+                  <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
+                <Command shouldFilter={false}>
+                  <CommandInput
+                    placeholder="Rechercher un type..."
+                    value={typeSearch}
+                    onValueChange={setTypeSearch}
+                  />
+                  <CommandList>
+                    <CommandEmpty>Aucun type trouvé.</CommandEmpty>
+                    {Array.from(grouped.entries()).map(([niv, options]) => {
+                      const filtered = typeSearch
+                        ? options.filter((o) =>
+                            o.label.toLowerCase().includes(typeSearch.toLowerCase())
+                          )
+                        : options;
+                      if (filtered.length === 0) return null;
+                      return (
+                        <CommandGroup key={niv} heading={NIVEAU_LABELS[niv]}>
+                          {filtered.map((opt) => (
+                            <CommandItem
+                              key={opt.value}
+                              onSelect={() => {
+                                setSourceType(opt.value);
+                                setTypeSearchOpen(false);
+                                setTypeSearch("");
+                              }}
+                            >
+                              <Check
+                                className={cn(
+                                  "mr-2 h-4 w-4",
+                                  sourceType === opt.value ? "opacity-100" : "opacity-0"
+                                )}
+                              />
+                              {opt.label}
+                            </CommandItem>
+                          ))}
+                        </CommandGroup>
+                      );
+                    })}
+                  </CommandList>
+                </Command>
+              </PopoverContent>
+            </Popover>
           </div>
 
           {niveau && (

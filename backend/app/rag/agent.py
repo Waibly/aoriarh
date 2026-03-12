@@ -93,6 +93,7 @@ _SOURCE_TYPE_LABELS: dict[str, str] = {
     "engagement_unilateral": "Engagement unilatéral",
     "reglement_interieur": "Règlement intérieur",
     "contrat_travail": "Contrat de travail",
+    "divers": "Divers",
 }
 
 _SYSTEM_PROMPT = """\
