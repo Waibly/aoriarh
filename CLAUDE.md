@@ -79,6 +79,8 @@ aoriarh/
 
 ## Règles importantes
 
+- **JAMAIS push ni déployer sans accord explicite** : ne JAMAIS exécuter `git push`, `docker compose up`, ou toute commande de déploiement en production sans avoir demandé et obtenu la confirmation de l'utilisateur. Cela s'applique à CHAQUE fois, sans exception.
+- **Demander avant de modifier des composants critiques** : ne pas se lancer dans des corrections sur le pipeline RAG, l'ingestion, les embeddings, ou tout composant qui impacte tous les documents/utilisateurs sans en discuter d'abord. Préférer ajouter du logging pour diagnostiquer avant de corriger.
 - **Cloisonnement** : toute requête Qdrant ou PostgreSQL doit filtrer par `organisation_id`. Ne jamais exposer des données cross-tenant.
 - **Hiérarchie des normes** : lors de contradictions entre sources, appliquer la priorité (1 = plus fort). Voir la table complète dans CAHIER_DES_CHARGES.md section 5.3.
 - **Performance RAG** : max 2 itérations de re-recherche, timeout global 15s, timeout par étape 3s, pas de boucle ouverte.

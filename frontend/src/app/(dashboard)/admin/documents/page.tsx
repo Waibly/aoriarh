@@ -219,11 +219,11 @@ export default function AdminDocumentsPage() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Nom</TableHead>
+                  <TableHead className="w-[35%]">Nom</TableHead>
                   <TableHead>Scope</TableHead>
-                  <TableHead>Type</TableHead>
+                  <TableHead className="w-[15%]">Type</TableHead>
                   <TableHead>Statut</TableHead>
-                  <TableHead>Indexation</TableHead>
+                  <TableHead className="w-[10%]">Indexation</TableHead>
                   <TableHead>Taille</TableHead>
                   <TableHead>Format</TableHead>
                   <TableHead>Date</TableHead>

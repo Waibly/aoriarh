@@ -51,6 +51,11 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { OrgSelector } from "./org-selector";
 import { SettingsDialog } from "./settings-dialog";
 import { useOrg } from "@/lib/org-context";
@@ -87,34 +92,42 @@ function ConversationItem({
   isActive: boolean;
   onDelete: (conv: Conversation) => void;
 }) {
+  const title = conv.title || "Nouvelle conversation";
   return (
-    <div
-      className={cn(
-        "group/conv relative flex items-center rounded-md transition-colors",
-        isActive ? "bg-accent text-accent-foreground" : "hover:bg-accent/50",
-      )}
-    >
-      <Link
-        href={`/chat/${conv.id}`}
-        className="flex min-w-0 flex-1 items-center gap-2 px-2 py-1.5"
-      >
-        <MessageSquare className="size-4 shrink-0 opacity-50" />
-        <span className="flex-1 truncate text-left text-sm">
-          {conv.title || "Nouvelle conversation"}
-        </span>
-      </Link>
-      <button
-        onClick={(e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          onDelete(conv);
-        }}
-        className="hidden shrink-0 cursor-pointer pr-2 group-hover/conv:block"
-        aria-label={`Supprimer ${conv.title || "conversation"}`}
-      >
-        <Trash2 className="size-4 text-destructive" />
-      </button>
-    </div>
+    <Tooltip delayDuration={400}>
+      <TooltipTrigger asChild>
+        <div
+          className={cn(
+            "group/conv relative flex items-center rounded-md transition-colors",
+            isActive ? "bg-accent text-accent-foreground" : "hover:bg-accent/50",
+          )}
+        >
+          <Link
+            href={`/chat/${conv.id}`}
+            className="flex min-w-0 flex-1 items-center gap-2 px-2 py-1.5"
+          >
+            <MessageSquare className="size-4 shrink-0 opacity-50" />
+            <span className="flex-1 truncate text-left text-sm">
+              {title}
+            </span>
+          </Link>
+          <button
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              onDelete(conv);
+            }}
+            className="hidden shrink-0 cursor-pointer pr-2 group-hover/conv:block"
+            aria-label={`Supprimer ${title}`}
+          >
+            <Trash2 className="size-4 text-destructive" />
+          </button>
+        </div>
+      </TooltipTrigger>
+      <TooltipContent side="right" className="max-w-xs">
+        {title}
+      </TooltipContent>
+    </Tooltip>
   );
 }
 
@@ -168,8 +181,11 @@ function ConversationHistory() {
 
   return (
     <>
+      {conversations.length === 0 ? null : (
+      <>
+      <div className="px-4"><Separator /></div>
       <div className="space-y-0.5 px-2 py-2">
-        <p className="text-muted-foreground px-2 pb-1 text-xs font-medium">
+        <p className="text-muted-foreground px-2 pb-1 pt-2 text-xs font-medium">
           Historique
         </p>
         {visible.map((conv) => (
@@ -208,6 +224,8 @@ function ConversationHistory() {
           </Collapsible>
         )}
       </div>
+      </>
+      )}
 
       <Dialog
         open={deleteTarget !== null}
@@ -428,7 +446,6 @@ export function Sidebar() {
         )}
 
         {/* Historique des conversations */}
-        <div className="px-4"><Separator /></div>
         <ConversationHistory />
 
         {/* Spacer */}

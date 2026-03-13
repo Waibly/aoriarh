@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useCallback } from "react";
+import Image from "next/image";
 import { Scale, ArrowUp } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -43,21 +44,21 @@ export function WelcomeScreen({ onSend }: WelcomeScreenProps) {
   };
 
   return (
-    <div className="flex flex-1 flex-col items-center justify-center rounded-xl bg-white px-4 dark:bg-card">
-      <div className="bg-primary/10 mb-6 flex size-16 items-center justify-center rounded-2xl">
-        <Scale className="text-primary size-8" />
+    <div className="flex flex-1 flex-col items-center justify-center rounded-xl bg-white px-4 dark:bg-card animate-in fade-in duration-500">
+      <div className="mb-6 animate-in fade-in zoom-in-95 duration-500">
+        <Image src="/logo-aoria.svg" alt="AORIA RH" width={48} height={64} priority />
       </div>
-      <h1 className="text-2xl font-semibold tracking-tight">AORIA RH</h1>
-      <p className="text-muted-foreground mt-1 text-base">
+      <h1 className="text-2xl font-semibold tracking-tight animate-in fade-in slide-in-from-bottom-2 duration-500 delay-100">AORIA RH</h1>
+      <p className="text-muted-foreground mt-1 text-base animate-in fade-in slide-in-from-bottom-2 duration-500 delay-150">
         Assistant juridique RH
       </p>
-      <p className="text-muted-foreground mt-4 max-w-md text-center text-sm">
+      <p className="text-muted-foreground mt-4 max-w-md text-center text-sm animate-in fade-in slide-in-from-bottom-2 duration-500 delay-200">
         Posez vos questions en droit social français. Je m&apos;appuie sur vos
         documents et la réglementation en vigueur pour vous répondre.
       </p>
 
       {/* Champ de saisie centré */}
-      <div className="mt-8 w-full max-w-2xl">
+      <div className="mt-8 w-full max-w-2xl animate-in fade-in slide-in-from-bottom-2 duration-500 delay-300">
         <div
           data-slot="chat-input"
           className={cn(
@@ -90,17 +91,16 @@ export function WelcomeScreen({ onSend }: WelcomeScreenProps) {
       </div>
 
       {/* Suggestions */}
-      <div className="mt-6 grid w-full max-w-2xl grid-cols-1 gap-3 sm:grid-cols-2">
+      <div className="mt-6 grid w-full max-w-2xl grid-cols-1 gap-3 sm:grid-cols-2 animate-in fade-in slide-in-from-bottom-2 duration-500 delay-[400ms]">
         {suggestions.map((suggestion) => (
-          <Button
+          <button
             key={suggestion}
-            variant="outline"
-            className="h-auto justify-start whitespace-normal px-4 py-3 text-left text-sm"
+            className="flex items-start gap-2 rounded-xl bg-muted/50 px-4 py-3 text-left text-sm text-muted-foreground transition-colors hover:bg-[#9952b8]/10 hover:text-foreground"
             onClick={() => onSend(suggestion)}
           >
-            <Scale className="text-muted-foreground mr-2 size-4 shrink-0" />
+            <Scale className="mt-0.5 size-4 shrink-0" />
             {suggestion}
-          </Button>
+          </button>
         ))}
       </div>
     </div>
