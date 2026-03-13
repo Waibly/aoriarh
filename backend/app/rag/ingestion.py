@@ -17,7 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.models.document import Document
 from app.rag.chunker import LegalChunker
-from app.rag.config import EMBEDDING_MODEL, MIN_CHUNK_CHARS
+from app.rag.config import EMBEDDING_MODEL
 from app.rag.jurisprudence_chunker import JurisprudenceChunker
 from app.rag.norme_hierarchy import JURISPRUDENCE_SOURCE_TYPES
 from app.rag.qdrant_store import COLLECTION_NAME, ensure_collection, get_qdrant_client
@@ -210,23 +210,6 @@ class IngestionPipeline:
                 logger.warning("Document %s: no chunks produced", document_id)
                 doc.indexation_status = "error"
                 doc.indexation_error = "Aucun chunk produit après extraction du texte"
-                doc.indexation_progress = None
-                await db.commit()
-                return
-
-            # Filter out chunks too short to be useful (titles, TOC entries)
-            before_filter = len(chunks)
-            chunks = [c for c in chunks if len(c.strip()) >= MIN_CHUNK_CHARS]
-            if before_filter != len(chunks):
-                logger.info(
-                    "Document %s: filtered %d short chunks (<%d chars), %d remaining",
-                    document_id, before_filter - len(chunks), MIN_CHUNK_CHARS, len(chunks),
-                )
-
-            if not chunks:
-                logger.warning("Document %s: all chunks filtered out", document_id)
-                doc.indexation_status = "error"
-                doc.indexation_error = "Aucun chunk utile après filtrage"
                 doc.indexation_progress = None
                 await db.commit()
                 return
