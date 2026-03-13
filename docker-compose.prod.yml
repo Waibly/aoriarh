@@ -209,6 +209,10 @@ services:
       VOYAGE_API_KEY: ${VOYAGE_API_KEY}
       BREVO_API_KEY: ${BREVO_API_KEY}
       REDIS_URL: redis://redis:6379
+      JUDILIBRE_CLIENT_ID: ${JUDILIBRE_CLIENT_ID:-}
+      JUDILIBRE_CLIENT_SECRET: ${JUDILIBRE_CLIENT_SECRET:-}
+      JUDILIBRE_BASE_URL: ${JUDILIBRE_BASE_URL:-https://api.piste.gouv.fr/cassation/judilibre/v1.0}
+      JUDILIBRE_OAUTH_URL: ${JUDILIBRE_OAUTH_URL:-https://oauth.piste.gouv.fr/api/oauth/token}
       LOG_FORMAT: json
     deploy:
       resources:
