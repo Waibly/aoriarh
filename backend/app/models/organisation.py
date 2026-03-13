@@ -13,6 +13,8 @@ class Organisation(TimestampMixin, Base):
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     forme_juridique: Mapped[str | None] = mapped_column(String(100))
     taille: Mapped[str | None] = mapped_column(String(50))
+    convention_collective: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    secteur_activite: Mapped[str | None] = mapped_column(String(255), nullable=True)
     account_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("accounts.id"), nullable=True, index=True
     )

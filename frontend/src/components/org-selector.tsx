@@ -18,25 +18,8 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { cn } from "@/lib/utils";
-import { FORME_JURIDIQUE_OPTIONS, TAILLE_OPTIONS } from "@/types/api";
+import { OrgFormDialog } from "@/components/org-form-dialog";
 import type { Organisation } from "@/types/api";
 
 export function OrgSelector() {
@@ -124,122 +107,29 @@ export function OrgSelector() {
       </Popover>
 
       {canCreate && (
-        <CreateOrgDialog
+        <OrgFormDialog
           open={createOpen}
           onOpenChange={setCreateOpen}
-          onCreated={async (org) => {
+          onSubmit={async (data) => {
+            const { profil_metier, ...orgData } = data;
+            const org = await apiFetch<Organisation>("/organisations/", {
+              method: "POST",
+              token: session?.access_token,
+              body: JSON.stringify(orgData),
+            });
+            // Save profil_metier on user if provided
+            if (profil_metier) {
+              await apiFetch("/users/me", {
+                method: "PATCH",
+                token: session?.access_token,
+                body: JSON.stringify({ profil_metier }),
+              });
+            }
             await refetchOrgs();
             setCurrentOrgId(org.id);
           }}
         />
       )}
     </>
-  );
-}
-
-interface CreateOrgDialogProps {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  onCreated: (org: Organisation) => Promise<void>;
-}
-
-function CreateOrgDialog({
-  open,
-  onOpenChange,
-  onCreated,
-}: CreateOrgDialogProps) {
-  const { data: session } = useSession();
-  const [name, setName] = useState("");
-  const [formeJuridique, setFormeJuridique] = useState<string>("");
-  const [taille, setTaille] = useState<string>("");
-  const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!name.trim()) return;
-    setSubmitting(true);
-    setError(null);
-    try {
-      const org = await apiFetch<Organisation>("/organisations/", {
-        method: "POST",
-        token: session?.access_token,
-        body: JSON.stringify({
-          name: name.trim(),
-          forme_juridique: formeJuridique || null,
-          taille: taille || null,
-        }),
-      });
-      await onCreated(org);
-      onOpenChange(false);
-      setName("");
-      setFormeJuridique("");
-      setTaille("");
-    } catch {
-      setError("Erreur lors de la création de l'organisation");
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle>Créer une organisation</DialogTitle>
-          <DialogDescription>
-            Renseignez les informations de votre organisation.
-          </DialogDescription>
-        </DialogHeader>
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor="org-name">Nom *</Label>
-            <Input
-              id="org-name"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="Nom de l'organisation"
-              required
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="forme-juridique">Forme juridique</Label>
-            <Select value={formeJuridique} onValueChange={setFormeJuridique}>
-              <SelectTrigger id="forme-juridique">
-                <SelectValue placeholder="Sélectionner..." />
-              </SelectTrigger>
-              <SelectContent>
-                {FORME_JURIDIQUE_OPTIONS.map((fj) => (
-                  <SelectItem key={fj} value={fj}>
-                    {fj}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="taille">Taille</Label>
-            <Select value={taille} onValueChange={setTaille}>
-              <SelectTrigger id="taille">
-                <SelectValue placeholder="Nombre de salariés..." />
-              </SelectTrigger>
-              <SelectContent>
-                {TAILLE_OPTIONS.map((t) => (
-                  <SelectItem key={t} value={t}>
-                    {t} salariés
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          {error && <p className="text-sm text-destructive">{error}</p>}
-          <DialogFooter>
-            <Button type="submit" disabled={submitting || !name.trim()}>
-              {submitting ? "Création..." : "Créer"}
-            </Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
   );
 }

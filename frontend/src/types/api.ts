@@ -6,13 +6,25 @@ export interface User {
   is_active: boolean;
   created_at: string;
   auth_provider: "credentials" | "google";
+  profil_metier: string | null;
 }
+
+export const PROFIL_METIER_OPTIONS = [
+  { value: "drh", label: "DRH / Responsable RH" },
+  { value: "charge_rh", label: "Chargé(e) RH / Assistant(e) RH" },
+  { value: "elu_cse", label: "Élu(e) CSE / Délégué(e) du personnel" },
+  { value: "dirigeant", label: "Dirigeant / Gérant" },
+  { value: "juriste", label: "Juriste d'entreprise" },
+  { value: "consultant_rh", label: "Consultant RH / Cabinet RH" },
+] as const;
 
 export interface Organisation {
   id: string;
   name: string;
   forme_juridique: string | null;
   taille: string | null;
+  convention_collective: string | null;
+  secteur_activite: string | null;
   created_at: string;
 }
 
@@ -148,15 +160,18 @@ export const FORME_JURIDIQUE_OPTIONS = [
 
 export const TAILLE_OPTIONS = [
   "1-10",
-  "11-50",
-  "51-250",
-  "251-500",
-  "501-1000",
-  "1000+",
+  "11-19",
+  "20-49",
+  "50-249",
+  "250-299",
+  "300-999",
+  "1000-4999",
+  "5000+",
 ] as const;
 
 export type FormeJuridique = (typeof FORME_JURIDIQUE_OPTIONS)[number];
 export type Taille = (typeof TAILLE_OPTIONS)[number];
+
 
 export const SOURCE_TYPE_OPTIONS: {
   value: string;

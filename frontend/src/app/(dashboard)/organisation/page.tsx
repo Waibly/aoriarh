@@ -8,7 +8,6 @@ import { toast } from "sonner";
 import { useOrg } from "@/lib/org-context";
 import { apiFetch } from "@/lib/api";
 import type { Membership } from "@/types/api";
-import { FORME_JURIDIQUE_OPTIONS, TAILLE_OPTIONS } from "@/types/api";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -28,13 +27,6 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
   Table,
   TableBody,
   TableCell,
@@ -44,6 +36,7 @@ import {
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import { OrgFormDialog } from "@/components/org-form-dialog";
 
 export default function OrganisationPage() {
   const { data: session } = useSession();
@@ -134,11 +127,23 @@ export default function OrganisationPage() {
             </p>
           </div>
           <div>
-            <p className="text-sm text-muted-foreground">Taille</p>
+            <p className="text-sm text-muted-foreground">Effectif</p>
             <p className="font-medium">
               {currentOrg.taille
                 ? `${currentOrg.taille} salariés`
-                : "Non renseignée"}
+                : "Non renseigné"}
+            </p>
+          </div>
+          <div>
+            <p className="text-sm text-muted-foreground">Convention collective</p>
+            <p className="font-medium">
+              {currentOrg.convention_collective ?? "Non renseignée"}
+            </p>
+          </div>
+          <div>
+            <p className="text-sm text-muted-foreground">Secteur d&apos;activité</p>
+            <p className="font-medium">
+              {currentOrg.secteur_activite ?? "Non renseigné"}
             </p>
           </div>
         </CardContent>
@@ -230,12 +235,18 @@ export default function OrganisationPage() {
 
       {isOrgManager && (
         <>
-          <EditOrgDialog
+          <OrgFormDialog
             open={editOpen}
             onOpenChange={setEditOpen}
             org={currentOrg}
-            token={token!}
-            onUpdated={refetchOrgs}
+            onSubmit={async (data) => {
+              await apiFetch(`/organisations/${currentOrg.id}`, {
+                method: "PATCH",
+                token: token!,
+                body: JSON.stringify(data),
+              });
+              await refetchOrgs();
+            }}
           />
           <DeleteOrgDialog
             open={deleteOpen}
@@ -247,114 +258,6 @@ export default function OrganisationPage() {
         </>
       )}
     </div>
-  );
-}
-
-// --- EditOrgDialog ---
-
-function EditOrgDialog({
-  open,
-  onOpenChange,
-  org,
-  token,
-  onUpdated,
-}: {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  org: { id: string; name: string; forme_juridique: string | null; taille: string | null };
-  token: string;
-  onUpdated: () => Promise<void>;
-}) {
-  const [name, setName] = useState(org.name);
-  const [formeJuridique, setFormeJuridique] = useState(
-    org.forme_juridique ?? ""
-  );
-  const [taille, setTaille] = useState(org.taille ?? "");
-  const [submitting, setSubmitting] = useState(false);
-
-  useEffect(() => {
-    setName(org.name);
-    setFormeJuridique(org.forme_juridique ?? "");
-    setTaille(org.taille ?? "");
-  }, [org]);
-
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    setSubmitting(true);
-    try {
-      await apiFetch(`/organisations/${org.id}`, {
-        method: "PATCH",
-        token,
-        body: JSON.stringify({
-          name: name.trim(),
-          forme_juridique: formeJuridique || null,
-          taille: taille || null,
-        }),
-      });
-      await onUpdated();
-      onOpenChange(false);
-    } finally {
-      setSubmitting(false);
-    }
-  }
-
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle>Modifier l&apos;organisation</DialogTitle>
-          <DialogDescription>
-            Mettez à jour les informations de votre organisation.
-          </DialogDescription>
-        </DialogHeader>
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor="edit-name">Nom *</Label>
-            <Input
-              id="edit-name"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              required
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="edit-forme">Forme juridique</Label>
-            <Select value={formeJuridique} onValueChange={setFormeJuridique}>
-              <SelectTrigger id="edit-forme">
-                <SelectValue placeholder="Sélectionner..." />
-              </SelectTrigger>
-              <SelectContent>
-                {FORME_JURIDIQUE_OPTIONS.map((fj) => (
-                  <SelectItem key={fj} value={fj}>
-                    {fj}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="edit-taille">Taille</Label>
-            <Select value={taille} onValueChange={setTaille}>
-              <SelectTrigger id="edit-taille">
-                <SelectValue placeholder="Nombre de salariés..." />
-              </SelectTrigger>
-              <SelectContent>
-                {TAILLE_OPTIONS.map((t) => (
-                  <SelectItem key={t} value={t}>
-                    {t} salariés
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <DialogFooter>
-            <Button type="submit" disabled={submitting || !name.trim()}>
-              {submitting ? "Enregistrement..." : "Enregistrer"}
-            </Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
   );
 }
 
@@ -440,4 +343,3 @@ function DeleteOrgDialog({
     </Dialog>
   );
 }
-

@@ -26,6 +26,9 @@ class UserService:
                     detail="Cet email est déjà utilisé",
                 )
 
+        if "profil_metier" in update_data and update_data["profil_metier"] is not None:
+            update_data["profil_metier"] = update_data["profil_metier"].value
+
         for key, value in update_data.items():
             setattr(user, key, value)
 

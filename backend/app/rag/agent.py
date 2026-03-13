@@ -208,13 +208,14 @@ class RAGAgent:
         self,
         query: str,
         organisation_id: str,
+        org_context: dict[str, str | None] | None = None,
         history: list[dict[str, str]] | None = None,
     ) -> RAGResponse:
         """Execute the full RAG pipeline with global timeout."""
         t0 = time.perf_counter()
         try:
             result = await asyncio.wait_for(
-                self._pipeline(query, organisation_id, history=history),
+                self._pipeline(query, organisation_id, org_context=org_context, history=history),
                 timeout=RAG_TIMEOUT_GLOBAL,
             )
             logger.info(
@@ -254,6 +255,7 @@ class RAGAgent:
         self,
         query: str,
         organisation_id: str,
+        org_context: dict[str, str | None] | None = None,
         history: list[dict[str, str]] | None = None,
     ) -> RAGResponse:
         # --- Step 0: Condensation (multi-turn) ---
@@ -322,7 +324,7 @@ class RAGAgent:
         # --- Step 6: Generation ---
         t_gen = time.perf_counter()
         answer = await self._step_with_timeout(
-            self._generate(query, results),
+            self._generate(query, results, org_context=org_context),
             fallback=self._fallback_answer(results),
         )
         logger.info(
@@ -341,6 +343,7 @@ class RAGAgent:
         self,
         query: str,
         organisation_id: str,
+        org_context: dict[str, str | None] | None = None,
         history: list[dict[str, str]] | None = None,
     ) -> tuple[list[SearchResult], str]:
         """Run steps 0-5 (non-streaming) and return results + reformulated query."""
@@ -415,24 +418,24 @@ class RAGAgent:
         self,
         query: str,
         results: list[SearchResult],
+        org_context: dict[str, str | None] | None = None,
         buffer_size: int = 10,
     ) -> AsyncGenerator[str, None]:
         """Stream the LLM generation token by token (buffered)."""
         t_start = time.perf_counter()
         context = self._build_context(results)
+        user_content = self._build_user_message(query, context, org_context)
+        logger.info(
+            "[RAG] stream org_context injected: %s",
+            org_context if org_context else "None",
+        )
 
         t_api = time.perf_counter()
         response = await self.llm.chat.completions.create(
             model=LLM_MODEL,
             messages=[
                 {"role": "system", "content": _SYSTEM_PROMPT},
-                {
-                    "role": "user",
-                    "content": (
-                        f"Sources documentaires :\n\n{context}\n\n"
-                        f"Question : {query}"
-                    ),
-                },
+                {"role": "user", "content": user_content},
             ],
             max_completion_tokens=16000,
             reasoning_effort="low",
@@ -686,21 +689,109 @@ class RAGAgent:
 
         return "\n\n---\n\n".join(context_parts)
 
-    async def _generate(self, query: str, results: list[SearchResult]) -> str:
+    _PROFIL_METIER_LABELS: dict[str, str] = {
+        "drh": "DRH / Responsable RH",
+        "charge_rh": "Chargé(e) RH / Assistant(e) RH",
+        "elu_cse": "Élu(e) CSE / Délégué(e) du personnel",
+        "dirigeant": "Dirigeant / Gérant",
+        "juriste": "Juriste d'entreprise",
+        "consultant_rh": "Consultant RH / Cabinet RH",
+    }
+
+    _PROFIL_METIER_INSTRUCTIONS: dict[str, str] = {
+        "drh": (
+            "L'utilisateur est DRH/Responsable RH : réponds du point de vue employeur, "
+            "avec les procédures à suivre, les risques juridiques et les délais à respecter."
+        ),
+        "charge_rh": (
+            "L'utilisateur est chargé(e)/assistant(e) RH : réponds de manière opérationnelle, "
+            "avec les étapes concrètes, les modèles de courriers si pertinent, et les points de vigilance."
+        ),
+        "elu_cse": (
+            "L'utilisateur est élu(e) CSE / représentant du personnel : réponds du point de vue "
+            "des droits des salariés et des prérogatives du CSE, en précisant les obligations de "
+            "l'employeur, les consultations obligatoires et les leviers d'action du CSE."
+        ),
+        "dirigeant": (
+            "L'utilisateur est dirigeant/gérant (souvent TPE-PME sans service RH) : réponds "
+            "de manière simple et directe, sans jargon excessif, avec les obligations essentielles "
+            "et les risques concrets en cas de non-respect."
+        ),
+        "juriste": (
+            "L'utilisateur est juriste d'entreprise : réponds avec précision juridique, "
+            "en citant les références exactes (articles, jurisprudence) et les nuances d'interprétation."
+        ),
+        "consultant_rh": (
+            "L'utilisateur est consultant RH / cabinet RH : réponds avec un niveau d'expertise élevé, "
+            "en couvrant les différents cas de figure et les recommandations à formuler à ses clients."
+        ),
+    }
+
+    def _build_org_context_block(self, org_context: dict[str, str | None]) -> str:
+        """Build an organisation context block for the LLM prompt."""
+        nom = org_context.get("nom") or "l'entreprise"
+        profil = org_context.get("profil_metier")
+
+        lines = [f"## Entreprise de l'utilisateur : {nom}\n"]
+
+        # Profil métier
+        if profil and profil in self._PROFIL_METIER_LABELS:
+            lines.append(f"**Profil de l'utilisateur** : {self._PROFIL_METIER_LABELS[profil]}")
+            lines.append(self._PROFIL_METIER_INSTRUCTIONS[profil] + "\n")
+        else:
+            lines.append(
+                "L'utilisateur travaille dans cette entreprise. "
+                "Adapte systématiquement tes réponses à ce contexte "
+                "(seuils d'effectifs, obligations légales, dispositions conventionnelles).\n"
+            )
+
+        field_labels = {
+            "forme_juridique": "Forme juridique",
+            "taille": "Effectif",
+            "convention_collective": "Convention collective",
+            "secteur_activite": "Secteur d'activité / code APE",
+        }
+        for key, label in field_labels.items():
+            value = org_context.get(key)
+            if value:
+                if key == "taille":
+                    lines.append(f"- {label} : {value} salariés")
+                else:
+                    lines.append(f"- {label} : {value}")
+        return "\n".join(lines)
+
+    def _build_user_message(
+        self,
+        query: str,
+        context: str,
+        org_context: dict[str, str | None] | None = None,
+    ) -> str:
+        """Build the user message with sources, optional org context, and question."""
+        parts = [f"Sources documentaires :\n\n{context}"]
+        if org_context and any(org_context.values()):
+            parts.append(self._build_org_context_block(org_context))
+        parts.append(f"Question : {query}")
+        return "\n\n".join(parts)
+
+    async def _generate(
+        self,
+        query: str,
+        results: list[SearchResult],
+        org_context: dict[str, str | None] | None = None,
+    ) -> str:
         """Step 6: Generate the answer using the LLM with retrieved context."""
         context = self._build_context(results)
+        user_content = self._build_user_message(query, context, org_context)
+        logger.info(
+            "[RAG] org_context injected: %s",
+            org_context if org_context else "None",
+        )
 
         response = await self.llm.chat.completions.create(
             model=LLM_MODEL,
             messages=[
                 {"role": "system", "content": _SYSTEM_PROMPT},
-                {
-                    "role": "user",
-                    "content": (
-                        f"Sources documentaires :\n\n{context}\n\n"
-                        f"Question : {query}"
-                    ),
-                },
+                {"role": "user", "content": user_content},
             ],
             max_completion_tokens=16000,
             reasoning_effort="low",

@@ -6,6 +6,7 @@ import { Pencil, KeyRound } from "lucide-react";
 import { toast } from "sonner";
 import { apiFetch } from "@/lib/api";
 import type { User } from "@/types/api";
+import { PROFIL_METIER_OPTIONS } from "@/types/api";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -24,6 +25,13 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 
@@ -111,6 +119,12 @@ export default function AccountPage() {
             }>{ROLE_LABELS[user.role] ?? user.role}</Badge>
           </div>
           <div className="flex items-center gap-2">
+            <span className="w-32 text-sm text-muted-foreground">Profil métier</span>
+            <span className="text-sm font-medium">
+              {PROFIL_METIER_OPTIONS.find((p) => p.value === user.profil_metier)?.label ?? "Non renseigné"}
+            </span>
+          </div>
+          <div className="flex items-center gap-2">
             <span className="w-32 text-sm text-muted-foreground">Membre depuis</span>
             <span className="text-sm font-medium">
               {new Date(user.created_at).toLocaleDateString("fr-FR", {
@@ -191,6 +205,7 @@ function EditProfileDialog({
 }: EditProfileDialogProps) {
   const [fullName, setFullName] = useState(user.full_name);
   const [email, setEmail] = useState(user.email);
+  const [profilMetier, setProfilMetier] = useState(user.profil_metier ?? "");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -198,6 +213,7 @@ function EditProfileDialog({
     if (open) {
       setFullName(user.full_name);
       setEmail(user.email);
+      setProfilMetier(user.profil_metier ?? "");
       setError(null);
     }
   }, [open, user]);
@@ -213,6 +229,7 @@ function EditProfileDialog({
         body: JSON.stringify({
           full_name: fullName.trim(),
           email: email.trim(),
+          profil_metier: profilMetier || null,
         }),
       });
       await onSaved(updated);
@@ -252,6 +269,24 @@ function EditProfileDialog({
               onChange={(e) => setEmail(e.target.value)}
               required
             />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="profil-metier">Profil métier</Label>
+            <Select value={profilMetier} onValueChange={setProfilMetier}>
+              <SelectTrigger id="profil-metier">
+                <SelectValue placeholder="Sélectionner votre profil..." />
+              </SelectTrigger>
+              <SelectContent>
+                {PROFIL_METIER_OPTIONS.map((p) => (
+                  <SelectItem key={p.value} value={p.value}>
+                    {p.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">
+              Permet d&apos;adapter les réponses juridiques à votre perspective métier.
+            </p>
           </div>
           {error && <p className="text-sm text-destructive">{error}</p>}
           <DialogFooter>

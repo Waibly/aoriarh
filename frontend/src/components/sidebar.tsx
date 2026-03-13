@@ -286,9 +286,9 @@ export function Sidebar() {
   }, [fetchPlan]);
 
   const planDisplay = {
-    gratuit: { label: "Gratuit", icon: UserCheck, gradient: "from-muted/50 to-muted", textClass: "text-muted-foreground", iconBg: "bg-muted" },
-    invite: { label: "Invité", icon: Gift, gradient: "from-[#9952b8]/5 to-[#9952b8]/10", textClass: "text-[#9952b8]", iconBg: "bg-[#9952b8]/15" },
-    vip: { label: "VIP", icon: Crown, gradient: "from-amber-50 to-amber-50 dark:from-amber-950 dark:to-amber-950", textClass: "text-amber-700 dark:text-amber-300", iconBg: "bg-amber-400/20 dark:bg-amber-500/20" },
+    gratuit: { label: "Gratuit", icon: UserCheck, textClass: "text-muted-foreground", iconBg: "bg-muted" },
+    invite: { label: "Invité", icon: Gift, textClass: "text-[#9952b8]", iconBg: "bg-[#9952b8]/15" },
+    vip: { label: "VIP", icon: Crown, textClass: "text-amber-700 dark:text-amber-300", iconBg: "bg-amber-400/20 dark:bg-amber-500/20" },
   } as const;
 
   const currentPlanConfig = planDisplay[(userPlan?.plan ?? "gratuit") as keyof typeof planDisplay] ?? planDisplay.gratuit;
@@ -454,10 +454,7 @@ export function Sidebar() {
         {/* Plan */}
         {userPlan && (
           <div className="px-3 pb-2">
-            <div className={cn(
-              "rounded-lg bg-gradient-to-r p-3",
-              currentPlanConfig.gradient,
-            )}>
+            <div className="rounded-lg border p-3">
               <div className="flex items-center gap-2">
                 <div className={cn(
                   "flex h-8 w-8 items-center justify-center rounded-md",

@@ -8,8 +8,11 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from sqlalchemy import select
+
 from app.core.database import get_db
 from app.core.dependencies import get_current_user
+from app.models.organisation import Organisation
 from app.models.user import User
 from app.rag.agent import RAGAgent
 from app.schemas.conversation import (
@@ -119,7 +122,12 @@ async def chat(
         user=user,
     )
 
-    # 2. Call RAG agent FIRST — nothing saved yet
+    # 2. Load org context for RAG
+    org_context = await _load_org_context(db, conversation.organisation_id)
+    if org_context is not None:
+        org_context["profil_metier"] = user.profil_metier
+
+    # 3. Call RAG agent FIRST — nothing saved yet
     history = [
         {"role": m.role, "content": m.content}
         for m in conversation.messages[-6:]
@@ -128,17 +136,18 @@ async def chat(
     rag_response = await agent.run(
         query=data.message,
         organisation_id=str(conversation.organisation_id),
+        org_context=org_context,
         history=history if history else None,
     )
 
-    # 3. If RAG failed, return 503 — nothing in DB
+    # 4. If RAG failed, return 503 — nothing in DB
     if rag_response.is_error:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail=rag_response.answer,
         )
 
-    # 4. RAG succeeded — save user message + assistant response
+    # 5. RAG succeeded — save user message + assistant response
     sources_dicts = [
         dataclasses.asdict(s) for s in rag_response.sources
     ] if rag_response.sources else None
@@ -155,7 +164,7 @@ async def chat(
         sources=sources_dicts,
     )
 
-    # 5. Auto-generate title from first message
+    # 6. Auto-generate title from first message
     if conversation.title is None:
         title = data.message[:100].strip()
         if len(data.message) > 100:
@@ -166,6 +175,26 @@ async def chat(
         message=user_message,  # type: ignore[arg-type]
         answer=assistant_message,  # type: ignore[arg-type]
     )
+
+
+async def _load_org_context(
+    db: AsyncSession, organisation_id: uuid.UUID
+) -> dict[str, str | None] | None:
+    """Load organisation profile for RAG context injection."""
+    result = await db.execute(
+        select(Organisation).where(Organisation.id == organisation_id)
+    )
+    org = result.scalar_one_or_none()
+    if org is None:
+        return None
+    ctx = {
+        "nom": org.name,
+        "forme_juridique": org.forme_juridique,
+        "taille": org.taille,
+        "convention_collective": org.convention_collective,
+        "secteur_activite": org.secteur_activite,
+    }
+    return ctx
 
 
 def _sse_event(event: str, data: dict) -> str:
@@ -190,6 +219,11 @@ async def chat_stream(
         user=user,
     )
 
+    # 2. Load org context for RAG
+    org_context = await _load_org_context(db, conversation.organisation_id)
+    if org_context is not None:
+        org_context["profil_metier"] = user.profil_metier
+
     async def sse_generator():  # noqa: C901
         t_total = time.perf_counter()
         agent = RAGAgent()
@@ -198,10 +232,11 @@ async def chat_stream(
             for m in conversation.messages[-6:]
         ]
         try:
-            # 2. Prepare context (steps 0-5: condensation, reformulation, search, rerank)
+            # 3. Prepare context (steps 0-5: condensation, reformulation, search, rerank)
             results, reformulated = await agent.prepare_context(
                 query=data.message,
                 organisation_id=str(conversation.organisation_id),
+                org_context=org_context,
                 history=history if history else None,
             )
 
@@ -231,7 +266,7 @@ async def chat_stream(
 
             full_answer = ""
             try:
-                async for chunk in agent.stream_generate(data.message, results):
+                async for chunk in agent.stream_generate(data.message, results, org_context=org_context):
                     if await request.is_disconnected():
                         logger.info("Client disconnected during streaming")
                         return

@@ -36,6 +36,8 @@ class OrganisationService:
             name=data.name,
             forme_juridique=data.forme_juridique.value if data.forme_juridique else None,
             taille=data.taille.value if data.taille else None,
+            convention_collective=data.convention_collective,
+            secteur_activite=data.secteur_activite,
             account_id=user.owned_account.id if user.owned_account else None,
         )
         self.db.add(org)

@@ -1,7 +1,18 @@
 import uuid
 from datetime import datetime
 
+from enum import StrEnum
+
 from pydantic import BaseModel, EmailStr, Field
+
+
+class ProfilMetier(StrEnum):
+    DRH = "drh"
+    CHARGE_RH = "charge_rh"
+    ELU_CSE = "elu_cse"
+    DIRIGEANT = "dirigeant"
+    JURISTE = "juriste"
+    CONSULTANT_RH = "consultant_rh"
 
 
 class UserCreate(BaseModel):
@@ -21,6 +32,7 @@ class UserRead(BaseModel):
     is_active: bool
     created_at: datetime
     auth_provider: str = "credentials"
+    profil_metier: str | None = None
     plan: str | None = None
     plan_expires_at: datetime | None = None
 
@@ -28,6 +40,7 @@ class UserRead(BaseModel):
 class UserUpdate(BaseModel):
     full_name: str | None = None
     email: EmailStr | None = None
+    profil_metier: ProfilMetier | None = None
 
 
 class PasswordChange(BaseModel):

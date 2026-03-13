@@ -45,6 +45,7 @@ async def get_me(
         is_active=user.is_active,
         created_at=user.created_at,
         auth_provider=user.auth_provider,
+        profil_metier=user.profil_metier,
         plan=plan,
         plan_expires_at=plan_expires_at,
     )

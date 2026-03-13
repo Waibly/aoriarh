@@ -21,11 +21,13 @@ class FormeJuridique(StrEnum):
 
 class Taille(StrEnum):
     XS = "1-10"
-    S = "11-50"
-    M = "51-250"
-    L = "251-500"
-    XL = "501-1000"
-    XXL = "1000+"
+    S = "11-19"
+    M = "20-49"
+    L = "50-249"
+    XL = "250-299"
+    XXL = "300-999"
+    XXXL = "1000-4999"
+    MEGA = "5000+"
 
 
 class PlanType(StrEnum):
@@ -43,6 +45,8 @@ class OrganisationCreate(BaseModel):
     name: str
     forme_juridique: FormeJuridique | None = None
     taille: Taille | None = None
+    convention_collective: str | None = None
+    secteur_activite: str | None = None
 
 
 class OrganisationRead(BaseModel):
@@ -52,6 +56,8 @@ class OrganisationRead(BaseModel):
     name: str
     forme_juridique: str | None
     taille: str | None
+    convention_collective: str | None = None
+    secteur_activite: str | None = None
     account_id: uuid.UUID | None = None
     created_at: datetime
 
@@ -60,6 +66,8 @@ class OrganisationUpdate(BaseModel):
     name: str | None = None
     forme_juridique: FormeJuridique | None = None
     taille: Taille | None = None
+    convention_collective: str | None = None
+    secteur_activite: str | None = None
 
 
 class MembershipRead(BaseModel):
