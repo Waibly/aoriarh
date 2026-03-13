@@ -44,7 +44,7 @@ export function CcnSelector({
       setLoading(true);
       try {
         const data = await apiFetch<{ results: CcnReference[]; total: number }>(
-          `/conventions/search?q=${encodeURIComponent(q)}&limit=30`,
+          `/conventions/search?q=${encodeURIComponent(q)}&limit=50`,
           { token }
         );
         setResults(data.results);
@@ -83,7 +83,7 @@ export function CcnSelector({
 
   return (
     <div className="space-y-2">
-      <Popover open={open} onOpenChange={setOpen}>
+      <Popover open={open} onOpenChange={setOpen} modal={true}>
         <PopoverTrigger asChild>
           <Button
             variant="outline"
@@ -98,14 +98,21 @@ export function CcnSelector({
             <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
           </Button>
         </PopoverTrigger>
-        <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0" align="start">
+        <PopoverContent
+          className="w-[var(--radix-popover-trigger-width)] p-0"
+          align="start"
+          side="bottom"
+          sideOffset={4}
+          avoidCollisions={true}
+          collisionPadding={8}
+        >
           <Command shouldFilter={false}>
             <CommandInput
               placeholder="Rechercher par nom ou IDCC..."
               value={query}
               onValueChange={handleSearch}
             />
-            <CommandList>
+            <CommandList className="max-h-[240px] overflow-y-auto">
               <CommandEmpty>
                 {loading ? "Recherche..." : "Aucune convention trouvée"}
               </CommandEmpty>
@@ -142,7 +149,7 @@ export function CcnSelector({
       </Popover>
 
       {selected.length > 0 && (
-        <div className="flex flex-wrap gap-1.5">
+        <div className="flex flex-wrap gap-1.5 max-h-[80px] overflow-y-auto">
           {selected.map((ccn) => (
             <Badge
               key={ccn.idcc}
