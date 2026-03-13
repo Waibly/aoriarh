@@ -5,6 +5,7 @@ LLM_MODEL = settings.llm_model
 
 CHUNK_SIZE = 1024
 CHUNK_OVERLAP = 100
+MIN_CHUNK_CHARS = 80  # Discard chunks shorter than this (titles, TOC entries)
 
 TOP_K = 20
 RERANK_TOP_K = 5

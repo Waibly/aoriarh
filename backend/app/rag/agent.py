@@ -165,7 +165,11 @@ signale-le avec prudence.
 ## Format
 
 - Markdown : ##/### pour structurer, **gras** pour les points clés, listes pour les étapes.
-- Actionnable : pas de reformulation de la question, pas de préambule.
+- CONCIS : va droit au but. Pas de préambule, pas de reformulation de la question, \
+pas de commentaire sur ta méthode, pas de "règle d'intention", pas de "je vais…". \
+Commence DIRECTEMENT par la réponse.
+- Pas de conclusion proposant d'aller plus loin ("Si vous souhaitez…", "Je peux aussi…"). \
+L'utilisateur posera une autre question s'il en a besoin.
 - Ne cite PAS les sources (pas de "Source 1", "Voir source"). Elles sont affichées séparément.
 - Français uniquement."""
 
