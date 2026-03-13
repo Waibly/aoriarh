@@ -186,7 +186,7 @@ function ConversationHistory() {
       <div className="px-4"><Separator /></div>
       <div className="space-y-0.5 px-2 py-2">
         <p className="text-muted-foreground px-2 pb-1 pt-2 text-xs font-medium">
-          Historique
+          Historique de chat
         </p>
         {visible.map((conv) => (
           <ConversationItem
