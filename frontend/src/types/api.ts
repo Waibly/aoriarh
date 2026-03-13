@@ -28,6 +28,27 @@ export interface Organisation {
   created_at: string;
 }
 
+export interface CcnReference {
+  idcc: string;
+  titre: string;
+  titre_court: string | null;
+  etat: string | null;
+}
+
+export interface OrganisationConvention {
+  id: string;
+  organisation_id: string;
+  idcc: string;
+  status: "pending" | "fetching" | "indexing" | "ready" | "error";
+  installed_at: string | null;
+  last_synced_at: string | null;
+  articles_count: number | null;
+  error_message: string | null;
+  created_at: string;
+  titre: string | null;
+  titre_court: string | null;
+}
+
 export interface Document {
   id: string;
   organisation_id: string | null;

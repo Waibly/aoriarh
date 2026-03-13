@@ -1,6 +1,7 @@
 from app.models.account import Account
 from app.models.account_member import AccountMember
 from app.models.base import Base
+from app.models.ccn import CcnReference, OrganisationConvention
 from app.models.conversation import Conversation, Message
 from app.models.document import Document
 from app.models.invitation import Invitation
@@ -12,11 +13,13 @@ __all__ = [
     "Account",
     "AccountMember",
     "Base",
+    "CcnReference",
     "Conversation",
     "Document",
     "Invitation",
     "Membership",
     "Message",
     "Organisation",
+    "OrganisationConvention",
     "User",
 ]

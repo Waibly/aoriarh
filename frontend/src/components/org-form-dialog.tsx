@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useSession } from "next-auth/react";
 import { Building2, UserCog, ArrowRight, ArrowLeft, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -25,14 +26,15 @@ import {
   TAILLE_OPTIONS,
   PROFIL_METIER_OPTIONS,
 } from "@/types/api";
-import type { Organisation } from "@/types/api";
+import type { Organisation, CcnReference } from "@/types/api";
+import { CcnSelector } from "@/components/ccn-selector";
 
 interface OrgFormDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   /** If provided, the dialog is in edit mode (no wizard). */
   org?: Organisation | null;
-  /** Called with org data. In wizard mode, also receives profil_metier. */
+  /** Called with org data. In wizard mode, also receives profil_metier and selectedCcn. */
   onSubmit: (data: {
     name: string;
     forme_juridique: string | null;
@@ -40,6 +42,7 @@ interface OrgFormDialogProps {
     convention_collective: string | null;
     secteur_activite: string | null;
     profil_metier?: string | null;
+    selectedCcn?: CcnReference[];
   }) => Promise<void>;
 }
 
@@ -49,6 +52,8 @@ export function OrgFormDialog({
   org,
   onSubmit,
 }: OrgFormDialogProps) {
+  const { data: session } = useSession();
+  const token = session?.access_token ?? "";
   const isEdit = !!org;
 
   // Step management (only for create mode)
@@ -58,8 +63,8 @@ export function OrgFormDialog({
   const [name, setName] = useState("");
   const [formeJuridique, setFormeJuridique] = useState("");
   const [taille, setTaille] = useState("");
-  const [conventionCollective, setConventionCollective] = useState("");
   const [secteurActivite, setSecteurActivite] = useState("");
+  const [selectedCcn, setSelectedCcn] = useState<CcnReference[]>([]);
 
   // User field (step 2)
   const [profilMetier, setProfilMetier] = useState("");
@@ -73,8 +78,8 @@ export function OrgFormDialog({
       setName(org?.name ?? "");
       setFormeJuridique(org?.forme_juridique ?? "");
       setTaille(org?.taille ?? "");
-      setConventionCollective(org?.convention_collective ?? "");
       setSecteurActivite(org?.secteur_activite ?? "");
+      setSelectedCcn([]);
       setProfilMetier("");
       setError(null);
     }
@@ -85,13 +90,18 @@ export function OrgFormDialog({
     setSubmitting(true);
     setError(null);
     try {
+      const ccnLabel = selectedCcn.length > 0
+        ? selectedCcn.map((c) => `${c.titre_court || c.titre} (IDCC ${c.idcc})`).join(", ")
+        : null;
       await onSubmit({
         name: name.trim(),
         forme_juridique: formeJuridique || null,
         taille: taille || null,
-        convention_collective: conventionCollective.trim() || null,
+        convention_collective: ccnLabel,
         secteur_activite: secteurActivite.trim() || null,
-        ...(!isEdit ? { profil_metier: profilMetier || null } : {}),
+        ...(!isEdit
+          ? { profil_metier: profilMetier || null, selectedCcn }
+          : {}),
       });
       onOpenChange(false);
     } catch {
@@ -105,7 +115,7 @@ export function OrgFormDialog({
     }
   }
 
-  // --- Edit mode: single form ---
+  // --- Edit mode: single form (CCN managed separately on org page) ---
   if (isEdit) {
     return (
       <Dialog open={open} onOpenChange={onOpenChange}>
@@ -133,8 +143,6 @@ export function OrgFormDialog({
               setTaille={setTaille}
               secteurActivite={secteurActivite}
               setSecteurActivite={setSecteurActivite}
-              conventionCollective={conventionCollective}
-              setConventionCollective={setConventionCollective}
             />
             {error && <p className="text-sm text-destructive">{error}</p>}
             <DialogFooter>
@@ -187,9 +195,15 @@ export function OrgFormDialog({
                   setTaille={setTaille}
                   secteurActivite={secteurActivite}
                   setSecteurActivite={setSecteurActivite}
-                  conventionCollective={conventionCollective}
-                  setConventionCollective={setConventionCollective}
                 />
+                <div className="space-y-1.5">
+                  <Label>Convention(s) collective(s)</Label>
+                  <CcnSelector
+                    token={token}
+                    selected={selectedCcn}
+                    onChange={setSelectedCcn}
+                  />
+                </div>
                 <DialogFooter className="pt-2">
                   <Button
                     variant="outline"
@@ -311,8 +325,6 @@ function OrgFields({
   setTaille,
   secteurActivite,
   setSecteurActivite,
-  conventionCollective,
-  setConventionCollective,
 }: {
   name: string;
   setName: (v: string) => void;
@@ -322,8 +334,6 @@ function OrgFields({
   setTaille: (v: string) => void;
   secteurActivite: string;
   setSecteurActivite: (v: string) => void;
-  conventionCollective: string;
-  setConventionCollective: (v: string) => void;
 }) {
   return (
     <>
@@ -381,20 +391,6 @@ function OrgFields({
           onChange={(e) => setSecteurActivite(e.target.value)}
           placeholder="Ex : 62.01Z — Programmation informatique"
         />
-      </div>
-
-      <div className="space-y-1.5">
-        <Label htmlFor="ccn">Convention(s) collective(s)</Label>
-        <Input
-          id="ccn"
-          value={conventionCollective}
-          onChange={(e) => setConventionCollective(e.target.value)}
-          placeholder="Ex : Métallurgie (IDCC 3248), Syntec (IDCC 1486)"
-        />
-        <p className="text-xs text-muted-foreground">
-          Saisissez le nom et/ou le code IDCC. Plusieurs CCN possibles,
-          séparées par des virgules.
-        </p>
       </div>
     </>
   );

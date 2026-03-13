@@ -59,6 +59,13 @@ class Settings(BaseSettings):
     judilibre_base_url: str = "https://api.piste.gouv.fr/cassation/judilibre/v1.0"
     judilibre_oauth_url: str = "https://oauth.piste.gouv.fr/api/oauth/token"
 
+    # Légifrance / KALI API (PISTE — même OAuth2, API différente)
+    # Si client_id/secret vides, utilise les credentials Judilibre (même app PISTE)
+    legifrance_client_id: str = ""
+    legifrance_client_secret: str = ""
+    legifrance_base_url: str = "https://api.piste.gouv.fr/dila/legifrance/lf-engine-app"
+    legifrance_oauth_url: str = "https://oauth.piste.gouv.fr/api/oauth/token"
+
     # Redis (task queue)
     redis_url: str = "redis://localhost:6379"
 

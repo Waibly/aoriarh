@@ -38,6 +38,7 @@ class AuthService:
             email=data.email,
             hashed_password=hash_password(data.password),
             full_name=data.full_name,
+            role="manager",
         )
         self.db.add(user)
         await self.db.flush()
@@ -84,6 +85,7 @@ class AuthService:
             hashed_password=None,
             full_name=data.full_name,
             auth_provider="google",
+            role="manager",
         )
         self.db.add(user)
         await self.db.flush()

@@ -22,6 +22,7 @@ from app.api import (
     admin_qdrant,
     admin_users,
     auth,
+    conventions,
     conversations,
     documents,
     invitations,
@@ -179,6 +180,9 @@ app.include_router(
 )
 app.include_router(
     admin_users.router, prefix="/api/v1/admin/users", tags=["admin-users"]
+)
+app.include_router(
+    conventions.router, prefix="/api/v1/conventions", tags=["conventions"]
 )
 app.include_router(invitations.router, prefix="/api/v1", tags=["invitations"])
 app.include_router(team.router, prefix="/api/v1/team", tags=["team"])

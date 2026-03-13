@@ -111,7 +111,7 @@ export function OrgSelector() {
           open={createOpen}
           onOpenChange={setCreateOpen}
           onSubmit={async (data) => {
-            const { profil_metier, ...orgData } = data;
+            const { profil_metier, selectedCcn, ...orgData } = data;
             const org = await apiFetch<Organisation>("/organisations/", {
               method: "POST",
               token: session?.access_token,
@@ -124,6 +124,16 @@ export function OrgSelector() {
                 token: session?.access_token,
                 body: JSON.stringify({ profil_metier }),
               });
+            }
+            // Install selected conventions collectives (fire & forget)
+            if (selectedCcn && selectedCcn.length > 0) {
+              for (const ccn of selectedCcn) {
+                apiFetch(`/conventions/organisations/${org.id}`, {
+                  method: "POST",
+                  token: session?.access_token,
+                  body: JSON.stringify({ idcc: ccn.idcc }),
+                }).catch(() => {});
+              }
             }
             await refetchOrgs();
             setCurrentOrgId(org.id);
