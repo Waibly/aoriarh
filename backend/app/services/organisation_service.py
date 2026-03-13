@@ -10,6 +10,7 @@ from sqlalchemy.orm import selectinload
 from app.models.conversation import Conversation, Message
 from app.models.document import Document
 from app.models.invitation import Invitation
+from app.models.ccn import OrganisationConvention
 from app.models.membership import Membership
 from app.models.organisation import Organisation
 from app.models.user import User
@@ -208,12 +209,17 @@ class OrganisationService:
             delete(Invitation).where(Invitation.organisation_id == org_id)
         )
 
-        # 7. Delete memberships (NOT users)
+        # 7. Delete organisation_conventions
+        await self.db.execute(
+            delete(OrganisationConvention).where(OrganisationConvention.organisation_id == org_id)
+        )
+
+        # 8. Delete memberships (NOT users)
         await self.db.execute(
             delete(Membership).where(Membership.organisation_id == org_id)
         )
 
-        # 8. Delete organisation
+        # 9. Delete organisation
         await self.db.delete(org)
         await self.db.commit()
 
