@@ -1,8 +1,10 @@
 """Service métier pour la gestion des conventions collectives par organisation."""
 
+import logging
 import uuid
 
 from fastapi import HTTPException, status
+from qdrant_client.models import FieldCondition, Filter, FilterSelector, MatchValue
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
@@ -10,6 +12,9 @@ from sqlalchemy.orm import joinedload
 from app.models.ccn import CcnReference, OrganisationConvention
 from app.models.document import Document
 from app.models.membership import Membership
+from app.rag.qdrant_store import COLLECTION_NAME, get_qdrant_client
+
+logger = logging.getLogger(__name__)
 
 
 class CcnService:
@@ -115,25 +120,45 @@ class CcnService:
                 detail=f"Convention IDCC {idcc} non trouvée pour cette organisation",
             )
 
-        # Delete associated CCN documents
-        await self.db.execute(
-            delete(Document).where(
+        # Find associated CCN documents to get their IDs for Qdrant cleanup
+        docs_result = await self.db.execute(
+            select(Document).where(
                 Document.organisation_id == organisation_id,
                 Document.source_type == "convention_collective_nationale",
                 Document.name.ilike(f"%IDCC {idcc}%"),
             )
         )
+        ccn_docs = docs_result.scalars().all()
 
-        # Delete Qdrant vectors (async, best effort)
-        try:
-            from app.rag.qdrant_store import delete_documents_by_filter
-            await delete_documents_by_filter(
-                organisation_id=str(organisation_id),
-                source_type="convention_collective_nationale",
-                idcc=idcc,
+        # Delete Qdrant vectors for each document
+        for doc in ccn_docs:
+            try:
+                client = get_qdrant_client()
+                client.delete(
+                    collection_name=COLLECTION_NAME,
+                    points_selector=FilterSelector(
+                        filter=Filter(
+                            must=[
+                                FieldCondition(
+                                    key="document_id",
+                                    match=MatchValue(value=str(doc.id)),
+                                )
+                            ]
+                        )
+                    ),
+                )
+            except Exception:
+                logger.warning("Failed to delete Qdrant chunks for document %s", doc.id)
+
+        # Delete documents from DB
+        if ccn_docs:
+            await self.db.execute(
+                delete(Document).where(
+                    Document.organisation_id == organisation_id,
+                    Document.source_type == "convention_collective_nationale",
+                    Document.name.ilike(f"%IDCC {idcc}%"),
+                )
             )
-        except Exception:
-            pass  # Non-blocking, documents are already deleted
 
         await self.db.delete(org_conv)
         await self.db.commit()
