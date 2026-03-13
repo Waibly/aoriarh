@@ -23,4 +23,4 @@ class Organisation(TimestampMixin, Base):
     memberships = relationship("Membership", back_populates="organisation", lazy="selectin")
     documents = relationship("Document", back_populates="organisation", lazy="selectin")
     conversations = relationship("Conversation", back_populates="organisation", lazy="selectin")
-    conventions = relationship("OrganisationConvention", back_populates="organisation", lazy="selectin")
+    conventions = relationship("OrganisationConvention", back_populates="organisation", lazy="selectin", passive_deletes=True)
