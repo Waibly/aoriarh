@@ -75,6 +75,7 @@ export function CcnSelector({
     } else {
       onChange([...selected, ccn]);
     }
+    setOpen(false);
   };
 
   const removeItem = (idcc: string) => {

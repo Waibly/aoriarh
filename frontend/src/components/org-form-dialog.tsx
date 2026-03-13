@@ -236,7 +236,7 @@ export function OrgFormDialog({
               </DialogHeader>
               <div className="space-y-5">
                 <div className="space-y-1.5">
-                  <Label htmlFor="profil-metier">Quel est votre rôle ?</Label>
+                  <Label htmlFor="profil-metier">Quel est votre rôle ? <span className="text-destructive">*</span></Label>
                   <Select value={profilMetier} onValueChange={setProfilMetier}>
                     <SelectTrigger id="profil-metier">
                       <SelectValue placeholder="Sélectionner votre profil..." />
@@ -269,7 +269,7 @@ export function OrgFormDialog({
                   </Button>
                   <Button
                     type="button"
-                    disabled={submitting}
+                    disabled={submitting || !profilMetier}
                     onClick={handleFinalSubmit}
                   >
                     {submitting ? "Création..." : "Créer l'organisation"}
