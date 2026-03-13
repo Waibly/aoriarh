@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
-import { Database, Search, ChevronLeft, ChevronRight } from "lucide-react";
+import { Database, Search, ChevronLeft, ChevronRight, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { apiFetch } from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -71,6 +71,9 @@ export default function QdrantPage() {
   const [filterOrgId, setFilterOrgId] = useState("");
   const [filterDocId, setFilterDocId] = useState("");
 
+  // Cleanup
+  const [cleaning, setCleaning] = useState(false);
+
   const fetchCollections = useCallback(async () => {
     if (!token) return;
     setLoadingCollections(true);
@@ -129,12 +132,50 @@ export default function QdrantPage() {
     fetchPoints();
   };
 
+  const handleCleanup = async () => {
+    if (!token) return;
+    if (!confirm("Supprimer tous les vecteurs orphelins (documents supprimés de la base) ?")) return;
+    setCleaning(true);
+    try {
+      const result = await apiFetch<{
+        orphaned_document_ids: number;
+        vectors_deleted: number;
+        total_vectors_before: number;
+        total_vectors_after: number;
+      }>("/admin/qdrant/cleanup", { token, method: "POST" });
+      if (result.orphaned_document_ids === 0) {
+        toast.success("Aucun vecteur orphelin trouvé, tout est propre !");
+      } else {
+        toast.success(
+          `${result.vectors_deleted} vecteurs supprimés (${result.orphaned_document_ids} documents orphelins). ${result.total_vectors_before} → ${result.total_vectors_after} vecteurs.`
+        );
+      }
+      fetchCollections();
+      fetchPoints();
+    } catch {
+      toast.error("Erreur lors du nettoyage");
+    } finally {
+      setCleaning(false);
+    }
+  };
+
   const totalPages = Math.ceil(total / PAGE_SIZE);
   const currentPage = Math.floor(offset / PAGE_SIZE) + 1;
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-semibold tracking-tight">Qdrant — Index vectoriel</h1>
+      <div className="flex items-center justify-between">
+        <h1 className="text-2xl font-semibold tracking-tight">Qdrant — Index vectoriel</h1>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={handleCleanup}
+          disabled={cleaning}
+        >
+          <Trash2 className="mr-2 h-4 w-4" />
+          {cleaning ? "Nettoyage..." : "Nettoyer les orphelins"}
+        </Button>
+      </div>
 
       {/* Collections cards */}
       <div className="grid gap-4 md:grid-cols-3">
