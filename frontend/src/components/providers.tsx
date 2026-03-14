@@ -7,7 +7,7 @@ import { SessionGuard } from "@/components/session-guard";
 
 export function Providers({ children }: { children: React.ReactNode }) {
   return (
-    <SessionProvider refetchInterval={14 * 60}>
+    <SessionProvider refetchInterval={5 * 60} refetchOnWindowFocus>
       <SessionGuard>
         <OrgProvider>
           <TooltipProvider>{children}</TooltipProvider>

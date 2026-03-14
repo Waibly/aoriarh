@@ -1,4 +1,4 @@
-import { signOut } from "next-auth/react";
+import { getSession, signOut } from "next-auth/react";
 
 export const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
@@ -7,11 +7,45 @@ type FetchOptions = RequestInit & {
   token?: string;
 };
 
-function handle401(response: Response): void {
-  if (response.status === 401) {
-    signOut({ callbackUrl: "/login" });
-    throw new Error("Session expirée");
+let isRefreshing = false;
+
+/**
+ * On 401, try refreshing the NextAuth session (which triggers the JWT callback
+ * and calls /auth/refresh on the backend). If refresh succeeds, retry the
+ * original request with the new token. If it fails, sign out.
+ */
+async function handleUnauthorized(
+  path: string,
+  options: FetchOptions,
+  buildHeaders: (token?: string) => HeadersInit,
+): Promise<Response | null> {
+  // Avoid concurrent refresh attempts
+  if (isRefreshing) return null;
+  isRefreshing = true;
+
+  try {
+    // Force NextAuth to refresh the session (triggers jwt callback → refreshAccessToken)
+    const newSession = await getSession();
+    if (newSession?.access_token && !newSession.error) {
+      // Retry the original request with the refreshed token
+      const { headers: _, token: _t, ...rest } = options;
+      const retryResponse = await fetch(`${API_BASE_URL}${path}`, {
+        headers: buildHeaders(newSession.access_token),
+        ...rest,
+      });
+      if (retryResponse.status !== 401) {
+        return retryResponse;
+      }
+    }
+  } catch {
+    // Refresh failed
+  } finally {
+    isRefreshing = false;
   }
+
+  // Refresh failed or retry still 401 — sign out
+  signOut({ callbackUrl: "/login" });
+  throw new Error("Session expirée");
 }
 
 export async function apiFetch<T>(
@@ -20,16 +54,27 @@ export async function apiFetch<T>(
 ): Promise<T> {
   const { token, headers, ...rest } = options;
 
+  const buildHeaders = (t?: string): HeadersInit => ({
+    "Content-Type": "application/json",
+    ...(t ? { Authorization: `Bearer ${t}` } : {}),
+    ...headers,
+  });
+
   const response = await fetch(`${API_BASE_URL}${path}`, {
-    headers: {
-      "Content-Type": "application/json",
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...headers,
-    },
+    headers: buildHeaders(token),
     ...rest,
   });
 
-  handle401(response);
+  if (response.status === 401) {
+    const retryResponse = await handleUnauthorized(path, options, buildHeaders);
+    if (retryResponse) {
+      if (!retryResponse.ok) {
+        throw new Error(`API error: ${retryResponse.status} ${retryResponse.statusText}`);
+      }
+      if (retryResponse.status === 204) return undefined as T;
+      return retryResponse.json() as Promise<T>;
+    }
+  }
 
   if (!response.ok) {
     throw new Error(`API error: ${response.status} ${response.statusText}`);
@@ -52,15 +97,20 @@ export async function authFetch(
 ): Promise<Response> {
   const { token, headers, ...rest } = options;
 
+  const buildHeaders = (t?: string): HeadersInit => ({
+    ...(t ? { Authorization: `Bearer ${t}` } : {}),
+    ...headers,
+  });
+
   const response = await fetch(`${API_BASE_URL}${path}`, {
-    headers: {
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...headers,
-    },
+    headers: buildHeaders(token),
     ...rest,
   });
 
-  handle401(response);
+  if (response.status === 401) {
+    const retryResponse = await handleUnauthorized(path, options, buildHeaders);
+    if (retryResponse) return retryResponse;
+  }
 
   return response;
 }
