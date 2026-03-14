@@ -155,20 +155,36 @@ ou isolée (un seul arrêt).
 
 ## Complétude et confiance
 
-- Couvre tous les aspects pertinents de la question (conditions, procédure, \
+- Couvre les aspects pertinents de la question (conditions, procédure, \
 délais, indemnités, sanctions, recours) dans la limite des sources.
-- La réponse peut être courte ou longue selon le sujet — ce qui compte c'est \
-qu'elle soit COMPLÈTE. Ne tronque jamais une réponse.
+- La réponse directe (partie 1) doit TOUJOURS être courte et claire. \
+Les détails viennent ensuite (parties 2-4). Ne tronque jamais les détails.
 - Si les sources couvrent le sujet partiellement, précise les aspects manquants.
 - Si une source peut être obsolète (dispositif temporaire, seuils anciens), \
 signale-le avec prudence.
 
+## Structure de la réponse (PYRAMIDE INVERSÉE — OBLIGATOIRE)
+
+Suis TOUJOURS cette structure, dans cet ordre :
+
+### 1. RÉPONSE DIRECTE (1-3 phrases maximum)
+Commence IMMÉDIATEMENT par la réponse à l'intention de l'utilisateur. \
+Oui/Non, le montant, la durée, la règle applicable — sans préambule, sans \
+reformulation de la question, sans "je vais…".
+
+### 2. BASE JURIDIQUE (règle applicable et pourquoi)
+Explique quelle norme s'applique (loi, CCN, accord), cite la référence, et \
+si plusieurs normes entrent en jeu, explique laquelle prévaut et pourquoi.
+
+### 3. DÉTAILS ET CAS PRATIQUES (si pertinent)
+Conditions, exceptions, délais, seuils, procédure étape par étape, calculs.
+
+### 4. CONSÉQUENCES / RISQUES (si pertinent)
+Sanctions, contentieux, obligations pratiques pour l'employeur.
+
 ## Format
 
 - Markdown : ##/### pour structurer, **gras** pour les points clés, listes pour les étapes.
-- CONCIS : va droit au but. Pas de préambule, pas de reformulation de la question, \
-pas de commentaire sur ta méthode, pas de "règle d'intention", pas de "je vais…". \
-Commence DIRECTEMENT par la réponse.
 - Pas de conclusion proposant d'aller plus loin ("Si vous souhaitez…", "Je peux aussi…"). \
 L'utilisateur posera une autre question s'il en a besoin.
 - Ne cite PAS les sources (pas de "Source 1", "Voir source"). Elles sont affichées séparément.
@@ -197,6 +213,11 @@ reformule la question de suivi en une question autonome et complète.
 Règles :
 - La question autonome doit être compréhensible SANS l'historique.
 - Conserve les termes juridiques mentionnés dans l'historique.
+- CONSERVE SYSTÉMATIQUEMENT le nom de l'organisation, la convention collective \
+(CCN, IDCC) et tout contexte d'entreprise mentionné dans l'historique ou le \
+contexte organisation. Ces éléments sont essentiels pour la recherche documentaire.
+- Intègre les noms des sources déjà citées (documents, CCN, arrêts) dans la \
+reformulation pour que la recherche les retrouve.
 - Si la question introduit un nouveau sujet sans lien, retourne-la telle quelle.
 - Réponds UNIQUEMENT avec la question reformulée."""
 
@@ -285,12 +306,17 @@ class RAGAgent:
         organisation_id: str,
         org_context: dict[str, str | None] | None = None,
         history: list[dict[str, str]] | None = None,
+        cited_sources: list[str] | None = None,
     ) -> RAGResponse:
         # --- Step 0: Condensation (multi-turn) ---
         t0 = time.perf_counter()
         if history:
             query = await self._step_with_timeout(
-                self._condense_question(query, history),
+                self._condense_question(
+                    query, history,
+                    org_context=org_context,
+                    cited_sources=cited_sources,
+                ),
                 fallback=query,
             )
             logger.info(
@@ -373,6 +399,7 @@ class RAGAgent:
         organisation_id: str,
         org_context: dict[str, str | None] | None = None,
         history: list[dict[str, str]] | None = None,
+        cited_sources: list[str] | None = None,
         user_id: str | None = None,
         conversation_id: str | None = None,
     ) -> tuple[list[SearchResult], str]:
@@ -386,7 +413,11 @@ class RAGAgent:
         # Step 0: Condensation (multi-turn)
         if history:
             query = await self._step_with_timeout(
-                self._condense_question(query, history),
+                self._condense_question(
+                    query, history,
+                    org_context=org_context,
+                    cited_sources=cited_sources,
+                ),
                 fallback=query,
             )
             logger.info(
@@ -537,6 +568,8 @@ class RAGAgent:
         self,
         query: str,
         history: list[dict[str, str]],
+        org_context: dict[str, str | None] | None = None,
+        cited_sources: list[str] | None = None,
     ) -> str:
         """Step 0: Condense a follow-up question using conversation history."""
         recent = history[-CONDENSE_HISTORY_LIMIT:]
@@ -547,17 +580,31 @@ class RAGAgent:
             history_lines.append(f"{role_label}: {content}")
         history_text = "\n".join(history_lines)
 
+        # Build context block with org info and cited sources
+        context_parts: list[str] = []
+        if org_context:
+            org_info = []
+            if org_context.get("nom"):
+                org_info.append(f"Organisation : {org_context['nom']}")
+            if org_context.get("convention_collective"):
+                org_info.append(f"Convention collective : {org_context['convention_collective']}")
+            if org_context.get("secteur_activite"):
+                org_info.append(f"Secteur : {org_context['secteur_activite']}")
+            if org_info:
+                context_parts.append("Contexte organisation :\n" + "\n".join(org_info))
+        if cited_sources:
+            context_parts.append("Sources déjà citées : " + ", ".join(cited_sources))
+
+        user_content = f"Historique :\n{history_text}\n\n"
+        if context_parts:
+            user_content += "\n".join(context_parts) + "\n\n"
+        user_content += f"Question de suivi : {query}"
+
         response = await self.llm.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
                 {"role": "system", "content": _CONDENSE_PROMPT},
-                {
-                    "role": "user",
-                    "content": (
-                        f"Historique :\n{history_text}\n\n"
-                        f"Question de suivi : {query}"
-                    ),
-                },
+                {"role": "user", "content": user_content},
             ],
             temperature=0.0,
             max_tokens=300,

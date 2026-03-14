@@ -68,6 +68,7 @@ export default function QdrantPage() {
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
   // Filters
+  const [filterSearch, setFilterSearch] = useState("");
   const [filterOrgId, setFilterOrgId] = useState("");
   const [filterDocId, setFilterDocId] = useState("");
 
@@ -101,6 +102,7 @@ export default function QdrantPage() {
         offset: String(offset),
         limit: String(PAGE_SIZE),
       });
+      if (filterSearch) params.set("search", filterSearch);
       if (filterOrgId) params.set("organisation_id", filterOrgId);
       if (filterDocId) params.set("document_id", filterDocId);
 
@@ -115,7 +117,7 @@ export default function QdrantPage() {
     } finally {
       setLoadingPoints(false);
     }
-  }, [token, selectedCollection, offset, filterOrgId, filterDocId]);
+  }, [token, selectedCollection, offset, filterSearch, filterOrgId, filterDocId]);
 
   useEffect(() => {
     fetchCollections();
@@ -238,12 +240,25 @@ export default function QdrantPage() {
             <div className="flex flex-wrap items-end gap-3 pt-2">
               <div className="space-y-1">
                 <label className="text-xs text-muted-foreground">
+                  Recherche
+                </label>
+                <Input
+                  placeholder="Nom du document, type (ex : CCN, syntec...)"
+                  value={filterSearch}
+                  onChange={(e) => setFilterSearch(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && handleSearch()}
+                  className="h-8 w-72"
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs text-muted-foreground">
                   Organisation ID
                 </label>
                 <Input
                   placeholder="UUID ou common"
                   value={filterOrgId}
                   onChange={(e) => setFilterOrgId(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && handleSearch()}
                   className="h-8 w-64"
                 />
               </div>
@@ -255,6 +270,7 @@ export default function QdrantPage() {
                   placeholder="UUID du document"
                   value={filterDocId}
                   onChange={(e) => setFilterDocId(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && handleSearch()}
                   className="h-8 w-64"
                 />
               </div>
@@ -262,11 +278,12 @@ export default function QdrantPage() {
                 <Search className="mr-1 h-3 w-3" />
                 Filtrer
               </Button>
-              {(filterOrgId || filterDocId) && (
+              {(filterSearch || filterOrgId || filterDocId) && (
                 <Button
                   size="sm"
                   variant="ghost"
                   onClick={() => {
+                    setFilterSearch("");
                     setFilterOrgId("");
                     setFilterDocId("");
                     setOffset(0);

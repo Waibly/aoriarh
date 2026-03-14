@@ -264,6 +264,7 @@ export function Sidebar() {
 
   const fullName = session?.user?.full_name ?? "Utilisateur";
   const token = session?.access_token;
+  const { workspaceName } = useOrg();
 
   const [userPlan, setUserPlan] = useState<{ plan: string; plan_expires_at: string | null } | null>(null);
 
@@ -467,10 +468,13 @@ export function Sidebar() {
         {/* Spacer */}
         <div className="flex-1" />
 
-        {/* Plan */}
+        {/* Espace de travail + Plan */}
         {userPlan && (
           <div className="px-3 pb-2">
-            <div className="rounded-lg border p-3">
+            <div className="rounded-lg border p-3 space-y-2">
+              {workspaceName && (
+                <p className="text-xs font-semibold truncate">{workspaceName}</p>
+              )}
               <div className="flex items-center gap-2">
                 <div className={cn(
                   "flex h-8 w-8 items-center justify-center rounded-md",

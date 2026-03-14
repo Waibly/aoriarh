@@ -229,10 +229,19 @@ async def chat_stream(
     async def sse_generator():  # noqa: C901
         t_total = time.perf_counter()
         agent = RAGAgent()
+        recent_messages = conversation.messages[-6:]
         history = [
             {"role": m.role, "content": m.content}
-            for m in conversation.messages[-6:]
+            for m in recent_messages
         ]
+        # Extract source names from recent assistant messages for condensation
+        cited_sources: list[str] = []
+        for m in recent_messages:
+            if m.role == "assistant" and m.sources:
+                for src in m.sources:
+                    name = src.get("document_name") if isinstance(src, dict) else None
+                    if name and name not in cited_sources:
+                        cited_sources.append(name)
         try:
             # 3. Prepare context (steps 0-5: condensation, reformulation, search, rerank)
             results, reformulated = await agent.prepare_context(
@@ -240,6 +249,7 @@ async def chat_stream(
                 organisation_id=str(conversation.organisation_id),
                 org_context=org_context,
                 history=history if history else None,
+                cited_sources=cited_sources if cited_sources else None,
                 user_id=str(user.id),
                 conversation_id=str(conversation_id),
             )

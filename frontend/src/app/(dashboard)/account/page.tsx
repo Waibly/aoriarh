@@ -2,9 +2,10 @@
 
 import { useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
-import { Pencil, KeyRound } from "lucide-react";
+import { Pencil, KeyRound, Briefcase } from "lucide-react";
 import { toast } from "sonner";
 import { apiFetch } from "@/lib/api";
+import { useOrg } from "@/lib/org-context";
 import type { User } from "@/types/api";
 import { PROFIL_METIER_OPTIONS } from "@/types/api";
 import { Button } from "@/components/ui/button";
@@ -45,10 +46,12 @@ export default function AccountPage() {
   const { data: session, update: updateSession } = useSession();
   const token = session?.access_token;
 
+  const { workspaceName, setWorkspaceName } = useOrg();
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [editOpen, setEditOpen] = useState(false);
   const [passwordOpen, setPasswordOpen] = useState(false);
+  const [workspaceEditOpen, setWorkspaceEditOpen] = useState(false);
 
   useEffect(() => {
     if (!token) return;
@@ -137,6 +140,40 @@ export default function AccountPage() {
         </CardContent>
       </Card>
 
+      {/* Espace de travail — visible pour tous, éditable par manager/admin */}
+      {workspaceName && (
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between">
+            <div className="space-y-1.5">
+              <CardTitle className="flex items-center gap-2">
+                <Briefcase className="h-5 w-5" />
+                Espace de travail
+              </CardTitle>
+              <CardDescription>
+                Votre espace de travail regroupe toutes vos organisations et les
+                membres de votre équipe.
+              </CardDescription>
+            </div>
+            {(user.role === "manager" || user.role === "admin") && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setWorkspaceEditOpen(true)}
+              >
+                <Pencil className="mr-2 h-4 w-4" />
+                Renommer
+              </Button>
+            )}
+          </CardHeader>
+          <CardContent>
+            <div className="flex items-center gap-2">
+              <span className="w-32 text-sm text-muted-foreground">Nom</span>
+              <span className="text-sm font-medium">{workspaceName}</span>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {user.auth_provider === "credentials" && (
         <Card>
           <CardHeader className="flex flex-row items-center justify-between">
@@ -181,6 +218,17 @@ export default function AccountPage() {
         open={passwordOpen}
         onOpenChange={setPasswordOpen}
         token={token}
+      />
+
+      <RenameWorkspaceDialog
+        open={workspaceEditOpen}
+        onOpenChange={setWorkspaceEditOpen}
+        currentName={workspaceName ?? ""}
+        token={token}
+        onSaved={(newName) => {
+          setWorkspaceName(newName);
+          toast.success("Espace de travail renommé");
+        }}
       />
     </div>
   );
@@ -407,6 +455,87 @@ function ChangePasswordDialog({
               disabled={submitting || !currentPassword || !newPassword || !confirmPassword}
             >
               {submitting ? "Modification..." : "Modifier"}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/* ---- Rename Workspace Dialog ---- */
+
+interface RenameWorkspaceDialogProps {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  currentName: string;
+  token?: string;
+  onSaved: (newName: string) => void;
+}
+
+function RenameWorkspaceDialog({
+  open,
+  onOpenChange,
+  currentName,
+  token,
+  onSaved,
+}: RenameWorkspaceDialogProps) {
+  const [name, setName] = useState(currentName);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (open) {
+      setName(currentName);
+      setError(null);
+    }
+  }, [open, currentName]);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!name.trim()) return;
+    setSubmitting(true);
+    setError(null);
+    try {
+      const res = await apiFetch<{ name: string }>("/users/me/workspace", {
+        method: "PUT",
+        token,
+        body: JSON.stringify({ name: name.trim() }),
+      });
+      onSaved(res.name);
+      onOpenChange(false);
+    } catch {
+      setError("Erreur lors du renommage");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Renommer l&apos;espace de travail</DialogTitle>
+          <DialogDescription>
+            Ce nom est visible par tous les membres de votre équipe.
+          </DialogDescription>
+        </DialogHeader>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="workspace-name">Nom</Label>
+            <Input
+              id="workspace-name"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="Ex : Waibly, Mon cabinet RH"
+              required
+              autoFocus
+            />
+          </div>
+          {error && <p className="text-sm text-destructive">{error}</p>}
+          <DialogFooter>
+            <Button type="submit" disabled={submitting || !name.trim()}>
+              {submitting ? "Enregistrement..." : "Enregistrer"}
             </Button>
           </DialogFooter>
         </form>

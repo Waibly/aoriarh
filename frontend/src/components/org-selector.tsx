@@ -24,7 +24,7 @@ import type { Organisation } from "@/types/api";
 
 export function OrgSelector() {
   const { data: session } = useSession();
-  const { organisations, currentOrg, setCurrentOrgId, loading, refetchOrgs } =
+  const { organisations, currentOrg, setCurrentOrgId, loading, refetchOrgs, workspaceName } =
     useOrg();
   const [open, setOpen] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
@@ -64,7 +64,14 @@ export function OrgSelector() {
         <PopoverContent className="w-56 p-0" align="start">
           <Command>
             <CommandList>
-              <CommandGroup heading="Mes organisations">
+              {workspaceName && (
+                <div className="px-3 py-2 border-b">
+                  <p className="text-xs font-semibold text-muted-foreground truncate">
+                    {workspaceName}
+                  </p>
+                </div>
+              )}
+              <CommandGroup heading="Organisations">
                 {organisations.map((org) => (
                   <CommandItem
                     key={org.id}

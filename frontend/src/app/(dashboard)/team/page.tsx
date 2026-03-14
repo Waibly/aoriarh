@@ -44,10 +44,12 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { useOrg } from "@/lib/org-context";
 
 export default function TeamPage() {
   const { data: session } = useSession();
   const token = session?.access_token;
+  const { workspaceName } = useOrg();
 
   const [members, setMembers] = useState<AccountMember[]>([]);
   const [invitations, setInvitations] = useState<Invitation[]>([]);
@@ -130,12 +132,19 @@ export default function TeamPage() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-semibold tracking-tight">Équipe</h1>
+      <div>
+        <h1 className="text-2xl font-semibold tracking-tight">
+          Équipe{workspaceName ? ` — ${workspaceName}` : ""}
+        </h1>
+        <p className="text-sm text-muted-foreground mt-1">
+          Gérez les membres de votre espace de travail et leurs accès aux organisations.
+        </p>
+      </div>
 
       {/* Owner card */}
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Propriétaire du compte</CardTitle>
+          <CardTitle className="text-base">Propriétaire de l&apos;espace de travail</CardTitle>
         </CardHeader>
         <CardContent>
           <div className="flex items-center gap-4">
@@ -438,8 +447,8 @@ function InviteTeamDialog({
         <DialogHeader>
           <DialogTitle>Inviter un membre</DialogTitle>
           <DialogDescription>
-            Un email d&apos;invitation sera envoyé. Le membre aura accès aux
-            organisations sélectionnées.
+            Un email d&apos;invitation sera envoyé pour rejoindre votre espace
+            de travail. Le membre aura accès aux organisations sélectionnées.
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4">

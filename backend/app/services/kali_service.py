@@ -269,20 +269,15 @@ class KaliService:
             from app.services.storage_service import StorageService
             storage = StorageService()
 
-            # Group articles into document chunks (1 document per ~50 articles for efficiency)
-            chunk_size = 50
-            for i in range(0, len(all_articles), chunk_size):
-                batch = all_articles[i:i + chunk_size]
-                text_content = self._format_articles_as_markdown(batch, ccn_ref)
-                doc = await self._create_document(
-                    db, org_conv, ccn_ref, text_content,
-                    batch_index=i // chunk_size,
-                    batch_count=len(batch),
-                    user_id=user_id,
-                    storage=storage,
-                )
-                await enqueue_ingestion(str(doc.id))
-                result.documents_created += 1
+            # Create a single document with all articles
+            text_content = self._format_articles_as_markdown(all_articles, ccn_ref)
+            doc = await self._create_document(
+                db, org_conv, ccn_ref, text_content,
+                user_id=user_id,
+                storage=storage,
+            )
+            await enqueue_ingestion(str(doc.id))
+            result.documents_created = 1
 
             # Step 4: Mark as ready
             org_conv.status = "ready"
@@ -451,19 +446,15 @@ class KaliService:
         org_conv: OrganisationConvention,
         ccn_ref: CcnReference,
         text_content: str,
-        batch_index: int,
-        batch_count: int,
         user_id: uuid.UUID,
         storage,
     ) -> Document:
-        """Create a Document record from extracted CCN articles."""
+        """Create a single Document record from all extracted CCN articles."""
         source_type = "convention_collective_nationale"
         hierarchy = DOCUMENT_TYPE_HIERARCHY[source_type]
 
         titre = ccn_ref.titre_court or ccn_ref.titre
         name = f"CCN {titre} (IDCC {ccn_ref.idcc})"
-        if batch_index > 0:
-            name += f" — partie {batch_index + 1}"
 
         file_id = uuid.uuid4()
         storage_path = (

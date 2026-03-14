@@ -7,6 +7,8 @@ export interface User {
   created_at: string;
   auth_provider: "credentials" | "google";
   profil_metier: string | null;
+  workspace_name: string | null;
+  workspace_id: string | null;
 }
 
 export const PROFIL_METIER_OPTIONS = [

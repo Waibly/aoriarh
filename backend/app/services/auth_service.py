@@ -44,7 +44,7 @@ class AuthService:
         await self.db.flush()
 
         account = Account(
-            name=f"Compte de {user.full_name}",
+            name=data.workspace_name or f"Espace de {user.full_name}",
             owner_id=user.id,
         )
         self.db.add(account)
@@ -91,7 +91,7 @@ class AuthService:
         await self.db.flush()
 
         account = Account(
-            name=f"Compte de {user.full_name}",
+            name=f"Espace de {user.full_name}",
             owner_id=user.id,
         )
         self.db.add(account)

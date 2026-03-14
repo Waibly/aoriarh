@@ -52,7 +52,7 @@ import { OrgFormDialog } from "@/components/org-form-dialog";
 
 export default function OrganisationPage() {
   const { data: session } = useSession();
-  const { currentOrg, refetchOrgs } = useOrg();
+  const { currentOrg, refetchOrgs, workspaceName } = useOrg();
   const token = session?.access_token;
   const router = useRouter();
 
@@ -202,6 +202,9 @@ export default function OrganisationPage() {
           <div className="space-y-1.5">
             <CardTitle>{currentOrg.name}</CardTitle>
             <CardDescription>
+              {workspaceName && (
+                <>Espace de travail <strong>{workspaceName}</strong> &middot; </>
+              )}
               Créée le{" "}
               {new Date(currentOrg.created_at).toLocaleDateString("fr-FR")}
             </CardDescription>

@@ -35,6 +35,8 @@ class UserRead(BaseModel):
     profil_metier: str | None = None
     plan: str | None = None
     plan_expires_at: datetime | None = None
+    workspace_name: str | None = None
+    workspace_id: uuid.UUID | None = None
 
 
 class UserUpdate(BaseModel):

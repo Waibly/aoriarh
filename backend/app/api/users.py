@@ -38,6 +38,22 @@ async def get_me(
         plan = user.owned_account.plan
         plan_expires_at = user.owned_account.plan_expires_at
 
+    # Resolve workspace name
+    workspace_name = None
+    workspace_id = None
+    if user.owned_account:
+        workspace_name = user.owned_account.name
+        workspace_id = user.owned_account.id
+    elif user.account_memberships:
+        team_account_id = user.account_memberships[0].account_id
+        result2 = await db.execute(
+            select(Account).where(Account.id == team_account_id)
+        )
+        team_acc = result2.scalar_one_or_none()
+        if team_acc:
+            workspace_name = team_acc.name
+            workspace_id = team_acc.id
+
     return UserRead(
         id=user.id,
         email=user.email,
@@ -49,6 +65,8 @@ async def get_me(
         profil_metier=user.profil_metier,
         plan=plan,
         plan_expires_at=plan_expires_at,
+        workspace_name=workspace_name,
+        workspace_id=workspace_id,
     )
 
 
@@ -71,6 +89,23 @@ async def change_password(
     service = UserService(db)
     await service.change_password(user, data)
     return {"detail": "Mot de passe modifié"}
+
+
+class WorkspaceRename(BaseModel):
+    name: str
+
+
+@router.put("/me/workspace")
+async def rename_workspace(
+    data: WorkspaceRename,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    if not user.owned_account:
+        raise HTTPException(status_code=403, detail="Vous n'êtes pas propriétaire d'un espace de travail")
+    user.owned_account.name = data.name.strip()
+    await db.commit()
+    return {"detail": "Espace de travail renommé", "name": user.owned_account.name}
 
 
 class DeleteAccountConfirmation(BaseModel):

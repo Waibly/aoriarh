@@ -2,12 +2,13 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSession } from "next-auth/react";
-import { Check, ChevronDown, ChevronsUpDown, Download, FileUp, Loader2, RefreshCw, Replace, Search, Trash2, Upload, X } from "lucide-react";
+import { Check, CheckCircle2, ChevronDown, ChevronsUpDown, Download, FileUp, Loader2, Plus, RefreshCw, Replace, Scale, Search, Trash2, Upload, X } from "lucide-react";
 import { toast } from "sonner";
 import { useOrg } from "@/lib/org-context";
 import { apiFetch, authFetch } from "@/lib/api";
-import type { Document } from "@/types/api";
+import type { Document, OrganisationConvention, CcnReference } from "@/types/api";
 import { SOURCE_TYPE_OPTIONS, NORME_POIDS } from "@/types/api";
+import { CcnSelector } from "@/components/ccn-selector";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -143,11 +144,15 @@ export default function DocumentsPage() {
   const token = session?.access_token;
 
   const [documents, setDocuments] = useState<Document[]>([]);
+  const [conventions, setConventions] = useState<OrganisationConvention[]>([]);
   const [loading, setLoading] = useState(false);
   const [uploadOpen, setUploadOpen] = useState(false);
   const [isManager, setIsManager] = useState(false);
   const [dragging, setDragging] = useState(false);
   const [search, setSearch] = useState("");
+  const [addCcnOpen, setAddCcnOpen] = useState(false);
+  const [selectedNewCcn, setSelectedNewCcn] = useState<CcnReference[]>([]);
+  const [installingCcn, setInstallingCcn] = useState(false);
 
   const initialLoadDone = useRef(false);
 
@@ -155,11 +160,15 @@ export default function DocumentsPage() {
     if (!currentOrg || !token) return;
     if (!initialLoadDone.current) setLoading(true);
     try {
-      const docs = await apiFetch<Document[]>(
-        `/documents/${currentOrg.id}/`,
-        { token }
-      );
+      const [docs, ccns] = await Promise.all([
+        apiFetch<Document[]>(`/documents/${currentOrg.id}/`, { token }),
+        apiFetch<OrganisationConvention[]>(
+          `/conventions/organisations/${currentOrg.id}`,
+          { token }
+        ).catch(() => [] as OrganisationConvention[]),
+      ]);
       setDocuments(docs);
+      setConventions(ccns);
       initialLoadDone.current = true;
     } catch {
       toast.error("Erreur lors du chargement des documents");
@@ -173,17 +182,20 @@ export default function DocumentsPage() {
     fetchDocuments();
   }, [fetchDocuments]);
 
-  // Polling : rafraîchir tant qu'un document est en cours de traitement
+  // Polling : rafraîchir tant qu'un document ou une CCN est en cours de traitement
   useEffect(() => {
-    const hasPending = documents.some(
+    const hasPendingDocs = documents.some(
       (d) => d.indexation_status === "pending" || d.indexation_status === "indexing"
     );
-    if (!hasPending) return;
+    const hasPendingCcn = conventions.some(
+      (c) => c.status === "pending" || c.status === "fetching" || c.status === "indexing"
+    );
+    if (!hasPendingDocs && !hasPendingCcn) return;
     const interval = setInterval(() => {
       fetchDocuments();
     }, 5000);
     return () => clearInterval(interval);
-  }, [documents, fetchDocuments]);
+  }, [documents, conventions, fetchDocuments]);
 
   useEffect(() => {
     setIsManager(
@@ -260,6 +272,62 @@ export default function DocumentsPage() {
       toast.error(
         err instanceof Error ? err.message : "Erreur lors du remplacement"
       );
+    }
+  };
+
+  /* ---- CCN actions ---- */
+
+  const handleInstallCcn = async () => {
+    if (!currentOrg || !token || selectedNewCcn.length === 0) return;
+    setInstallingCcn(true);
+    try {
+      for (const ccn of selectedNewCcn) {
+        await apiFetch(`/conventions/organisations/${currentOrg.id}`, {
+          method: "POST",
+          token,
+          body: JSON.stringify({ idcc: ccn.idcc }),
+        });
+      }
+      toast.success(
+        selectedNewCcn.length === 1
+          ? "Convention en cours d'installation"
+          : `${selectedNewCcn.length} conventions en cours d'installation`
+      );
+      setSelectedNewCcn([]);
+      setAddCcnOpen(false);
+      fetchDocuments();
+    } catch {
+      toast.error("Erreur lors de l'installation");
+    } finally {
+      setInstallingCcn(false);
+    }
+  };
+
+  const handleSyncCcn = async (idcc: string) => {
+    if (!currentOrg || !token) return;
+    try {
+      await apiFetch(`/conventions/organisations/${currentOrg.id}/${idcc}/sync`, {
+        method: "POST",
+        token,
+      });
+      toast.success("Mise à jour lancée");
+      fetchDocuments();
+    } catch {
+      toast.error("Erreur lors de la mise à jour");
+    }
+  };
+
+  const handleRemoveCcn = async (idcc: string) => {
+    if (!currentOrg || !token) return;
+    try {
+      await apiFetch(`/conventions/organisations/${currentOrg.id}/${idcc}`, {
+        method: "DELETE",
+        token,
+      });
+      toast.success("Convention retirée");
+      fetchDocuments();
+    } catch {
+      toast.error("Erreur lors de la suppression");
     }
   };
 
@@ -343,6 +411,133 @@ export default function DocumentsPage() {
           </p>
         </div>
       )}
+
+      {/* Conventions collectives — checklist */}
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between">
+          <div className="space-y-1.5">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Scale className="h-5 w-5" />
+              Conventions collectives
+            </CardTitle>
+            <CardDescription>
+              {conventions.length === 0
+                ? "Aucune convention installée pour cette organisation"
+                : `${conventions.length} convention${conventions.length > 1 ? "s" : ""} installée${conventions.length > 1 ? "s" : ""}`}
+            </CardDescription>
+          </div>
+          {isManager && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setAddCcnOpen(!addCcnOpen)}
+            >
+              <Plus className="mr-2 h-4 w-4" />
+              Ajouter une convention collective
+            </Button>
+          )}
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {/* Add CCN form */}
+          {addCcnOpen && isManager && token && (
+            <div className="rounded-lg border border-border bg-muted/30 p-4 space-y-3">
+              <CcnSelector
+                token={token}
+                selected={selectedNewCcn}
+                onChange={setSelectedNewCcn}
+              />
+              <div className="flex justify-end gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    setAddCcnOpen(false);
+                    setSelectedNewCcn([]);
+                  }}
+                >
+                  Annuler
+                </Button>
+                <Button
+                  size="sm"
+                  disabled={selectedNewCcn.length === 0 || installingCcn}
+                  onClick={handleInstallCcn}
+                >
+                  {installingCcn ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Installation...
+                    </>
+                  ) : (
+                    "Installer"
+                  )}
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {/* Convention list */}
+          {conventions.length > 0 && (
+            <div className="space-y-2">
+              {conventions.map((c) => (
+                <div
+                  key={c.id}
+                  className="flex items-center gap-3 rounded-lg border border-border p-3"
+                >
+                  {/* Status icon */}
+                  {c.status === "ready" && (
+                    <CheckCircle2 className="h-5 w-5 text-green-600 dark:text-green-400 shrink-0" />
+                  )}
+                  {(c.status === "pending" || c.status === "fetching" || c.status === "indexing") && (
+                    <Loader2 className="h-5 w-5 animate-spin text-blue-600 dark:text-blue-400 shrink-0" />
+                  )}
+                  {c.status === "error" && (
+                    <X className="h-5 w-5 text-destructive shrink-0" />
+                  )}
+
+                  {/* Content */}
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium truncate">
+                      {c.titre_court || c.titre || `IDCC ${c.idcc}`}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      IDCC {c.idcc}
+                      {c.status === "ready" && c.articles_count != null && ` — ${c.articles_count} articles`}
+                      {c.status === "pending" && " — En attente"}
+                      {c.status === "fetching" && " — Téléchargement en cours"}
+                      {c.status === "indexing" && " — Indexation en cours"}
+                      {c.status === "error" && " — Erreur"}
+                    </p>
+                  </div>
+
+                  {/* Actions */}
+                  {isManager && c.status !== "fetching" && c.status !== "indexing" && c.status !== "pending" && (
+                    <div className="flex items-center gap-1 shrink-0">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8"
+                        title="Mettre à jour"
+                        onClick={() => handleSyncCcn(c.idcc)}
+                      >
+                        <RefreshCw className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 text-destructive hover:text-destructive"
+                        title="Retirer"
+                        onClick={() => handleRemoveCcn(c.idcc)}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">

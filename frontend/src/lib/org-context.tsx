@@ -17,6 +17,8 @@ interface OrgContextValue {
   setCurrentOrgId: (id: string) => void;
   loading: boolean;
   refetchOrgs: () => Promise<void>;
+  workspaceName: string | null;
+  setWorkspaceName: (name: string) => void;
 }
 
 const OrgContext = createContext<OrgContextValue>({
@@ -25,6 +27,8 @@ const OrgContext = createContext<OrgContextValue>({
   setCurrentOrgId: () => {},
   loading: true,
   refetchOrgs: async () => {},
+  workspaceName: null,
+  setWorkspaceName: () => {},
 });
 
 const STORAGE_KEY = "aoriarh_current_org_id";
@@ -34,6 +38,7 @@ export function OrgProvider({ children }: { children: React.ReactNode }) {
   const [organisations, setOrganisations] = useState<Organisation[]>([]);
   const [currentOrgId, setCurrentOrgIdState] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [workspaceName, setWorkspaceNameState] = useState<string | null>(null);
 
   const token = session?.access_token;
 
@@ -45,6 +50,11 @@ export function OrgProvider({ children }: { children: React.ReactNode }) {
     }
     setLoading(true);
     try {
+      // Fetch workspace name alongside orgs
+      apiFetch<{ workspace_name: string | null }>("/users/me", { token })
+        .then((data) => setWorkspaceNameState(data.workspace_name))
+        .catch(() => {});
+
       const orgs = await apiFetch<Organisation[]>("/organisations/", { token });
       setOrganisations(orgs);
 
@@ -87,6 +97,8 @@ export function OrgProvider({ children }: { children: React.ReactNode }) {
         setCurrentOrgId,
         loading,
         refetchOrgs: fetchOrgs,
+        workspaceName,
+        setWorkspaceName: setWorkspaceNameState,
       }}
     >
       {children}

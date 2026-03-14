@@ -163,7 +163,7 @@ export default function AcceptInvitationPage() {
 
   if (pageState === "accepted") {
     const displayName = invitation?.account_name
-      ? `l'équipe ${invitation.account_name}`
+      ? `l'espace de travail ${invitation.account_name}`
       : invitation?.organisation_name;
     return (
       <Card>
@@ -205,10 +205,10 @@ export default function AcceptInvitationPage() {
   // pageState === "needsAuth" and user is NOT logged in
   if (!isLoggedIn) {
     const joinLabel = invitation?.account_name
-      ? `Rejoindre l'équipe ${invitation.account_name}`
+      ? `Rejoindre l'espace de travail ${invitation.account_name}`
       : `Rejoindre ${invitation?.organisation_name}`;
     const joinDescription = invitation?.account_name
-      ? "Vous avez été invité(e) à rejoindre cette équipe sur AORIA RH."
+      ? "Vous avez été invité(e) à rejoindre cet espace de travail sur AORIA RH."
       : "Vous avez été invité(e) à rejoindre cette organisation sur AORIA RH.";
     return (
       <Card>

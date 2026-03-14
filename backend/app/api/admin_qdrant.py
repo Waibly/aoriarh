@@ -67,9 +67,11 @@ async def list_points(
     limit: int = Query(20, ge=1, le=100),
     organisation_id: str | None = Query(None),
     document_id: str | None = Query(None),
+    search: str | None = Query(None, description="Recherche textuelle sur doc_name ou source_type"),
     user: User = Depends(require_role(["admin"])),
+    db: AsyncSession = Depends(get_db),
 ) -> PointsResponse:
-    from qdrant_client.models import FieldCondition, Filter, MatchValue
+    from qdrant_client.models import FieldCondition, Filter, MatchAny, MatchValue
 
     client = get_qdrant_client()
 
@@ -82,6 +84,21 @@ async def list_points(
     if document_id:
         must_conditions.append(
             FieldCondition(key="document_id", match=MatchValue(value=document_id))
+        )
+
+    # Text search: find matching document IDs from PostgreSQL, then filter Qdrant
+    if search and search.strip():
+        q = f"%{search.strip()}%"
+        result = await db.execute(
+            select(Document.id).where(
+                Document.name.ilike(q) | Document.source_type.ilike(q)
+            )
+        )
+        matching_doc_ids = [str(row[0]) for row in result.all()]
+        if not matching_doc_ids:
+            return PointsResponse(points=[], total=0, offset=offset, limit=limit)
+        must_conditions.append(
+            FieldCondition(key="document_id", match=MatchAny(any=matching_doc_ids))
         )
 
     scroll_filter = Filter(must=must_conditions) if must_conditions else None
