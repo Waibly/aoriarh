@@ -99,3 +99,13 @@ async def trigger_scheduled_sync(
     from app.rag.tasks import enqueue_scheduled_sync
     await enqueue_scheduled_sync()
     return {"detail": "Synchronisation planifiée lancée"}
+
+
+@router.post("/code-travail")
+async def trigger_code_travail_sync(
+    user: User = Depends(require_role(["admin"])),
+) -> dict:
+    """Manually trigger Code du travail sync from Légifrance API."""
+    from app.rag.tasks import enqueue_code_travail_sync
+    await enqueue_code_travail_sync(str(user.id))
+    return {"detail": "Synchronisation du Code du travail lancée"}

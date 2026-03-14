@@ -120,6 +120,26 @@ async def run_kali_install(ctx: dict, org_convention_id: str, user_id: str) -> N
         logger.exception("Worker: KALI install failed for %s", org_convention_id)
 
 
+async def run_code_travail_sync(ctx: dict, user_id: str) -> None:
+    """Tâche de synchronisation du Code du travail."""
+    logger.info("Worker: Code du travail sync started")
+    session_factory = ctx["session_factory"]
+    try:
+        from app.services.legi_service import LegiService
+
+        service = LegiService()
+        async with session_factory() as db:
+            result = await service.sync_code_travail(db, uuid.UUID(user_id))
+        logger.info(
+            "Worker: Code du travail sync completed — %d législatifs, %d réglementaires, "
+            "changed=%s/%s, %d errors",
+            result.articles_legislatif, result.articles_reglementaire,
+            result.legislatif_changed, result.reglementaire_changed, result.errors,
+        )
+    except Exception:
+        logger.exception("Worker: Code du travail sync failed")
+
+
 async def run_scheduled_sync(ctx: dict) -> None:
     """Tâche planifiée bimensuelle : sync jurisprudence + rotation CCN."""
     import time as _time
@@ -288,6 +308,7 @@ class WorkerSettings:
         run_judilibre_sync,
         run_kali_install,
         run_ccn_blue_green_cleanup,
+        run_code_travail_sync,
         run_scheduled_sync,
     ]
     # Cron: 1st and 15th of each month at 3:00 AM UTC

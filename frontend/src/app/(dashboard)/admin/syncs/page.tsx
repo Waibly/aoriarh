@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
-import { RefreshCw, Play, CheckCircle2, XCircle, MinusCircle, Clock } from "lucide-react";
+import { RefreshCw, Play, CheckCircle2, XCircle, MinusCircle, Clock, BookOpen } from "lucide-react";
 import { toast } from "sonner";
 import { apiFetch } from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -95,6 +95,7 @@ export default function SyncsPage() {
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [triggering, setTriggering] = useState(false);
+  const [triggeringCdt, setTriggeringCdt] = useState(false);
   const [filter, setFilter] = useState<string | null>(null);
   const [page, setPage] = useState(1);
 
@@ -120,6 +121,20 @@ export default function SyncsPage() {
   useEffect(() => {
     fetchLogs();
   }, [fetchLogs]);
+
+  const handleTriggerCodeTravail = async () => {
+    if (!token) return;
+    setTriggeringCdt(true);
+    try {
+      await apiFetch("/admin/syncs/code-travail", { method: "POST", token });
+      toast.success("Synchronisation du Code du travail lancée");
+      setTimeout(fetchLogs, 3000);
+    } catch {
+      toast.error("Erreur lors du déclenchement");
+    } finally {
+      setTriggeringCdt(false);
+    }
+  };
 
   const handleTrigger = async () => {
     if (!token) return;
@@ -147,14 +162,25 @@ export default function SyncsPage() {
             Jurisprudence et conventions collectives — sync automatique le 1er et 15 de chaque mois à 3h.
           </p>
         </div>
-        <Button
-          size="sm"
-          onClick={handleTrigger}
-          disabled={triggering}
-        >
-          <Play className="mr-2 h-4 w-4" />
-          {triggering ? "Lancement..." : "Lancer maintenant"}
-        </Button>
+        <div className="flex gap-2">
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={handleTriggerCodeTravail}
+            disabled={triggeringCdt}
+          >
+            <BookOpen className="mr-2 h-4 w-4" />
+            {triggeringCdt ? "Synchronisation..." : "Code du travail"}
+          </Button>
+          <Button
+            size="sm"
+            onClick={handleTrigger}
+            disabled={triggering}
+          >
+            <Play className="mr-2 h-4 w-4" />
+            {triggering ? "Lancement..." : "Sync complète"}
+          </Button>
+        </div>
       </div>
 
       {/* Filters */}

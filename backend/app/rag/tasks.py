@@ -50,6 +50,17 @@ async def enqueue_kali_install(org_convention_id: str, user_id: str) -> None:
     logger.info("KALI install job enqueued for org_convention %s", org_convention_id)
 
 
+async def enqueue_code_travail_sync(user_id: str) -> None:
+    """Enqueue a Code du travail sync job."""
+    pool = await get_arq_pool()
+    await pool.enqueue_job(
+        "run_code_travail_sync",
+        user_id,
+        _job_id="code_travail_sync",
+    )
+    logger.info("Code du travail sync job enqueued")
+
+
 async def enqueue_scheduled_sync() -> None:
     """Enqueue the bi-monthly scheduled sync (jurisprudence + CCN rotation)."""
     pool = await get_arq_pool()
