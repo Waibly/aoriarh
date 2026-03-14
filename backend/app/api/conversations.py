@@ -138,6 +138,8 @@ async def chat(
         organisation_id=str(conversation.organisation_id),
         org_context=org_context,
         history=history if history else None,
+        user_id=str(user.id),
+        conversation_id=str(conversation_id),
     )
 
     # 4. If RAG failed, return 503 — nothing in DB
@@ -238,6 +240,8 @@ async def chat_stream(
                 organisation_id=str(conversation.organisation_id),
                 org_context=org_context,
                 history=history if history else None,
+                user_id=str(user.id),
+                conversation_id=str(conversation_id),
             )
 
             if not results:

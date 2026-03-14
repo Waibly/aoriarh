@@ -18,6 +18,7 @@ from app.core.config import settings
 from app.models.document import Document
 from app.rag.chunker import LegalChunker
 from app.rag.config import EMBEDDING_MODEL
+from app.services.cost_tracker import cost_tracker
 from app.rag.jurisprudence_chunker import JurisprudenceChunker
 from app.rag.norme_hierarchy import JURISPRUDENCE_SOURCE_TYPES
 from app.rag.qdrant_store import COLLECTION_NAME, ensure_collection, get_qdrant_client
@@ -37,6 +38,8 @@ async def _get_embeddings_batch(
     texts: list[str],
     api_key: str,
     client: httpx.AsyncClient,
+    organisation_id: str | None = None,
+    document_id: str | None = None,
 ) -> list[list[float]]:
     """Get dense embeddings for a single batch (max 128 texts) with retry on 429."""
     url = "https://api.voyageai.com/v1/embeddings"
@@ -71,18 +74,42 @@ async def _get_embeddings_batch(
             )
         response.raise_for_status()
         data = response.json()
+        # Log embedding cost for ingestion
+        usage = data.get("usage", {})
+        total_tokens = usage.get("total_tokens", 0)
+        if total_tokens:
+            await cost_tracker.log(
+                provider="voyageai",
+                model=EMBEDDING_MODEL,
+                operation_type="embedding",
+                tokens_input=total_tokens,
+                organisation_id=organisation_id,
+                context_type="ingestion",
+                context_id=document_id,
+            )
         return [item["embedding"] for item in data["data"]]
 
     raise RuntimeError("Voyage AI: max retries exceeded")
 
 
-async def _get_embeddings(texts: list[str], api_key: str) -> list[list[float]]:
+async def _get_embeddings(
+    texts: list[str],
+    api_key: str,
+    organisation_id: str | None = None,
+    document_id: str | None = None,
+) -> list[list[float]]:
     """Get dense embeddings with automatic batching."""
     all_embeddings: list[list[float]] = []
     async with httpx.AsyncClient() as client:
         for i in range(0, len(texts), EMBEDDING_BATCH_SIZE):
             batch = texts[i : i + EMBEDDING_BATCH_SIZE]
-            all_embeddings.extend(await _get_embeddings_batch(batch, api_key, client))
+            all_embeddings.extend(
+                await _get_embeddings_batch(
+                    batch, api_key, client,
+                    organisation_id=organisation_id,
+                    document_id=document_id,
+                )
+            )
     return all_embeddings
 
 
@@ -102,6 +129,9 @@ async def _get_embeddings_with_progress(
     db_lock = asyncio.Lock()
     done_count = 0
 
+    org_id_str = str(doc.organisation_id) if doc.organisation_id else None
+    doc_id_str = str(doc.id)
+
     async def _process_batch(
         batch_idx: int, client: httpx.AsyncClient
     ) -> None:
@@ -109,7 +139,11 @@ async def _get_embeddings_with_progress(
         start = batch_idx * EMBEDDING_BATCH_SIZE
         batch = texts[start : start + EMBEDDING_BATCH_SIZE]
         async with semaphore:
-            results[batch_idx] = await _get_embeddings_batch(batch, api_key, client)
+            results[batch_idx] = await _get_embeddings_batch(
+                batch, api_key, client,
+                organisation_id=org_id_str,
+                document_id=doc_id_str,
+            )
         async with db_lock:
             done_count += 1
             # Update progress: 15% → 80% proportional to batches done

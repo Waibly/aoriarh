@@ -25,6 +25,7 @@ import {
   Crown,
   Gift,
   UserCheck,
+  DollarSign,
 } from "lucide-react";
 import { apiFetch } from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -437,6 +438,21 @@ export function Sidebar() {
                   <Link href="/admin/qdrant">
                     <Database className="mr-2 h-5 w-5" />
                     Index Qdrant
+                  </Link>
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className={cn(
+                    "w-full justify-start font-normal",
+                    pathname.startsWith("/admin/costs") &&
+                      "bg-accent text-accent-foreground font-medium",
+                  )}
+                  asChild
+                >
+                  <Link href="/admin/costs">
+                    <DollarSign className="mr-2 h-5 w-5" />
+                    Suivi des coûts
                   </Link>
                 </Button>
               </CollapsibleContent>

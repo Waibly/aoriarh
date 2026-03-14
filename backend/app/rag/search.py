@@ -17,6 +17,7 @@ from qdrant_client.models import (
 from app.core.config import settings
 from app.rag.config import EMBEDDING_MODEL, TOP_K
 from app.rag.qdrant_store import COLLECTION_NAME, get_qdrant_client
+from app.services.cost_tracker import cost_tracker
 
 logger = logging.getLogger(__name__)
 
@@ -71,6 +72,20 @@ class HybridSearch:
 
     def __init__(self) -> None:
         self.qdrant = get_qdrant_client()
+        # Cost tracking context — set externally by RAGAgent
+        self._cost_org_id: str | None = None
+        self._cost_user_id: str | None = None
+        self._cost_context_id: str | None = None
+
+    def set_cost_context(
+        self,
+        organisation_id: str | None = None,
+        user_id: str | None = None,
+        context_id: str | None = None,
+    ) -> None:
+        self._cost_org_id = organisation_id
+        self._cost_user_id = user_id
+        self._cost_context_id = context_id
 
     async def search(
         self,
@@ -194,6 +209,20 @@ class HybridSearch:
                         continue
                     response.raise_for_status()
                     data = response.json()
+                    # Log embedding cost
+                    usage = data.get("usage", {})
+                    total_tokens = usage.get("total_tokens", 0)
+                    if total_tokens:
+                        await cost_tracker.log(
+                            provider="voyageai",
+                            model=EMBEDDING_MODEL,
+                            operation_type="embedding",
+                            tokens_input=total_tokens,
+                            organisation_id=self._cost_org_id,
+                            user_id=self._cost_user_id,
+                            context_type="question",
+                            context_id=self._cost_context_id,
+                        )
                     logger.info(
                         "[PERF]   ├─ Dense embedding (Voyage AI) %.0fms (attempt %d)",
                         (time.perf_counter() - t_start) * 1000, attempt + 1,

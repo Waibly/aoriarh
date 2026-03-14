@@ -21,6 +21,7 @@ from app.rag.config import (
 from app.rag.norme_hierarchy import DOCUMENT_TYPE_HIERARCHY
 from app.rag.reranker import get_reranker
 from app.rag.search import HybridSearch, SearchResult
+from app.services.cost_tracker import cost_tracker
 
 logger = logging.getLogger(__name__)
 
@@ -207,6 +208,23 @@ class RAGAgent:
         self.search_engine = _search_engine
         self.llm = _llm
         self.reranker = get_reranker()
+        # Cost tracking context — set by run()/prepare_context()
+        self._org_id: str | None = None
+        self._user_id: str | None = None
+        self._conversation_id: str | None = None
+
+    def _propagate_cost_context(self) -> None:
+        """Push cost tracking context to search engine and reranker."""
+        self.search_engine.set_cost_context(
+            organisation_id=self._org_id,
+            user_id=self._user_id,
+            context_id=self._conversation_id,
+        )
+        self.reranker.set_cost_context(
+            organisation_id=self._org_id,
+            user_id=self._user_id,
+            context_id=self._conversation_id,
+        )
 
     async def run(
         self,
@@ -214,8 +232,14 @@ class RAGAgent:
         organisation_id: str,
         org_context: dict[str, str | None] | None = None,
         history: list[dict[str, str]] | None = None,
+        user_id: str | None = None,
+        conversation_id: str | None = None,
     ) -> RAGResponse:
         """Execute the full RAG pipeline with global timeout."""
+        self._org_id = organisation_id
+        self._user_id = user_id
+        self._conversation_id = conversation_id
+        self._propagate_cost_context()
         t0 = time.perf_counter()
         try:
             result = await asyncio.wait_for(
@@ -349,8 +373,14 @@ class RAGAgent:
         organisation_id: str,
         org_context: dict[str, str | None] | None = None,
         history: list[dict[str, str]] | None = None,
+        user_id: str | None = None,
+        conversation_id: str | None = None,
     ) -> tuple[list[SearchResult], str]:
         """Run steps 0-5 (non-streaming) and return results + reformulated query."""
+        self._org_id = organisation_id
+        self._user_id = user_id
+        self._conversation_id = conversation_id
+        self._propagate_cost_context()
         t0 = time.perf_counter()
 
         # Step 0: Condensation (multi-turn)
@@ -444,6 +474,7 @@ class RAGAgent:
             max_completion_tokens=16000,
             reasoning_effort="low",
             stream=True,
+            stream_options={"include_usage": True},
         )
         logger.info(
             "[PERF] Step 6 — LLM stream opened %.0fms",
@@ -453,24 +484,43 @@ class RAGAgent:
         token_buffer: list[str] = []
         first_token_logged = False
         total_tokens = 0
+        stream_usage = None
         async for chunk in response:
-            delta = chunk.choices[0].delta
-            if delta.content:
-                if not first_token_logged:
-                    logger.info(
-                        "[PERF] Step 6 — First token %.0fms",
-                        (time.perf_counter() - t_start) * 1000,
-                    )
-                    first_token_logged = True
-                total_tokens += 1
-                token_buffer.append(delta.content)
-                if len(token_buffer) >= buffer_size:
-                    yield "".join(token_buffer)
-                    token_buffer = []
+            # Capture usage from the final chunk (stream_options.include_usage)
+            if chunk.usage is not None:
+                stream_usage = chunk.usage
+            if chunk.choices:
+                delta = chunk.choices[0].delta
+                if delta.content:
+                    if not first_token_logged:
+                        logger.info(
+                            "[PERF] Step 6 — First token %.0fms",
+                            (time.perf_counter() - t_start) * 1000,
+                        )
+                        first_token_logged = True
+                    total_tokens += 1
+                    token_buffer.append(delta.content)
+                    if len(token_buffer) >= buffer_size:
+                        yield "".join(token_buffer)
+                        token_buffer = []
 
         # Flush remaining buffer
         if token_buffer:
             yield "".join(token_buffer)
+
+        # Log cost from stream usage
+        if stream_usage:
+            await cost_tracker.log(
+                provider="openai",
+                model=LLM_MODEL,
+                operation_type="generate",
+                tokens_input=stream_usage.prompt_tokens,
+                tokens_output=stream_usage.completion_tokens,
+                organisation_id=self._org_id,
+                user_id=self._user_id,
+                context_type="question",
+                context_id=self._conversation_id,
+            )
 
         logger.info(
             "[PERF] Step 6 — LLM streaming done %.0fms | %d token chunks",
@@ -512,6 +562,18 @@ class RAGAgent:
             temperature=0.0,
             max_tokens=300,
         )
+        if response.usage:
+            await cost_tracker.log(
+                provider="openai",
+                model="gpt-4o-mini",
+                operation_type="condense",
+                tokens_input=response.usage.prompt_tokens,
+                tokens_output=response.usage.completion_tokens,
+                organisation_id=self._org_id,
+                user_id=self._user_id,
+                context_type="question",
+                context_id=self._conversation_id,
+            )
         return response.choices[0].message.content or query
 
     async def _expand_queries(self, query: str) -> list[str]:
@@ -525,6 +587,18 @@ class RAGAgent:
             temperature=0.3,
             max_tokens=400,
         )
+        if response.usage:
+            await cost_tracker.log(
+                provider="openai",
+                model="gpt-4o-mini",
+                operation_type="expand",
+                tokens_input=response.usage.prompt_tokens,
+                tokens_output=response.usage.completion_tokens,
+                organisation_id=self._org_id,
+                user_id=self._user_id,
+                context_type="question",
+                context_id=self._conversation_id,
+            )
         content = response.choices[0].message.content or ""
         return self._parse_variants(content, query)
 
@@ -800,6 +874,18 @@ class RAGAgent:
             max_completion_tokens=16000,
             reasoning_effort="low",
         )
+        if response.usage:
+            await cost_tracker.log(
+                provider="openai",
+                model=LLM_MODEL,
+                operation_type="generate",
+                tokens_input=response.usage.prompt_tokens,
+                tokens_output=response.usage.completion_tokens,
+                organisation_id=self._org_id,
+                user_id=self._user_id,
+                context_type="question",
+                context_id=self._conversation_id,
+            )
         return response.choices[0].message.content or ""
 
     def _format_sources(self, results: list[SearchResult]) -> list[RAGSource]:

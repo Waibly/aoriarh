@@ -16,6 +16,7 @@ from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api import (
+    admin_costs,
     admin_documents,
     admin_feedbacks,
     admin_judilibre,
@@ -180,6 +181,9 @@ app.include_router(
 )
 app.include_router(
     admin_users.router, prefix="/api/v1/admin/users", tags=["admin-users"]
+)
+app.include_router(
+    admin_costs.router, prefix="/api/v1/admin/costs", tags=["admin-costs"]
 )
 app.include_router(
     conventions.router, prefix="/api/v1/conventions", tags=["conventions"]

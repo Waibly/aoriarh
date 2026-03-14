@@ -7,6 +7,7 @@ import httpx
 from app.core.config import settings
 from app.rag.config import RERANK_MODEL
 from app.rag.search import SearchResult
+from app.services.cost_tracker import cost_tracker
 
 logger = logging.getLogger(__name__)
 
@@ -16,6 +17,22 @@ _RETRY_BASE_DELAY = 2.0
 
 class VoyageReranker:
     """Cross-encoder reranker using Voyage AI rerank-2."""
+
+    def __init__(self) -> None:
+        # Cost tracking context — set externally by RAGAgent
+        self._cost_org_id: str | None = None
+        self._cost_user_id: str | None = None
+        self._cost_context_id: str | None = None
+
+    def set_cost_context(
+        self,
+        organisation_id: str | None = None,
+        user_id: str | None = None,
+        context_id: str | None = None,
+    ) -> None:
+        self._cost_org_id = organisation_id
+        self._cost_user_id = user_id
+        self._cost_context_id = context_id
 
     async def rerank(
         self,
@@ -40,11 +57,22 @@ class VoyageReranker:
             return results[:top_k]
 
         elapsed = (time.perf_counter() - t0) * 1000
-        tokens = rerank_response.get("usage", {}).get("total_tokens", "?")
+        tokens = rerank_response.get("usage", {}).get("total_tokens", 0)
         logger.info(
             "[PERF] Reranking (Voyage AI %s) %.0fms | %s tokens | %d→%d results",
             RERANK_MODEL, elapsed, tokens, len(results), min(top_k, len(results)),
         )
+        if tokens:
+            await cost_tracker.log(
+                provider="voyageai",
+                model=RERANK_MODEL,
+                operation_type="rerank",
+                tokens_input=int(tokens),
+                organisation_id=self._cost_org_id,
+                user_id=self._cost_user_id,
+                context_type="question",
+                context_id=self._cost_context_id,
+            )
 
         # Map reranked scores back to SearchResult objects
         ranked_data = rerank_response.get("data", [])
