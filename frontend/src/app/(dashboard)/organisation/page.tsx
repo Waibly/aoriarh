@@ -7,19 +7,11 @@ import {
   Pencil,
   Trash2,
   Info,
-  RefreshCw,
-  X,
-  Plus,
-  Download,
-  Loader2,
-  AlertCircle,
-  CheckCircle2,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useOrg } from "@/lib/org-context";
 import { apiFetch } from "@/lib/api";
-import type { Membership, OrganisationConvention, CcnReference } from "@/types/api";
-import { CcnSelector } from "@/components/ccn-selector";
+import type { Membership } from "@/types/api";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -61,11 +53,6 @@ export default function OrganisationPage() {
   const [editOpen, setEditOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [isOrgManager, setIsOrgManager] = useState(false);
-  const [conventions, setConventions] = useState<OrganisationConvention[]>([]);
-  const [loadingConventions, setLoadingConventions] = useState(false);
-  const [addCcnOpen, setAddCcnOpen] = useState(false);
-  const [selectedNewCcn, setSelectedNewCcn] = useState<CcnReference[]>([]);
-  const [installingCcn, setInstallingCcn] = useState(false);
 
   const handleOrgDeleted = useCallback(async () => {
     await refetchOrgs();
@@ -95,90 +82,9 @@ export default function OrganisationPage() {
     }
   }, [currentOrg, token, session?.user?.id, session?.user?.role]);
 
-  const fetchConventions = useCallback(async () => {
-    if (!currentOrg || !token) return;
-    setLoadingConventions(true);
-    try {
-      const data = await apiFetch<OrganisationConvention[]>(
-        `/conventions/organisations/${currentOrg.id}`,
-        { token }
-      );
-      setConventions(data);
-    } catch {
-      setConventions([]);
-    } finally {
-      setLoadingConventions(false);
-    }
-  }, [currentOrg, token]);
-
   useEffect(() => {
     fetchMembers();
-    fetchConventions();
-  }, [fetchMembers, fetchConventions]);
-
-  // Poll conventions that are in progress
-  useEffect(() => {
-    const hasInProgress = conventions.some(
-      (c) => c.status === "pending" || c.status === "fetching" || c.status === "indexing"
-    );
-    if (!hasInProgress) return;
-    const interval = setInterval(fetchConventions, 5000);
-    return () => clearInterval(interval);
-  }, [conventions, fetchConventions]);
-
-  async function handleInstallCcn() {
-    if (!currentOrg || !token || selectedNewCcn.length === 0) return;
-    setInstallingCcn(true);
-    try {
-      for (const ccn of selectedNewCcn) {
-        await apiFetch(`/conventions/organisations/${currentOrg.id}`, {
-          method: "POST",
-          token,
-          body: JSON.stringify({ idcc: ccn.idcc }),
-        });
-      }
-      toast.success(
-        selectedNewCcn.length === 1
-          ? "Convention en cours d'installation"
-          : `${selectedNewCcn.length} conventions en cours d'installation`
-      );
-      setSelectedNewCcn([]);
-      setAddCcnOpen(false);
-      await fetchConventions();
-    } catch {
-      toast.error("Erreur lors de l'installation");
-    } finally {
-      setInstallingCcn(false);
-    }
-  }
-
-  async function handleRemoveCcn(idcc: string) {
-    if (!currentOrg || !token) return;
-    try {
-      await apiFetch(`/conventions/organisations/${currentOrg.id}/${idcc}`, {
-        method: "DELETE",
-        token,
-      });
-      toast.success("Convention retirée");
-      await fetchConventions();
-    } catch {
-      toast.error("Erreur lors de la suppression");
-    }
-  }
-
-  async function handleSyncCcn(idcc: string) {
-    if (!currentOrg || !token) return;
-    try {
-      await apiFetch(`/conventions/organisations/${currentOrg.id}/${idcc}/sync`, {
-        method: "POST",
-        token,
-      });
-      toast.success("Mise à jour lancée");
-      await fetchConventions();
-    } catch {
-      toast.error("Erreur lors de la mise à jour");
-    }
-  }
+  }, [fetchMembers]);
 
   if (!currentOrg) {
     return (
@@ -241,133 +147,6 @@ export default function OrganisationPage() {
               {currentOrg.secteur_activite ?? "Non renseigné"}
             </p>
           </div>
-        </CardContent>
-      </Card>
-
-      {/* Conventions collectives section */}
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between">
-          <div className="space-y-1.5">
-            <CardTitle>Conventions collectives</CardTitle>
-            <CardDescription>
-              {conventions.length === 0
-                ? "Aucune convention installée"
-                : `${conventions.length} convention(s) installée(s)`}
-            </CardDescription>
-          </div>
-          {isOrgManager && (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setAddCcnOpen(!addCcnOpen)}
-            >
-              <Plus className="mr-2 h-4 w-4" />
-              Ajouter
-            </Button>
-          )}
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {/* Add CCN form */}
-          {addCcnOpen && isOrgManager && token && (
-            <div className="rounded-lg border border-border bg-muted/30 p-4 space-y-3">
-              <CcnSelector
-                token={token}
-                selected={selectedNewCcn}
-                onChange={setSelectedNewCcn}
-              />
-              <div className="flex justify-end gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => {
-                    setAddCcnOpen(false);
-                    setSelectedNewCcn([]);
-                  }}
-                >
-                  Annuler
-                </Button>
-                <Button
-                  size="sm"
-                  disabled={selectedNewCcn.length === 0 || installingCcn}
-                  onClick={handleInstallCcn}
-                >
-                  {installingCcn ? (
-                    <>
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      Installation...
-                    </>
-                  ) : (
-                    <>
-                      <Download className="mr-2 h-4 w-4" />
-                      Installer
-                    </>
-                  )}
-                </Button>
-              </div>
-            </div>
-          )}
-
-          {/* Convention list */}
-          {loadingConventions ? (
-            <div className="space-y-2">
-              <Skeleton className="h-16 w-full" />
-              <Skeleton className="h-16 w-full" />
-            </div>
-          ) : (
-            <div className="space-y-2">
-              {conventions.map((conv) => (
-                <div
-                  key={conv.id}
-                  className="flex items-center justify-between rounded-lg border border-border p-3"
-                >
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2">
-                      <p className="font-medium truncate">
-                        {conv.titre_court || conv.titre || `IDCC ${conv.idcc}`}
-                      </p>
-                      <CcnStatusBadge status={conv.status} />
-                    </div>
-                    <p className="text-sm text-muted-foreground">
-                      IDCC {conv.idcc}
-                      {conv.articles_count != null && ` — ${conv.articles_count} articles`}
-                      {conv.last_synced_at &&
-                        ` — Synchro ${new Date(conv.last_synced_at).toLocaleDateString("fr-FR")}`}
-                    </p>
-                    {conv.status === "error" && conv.error_message && (
-                      <p className="text-xs text-destructive mt-1 truncate">
-                        {conv.error_message}
-                      </p>
-                    )}
-                  </div>
-                  {isOrgManager && conv.status !== "fetching" && conv.status !== "indexing" && (
-                    <div className="flex items-center gap-1 ml-2 shrink-0">
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8"
-                        title="Mettre à jour"
-                        onClick={() => handleSyncCcn(conv.idcc)}
-                      >
-                        <RefreshCw className="h-4 w-4" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8 text-destructive hover:text-destructive"
-                        title="Retirer"
-                        onClick={() => handleRemoveCcn(conv.idcc)}
-                      >
-                        <X className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  )}
-                  {(conv.status === "fetching" || conv.status === "indexing" || conv.status === "pending") && (
-                    <Loader2 className="h-4 w-4 animate-spin text-muted-foreground ml-2 shrink-0" />
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
         </CardContent>
       </Card>
 
@@ -564,36 +343,4 @@ function DeleteOrgDialog({
       </DialogContent>
     </Dialog>
   );
-}
-
-// --- CCN Status Badge ---
-
-function CcnStatusBadge({ status }: { status: string }) {
-  switch (status) {
-    case "ready":
-      return (
-        <Badge variant="outline" className="rounded-full border-green-500 bg-green-500/10 text-green-700 text-xs">
-          <CheckCircle2 className="mr-1 h-3 w-3" />
-          Installée
-        </Badge>
-      );
-    case "pending":
-    case "fetching":
-    case "indexing":
-      return (
-        <Badge variant="outline" className="rounded-full border-blue-500 bg-blue-500/10 text-blue-700 text-xs">
-          <Loader2 className="mr-1 h-3 w-3 animate-spin" />
-          {status === "pending" ? "En attente" : status === "fetching" ? "Téléchargement" : "Indexation"}
-        </Badge>
-      );
-    case "error":
-      return (
-        <Badge variant="outline" className="rounded-full border-destructive bg-destructive/10 text-destructive text-xs">
-          <AlertCircle className="mr-1 h-3 w-3" />
-          Erreur
-        </Badge>
-      );
-    default:
-      return null;
-  }
 }
