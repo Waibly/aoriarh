@@ -22,7 +22,7 @@ class Document(TimestampMixin, Base):
     indexation_status: Mapped[str] = mapped_column(
         String(20), nullable=False, default="pending"
     )
-    uploaded_by: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), nullable=False)
+    uploaded_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     file_size: Mapped[int | None] = mapped_column(Integer)
     file_format: Mapped[str | None] = mapped_column(String(50))
     file_hash: Mapped[str | None] = mapped_column(String(64))

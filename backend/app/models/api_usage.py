@@ -76,6 +76,10 @@ class ApiUsageLog(Base):
         ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
 
+    # Snapshots — preserved after user/org deletion
+    user_email_snapshot: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    organisation_name_snapshot: Mapped[str | None] = mapped_column(String(255), nullable=True)
+
     # Context
     context_type: Mapped[str] = mapped_column(
         String(30), nullable=False, comment="question | ingestion"

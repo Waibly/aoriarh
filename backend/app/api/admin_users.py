@@ -9,10 +9,9 @@ from sqlalchemy.orm import selectinload
 from app.core.database import get_db
 from app.core.dependencies import get_current_user, require_role
 from app.models.account import Account
-from app.models.conversation import Conversation, Message
-from app.models.invitation import Invitation
 from app.models.user import User
 from app.models.membership import Membership
+from app.services.user_service import UserService
 from app.models.organisation import Organisation
 from app.schemas.account import AccountRead
 from app.schemas.organisation import PlanAssign
@@ -188,29 +187,8 @@ async def delete_user(
     if user.role == "admin":
         raise HTTPException(status_code=400, detail="Impossible de supprimer un administrateur")
 
-    # 1. Delete messages from user's conversations
-    conv_result = await db.execute(
-        select(Conversation.id).where(Conversation.user_id == user_id)
-    )
-    conv_ids = [row[0] for row in conv_result.all()]
-    if conv_ids:
-        await db.execute(delete(Message).where(Message.conversation_id.in_(conv_ids)))
-
-    # 2. Delete conversations
-    await db.execute(delete(Conversation).where(Conversation.user_id == user_id))
-
-    # 3. Delete invitations sent by user
-    await db.execute(delete(Invitation).where(Invitation.invited_by == user_id))
-
-    # 4. Delete memberships
-    await db.execute(delete(Membership).where(Membership.user_id == user_id))
-
-    # 5. Delete account
-    if user.owned_account:
-        await db.delete(user.owned_account)
-
-    # 6. Delete user
-    await db.delete(user)
+    service = UserService(db)
+    await service.delete_user_data(user.id)
     await db.commit()
 
     return {"detail": "Utilisateur supprimé"}

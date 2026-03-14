@@ -21,6 +21,8 @@ import logging
 import uuid
 from decimal import Decimal
 
+from sqlalchemy import select
+
 from app.core.database import async_session_factory
 from app.models.api_usage import ApiUsageLog
 
@@ -74,6 +76,8 @@ class CostTracker:
         tokens_output: int = 0,
         organisation_id: str | None = None,
         user_id: str | None = None,
+        user_email: str | None = None,
+        organisation_name: str | None = None,
         context_type: str = "question",
         context_id: str | None = None,
     ) -> None:
@@ -81,20 +85,37 @@ class CostTracker:
         try:
             cost = compute_cost(provider, model, tokens_input, tokens_output)
 
-            log_entry = ApiUsageLog(
-                provider=provider,
-                model=model,
-                operation_type=operation_type,
-                tokens_input=tokens_input,
-                tokens_output=tokens_output,
-                cost_usd=cost,
-                organisation_id=uuid.UUID(organisation_id) if organisation_id else None,
-                user_id=uuid.UUID(user_id) if user_id else None,
-                context_type=context_type,
-                context_id=uuid.UUID(context_id) if context_id else None,
-            )
-
+            # Resolve snapshots if not provided
+            resolved_email = user_email
+            resolved_org_name = organisation_name
             async with async_session_factory() as session:
+                if not resolved_email and user_id:
+                    from app.models.user import User
+                    result = await session.execute(
+                        select(User.email).where(User.id == uuid.UUID(user_id))
+                    )
+                    resolved_email = result.scalar_one_or_none()
+                if not resolved_org_name and organisation_id:
+                    from app.models.organisation import Organisation
+                    result = await session.execute(
+                        select(Organisation.name).where(Organisation.id == uuid.UUID(organisation_id))
+                    )
+                    resolved_org_name = result.scalar_one_or_none()
+
+                log_entry = ApiUsageLog(
+                    provider=provider,
+                    model=model,
+                    operation_type=operation_type,
+                    tokens_input=tokens_input,
+                    tokens_output=tokens_output,
+                    cost_usd=cost,
+                    organisation_id=uuid.UUID(organisation_id) if organisation_id else None,
+                    user_id=uuid.UUID(user_id) if user_id else None,
+                    user_email_snapshot=resolved_email,
+                    organisation_name_snapshot=resolved_org_name,
+                    context_type=context_type,
+                    context_id=uuid.UUID(context_id) if context_id else None,
+                )
                 session.add(log_entry)
                 await session.commit()
 

@@ -1,4 +1,5 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -70,3 +71,31 @@ async def change_password(
     service = UserService(db)
     await service.change_password(user, data)
     return {"detail": "Mot de passe modifié"}
+
+
+class DeleteAccountConfirmation(BaseModel):
+    confirmation: str
+
+
+@router.delete("/me")
+async def delete_own_account(
+    body: DeleteAccountConfirmation,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Delete the current user's own account and all associated data.
+
+    If the user owns an Account (manager), all organisations under that
+    account will also be deleted (documents, vectors, conversations, etc.).
+
+    Requires body: {"confirmation": "SUPPRIMER MON COMPTE"}
+    """
+    if body.confirmation != "SUPPRIMER MON COMPTE":
+        raise HTTPException(
+            status_code=400,
+            detail="Veuillez confirmer en envoyant 'SUPPRIMER MON COMPTE'",
+        )
+
+    service = UserService(db)
+    await service.delete_own_account(user)
+    return {"detail": "Compte supprimé"}

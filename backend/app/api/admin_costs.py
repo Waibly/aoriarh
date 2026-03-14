@@ -3,7 +3,7 @@ from datetime import date, datetime, timedelta
 
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
-from sqlalchemy import func, select, case, distinct
+from sqlalchemy import func, select, case, distinct, literal
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from fastapi import status
@@ -233,10 +233,16 @@ async def get_cost_dashboard(
     # 4. By organisation
     from app.models.organisation import Organisation
 
+    # Use snapshot as fallback when org/user has been deleted
+    org_name_col = func.coalesce(
+        Organisation.name,
+        func.max(ApiUsageLog.organisation_name_snapshot),
+    ).label("org_name")
+
     org_q = await db.execute(
         select(
             ApiUsageLog.organisation_id,
-            Organisation.name.label("org_name"),
+            org_name_col,
             func.sum(ApiUsageLog.cost_usd).label("cost"),
             func.count(distinct(
                 case(
@@ -258,7 +264,7 @@ async def get_cost_dashboard(
     by_organisation = [
         CostByOrganisation(
             organisation_id=str(r.organisation_id) if r.organisation_id else None,
-            organisation_name=r.org_name,
+            organisation_name=r.org_name if r.org_name else "Organisation supprimée",
             cost_usd=float(r.cost or 0),
             total_questions=int(r.questions or 0),
             total_ingestions=int(r.ingestions or 0),
@@ -267,11 +273,16 @@ async def get_cost_dashboard(
         for r in org_q.all()
     ]
 
-    # 5. By user
+    # 5. By user — use snapshot as fallback for deleted users
+    user_email_col = func.coalesce(
+        User.email,
+        func.max(ApiUsageLog.user_email_snapshot),
+    ).label("user_email")
+
     user_q = await db.execute(
         select(
             ApiUsageLog.user_id,
-            User.email.label("user_email"),
+            user_email_col,
             func.sum(ApiUsageLog.cost_usd).label("cost"),
             func.count(distinct(
                 case(
@@ -289,7 +300,7 @@ async def get_cost_dashboard(
     by_user = [
         CostByUser(
             user_id=str(r.user_id) if r.user_id else None,
-            user_email=r.user_email,
+            user_email=r.user_email if r.user_email else "Utilisateur supprimé",
             cost_usd=float(r.cost or 0),
             total_questions=int(r.questions or 0),
             calls=int(r.calls or 0),
