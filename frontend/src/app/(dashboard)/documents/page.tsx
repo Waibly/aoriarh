@@ -505,8 +505,18 @@ export default function DocumentsPage() {
                       {c.status === "pending" && " — En attente"}
                       {c.status === "fetching" && " — Téléchargement en cours"}
                       {c.status === "indexing" && " — Indexation en cours"}
-                      {c.status === "error" && " — Erreur"}
+                      {c.status === "error" && " — Erreur de mise à jour"}
                     </p>
+                    {c.status === "ready" && c.last_synced_at && (
+                      <p className="text-xs text-muted-foreground/70">
+                        Mis à jour le {new Date(c.last_synced_at).toLocaleDateString("fr-FR")}
+                      </p>
+                    )}
+                    {c.status === "error" && c.error_message && (
+                      <p className="text-xs text-destructive mt-0.5 truncate" title={c.error_message}>
+                        {c.error_message}
+                      </p>
+                    )}
                   </div>
 
                   {/* Actions */}

@@ -16,6 +16,7 @@ from datetime import UTC, datetime
 import httpx
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import joinedload
 
 from app.core.config import settings
 from app.models.ccn import CcnReference, OrganisationConvention
@@ -40,6 +41,31 @@ class KaliInstallResult:
     documents_created: int = 0
     errors: int = 0
     error_messages: list[str] = field(default_factory=list)
+
+
+@dataclass
+class KaliSyncResult:
+    """Result of a CCN sync operation."""
+
+    idcc: str = ""
+    update_needed: bool = False
+    content_hash: str = ""
+    new_document_id: str | None = None
+    old_document_ids: list[str] = field(default_factory=list)
+    articles_count: int = 0
+    error: str | None = None
+
+
+@dataclass
+class KaliBulkSyncResult:
+    """Result of a bulk CCN sync."""
+
+    total_idcc: int = 0
+    total_orgs_synced: int = 0
+    updates_needed: int = 0
+    skipped_identical: int = 0
+    errors: int = 0
+    details: list[KaliSyncResult] = field(default_factory=list)
 
 
 class KaliService:
@@ -205,7 +231,12 @@ class KaliService:
         org_conv: OrganisationConvention,
         user_id: uuid.UUID,
     ) -> KaliInstallResult:
-        """Fetch a full convention collective from KALI and ingest it."""
+        """Fetch a full convention collective from KALI and ingest it.
+
+        For first install (no existing doc): creates document directly.
+        For re-sync (existing doc): uses blue-green approach — creates new doc
+        while old one stays active, old doc cleaned up after ingestion.
+        """
         result = KaliInstallResult()
 
         # Update status
@@ -217,74 +248,88 @@ class KaliService:
             if not ccn_ref or not ccn_ref.kali_id:
                 raise ValueError(f"IDCC {org_conv.idcc} introuvable dans le référentiel")
 
-            async with httpx.AsyncClient(timeout=_REQUEST_TIMEOUT) as client:
-                # Step 1: Get container to find KALITEXT IDs
-                container = await self._api_post(
-                    client, "/consult/kaliCont", json_body={"id": ccn_ref.kali_id}
-                )
-                if container is None:
-                    raise ValueError(f"Container KALI introuvable pour {ccn_ref.kali_id}")
+            # Check for existing CCN documents (re-sync case)
+            existing_docs = await self._find_existing_ccn_docs(
+                db, org_conv.organisation_id, org_conv.idcc
+            )
 
-                # Extract text IDs from container structure
-                text_ids = self._extract_text_ids(container)
-                if not text_ids:
-                    raise ValueError("Aucun texte trouvé dans le container KALI")
-
-                logger.info(
-                    "KALI install IDCC %s: %d text(s) to fetch",
-                    org_conv.idcc, len(text_ids),
-                )
-
-                # Step 2: Fetch each text and extract articles
-                all_articles: list[dict] = []
-                for text_id in text_ids:
-                    await asyncio.sleep(_API_THROTTLE)
-                    text_data = await self._api_post(
-                        client, "/consult/kaliText", json_body={"id": text_id}
-                    )
-                    if text_data is None:
-                        result.errors += 1
-                        result.error_messages.append(f"Texte {text_id} introuvable")
-                        continue
-
-                    # Only in-force texts (etat can be None in API response,
-                    # but we already filtered by etat in _extract_text_ids)
-                    text_etat = text_data.get("etat") or ""
-                    if text_etat and not text_etat.startswith("VIGUEUR"):
-                        continue
-
-                    articles = self._extract_articles_from_text(text_data)
-                    all_articles.extend(articles)
+            # Fetch from KALI API
+            all_articles, fetch_errors = await self._fetch_kali_articles(ccn_ref)
+            result.errors += len(fetch_errors)
+            result.error_messages.extend(fetch_errors)
 
             result.articles_count = len(all_articles)
             logger.info(
-                "KALI IDCC %s: %d articles extracted, creating documents",
+                "KALI IDCC %s: %d articles extracted",
                 org_conv.idcc, len(all_articles),
             )
 
-            # Step 3: Update status and create documents
+            text_content = self._format_articles_as_markdown(all_articles, ccn_ref)
+            text_bytes = text_content.encode("utf-8")
+            new_hash = hashlib.sha256(text_bytes).hexdigest()
+
+            # If existing docs, compare hash for blue-green
+            if existing_docs:
+                existing_hash = existing_docs[0].file_hash
+                if existing_hash == new_hash:
+                    # Content identical — just update timestamp
+                    logger.info(
+                        "KALI IDCC %s: content unchanged (hash %s), skipping re-index",
+                        org_conv.idcc, new_hash[:12],
+                    )
+                    org_conv.status = "ready"
+                    org_conv.last_synced_at = datetime.now(UTC)
+                    org_conv.error_message = None
+                    await db.commit()
+                    return result
+
+                # Content changed — blue-green: create new doc, keep old active
+                logger.info(
+                    "KALI IDCC %s: content changed (old=%s new=%s), blue-green sync",
+                    org_conv.idcc,
+                    (existing_hash or "none")[:12],
+                    new_hash[:12],
+                )
+
+            # Create document (first install or blue-green new version)
             org_conv.status = "indexing"
             await db.commit()
 
             from app.services.storage_service import StorageService
             storage = StorageService()
 
-            # Create a single document with all articles
-            text_content = self._format_articles_as_markdown(all_articles, ccn_ref)
             doc = await self._create_document(
                 db, org_conv, ccn_ref, text_content,
                 user_id=user_id,
                 storage=storage,
             )
-            await enqueue_ingestion(str(doc.id))
+
+            # If blue-green, store old doc IDs in the new doc's name for cleanup
+            old_doc_ids = [str(d.id) for d in existing_docs] if existing_docs else []
+            if old_doc_ids:
+                # Schedule cleanup of old docs after ingestion completes
+                await enqueue_ingestion(str(doc.id))
+                # Enqueue cleanup job for old documents
+                await self._enqueue_old_docs_cleanup(old_doc_ids)
+            else:
+                await enqueue_ingestion(str(doc.id))
+
             result.documents_created = 1
 
-            # Step 4: Mark as ready
-            org_conv.status = "ready"
-            org_conv.articles_count = result.articles_count
-            org_conv.installed_at = datetime.now(UTC)
-            org_conv.last_synced_at = datetime.now(UTC)
-            org_conv.error_message = None
+            # Mark as ready (for first install) or keep indexing (blue-green)
+            if existing_docs:
+                # Blue-green: status stays "indexing" until new doc is indexed
+                # Old docs remain active and searchable during this time
+                org_conv.articles_count = result.articles_count
+                org_conv.last_synced_at = datetime.now(UTC)
+                org_conv.error_message = None
+            else:
+                # First install
+                org_conv.status = "ready"
+                org_conv.articles_count = result.articles_count
+                org_conv.installed_at = datetime.now(UTC)
+                org_conv.last_synced_at = datetime.now(UTC)
+                org_conv.error_message = None
             await db.commit()
 
         except Exception as exc:
@@ -297,7 +342,357 @@ class KaliService:
 
         return result
 
+    async def sync_convention_content(
+        self,
+        db: AsyncSession,
+        org_conv: OrganisationConvention,
+        user_id: uuid.UUID,
+    ) -> KaliSyncResult:
+        """Sync a single OrganisationConvention: fetch KALI, compare hash, blue-green if needed.
+
+        Returns a KaliSyncResult indicating whether an update was needed.
+        """
+        sync_result = KaliSyncResult(idcc=org_conv.idcc)
+
+        try:
+            ccn_ref = await db.get(CcnReference, org_conv.idcc)
+            if not ccn_ref or not ccn_ref.kali_id:
+                sync_result.error = f"IDCC {org_conv.idcc} introuvable dans le référentiel"
+                return sync_result
+
+            # Fetch from KALI
+            all_articles, fetch_errors = await self._fetch_kali_articles(ccn_ref)
+            if fetch_errors:
+                sync_result.error = "; ".join(fetch_errors)
+
+            text_content = self._format_articles_as_markdown(all_articles, ccn_ref)
+            text_bytes = text_content.encode("utf-8")
+            new_hash = hashlib.sha256(text_bytes).hexdigest()
+            sync_result.content_hash = new_hash
+            sync_result.articles_count = len(all_articles)
+
+            # Find existing docs
+            existing_docs = await self._find_existing_ccn_docs(
+                db, org_conv.organisation_id, org_conv.idcc
+            )
+
+            if existing_docs and existing_docs[0].file_hash == new_hash:
+                # Identical — just update timestamp
+                sync_result.update_needed = False
+                org_conv.last_synced_at = datetime.now(UTC)
+                await db.commit()
+                logger.info(
+                    "sync_convention_content IDCC %s org %s: unchanged",
+                    org_conv.idcc, org_conv.organisation_id,
+                )
+                return sync_result
+
+            # Update needed — blue-green
+            sync_result.update_needed = True
+            sync_result.old_document_ids = [str(d.id) for d in existing_docs]
+
+            org_conv.status = "indexing"
+            org_conv.error_message = None
+            await db.commit()
+
+            from app.services.storage_service import StorageService
+            storage = StorageService()
+
+            doc = await self._create_document(
+                db, org_conv, ccn_ref, text_content,
+                user_id=user_id,
+                storage=storage,
+            )
+            sync_result.new_document_id = str(doc.id)
+
+            await enqueue_ingestion(str(doc.id))
+
+            if sync_result.old_document_ids:
+                await self._enqueue_old_docs_cleanup(sync_result.old_document_ids)
+
+            org_conv.articles_count = len(all_articles)
+            org_conv.last_synced_at = datetime.now(UTC)
+            if not existing_docs:
+                org_conv.installed_at = datetime.now(UTC)
+                org_conv.status = "ready"
+            await db.commit()
+
+            logger.info(
+                "sync_convention_content IDCC %s org %s: update needed, new doc %s",
+                org_conv.idcc, org_conv.organisation_id, doc.id,
+            )
+
+        except Exception as exc:
+            sync_result.error = str(exc)[:500]
+            org_conv.status = "error"
+            org_conv.error_message = str(exc)[:500]
+            await db.commit()
+            logger.exception(
+                "sync_convention_content failed for IDCC %s org %s",
+                org_conv.idcc, org_conv.organisation_id,
+            )
+
+        return sync_result
+
+    async def bulk_sync_ccn(
+        self,
+        db: AsyncSession,
+        idcc_list: list[str],
+        user_id: uuid.UUID,
+    ) -> KaliBulkSyncResult:
+        """Bulk sync multiple CCN across all orgs that use them.
+
+        Fetches each IDCC from KALI once, then applies to all orgs.
+        """
+        bulk_result = KaliBulkSyncResult(total_idcc=len(idcc_list))
+
+        for idcc in idcc_list:
+            try:
+                ccn_ref = await db.get(CcnReference, idcc)
+                if not ccn_ref or not ccn_ref.kali_id:
+                    logger.warning("bulk_sync_ccn: IDCC %s not found in reference", idcc)
+                    bulk_result.errors += 1
+                    continue
+
+                # Fetch KALI content ONCE for this IDCC
+                all_articles, fetch_errors = await self._fetch_kali_articles(ccn_ref)
+                if fetch_errors:
+                    logger.warning(
+                        "bulk_sync_ccn: fetch errors for IDCC %s: %s",
+                        idcc, "; ".join(fetch_errors),
+                    )
+
+                text_content = self._format_articles_as_markdown(all_articles, ccn_ref)
+                text_bytes = text_content.encode("utf-8")
+                new_hash = hashlib.sha256(text_bytes).hexdigest()
+
+                # Find all orgs that have this IDCC installed
+                org_convs_result = await db.execute(
+                    select(OrganisationConvention)
+                    .options(joinedload(OrganisationConvention.ccn))
+                    .where(OrganisationConvention.idcc == idcc)
+                )
+                org_convs = list(org_convs_result.scalars().all())
+
+                if not org_convs:
+                    logger.info("bulk_sync_ccn: no orgs have IDCC %s installed", idcc)
+                    continue
+
+                from app.services.storage_service import StorageService
+                storage = StorageService()
+
+                for org_conv in org_convs:
+                    bulk_result.total_orgs_synced += 1
+                    sync_result = KaliSyncResult(
+                        idcc=idcc,
+                        content_hash=new_hash,
+                        articles_count=len(all_articles),
+                    )
+
+                    try:
+                        existing_docs = await self._find_existing_ccn_docs(
+                            db, org_conv.organisation_id, idcc
+                        )
+
+                        if existing_docs and existing_docs[0].file_hash == new_hash:
+                            # Identical
+                            sync_result.update_needed = False
+                            org_conv.last_synced_at = datetime.now(UTC)
+                            await db.commit()
+                            bulk_result.skipped_identical += 1
+                            bulk_result.details.append(sync_result)
+                            continue
+
+                        # Update needed — blue-green
+                        sync_result.update_needed = True
+                        sync_result.old_document_ids = [str(d.id) for d in existing_docs]
+                        bulk_result.updates_needed += 1
+
+                        org_conv.status = "indexing"
+                        org_conv.error_message = None
+                        await db.commit()
+
+                        doc = await self._create_document(
+                            db, org_conv, ccn_ref, text_content,
+                            user_id=user_id,
+                            storage=storage,
+                        )
+                        sync_result.new_document_id = str(doc.id)
+
+                        await enqueue_ingestion(str(doc.id))
+
+                        if sync_result.old_document_ids:
+                            await self._enqueue_old_docs_cleanup(sync_result.old_document_ids)
+
+                        org_conv.articles_count = len(all_articles)
+                        org_conv.last_synced_at = datetime.now(UTC)
+                        if not existing_docs:
+                            org_conv.installed_at = datetime.now(UTC)
+                            org_conv.status = "ready"
+                        await db.commit()
+
+                    except Exception as exc:
+                        sync_result.error = str(exc)[:500]
+                        org_conv.status = "error"
+                        org_conv.error_message = str(exc)[:500]
+                        await db.commit()
+                        bulk_result.errors += 1
+                        logger.exception(
+                            "bulk_sync_ccn: failed for IDCC %s org %s",
+                            idcc, org_conv.organisation_id,
+                        )
+
+                    bulk_result.details.append(sync_result)
+
+            except Exception as exc:
+                bulk_result.errors += 1
+                logger.exception("bulk_sync_ccn: failed to process IDCC %s: %s", idcc, exc)
+
+        logger.info(
+            "bulk_sync_ccn complete: %d IDCC, %d orgs, %d updates, %d identical, %d errors",
+            bulk_result.total_idcc,
+            bulk_result.total_orgs_synced,
+            bulk_result.updates_needed,
+            bulk_result.skipped_identical,
+            bulk_result.errors,
+        )
+        return bulk_result
+
     # --- Private methods ---
+
+    async def _fetch_kali_articles(
+        self, ccn_ref: CcnReference
+    ) -> tuple[list[dict], list[str]]:
+        """Fetch all articles for a CCN from the KALI API.
+
+        Returns (articles, error_messages).
+        """
+        errors: list[str] = []
+
+        async with httpx.AsyncClient(timeout=_REQUEST_TIMEOUT) as client:
+            container = await self._api_post(
+                client, "/consult/kaliCont", json_body={"id": ccn_ref.kali_id}
+            )
+            if container is None:
+                raise ValueError(f"Container KALI introuvable pour {ccn_ref.kali_id}")
+
+            text_ids = self._extract_text_ids(container)
+            if not text_ids:
+                raise ValueError("Aucun texte trouvé dans le container KALI")
+
+            logger.info(
+                "KALI fetch IDCC %s: %d text(s) to fetch",
+                ccn_ref.idcc, len(text_ids),
+            )
+
+            all_articles: list[dict] = []
+            for text_id in text_ids:
+                await asyncio.sleep(_API_THROTTLE)
+                text_data = await self._api_post(
+                    client, "/consult/kaliText", json_body={"id": text_id}
+                )
+                if text_data is None:
+                    errors.append(f"Texte {text_id} introuvable")
+                    continue
+
+                text_etat = text_data.get("etat") or ""
+                if text_etat and not text_etat.startswith("VIGUEUR"):
+                    continue
+
+                articles = self._extract_articles_from_text(text_data)
+                all_articles.extend(articles)
+
+        return all_articles, errors
+
+    @staticmethod
+    async def _find_existing_ccn_docs(
+        db: AsyncSession, organisation_id: uuid.UUID, idcc: str
+    ) -> list[Document]:
+        """Find existing CCN documents for an org+idcc pair."""
+        result = await db.execute(
+            select(Document).where(
+                Document.organisation_id == organisation_id,
+                Document.source_type == "convention_collective_nationale",
+                Document.name.ilike(f"%IDCC {idcc}%"),
+            ).order_by(Document.created_at.desc())
+        )
+        return list(result.scalars().all())
+
+    @staticmethod
+    async def _cleanup_old_ccn_docs(
+        db: AsyncSession, old_doc_ids: list[str]
+    ) -> int:
+        """Delete old CCN documents and their Qdrant vectors (blue-green cleanup).
+
+        Call this after the new document has been successfully indexed.
+        Returns the number of documents cleaned up.
+        """
+        from qdrant_client.models import FieldCondition, Filter, FilterSelector, MatchValue
+
+        from app.rag.qdrant_store import COLLECTION_NAME, get_qdrant_client
+        from app.services.storage_service import StorageService
+
+        storage = StorageService()
+        cleaned = 0
+
+        for doc_id_str in old_doc_ids:
+            doc_id = uuid.UUID(doc_id_str)
+            doc = await db.get(Document, doc_id)
+            if doc is None:
+                continue
+
+            # Delete Qdrant vectors
+            try:
+                qdrant = get_qdrant_client()
+                qdrant.delete(
+                    collection_name=COLLECTION_NAME,
+                    points_selector=FilterSelector(
+                        filter=Filter(
+                            must=[
+                                FieldCondition(
+                                    key="document_id",
+                                    match=MatchValue(value=str(doc_id)),
+                                )
+                            ]
+                        )
+                    ),
+                )
+            except Exception:
+                logger.warning("Failed to delete Qdrant chunks for old doc %s", doc_id)
+
+            # Delete storage file
+            try:
+                storage.delete_file(doc.storage_path)
+            except Exception:
+                logger.warning("Failed to delete storage for old doc %s", doc_id)
+
+            # Delete DB record
+            await db.delete(doc)
+            cleaned += 1
+
+        if cleaned:
+            await db.commit()
+            logger.info("Blue-green cleanup: deleted %d old CCN document(s)", cleaned)
+
+        return cleaned
+
+    @staticmethod
+    async def _enqueue_old_docs_cleanup(old_doc_ids: list[str]) -> None:
+        """Enqueue a job to clean up old CCN documents after new one is indexed."""
+        from app.rag.tasks import get_arq_pool
+
+        pool = await get_arq_pool()
+        job_id = f"ccn_cleanup_{'_'.join(old_doc_ids[:3])}"
+        await pool.enqueue_job(
+            "run_ccn_blue_green_cleanup",
+            old_doc_ids,
+            _job_id=job_id,
+            _defer_by=120,  # Wait 2 minutes for ingestion to complete
+        )
+        logger.info(
+            "Blue-green cleanup enqueued for %d old doc(s): %s",
+            len(old_doc_ids), old_doc_ids,
+        )
 
     def _extract_text_ids(self, container: dict) -> list[str]:
         """Extract in-force KALITEXT IDs from a container response.
