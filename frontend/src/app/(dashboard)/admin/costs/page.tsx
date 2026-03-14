@@ -493,11 +493,11 @@ export default function AdminCostsPage() {
       )}
 
       {/* Tabs: Provider / Organisation / User / Pricing */}
-      <Tabs defaultValue="provider">
+      <Tabs defaultValue="organisation">
         <TabsList>
-          <TabsTrigger value="provider">Par modèle</TabsTrigger>
           <TabsTrigger value="organisation">Par organisation</TabsTrigger>
           <TabsTrigger value="user">Par utilisateur</TabsTrigger>
+          <TabsTrigger value="provider">Par modèle</TabsTrigger>
           <TabsTrigger value="pricing">Tarifs configurés</TabsTrigger>
         </TabsList>
 
