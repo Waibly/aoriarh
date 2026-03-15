@@ -34,14 +34,15 @@ class CcnService:
             )
             return list(result.scalars().all())
 
-        # Search by IDCC exact match or title ILIKE
+        # Search by IDCC or title or titre_court
         result = await self.db.execute(
             select(CcnReference)
             .where(
                 CcnReference.etat.ilike("VIGUEUR%"),
                 (CcnReference.idcc == q)
+                | CcnReference.idcc.ilike(f"%{q}%")
                 | CcnReference.titre.ilike(f"%{q}%")
-                | CcnReference.idcc.ilike(f"%{q}%"),
+                | CcnReference.titre_court.ilike(f"%{q}%"),
             )
             .order_by(CcnReference.titre)
             .limit(limit)
