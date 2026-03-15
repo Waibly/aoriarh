@@ -261,17 +261,43 @@ async def get_cost_dashboard(
         .group_by(ApiUsageLog.organisation_id, Organisation.name)
         .order_by(func.sum(ApiUsageLog.cost_usd).desc())
     )
-    by_organisation = [
-        CostByOrganisation(
-            organisation_id=str(r.organisation_id) if r.organisation_id else None,
-            organisation_name=r.org_name if r.org_name else "Organisation supprimée",
+    by_organisation_map: dict[str | None, CostByOrganisation] = {}
+    for r in org_q.all():
+        org_id = str(r.organisation_id) if r.organisation_id else None
+        if org_id is None and not r.org_name:
+            name = "Documents communs"
+        elif r.org_name:
+            name = r.org_name
+        else:
+            name = "Organisation supprimée"
+        by_organisation_map[org_id] = CostByOrganisation(
+            organisation_id=org_id,
+            organisation_name=name,
             cost_usd=float(r.cost or 0),
             total_questions=int(r.questions or 0),
             total_ingestions=int(r.ingestions or 0),
             calls=int(r.calls or 0),
         )
-        for r in org_q.all()
-    ]
+
+    # Add organisations with zero usage
+    all_orgs_q = await db.execute(select(Organisation.id, Organisation.name))
+    for org_row in all_orgs_q.all():
+        oid = str(org_row.id)
+        if oid not in by_organisation_map:
+            by_organisation_map[oid] = CostByOrganisation(
+                organisation_id=oid,
+                organisation_name=org_row.name,
+                cost_usd=0,
+                total_questions=0,
+                total_ingestions=0,
+                calls=0,
+            )
+
+    by_organisation = sorted(
+        by_organisation_map.values(),
+        key=lambda x: x.cost_usd,
+        reverse=True,
+    )
 
     # 5. By user — use snapshot as fallback for deleted users
     user_email_col = func.coalesce(
@@ -297,16 +323,37 @@ async def get_cost_dashboard(
         .order_by(func.sum(ApiUsageLog.cost_usd).desc())
         .limit(50)
     )
-    by_user = [
-        CostByUser(
-            user_id=str(r.user_id) if r.user_id else None,
+    by_user_map: dict[str | None, CostByUser] = {}
+    for r in user_q.all():
+        uid = str(r.user_id) if r.user_id else None
+        by_user_map[uid] = CostByUser(
+            user_id=uid,
             user_email=r.user_email if r.user_email else "Utilisateur supprimé",
             cost_usd=float(r.cost or 0),
             total_questions=int(r.questions or 0),
             calls=int(r.calls or 0),
         )
-        for r in user_q.all()
-    ]
+
+    # Add users with zero usage
+    all_users_q = await db.execute(
+        select(User.id, User.email).where(User.is_active.is_(True))
+    )
+    for u_row in all_users_q.all():
+        uid = str(u_row.id)
+        if uid not in by_user_map:
+            by_user_map[uid] = CostByUser(
+                user_id=uid,
+                user_email=u_row.email,
+                cost_usd=0,
+                total_questions=0,
+                calls=0,
+            )
+
+    by_user = sorted(
+        by_user_map.values(),
+        key=lambda x: x.cost_usd,
+        reverse=True,
+    )
 
     # 6. Current pricing
     pricing = [
