@@ -1,6 +1,9 @@
+import logging
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
+
+logger = logging.getLogger(__name__)
 from jose import JWTError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -43,7 +46,9 @@ async def login(
     service = AuthService(db)
     token = await service.login(data)
     if not token:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
+        client_ip = request.client.host if request.client else "unknown"
+        logger.warning("Login failed for %s from %s", data.email, client_ip)
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Email ou mot de passe incorrect")
     return token
 
 
@@ -64,9 +69,10 @@ async def refresh(
     try:
         payload = decode_refresh_token(data.refresh_token)
     except JWTError:
+        logger.warning("Refresh token failed from %s", request.client.host if request.client else "unknown")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Refresh token invalide ou expiré",
+            detail="Session expirée, veuillez vous reconnecter",
         )
 
     user_id = payload.get("sub")

@@ -296,8 +296,8 @@ function DeleteOrgDialog({
       toast.success("Organisation supprimée");
       onOpenChange(false);
       await onDeleted();
-    } catch {
-      toast.error("Erreur lors de la suppression");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Impossible de supprimer l'organisation");
     } finally {
       setSubmitting(false);
     }

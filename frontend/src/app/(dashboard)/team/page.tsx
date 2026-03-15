@@ -105,8 +105,8 @@ export default function TeamPage() {
       });
       toast.success("Membre retiré de l'équipe");
       fetchMembers();
-    } catch {
-      toast.error("Erreur lors de la suppression");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Impossible de retirer ce membre");
     }
     setRemoveTarget(null);
   };
@@ -650,8 +650,8 @@ function EditMemberDialog({
       toast.success("Membre mis à jour");
       onUpdated();
       onOpenChange(false);
-    } catch {
-      toast.error("Erreur lors de la mise à jour");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Impossible de mettre à jour ce membre");
     } finally {
       setSubmitting(false);
     }

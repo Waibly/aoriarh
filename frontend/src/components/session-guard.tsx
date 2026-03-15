@@ -28,7 +28,7 @@ export function SessionGuard({ children }: { children: React.ReactNode }) {
         signOut({ callbackUrl: "/login" });
       }
     }).catch(() => {
-      // Network error — don't sign out
+      // Network error — don't sign out, backend may be temporarily unreachable
     });
   }, [status, session?.access_token]);
 

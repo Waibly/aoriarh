@@ -49,7 +49,7 @@ export function OrgProvider({ children }: { children: React.ReactNode }) {
       const data = await apiFetch<{ workspace_name: string | null }>(`/users/me${params}`, { token });
       setWorkspaceNameState(data.workspace_name);
     } catch {
-      // ignore
+      // Non-blocking: workspace name is optional, continue without it
     }
   }, [token]);
 
@@ -74,6 +74,7 @@ export function OrgProvider({ children }: { children: React.ReactNode }) {
         localStorage.removeItem(STORAGE_KEY);
       }
     } catch {
+      // Network error or 401 (handled by apiFetch) — show empty state
       setOrganisations([]);
       setCurrentOrgIdState(null);
     } finally {
