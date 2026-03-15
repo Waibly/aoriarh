@@ -33,13 +33,20 @@ class OrganisationService:
     async def create_organisation(
         self, data: OrganisationCreate, user: User
     ) -> Organisation:
+        # Resolve account_id: own workspace first, then invited workspace
+        account_id = None
+        if user.owned_account:
+            account_id = user.owned_account.id
+        elif user.account_memberships:
+            account_id = user.account_memberships[0].account_id
+
         org = Organisation(
             name=data.name,
             forme_juridique=data.forme_juridique.value if data.forme_juridique else None,
             taille=data.taille.value if data.taille else None,
             convention_collective=data.convention_collective,
             secteur_activite=data.secteur_activite,
-            account_id=user.owned_account.id if user.owned_account else None,
+            account_id=account_id,
         )
         self.db.add(org)
         await self.db.flush()

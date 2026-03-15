@@ -22,9 +22,17 @@ router = APIRouter()
 @router.post("/", response_model=OrganisationRead, status_code=status.HTTP_201_CREATED)
 async def create_organisation(
     data: OrganisationCreate,
-    user: User = Depends(require_role(["admin", "manager"])),
+    user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> OrganisationRead:
+    # Allow: admin, manager (workspace owner), or invited manager in a workspace
+    can_create = (
+        user.role in ("admin", "manager")
+        or any(m.role_in_org == "manager" for m in user.account_memberships)
+    )
+    if not can_create:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=403, detail="Vous n'avez pas les droits pour créer une organisation")
     service = OrganisationService(db)
     return await service.create_organisation(data, user)
 

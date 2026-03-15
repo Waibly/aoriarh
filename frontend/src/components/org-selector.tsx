@@ -29,10 +29,11 @@ export function OrgSelector() {
   const [open, setOpen] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
 
-  // Can create orgs only if admin or workspace owner (manager with own workspace)
+  // Can create orgs: admin, workspace owner, or invited manager in a workspace
   const isAdmin = session?.user?.role === "admin";
-  const isWorkspaceOwner = session?.user?.role === "manager" && !!workspaceName;
-  const canCreate = isAdmin || isWorkspaceOwner;
+  const isManager = session?.user?.role === "manager";
+  const hasWorkspace = !!workspaceName;
+  const canCreate = isAdmin || isManager || hasWorkspace;
 
   // Auto-open create dialog when workspace owner has no organisations
   useEffect(() => {
