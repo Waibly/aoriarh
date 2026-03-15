@@ -122,6 +122,12 @@ export default function SyncsPage() {
     fetchLogs();
   }, [fetchLogs]);
 
+  // Auto-refresh logs every 10s
+  useEffect(() => {
+    const interval = setInterval(fetchLogs, 10000);
+    return () => clearInterval(interval);
+  }, [fetchLogs]);
+
   const handleTriggerCodeTravail = async () => {
     if (!token) return;
     setTriggeringCdt(true);

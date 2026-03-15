@@ -56,7 +56,6 @@ async def enqueue_code_travail_sync(user_id: str) -> None:
     await pool.enqueue_job(
         "run_code_travail_sync",
         user_id,
-        _job_id="code_travail_sync",
     )
     logger.info("Code du travail sync job enqueued")
 
@@ -66,7 +65,6 @@ async def enqueue_scheduled_sync() -> None:
     pool = await get_arq_pool()
     await pool.enqueue_job(
         "run_scheduled_sync",
-        _job_id="scheduled_sync",
     )
     logger.info("Scheduled sync job enqueued")
 
@@ -90,6 +88,5 @@ async def enqueue_judilibre_sync(
         chamber=chamber,
         publication=publication,
         max_decisions=max_decisions,
-        _job_id="judilibre_sync",  # single job — prevent duplicates
     )
     logger.info("Judilibre sync job enqueued")

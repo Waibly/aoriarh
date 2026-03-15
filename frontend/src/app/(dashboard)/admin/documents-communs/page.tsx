@@ -162,15 +162,12 @@ export default function DocumentsCommunsPage() {
     fetchDocuments();
   }, [fetchDocuments]);
 
-  // Polling : rafraîchir tant qu'un document est en cours de traitement
+  // Polling : 5s si indexation en cours, 10s sinon (détecte les nouveaux docs)
   useEffect(() => {
     const hasPending = documents.some(
       (d) => d.indexation_status === "pending" || d.indexation_status === "indexing"
     );
-    if (!hasPending) return;
-    const interval = setInterval(() => {
-      fetchDocuments();
-    }, 5000);
+    const interval = setInterval(fetchDocuments, hasPending ? 5000 : 10000);
     return () => clearInterval(interval);
   }, [documents, fetchDocuments]);
 
