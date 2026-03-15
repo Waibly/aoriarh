@@ -47,7 +47,7 @@ async def search_ccn(
 )
 async def list_org_conventions(
     organisation_id: uuid.UUID,
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_org_role(["manager", "user"])),
     db: AsyncSession = Depends(get_db),
 ) -> list[OrganisationConventionRead]:
     """List installed conventions for an organisation."""
@@ -64,13 +64,11 @@ async def list_org_conventions(
 async def install_convention(
     organisation_id: uuid.UUID,
     body: InstallConventionRequest,
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_org_role(["manager"])),
     db: AsyncSession = Depends(get_db),
 ) -> OrganisationConventionRead:
     """Install a convention collective for an organisation."""
     service = CcnService(db)
-    if user.role != "admin":
-        await service.verify_org_membership(organisation_id, user.id, role="manager")
     org_conv = await service.install_convention(organisation_id, body.idcc, user.id)
     return OrganisationConventionRead.from_orm_with_ccn(org_conv)
 
@@ -82,13 +80,11 @@ async def install_convention(
 async def remove_convention(
     organisation_id: uuid.UUID,
     idcc: str,
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_org_role(["manager"])),
     db: AsyncSession = Depends(get_db),
 ) -> None:
     """Remove a convention from an organisation."""
     service = CcnService(db)
-    if user.role != "admin":
-        await service.verify_org_membership(organisation_id, user.id, role="manager")
     await service.remove_convention(organisation_id, idcc)
 
 
@@ -100,13 +96,11 @@ async def remove_convention(
 async def sync_convention(
     organisation_id: uuid.UUID,
     idcc: str,
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_org_role(["manager"])),
     db: AsyncSession = Depends(get_db),
 ) -> OrganisationConventionRead:
     """Force re-sync of an installed convention."""
     service = CcnService(db)
-    if user.role != "admin":
-        await service.verify_org_membership(organisation_id, user.id, role="manager")
     org_conv = await service.sync_convention(organisation_id, idcc, user.id)
     return OrganisationConventionRead.from_orm_with_ccn(org_conv)
 
@@ -119,10 +113,7 @@ async def refresh_ccn_reference(
     user: User = Depends(require_role(["admin"])),
     db: AsyncSession = Depends(get_db),
 ) -> dict:
-    """Refresh the CCN reference table from the KALI API (admin only).
-
-    Falls back to static seed data if the API is unavailable.
-    """
+    """Refresh the CCN reference table from the KALI API (admin only)."""
     from app.services.kali_service import KaliService
 
     service = KaliService()

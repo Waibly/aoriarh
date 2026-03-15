@@ -153,6 +153,7 @@ export default function DocumentsPage() {
   const [addCcnOpen, setAddCcnOpen] = useState(false);
   const [selectedNewCcn, setSelectedNewCcn] = useState<CcnReference[]>([]);
   const [installingCcn, setInstallingCcn] = useState(false);
+  const [removeCcnIdcc, setRemoveCcnIdcc] = useState<string | null>(null);
 
   const initialLoadDone = useRef(false);
 
@@ -170,8 +171,8 @@ export default function DocumentsPage() {
       setDocuments(docs);
       setConventions(ccns);
       initialLoadDone.current = true;
-    } catch {
-      toast.error("Erreur lors du chargement des documents");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Erreur lors du chargement des documents");
     } finally {
       setLoading(false);
     }
@@ -183,19 +184,21 @@ export default function DocumentsPage() {
   }, [fetchDocuments]);
 
   // Polling : rafraîchir tant qu'un document ou une CCN est en cours de traitement
-  useEffect(() => {
-    const hasPendingDocs = documents.some(
+  const hasPending = useMemo(() => {
+    const pendingDocs = documents.some(
       (d) => d.indexation_status === "pending" || d.indexation_status === "indexing"
     );
-    const hasPendingCcn = conventions.some(
+    const pendingCcn = conventions.some(
       (c) => c.status === "pending" || c.status === "fetching" || c.status === "indexing"
     );
-    if (!hasPendingDocs && !hasPendingCcn) return;
-    const interval = setInterval(() => {
-      fetchDocuments();
-    }, 5000);
+    return pendingDocs || pendingCcn;
+  }, [documents, conventions]);
+
+  useEffect(() => {
+    if (!hasPending) return;
+    const interval = setInterval(fetchDocuments, 5000);
     return () => clearInterval(interval);
-  }, [documents, conventions, fetchDocuments]);
+  }, [hasPending, fetchDocuments]);
 
   useEffect(() => {
     setIsManager(
@@ -212,8 +215,8 @@ export default function DocumentsPage() {
       });
       toast.success("Document supprimé");
       fetchDocuments();
-    } catch {
-      toast.error("Erreur lors de la suppression");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Erreur lors de la suppression");
     }
   };
 
@@ -244,8 +247,8 @@ export default function DocumentsPage() {
       a.download = filename;
       a.click();
       URL.revokeObjectURL(url);
-    } catch {
-      toast.error("Erreur lors du téléchargement");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Erreur lors du téléchargement");
     }
   };
 
@@ -258,8 +261,8 @@ export default function DocumentsPage() {
       });
       toast.success("Réindexation lancée");
       fetchDocuments();
-    } catch {
-      toast.error("Erreur lors de la réindexation");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Erreur lors de la réindexation");
     }
   };
 
@@ -307,8 +310,8 @@ export default function DocumentsPage() {
       setSelectedNewCcn([]);
       setAddCcnOpen(false);
       fetchDocuments();
-    } catch {
-      toast.error("Erreur lors de l'installation");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Erreur lors de l'installation");
     } finally {
       setInstallingCcn(false);
     }
@@ -323,8 +326,8 @@ export default function DocumentsPage() {
       });
       toast.success("Mise à jour lancée");
       fetchDocuments();
-    } catch {
-      toast.error("Erreur lors de la mise à jour");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Erreur lors de la mise à jour");
     }
   };
 
@@ -336,9 +339,10 @@ export default function DocumentsPage() {
         token,
       });
       toast.success("Convention retirée");
+      setRemoveCcnIdcc(null);
       fetchDocuments();
-    } catch {
-      toast.error("Erreur lors de la suppression");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Erreur lors de la suppression");
     }
   };
 
@@ -547,7 +551,7 @@ export default function DocumentsPage() {
                         size="icon"
                         className="h-8 w-8 text-destructive hover:text-destructive"
                         title="Retirer"
-                        onClick={() => handleRemoveCcn(c.idcc)}
+                        onClick={() => setRemoveCcnIdcc(c.idcc)}
                       >
                         <Trash2 className="h-4 w-4" />
                       </Button>
@@ -644,6 +648,27 @@ export default function DocumentsPage() {
         token={token}
         onUploaded={fetchDocuments}
       />
+
+      {/* CCN removal confirmation */}
+      <Dialog open={removeCcnIdcc !== null} onOpenChange={(open) => { if (!open) setRemoveCcnIdcc(null); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Retirer la convention collective</DialogTitle>
+            <DialogDescription>
+              Cette action supprimera la convention et tous ses documents indexés.
+              Les réponses du chat ne pourront plus s&apos;appuyer sur cette convention.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setRemoveCcnIdcc(null)}>
+              Annuler
+            </Button>
+            <Button variant="destructive" onClick={() => removeCcnIdcc && handleRemoveCcn(removeCcnIdcc)}>
+              Retirer
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -957,6 +982,9 @@ function UploadDialog({
   const niveau = selectedOption?.niveau;
   const poids = niveau ? NORME_POIDS[niveau] : null;
 
+  const [typeSearchOpen, setTypeSearchOpen] = useState(false);
+  const [typeSearch, setTypeSearch] = useState("");
+
   useEffect(() => {
     if (open) {
       setFiles([]);
@@ -969,6 +997,8 @@ function UploadDialog({
       setDateDecision("");
       setSolution("");
       setPublication("");
+      setTypeSearch("");
+      setTypeSearchOpen(false);
       if (fileRef.current) fileRef.current.value = "";
     }
   }, [open]);
@@ -1086,8 +1116,6 @@ function UploadDialog({
     group.push(opt);
     grouped.set(opt.niveau, group);
   }
-  const [typeSearchOpen, setTypeSearchOpen] = useState(false);
-  const [typeSearch, setTypeSearch] = useState("");
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>

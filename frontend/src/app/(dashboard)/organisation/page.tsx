@@ -234,7 +234,7 @@ export default function OrganisationPage() {
         </Card>
       )}
 
-      {isOrgManager && (
+      {isOrgManager && token && (
         <>
           <OrgFormDialog
             open={editOpen}
@@ -243,7 +243,7 @@ export default function OrganisationPage() {
             onSubmit={async (data) => {
               await apiFetch(`/organisations/${currentOrg.id}`, {
                 method: "PATCH",
-                token: token!,
+                token,
                 body: JSON.stringify(data),
               });
               await refetchOrgs();
@@ -253,7 +253,7 @@ export default function OrganisationPage() {
             open={deleteOpen}
             onOpenChange={setDeleteOpen}
             org={currentOrg}
-            token={token!}
+            token={token}
             onDeleted={handleOrgDeleted}
           />
         </>

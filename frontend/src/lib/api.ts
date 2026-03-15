@@ -69,7 +69,11 @@ export async function apiFetch<T>(
     const retryResponse = await handleUnauthorized(path, options, buildHeaders);
     if (retryResponse) {
       if (!retryResponse.ok) {
-        throw new Error(`API error: ${retryResponse.status} ${retryResponse.statusText}`);
+        const errorData = await retryResponse.json().catch(() => null);
+        const detail = errorData?.detail;
+        throw new Error(
+          typeof detail === "string" ? detail : `Erreur ${retryResponse.status}`,
+        );
       }
       if (retryResponse.status === 204) return undefined as T;
       return retryResponse.json() as Promise<T>;
@@ -77,7 +81,15 @@ export async function apiFetch<T>(
   }
 
   if (!response.ok) {
-    throw new Error(`API error: ${response.status} ${response.statusText}`);
+    const errorData = await response.json().catch(() => null);
+    const detail = errorData?.detail;
+    throw new Error(
+      typeof detail === "string"
+        ? detail
+        : Array.isArray(detail)
+          ? detail.map((d: { msg?: string }) => d.msg || d).join(". ")
+          : `Erreur ${response.status}`,
+    );
   }
 
   if (response.status === 204) {
