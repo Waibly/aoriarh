@@ -42,6 +42,7 @@ class Settings(BaseSettings):
 
     # Brevo (email)
     brevo_api_key: str  # OBLIGATOIRE — pas de défaut
+    support_email: str = "support@aoriarh.fr"
     frontend_url: str = "http://localhost:3000"
 
     # Stripe

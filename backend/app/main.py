@@ -29,6 +29,7 @@ from app.api import (
     documents,
     invitations,
     organisations,
+    support,
     team,
     users,
 )
@@ -167,6 +168,7 @@ async def log_requests(request: Request, call_next) -> Response:
 
 app.include_router(auth.router, prefix="/api/v1/auth", tags=["auth"])
 app.include_router(users.router, prefix="/api/v1/users", tags=["users"])
+app.include_router(support.router, prefix="/api/v1/support", tags=["support"])
 app.include_router(organisations.router, prefix="/api/v1/organisations", tags=["organisations"])
 app.include_router(documents.router, prefix="/api/v1/documents", tags=["documents"])
 app.include_router(
