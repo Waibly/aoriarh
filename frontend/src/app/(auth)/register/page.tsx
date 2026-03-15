@@ -15,6 +15,15 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { PROFIL_METIER_OPTIONS } from "@/types/api";
+import { UserCog } from "lucide-react";
 
 const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
@@ -47,6 +56,9 @@ function RegisterForm() {
 
   // Step 3 — Organisation
   const [orgName, setOrgName] = useState("");
+
+  // Invitation step 2 — Profil métier
+  const [profilMetier, setProfilMetier] = useState("");
 
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -101,7 +113,23 @@ function RegisterForm() {
 
       const registerData = await res.json().catch(() => null);
 
-      // 2. Create first org if name provided (use token from register response)
+      // 2. Save profil_metier if provided (invitation flow)
+      if (profilMetier && registerData?.access_token) {
+        try {
+          await fetch(`${API_BASE_URL}/users/me`, {
+            method: "PATCH",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${registerData.access_token}`,
+            },
+            body: JSON.stringify({ profil_metier: profilMetier }),
+          });
+        } catch {
+          // Non-blocking
+        }
+      }
+
+      // 3. Create first org if name provided (use token from register response)
       if (orgName.trim() && registerData?.access_token) {
         try {
           await fetch(`${API_BASE_URL}/organisations/`, {
@@ -150,7 +178,9 @@ function RegisterForm() {
         </h1>
         <p className="text-muted-foreground text-sm">
           {isInvitation
-            ? "Créez votre compte pour accepter l'invitation"
+            ? step === 1
+              ? "Créez votre compte pour accepter l'invitation"
+              : "Une dernière étape pour personnaliser vos réponses"
             : step === 1
               ? "Entrez vos informations pour commencer"
               : step === 2
@@ -159,8 +189,24 @@ function RegisterForm() {
         </p>
       </div>
 
-      {/* Stepper — hidden for invitations */}
-      {!isInvitation && (
+      {/* Stepper */}
+      {isInvitation ? (
+        <div className="flex items-center justify-center gap-2 py-2">
+          <StepBadge
+            step={1}
+            current={step}
+            icon={<User className="h-3.5 w-3.5" />}
+            label="Compte"
+          />
+          <div className="h-px w-6 bg-border" />
+          <StepBadge
+            step={2}
+            current={step}
+            icon={<UserCog className="h-3.5 w-3.5" />}
+            label="Profil"
+          />
+        </div>
+      ) : (
         <div className="flex items-center justify-center gap-2 py-2">
           <StepBadge
             step={1}
@@ -198,11 +244,7 @@ function RegisterForm() {
             onSubmit={(e) => {
               e.preventDefault();
               if (!validateStep1()) return;
-              if (isInvitation) {
-                handleSubmit();
-              } else {
-                setStep(2);
-              }
+              setStep(2);
             }}
           >
             <div className="grid gap-4">
@@ -258,22 +300,68 @@ function RegisterForm() {
                   minLength={8}
                 />
               </div>
-              <Button type="submit" disabled={isLoading}>
-                {isInvitation ? (
-                  isLoading ? "Création en cours..." : "Créer mon compte"
-                ) : (
-                  <>
-                    Suivant
-                    <ArrowRight className="ml-2 h-4 w-4" />
-                  </>
-                )}
+              <Button type="submit">
+                Suivant
+                <ArrowRight className="ml-2 h-4 w-4" />
               </Button>
             </div>
           </form>
         )}
 
-        {/* Step 2 — Espace de travail */}
-        {step === 2 && (
+        {/* Step 2 — Profil métier (invitation) or Espace de travail (normal) */}
+        {step === 2 && isInvitation && (
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              handleSubmit();
+            }}
+          >
+            <div className="grid gap-4">
+              <div className="grid gap-2">
+                <Label htmlFor="profilMetier">
+                  Quel est votre rôle ?{" "}
+                  <span className="text-destructive">*</span>
+                </Label>
+                <Select value={profilMetier} onValueChange={setProfilMetier}>
+                  <SelectTrigger id="profilMetier">
+                    <SelectValue placeholder="Sélectionner votre profil..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {PROFIL_METIER_OPTIONS.map((p) => (
+                      <SelectItem key={p.value} value={p.value}>
+                        {p.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  Votre fonction permet d&apos;adapter les réponses juridiques à
+                  votre perspective métier.
+                </p>
+              </div>
+              <div className="flex gap-3">
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="flex-1"
+                  onClick={() => setStep(1)}
+                >
+                  <ArrowLeft className="mr-2 h-4 w-4" />
+                  Retour
+                </Button>
+                <Button
+                  type="submit"
+                  className="flex-1"
+                  disabled={!profilMetier || isLoading}
+                >
+                  {isLoading ? "Création en cours..." : "Créer mon compte"}
+                </Button>
+              </div>
+            </div>
+          </form>
+        )}
+
+        {step === 2 && !isInvitation && (
           <form
             onSubmit={(e) => {
               e.preventDefault();
