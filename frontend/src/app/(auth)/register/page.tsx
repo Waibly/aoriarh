@@ -31,8 +31,9 @@ function RegisterForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const callbackUrl = searchParams.get("callbackUrl");
+  const isInvitation = callbackUrl?.includes("/invite/accept/") ?? false;
 
-  // Step management
+  // Step management — skip workspace/org steps for invitations
   const [step, setStep] = useState(1);
 
   // Step 1 — Compte
@@ -76,7 +77,8 @@ function RegisterForm() {
           email,
           password,
           full_name: fullName,
-          workspace_name: workspaceName.trim() || null,
+          workspace_name: isInvitation ? null : (workspaceName.trim() || null),
+          invited: isInvitation,
         }),
       });
 
@@ -144,38 +146,44 @@ function RegisterForm() {
     <>
       <div className="flex flex-col space-y-2 text-center">
         <h1 className="text-2xl font-semibold tracking-tight">
-          Créer un compte
+          {isInvitation ? "Rejoindre l'équipe" : "Créer un compte"}
         </h1>
         <p className="text-muted-foreground text-sm">
-          {step === 1 && "Entrez vos informations pour commencer"}
-          {step === 2 && "Nommez votre espace de travail"}
-          {step === 3 && "Créez votre première organisation"}
+          {isInvitation
+            ? "Créez votre compte pour accepter l'invitation"
+            : step === 1
+              ? "Entrez vos informations pour commencer"
+              : step === 2
+                ? "Nommez votre espace de travail"
+                : "Créez votre première organisation"}
         </p>
       </div>
 
-      {/* Stepper */}
-      <div className="flex items-center justify-center gap-2 py-2">
-        <StepBadge
-          step={1}
-          current={step}
-          icon={<User className="h-3.5 w-3.5" />}
-          label="Compte"
-        />
-        <div className="h-px w-6 bg-border" />
-        <StepBadge
-          step={2}
-          current={step}
-          icon={<Briefcase className="h-3.5 w-3.5" />}
-          label="Espace"
-        />
-        <div className="h-px w-6 bg-border" />
-        <StepBadge
-          step={3}
-          current={step}
-          icon={<Building2 className="h-3.5 w-3.5" />}
-          label="Organisation"
-        />
-      </div>
+      {/* Stepper — hidden for invitations */}
+      {!isInvitation && (
+        <div className="flex items-center justify-center gap-2 py-2">
+          <StepBadge
+            step={1}
+            current={step}
+            icon={<User className="h-3.5 w-3.5" />}
+            label="Compte"
+          />
+          <div className="h-px w-6 bg-border" />
+          <StepBadge
+            step={2}
+            current={step}
+            icon={<Briefcase className="h-3.5 w-3.5" />}
+            label="Espace"
+          />
+          <div className="h-px w-6 bg-border" />
+          <StepBadge
+            step={3}
+            current={step}
+            icon={<Building2 className="h-3.5 w-3.5" />}
+            label="Organisation"
+          />
+        </div>
+      )}
 
       <div className="grid gap-6">
         {error && (
@@ -189,7 +197,12 @@ function RegisterForm() {
           <form
             onSubmit={(e) => {
               e.preventDefault();
-              if (validateStep1()) setStep(2);
+              if (!validateStep1()) return;
+              if (isInvitation) {
+                handleSubmit();
+              } else {
+                setStep(2);
+              }
             }}
           >
             <div className="grid gap-4">
@@ -245,9 +258,15 @@ function RegisterForm() {
                   minLength={8}
                 />
               </div>
-              <Button type="submit">
-                Suivant
-                <ArrowRight className="ml-2 h-4 w-4" />
+              <Button type="submit" disabled={isLoading}>
+                {isInvitation ? (
+                  isLoading ? "Création en cours..." : "Créer mon compte"
+                ) : (
+                  <>
+                    Suivant
+                    <ArrowRight className="ml-2 h-4 w-4" />
+                  </>
+                )}
               </Button>
             </div>
           </form>

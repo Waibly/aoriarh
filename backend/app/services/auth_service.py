@@ -34,6 +34,20 @@ class AuthService:
                 detail="Un compte avec cet email existe déjà",
             )
 
+        if data.invited:
+            # Invited user: no Account, role=user
+            user = User(
+                email=data.email,
+                hashed_password=hash_password(data.password),
+                full_name=data.full_name,
+                role="user",
+            )
+            self.db.add(user)
+            await self.db.commit()
+            await self.db.refresh(user)
+            return _build_token_response(str(user.id))
+
+        # Self-registration: create Account + role=manager
         user = User(
             email=data.email,
             hashed_password=hash_password(data.password),
