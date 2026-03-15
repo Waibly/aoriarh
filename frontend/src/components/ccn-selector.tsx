@@ -174,6 +174,15 @@ export function CcnSelector({
 
       <p className="text-xs text-muted-foreground">
         Les textes seront installés automatiquement après la création.
+        Vous ne connaissez pas votre IDCC ?{" "}
+        <a
+          href="https://www.elections-professionnelles.travail.gouv.fr/web/guest/recherche-idcc"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-primary underline underline-offset-2 hover:text-primary/80"
+        >
+          Trouvez-le ici
+        </a>.
       </p>
     </div>
   );
