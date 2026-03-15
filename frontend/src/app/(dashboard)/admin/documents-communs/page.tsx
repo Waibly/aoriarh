@@ -3,12 +3,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSession } from "next-auth/react";
 import {
+  BookOpen,
+  CheckCircle2,
   Download,
   FileUp,
   Loader2,
   RefreshCw,
   Replace,
+  Search,
   Trash2,
+  X,
 } from "lucide-react";
 import { toast } from "sonner";
 import { apiFetch, authFetch } from "@/lib/api";
@@ -139,7 +143,10 @@ export default function DocumentsCommunsPage() {
   const [loading, setLoading] = useState(false);
   const [uploadOpen, setUploadOpen] = useState(false);
   const [page, setPage] = useState(1);
-  const PAGE_SIZE = 50;
+  const [pageSize, setPageSize] = useState(50);
+  const [search, setSearch] = useState("");
+  const [filterType, setFilterType] = useState("");
+  const [syncingCdt, setSyncingCdt] = useState(false);
 
   const initialLoadDone = useRef(false);
 
@@ -252,27 +259,160 @@ export default function DocumentsCommunsPage() {
     }
   };
 
-  const totalPages = Math.max(1, Math.ceil(documents.length / PAGE_SIZE));
-  const paginatedDocs = useMemo(
-    () => documents.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE),
-    [documents, page],
+  // Code du travail documents (separate from the table)
+  const codeTravailDocs = useMemo(
+    () => documents.filter(
+      (d) => d.source_type === "code_travail" || d.source_type === "code_travail_reglementaire"
+    ),
+    [documents],
   );
 
-  // Reset to page 1 when documents change (e.g. after upload/delete)
+  // Other documents (everything except Code du travail)
+  const otherDocs = useMemo(() => {
+    let docs = documents.filter(
+      (d) => d.source_type !== "code_travail" && d.source_type !== "code_travail_reglementaire"
+    );
+    if (search.trim()) {
+      const q = search.toLowerCase();
+      docs = docs.filter(
+        (d) =>
+          d.name.toLowerCase().includes(q) ||
+          (SOURCE_TYPE_OPTIONS.find((s) => s.value === d.source_type)?.label ?? "")
+            .toLowerCase()
+            .includes(q)
+      );
+    }
+    if (filterType && filterType !== "all") {
+      docs = docs.filter((d) => d.source_type === filterType);
+    }
+    return docs;
+  }, [documents, search, filterType]);
+
+  const totalPages = Math.max(1, Math.ceil(otherDocs.length / pageSize));
+  const paginatedDocs = useMemo(
+    () => otherDocs.slice((page - 1) * pageSize, page * pageSize),
+    [otherDocs, page, pageSize],
+  );
+
+  // Available source types for filter (from actual data, excluding code du travail)
+  const typeOptions = useMemo(() => {
+    const types = new Set(
+      documents
+        .filter((d) => d.source_type !== "code_travail" && d.source_type !== "code_travail_reglementaire")
+        .map((d) => d.source_type)
+    );
+    return Array.from(types)
+      .map((t) => ({
+        value: t,
+        label: SOURCE_TYPE_OPTIONS.find((s) => s.value === t)?.label ?? t,
+      }))
+      .sort((a, b) => a.label.localeCompare(b.label));
+  }, [documents]);
+
+  // Reset to page 1 when filters change
+  useEffect(() => {
+    setPage(1);
+  }, [search, filterType, pageSize]);
+
   useEffect(() => {
     if (page > totalPages) setPage(1);
   }, [totalPages, page]);
+
+  const handleSyncCodeTravail = async () => {
+    if (!token) return;
+    setSyncingCdt(true);
+    try {
+      await apiFetch("/admin/syncs/code-travail", { method: "POST", token });
+      toast.success("Synchronisation du Code du travail lancée");
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "";
+      if (msg.includes("409")) {
+        toast.warning("Une synchronisation est déjà en cours");
+      } else {
+        toast.error("Erreur lors de la synchronisation");
+      }
+    } finally {
+      setSyncingCdt(false);
+    }
+  };
 
   return (
     <div className="space-y-6">
       <h1 className="text-2xl font-semibold tracking-tight">Documents communs</h1>
 
+      {/* Code du travail block */}
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between">
+          <div className="space-y-1.5">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <BookOpen className="h-5 w-5" />
+              Code du travail
+            </CardTitle>
+            <CardDescription>
+              {codeTravailDocs.length === 0
+                ? "Non synchronisé — cliquez sur Synchroniser pour récupérer le Code du travail depuis Légifrance"
+                : "Récupéré automatiquement depuis l'API Légifrance"}
+            </CardDescription>
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleSyncCodeTravail}
+            disabled={syncingCdt}
+          >
+            <RefreshCw className={`mr-2 h-4 w-4 ${syncingCdt ? "animate-spin" : ""}`} />
+            {syncingCdt ? "Synchronisation..." : "Synchroniser"}
+          </Button>
+        </CardHeader>
+        {codeTravailDocs.length > 0 && (
+          <CardContent className="space-y-2">
+            {codeTravailDocs.map((doc) => (
+              <div
+                key={doc.id}
+                className="flex items-center gap-3 rounded-lg border border-border p-3"
+              >
+                {doc.indexation_status === "indexed" && (
+                  <CheckCircle2 className="h-5 w-5 text-green-600 dark:text-green-400 shrink-0" />
+                )}
+                {(doc.indexation_status === "pending" || doc.indexation_status === "indexing") && (
+                  <Loader2 className="h-5 w-5 animate-spin text-blue-600 dark:text-blue-400 shrink-0" />
+                )}
+                {doc.indexation_status === "error" && (
+                  <X className="h-5 w-5 text-destructive shrink-0" />
+                )}
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium">{doc.name}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {doc.chunk_count != null && `${doc.chunk_count} chunks — `}
+                    {formatFileSize(doc.file_size)}
+                    {doc.indexation_status === "pending" && " — En attente"}
+                    {doc.indexation_status === "indexing" && " — Indexation en cours"}
+                    {doc.indexation_status === "indexed" && ` — Indexé le ${new Date(doc.created_at).toLocaleDateString("fr-FR")}`}
+                    {doc.indexation_status === "error" && " — Erreur"}
+                  </p>
+                </div>
+                <div className="flex items-center gap-1 shrink-0">
+                  <Button variant="ghost" size="icon" className="h-8 w-8" title="Télécharger" onClick={() => handleDownload(doc.id)}>
+                    <Download className="h-4 w-4" />
+                  </Button>
+                  <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:text-destructive" title="Supprimer" onClick={() => handleDelete(doc.id)}>
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </CardContent>
+        )}
+      </Card>
+
+      {/* Base documentaire commune */}
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
           <div className="space-y-1.5">
             <CardTitle>Base documentaire commune</CardTitle>
             <CardDescription>
-              {documents.length} document{documents.length !== 1 ? "s" : ""} —
+              {otherDocs.length} document{otherDocs.length !== 1 ? "s" : ""}
+              {search || (filterType && filterType !== "all") ? " (filtré)" : ""} —
               partagés avec toutes les organisations
             </CardDescription>
           </div>
@@ -282,16 +422,59 @@ export default function DocumentsCommunsPage() {
           </Button>
         </CardHeader>
         <CardContent>
+          {/* Search + filters */}
+          {!loading && documents.length > 0 && (
+            <div className="mb-4 flex flex-wrap items-center gap-3">
+              <div className="relative flex-1 min-w-[200px] max-w-sm">
+                <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  placeholder="Rechercher un document..."
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  className="pl-9"
+                />
+              </div>
+              <Select value={filterType} onValueChange={setFilterType}>
+                <SelectTrigger className="w-[200px]">
+                  <SelectValue placeholder="Tous les types" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Tous les types</SelectItem>
+                  {typeOptions.map((opt) => (
+                    <SelectItem key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Select value={String(pageSize)} onValueChange={(v) => setPageSize(Number(v))}>
+                <SelectTrigger className="w-[100px]">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="50">50 / page</SelectItem>
+                  <SelectItem value="100">100 / page</SelectItem>
+                </SelectContent>
+              </Select>
+              {(search || (filterType && filterType !== "all")) && (
+                <Button variant="ghost" size="sm" onClick={() => { setSearch(""); setFilterType("all"); }}>
+                  Réinitialiser
+                </Button>
+              )}
+            </div>
+          )}
+
           {loading ? (
             <div className="space-y-3">
               {[1, 2, 3].map((i) => (
                 <Skeleton key={i} className="h-12 w-full" />
               ))}
             </div>
-          ) : documents.length === 0 ? (
+          ) : otherDocs.length === 0 ? (
             <p className="py-8 text-center text-muted-foreground">
-              Aucun document commun. Ajoutez le Code du travail ou une
-              convention collective.
+              {search || (filterType && filterType !== "all")
+                ? "Aucun document ne correspond aux filtres."
+                : "Aucun document commun."}
             </p>
           ) : (
             <>
@@ -324,7 +507,7 @@ export default function DocumentsCommunsPage() {
               {totalPages > 1 && (
                 <div className="flex items-center justify-between border-t pt-4 mt-4">
                   <p className="text-sm text-muted-foreground">
-                    {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, documents.length)} sur {documents.length}
+                    {(page - 1) * pageSize + 1}–{Math.min(page * pageSize, otherDocs.length)} sur {otherDocs.length}
                   </p>
                   <div className="flex items-center gap-2">
                     <Button
