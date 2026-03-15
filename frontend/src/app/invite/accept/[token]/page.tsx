@@ -82,7 +82,7 @@ export default function AcceptInvitationPage() {
 
         setPageState("accepted");
         setTimeout(() => {
-          router.push("/organisation");
+          router.push("/chat");
         }, 1500);
       } catch {
         setPageState("error");
