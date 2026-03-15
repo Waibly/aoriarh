@@ -357,7 +357,7 @@ async def get_cost_dashboard(
         uid = str(r.user_id) if r.user_id else None
         by_user_map[uid] = CostByUser(
             user_id=uid,
-            user_email=r.user_email if r.user_email else "Utilisateur supprimé",
+            user_email=r.user_email if r.user_email else ("Système (automatique)" if uid is None else "Utilisateur supprimé"),
             cost_usd=float(r.cost or 0),
             cost_questions_usd=float(r.cost_questions or 0),
             cost_ingestion_usd=float(r.cost_ingestion or 0),
