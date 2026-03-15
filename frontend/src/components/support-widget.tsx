@@ -37,9 +37,7 @@ export function SupportWidget() {
   const panelRef = useRef<HTMLDivElement>(null);
 
   const token = session?.access_token;
-
-  // Don't show if not logged in
-  if (!session?.user) return null;
+  const isLoggedIn = !!session?.user;
 
   // Close on click outside
   useEffect(() => {
@@ -90,6 +88,8 @@ export function SupportWidget() {
 
   const placeholder =
     TYPES.find((t) => t.value === type)?.placeholder ?? "Votre message...";
+
+  if (!isLoggedIn) return null;
 
   return (
     <>
