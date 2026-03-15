@@ -132,7 +132,7 @@ export function SupportWidget() {
                   className={cn(
                     "rounded-full border px-3 py-1 text-xs font-medium transition-colors",
                     type === t.value
-                      ? "border-primary bg-primary/10 text-primary"
+                      ? "border-[#9952b8] bg-[#9952b8]/10 text-[#9952b8]"
                       : "border-border hover:bg-muted"
                   )}
                 >
