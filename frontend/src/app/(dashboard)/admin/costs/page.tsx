@@ -71,6 +71,8 @@ interface CostByOrganisation {
   organisation_id: string | null;
   organisation_name: string | null;
   cost_usd: number;
+  cost_questions_usd: number;
+  cost_ingestion_usd: number;
   total_questions: number;
   total_ingestions: number;
   calls: number;
@@ -80,7 +82,10 @@ interface CostByUser {
   user_id: string | null;
   user_email: string | null;
   cost_usd: number;
+  cost_questions_usd: number;
+  cost_ingestion_usd: number;
   total_questions: number;
+  total_ingestions: number;
   calls: number;
 }
 
@@ -569,9 +574,10 @@ export default function AdminCostsPage() {
                   <TableRow>
                     <TableHead>Organisation</TableHead>
                     <TableHead className="text-right">Questions</TableHead>
-                    <TableHead className="text-right">Documents</TableHead>
-                    <TableHead className="text-right">Appels</TableHead>
-                    <TableHead className="text-right">Coût</TableHead>
+                    <TableHead className="text-right">Coût questions</TableHead>
+                    <TableHead className="text-right">Ingestions</TableHead>
+                    <TableHead className="text-right">Coût ingestion</TableHead>
+                    <TableHead className="text-right">Coût total</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -588,10 +594,13 @@ export default function AdminCostsPage() {
                         {row.total_questions.toLocaleString("fr-FR")}
                       </TableCell>
                       <TableCell className="text-right">
+                        {formatUSD(row.cost_questions_usd)}
+                      </TableCell>
+                      <TableCell className="text-right">
                         {row.total_ingestions.toLocaleString("fr-FR")}
                       </TableCell>
                       <TableCell className="text-right">
-                        {row.calls.toLocaleString("fr-FR")}
+                        {formatUSD(row.cost_ingestion_usd)}
                       </TableCell>
                       <TableCell className="text-right font-medium">
                         {formatUSD(row.cost_usd)}
@@ -601,7 +610,7 @@ export default function AdminCostsPage() {
                   {by_organisation.length === 0 && (
                     <TableRow>
                       <TableCell
-                        colSpan={5}
+                        colSpan={6}
                         className="text-center text-muted-foreground py-8"
                       >
                         Aucune donnée sur cette période
@@ -623,8 +632,10 @@ export default function AdminCostsPage() {
                   <TableRow>
                     <TableHead>Utilisateur</TableHead>
                     <TableHead className="text-right">Questions</TableHead>
-                    <TableHead className="text-right">Appels</TableHead>
-                    <TableHead className="text-right">Coût</TableHead>
+                    <TableHead className="text-right">Coût questions</TableHead>
+                    <TableHead className="text-right">Ingestions</TableHead>
+                    <TableHead className="text-right">Coût ingestion</TableHead>
+                    <TableHead className="text-right">Coût total</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -641,7 +652,13 @@ export default function AdminCostsPage() {
                         {row.total_questions.toLocaleString("fr-FR")}
                       </TableCell>
                       <TableCell className="text-right">
-                        {row.calls.toLocaleString("fr-FR")}
+                        {formatUSD(row.cost_questions_usd)}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        {row.total_ingestions.toLocaleString("fr-FR")}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        {formatUSD(row.cost_ingestion_usd)}
                       </TableCell>
                       <TableCell className="text-right font-medium">
                         {formatUSD(row.cost_usd)}
@@ -651,7 +668,7 @@ export default function AdminCostsPage() {
                   {by_user.length === 0 && (
                     <TableRow>
                       <TableCell
-                        colSpan={4}
+                        colSpan={6}
                         className="text-center text-muted-foreground py-8"
                       >
                         Aucune donnée sur cette période

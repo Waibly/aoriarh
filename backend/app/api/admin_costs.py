@@ -55,6 +55,8 @@ class CostByOrganisation(BaseModel):
     organisation_id: str | None
     organisation_name: str | None
     cost_usd: float
+    cost_questions_usd: float
+    cost_ingestion_usd: float
     total_questions: int
     total_ingestions: int
     calls: int
@@ -64,7 +66,10 @@ class CostByUser(BaseModel):
     user_id: str | None
     user_email: str | None
     cost_usd: float
+    cost_questions_usd: float
+    cost_ingestion_usd: float
     total_questions: int
+    total_ingestions: int
     calls: int
 
 
@@ -244,6 +249,14 @@ async def get_cost_dashboard(
             ApiUsageLog.organisation_id,
             org_name_col,
             func.sum(ApiUsageLog.cost_usd).label("cost"),
+            func.coalesce(func.sum(case(
+                (ApiUsageLog.context_type == "question", ApiUsageLog.cost_usd),
+                else_=0,
+            )), 0).label("cost_questions"),
+            func.coalesce(func.sum(case(
+                (ApiUsageLog.context_type == "ingestion", ApiUsageLog.cost_usd),
+                else_=0,
+            )), 0).label("cost_ingestion"),
             func.count(distinct(
                 case(
                     (ApiUsageLog.context_type == "question", ApiUsageLog.context_id),
@@ -274,6 +287,8 @@ async def get_cost_dashboard(
             organisation_id=org_id,
             organisation_name=name,
             cost_usd=float(r.cost or 0),
+            cost_questions_usd=float(r.cost_questions or 0),
+            cost_ingestion_usd=float(r.cost_ingestion or 0),
             total_questions=int(r.questions or 0),
             total_ingestions=int(r.ingestions or 0),
             calls=int(r.calls or 0),
@@ -288,6 +303,8 @@ async def get_cost_dashboard(
                 organisation_id=oid,
                 organisation_name=org_row.name,
                 cost_usd=0,
+                cost_questions_usd=0,
+                cost_ingestion_usd=0,
                 total_questions=0,
                 total_ingestions=0,
                 calls=0,
@@ -310,18 +327,30 @@ async def get_cost_dashboard(
             ApiUsageLog.user_id,
             user_email_col,
             func.sum(ApiUsageLog.cost_usd).label("cost"),
+            func.coalesce(func.sum(case(
+                (ApiUsageLog.context_type == "question", ApiUsageLog.cost_usd),
+                else_=0,
+            )), 0).label("cost_questions"),
+            func.coalesce(func.sum(case(
+                (ApiUsageLog.context_type == "ingestion", ApiUsageLog.cost_usd),
+                else_=0,
+            )), 0).label("cost_ingestion"),
             func.count(distinct(
                 case(
                     (ApiUsageLog.context_type == "question", ApiUsageLog.context_id),
                 )
             )).label("questions"),
+            func.count(distinct(
+                case(
+                    (ApiUsageLog.context_type == "ingestion", ApiUsageLog.context_id),
+                )
+            )).label("ingestions"),
             func.count(ApiUsageLog.id).label("calls"),
         )
         .outerjoin(User, User.id == ApiUsageLog.user_id)
         .where(*filters)
         .group_by(ApiUsageLog.user_id, User.email)
         .order_by(func.sum(ApiUsageLog.cost_usd).desc())
-        .limit(50)
     )
     by_user_map: dict[str | None, CostByUser] = {}
     for r in user_q.all():
@@ -330,7 +359,10 @@ async def get_cost_dashboard(
             user_id=uid,
             user_email=r.user_email if r.user_email else "Utilisateur supprimé",
             cost_usd=float(r.cost or 0),
+            cost_questions_usd=float(r.cost_questions or 0),
+            cost_ingestion_usd=float(r.cost_ingestion or 0),
             total_questions=int(r.questions or 0),
+            total_ingestions=int(r.ingestions or 0),
             calls=int(r.calls or 0),
         )
 
@@ -345,7 +377,10 @@ async def get_cost_dashboard(
                 user_id=uid,
                 user_email=u_row.email,
                 cost_usd=0,
+                cost_questions_usd=0,
+                cost_ingestion_usd=0,
                 total_questions=0,
+                total_ingestions=0,
                 calls=0,
             )
 
