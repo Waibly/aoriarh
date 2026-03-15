@@ -10,6 +10,7 @@ from app.core.security import (
     verify_password,
 )
 from app.models.account import Account
+from app.models.invitation import Invitation
 from app.models.user import User
 from app.schemas.auth import GoogleAuthRequest, LoginRequest, RegisterRequest, TokenResponse
 
@@ -93,7 +94,30 @@ class AuthService:
                 await self.db.commit()
             return _build_token_response(str(user.id))
 
-        # New user — create account
+        # Check if there's a pending invitation for this email
+        inv_result = await self.db.execute(
+            select(Invitation).where(
+                Invitation.email == data.email,
+                Invitation.status == "pending",
+            )
+        )
+        has_pending_invitation = inv_result.scalar_one_or_none() is not None
+
+        if has_pending_invitation:
+            # Invited user via Google — no Account, role=user
+            user = User(
+                email=data.email,
+                hashed_password=None,
+                full_name=data.full_name,
+                auth_provider="google",
+                role="user",
+            )
+            self.db.add(user)
+            await self.db.commit()
+            await self.db.refresh(user)
+            return _build_token_response(str(user.id))
+
+        # Self-registration via Google — create Account + role=manager
         user = User(
             email=data.email,
             hashed_password=None,
