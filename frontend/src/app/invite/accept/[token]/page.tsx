@@ -82,7 +82,8 @@ export default function AcceptInvitationPage() {
 
         setPageState("accepted");
         setTimeout(() => {
-          router.push("/chat");
+          // Full page reload to reset OrgProvider with new memberships
+          window.location.href = "/chat";
         }, 1500);
       } catch {
         setPageState("error");

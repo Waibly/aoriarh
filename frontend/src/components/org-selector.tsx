@@ -35,12 +35,13 @@ export function OrgSelector() {
   const hasWorkspace = !!workspaceName;
   const canCreate = isAdmin || isManager || hasWorkspace;
 
-  // Auto-open create dialog when workspace owner has no organisations
+  // Auto-open create dialog ONLY for workspace owners (not invited users)
+  const isWorkspaceOwner = session?.user?.role === "manager" && !!workspaceName;
   useEffect(() => {
-    if (!loading && organisations.length === 0 && canCreate) {
+    if (!loading && organisations.length === 0 && (isAdmin || isWorkspaceOwner)) {
       setCreateOpen(true);
     }
-  }, [loading, organisations.length, canCreate]);
+  }, [loading, organisations.length, isAdmin, isWorkspaceOwner]);
 
   if (loading) {
     return (
