@@ -108,7 +108,7 @@ export function SupportWidget() {
       {open && (
         <div
           ref={panelRef}
-          className="fixed bottom-6 right-6 z-50 w-[340px] rounded-xl border bg-card shadow-xl"
+          className="fixed bottom-6 right-6 z-50 w-[340px] rounded-xl border bg-card shadow-2xl ring-1 ring-black/5"
         >
           {/* Header */}
           <div className="flex items-center justify-between border-b px-4 py-3">
