@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, Suspense } from "react";
+import { useState, useEffect, Suspense } from "react";
 import { signIn } from "next-auth/react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
@@ -39,8 +39,22 @@ export default function RegisterPage() {
 function RegisterForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const callbackUrl = searchParams.get("callbackUrl");
-  const isInvitation = callbackUrl?.includes("/invite/accept/") ?? false;
+  const rawCallback = searchParams.get("callbackUrl");
+  const callbackUrl = rawCallback?.startsWith("/") ? rawCallback : null;
+  // Extract invitation token and validate it exists
+  const inviteToken = callbackUrl?.match(/\/invite\/accept\/([^/?]+)/)?.[1] ?? null;
+  const [isInvitation, setIsInvitation] = useState(false);
+
+  useEffect(() => {
+    if (!inviteToken) return;
+    // Validate token is real and pending before enabling invitation mode
+    fetch(`${API_BASE_URL}/invitations/${inviteToken}/validate`)
+      .then((res) => res.ok ? res.json() : null)
+      .then((data) => {
+        if (data?.valid) setIsInvitation(true);
+      })
+      .catch(() => {});
+  }, [inviteToken]);
 
   // Step management — skip workspace/org steps for invitations
   const [step, setStep] = useState(1);

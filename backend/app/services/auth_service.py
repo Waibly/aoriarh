@@ -28,7 +28,8 @@ class AuthService:
         self.db = db
 
     async def register(self, data: RegisterRequest) -> TokenResponse:
-        result = await self.db.execute(select(User).where(User.email == data.email))
+        email = data.email.lower().strip()
+        result = await self.db.execute(select(User).where(User.email == email))
         if result.scalar_one_or_none():
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
@@ -38,7 +39,7 @@ class AuthService:
         if data.invited:
             # Invited user: no Account, role=user
             user = User(
-                email=data.email,
+                email=email,
                 hashed_password=hash_password(data.password),
                 full_name=data.full_name,
                 role="user",
@@ -50,7 +51,7 @@ class AuthService:
 
         # Self-registration: create Account + role=manager
         user = User(
-            email=data.email,
+            email=email,
             hashed_password=hash_password(data.password),
             full_name=data.full_name,
             role="manager",
@@ -68,17 +69,22 @@ class AuthService:
         return _build_token_response(str(user.id))
 
     async def login(self, data: LoginRequest) -> TokenResponse | None:
-        result = await self.db.execute(select(User).where(User.email == data.email))
+        email = data.email.lower().strip()
+        result = await self.db.execute(select(User).where(User.email == email))
         user = result.scalar_one_or_none()
         if not user or not user.hashed_password or not verify_password(data.password, user.hashed_password):
             return None
         if not user.is_active:
-            return None
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Compte désactivé",
+            )
         return _build_token_response(str(user.id))
 
     async def google_auth(self, data: GoogleAuthRequest) -> TokenResponse:
         """Login or register a user via Google OAuth."""
-        result = await self.db.execute(select(User).where(User.email == data.email))
+        email = data.email.lower().strip()
+        result = await self.db.execute(select(User).where(User.email == email))
         user = result.scalar_one_or_none()
 
         if user:
@@ -97,7 +103,7 @@ class AuthService:
         # Check if there's a pending invitation for this email
         inv_result = await self.db.execute(
             select(Invitation).where(
-                Invitation.email == data.email,
+                Invitation.email.ilike(email),
                 Invitation.status == "pending",
             )
         )
@@ -106,7 +112,7 @@ class AuthService:
         if has_pending_invitation:
             # Invited user via Google — no Account, role=user
             user = User(
-                email=data.email,
+                email=email,
                 hashed_password=None,
                 full_name=data.full_name,
                 auth_provider="google",
@@ -119,7 +125,7 @@ class AuthService:
 
         # Self-registration via Google — create Account + role=manager
         user = User(
-            email=data.email,
+            email=email,
             hashed_password=None,
             full_name=data.full_name,
             auth_provider="google",

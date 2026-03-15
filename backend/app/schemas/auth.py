@@ -15,17 +15,9 @@ class RegisterRequest(BaseModel):
 
     @field_validator("password")
     @classmethod
-    def password_complexity(cls, v: str) -> str:
-        if len(v) < 12:
-            raise ValueError("Le mot de passe doit contenir au moins 12 caractères")
-        if not any(c.isupper() for c in v):
-            raise ValueError("Le mot de passe doit contenir au moins une majuscule")
-        if not any(c.islower() for c in v):
-            raise ValueError("Le mot de passe doit contenir au moins une minuscule")
-        if not any(c.isdigit() for c in v):
-            raise ValueError("Le mot de passe doit contenir au moins un chiffre")
-        if not any(c in "!@#$%^&*()_+-=[]{}|;:',.<>?/~`" for c in v):
-            raise ValueError("Le mot de passe doit contenir au moins un caractère spécial")
+    def password_min_length(cls, v: str) -> str:
+        if len(v) < 8:
+            raise ValueError("Le mot de passe doit contenir au moins 8 caractères")
         return v
 
 
