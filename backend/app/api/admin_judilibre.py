@@ -81,10 +81,10 @@ async def sync_judilibre(
 async def list_jurisprudence(
     user: User = Depends(require_role(["admin"])),
     db: AsyncSession = Depends(get_db),
-    page: int = Query(0, ge=0),
+    page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=200),
 ) -> list[DocumentRead]:
-    """List ingested jurisprudence decisions (paginated)."""
+    """List ingested jurisprudence decisions (paginated, 1-based)."""
     juris_types = [
         "arret_cour_cassation",
         "arret_conseil_etat",
@@ -97,7 +97,7 @@ async def list_jurisprudence(
             Document.organisation_id.is_(None),
         )
         .order_by(Document.date_decision.desc().nullslast(), Document.created_at.desc())
-        .offset(page * page_size)
+        .offset((page - 1) * page_size)
         .limit(page_size)
     )
     return list(result.scalars().all())  # type: ignore[return-value]

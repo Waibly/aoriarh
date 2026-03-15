@@ -118,7 +118,7 @@ export default function JurisprudencePage() {
   const [decisions, setDecisions] = useState<Document[]>([]);
   const [loading, setLoading] = useState(true);
   const [syncDialogOpen, setSyncDialogOpen] = useState(false);
-  const [page, setPage] = useState(0);
+  const [page, setPage] = useState(1);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -320,13 +320,13 @@ export default function JurisprudencePage() {
             {stats && stats.total > PAGE_SIZE && (
               <div className="flex items-center justify-between border-t pt-4">
                 <p className="text-sm text-muted-foreground">
-                  {page * PAGE_SIZE + 1}–{Math.min((page + 1) * PAGE_SIZE, stats.total)} sur {stats.total} arrêts
+                  {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, stats.total)} sur {stats.total} arrêts
                 </p>
                 <div className="flex gap-2">
                   <Button
                     variant="outline"
                     size="sm"
-                    disabled={page === 0}
+                    disabled={page <= 1}
                     onClick={() => setPage((p) => p - 1)}
                   >
                     <ChevronLeft className="mr-1 h-4 w-4" />
@@ -335,7 +335,7 @@ export default function JurisprudencePage() {
                   <Button
                     variant="outline"
                     size="sm"
-                    disabled={(page + 1) * PAGE_SIZE >= stats.total}
+                    disabled={page * PAGE_SIZE >= stats.total}
                     onClick={() => setPage((p) => p + 1)}
                   >
                     Suivant

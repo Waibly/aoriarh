@@ -141,6 +141,9 @@ async def upload_common_document(
     return doc  # type: ignore[return-value]
 
 
+MAX_FILES_PER_BATCH = 20
+
+
 @router.post("/batch", response_model=BatchUploadResponse)
 async def upload_common_documents_batch(
     request: Request,
@@ -150,6 +153,26 @@ async def upload_common_documents_batch(
     db: AsyncSession = Depends(get_db),
 ) -> BatchUploadResponse:
     """Upload multiple common documents of the same type in one request."""
+    if len(files) > MAX_FILES_PER_BATCH:
+        from fastapi import HTTPException
+        raise HTTPException(
+            status_code=400,
+            detail=f"Maximum {MAX_FILES_PER_BATCH} fichiers par lot",
+        )
+
+    # Validate all files first (size, format)
+    allowed_types = {
+        "application/pdf", "text/plain",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    }
+    for file in files:
+        if file.size and file.size > MAX_FILE_SIZE_ADMIN:
+            from fastapi import HTTPException
+            raise HTTPException(
+                status_code=400,
+                detail=f"Le fichier {file.filename} dépasse la taille maximale",
+            )
+
     service = DocumentService(db)
     results: list[BatchUploadFileResult] = []
 

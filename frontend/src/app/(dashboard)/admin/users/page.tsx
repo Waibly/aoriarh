@@ -133,11 +133,27 @@ export default function AdminUsersPage() {
   const [selectedDuration, setSelectedDuration] = useState<string>("1");
   const [planSaving, setPlanSaving] = useState(false);
 
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+
+  // Debounce search to avoid spamming API
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(search);
+      setPage(1);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [search]);
+
   const fetchUsers = useCallback(async () => {
     if (!token) return;
     try {
+      const params = new URLSearchParams({
+        page: String(page),
+        page_size: String(PAGE_SIZE),
+      });
+      if (debouncedSearch.trim()) params.set("search", debouncedSearch.trim());
       const res = await apiFetch<UserListResponse>(
-        `/admin/users/?page=${page}&page_size=${PAGE_SIZE}`,
+        `/admin/users/?${params}`,
         { token },
       );
       setData(res);
@@ -146,22 +162,14 @@ export default function AdminUsersPage() {
     } finally {
       setLoading(false);
     }
-  }, [token, page]);
+  }, [token, page, debouncedSearch]);
 
   useEffect(() => {
     setLoading(true);
     fetchUsers();
   }, [fetchUsers]);
 
-  const filteredItems = data?.items.filter((u) => {
-    if (!search.trim()) return true;
-    const q = search.toLowerCase();
-    return (
-      u.full_name.toLowerCase().includes(q) ||
-      u.email.toLowerCase().includes(q) ||
-      u.organisations.some((o) => o.organisation_name.toLowerCase().includes(q))
-    );
-  });
+  const filteredItems = data?.items;
 
   const totalPages = data ? Math.max(1, Math.ceil(data.total / PAGE_SIZE)) : 1;
 
@@ -311,7 +319,7 @@ export default function AdminUsersPage() {
                         </TableCell>
                         <TableCell>
                           <button onClick={() => openRoleDialog(user)} className="cursor-pointer" title="Modifier le rôle">
-                            <Badge variant="outline" className={badge.className}>{badge.label}</Badge>
+                            <Badge variant="outline" className={`${badge.className} hover:opacity-75 transition-opacity`}>{badge.label}</Badge>
                           </button>
                         </TableCell>
                         <TableCell className="text-sm">

@@ -2,7 +2,7 @@ import logging
 from datetime import date, datetime, timedelta
 
 from fastapi import APIRouter, Depends, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import func, select, case, distinct, literal
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -414,8 +414,8 @@ async def get_cost_dashboard(
 class PricingUpdate(BaseModel):
     provider: str
     model: str
-    price_input_per_million: float
-    price_output_per_million: float | None = None
+    price_input_per_million: float = Field(ge=0)
+    price_output_per_million: float | None = Field(None, ge=0)
 
 
 @router.put("/pricing", response_model=list[PricingEntry], status_code=status.HTTP_200_OK)
