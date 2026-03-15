@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
 from app.core.dependencies import get_current_user
 from app.models.account import Account
+from app.models.organisation import Organisation
 from app.models.user import User
 from app.schemas.user import PasswordChange, UserRead, UserUpdate
 from app.services.user_service import UserService
@@ -17,42 +18,51 @@ router = APIRouter()
 async def get_me(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
+    organisation_id: str | None = Query(None, description="Current org to resolve plan/workspace"),
 ) -> UserRead:
-    # Resolve effective plan: team account takes priority over personal account
+    # Resolve plan and workspace from the current organisation's Account
     plan = None
     plan_expires_at = None
+    workspace_name = None
+    workspace_id = None
 
-    if user.account_memberships:
-        # User is a team member — use the team account's plan
-        team_account_id = user.account_memberships[0].account_id
-        result = await db.execute(
-            select(Account).where(Account.id == team_account_id)
+    # If an organisation is specified, find its parent Account
+    if organisation_id:
+        org_result = await db.execute(
+            select(Organisation).where(Organisation.id == organisation_id)
         )
-        team_account = result.scalar_one_or_none()
-        if team_account:
-            plan = team_account.plan
-            plan_expires_at = team_account.plan_expires_at
+        org = org_result.scalar_one_or_none()
+        if org and org.account_id:
+            acc_result = await db.execute(
+                select(Account).where(Account.id == org.account_id)
+            )
+            account = acc_result.scalar_one_or_none()
+            if account:
+                plan = account.plan
+                plan_expires_at = account.plan_expires_at
+                workspace_name = account.name
+                workspace_id = account.id
 
-    # Fallback to personal account
+    # Fallback: user's own account
     if plan is None and user.owned_account:
         plan = user.owned_account.plan
         plan_expires_at = user.owned_account.plan_expires_at
-
-    # Resolve workspace name
-    workspace_name = None
-    workspace_id = None
-    if user.owned_account:
         workspace_name = user.owned_account.name
         workspace_id = user.owned_account.id
-    elif user.account_memberships:
+
+    # Fallback: first team account membership
+    if plan is None and user.account_memberships:
         team_account_id = user.account_memberships[0].account_id
-        result2 = await db.execute(
+        acc_result = await db.execute(
             select(Account).where(Account.id == team_account_id)
         )
-        team_acc = result2.scalar_one_or_none()
+        team_acc = acc_result.scalar_one_or_none()
         if team_acc:
-            workspace_name = team_acc.name
-            workspace_id = team_acc.id
+            plan = team_acc.plan
+            plan_expires_at = team_acc.plan_expires_at
+            if not workspace_name:
+                workspace_name = team_acc.name
+                workspace_id = team_acc.id
 
     return UserRead(
         id=user.id,

@@ -42,19 +42,23 @@ export function OrgProvider({ children }: { children: React.ReactNode }) {
 
   const token = session?.access_token;
 
+  const fetchUserContext = useCallback(async (orgId: string | null) => {
+    if (!token) return;
+    try {
+      const params = orgId ? `?organisation_id=${orgId}` : "";
+      const data = await apiFetch<{ workspace_name: string | null }>(`/users/me${params}`, { token });
+      setWorkspaceNameState(data.workspace_name);
+    } catch {
+      // ignore
+    }
+  }, [token]);
+
   const fetchOrgs = useCallback(async () => {
     if (!token) {
-      // Session pas encore chargée — on reste en loading
-      // pour ne pas déclencher la modale "créer org" à tort.
       return;
     }
     setLoading(true);
     try {
-      // Fetch workspace name alongside orgs
-      apiFetch<{ workspace_name: string | null }>("/users/me", { token })
-        .then((data) => setWorkspaceNameState(data.workspace_name))
-        .catch(() => {});
-
       const orgs = await apiFetch<Organisation[]>("/organisations/", { token });
       setOrganisations(orgs);
 
@@ -80,6 +84,11 @@ export function OrgProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     fetchOrgs();
   }, [fetchOrgs]);
+
+  // Refresh workspace/plan when current org changes
+  useEffect(() => {
+    fetchUserContext(currentOrgId);
+  }, [currentOrgId, fetchUserContext]);
 
   const setCurrentOrgId = (id: string) => {
     setCurrentOrgIdState(id);

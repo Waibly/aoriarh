@@ -265,18 +265,19 @@ export function Sidebar() {
 
   const fullName = session?.user?.full_name ?? "Utilisateur";
   const token = session?.access_token;
-  const { workspaceName } = useOrg();
+  const { workspaceName, currentOrg } = useOrg();
 
   const [userPlan, setUserPlan] = useState<{ plan: string; plan_expires_at: string | null } | null>(null);
 
   const fetchPlan = useCallback(() => {
     if (!token) return;
-    apiFetch<{ plan: string | null; plan_expires_at: string | null }>("/users/me", { token })
+    const params = currentOrg?.id ? `?organisation_id=${currentOrg.id}` : "";
+    apiFetch<{ plan: string | null; plan_expires_at: string | null }>(`/users/me${params}`, { token })
       .then((data) => {
         setUserPlan({ plan: data.plan ?? "gratuit", plan_expires_at: data.plan_expires_at });
       })
       .catch(() => {});
-  }, [token]);
+  }, [token, currentOrg?.id]);
 
   useEffect(() => {
     fetchPlan();
