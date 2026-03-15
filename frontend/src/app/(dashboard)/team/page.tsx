@@ -11,6 +11,7 @@ import {
   Globe,
   Building2,
   Crown,
+  Info,
 } from "lucide-react";
 import { toast } from "sonner";
 import { apiFetch } from "@/lib/api";
@@ -490,6 +491,13 @@ function InviteTeamDialog({
               >
                 Manager
               </button>
+            </div>
+            <div className="flex items-start gap-1.5 rounded-md bg-muted/50 p-2">
+              <Info className="h-3.5 w-3.5 text-muted-foreground mt-0.5 shrink-0" />
+              <p className="text-xs text-muted-foreground">
+                <strong>Utilisateur</strong> : peut consulter le chat et les documents.{" "}
+                <strong>Manager</strong> : peut aussi ajouter des documents, gérer les membres et créer des organisations.
+              </p>
             </div>
           </div>
 
