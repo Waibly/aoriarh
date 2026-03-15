@@ -1,4 +1,5 @@
 import logging
+import urllib.parse
 import uuid
 from datetime import date
 
@@ -171,7 +172,7 @@ async def download_document(
         content=file_bytes,
         media_type=content_type,
         headers={
-            "Content-Disposition": f'attachment; filename="{doc.name}"',
+            "Content-Disposition": "attachment; filename*=UTF-8''" + urllib.parse.quote(doc.name, safe=""),
         },
     )
 

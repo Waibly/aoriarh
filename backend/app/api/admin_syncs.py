@@ -94,8 +94,19 @@ async def list_sync_logs(
 @router.post("/trigger")
 async def trigger_scheduled_sync(
     user: User = Depends(require_role(["admin"])),
+    db: AsyncSession = Depends(get_db),
 ) -> dict:
     """Manually trigger the bi-monthly sync (jurisprudence + CCN rotation)."""
+    running = await db.execute(
+        select(SyncLog).where(
+            SyncLog.sync_type.in_(["jurisprudence", "ccn"]),
+            SyncLog.status == "running",
+        )
+    )
+    if running.scalar_one_or_none():
+        from fastapi import HTTPException
+        raise HTTPException(status_code=409, detail="Une synchronisation est déjà en cours")
+
     from app.rag.tasks import enqueue_scheduled_sync
     await enqueue_scheduled_sync()
     return {"detail": "Synchronisation planifiée lancée"}
@@ -104,8 +115,21 @@ async def trigger_scheduled_sync(
 @router.post("/code-travail")
 async def trigger_code_travail_sync(
     user: User = Depends(require_role(["admin"])),
+    db: AsyncSession = Depends(get_db),
 ) -> dict:
     """Manually trigger Code du travail sync from Légifrance API."""
+    # Check if a sync is already running (document pending/indexing for code_travail)
+    from sqlalchemy import or_
+    running = await db.execute(
+        select(SyncLog).where(
+            SyncLog.sync_type == "code_travail",
+            SyncLog.status == "running",
+        )
+    )
+    if running.scalar_one_or_none():
+        from fastapi import HTTPException
+        raise HTTPException(status_code=409, detail="Une synchronisation du Code du travail est déjà en cours")
+
     from app.rag.tasks import enqueue_code_travail_sync
     await enqueue_code_travail_sync(str(user.id))
     return {"detail": "Synchronisation du Code du travail lancée"}

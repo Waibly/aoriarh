@@ -29,7 +29,7 @@ from app.rag.tasks import enqueue_ingestion
 logger = logging.getLogger(__name__)
 
 _LEGITEXT_CODE_TRAVAIL = "LEGITEXT000006072050"
-_REQUEST_TIMEOUT = 120.0
+_REQUEST_TIMEOUT = 180.0  # Code du travail is a large payload
 _RETRY_DELAY = 2.0
 _MAX_RETRIES = 3
 _TOKEN_REFRESH_MARGIN = 300
@@ -120,29 +120,26 @@ class LegiService:
             return result
 
         try:
-            # Step 1: Fetch table of contents to get all section/article structure
-            logger.info("LegiService: fetching Code du travail structure...")
+            # Step 1: Fetch entire code via /consult/legiPart (single API call, all articles inline)
+            logger.info("LegiService: fetching Code du travail via legiPart...")
             articles_legislatif: list[dict] = []
             articles_reglementaire: list[dict] = []
 
             async with httpx.AsyncClient(timeout=_REQUEST_TIMEOUT) as client:
-                # Fetch the code's table of contents
-                toc = await self._api_post(client, "/consult/code/tableMatieres", {
+                data = await self._api_post(client, "/consult/legiPart", {
                     "textId": _LEGITEXT_CODE_TRAVAIL,
                     "date": datetime.now(UTC).strftime("%Y-%m-%d"),
                 })
-                if toc is None:
-                    raise ValueError("Impossible de récupérer la table des matières du Code du travail")
+                if data is None:
+                    raise ValueError("Impossible de récupérer le Code du travail depuis l'API LEGI")
 
-                # Walk the TOC to extract all articles
-                sections = toc.get("sections", [])
+                # Walk the structure to extract all articles with content
+                sections = data.get("sections", [])
                 for section in sections:
                     section_title = section.get("title", section.get("titre", ""))
                     is_reglementaire = self._is_reglementaire_section(section_title)
 
-                    articles = await self._fetch_section_articles(
-                        client, section, section_title
-                    )
+                    articles = self._extract_articles_from_section(section, section_title)
 
                     if is_reglementaire:
                         articles_reglementaire.extend(articles)
@@ -266,46 +263,35 @@ class LegiService:
 
         return True, str(new_doc.id)
 
-    async def _fetch_section_articles(
-        self,
-        client: httpx.AsyncClient,
+    @classmethod
+    def _extract_articles_from_section(
+        cls,
         section: dict,
         path: str,
     ) -> list[dict]:
-        """Recursively fetch articles from a TOC section."""
+        """Recursively extract articles with content from a legiPart section."""
         articles: list[dict] = []
 
-        # Extract articles at this level
         for article in section.get("articles", []):
-            if not self._is_in_force(article):
+            if not cls._is_in_force(article):
                 continue
-            content = article.get("content", article.get("texte", ""))
-            if not content:
-                # Need to fetch full article
-                article_id = article.get("id", "")
-                if article_id:
-                    await asyncio.sleep(_API_THROTTLE)
-                    full = await self._api_post(client, "/consult/getArticle", {
-                        "id": article_id,
-                    })
-                    if full:
-                        content = full.get("article", {}).get("texte", full.get("texte", ""))
-
+            content = (
+                article.get("texte")
+                or article.get("texteHtml")
+                or article.get("content")
+                or ""
+            )
             if content:
                 articles.append({
                     "num": article.get("num", ""),
-                    "content": self._clean_html(content),
+                    "content": cls._clean_html(content),
                     "section": path,
                 })
 
-        # Recurse into sub-sections
         for child in section.get("sections", section.get("children", [])):
             child_title = child.get("title", child.get("titre", ""))
             child_path = f"{path} > {child_title}" if child_title else path
-
-            # If child has articles inline, extract them
-            child_articles = await self._fetch_section_articles(client, child, child_path)
-            articles.extend(child_articles)
+            articles.extend(cls._extract_articles_from_section(child, child_path))
 
         return articles
 

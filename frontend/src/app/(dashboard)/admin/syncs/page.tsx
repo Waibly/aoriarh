@@ -129,8 +129,13 @@ export default function SyncsPage() {
       await apiFetch("/admin/syncs/code-travail", { method: "POST", token });
       toast.success("Synchronisation du Code du travail lancée");
       setTimeout(fetchLogs, 3000);
-    } catch {
-      toast.error("Erreur lors du déclenchement");
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "";
+      if (msg.includes("409")) {
+        toast.warning("Une synchronisation est déjà en cours");
+      } else {
+        toast.error("Erreur lors du déclenchement");
+      }
     } finally {
       setTriggeringCdt(false);
     }

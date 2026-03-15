@@ -16,11 +16,19 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.models.document import Document
+from app.rag.article_chunker import ArticleChunker
 from app.rag.chunker import LegalChunker
 from app.rag.config import EMBEDDING_MODEL
 from app.services.cost_tracker import cost_tracker
 from app.rag.jurisprudence_chunker import JurisprudenceChunker
 from app.rag.norme_hierarchy import JURISPRUDENCE_SOURCE_TYPES
+
+# Source types that use article-aware chunking (Code du travail, CCN)
+ARTICLE_AWARE_SOURCE_TYPES = {
+    "code_travail",
+    "code_travail_reglementaire",
+    "convention_collective_nationale",
+}
 from app.rag.qdrant_store import COLLECTION_NAME, ensure_collection, get_qdrant_client
 from app.rag.text_cleaner import clean_text
 from app.rag.text_extractor import TextExtractor
@@ -184,6 +192,7 @@ class IngestionPipeline:
     def __init__(self) -> None:
         self.extractor = TextExtractor()
         self.chunker = LegalChunker()
+        self.article_chunker = ArticleChunker()
         self.jurisprudence_chunker = JurisprudenceChunker()
         self.storage = StorageService()
         self.qdrant = get_qdrant_client()
@@ -232,12 +241,14 @@ class IngestionPipeline:
                 await db.commit()
                 return
 
-            # 6. Chunk (route to jurisprudence chunker when applicable)
+            # 6. Chunk (route to specialized chunker by source type)
             if doc.source_type in JURISPRUDENCE_SOURCE_TYPES:
                 metadata_header = self._build_jurisprudence_header(doc)
                 chunks = self.jurisprudence_chunker.chunk(
                     cleaned_text, metadata_header=metadata_header,
                 )
+            elif doc.source_type in ARTICLE_AWARE_SOURCE_TYPES:
+                chunks = self.article_chunker.chunk(cleaned_text)
             else:
                 chunks = self.chunker.chunk(cleaned_text)
             if not chunks:

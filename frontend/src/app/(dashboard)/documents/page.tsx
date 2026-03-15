@@ -226,7 +226,18 @@ export default function DocumentsPage() {
       if (!res.ok) throw new Error("Erreur");
       const blob = await res.blob();
       const disposition = res.headers.get("Content-Disposition");
-      const filename = disposition?.match(/filename="(.+)"/)?.[1] ?? "document";
+      let filename = "document";
+      if (disposition) {
+        // Try UTF-8 encoded filename (filename*=UTF-8''...)
+        const utf8Match = disposition.match(/filename\*=UTF-8''(.+)/i);
+        if (utf8Match) {
+          filename = decodeURIComponent(utf8Match[1].replace(/;.*$/, "").trim());
+        } else {
+          // Fallback to regular filename="..."
+          const asciiMatch = disposition.match(/filename="(.+?)"/);
+          if (asciiMatch) filename = asciiMatch[1];
+        }
+      }
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
