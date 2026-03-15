@@ -48,6 +48,7 @@ async def _get_embeddings_batch(
     client: httpx.AsyncClient,
     organisation_id: str | None = None,
     document_id: str | None = None,
+    user_id: str | None = None,
 ) -> list[list[float]]:
     """Get dense embeddings for a single batch (max 128 texts) with retry on 429."""
     url = "https://api.voyageai.com/v1/embeddings"
@@ -92,6 +93,7 @@ async def _get_embeddings_batch(
                 operation_type="embedding",
                 tokens_input=total_tokens,
                 organisation_id=organisation_id,
+                user_id=user_id,
                 context_type="ingestion",
                 context_id=document_id,
             )
@@ -139,6 +141,7 @@ async def _get_embeddings_with_progress(
 
     org_id_str = str(doc.organisation_id) if doc.organisation_id else None
     doc_id_str = str(doc.id)
+    user_id_str = str(doc.uploaded_by) if doc.uploaded_by else None
 
     async def _process_batch(
         batch_idx: int, client: httpx.AsyncClient
@@ -151,6 +154,7 @@ async def _get_embeddings_with_progress(
                 batch, api_key, client,
                 organisation_id=org_id_str,
                 document_id=doc_id_str,
+                user_id=user_id_str,
             )
         async with db_lock:
             done_count += 1
