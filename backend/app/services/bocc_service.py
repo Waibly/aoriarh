@@ -316,7 +316,7 @@ class BoccService:
         pdfs = []
         try:
             # Write to temp file, decompress with gzip (handles .Z format)
-            with tempfile.NamedTemporaryFile(suffix=".taz", delete=False) as tmp:
+            with tempfile.NamedTemporaryFile(suffix=".Z", delete=False) as tmp:
                 tmp.write(archive_bytes)
                 tmp_path = tmp.name
 
