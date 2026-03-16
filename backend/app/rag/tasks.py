@@ -50,6 +50,28 @@ async def enqueue_kali_install(org_convention_id: str, user_id: str) -> None:
     logger.info("KALI install job enqueued for org_convention %s", org_convention_id)
 
 
+async def enqueue_bocc_sync(user_id: str, year: int | None = None, week: int | None = None) -> None:
+    """Enqueue a BOCC sync job. If year/week not specified, syncs latest."""
+    pool = await get_arq_pool()
+    await pool.enqueue_job(
+        "run_bocc_sync",
+        user_id,
+        year=year,
+        week=week,
+    )
+    logger.info("BOCC sync job enqueued (year=%s, week=%s)", year, week)
+
+
+async def enqueue_bocc_backfill(user_id: str) -> None:
+    """Enqueue a full BOCC backfill job (3 last years)."""
+    pool = await get_arq_pool()
+    await pool.enqueue_job(
+        "run_bocc_backfill",
+        user_id,
+    )
+    logger.info("BOCC backfill job enqueued")
+
+
 async def enqueue_code_travail_sync(user_id: str) -> None:
     """Enqueue a Code du travail sync job."""
     pool = await get_arq_pool()

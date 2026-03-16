@@ -508,21 +508,24 @@ export default function DocumentsPage() {
                       {c.status === "indexing" && " — Indexation en cours"}
                       {c.status === "error" && " — Erreur de mise à jour"}
                     </p>
-                    {/* List CCN documents — ordered: base first, then annexes, then salaires */}
-                    {c.status === "ready" && (
-                      <div className="mt-1.5 space-y-0.5">
-                        {documents
-                          .filter((d) => d.source_type === "convention_collective_nationale" && d.name.includes(`IDCC ${c.idcc}`))
-                          .sort((a, b) => {
-                            // Base first, then annexes, then salaires
-                            const order = (name: string) => {
-                              if (name.includes("Avenants")) return 1;
-                              if (name.includes("Grilles")) return 2;
-                              return 0;
-                            };
-                            return order(a.name) - order(b.name);
-                          })
-                          .map((d) => {
+                    {/* List CCN documents — ordered: base first, then annexes, then salaires, then BOCC */}
+                    {c.status === "ready" && (() => {
+                      const ccnDocs = documents
+                        .filter((d) => d.source_type === "convention_collective_nationale" && d.name.includes(`IDCC ${c.idcc}`))
+                        .sort((a, b) => {
+                          const order = (name: string) => {
+                            if (name.includes("BOCC")) return 3;
+                            if (name.includes("Avenants")) return 1;
+                            if (name.includes("Grilles")) return 2;
+                            return 0;
+                          };
+                          return order(a.name) - order(b.name);
+                        });
+                      const kaliDocs = ccnDocs.filter((d) => !d.name.includes("BOCC"));
+                      const boccDocs = ccnDocs.filter((d) => d.name.includes("BOCC"));
+                      return (
+                        <div className="mt-1.5 space-y-0.5">
+                          {kaliDocs.map((d) => {
                             const suffix = d.name.includes("Avenants") ? "Avenants et annexes" : d.name.includes("Grilles") ? "Grilles de salaires" : "Texte de base";
                             return (
                               <p key={d.id} className="text-xs text-foreground/60 pl-3 border-l-2 border-muted">
@@ -530,8 +533,14 @@ export default function DocumentsPage() {
                               </p>
                             );
                           })}
-                      </div>
-                    )}
+                          {boccDocs.length > 0 && (
+                            <p className="text-xs text-foreground/60 pl-3 border-l-2 border-blue-300">
+                              {boccDocs.length} avenant{boccDocs.length > 1 ? "s" : ""} BOCC
+                            </p>
+                          )}
+                        </div>
+                      );
+                    })()}
                     {c.status === "error" && c.error_message && (
                       <p className="text-xs text-destructive mt-0.5 truncate" title={c.error_message}>
                         {c.error_message}

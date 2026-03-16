@@ -17,6 +17,8 @@ from arq.connections import RedisSettings
 from arq.cron import cron
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
+from sqlalchemy import select
+
 from app.core.config import settings
 from app.rag.ingestion import IngestionPipeline
 
@@ -118,6 +120,65 @@ async def run_kali_install(ctx: dict, org_convention_id: str, user_id: str) -> N
         )
     except Exception:
         logger.exception("Worker: KALI install failed for %s", org_convention_id)
+
+
+async def run_bocc_sync(
+    ctx: dict,
+    user_id: str,
+    *,
+    year: int | None = None,
+    week: int | None = None,
+) -> None:
+    """Tâche de synchronisation BOCC."""
+    logger.info("Worker: BOCC sync started (year=%s, week=%s)", year, week)
+    session_factory = ctx["session_factory"]
+    try:
+        from app.models.bocc_issue import BoccIssue
+        from app.services.bocc_service import BoccService
+
+        service = BoccService()
+
+        # If no year/week specified, find the latest not yet processed
+        if year is None or week is None:
+            import datetime as dt
+            today = dt.date.today()
+            # Current ISO week - 2 (DILA has ~2 week delay)
+            target = today - dt.timedelta(weeks=2)
+            year = target.isocalendar()[0]
+            week = target.isocalendar()[1]
+
+        async with session_factory() as db:
+            # Check if already processed
+            existing = await db.execute(
+                select(BoccIssue).where(BoccIssue.numero == f"{year}-{week:02d}")
+            )
+            if existing.scalar_one_or_none():
+                logger.info("BOCC %d-%02d already processed, skipping", year, week)
+                return
+
+            result = await service.process_issue(db, year, week, uuid.UUID(user_id))
+
+            # Record in bocc_issues
+            issue = BoccIssue(
+                numero=f"{year}-{week:02d}",
+                year=year,
+                week=week,
+                avenants_count=result.avenants_found,
+                avenants_ingested=result.avenants_ingested,
+                status="error" if result.errors > 0 and result.avenants_found == 0 else "processed",
+                error_message="; ".join(result.error_messages[:3]) if result.error_messages else None,
+                processed_at=datetime.now(UTC),
+            )
+            db.add(issue)
+            await db.commit()
+
+        logger.info(
+            "Worker: BOCC %d-%02d completed — %d found, %d ingested, %d stored, %d errors",
+            year, week, result.avenants_found, result.avenants_ingested,
+            result.avenants_stored, result.errors,
+        )
+    except Exception:
+        logger.exception("Worker: BOCC sync failed")
 
 
 async def run_code_travail_sync(ctx: dict, user_id: str) -> None:
@@ -272,7 +333,68 @@ async def run_scheduled_sync(ctx: dict) -> None:
         else:
             logger.info("Scheduled sync: no CCN installed, skipping")
 
+        # --- 3. BOCC weekly sync ---
+        try:
+            import datetime as dt
+
+            from app.models.bocc_issue import BoccIssue
+            from app.services.bocc_service import BoccService
+
+            bocc_service = BoccService()
+            # Sync latest available (current week - 2, DILA has ~2 week delay)
+            today = dt.date.today()
+            target = today - dt.timedelta(weeks=2)
+            bocc_year = target.isocalendar()[0]
+            bocc_week = target.isocalendar()[1]
+            bocc_numero = f"{bocc_year}-{bocc_week:02d}"
+
+            existing_bocc = await db.execute(
+                select(BoccIssue).where(BoccIssue.numero == bocc_numero)
+            )
+            if existing_bocc.scalar_one_or_none():
+                logger.info("Scheduled sync: BOCC %s already processed, skipping", bocc_numero)
+            else:
+                bocc_result = await bocc_service.process_issue(db, bocc_year, bocc_week, admin_id)
+                issue = BoccIssue(
+                    numero=bocc_numero,
+                    year=bocc_year,
+                    week=bocc_week,
+                    avenants_count=bocc_result.avenants_found,
+                    avenants_ingested=bocc_result.avenants_ingested,
+                    status="error" if bocc_result.errors > 0 and bocc_result.avenants_found == 0 else "processed",
+                    error_message="; ".join(bocc_result.error_messages[:3]) if bocc_result.error_messages else None,
+                    processed_at=datetime.now(UTC),
+                )
+                db.add(issue)
+                await db.commit()
+                logger.info(
+                    "Scheduled sync: BOCC %s done — %d avenants, %d ingested, %d errors",
+                    bocc_numero, bocc_result.avenants_found, bocc_result.avenants_ingested, bocc_result.errors,
+                )
+        except Exception:
+            logger.exception("Scheduled sync: BOCC sync failed")
+
     logger.info("Worker: scheduled sync completed")
+
+
+async def run_bocc_backfill(ctx: dict, user_id: str) -> None:
+    """Tâche de backfill complet des BOCC (3 dernières années)."""
+    logger.info("Worker: BOCC backfill started")
+    session_factory = ctx["session_factory"]
+    try:
+        from app.services.bocc_service import BoccService
+
+        service = BoccService()
+        async with session_factory() as db:
+            result = await service.backfill_all(db, uuid.UUID(user_id))
+        logger.info(
+            "Worker: BOCC backfill completed — %d issues (%d processed, %d skipped), "
+            "%d avenants, %d ingested, %d errors",
+            result.total_issues, result.issues_processed, result.issues_skipped,
+            result.total_avenants, result.total_ingested, result.total_errors,
+        )
+    except Exception:
+        logger.exception("Worker: BOCC backfill failed")
 
 
 async def run_ccn_blue_green_cleanup(ctx: dict, old_doc_ids: list[str]) -> None:
@@ -308,6 +430,8 @@ class WorkerSettings:
         run_judilibre_sync,
         run_kali_install,
         run_ccn_blue_green_cleanup,
+        run_bocc_sync,
+        run_bocc_backfill,
         run_code_travail_sync,
         run_scheduled_sync,
     ]
@@ -317,6 +441,6 @@ class WorkerSettings:
     ]
     redis_settings = _parse_redis_settings()
     max_jobs = 4
-    job_timeout = 1800  # 30 min max par ingestion (gros PDFs comme le Code du travail)
+    job_timeout = 14400  # 4h max (BOCC backfill peut prendre plusieurs heures)
     on_startup = on_startup
     on_shutdown = on_shutdown

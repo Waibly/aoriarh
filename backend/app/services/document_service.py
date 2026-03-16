@@ -145,9 +145,34 @@ class DocumentService:
         return await self._upload(file, source_type, user_id, org_id, **kwargs)
 
     async def list_documents(self, org_id: uuid.UUID) -> list[Document]:
+        from sqlalchemy import or_
+
+        from app.models.ccn import OrganisationConvention
+
+        # Get org's installed IDCC list
+        idcc_result = await self.db.execute(
+            select(OrganisationConvention.idcc).where(
+                OrganisationConvention.organisation_id == org_id,
+                OrganisationConvention.status.in_(["ready", "indexing", "fetching"]),
+            )
+        )
+        installed_idccs = [row[0] for row in idcc_result.all()]
+
+        # Build filter: org docs + common CCN docs matching installed IDCCs
+        conditions = [Document.organisation_id == org_id]
+        if installed_idccs:
+            # Common CCN docs whose name contains any installed IDCC
+            idcc_filters = [
+                Document.name.ilike(f"%IDCC {idcc}%")
+                for idcc in installed_idccs
+            ]
+            conditions.append(
+                Document.organisation_id.is_(None) & or_(*idcc_filters)
+            )
+
         result = await self.db.execute(
             select(Document)
-            .where(Document.organisation_id == org_id)
+            .where(or_(*conditions))
             .order_by(Document.created_at.desc())
         )
         return list(result.scalars().all())

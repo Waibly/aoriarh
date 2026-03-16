@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
-import { RefreshCw, Play, CheckCircle2, XCircle, MinusCircle, Clock, BookOpen } from "lucide-react";
+import { RefreshCw, Play, CheckCircle2, XCircle, MinusCircle, Clock, BookOpen, Download } from "lucide-react";
 import { toast } from "sonner";
 import { apiFetch } from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -96,6 +96,8 @@ export default function SyncsPage() {
   const [loading, setLoading] = useState(true);
   const [triggering, setTriggering] = useState(false);
   const [triggeringCdt, setTriggeringCdt] = useState(false);
+  const [triggeringBocc, setTriggeringBocc] = useState(false);
+  const [triggeringBackfill, setTriggeringBackfill] = useState(false);
   const [filter, setFilter] = useState<string | null>(null);
   const [page, setPage] = useState(1);
 
@@ -127,6 +129,34 @@ export default function SyncsPage() {
     const interval = setInterval(fetchLogs, 10000);
     return () => clearInterval(interval);
   }, [fetchLogs]);
+
+  const handleTriggerBocc = async () => {
+    if (!token) return;
+    setTriggeringBocc(true);
+    try {
+      await apiFetch("/admin/syncs/bocc", { method: "POST", token });
+      toast.success("Synchronisation BOCC lancée");
+      setTimeout(fetchLogs, 3000);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Erreur");
+    } finally {
+      setTriggeringBocc(false);
+    }
+  };
+
+  const handleBackfillBocc = async () => {
+    if (!token) return;
+    setTriggeringBackfill(true);
+    try {
+      await apiFetch("/admin/syncs/bocc/backfill", { method: "POST", token });
+      toast.success("Backfill BOCC lancé (2023-2025). Opération longue.");
+      setTimeout(fetchLogs, 5000);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Erreur");
+    } finally {
+      setTriggeringBackfill(false);
+    }
+  };
 
   const handleTriggerCodeTravail = async () => {
     if (!token) return;
@@ -182,6 +212,24 @@ export default function SyncsPage() {
           >
             <BookOpen className="mr-2 h-4 w-4" />
             {triggeringCdt ? "Synchronisation..." : "Code du travail"}
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={handleBackfillBocc}
+            disabled={triggeringBackfill}
+          >
+            <Download className="mr-2 h-4 w-4" />
+            {triggeringBackfill ? "Lancement..." : "Backfill BOCC"}
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={handleTriggerBocc}
+            disabled={triggeringBocc}
+          >
+            <RefreshCw className={`mr-2 h-4 w-4 ${triggeringBocc ? "animate-spin" : ""}`} />
+            {triggeringBocc ? "Téléchargement..." : "BOCC"}
           </Button>
           <Button
             size="sm"
@@ -272,7 +320,7 @@ export default function SyncsPage() {
                     </TableCell>
                     <TableCell>
                       <Badge variant="outline" className="rounded-full text-xs">
-                        {log.sync_type === "jurisprudence" ? "Jurisprudence" : "CCN"}
+                        {log.sync_type === "jurisprudence" ? "Jurisprudence" : log.sync_type === "code_travail" ? "Code travail" : "CCN"}
                       </Badge>
                     </TableCell>
                     <TableCell className="text-sm font-mono">

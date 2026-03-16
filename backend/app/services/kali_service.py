@@ -317,6 +317,15 @@ class KaliService:
             org_conv.error_message = None
             await db.commit()
 
+            # Ingest any pending BOCC avenants for this IDCC
+            try:
+                from app.services.bocc_service import BoccService
+                bocc_count = await BoccService().ingest_bocc_for_idcc(db, org_conv.idcc)
+                if bocc_count:
+                    logger.info("KALI install IDCC %s: also enqueued %d BOCC docs", org_conv.idcc, bocc_count)
+            except Exception:
+                logger.warning("KALI install IDCC %s: failed to ingest BOCC docs", org_conv.idcc, exc_info=True)
+
         except Exception as exc:
             org_conv.status = "error"
             org_conv.error_message = str(exc)[:500]

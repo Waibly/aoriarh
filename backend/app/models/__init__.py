@@ -7,6 +7,7 @@ from app.models.conversation import Conversation, Message
 from app.models.document import Document
 from app.models.invitation import Invitation
 from app.models.membership import Membership
+from app.models.bocc_issue import BoccIssue
 from app.models.organisation import Organisation
 from app.models.sync_log import SyncLog
 from app.models.user import User
@@ -24,6 +25,7 @@ __all__ = [
     "Membership",
     "Message",
     "Organisation",
+    "BoccIssue",
     "OrganisationConvention",
     "SyncLog",
     "User",
