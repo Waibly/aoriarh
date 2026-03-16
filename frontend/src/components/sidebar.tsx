@@ -403,6 +403,21 @@ export function Sidebar() {
                   size="sm"
                   className={cn(
                     "w-full justify-start font-normal",
+                    pathname.startsWith("/admin/ccn") &&
+                      "bg-accent text-accent-foreground font-medium",
+                  )}
+                  asChild
+                >
+                  <Link href="/admin/ccn">
+                    <Scale className="mr-2 h-5 w-5" />
+                    Conventions collectives
+                  </Link>
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className={cn(
+                    "w-full justify-start font-normal",
                     pathname.startsWith("/admin/jurisprudence") &&
                       "bg-accent text-accent-foreground font-medium",
                   )}

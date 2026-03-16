@@ -21,6 +21,7 @@ from app.api import (
     admin_feedbacks,
     admin_judilibre,
     admin_qdrant,
+    admin_ccn,
     admin_syncs,
     admin_users,
     admin_workspaces,
@@ -192,6 +193,9 @@ app.include_router(
 )
 app.include_router(
     admin_workspaces.router, prefix="/api/v1/admin/workspaces", tags=["admin-workspaces"]
+)
+app.include_router(
+    admin_ccn.router, prefix="/api/v1/admin/ccn", tags=["admin-ccn"]
 )
 app.include_router(
     admin_costs.router, prefix="/api/v1/admin/costs", tags=["admin-costs"]
