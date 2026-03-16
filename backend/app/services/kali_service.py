@@ -259,20 +259,36 @@ class KaliService:
             result.error_messages.extend(fetch_errors)
 
             result.articles_count = len(all_articles)
+
+            # Split articles by category
+            base_articles = [a for a in all_articles if a.get("category") == "base"]
+            annexe_articles = [a for a in all_articles if a.get("category") == "annexe"]
+            salaire_articles = [a for a in all_articles if a.get("category") == "salaire"]
+
             logger.info(
-                "KALI IDCC %s: %d articles extracted",
+                "KALI IDCC %s: %d articles (base=%d, annexes=%d, salaires=%d)",
                 org_conv.idcc, len(all_articles),
+                len(base_articles), len(annexe_articles), len(salaire_articles),
             )
 
-            text_content = self._format_articles_as_markdown(all_articles, ccn_ref)
-            text_bytes = text_content.encode("utf-8")
-            new_hash = hashlib.sha256(text_bytes).hexdigest()
+            # Build content for each document
+            titre = ccn_ref.titre_court or ccn_ref.titre
+            parts: list[tuple[str, str, list[dict]]] = []  # (name_suffix, content, articles)
+            if base_articles:
+                parts.append(("", self._format_articles_as_markdown(base_articles, ccn_ref), base_articles))
+            if annexe_articles:
+                parts.append((" — Avenants et annexes", self._format_articles_as_markdown(annexe_articles, ccn_ref), annexe_articles))
+            if salaire_articles:
+                parts.append((" — Grilles de salaires", self._format_articles_as_markdown(salaire_articles, ccn_ref), salaire_articles))
+
+            # Compute combined hash for change detection
+            combined = "".join(text for _, text, _ in parts)
+            new_hash = hashlib.sha256(combined.encode("utf-8")).hexdigest()
 
             # If existing docs, compare hash for blue-green
             if existing_docs:
                 existing_hash = existing_docs[0].file_hash
                 if existing_hash == new_hash:
-                    # Content identical — just update timestamp
                     logger.info(
                         "KALI IDCC %s: content unchanged (hash %s), skipping re-index",
                         org_conv.idcc, new_hash[:12],
@@ -283,48 +299,43 @@ class KaliService:
                     await db.commit()
                     return result
 
-                # Content changed — blue-green: create new doc, keep old active
                 logger.info(
-                    "KALI IDCC %s: content changed (old=%s new=%s), blue-green sync",
+                    "KALI IDCC %s: content changed, blue-green sync",
                     org_conv.idcc,
-                    (existing_hash or "none")[:12],
-                    new_hash[:12],
                 )
 
-            # Create document (first install or blue-green new version)
+            # Create documents
             org_conv.status = "indexing"
             await db.commit()
 
             from app.services.storage_service import StorageService
             storage = StorageService()
 
-            doc = await self._create_document(
-                db, org_conv, ccn_ref, text_content,
-                user_id=user_id,
-                storage=storage,
-            )
+            new_doc_ids: list[str] = []
+            for suffix, text_content, _ in parts:
+                doc = await self._create_document(
+                    db, org_conv, ccn_ref, text_content,
+                    user_id=user_id,
+                    storage=storage,
+                    name_suffix=suffix,
+                    file_hash_override=new_hash if suffix == "" else None,
+                )
+                await enqueue_ingestion(str(doc.id))
+                new_doc_ids.append(str(doc.id))
 
-            # If blue-green, store old doc IDs in the new doc's name for cleanup
+            result.documents_created = len(new_doc_ids)
+
+            # Blue-green cleanup of old docs
             old_doc_ids = [str(d.id) for d in existing_docs] if existing_docs else []
             if old_doc_ids:
-                # Schedule cleanup of old docs after ingestion completes
-                await enqueue_ingestion(str(doc.id))
-                # Enqueue cleanup job for old documents
                 await self._enqueue_old_docs_cleanup(old_doc_ids)
-            else:
-                await enqueue_ingestion(str(doc.id))
 
-            result.documents_created = 1
-
-            # Mark as ready (for first install) or keep indexing (blue-green)
+            # Update status
             if existing_docs:
-                # Blue-green: status stays "indexing" until new doc is indexed
-                # Old docs remain active and searchable during this time
                 org_conv.articles_count = result.articles_count
                 org_conv.last_synced_at = datetime.now(UTC)
                 org_conv.error_message = None
             else:
-                # First install
                 org_conv.status = "ready"
                 org_conv.articles_count = result.articles_count
                 org_conv.installed_at = datetime.now(UTC)
@@ -566,6 +577,7 @@ class KaliService:
         """Fetch all articles for a CCN from the KALI API.
 
         Returns (articles, error_messages).
+        Articles include a 'category' field: 'base', 'annexe', or 'salaire'.
         """
         errors: list[str] = []
 
@@ -576,17 +588,55 @@ class KaliService:
             if container is None:
                 raise ValueError(f"Container KALI introuvable pour {ccn_ref.kali_id}")
 
-            text_ids = self._extract_text_ids(container)
-            if not text_ids:
+            # Categorize text IDs by section type
+            sections = container.get("sections", [])
+            categorized_ids: list[tuple[str, str]] = []  # (text_id, category)
+
+            for section in sections:
+                title = (section.get("title") or section.get("titre") or "").lower()
+                etat = section.get("etat") or ""
+
+                if "salaire" in title:
+                    category = "salaire"
+                elif "attaché" in title or "attach" in title:
+                    category = "annexe"
+                else:
+                    category = "base"
+
+                # Collect KALITEXT IDs from this section
+                section_ids: list[str] = []
+                def _walk(items: list[dict]) -> None:
+                    for item in items:
+                        tid = item.get("id") or ""
+                        ie = item.get("etat") or ""
+                        if tid.startswith("KALITEXT") and ie.startswith("VIGUEUR"):
+                            section_ids.append(tid)
+                        children = item.get("sections", [])
+                        if children:
+                            _walk(children)
+
+                sid = section.get("id") or ""
+                if sid.startswith("KALITEXT") and etat.startswith("VIGUEUR"):
+                    section_ids.append(sid)
+                _walk(section.get("sections", []))
+
+                for tid in section_ids:
+                    categorized_ids.append((tid, category))
+
+            if not categorized_ids:
                 raise ValueError("Aucun texte trouvé dans le container KALI")
 
             logger.info(
-                "KALI fetch IDCC %s: %d text(s) to fetch",
-                ccn_ref.idcc, len(text_ids),
+                "KALI fetch IDCC %s: %d text(s) to fetch (base=%d, annexes=%d, salaires=%d)",
+                ccn_ref.idcc,
+                len(categorized_ids),
+                sum(1 for _, c in categorized_ids if c == "base"),
+                sum(1 for _, c in categorized_ids if c == "annexe"),
+                sum(1 for _, c in categorized_ids if c == "salaire"),
             )
 
             all_articles: list[dict] = []
-            for text_id in text_ids:
+            for text_id, category in categorized_ids:
                 await asyncio.sleep(_API_THROTTLE)
                 text_data = await self._api_post(
                     client, "/consult/kaliText", json_body={"id": text_id}
@@ -600,6 +650,8 @@ class KaliService:
                     continue
 
                 articles = self._extract_articles_from_text(text_data)
+                for art in articles:
+                    art["category"] = category
                 all_articles.extend(articles)
 
         return all_articles, errors
@@ -843,13 +895,15 @@ class KaliService:
         text_content: str,
         user_id: uuid.UUID,
         storage,
+        name_suffix: str = "",
+        file_hash_override: str | None = None,
     ) -> Document:
-        """Create a single Document record from all extracted CCN articles."""
+        """Create a single Document record from extracted CCN articles."""
         source_type = "convention_collective_nationale"
         hierarchy = DOCUMENT_TYPE_HIERARCHY[source_type]
 
         titre = ccn_ref.titre_court or ccn_ref.titre
-        name = f"CCN {titre} (IDCC {ccn_ref.idcc})"
+        name = f"CCN {titre} (IDCC {ccn_ref.idcc}){name_suffix}"
 
         file_id = uuid.uuid4()
         storage_path = (
@@ -858,7 +912,7 @@ class KaliService:
         text_bytes = text_content.encode("utf-8")
         storage.put_file_bytes(storage_path, text_bytes, content_type="text/plain")
 
-        file_hash = hashlib.sha256(text_bytes).hexdigest()
+        file_hash = file_hash_override or hashlib.sha256(text_bytes).hexdigest()
 
         doc = Document(
             organisation_id=org_conv.organisation_id,

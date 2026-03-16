@@ -19,7 +19,7 @@ class TextExtractor:
         return extractor(file_bytes)
 
     # Above this threshold (in bytes), use fast text extraction instead of layout analysis
-    _LARGE_PDF_THRESHOLD = 2 * 1024 * 1024  # 2 MB
+    _LARGE_PDF_THRESHOLD = 5 * 1024 * 1024  # 5 MB
 
     def _extract_pdf(self, file_bytes: bytes) -> str:
         import pymupdf
