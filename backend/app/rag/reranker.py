@@ -74,13 +74,17 @@ class VoyageReranker:
                 context_id=self._cost_context_id,
             )
 
-        # Map reranked scores back to SearchResult objects
+        # Map reranked scores back to SearchResult objects,
+        # weighted by norme_poids so authoritative sources rank higher
         ranked_data = rerank_response.get("data", [])
         for item in ranked_data:
             idx = item["index"]
-            results[idx].score = item["relevance_score"]
+            relevance = item["relevance_score"]
+            poids = results[idx].norme_poids or 0.5
+            # Blend: 70% relevance + 30% hierarchy weight
+            results[idx].score = relevance * (0.7 + 0.3 * poids)
 
-        # Sort by relevance_score descending
+        # Sort by weighted score descending
         reranked = sorted(results, key=lambda r: r.score, reverse=True)
         return reranked[:top_k]
 
