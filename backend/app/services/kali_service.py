@@ -254,7 +254,7 @@ class KaliService:
             )
 
             # Fetch from KALI API
-            all_articles, fetch_errors = await self._fetch_kali_articles(ccn_ref)
+            all_articles, fetch_errors, source_date = await self._fetch_kali_articles(ccn_ref)
             result.errors += len(fetch_errors)
             result.error_messages.extend(fetch_errors)
 
@@ -333,11 +333,13 @@ class KaliService:
             # Update status
             if existing_docs:
                 org_conv.articles_count = result.articles_count
+                org_conv.source_date = source_date
                 org_conv.last_synced_at = datetime.now(UTC)
                 org_conv.error_message = None
             else:
                 org_conv.status = "ready"
                 org_conv.articles_count = result.articles_count
+                org_conv.source_date = source_date
                 org_conv.installed_at = datetime.now(UTC)
                 org_conv.last_synced_at = datetime.now(UTC)
                 org_conv.error_message = None
@@ -372,7 +374,7 @@ class KaliService:
                 return sync_result
 
             # Fetch from KALI
-            all_articles, fetch_errors = await self._fetch_kali_articles(ccn_ref)
+            all_articles, fetch_errors, source_date = await self._fetch_kali_articles(ccn_ref)
             if fetch_errors:
                 sync_result.error = "; ".join(fetch_errors)
 
@@ -422,6 +424,7 @@ class KaliService:
                 await self._enqueue_old_docs_cleanup(sync_result.old_document_ids)
 
             org_conv.articles_count = len(all_articles)
+            org_conv.source_date = source_date
             org_conv.last_synced_at = datetime.now(UTC)
             if not existing_docs:
                 org_conv.installed_at = datetime.now(UTC)
@@ -466,7 +469,7 @@ class KaliService:
                     continue
 
                 # Fetch KALI content ONCE for this IDCC
-                all_articles, fetch_errors = await self._fetch_kali_articles(ccn_ref)
+                all_articles, fetch_errors, source_date = await self._fetch_kali_articles(ccn_ref)
                 if fetch_errors:
                     logger.warning(
                         "bulk_sync_ccn: fetch errors for IDCC %s: %s",
@@ -536,6 +539,7 @@ class KaliService:
                             await self._enqueue_old_docs_cleanup(sync_result.old_document_ids)
 
                         org_conv.articles_count = len(all_articles)
+                        org_conv.source_date = source_date
                         org_conv.last_synced_at = datetime.now(UTC)
                         if not existing_docs:
                             org_conv.installed_at = datetime.now(UTC)
@@ -573,13 +577,14 @@ class KaliService:
 
     async def _fetch_kali_articles(
         self, ccn_ref: CcnReference
-    ) -> tuple[list[dict], list[str]]:
+    ) -> tuple[list[dict], list[str], str | None]:
         """Fetch all articles for a CCN from the KALI API.
 
-        Returns (articles, error_messages).
+        Returns (articles, error_messages, most_recent_source_date).
         Articles include a 'category' field: 'base', 'annexe', or 'salaire'.
         """
         errors: list[str] = []
+        most_recent_date: str | None = None
 
         async with httpx.AsyncClient(timeout=_REQUEST_TIMEOUT) as client:
             container = await self._api_post(
@@ -649,12 +654,17 @@ class KaliService:
                 if text_etat and not text_etat.startswith("VIGUEUR"):
                     continue
 
+                # Track most recent source date
+                modif_date = text_data.get("modifDate") or ""
+                if modif_date and (most_recent_date is None or modif_date > most_recent_date):
+                    most_recent_date = modif_date
+
                 articles = self._extract_articles_from_text(text_data)
                 for art in articles:
                     art["category"] = category
                 all_articles.extend(articles)
 
-        return all_articles, errors
+        return all_articles, errors, most_recent_date
 
     @staticmethod
     async def _find_existing_ccn_docs(

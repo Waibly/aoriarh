@@ -41,6 +41,7 @@ class OrganisationConvention(TimestampMixin, Base):
     installed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     last_synced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     articles_count: Mapped[int | None] = mapped_column(Integer)
+    source_date: Mapped[str | None] = mapped_column(String(10))  # Most recent modifDate from KALI (YYYY-MM-DD)
     error_message: Mapped[str | None] = mapped_column(Text)
 
     organisation = relationship("Organisation", back_populates="conventions")

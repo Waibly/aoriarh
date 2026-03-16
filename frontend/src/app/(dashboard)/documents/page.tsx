@@ -522,10 +522,27 @@ export default function DocumentsPage() {
                       {c.status === "indexing" && " — Indexation en cours"}
                       {c.status === "error" && " — Erreur de mise à jour"}
                     </p>
-                    {c.status === "ready" && c.last_synced_at && (
+                    {c.status === "ready" && (
                       <p className="text-xs text-muted-foreground/70">
-                        Mis à jour le {new Date(c.last_synced_at).toLocaleDateString("fr-FR")}
+                        {c.source_date
+                          ? `Texte source à jour au ${new Date(c.source_date).toLocaleDateString("fr-FR")}`
+                          : c.last_synced_at
+                            ? `Synchronisé le ${new Date(c.last_synced_at).toLocaleDateString("fr-FR")}`
+                            : null}
                       </p>
+                    )}
+                    {/* List CCN documents */}
+                    {c.status === "ready" && (
+                      <div className="mt-1.5 space-y-0.5">
+                        {documents
+                          .filter((d) => d.source_type === "convention_collective_nationale" && d.name.includes(`IDCC ${c.idcc}`))
+                          .map((d) => (
+                            <p key={d.id} className="text-xs text-muted-foreground/60 pl-2 border-l border-muted">
+                              {d.name.replace(`CCN ${c.titre_court || c.titre || ""} (IDCC ${c.idcc})`, "").replace(" — ", "") || "Texte de base"}
+                              {d.chunk_count != null && ` — ${d.chunk_count} chunks`}
+                            </p>
+                          ))}
+                      </div>
                     )}
                     {c.status === "error" && c.error_message && (
                       <p className="text-xs text-destructive mt-0.5 truncate" title={c.error_message}>
@@ -567,10 +584,10 @@ export default function DocumentsPage() {
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
           <div className="space-y-1.5">
-            <CardTitle>Documents de {currentOrg.name}</CardTitle>
+            <CardTitle>Vos documents — {currentOrg.name}</CardTitle>
             <CardDescription>
-              {documents.length} document
-              {documents.length !== 1 ? "s" : ""}
+              {documents.filter((d) => d.source_type !== "convention_collective_nationale").length} document
+              {documents.filter((d) => d.source_type !== "convention_collective_nationale").length !== 1 ? "s" : ""}
             </CardDescription>
           </div>
           {isManager && (
@@ -600,36 +617,38 @@ export default function DocumentsPage() {
                 <Skeleton key={i} className="h-12 w-full" />
               ))}
             </div>
-          ) : documents.length === 0 ? (
+          ) : documents.filter((d) => d.source_type !== "convention_collective_nationale").length === 0 ? (
             <p className="py-8 text-center text-muted-foreground">
-              Aucun document. Ajoutez votre premier document juridique.
+              Aucun document. Ajoutez votre premier document.
             </p>
           ) : (
             <DocumentTable
               documents={
-                search.trim()
-                  ? documents
-                      .filter((d) => {
-                        const q = search.toLowerCase();
-                        const sourceLabel =
-                          SOURCE_TYPE_OPTIONS.find((s) => s.value === d.source_type)?.label ?? d.source_type;
-                        return (
-                          d.name.toLowerCase().includes(q) ||
-                          sourceLabel.toLowerCase().includes(q)
-                        );
-                      })
-                      .sort((a, b) => {
-                        const q = search.toLowerCase();
-                        const scoreDoc = (d: Document) => {
-                          const name = d.name.toLowerCase();
-                          if (name === q) return 0;            // exact match
-                          if (name.startsWith(q)) return 1;    // starts with
-                          if (name.includes(q)) return 2;      // contains in name
-                          return 3;                              // match in type label only
-                        };
-                        return scoreDoc(a) - scoreDoc(b);
-                      })
-                  : documents
+                (() => {
+                  // Exclude CCN documents — shown in the CCN block above
+                  const userDocs = documents.filter((d) => d.source_type !== "convention_collective_nationale");
+                  if (!search.trim()) return userDocs;
+                  const q = search.toLowerCase();
+                  return userDocs
+                    .filter((d) => {
+                      const sourceLabel =
+                        SOURCE_TYPE_OPTIONS.find((s) => s.value === d.source_type)?.label ?? d.source_type;
+                      return (
+                        d.name.toLowerCase().includes(q) ||
+                        sourceLabel.toLowerCase().includes(q)
+                      );
+                    })
+                    .sort((a, b) => {
+                      const scoreDoc = (d: Document) => {
+                        const name = d.name.toLowerCase();
+                        if (name === q) return 0;
+                        if (name.startsWith(q)) return 1;
+                        if (name.includes(q)) return 2;
+                        return 3;
+                      };
+                      return scoreDoc(a) - scoreDoc(b);
+                    });
+                })()
               }
               isManager={isManager}
               onDownload={handleDownload}
