@@ -243,6 +243,16 @@ async def chat_stream(
                     if name and name not in cited_sources:
                         cited_sources.append(name)
         try:
+            # 2b. Load org's CCN IDCC list for search filtering
+            from app.models.ccn import OrganisationConvention
+            idcc_result = await db.execute(
+                select(OrganisationConvention.idcc).where(
+                    OrganisationConvention.organisation_id == conversation.organisation_id,
+                    OrganisationConvention.use_custom.is_(False),
+                )
+            )
+            org_idcc_list = [r[0] for r in idcc_result.all()] or None
+
             # 3. Prepare context (steps 0-5: condensation, reformulation, search, rerank)
             results, reformulated = await agent.prepare_context(
                 query=data.message,
@@ -250,6 +260,7 @@ async def chat_stream(
                 org_context=org_context,
                 history=history if history else None,
                 cited_sources=cited_sources if cited_sources else None,
+                org_idcc_list=org_idcc_list,
                 user_id=str(user.id),
                 conversation_id=str(conversation_id),
             )

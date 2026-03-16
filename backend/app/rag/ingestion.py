@@ -303,6 +303,13 @@ class IngestionPipeline:
                     "norme_poids": doc.norme_poids,
                     "chunk_index": i,
                 }
+                # Propagate CCN IDCC into Qdrant payload for per-org filtering
+                if doc.source_type in ARTICLE_AWARE_SOURCE_TYPES:
+                    import re as _re
+                    idcc_match = _re.search(r"IDCC\s+(\d{4})", doc.name)
+                    if idcc_match:
+                        payload["idcc"] = idcc_match.group(1)
+
                 # Propagate jurisprudence metadata into Qdrant payload
                 if doc.source_type in JURISPRUDENCE_SOURCE_TYPES:
                     payload["juridiction"] = doc.juridiction

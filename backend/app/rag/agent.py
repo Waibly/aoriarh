@@ -307,6 +307,7 @@ class RAGAgent:
         org_context: dict[str, str | None] | None = None,
         history: list[dict[str, str]] | None = None,
         cited_sources: list[str] | None = None,
+        org_idcc_list: list[str] | None = None,
     ) -> RAGResponse:
         # --- Step 0: Condensation (multi-turn) ---
         t0 = time.perf_counter()
@@ -325,7 +326,7 @@ class RAGAgent:
             )
 
         # --- Step 1-2: Query expansion + parallel search + RRF ---
-        results, _variants = await self._search_with_expansion(query, organisation_id)
+        results, _variants = await self._search_with_expansion(query, organisation_id, org_idcc_list=org_idcc_list)
         t2 = time.perf_counter()
 
         # --- Step 3: Cross-encoder reranking ---
@@ -400,6 +401,7 @@ class RAGAgent:
         org_context: dict[str, str | None] | None = None,
         history: list[dict[str, str]] | None = None,
         cited_sources: list[str] | None = None,
+        org_idcc_list: list[str] | None = None,
         user_id: str | None = None,
         conversation_id: str | None = None,
     ) -> tuple[list[SearchResult], str]:
@@ -426,7 +428,7 @@ class RAGAgent:
             )
 
         # Step 1-2: Query expansion + parallel search + RRF
-        results, variants = await self._search_with_expansion(query, organisation_id)
+        results, variants = await self._search_with_expansion(query, organisation_id, org_idcc_list=org_idcc_list)
         reformulated = variants[0] if variants else query
         t2 = time.perf_counter()
 
@@ -696,6 +698,7 @@ class RAGAgent:
         self,
         query: str,
         organisation_id: str,
+        org_idcc_list: list[str] | None = None,
     ) -> tuple[list[SearchResult], list[str]]:
         """Expand query into variants, search in parallel, fuse with RRF."""
         t0 = time.perf_counter()
@@ -714,7 +717,10 @@ class RAGAgent:
 
         # Search all variants in parallel
         search_tasks = [
-            self.search_engine.search(variant, organisation_id, top_k=TOP_K)
+            self.search_engine.search(
+                variant, organisation_id, top_k=TOP_K,
+                org_idcc_list=org_idcc_list,
+            )
             for variant in variants
         ]
         search_results = await asyncio.gather(*search_tasks, return_exceptions=True)

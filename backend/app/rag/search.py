@@ -9,6 +9,7 @@ from qdrant_client.models import (
     FieldCondition,
     Filter,
     FusionQuery,
+    MatchAny,
     MatchValue,
     Prefetch,
     SparseVector,
@@ -92,8 +93,13 @@ class HybridSearch:
         query: str,
         organisation_id: str,
         top_k: int = TOP_K,
+        org_idcc_list: list[str] | None = None,
     ) -> list[SearchResult]:
-        """Execute a hybrid search combining dense and sparse vectors."""
+        """Execute a hybrid search combining dense and sparse vectors.
+
+        org_idcc_list: if provided, CCN common docs are filtered to only include
+        these IDCCs. Other common docs (code du travail, jurisprudence) are always included.
+        """
         t0 = time.perf_counter()
 
         # 1. Encode query — dense (Voyage AI) + sparse (BM25) in parallel
@@ -106,19 +112,50 @@ class HybridSearch:
         t1 = time.perf_counter()
         logger.info("[PERF] Encoding (dense+sparse parallel) %.0fms", (t1 - t0) * 1000)
 
-        # 2. Build organisation filter (also include common documents)
-        org_filter = Filter(
-            should=[
-                FieldCondition(
-                    key="organisation_id",
-                    match=MatchValue(value=organisation_id),
-                ),
+        # 2. Build organisation filter
+        # - org's own documents
+        # - common non-CCN documents (code du travail, jurisprudence, etc.)
+        # - common CCN documents ONLY for the org's selected IDCCs
+        should_conditions = [
+            # Org's own documents
+            FieldCondition(
+                key="organisation_id",
+                match=MatchValue(value=organisation_id),
+            ),
+        ]
+
+        if org_idcc_list:
+            # Common docs that are NOT CCN (code du travail, jurisprudence, etc.)
+            should_conditions.append(
+                Filter(
+                    must=[
+                        FieldCondition(key="organisation_id", match=MatchValue(value="common")),
+                    ],
+                    must_not=[
+                        FieldCondition(key="source_type", match=MatchValue(value="convention_collective_nationale")),
+                    ],
+                )
+            )
+            # Common CCN docs only for org's selected IDCCs
+            should_conditions.append(
+                Filter(
+                    must=[
+                        FieldCondition(key="organisation_id", match=MatchValue(value="common")),
+                        FieldCondition(key="source_type", match=MatchValue(value="convention_collective_nationale")),
+                        FieldCondition(key="idcc", match=MatchAny(any=org_idcc_list)),
+                    ],
+                )
+            )
+        else:
+            # No IDCC list — include all common docs (backward compatible)
+            should_conditions.append(
                 FieldCondition(
                     key="organisation_id",
                     match=MatchValue(value="common"),
                 ),
-            ],
-        )
+            )
+
+        org_filter = Filter(should=should_conditions)
 
         # 3. Hybrid query with RRF fusion via prefetch
         prefetch_dense = Prefetch(
