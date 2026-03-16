@@ -792,7 +792,7 @@ function DocumentTable({
       <Table>
         <TableHeader>
           <TableRow>
-            <TableHead className="w-[40%]">Nom</TableHead>
+            <TableHead className="max-w-[250px]">Nom</TableHead>
             <TableHead>
               <ColumnFilter label="Type" value={filterType} options={typeOptions} onChange={setFilterType} />
             </TableHead>
@@ -804,7 +804,7 @@ function DocumentTable({
             </TableHead>
             <TableHead>Taille</TableHead>
             <TableHead>Date</TableHead>
-            <TableHead className="text-right">Actions</TableHead>
+            <TableHead className="text-right whitespace-nowrap">Actions</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -860,8 +860,8 @@ function DocumentRow({
 
   return (
     <TableRow>
-      <TableCell className="truncate font-medium">
-        {doc.name}
+      <TableCell className="max-w-[250px] font-medium">
+        <span className="line-clamp-2 break-words">{doc.name}</span>
       </TableCell>
       <TableCell className="text-sm">{sourceLabel}</TableCell>
       <TableCell>
