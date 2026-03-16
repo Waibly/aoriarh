@@ -365,7 +365,7 @@ export function Sidebar() {
                 >
                   <Link href="/admin/users">
                     <Users className="mr-2 h-5 w-5" />
-                    Utilisateurs
+                    Clients
                   </Link>
                 </Button>
                 <Button

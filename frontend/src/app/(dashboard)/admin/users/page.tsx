@@ -2,12 +2,23 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
-import { Search, Users, Building2, Crown, Gift, User as UserIcon, Trash2, ShieldAlert } from "lucide-react";
+import {
+  Building2,
+  ChevronDown,
+  ChevronRight,
+  Crown,
+  Mail,
+  Search,
+  Trash2,
+  Users,
+  FileText,
+  MessageSquare,
+  UserCheck,
+  Gift,
+} from "lucide-react";
 import { toast } from "sonner";
 import { apiFetch } from "@/lib/api";
-import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import {
   Card,
   CardContent,
@@ -15,566 +26,363 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
-interface UserOrgItem {
-  organisation_id: string;
-  organisation_name: string;
-  role_in_org: string;
-}
-
-interface AdminUserItem {
-  id: string;
+interface WorkspaceMember {
+  user_id: string;
   email: string;
   full_name: string;
   role: string;
-  is_active: boolean;
-  created_at: string;
-  organisations: UserOrgItem[];
-  account_id: string | null;
-  account_name: string | null;
-  plan: string | null;
+  role_in_workspace: string;
+  is_owner: boolean;
+}
+
+interface WorkspaceOrg {
+  id: string;
+  name: string;
+  documents_count: number;
+  members_count: number;
+}
+
+interface WorkspaceOverview {
+  account_id: string;
+  name: string;
+  plan: string;
   plan_expires_at: string | null;
+  created_at: string;
+  owner_email: string;
+  owner_name: string;
+  organisations: WorkspaceOrg[];
+  members: WorkspaceMember[];
+  total_documents: number;
+  total_questions: number;
 }
 
-interface UserListResponse {
-  items: AdminUserItem[];
-  total: number;
-  page: number;
-  page_size: number;
+interface OrphanUser {
+  user_id: string;
+  email: string;
+  full_name: string;
+  role: string;
+  created_at: string;
 }
 
-const roleBadge: Record<string, { label: string; className: string }> = {
-  admin: { label: "Admin", className: "rounded-full border-amber-400 bg-amber-50 text-amber-700 dark:border-amber-500 dark:bg-amber-950 dark:text-amber-300" },
-  manager: { label: "Manager", className: "rounded-full border-[#9952b8] bg-[#9952b8]/10 text-[#9952b8]" },
-  user: { label: "Utilisateur", className: "rounded-full" },
-};
-
-const planStyles: Record<string, { label: string; icon: typeof Crown; badgeClass: string }> = {
-  gratuit: { label: "Gratuit", icon: UserIcon, badgeClass: "rounded-full" },
-  invite: { label: "Invité", icon: Gift, badgeClass: "rounded-full border-[#9952b8] bg-[#9952b8]/10 text-[#9952b8]" },
-  vip: { label: "VIP", icon: Crown, badgeClass: "rounded-full border-amber-400 bg-amber-50 text-amber-700 dark:border-amber-500 dark:bg-amber-950 dark:text-amber-300" },
-};
-
-function orgRoleLabel(role: string): string {
-  switch (role) {
-    case "manager": return "Manager";
-    case "user": return "Membre";
-    default: return role;
-  }
+interface WorkspacesResponse {
+  workspaces: WorkspaceOverview[];
+  orphan_users: OrphanUser[];
+  totals: {
+    users: number;
+    workspaces: number;
+    organisations: number;
+    documents: number;
+  };
 }
 
-function PlanBadge({ plan, planExpiresAt }: { plan: string | null; planExpiresAt: string | null }) {
-  const style = planStyles[plan ?? "gratuit"] ?? planStyles.gratuit;
-  const Icon = style.icon;
+const PLAN_CONFIG = {
+  gratuit: { label: "Gratuit", className: "rounded-full", icon: UserCheck },
+  invite: { label: "Invité", className: "rounded-full border-[#9952b8] bg-[#9952b8]/10 text-[#9952b8]", icon: Gift },
+  vip: { label: "VIP", className: "rounded-full border-amber-500 bg-amber-500/10 text-amber-600", icon: Crown },
+} as const;
 
-  return (
-    <span className="inline-flex items-center gap-1">
-      <Badge variant="outline" className={style.badgeClass}>
-        <Icon className="mr-1 size-3" />
-        {style.label}
-      </Badge>
-      {plan === "invite" && planExpiresAt && (
-        <span className="text-xs text-muted-foreground">
-          Expire le {new Date(planExpiresAt).toLocaleDateString("fr-FR")}
-        </span>
-      )}
-    </span>
-  );
-}
-
-export default function AdminUsersPage() {
+export default function WorkspacesPage() {
   const { data: session } = useSession();
   const token = session?.access_token;
 
-  const [data, setData] = useState<UserListResponse | null>(null);
+  const [data, setData] = useState<WorkspacesResponse | null>(null);
   const [loading, setLoading] = useState(true);
-  const [page, setPage] = useState(1);
   const [search, setSearch] = useState("");
-  const PAGE_SIZE = 50;
-
-  // Delete dialog state
-  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
-  const [userToDelete, setUserToDelete] = useState<AdminUserItem | null>(null);
-  const [deleting, setDeleting] = useState(false);
-
-  // Role dialog state
-  const [roleDialogOpen, setRoleDialogOpen] = useState(false);
-  const [roleTarget, setRoleTarget] = useState<AdminUserItem | null>(null);
-  const [selectedRole, setSelectedRole] = useState<string>("user");
-  const [roleSaving, setRoleSaving] = useState(false);
-
-  // Plan dialog state
-  const [planDialogOpen, setPlanDialogOpen] = useState(false);
-  const [selectedAccountId, setSelectedAccountId] = useState<string | null>(null);
-  const [selectedAccountName, setSelectedAccountName] = useState<string>("");
-  const [selectedPlan, setSelectedPlan] = useState<string>("gratuit");
-  const [selectedDuration, setSelectedDuration] = useState<string>("1");
-  const [planSaving, setPlanSaving] = useState(false);
-
   const [debouncedSearch, setDebouncedSearch] = useState("");
 
-  // Debounce search to avoid spamming API
   useEffect(() => {
-    const timer = setTimeout(() => {
-      setDebouncedSearch(search);
-      setPage(1);
-    }, 300);
+    const timer = setTimeout(() => setDebouncedSearch(search), 300);
     return () => clearTimeout(timer);
   }, [search]);
 
-  const fetchUsers = useCallback(async () => {
+  const fetchData = useCallback(async () => {
     if (!token) return;
     try {
-      const params = new URLSearchParams({
-        page: String(page),
-        page_size: String(PAGE_SIZE),
-      });
-      if (debouncedSearch.trim()) params.set("search", debouncedSearch.trim());
-      const res = await apiFetch<UserListResponse>(
-        `/admin/users/?${params}`,
+      const params = debouncedSearch ? `?search=${encodeURIComponent(debouncedSearch)}` : "";
+      const res = await apiFetch<WorkspacesResponse>(
+        `/admin/workspaces/${params}`,
         { token },
       );
       setData(res);
-    } catch {
-      toast.error("Erreur lors du chargement des utilisateurs");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Erreur lors du chargement");
     } finally {
       setLoading(false);
     }
-  }, [token, page, debouncedSearch]);
+  }, [token, debouncedSearch]);
 
   useEffect(() => {
     setLoading(true);
-    fetchUsers();
-  }, [fetchUsers]);
-
-  const filteredItems = data?.items;
-
-  const totalPages = data ? Math.max(1, Math.ceil(data.total / PAGE_SIZE)) : 1;
-
-  function openPlanDialog(accountId: string, accountName: string, currentPlan: string) {
-    setSelectedAccountId(accountId);
-    setSelectedAccountName(accountName);
-    setSelectedPlan(currentPlan);
-    setSelectedDuration("1");
-    setPlanDialogOpen(true);
-  }
-
-  async function handlePlanSubmit() {
-    if (!token || !selectedAccountId) return;
-    setPlanSaving(true);
-    try {
-      await apiFetch(`/admin/users/accounts/${selectedAccountId}/plan`, {
-        token,
-        method: "PUT",
-        body: JSON.stringify({
-          plan: selectedPlan,
-          ...(selectedPlan === "invite" ? { duration_months: parseInt(selectedDuration) } : {}),
-        }),
-      });
-      toast.success("Plan mis à jour");
-      setPlanDialogOpen(false);
-      fetchUsers();
-      window.dispatchEvent(new Event("plan-updated"));
-    } catch {
-      toast.error("Erreur lors de la mise à jour du plan");
-    } finally {
-      setPlanSaving(false);
-    }
-  }
-
-  function openRoleDialog(user: AdminUserItem) {
-    setRoleTarget(user);
-    setSelectedRole(user.role);
-    setRoleDialogOpen(true);
-  }
-
-  async function handleRoleSubmit() {
-    if (!token || !roleTarget || selectedRole === roleTarget.role) return;
-    setRoleSaving(true);
-    try {
-      await apiFetch(`/admin/users/${roleTarget.id}/role`, {
-        token,
-        method: "PUT",
-        body: JSON.stringify({ role: selectedRole }),
-      });
-      toast.success(`Rôle de ${roleTarget.full_name} mis à jour`);
-      setRoleDialogOpen(false);
-      setRoleTarget(null);
-      fetchUsers();
-    } catch {
-      toast.error("Erreur lors de la mise à jour du rôle");
-    } finally {
-      setRoleSaving(false);
-    }
-  }
-
-  function openDeleteDialog(user: AdminUserItem) {
-    setUserToDelete(user);
-    setDeleteDialogOpen(true);
-  }
-
-  async function handleDelete() {
-    if (!token || !userToDelete) return;
-    setDeleting(true);
-    try {
-      await apiFetch(`/admin/users/${userToDelete.id}`, {
-        token,
-        method: "DELETE",
-      });
-      toast.success(`${userToDelete.full_name} supprimé`);
-      setDeleteDialogOpen(false);
-      setUserToDelete(null);
-      fetchUsers();
-    } catch {
-      toast.error("Erreur lors de la suppression");
-    } finally {
-      setDeleting(false);
-    }
-  }
+    fetchData();
+  }, [fetchData]);
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-semibold tracking-tight">Utilisateurs</h1>
+      <div>
+        <h1 className="text-2xl font-semibold tracking-tight">
+          Clients et espaces de travail
+        </h1>
+        <p className="text-sm text-muted-foreground mt-1">
+          Vue d&apos;ensemble de tous les comptes, organisations et membres.
+        </p>
+      </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Users className="size-5" />
-            Tous les utilisateurs
-          </CardTitle>
-          <CardDescription>
-            {data ? `${data.total} utilisateur${data.total > 1 ? "s" : ""} au total` : "Chargement..."}
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="mb-4">
-            <div className="relative max-w-sm">
-              <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                placeholder="Rechercher par nom ou email..."
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                className="pl-9"
-              />
-            </div>
-          </div>
+      {/* Totals */}
+      {data && (
+        <div className="grid grid-cols-4 gap-4">
+          <StatCard icon={Users} label="Utilisateurs" value={data.totals.users} />
+          <StatCard icon={Building2} label="Espaces de travail" value={data.totals.workspaces} />
+          <StatCard icon={Building2} label="Organisations" value={data.totals.organisations} />
+          <StatCard icon={FileText} label="Documents (orgs)" value={data.totals.documents} />
+        </div>
+      )}
 
-          {loading ? (
-            <div className="space-y-3">
-              {[1, 2, 3, 4, 5].map((i) => (
-                <Skeleton key={i} className="h-12 w-full" />
-              ))}
-            </div>
-          ) : !filteredItems || filteredItems.length === 0 ? (
-            <p className="py-8 text-center text-muted-foreground">
-              {search ? "Aucun utilisateur trouvé." : "Aucun utilisateur pour le moment."}
-            </p>
-          ) : (
-            <>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Nom</TableHead>
-                    <TableHead>Email</TableHead>
-                    <TableHead>Rôle</TableHead>
-                    <TableHead>Organisations</TableHead>
-                    <TableHead>Plan</TableHead>
-                    <TableHead>Statut</TableHead>
-                    <TableHead>Inscription</TableHead>
-                    <TableHead className="w-10"></TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filteredItems!.map((user) => {
-                    const badge = roleBadge[user.role] || roleBadge.user;
-                    return (
-                      <TableRow key={user.id}>
-                        <TableCell className="font-medium text-sm">
-                          {user.full_name}
-                        </TableCell>
-                        <TableCell className="text-sm">
-                          {user.email}
-                        </TableCell>
-                        <TableCell>
-                          <button onClick={() => openRoleDialog(user)} className="cursor-pointer" title="Modifier le rôle">
-                            <Badge variant="outline" className={`${badge.className} hover:opacity-75 transition-opacity`}>{badge.label}</Badge>
-                          </button>
-                        </TableCell>
-                        <TableCell className="text-sm">
-                          {user.organisations.length === 0 ? (
-                            <span className="text-muted-foreground">Aucune</span>
-                          ) : (
-                            <Popover>
-                              <PopoverTrigger asChild>
-                                <button className="flex cursor-pointer items-center gap-1 hover:underline">
-                                  <Building2 className="size-3.5 text-muted-foreground" />
-                                  {user.organisations.length} org{user.organisations.length > 1 ? "s" : ""}
-                                </button>
-                              </PopoverTrigger>
-                              <PopoverContent side="bottom" className="w-80">
-                                <ul className="space-y-2">
-                                  {user.organisations.map((o) => (
-                                    <li key={o.organisation_id} className="flex items-center justify-between gap-3 text-sm">
-                                      <span className="font-medium">{o.organisation_name}</span>
-                                      <span className="text-xs text-muted-foreground">{orgRoleLabel(o.role_in_org)}</span>
-                                    </li>
-                                  ))}
-                                </ul>
-                              </PopoverContent>
-                            </Popover>
-                          )}
-                        </TableCell>
-                        <TableCell>
-                          {user.account_id ? (
-                            <button
-                              onClick={() => openPlanDialog(user.account_id!, user.account_name ?? "—", user.plan ?? "gratuit")}
-                              className="cursor-pointer"
-                              title="Modifier le plan"
-                            >
-                              <PlanBadge plan={user.plan} planExpiresAt={user.plan_expires_at} />
-                            </button>
-                          ) : (
-                            <span className="text-muted-foreground text-xs">—</span>
-                          )}
-                        </TableCell>
-                        <TableCell>
-                          {user.is_active ? (
-                            <Badge variant="outline" className="rounded-full border-green-500 bg-green-500/10 text-green-600 dark:text-green-400">Actif</Badge>
-                          ) : (
-                            <Badge variant="outline" className="rounded-full border-red-500 bg-red-500/10 text-red-600 dark:text-red-400">Inactif</Badge>
-                          )}
-                        </TableCell>
-                        <TableCell className="text-sm text-muted-foreground whitespace-nowrap">
-                          {new Date(user.created_at).toLocaleDateString("fr-FR", {
-                            day: "2-digit",
-                            month: "2-digit",
-                            year: "numeric",
-                          })}
-                        </TableCell>
-                        <TableCell>
-                          {user.role !== "admin" && (
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="size-8 text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950"
-                              onClick={() => openDeleteDialog(user)}
-                            >
-                              <Trash2 className="size-4" />
-                            </Button>
-                          )}
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })}
-                </TableBody>
-              </Table>
+      {/* Search */}
+      <div className="relative max-w-md">
+        <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+        <Input
+          placeholder="Rechercher par nom, email, organisation..."
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          className="pl-9"
+        />
+      </div>
 
-              {totalPages > 1 && (
-                <div className="flex items-center justify-between border-t pt-4 mt-4">
-                  <p className="text-sm text-muted-foreground">
-                    {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, data!.total)} sur {data!.total}
-                  </p>
-                  <div className="flex items-center gap-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      disabled={page <= 1}
-                      onClick={() => setPage((p) => p - 1)}
-                    >
-                      Précédent
-                    </Button>
-                    <span className="text-sm text-muted-foreground">
-                      {page} / {totalPages}
-                    </span>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      disabled={page >= totalPages}
-                      onClick={() => setPage((p) => p + 1)}
-                    >
-                      Suivant
-                    </Button>
-                  </div>
+      {loading ? (
+        <div className="space-y-4">
+          {[1, 2, 3].map((i) => <Skeleton key={i} className="h-40 w-full" />)}
+        </div>
+      ) : !data || data.workspaces.length === 0 ? (
+        <p className="py-8 text-center text-muted-foreground">
+          {debouncedSearch ? "Aucun résultat pour cette recherche." : "Aucun espace de travail."}
+        </p>
+      ) : (
+        <div className="space-y-4">
+          {data.workspaces.map((ws) => (
+            <WorkspaceCard
+              key={ws.account_id}
+              workspace={ws}
+              token={token!}
+              onUpdated={fetchData}
+            />
+          ))}
+
+          {data.orphan_users.length > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">Utilisateurs sans espace</CardTitle>
+                <CardDescription>
+                  {data.orphan_users.length} utilisateur{data.orphan_users.length > 1 ? "s" : ""} sans espace de travail
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-2">
+                  {data.orphan_users.map((u) => (
+                    <div key={u.user_id} className="flex items-center gap-3 text-sm">
+                      <Mail className="h-4 w-4 text-muted-foreground" />
+                      <span>{u.email}</span>
+                      <span className="text-muted-foreground">({u.full_name})</span>
+                      <Badge variant="outline" className="rounded-full text-xs">{u.role}</Badge>
+                    </div>
+                  ))}
                 </div>
-              )}
-            </>
+              </CardContent>
+            </Card>
           )}
-        </CardContent>
-      </Card>
+        </div>
+      )}
+    </div>
+  );
+}
 
-      {/* Plan Assignment Dialog */}
-      <Dialog open={planDialogOpen} onOpenChange={setPlanDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Modifier le plan</DialogTitle>
-            <DialogDescription>
-              Compte : {selectedAccountName}
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-6 py-4">
-            <div>
-              <label className="mb-4 block text-sm font-medium">Plan</label>
-              <div className="flex gap-2.5">
-                {([
-                  { value: "gratuit", label: "Gratuit", icon: UserIcon },
-                  { value: "invite", label: "Invité", icon: Gift },
-                  { value: "vip", label: "VIP", icon: Crown },
-                ] as const).map((p) => {
-                  const isActive = selectedPlan === p.value;
-                  const Icon = p.icon;
-                  return (
-                    <button
-                      key={p.value}
-                      type="button"
-                      onClick={() => setSelectedPlan(p.value)}
-                      className={`inline-flex items-center gap-1.5 rounded-full border px-4 py-2 text-sm font-medium transition-colors ${
-                        isActive
-                          ? "border-[#9952b8] bg-[#9952b8]/10 text-[#9952b8]"
-                          : "border-border text-muted-foreground hover:border-foreground/30 hover:text-foreground"
-                      }`}
-                    >
-                      <Icon className="size-3.5" />
-                      {p.label}
-                    </button>
-                  );
-                })}
-              </div>
+function StatCard({ icon: Icon, label, value }: { icon: React.ElementType; label: string; value: number }) {
+  return (
+    <Card>
+      <CardContent className="flex items-center gap-3 pt-6">
+        <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-muted">
+          <Icon className="h-5 w-5 text-muted-foreground" />
+        </div>
+        <div>
+          <p className="text-2xl font-semibold">{value}</p>
+          <p className="text-xs text-muted-foreground">{label}</p>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function WorkspaceCard({
+  workspace: ws,
+  token,
+  onUpdated,
+}: {
+  workspace: WorkspaceOverview;
+  token: string;
+  onUpdated: () => void;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const [planSaving, setPlanSaving] = useState(false);
+
+  const planConfig = PLAN_CONFIG[ws.plan as keyof typeof PLAN_CONFIG] ?? PLAN_CONFIG.gratuit;
+  const PlanIcon = planConfig.icon;
+
+  const handlePlanChange = async (newPlan: string) => {
+    setPlanSaving(true);
+    try {
+      await apiFetch(`/admin/users/accounts/${ws.account_id}/plan`, {
+        method: "PUT",
+        token,
+        body: JSON.stringify({
+          plan: newPlan,
+          duration_months: newPlan === "invite" ? 3 : null,
+        }),
+      });
+      toast.success("Plan mis à jour");
+      onUpdated();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Erreur");
+    } finally {
+      setPlanSaving(false);
+    }
+  };
+
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <div className="flex items-start justify-between">
+          <div className="space-y-1">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Building2 className="h-5 w-5" />
+              {ws.name}
+            </CardTitle>
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <a href={`mailto:${ws.owner_email}`} className="hover:text-primary hover:underline">
+                {ws.owner_email}
+              </a>
+              <span>—</span>
+              <span>{ws.owner_name}</span>
             </div>
-            {selectedPlan === "invite" && (
+            {ws.created_at && (
+              <p className="text-xs text-muted-foreground/70">
+                Inscrit le {new Date(ws.created_at).toLocaleDateString("fr-FR")}
+              </p>
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            <Select
+              value={ws.plan}
+              onValueChange={handlePlanChange}
+              disabled={planSaving}
+            >
+              <SelectTrigger className="h-8 w-[120px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="gratuit">Gratuit</SelectItem>
+                <SelectItem value="invite">Invité</SelectItem>
+                <SelectItem value="vip">VIP</SelectItem>
+              </SelectContent>
+            </Select>
+            <Badge variant="outline" className={planConfig.className}>
+              <PlanIcon className="mr-1 h-3 w-3" />
+              {planConfig.label}
+            </Badge>
+          </div>
+        </div>
+
+        {/* Stats row */}
+        <div className="flex gap-6 pt-2 text-sm">
+          <div className="flex items-center gap-1.5 text-muted-foreground">
+            <Building2 className="h-3.5 w-3.5" />
+            <span>{ws.organisations.length} org{ws.organisations.length > 1 ? "s" : ""}</span>
+          </div>
+          <div className="flex items-center gap-1.5 text-muted-foreground">
+            <Users className="h-3.5 w-3.5" />
+            <span>{ws.members.length} membre{ws.members.length > 1 ? "s" : ""}</span>
+          </div>
+          <div className="flex items-center gap-1.5 text-muted-foreground">
+            <FileText className="h-3.5 w-3.5" />
+            <span>{ws.total_documents} doc{ws.total_documents > 1 ? "s" : ""}</span>
+          </div>
+          <div className="flex items-center gap-1.5 text-muted-foreground">
+            <MessageSquare className="h-3.5 w-3.5" />
+            <span>{ws.total_questions} question{ws.total_questions > 1 ? "s" : ""}</span>
+          </div>
+        </div>
+      </CardHeader>
+
+      <Collapsible open={expanded} onOpenChange={setExpanded}>
+        <CollapsibleTrigger asChild>
+          <button className="flex w-full items-center gap-1 border-t px-6 py-2 text-xs font-medium text-muted-foreground hover:bg-muted/50 transition-colors">
+            {expanded ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+            Détails
+          </button>
+        </CollapsibleTrigger>
+        <CollapsibleContent>
+          <CardContent className="pt-0 space-y-4">
+            {/* Organisations */}
+            {ws.organisations.length > 0 && (
               <div>
-                <label className="mb-4 block text-sm font-medium">Durée</label>
-                <div className="flex gap-2.5">
-                  {["1", "2", "3"].map((d) => (
-                    <button
-                      key={d}
-                      type="button"
-                      onClick={() => setSelectedDuration(d)}
-                      className={`rounded-full border px-4 py-2 text-sm font-medium transition-colors ${
-                        selectedDuration === d
-                          ? "border-[#9952b8] bg-[#9952b8]/10 text-[#9952b8]"
-                          : "border-border text-muted-foreground hover:border-foreground/30 hover:text-foreground"
-                      }`}
-                    >
-                      {d} mois
-                    </button>
+                <p className="text-xs font-semibold text-muted-foreground mb-2">Organisations</p>
+                <div className="space-y-1.5">
+                  {ws.organisations.map((org) => (
+                    <div key={org.id} className="flex items-center gap-2 rounded-md bg-muted/30 px-3 py-2 text-sm">
+                      <Building2 className="h-3.5 w-3.5 text-muted-foreground" />
+                      <span className="font-medium">{org.name}</span>
+                      <span className="text-xs text-muted-foreground">
+                        {org.documents_count} docs — {org.members_count} membres
+                      </span>
+                    </div>
                   ))}
                 </div>
               </div>
             )}
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setPlanDialogOpen(false)}>
-              Annuler
-            </Button>
-            <Button onClick={handlePlanSubmit} disabled={planSaving}>
-              {planSaving ? "Enregistrement..." : "Enregistrer"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
-      {/* Role Change Dialog */}
-      <Dialog open={roleDialogOpen} onOpenChange={setRoleDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Modifier le rôle</DialogTitle>
-            <DialogDescription>
-              Changer le rôle de <strong>{roleTarget?.full_name}</strong> ({roleTarget?.email})
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-4">
-            <div className="flex gap-2.5">
-              {([
-                { value: "user", label: "Utilisateur", icon: UserIcon },
-                { value: "manager", label: "Manager", icon: UserIcon },
-                { value: "admin", label: "Admin", icon: ShieldAlert },
-              ] as const).map((r) => {
-                const isActive = selectedRole === r.value;
-                const Icon = r.icon;
-                const style = roleBadge[r.value] || roleBadge.user;
-                return (
-                  <button
-                    key={r.value}
-                    type="button"
-                    onClick={() => setSelectedRole(r.value)}
-                    className={`inline-flex items-center gap-1.5 rounded-full border px-4 py-2 text-sm font-medium transition-colors ${
-                      isActive
-                        ? style.className
-                        : "border-border text-muted-foreground hover:border-foreground/30 hover:text-foreground"
-                    }`}
-                  >
-                    <Icon className="size-3.5" />
-                    {r.label}
-                  </button>
-                );
-              })}
-            </div>
-            {selectedRole === "admin" && selectedRole !== roleTarget?.role && (
-              <div className="flex items-start gap-2 rounded-md border border-amber-400 bg-amber-50 p-3 dark:bg-amber-950">
-                <ShieldAlert className="mt-0.5 size-4 text-amber-600 dark:text-amber-400" />
-                <p className="text-sm text-amber-700 dark:text-amber-300">
-                  Ce rôle donne un accès total au back-office, à tous les utilisateurs et à toutes les données. Cette action est sensible.
-                </p>
+            {/* Members */}
+            <div>
+              <p className="text-xs font-semibold text-muted-foreground mb-2">Membres</p>
+              <div className="space-y-1.5">
+                {ws.members.map((m) => (
+                  <div key={m.user_id} className="flex items-center gap-2 text-sm">
+                    <Mail className="h-3.5 w-3.5 text-muted-foreground" />
+                    <a href={`mailto:${m.email}`} className="hover:text-primary hover:underline">
+                      {m.email}
+                    </a>
+                    <span className="text-muted-foreground">({m.full_name})</span>
+                    {m.is_owner && (
+                      <Badge variant="outline" className="rounded-full border-amber-500 bg-amber-500/10 text-amber-600 text-xs">
+                        <Crown className="mr-1 h-2.5 w-2.5" />
+                        Propriétaire
+                      </Badge>
+                    )}
+                    {!m.is_owner && (
+                      <Badge variant="outline" className="rounded-full text-xs">
+                        {m.role_in_workspace === "manager" ? "Manager" : "Utilisateur"}
+                      </Badge>
+                    )}
+                  </div>
+                ))}
               </div>
-            )}
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setRoleDialogOpen(false)}>
-              Annuler
-            </Button>
-            <Button
-              onClick={handleRoleSubmit}
-              disabled={roleSaving || selectedRole === roleTarget?.role}
-              variant={selectedRole === "admin" && selectedRole !== roleTarget?.role ? "destructive" : "default"}
-            >
-              {roleSaving ? "Enregistrement..." : "Confirmer"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Delete Confirmation Dialog */}
-      <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Supprimer l&apos;utilisateur</DialogTitle>
-            <DialogDescription>
-              Êtes-vous sûr de vouloir supprimer <strong>{userToDelete?.full_name}</strong> ({userToDelete?.email}) ?
-              Cette action est irréversible. Toutes ses données (conversations, memberships, compte) seront supprimées.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setDeleteDialogOpen(false)}>
-              Annuler
-            </Button>
-            <Button variant="destructive" onClick={handleDelete} disabled={deleting}>
-              {deleting ? "Suppression..." : "Supprimer"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    </div>
+            </div>
+          </CardContent>
+        </CollapsibleContent>
+      </Collapsible>
+    </Card>
   );
 }
