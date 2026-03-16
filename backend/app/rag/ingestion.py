@@ -41,6 +41,35 @@ MAX_RETRIES = 3
 RETRY_BASE_DELAY = 2.0
 EMBEDDING_BATCH_SIZE = 64
 
+# --- Date extraction for recency boosting ---
+import re as _re_mod
+
+_FRENCH_MONTHS = {
+    "janvier": "01", "février": "02", "mars": "03", "avril": "04",
+    "mai": "05", "juin": "06", "juillet": "07", "août": "08",
+    "septembre": "09", "octobre": "10", "novembre": "11", "décembre": "12",
+}
+_DATE_PATTERN = _re_mod.compile(
+    r"(?:1er|(\d{1,2}))\s+(janvier|février|mars|avril|mai|juin|juillet|août|septembre|octobre|novembre|décembre)\s+(\d{4})",
+    _re_mod.IGNORECASE,
+)
+
+
+def _extract_content_date(text: str) -> str | None:
+    """Extract the most recent date from a chunk text (YYYY-MM-DD format).
+
+    Looks for French date patterns like '1er février 2021' or '15 mars 2023'.
+    Returns the most recent date found, or None.
+    """
+    dates = []
+    for m in _DATE_PATTERN.finditer(text):
+        day = m.group(1) or "01"  # "1er" → day=01
+        month = _FRENCH_MONTHS.get(m.group(2).lower())
+        year = m.group(3)
+        if month and 1990 <= int(year) <= 2030:
+            dates.append(f"{year}-{month}-{day.zfill(2)}")
+    return max(dates) if dates else None
+
 
 async def _get_embeddings_batch(
     texts: list[str],
@@ -309,6 +338,10 @@ class IngestionPipeline:
                     idcc_match = _re.search(r"IDCC\s+(\d{4})", doc.name)
                     if idcc_match:
                         payload["idcc"] = idcc_match.group(1)
+                    # Extract most recent date from chunk for recency boosting
+                    content_date = _extract_content_date(chunk_text)
+                    if content_date:
+                        payload["content_date"] = content_date
 
                 # Propagate jurisprudence metadata into Qdrant payload
                 if doc.source_type in JURISPRUDENCE_SOURCE_TYPES:

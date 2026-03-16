@@ -66,6 +66,8 @@ class SearchResult:
     date_decision: str | None = None
     solution: str | None = None
     publication: str | None = None
+    # Recency metadata (optional, for CCN/code du travail)
+    content_date: str | None = None
 
 
 class HybridSearch:
@@ -210,6 +212,7 @@ class HybridSearch:
                     date_decision=payload.get("date_decision"),
                     solution=payload.get("solution"),
                     publication=payload.get("publication"),
+                    content_date=payload.get("content_date"),
                 )
             )
 
