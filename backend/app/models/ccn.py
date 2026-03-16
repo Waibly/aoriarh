@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, TimestampMixin, generate_uuid
@@ -42,6 +42,7 @@ class OrganisationConvention(TimestampMixin, Base):
     last_synced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     articles_count: Mapped[int | None] = mapped_column(Integer)
     source_date: Mapped[str | None] = mapped_column(String(10))  # Most recent modifDate from KALI (YYYY-MM-DD)
+    use_custom: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")  # True = user uploaded their own CCN
     error_message: Mapped[str | None] = mapped_column(Text)
 
     organisation = relationship("Organisation", back_populates="conventions")

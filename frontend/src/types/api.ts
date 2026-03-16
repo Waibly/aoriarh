@@ -46,6 +46,7 @@ export interface OrganisationConvention {
   last_synced_at: string | null;
   articles_count: number | null;
   source_date: string | null;
+  use_custom: boolean;
   error_message: string | null;
   created_at: string;
   titre: string | null;

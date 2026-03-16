@@ -231,15 +231,14 @@ class KaliService:
         org_conv: OrganisationConvention,
         user_id: uuid.UUID,
     ) -> KaliInstallResult:
-        """Fetch a full convention collective from KALI and ingest it.
+        """Fetch a CCN from KALI and ingest as COMMON documents (shared).
 
-        For first install (no existing doc): creates document directly.
-        For re-sync (existing doc): uses blue-green approach — creates new doc
-        while old one stays active, old doc cleaned up after ingestion.
+        If common docs already exist for this IDCC, just link (no re-fetch).
+        If not, fetch from KALI and create common docs.
+        Blue-green for updates.
         """
         result = KaliInstallResult()
 
-        # Update status
         org_conv.status = "fetching"
         await db.commit()
 
@@ -248,19 +247,29 @@ class KaliService:
             if not ccn_ref or not ccn_ref.kali_id:
                 raise ValueError(f"IDCC {org_conv.idcc} introuvable dans le référentiel")
 
-            # Check for existing CCN documents (re-sync case)
-            existing_docs = await self._find_existing_ccn_docs(
-                db, org_conv.organisation_id, org_conv.idcc
-            )
+            # Check if common docs already exist for this IDCC
+            existing_common = await self._find_common_ccn_docs(db, org_conv.idcc)
 
-            # Fetch from KALI API
+            if existing_common:
+                # Common docs exist — just link, no need to re-fetch
+                logger.info(
+                    "KALI IDCC %s: common docs already exist (%d docs), linking only",
+                    org_conv.idcc, len(existing_common),
+                )
+                org_conv.status = "ready"
+                org_conv.articles_count = existing_common[0].chunk_count
+                org_conv.installed_at = datetime.now(UTC)
+                org_conv.last_synced_at = datetime.now(UTC)
+                org_conv.error_message = None
+                await db.commit()
+                return result
+
+            # No common docs — fetch from KALI and create
             all_articles, fetch_errors, source_date = await self._fetch_kali_articles(ccn_ref)
             result.errors += len(fetch_errors)
             result.error_messages.extend(fetch_errors)
-
             result.articles_count = len(all_articles)
 
-            # Split articles by category
             base_articles = [a for a in all_articles if a.get("category") == "base"]
             annexe_articles = [a for a in all_articles if a.get("category") == "annexe"]
             salaire_articles = [a for a in all_articles if a.get("category") == "salaire"]
@@ -271,78 +280,41 @@ class KaliService:
                 len(base_articles), len(annexe_articles), len(salaire_articles),
             )
 
-            # Build content for each document
-            titre = ccn_ref.titre_court or ccn_ref.titre
-            parts: list[tuple[str, str, list[dict]]] = []  # (name_suffix, content, articles)
+            parts: list[tuple[str, str]] = []
             if base_articles:
-                parts.append(("", self._format_articles_as_markdown(base_articles, ccn_ref), base_articles))
+                parts.append(("", self._format_articles_as_markdown(base_articles, ccn_ref)))
             if annexe_articles:
-                parts.append((" — Avenants et annexes", self._format_articles_as_markdown(annexe_articles, ccn_ref), annexe_articles))
+                parts.append((" — Avenants et annexes", self._format_articles_as_markdown(annexe_articles, ccn_ref)))
             if salaire_articles:
-                parts.append((" — Grilles de salaires", self._format_articles_as_markdown(salaire_articles, ccn_ref), salaire_articles))
+                parts.append((" — Grilles de salaires", self._format_articles_as_markdown(salaire_articles, ccn_ref)))
 
-            # Compute combined hash for change detection
-            combined = "".join(text for _, text, _ in parts)
+            combined = "".join(text for _, text in parts)
             new_hash = hashlib.sha256(combined.encode("utf-8")).hexdigest()
 
-            # If existing docs, compare hash for blue-green
-            if existing_docs:
-                existing_hash = existing_docs[0].file_hash
-                if existing_hash == new_hash:
-                    logger.info(
-                        "KALI IDCC %s: content unchanged (hash %s), skipping re-index",
-                        org_conv.idcc, new_hash[:12],
-                    )
-                    org_conv.status = "ready"
-                    org_conv.last_synced_at = datetime.now(UTC)
-                    org_conv.error_message = None
-                    await db.commit()
-                    return result
-
-                logger.info(
-                    "KALI IDCC %s: content changed, blue-green sync",
-                    org_conv.idcc,
-                )
-
-            # Create documents
             org_conv.status = "indexing"
             await db.commit()
 
             from app.services.storage_service import StorageService
             storage = StorageService()
 
-            new_doc_ids: list[str] = []
-            for suffix, text_content, _ in parts:
-                doc = await self._create_document(
-                    db, org_conv, ccn_ref, text_content,
+            for suffix, text_content in parts:
+                doc = await self._create_common_ccn_document(
+                    db, ccn_ref, text_content,
                     user_id=user_id,
                     storage=storage,
                     name_suffix=suffix,
                     file_hash_override=new_hash if suffix == "" else None,
                 )
                 await enqueue_ingestion(str(doc.id))
-                new_doc_ids.append(str(doc.id))
 
-            result.documents_created = len(new_doc_ids)
+            result.documents_created = len(parts)
 
-            # Blue-green cleanup of old docs
-            old_doc_ids = [str(d.id) for d in existing_docs] if existing_docs else []
-            if old_doc_ids:
-                await self._enqueue_old_docs_cleanup(old_doc_ids)
-
-            # Update status
-            if existing_docs:
-                org_conv.articles_count = result.articles_count
-                org_conv.source_date = source_date
-                org_conv.last_synced_at = datetime.now(UTC)
-                org_conv.error_message = None
-            else:
-                org_conv.status = "ready"
-                org_conv.articles_count = result.articles_count
-                org_conv.source_date = source_date
-                org_conv.installed_at = datetime.now(UTC)
-                org_conv.last_synced_at = datetime.now(UTC)
-                org_conv.error_message = None
+            org_conv.status = "ready"
+            org_conv.articles_count = result.articles_count
+            org_conv.source_date = source_date
+            org_conv.installed_at = datetime.now(UTC)
+            org_conv.last_synced_at = datetime.now(UTC)
+            org_conv.error_message = None
             await db.commit()
 
         except Exception as exc:
@@ -670,7 +642,7 @@ class KaliService:
     async def _find_existing_ccn_docs(
         db: AsyncSession, organisation_id: uuid.UUID, idcc: str
     ) -> list[Document]:
-        """Find existing CCN documents for an org+idcc pair."""
+        """Find existing CCN documents for an org+idcc pair (legacy, per-org)."""
         result = await db.execute(
             select(Document).where(
                 Document.organisation_id == organisation_id,
@@ -679,6 +651,62 @@ class KaliService:
             ).order_by(Document.created_at.desc())
         )
         return list(result.scalars().all())
+
+    @staticmethod
+    async def _find_common_ccn_docs(
+        db: AsyncSession, idcc: str
+    ) -> list[Document]:
+        """Find common (shared) CCN documents for an IDCC."""
+        result = await db.execute(
+            select(Document).where(
+                Document.organisation_id.is_(None),
+                Document.source_type == "convention_collective_nationale",
+                Document.name.ilike(f"%IDCC {idcc}%"),
+            ).order_by(Document.created_at.desc())
+        )
+        return list(result.scalars().all())
+
+    async def _create_common_ccn_document(
+        self,
+        db: AsyncSession,
+        ccn_ref: CcnReference,
+        text_content: str,
+        user_id: uuid.UUID,
+        storage,
+        name_suffix: str = "",
+        file_hash_override: str | None = None,
+    ) -> Document:
+        """Create a common (shared) CCN document — org_id = NULL."""
+        source_type = "convention_collective_nationale"
+        hierarchy = DOCUMENT_TYPE_HIERARCHY[source_type]
+
+        titre = ccn_ref.titre_court or ccn_ref.titre
+        name = f"CCN {titre} (IDCC {ccn_ref.idcc}){name_suffix}"
+
+        file_id = uuid.uuid4()
+        storage_path = f"common/ccn/{ccn_ref.idcc}/{file_id}.txt"
+        text_bytes = text_content.encode("utf-8")
+        storage.put_file_bytes(storage_path, text_bytes, content_type="text/plain")
+
+        file_hash = file_hash_override or hashlib.sha256(text_bytes).hexdigest()
+
+        doc = Document(
+            organisation_id=None,  # COMMON document
+            name=name,
+            source_type=source_type,
+            norme_niveau=hierarchy["niveau"],
+            norme_poids=hierarchy["poids"],
+            storage_path=storage_path,
+            indexation_status="pending",
+            uploaded_by=user_id,
+            file_size=len(text_bytes),
+            file_format="txt",
+            file_hash=file_hash,
+        )
+        db.add(doc)
+        await db.commit()
+        await db.refresh(doc)
+        return doc
 
     @staticmethod
     async def _cleanup_old_ccn_docs(

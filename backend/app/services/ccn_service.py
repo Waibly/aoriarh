@@ -107,7 +107,11 @@ class CcnService:
     async def remove_convention(
         self, organisation_id: uuid.UUID, idcc: str
     ) -> None:
-        """Remove a convention from an organisation and clean up documents/vectors."""
+        """Remove a convention link from an organisation.
+
+        Common CCN docs are NOT deleted (shared with other orgs).
+        Only org-specific custom CCN docs are deleted.
+        """
         result = await self.db.execute(
             select(OrganisationConvention).where(
                 OrganisationConvention.organisation_id == organisation_id,
@@ -121,7 +125,7 @@ class CcnService:
                 detail=f"Convention IDCC {idcc} non trouvée pour cette organisation",
             )
 
-        # Find associated CCN documents to get their IDs for Qdrant cleanup
+        # Only delete org-specific CCN docs (custom uploads), NOT common ones
         docs_result = await self.db.execute(
             select(Document).where(
                 Document.organisation_id == organisation_id,
@@ -131,7 +135,6 @@ class CcnService:
         )
         ccn_docs = docs_result.scalars().all()
 
-        # Delete Qdrant vectors for each document
         for doc in ccn_docs:
             try:
                 client = get_qdrant_client()
@@ -151,11 +154,47 @@ class CcnService:
             except Exception:
                 logger.warning("Failed to delete Qdrant chunks for document %s", doc.id)
 
-        # Delete documents from DB
         if ccn_docs:
             await self.db.execute(
                 delete(Document).where(
                     Document.organisation_id == organisation_id,
+                    Document.source_type == "convention_collective_nationale",
+                    Document.name.ilike(f"%IDCC {idcc}%"),
+                )
+            )
+
+        # Check if any other org uses this CCN — if not, delete common docs too
+        other_orgs = await self.db.execute(
+            select(OrganisationConvention).where(
+                OrganisationConvention.idcc == idcc,
+                OrganisationConvention.id != org_conv.id,
+            )
+        )
+        if not other_orgs.scalar_one_or_none():
+            # No other org uses this CCN — clean up common docs
+            common_docs = await self.db.execute(
+                select(Document).where(
+                    Document.organisation_id.is_(None),
+                    Document.source_type == "convention_collective_nationale",
+                    Document.name.ilike(f"%IDCC {idcc}%"),
+                )
+            )
+            for doc in common_docs.scalars().all():
+                try:
+                    client = get_qdrant_client()
+                    client.delete(
+                        collection_name=COLLECTION_NAME,
+                        points_selector=FilterSelector(
+                            filter=Filter(
+                                must=[FieldCondition(key="document_id", match=MatchValue(value=str(doc.id)))]
+                            )
+                        ),
+                    )
+                except Exception:
+                    logger.warning("Failed to delete Qdrant chunks for common doc %s", doc.id)
+            await self.db.execute(
+                delete(Document).where(
+                    Document.organisation_id.is_(None),
                     Document.source_type == "convention_collective_nationale",
                     Document.name.ilike(f"%IDCC {idcc}%"),
                 )

@@ -29,6 +29,7 @@ class OrganisationConventionRead(BaseModel):
     last_synced_at: datetime | None = None
     articles_count: int | None = None
     source_date: str | None = None
+    use_custom: bool = False
     error_message: str | None = None
     created_at: datetime
     # Joined CCN reference fields
@@ -46,6 +47,7 @@ class OrganisationConventionRead(BaseModel):
             last_synced_at=obj.last_synced_at,
             articles_count=obj.articles_count,
             source_date=obj.source_date,
+            use_custom=obj.use_custom,
             error_message=obj.error_message,
             created_at=obj.created_at,
             titre=obj.ccn.titre if obj.ccn else None,
