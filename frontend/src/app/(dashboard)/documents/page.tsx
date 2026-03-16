@@ -481,9 +481,25 @@ export default function DocumentsPage() {
 
                   {/* Content */}
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium">
-                      {c.titre || c.titre_court || `IDCC ${c.idcc}`}
-                    </p>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <p className="text-sm font-medium">
+                        {c.titre || c.titre_court || `IDCC ${c.idcc}`}
+                      </p>
+                      {c.status === "ready" && c.source_date && (() => {
+                        const ageMs = Date.now() - new Date(c.source_date).getTime();
+                        const ageYears = ageMs / (365.25 * 24 * 60 * 60 * 1000);
+                        const color = ageYears > 2
+                          ? "border-red-500 bg-red-500/10 text-red-700 dark:text-red-400"
+                          : ageYears > 1
+                            ? "border-orange-500 bg-orange-500/10 text-orange-700 dark:text-orange-400"
+                            : "border-green-500 bg-green-500/10 text-green-700 dark:text-green-400";
+                        return (
+                          <Badge variant="outline" className={`rounded-full text-[11px] ${color}`}>
+                            Textes au {new Date(c.source_date).toLocaleDateString("fr-FR")}
+                          </Badge>
+                        );
+                      })()}
+                    </div>
                     <p className="text-xs text-foreground/70">
                       IDCC {c.idcc}
                       {c.status === "ready" && c.articles_count != null && ` — ${c.articles_count} articles`}
@@ -492,15 +508,6 @@ export default function DocumentsPage() {
                       {c.status === "indexing" && " — Indexation en cours"}
                       {c.status === "error" && " — Erreur de mise à jour"}
                     </p>
-                    {c.status === "ready" && (
-                      <p className="text-xs text-foreground/60">
-                        {c.source_date
-                          ? `Texte source à jour au ${new Date(c.source_date).toLocaleDateString("fr-FR")}`
-                          : c.last_synced_at
-                            ? `Synchronisé le ${new Date(c.last_synced_at).toLocaleDateString("fr-FR")}`
-                            : null}
-                      </p>
-                    )}
                     {/* List CCN documents — ordered: base first, then annexes, then salaires */}
                     {c.status === "ready" && (
                       <div className="mt-1.5 space-y-0.5">
