@@ -71,7 +71,7 @@ function RegisterForm() {
   // Step 3 — Organisation
   const [orgName, setOrgName] = useState("");
 
-  // Invitation step 2 — Profil métier
+  // Step 4 — Profil métier (also used in invitation step 2)
   const [profilMetier, setProfilMetier] = useState("");
 
   const [error, setError] = useState<string | null>(null);
@@ -199,7 +199,9 @@ function RegisterForm() {
               ? "Entrez vos informations pour commencer"
               : step === 2
                 ? "Nommez votre espace de travail"
-                : "Créez votre première organisation"}
+                : step === 3
+                  ? "Créez votre première organisation"
+                  : "Une dernière étape pour personnaliser vos réponses"}
         </p>
       </div>
 
@@ -241,6 +243,13 @@ function RegisterForm() {
             current={step}
             icon={<Building2 className="h-3.5 w-3.5" />}
             label="Organisation"
+          />
+          <div className="h-px w-6 bg-border" />
+          <StepBadge
+            step={4}
+            current={step}
+            icon={<UserCog className="h-3.5 w-3.5" />}
+            label="Profil"
           />
         </div>
       )}
@@ -427,11 +436,11 @@ function RegisterForm() {
         )}
 
         {/* Step 3 — Organisation */}
-        {step === 3 && (
+        {step === 3 && !isInvitation && (
           <form
             onSubmit={(e) => {
               e.preventDefault();
-              handleSubmit();
+              setStep(4);
             }}
           >
             <div className="grid gap-4">
@@ -466,13 +475,62 @@ function RegisterForm() {
                 <Button
                   type="submit"
                   className="flex-1"
-                  disabled={isLoading}
                 >
-                  {isLoading
-                    ? "Création en cours..."
-                    : orgName.trim()
-                      ? "Créer mon compte"
-                      : "Passer et terminer"}
+                  Suivant
+                  <ArrowRight className="ml-2 h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+          </form>
+        )}
+
+        {/* Step 4 — Profil métier (normal flow) */}
+        {step === 4 && !isInvitation && (
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              handleSubmit();
+            }}
+          >
+            <div className="grid gap-4">
+              <div className="grid gap-2">
+                <Label htmlFor="profilMetierNormal">
+                  Quel est votre rôle ?{" "}
+                  <span className="text-destructive">*</span>
+                </Label>
+                <Select value={profilMetier} onValueChange={setProfilMetier}>
+                  <SelectTrigger id="profilMetierNormal">
+                    <SelectValue placeholder="Sélectionner votre profil..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {PROFIL_METIER_OPTIONS.map((p) => (
+                      <SelectItem key={p.value} value={p.value}>
+                        {p.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  Votre fonction permet d&apos;adapter les réponses juridiques à
+                  votre perspective métier.
+                </p>
+              </div>
+              <div className="flex gap-3">
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="flex-1"
+                  onClick={() => setStep(3)}
+                >
+                  <ArrowLeft className="mr-2 h-4 w-4" />
+                  Retour
+                </Button>
+                <Button
+                  type="submit"
+                  className="flex-1"
+                  disabled={!profilMetier || isLoading}
+                >
+                  {isLoading ? "Création en cours..." : "Créer mon compte"}
                 </Button>
               </div>
             </div>
