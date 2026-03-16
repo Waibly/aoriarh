@@ -305,10 +305,36 @@ class BoccService:
         return result
 
     def _extract_individual_pdfs(self, archive_bytes: bytes) -> list[tuple[str, bytes]]:
-        """Extract individual avenant PDFs from a .taz archive."""
+        """Extract individual avenant PDFs from a .taz archive.
+
+        .taz files are .tar.Z (Unix compress format), not .tar.gz.
+        We decompress with subprocess (uncompress/gzip) then open as plain tar.
+        """
+        import subprocess
+        import tempfile
+
         pdfs = []
         try:
-            with tarfile.open(fileobj=io.BytesIO(archive_bytes), mode="r:gz") as tar:
+            # Write to temp file, decompress with gzip (handles .Z format)
+            with tempfile.NamedTemporaryFile(suffix=".taz", delete=False) as tmp:
+                tmp.write(archive_bytes)
+                tmp_path = tmp.name
+
+            # gzip -d can decompress .Z files; output to stdout as tar
+            proc = subprocess.run(
+                ["gzip", "-dc", tmp_path],
+                capture_output=True,
+                timeout=120,
+            )
+            import os
+            os.unlink(tmp_path)
+
+            if proc.returncode != 0:
+                logger.warning("BOCC: gzip decompress failed: %s", proc.stderr[:200])
+                return pdfs
+
+            tar_bytes = proc.stdout
+            with tarfile.open(fileobj=io.BytesIO(tar_bytes), mode="r:") as tar:
                 for member in tar.getmembers():
                     name = member.name
                     # Individual avenants: boc_XXXX_0000_NNNN.pdf (not the complete PDF _0001_p000)
@@ -316,7 +342,7 @@ class BoccService:
                         f = tar.extractfile(member)
                         if f:
                             pdfs.append((name, f.read()))
-        except tarfile.TarError as exc:
+        except (tarfile.TarError, subprocess.TimeoutExpired, OSError) as exc:
             logger.warning("BOCC: failed to extract archive: %s", exc)
         return pdfs
 
