@@ -238,22 +238,25 @@ function WorkspaceCard({
 }) {
   const [expanded, setExpanded] = useState(false);
   const [planSaving, setPlanSaving] = useState(false);
+  const [pendingPlan, setPendingPlan] = useState<string | null>(null);
+  const [pendingDuration, setPendingDuration] = useState("3");
 
   const planConfig = PLAN_CONFIG[ws.plan as keyof typeof PLAN_CONFIG] ?? PLAN_CONFIG.gratuit;
-  const PlanIcon = planConfig.icon;
 
-  const handlePlanChange = async (newPlan: string) => {
+  const handlePlanConfirm = async () => {
+    if (!pendingPlan) return;
     setPlanSaving(true);
     try {
       await apiFetch(`/admin/users/accounts/${ws.account_id}/plan`, {
         method: "PUT",
         token,
         body: JSON.stringify({
-          plan: newPlan,
-          duration_months: newPlan === "invite" ? 3 : null,
+          plan: pendingPlan,
+          duration_months: pendingPlan === "invite" ? Number(pendingDuration) : null,
         }),
       });
-      toast.success("Plan mis à jour");
+      toast.success(`Plan mis à jour : ${pendingPlan}`);
+      setPendingPlan(null);
       onUpdated();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Erreur");
@@ -264,34 +267,68 @@ function WorkspaceCard({
 
   return (
     <Card>
-      <CardHeader className="pb-3">
-        <div className="flex items-start justify-between">
-          <div className="space-y-1">
-            <CardTitle className="flex items-center gap-2 text-base">
-              <Building2 className="h-5 w-5" />
-              {ws.name}
-            </CardTitle>
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <a href={`mailto:${ws.owner_email}`} className="hover:text-primary hover:underline">
-                {ws.owner_email}
-              </a>
-              <span>—</span>
-              <span>{ws.owner_name}</span>
-            </div>
-            {ws.created_at && (
-              <p className="text-xs text-muted-foreground/70">
-                Inscrit le {new Date(ws.created_at).toLocaleDateString("fr-FR")}
-              </p>
-            )}
-          </div>
-          <div className="flex items-center gap-2">
-            <Select
-              value={ws.plan}
-              onValueChange={handlePlanChange}
-              disabled={planSaving}
-            >
-              <SelectTrigger className="h-8 w-[120px]">
-                <SelectValue />
+      {/* Compact header: name + plan on one line */}
+      <div className="flex items-center justify-between px-4 py-3 border-b">
+        <div className="flex items-center gap-2 min-w-0">
+          <Building2 className="h-4 w-4 shrink-0 text-muted-foreground" />
+          <span className="font-semibold truncate">{ws.name}</span>
+          <Badge variant="outline" className={`${planConfig.className} text-xs shrink-0`}>
+            {planConfig.label}
+          </Badge>
+          {ws.plan === "invite" && ws.plan_expires_at && (
+            <span className="text-xs text-muted-foreground shrink-0">
+              exp. {new Date(ws.plan_expires_at).toLocaleDateString("fr-FR")}
+            </span>
+          )}
+        </div>
+        <div className="flex items-center gap-4 text-xs text-muted-foreground shrink-0">
+          <span>{ws.organisations.length} org{ws.organisations.length > 1 ? "s" : ""}</span>
+          <span>{ws.members.length} membre{ws.members.length > 1 ? "s" : ""}</span>
+          <span>{ws.total_documents} docs</span>
+          <span>{ws.total_questions} questions</span>
+        </div>
+      </div>
+
+      {/* Owner info + plan change */}
+      <div className="flex items-center justify-between px-4 py-2 text-sm">
+        <div className="flex items-center gap-2 text-muted-foreground">
+          <Mail className="h-3.5 w-3.5" />
+          <a href={`mailto:${ws.owner_email}`} className="hover:text-primary hover:underline">
+            {ws.owner_email}
+          </a>
+          <span>— {ws.owner_name}</span>
+          {ws.created_at && (
+            <span className="text-xs">
+              — inscrit le {new Date(ws.created_at).toLocaleDateString("fr-FR")}
+            </span>
+          )}
+        </div>
+        <div className="flex items-center gap-2">
+          {pendingPlan ? (
+            <>
+              {pendingPlan === "invite" && (
+                <Select value={pendingDuration} onValueChange={setPendingDuration}>
+                  <SelectTrigger className="h-7 w-[90px] text-xs">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="1">1 mois</SelectItem>
+                    <SelectItem value="2">2 mois</SelectItem>
+                    <SelectItem value="3">3 mois</SelectItem>
+                  </SelectContent>
+                </Select>
+              )}
+              <Button size="sm" variant="default" className="h-7 text-xs" onClick={handlePlanConfirm} disabled={planSaving}>
+                {planSaving ? "..." : `Passer en ${pendingPlan}`}
+              </Button>
+              <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => setPendingPlan(null)}>
+                Annuler
+              </Button>
+            </>
+          ) : (
+            <Select value="" onValueChange={(v) => setPendingPlan(v)}>
+              <SelectTrigger className="h-7 w-[130px] text-xs">
+                <SelectValue placeholder="Changer le plan" />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="gratuit">Gratuit</SelectItem>
@@ -299,54 +336,30 @@ function WorkspaceCard({
                 <SelectItem value="vip">VIP</SelectItem>
               </SelectContent>
             </Select>
-            <Badge variant="outline" className={planConfig.className}>
-              <PlanIcon className="mr-1 h-3 w-3" />
-              {planConfig.label}
-            </Badge>
-          </div>
+          )}
         </div>
+      </div>
 
-        {/* Stats row */}
-        <div className="flex gap-6 pt-2 text-sm">
-          <div className="flex items-center gap-1.5 text-muted-foreground">
-            <Building2 className="h-3.5 w-3.5" />
-            <span>{ws.organisations.length} org{ws.organisations.length > 1 ? "s" : ""}</span>
-          </div>
-          <div className="flex items-center gap-1.5 text-muted-foreground">
-            <Users className="h-3.5 w-3.5" />
-            <span>{ws.members.length} membre{ws.members.length > 1 ? "s" : ""}</span>
-          </div>
-          <div className="flex items-center gap-1.5 text-muted-foreground">
-            <FileText className="h-3.5 w-3.5" />
-            <span>{ws.total_documents} doc{ws.total_documents > 1 ? "s" : ""}</span>
-          </div>
-          <div className="flex items-center gap-1.5 text-muted-foreground">
-            <MessageSquare className="h-3.5 w-3.5" />
-            <span>{ws.total_questions} question{ws.total_questions > 1 ? "s" : ""}</span>
-          </div>
-        </div>
-      </CardHeader>
-
+      {/* Expandable details */}
       <Collapsible open={expanded} onOpenChange={setExpanded}>
         <CollapsibleTrigger asChild>
-          <button className="flex w-full items-center gap-1 border-t px-6 py-2 text-xs font-medium text-muted-foreground hover:bg-muted/50 transition-colors">
+          <button className="flex w-full items-center gap-1 border-t px-4 py-1.5 text-xs font-medium text-muted-foreground hover:bg-muted/50 transition-colors">
             {expanded ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
             Détails
           </button>
         </CollapsibleTrigger>
         <CollapsibleContent>
-          <CardContent className="pt-0 space-y-4">
+          <div className="px-4 pb-3 space-y-3">
             {/* Organisations */}
             {ws.organisations.length > 0 && (
               <div>
-                <p className="text-xs font-semibold text-muted-foreground mb-2">Organisations</p>
-                <div className="space-y-1.5">
+                <p className="text-xs font-semibold text-muted-foreground mb-1">Organisations</p>
+                <div className="space-y-1 pl-4">
                   {ws.organisations.map((org) => (
-                    <div key={org.id} className="flex items-center gap-2 rounded-md bg-muted/30 px-3 py-2 text-sm">
-                      <Building2 className="h-3.5 w-3.5 text-muted-foreground" />
+                    <div key={org.id} className="flex items-center gap-2 text-sm">
                       <span className="font-medium">{org.name}</span>
                       <span className="text-xs text-muted-foreground">
-                        {org.documents_count} docs — {org.members_count} membres
+                        — {org.documents_count} docs, {org.members_count} membres
                       </span>
                     </div>
                   ))}
@@ -356,23 +369,20 @@ function WorkspaceCard({
 
             {/* Members */}
             <div>
-              <p className="text-xs font-semibold text-muted-foreground mb-2">Membres</p>
-              <div className="space-y-1.5">
+              <p className="text-xs font-semibold text-muted-foreground mb-1">Membres</p>
+              <div className="space-y-1 pl-4">
                 {ws.members.map((m) => (
                   <div key={m.user_id} className="flex items-center gap-2 text-sm">
-                    <Mail className="h-3.5 w-3.5 text-muted-foreground" />
                     <a href={`mailto:${m.email}`} className="hover:text-primary hover:underline">
                       {m.email}
                     </a>
-                    <span className="text-muted-foreground">({m.full_name})</span>
-                    {m.is_owner && (
-                      <Badge variant="outline" className="rounded-full border-amber-500 bg-amber-500/10 text-amber-600 text-xs">
-                        <Crown className="mr-1 h-2.5 w-2.5" />
+                    <span className="text-muted-foreground text-xs">({m.full_name})</span>
+                    {m.is_owner ? (
+                      <Badge variant="outline" className="rounded-full border-amber-500 bg-amber-500/10 text-amber-600 text-[10px] px-1.5 py-0">
                         Propriétaire
                       </Badge>
-                    )}
-                    {!m.is_owner && (
-                      <Badge variant="outline" className="rounded-full text-xs">
+                    ) : (
+                      <Badge variant="outline" className="rounded-full text-[10px] px-1.5 py-0">
                         {m.role_in_workspace === "manager" ? "Manager" : "Utilisateur"}
                       </Badge>
                     )}
@@ -380,7 +390,7 @@ function WorkspaceCard({
                 ))}
               </div>
             </div>
-          </CardContent>
+          </div>
         </CollapsibleContent>
       </Collapsible>
     </Card>

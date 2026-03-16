@@ -397,36 +397,6 @@ export default function DocumentsPage() {
     <div className="space-y-6">
       <h1 className="text-2xl font-semibold tracking-tight">Documents</h1>
 
-      {/* Drop zone (manager only) */}
-      {isManager && (
-        <div
-          onDragOver={handleDragOver}
-          onDragLeave={handleDragLeave}
-          onDrop={handleDrop}
-          className={cn(
-            "flex flex-col items-center justify-center rounded-lg border-2 border-dashed bg-white p-8 transition-colors dark:bg-card",
-            dragging
-              ? "border-primary bg-primary/5"
-              : "border-muted-foreground/25"
-          )}
-        >
-          <Upload className="mb-2 h-8 w-8 text-muted-foreground" />
-          <p className="text-sm text-muted-foreground">
-            Glissez-déposez un ou plusieurs fichiers ici ou{" "}
-            <button
-              type="button"
-              onClick={() => setUploadOpen(true)}
-              className="font-medium text-primary underline-offset-4 hover:underline"
-            >
-              parcourez vos fichiers
-            </button>
-          </p>
-          <p className="mt-1 text-xs text-muted-foreground">
-            PDF, Word (.docx), Texte (.txt)
-          </p>
-        </div>
-      )}
-
       {/* Conventions collectives — checklist */}
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
@@ -511,10 +481,10 @@ export default function DocumentsPage() {
 
                   {/* Content */}
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium truncate">
-                      {c.titre_court || c.titre || `IDCC ${c.idcc}`}
+                    <p className="text-sm font-medium">
+                      {c.titre || c.titre_court || `IDCC ${c.idcc}`}
                     </p>
-                    <p className="text-xs text-muted-foreground">
+                    <p className="text-xs text-foreground/70">
                       IDCC {c.idcc}
                       {c.status === "ready" && c.articles_count != null && ` — ${c.articles_count} articles`}
                       {c.status === "pending" && " — En attente"}
@@ -523,7 +493,7 @@ export default function DocumentsPage() {
                       {c.status === "error" && " — Erreur de mise à jour"}
                     </p>
                     {c.status === "ready" && (
-                      <p className="text-xs text-muted-foreground/70">
+                      <p className="text-xs text-foreground/60">
                         {c.source_date
                           ? `Texte source à jour au ${new Date(c.source_date).toLocaleDateString("fr-FR")}`
                           : c.last_synced_at
@@ -531,17 +501,28 @@ export default function DocumentsPage() {
                             : null}
                       </p>
                     )}
-                    {/* List CCN documents */}
+                    {/* List CCN documents — ordered: base first, then annexes, then salaires */}
                     {c.status === "ready" && (
                       <div className="mt-1.5 space-y-0.5">
                         {documents
                           .filter((d) => d.source_type === "convention_collective_nationale" && d.name.includes(`IDCC ${c.idcc}`))
-                          .map((d) => (
-                            <p key={d.id} className="text-xs text-muted-foreground/60 pl-2 border-l border-muted">
-                              {d.name.replace(`CCN ${c.titre_court || c.titre || ""} (IDCC ${c.idcc})`, "").replace(" — ", "") || "Texte de base"}
-                              {d.chunk_count != null && ` — ${d.chunk_count} chunks`}
-                            </p>
-                          ))}
+                          .sort((a, b) => {
+                            // Base first, then annexes, then salaires
+                            const order = (name: string) => {
+                              if (name.includes("Avenants")) return 1;
+                              if (name.includes("Grilles")) return 2;
+                              return 0;
+                            };
+                            return order(a.name) - order(b.name);
+                          })
+                          .map((d) => {
+                            const suffix = d.name.includes("Avenants") ? "Avenants et annexes" : d.name.includes("Grilles") ? "Grilles de salaires" : "Texte de base";
+                            return (
+                              <p key={d.id} className="text-xs text-foreground/60 pl-3 border-l-2 border-muted">
+                                {suffix}
+                              </p>
+                            );
+                          })}
                       </div>
                     )}
                     {c.status === "error" && c.error_message && (
