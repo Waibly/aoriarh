@@ -389,21 +389,6 @@ export function Sidebar() {
                   size="sm"
                   className={cn(
                     "w-full justify-start font-normal",
-                    pathname === "/admin/documents" &&
-                      "bg-accent text-accent-foreground font-medium",
-                  )}
-                  asChild
-                >
-                  <Link href="/admin/documents">
-                    <Files className="mr-2 h-5 w-5" />
-                    Tous les documents
-                  </Link>
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className={cn(
-                    "w-full justify-start font-normal",
                     pathname.startsWith("/admin/documents-communs") &&
                       "bg-accent text-accent-foreground font-medium",
                   )}

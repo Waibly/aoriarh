@@ -154,7 +154,14 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
       if (isInvitePage || isAuthPage) return true;
       return isLoggedIn;
     },
-    async jwt({ token, user, account, profile }) {
+    async jwt({ token, user, account, profile, trigger, session: updateData }) {
+      // Session update (e.g. user changed their name)
+      if (trigger === "update" && updateData?.user) {
+        if (updateData.user.full_name) token.full_name = updateData.user.full_name;
+        if (updateData.user.email) token.email = updateData.user.email;
+        return token;
+      }
+
       // Initial sign-in via Credentials
       if (user && account?.provider === "credentials") {
         token.access_token = user.access_token;
