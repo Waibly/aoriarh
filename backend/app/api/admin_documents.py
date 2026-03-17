@@ -250,29 +250,47 @@ async def list_common_document_groups(
     """Return common documents grouped by source_type with counts."""
     from app.rag.norme_hierarchy import DOCUMENT_TYPE_HIERARCHY
 
+    # Split CCN into KALI (indexed) and BOCC (reserve) for clarity
+    is_bocc_reserve = (
+        Document.organisation_id.is_(None)
+        & Document.storage_path.ilike("common/ccn/%/bocc_%")
+        & (Document.indexation_status == "pending")
+    )
+
     result = await db.execute(
         select(
             Document.source_type,
             func.count().label("count"),
             func.count().filter(Document.indexation_status == "indexed").label("indexed"),
-            func.count().filter(Document.indexation_status == "pending").label("pending"),
+            func.count().filter(
+                (Document.indexation_status == "pending") & ~is_bocc_reserve
+            ).label("pending"),
             func.coalesce(func.sum(Document.chunk_count), 0).label("total_chunks"),
         )
-        .where(Document.organisation_id.is_(None))
+        .where(Document.organisation_id.is_(None), ~is_bocc_reserve)
         .group_by(Document.source_type)
         .order_by(func.count().desc())
     )
     rows = result.all()
 
+    # Count BOCC reserve separately
+    bocc_q = await db.execute(
+        select(func.count()).select_from(Document).where(is_bocc_reserve)
+    )
+    bocc_reserve_count = bocc_q.scalar() or 0
+
     source_labels = {
         "code_travail": "Code du travail (législatif)",
         "code_travail_reglementaire": "Code du travail (réglementaire)",
         "arret_cour_cassation": "Jurisprudence — Cour de cassation",
-        "convention_collective_nationale": "Conventions collectives & BOCC",
+        "convention_collective_nationale": "Conventions collectives (KALI)",
         "constitution": "Constitution",
         "convention_oit": "Conventions OIT",
         "code_civil": "Code civil",
         "code_penal": "Code pénal",
+        "code_securite_sociale": "Code de la sécurité sociale (législatif)",
+        "code_securite_sociale_reglementaire": "Code de la sécurité sociale (réglementaire)",
+        "code_action_sociale": "Code de l'action sociale et des familles",
     }
 
     groups = []
@@ -289,6 +307,18 @@ async def list_common_document_groups(
         ))
         total += row.count
 
+    # Add BOCC reserve as a separate virtual group
+    if bocc_reserve_count > 0:
+        groups.append(DocumentGroupItem(
+            source_type="bocc_reserve",
+            label=f"BOCC en réserve ({bocc_reserve_count} avenants — ingérés à l'installation d'une CCN)",
+            count=bocc_reserve_count,
+            indexed=0,
+            pending=0,
+            total_chunks=0,
+        ))
+        total += bocc_reserve_count
+
     return DocumentGroupsResponse(groups=groups, total=total)
 
 
@@ -301,6 +331,21 @@ async def list_common_documents_by_type(
     db: AsyncSession = Depends(get_db),
 ) -> list[DocumentRead]:
     """Return common documents for a specific source_type with pagination."""
+    # Virtual group for BOCC reserve
+    if source_type == "bocc_reserve":
+        result = await db.execute(
+            select(Document)
+            .where(
+                Document.organisation_id.is_(None),
+                Document.storage_path.ilike("common/ccn/%/bocc_%"),
+                Document.indexation_status == "pending",
+            )
+            .order_by(Document.created_at.desc())
+            .offset((page - 1) * page_size)
+            .limit(page_size)
+        )
+        return list(result.scalars().all())  # type: ignore[return-value]
+
     result = await db.execute(
         select(Document)
         .where(
