@@ -355,10 +355,12 @@ async def list_common_documents_by_type(
         )
     )
     if source_type == "convention_collective_nationale":
+        from sqlalchemy import or_
+        # Exclude BOCC reserve: keep docs that are NOT (bocc path + pending)
         query = query.where(
-            ~(
-                Document.storage_path.ilike("common/ccn/%/bocc_%")
-                & (Document.indexation_status == "pending")
+            or_(
+                ~Document.storage_path.ilike("common/ccn/%/bocc_%"),
+                Document.indexation_status != "pending",
             )
         )
 
