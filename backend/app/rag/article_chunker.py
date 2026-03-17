@@ -133,15 +133,15 @@ class ArticleChunker:
             article_text = section_prefix + article["content"]
             article_tokens = self._token_count(article_text)
 
-            # If single article exceeds chunk_size, it gets its own chunk
+            # If single article exceeds chunk_size, split it into smaller pieces
             if article_tokens > self.chunk_size:
                 # Flush current buffer
                 if current_parts:
                     chunks.append("\n\n".join(current_parts))
                     current_parts = []
                     current_tokens = 0
-                # Force-split oversized article
-                chunks.append(article_text)
+                # Split oversized article by paragraphs
+                chunks.extend(self._split_large_article(article_text))
                 continue
 
             # If adding this article would exceed the limit, flush
@@ -155,6 +155,41 @@ class ArticleChunker:
             current_tokens += article_tokens
 
         # Flush remaining
+        if current_parts:
+            chunks.append("\n\n".join(current_parts))
+
+        return chunks
+
+    def _split_large_article(self, text: str) -> list[str]:
+        """Split an oversized article into chunks by paragraphs."""
+        paragraphs = text.split("\n\n")
+        chunks: list[str] = []
+        current_parts: list[str] = []
+        current_tokens = 0
+
+        for para in paragraphs:
+            para_tokens = self._token_count(para)
+
+            # Single paragraph exceeds chunk_size — force-split by characters
+            if para_tokens > self.chunk_size:
+                if current_parts:
+                    chunks.append("\n\n".join(current_parts))
+                    current_parts = []
+                    current_tokens = 0
+                # Split by ~chunk_size tokens worth of characters (~4 chars/token)
+                max_chars = self.chunk_size * 4
+                for i in range(0, len(para), max_chars):
+                    chunks.append(para[i : i + max_chars])
+                continue
+
+            if current_tokens + para_tokens > self.chunk_size:
+                chunks.append("\n\n".join(current_parts))
+                current_parts = []
+                current_tokens = 0
+
+            current_parts.append(para)
+            current_tokens += para_tokens
+
         if current_parts:
             chunks.append("\n\n".join(current_parts))
 

@@ -44,7 +44,7 @@ logger = logging.getLogger(__name__)
 # Retry config for Voyage AI rate limits
 MAX_RETRIES = 3
 RETRY_BASE_DELAY = 2.0
-EMBEDDING_BATCH_SIZE = 64
+EMBEDDING_BATCH_SIZE = 32  # Reduced from 64 to handle large legal code chunks
 
 # --- Date extraction for recency boosting ---
 import re as _re_mod
