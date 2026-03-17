@@ -346,12 +346,24 @@ async def list_common_documents_by_type(
         )
         return list(result.scalars().all())  # type: ignore[return-value]
 
-    result = await db.execute(
+    # For CCN group, exclude BOCC reserve docs (they have their own group)
+    query = (
         select(Document)
         .where(
             Document.organisation_id.is_(None),
             Document.source_type == source_type,
         )
+    )
+    if source_type == "convention_collective_nationale":
+        query = query.where(
+            ~(
+                Document.storage_path.ilike("common/ccn/%/bocc_%")
+                & (Document.indexation_status == "pending")
+            )
+        )
+
+    result = await db.execute(
+        query
         .order_by(Document.created_at.desc())
         .offset((page - 1) * page_size)
         .limit(page_size)
