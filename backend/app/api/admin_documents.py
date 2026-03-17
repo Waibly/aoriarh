@@ -227,6 +227,93 @@ async def list_common_documents(
     return await service.list_common_documents()  # type: ignore[return-value]
 
 
+class DocumentGroupItem(BaseModel):
+    """A group of common documents by source_type."""
+    source_type: str
+    label: str
+    count: int
+    indexed: int
+    pending: int
+    total_chunks: int
+
+
+class DocumentGroupsResponse(BaseModel):
+    groups: list[DocumentGroupItem]
+    total: int
+
+
+@router.get("/groups", response_model=DocumentGroupsResponse)
+async def list_common_document_groups(
+    user: User = Depends(require_role(["admin"])),
+    db: AsyncSession = Depends(get_db),
+) -> DocumentGroupsResponse:
+    """Return common documents grouped by source_type with counts."""
+    from app.rag.norme_hierarchy import DOCUMENT_TYPE_HIERARCHY
+
+    result = await db.execute(
+        select(
+            Document.source_type,
+            func.count().label("count"),
+            func.count().filter(Document.indexation_status == "indexed").label("indexed"),
+            func.count().filter(Document.indexation_status == "pending").label("pending"),
+            func.coalesce(func.sum(Document.chunk_count), 0).label("total_chunks"),
+        )
+        .where(Document.organisation_id.is_(None))
+        .group_by(Document.source_type)
+        .order_by(func.count().desc())
+    )
+    rows = result.all()
+
+    source_labels = {
+        "code_travail": "Code du travail (législatif)",
+        "code_travail_reglementaire": "Code du travail (réglementaire)",
+        "arret_cour_cassation": "Jurisprudence — Cour de cassation",
+        "convention_collective_nationale": "Conventions collectives & BOCC",
+        "constitution": "Constitution",
+        "convention_oit": "Conventions OIT",
+        "code_civil": "Code civil",
+        "code_penal": "Code pénal",
+    }
+
+    groups = []
+    total = 0
+    for row in rows:
+        label = source_labels.get(row.source_type, row.source_type)
+        groups.append(DocumentGroupItem(
+            source_type=row.source_type,
+            label=label,
+            count=row.count,
+            indexed=row.indexed,
+            pending=row.pending,
+            total_chunks=row.total_chunks,
+        ))
+        total += row.count
+
+    return DocumentGroupsResponse(groups=groups, total=total)
+
+
+@router.get("/groups/{source_type}", response_model=list[DocumentRead])
+async def list_common_documents_by_type(
+    source_type: str,
+    page: int = 1,
+    page_size: int = 50,
+    user: User = Depends(require_role(["admin"])),
+    db: AsyncSession = Depends(get_db),
+) -> list[DocumentRead]:
+    """Return common documents for a specific source_type with pagination."""
+    result = await db.execute(
+        select(Document)
+        .where(
+            Document.organisation_id.is_(None),
+            Document.source_type == source_type,
+        )
+        .order_by(Document.created_at.desc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+    )
+    return list(result.scalars().all())  # type: ignore[return-value]
+
+
 @router.get("/{document_id}/download")
 async def download_common_document(
     document_id: uuid.UUID,

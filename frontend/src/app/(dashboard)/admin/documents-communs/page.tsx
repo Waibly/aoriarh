@@ -5,6 +5,8 @@ import { useSession } from "next-auth/react";
 import {
   BookOpen,
   CheckCircle2,
+  ChevronDown,
+  ChevronRight,
   Download,
   FileUp,
   Loader2,
@@ -56,8 +58,6 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 
-// API_BASE_URL importé via authFetch — plus de fetch direct
-
 const NIVEAU_LABELS: Record<number, string> = {
   1: "Constitution",
   2: "Normes internationales",
@@ -83,42 +83,11 @@ const JURISPRUDENCE_SOURCE_TYPES = new Set([
   "decision_conseil_constitutionnel",
 ]);
 
-const JURIDICTION_OPTIONS = [
-  "Cour de cassation",
-  "Conseil d'État",
-  "Conseil constitutionnel",
-] as const;
-
-const CHAMBRE_OPTIONS = [
-  "Chambre sociale",
-  "Chambre civile 1",
-  "Chambre civile 2",
-  "Chambre civile 3",
-  "Chambre commerciale",
-  "Chambre criminelle",
-  "Assemblée plénière",
-  "Chambre mixte",
-] as const;
-
-const FORMATION_OPTIONS = [
-  "Formation plénière de chambre",
-  "Formation restreinte",
-  "Section",
-] as const;
-
-const SOLUTION_OPTIONS = [
-  "Cassation",
-  "Cassation partielle",
-  "Rejet",
-  "QPC",
-  "Non-lieu à statuer",
-] as const;
-
-const PUBLICATION_OPTIONS = [
-  "Publié au Bulletin",
-  "Inédit",
-  "Mentionné aux tables",
-] as const;
+const JURIDICTION_OPTIONS = ["Cour de cassation", "Conseil d'État", "Conseil constitutionnel"] as const;
+const CHAMBRE_OPTIONS = ["Chambre sociale", "Chambre civile 1", "Chambre civile 2", "Chambre civile 3", "Chambre commerciale", "Chambre criminelle", "Assemblée plénière", "Chambre mixte"] as const;
+const FORMATION_OPTIONS = ["Formation plénière de chambre", "Formation restreinte", "Section"] as const;
+const SOLUTION_OPTIONS = ["Cassation", "Cassation partielle", "Rejet", "QPC", "Non-lieu à statuer"] as const;
+const PUBLICATION_OPTIONS = ["Publié au Bulletin", "Inédit", "Mentionné aux tables"] as const;
 
 const STATUS_LABEL: Record<string, string> = {
   pending: "En attente",
@@ -134,59 +103,89 @@ function formatFileSize(bytes: number | null): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} Mo`;
 }
 
+interface DocumentGroup {
+  source_type: string;
+  label: string;
+  count: number;
+  indexed: number;
+  pending: number;
+  total_chunks: number;
+}
+
+interface DocumentGroupsResponse {
+  groups: DocumentGroup[];
+  total: number;
+}
 
 export default function DocumentsCommunsPage() {
   const { data: session } = useSession();
   const token = session?.access_token;
 
-  const [documents, setDocuments] = useState<Document[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [groups, setGroups] = useState<DocumentGroup[]>([]);
+  const [loading, setLoading] = useState(true);
   const [uploadOpen, setUploadOpen] = useState(false);
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(50);
-  const [search, setSearch] = useState("");
-  const [filterType, setFilterType] = useState("");
   const [syncingCdt, setSyncingCdt] = useState(false);
 
-  const initialLoadDone = useRef(false);
+  // Expanded groups with their loaded documents
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+  const [groupDocs, setGroupDocs] = useState<Record<string, Document[]>>({});
+  const [groupPages, setGroupPages] = useState<Record<string, number>>({});
+  const [loadingGroup, setLoadingGroup] = useState<Record<string, boolean>>({});
 
-  const fetchDocuments = useCallback(async () => {
+  const fetchGroups = useCallback(async () => {
     if (!token) return;
-    if (!initialLoadDone.current) setLoading(true);
     try {
-      const docs = await apiFetch<Document[]>("/admin/documents/", { token });
-      setDocuments(docs);
-      initialLoadDone.current = true;
+      const data = await apiFetch<DocumentGroupsResponse>("/admin/documents/groups", { token });
+      setGroups(data.groups);
     } catch {
-      toast.error("Erreur lors du chargement des documents communs");
+      toast.error("Erreur lors du chargement");
     } finally {
       setLoading(false);
     }
   }, [token]);
 
   useEffect(() => {
-    initialLoadDone.current = false;
-    fetchDocuments();
-  }, [fetchDocuments]);
+    fetchGroups();
+  }, [fetchGroups]);
 
-  // Polling : 5s si indexation en cours, 10s sinon (détecte les nouveaux docs)
+  // Auto-refresh groups every 15s
   useEffect(() => {
-    const hasPending = documents.some(
-      (d) => d.indexation_status === "pending" || d.indexation_status === "indexing"
-    );
-    const interval = setInterval(fetchDocuments, hasPending ? 5000 : 10000);
+    const interval = setInterval(fetchGroups, 15000);
     return () => clearInterval(interval);
-  }, [documents, fetchDocuments]);
+  }, [fetchGroups]);
 
-  const handleDelete = async (docId: string) => {
+  const fetchGroupDocs = useCallback(async (sourceType: string, page: number = 1) => {
+    if (!token) return;
+    setLoadingGroup((prev) => ({ ...prev, [sourceType]: true }));
+    try {
+      const docs = await apiFetch<Document[]>(
+        `/admin/documents/groups/${sourceType}?page=${page}&page_size=50`,
+        { token },
+      );
+      setGroupDocs((prev) => ({ ...prev, [sourceType]: docs }));
+      setGroupPages((prev) => ({ ...prev, [sourceType]: page }));
+    } catch {
+      toast.error("Erreur lors du chargement des documents");
+    } finally {
+      setLoadingGroup((prev) => ({ ...prev, [sourceType]: false }));
+    }
+  }, [token]);
+
+  const toggleGroup = (sourceType: string) => {
+    const isExpanded = expanded[sourceType];
+    setExpanded((prev) => ({ ...prev, [sourceType]: !isExpanded }));
+    if (!isExpanded && !groupDocs[sourceType]) {
+      fetchGroupDocs(sourceType);
+    }
+  };
+
+  const handleDelete = async (docId: string, sourceType: string) => {
     if (!token) return;
     try {
-      await apiFetch(`/admin/documents/${docId}`, {
-        method: "DELETE",
-        token,
-      });
+      await apiFetch(`/admin/documents/${docId}`, { method: "DELETE", token });
       toast.success("Document supprimé");
-      fetchDocuments();
+      fetchGroups();
+      fetchGroupDocs(sourceType, groupPages[sourceType] || 1);
     } catch {
       toast.error("Erreur lors de la suppression");
     }
@@ -195,9 +194,7 @@ export default function DocumentsCommunsPage() {
   const handleDownload = async (docId: string) => {
     if (!token) return;
     try {
-      const res = await authFetch(`/admin/documents/${docId}/download`, {
-        token,
-      });
+      const res = await authFetch(`/admin/documents/${docId}/download`, { token });
       if (!res.ok) throw new Error("Erreur");
       const blob = await res.blob();
       const disposition = res.headers.get("Content-Disposition");
@@ -222,21 +219,18 @@ export default function DocumentsCommunsPage() {
     }
   };
 
-  const handleReindex = async (docId: string) => {
+  const handleReindex = async (docId: string, sourceType: string) => {
     if (!token) return;
     try {
-      await apiFetch(`/admin/documents/${docId}/reindex`, {
-        method: "POST",
-        token,
-      });
+      await apiFetch(`/admin/documents/${docId}/reindex`, { method: "POST", token });
       toast.success("Réindexation lancée");
-      fetchDocuments();
+      fetchGroupDocs(sourceType, groupPages[sourceType] || 1);
     } catch {
       toast.error("Erreur lors de la réindexation");
     }
   };
 
-  const handleReplace = async (docId: string, file: File) => {
+  const handleReplace = async (docId: string, file: File, sourceType: string) => {
     if (!token) return;
     const formData = new FormData();
     formData.append("file", file);
@@ -248,75 +242,14 @@ export default function DocumentsCommunsPage() {
       });
       if (!res.ok) {
         const data = await res.json().catch(() => null);
-        throw new Error(data?.detail ?? "Erreur lors du remplacement");
+        throw new Error(data?.detail ?? "Erreur");
       }
       toast.success("Document remplacé — réindexation en cours");
-      fetchDocuments();
+      fetchGroupDocs(sourceType, groupPages[sourceType] || 1);
     } catch (err) {
-      toast.error(
-        err instanceof Error ? err.message : "Erreur lors du remplacement"
-      );
+      toast.error(err instanceof Error ? err.message : "Erreur");
     }
   };
-
-  // Code du travail documents (separate from the table)
-  const codeTravailDocs = useMemo(
-    () => documents.filter(
-      (d) => d.source_type === "code_travail" || d.source_type === "code_travail_reglementaire"
-    ),
-    [documents],
-  );
-
-  // Other documents (everything except Code du travail)
-  const otherDocs = useMemo(() => {
-    let docs = documents.filter(
-      (d) => d.source_type !== "code_travail" && d.source_type !== "code_travail_reglementaire"
-    );
-    if (search.trim()) {
-      const q = search.toLowerCase();
-      docs = docs.filter(
-        (d) =>
-          d.name.toLowerCase().includes(q) ||
-          (SOURCE_TYPE_OPTIONS.find((s) => s.value === d.source_type)?.label ?? "")
-            .toLowerCase()
-            .includes(q)
-      );
-    }
-    if (filterType && filterType !== "all") {
-      docs = docs.filter((d) => d.source_type === filterType);
-    }
-    return docs;
-  }, [documents, search, filterType]);
-
-  const totalPages = Math.max(1, Math.ceil(otherDocs.length / pageSize));
-  const paginatedDocs = useMemo(
-    () => otherDocs.slice((page - 1) * pageSize, page * pageSize),
-    [otherDocs, page, pageSize],
-  );
-
-  // Available source types for filter (from actual data, excluding code du travail)
-  const typeOptions = useMemo(() => {
-    const types = new Set(
-      documents
-        .filter((d) => d.source_type !== "code_travail" && d.source_type !== "code_travail_reglementaire")
-        .map((d) => d.source_type)
-    );
-    return Array.from(types)
-      .map((t) => ({
-        value: t,
-        label: SOURCE_TYPE_OPTIONS.find((s) => s.value === t)?.label ?? t,
-      }))
-      .sort((a, b) => a.label.localeCompare(b.label));
-  }, [documents]);
-
-  // Reset to page 1 when filters change
-  useEffect(() => {
-    setPage(1);
-  }, [search, filterType, pageSize]);
-
-  useEffect(() => {
-    if (page > totalPages) setPage(1);
-  }, [totalPages, page]);
 
   const handleSyncCodeTravail = async () => {
     if (!token) return;
@@ -338,254 +271,179 @@ export default function DocumentsCommunsPage() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-semibold tracking-tight">Documents communs</h1>
-
-      {/* Code du travail block */}
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between">
-          <div className="space-y-1.5">
-            <CardTitle className="flex items-center gap-2 text-base">
-              <BookOpen className="h-5 w-5" />
-              Code du travail
-            </CardTitle>
-            <CardDescription>
-              {codeTravailDocs.length === 0
-                ? "Non synchronisé — cliquez sur Synchroniser pour récupérer le Code du travail depuis Légifrance"
-                : "Récupéré automatiquement depuis l'API Légifrance"}
-            </CardDescription>
-          </div>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handleSyncCodeTravail}
-            disabled={syncingCdt}
-          >
+      <div className="flex items-center justify-between">
+        <h1 className="text-2xl font-semibold tracking-tight">Documents communs</h1>
+        <div className="flex gap-2">
+          <Button variant="outline" size="sm" onClick={handleSyncCodeTravail} disabled={syncingCdt}>
             <RefreshCw className={`mr-2 h-4 w-4 ${syncingCdt ? "animate-spin" : ""}`} />
-            {syncingCdt ? "Synchronisation..." : "Synchroniser"}
+            {syncingCdt ? "Sync..." : "Code du travail"}
           </Button>
-        </CardHeader>
-        {codeTravailDocs.length > 0 && (
-          <CardContent className="space-y-2">
-            {codeTravailDocs.map((doc) => (
-              <div
-                key={doc.id}
-                className="flex items-center gap-3 rounded-lg border border-border p-3"
-              >
-                {doc.indexation_status === "indexed" && (
-                  <CheckCircle2 className="h-5 w-5 text-green-600 dark:text-green-400 shrink-0" />
+          <Button size="sm" onClick={() => setUploadOpen(true)}>
+            <FileUp className="mr-2 h-4 w-4" />
+            Ajouter
+          </Button>
+        </div>
+      </div>
+
+      {loading ? (
+        <div className="space-y-3">
+          {[1, 2, 3, 4].map((i) => (
+            <Skeleton key={i} className="h-14 w-full" />
+          ))}
+        </div>
+      ) : (
+        <Card>
+          <CardHeader>
+            <CardTitle>Base documentaire</CardTitle>
+            <CardDescription>
+              {groups.reduce((acc, g) => acc + g.count, 0)} documents communs — partagés avec toutes les organisations
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-1">
+            {groups.map((group) => (
+              <div key={group.source_type}>
+                {/* Group header */}
+                <button
+                  onClick={() => toggleGroup(group.source_type)}
+                  className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left hover:bg-muted/50 transition-colors"
+                >
+                  {expanded[group.source_type] ? (
+                    <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
+                  ) : (
+                    <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+                  )}
+                  <div className="flex-1 min-w-0">
+                    <span className="text-sm font-medium">{group.label}</span>
+                  </div>
+                  <div className="flex items-center gap-3 shrink-0">
+                    {group.pending > 0 && (
+                      <Badge variant="outline" className="rounded-full text-xs">
+                        {group.pending} en attente
+                      </Badge>
+                    )}
+                    <Badge variant="outline" className="rounded-full border-green-500 bg-green-500/10 text-green-600 text-xs">
+                      {group.indexed} indexé{group.indexed > 1 ? "s" : ""}
+                    </Badge>
+                    <span className="text-xs text-muted-foreground w-20 text-right">
+                      {group.total_chunks > 0 ? `${group.total_chunks.toLocaleString()} chunks` : "—"}
+                    </span>
+                    <span className="text-xs text-muted-foreground w-12 text-right font-mono">
+                      {group.count}
+                    </span>
+                  </div>
+                </button>
+
+                {/* Expanded documents */}
+                {expanded[group.source_type] && (
+                  <div className="ml-7 border-l border-border pl-3 mb-2">
+                    {loadingGroup[group.source_type] ? (
+                      <div className="py-3 space-y-2">
+                        {[1, 2, 3].map((i) => (
+                          <Skeleton key={i} className="h-8 w-full" />
+                        ))}
+                      </div>
+                    ) : (
+                      <>
+                        <Table>
+                          <TableHeader>
+                            <TableRow>
+                              <TableHead className="w-[50%]">Nom</TableHead>
+                              <TableHead>Statut</TableHead>
+                              <TableHead>Taille</TableHead>
+                              <TableHead>Date</TableHead>
+                              <TableHead className="text-right">Actions</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {(groupDocs[group.source_type] ?? []).map((doc) => (
+                              <GroupDocRow
+                                key={doc.id}
+                                doc={doc}
+                                sourceType={group.source_type}
+                                onDownload={handleDownload}
+                                onDelete={handleDelete}
+                                onReindex={handleReindex}
+                                onReplace={handleReplace}
+                              />
+                            ))}
+                          </TableBody>
+                        </Table>
+
+                        {/* Pagination within group */}
+                        {group.count > 50 && (
+                          <div className="flex items-center justify-between pt-3 pb-1">
+                            <p className="text-xs text-muted-foreground">
+                              Page {groupPages[group.source_type] || 1} / {Math.ceil(group.count / 50)}
+                            </p>
+                            <div className="flex gap-2">
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                disabled={(groupPages[group.source_type] || 1) <= 1}
+                                onClick={() => fetchGroupDocs(group.source_type, (groupPages[group.source_type] || 1) - 1)}
+                              >
+                                Précédent
+                              </Button>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                disabled={(groupPages[group.source_type] || 1) >= Math.ceil(group.count / 50)}
+                                onClick={() => fetchGroupDocs(group.source_type, (groupPages[group.source_type] || 1) + 1)}
+                              >
+                                Suivant
+                              </Button>
+                            </div>
+                          </div>
+                        )}
+                      </>
+                    )}
+                  </div>
                 )}
-                {(doc.indexation_status === "pending" || doc.indexation_status === "indexing") && (
-                  <Loader2 className="h-5 w-5 animate-spin text-blue-600 dark:text-blue-400 shrink-0" />
-                )}
-                {doc.indexation_status === "error" && (
-                  <X className="h-5 w-5 text-destructive shrink-0" />
-                )}
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium">{doc.name}</p>
-                  <p className="text-xs text-muted-foreground">
-                    {doc.chunk_count != null && `${doc.chunk_count} chunks — `}
-                    {formatFileSize(doc.file_size)}
-                    {doc.indexation_status === "pending" && " — En attente"}
-                    {doc.indexation_status === "indexing" && " — Indexation en cours"}
-                    {doc.indexation_status === "indexed" && ` — Indexé le ${new Date(doc.created_at).toLocaleDateString("fr-FR")}`}
-                    {doc.indexation_status === "error" && " — Erreur"}
-                  </p>
-                </div>
-                <div className="flex items-center gap-1 shrink-0">
-                  <Button variant="ghost" size="icon" className="h-8 w-8" title="Télécharger" onClick={() => handleDownload(doc.id)}>
-                    <Download className="h-4 w-4" />
-                  </Button>
-                  <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:text-destructive" title="Supprimer" onClick={() => handleDelete(doc.id)}>
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
-                </div>
               </div>
             ))}
           </CardContent>
-        )}
-      </Card>
-
-      {/* Base documentaire commune */}
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between">
-          <div className="space-y-1.5">
-            <CardTitle>Base documentaire commune</CardTitle>
-            <CardDescription>
-              {otherDocs.length} document{otherDocs.length !== 1 ? "s" : ""}
-              {search || (filterType && filterType !== "all") ? " (filtré)" : ""} —
-              partagés avec toutes les organisations
-            </CardDescription>
-          </div>
-          <Button size="sm" onClick={() => setUploadOpen(true)}>
-            <FileUp className="mr-2 h-4 w-4" />
-            Ajouter un document
-          </Button>
-        </CardHeader>
-        <CardContent>
-          {/* Search + filters */}
-          {!loading && documents.length > 0 && (
-            <div className="mb-4 flex flex-wrap items-center gap-3">
-              <div className="relative flex-1 min-w-[200px] max-w-sm">
-                <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-                <Input
-                  placeholder="Rechercher un document..."
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  className="pl-9"
-                />
-              </div>
-              <Select value={filterType} onValueChange={setFilterType}>
-                <SelectTrigger className="w-[200px]">
-                  <SelectValue placeholder="Tous les types" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Tous les types</SelectItem>
-                  {typeOptions.map((opt) => (
-                    <SelectItem key={opt.value} value={opt.value}>
-                      {opt.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <Select value={String(pageSize)} onValueChange={(v) => setPageSize(Number(v))}>
-                <SelectTrigger className="w-[100px]">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="50">50 / page</SelectItem>
-                  <SelectItem value="100">100 / page</SelectItem>
-                </SelectContent>
-              </Select>
-              {(search || (filterType && filterType !== "all")) && (
-                <Button variant="ghost" size="sm" onClick={() => { setSearch(""); setFilterType("all"); }}>
-                  Réinitialiser
-                </Button>
-              )}
-            </div>
-          )}
-
-          {loading ? (
-            <div className="space-y-3">
-              {[1, 2, 3].map((i) => (
-                <Skeleton key={i} className="h-12 w-full" />
-              ))}
-            </div>
-          ) : otherDocs.length === 0 ? (
-            <p className="py-8 text-center text-muted-foreground">
-              {search || (filterType && filterType !== "all")
-                ? "Aucun document ne correspond aux filtres."
-                : "Aucun document commun."}
-            </p>
-          ) : (
-            <>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="w-[40%]">Nom</TableHead>
-                    <TableHead>Type</TableHead>
-                    <TableHead>Statut</TableHead>
-                    <TableHead>Format</TableHead>
-                    <TableHead>Taille</TableHead>
-                    <TableHead>Date</TableHead>
-                    <TableHead className="text-right">Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {paginatedDocs.map((doc) => (
-                    <CommonDocRow
-                      key={doc.id}
-                      doc={doc}
-                      onDownload={handleDownload}
-                      onDelete={handleDelete}
-                      onReindex={handleReindex}
-                      onReplace={handleReplace}
-                    />
-                  ))}
-                </TableBody>
-              </Table>
-
-              {totalPages > 1 && (
-                <div className="flex items-center justify-between border-t pt-4 mt-4">
-                  <p className="text-sm text-muted-foreground">
-                    {(page - 1) * pageSize + 1}–{Math.min(page * pageSize, otherDocs.length)} sur {otherDocs.length}
-                  </p>
-                  <div className="flex items-center gap-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      disabled={page <= 1}
-                      onClick={() => setPage((p) => p - 1)}
-                    >
-                      Précédent
-                    </Button>
-                    <span className="text-sm text-muted-foreground">
-                      {page} / {totalPages}
-                    </span>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      disabled={page >= totalPages}
-                      onClick={() => setPage((p) => p + 1)}
-                    >
-                      Suivant
-                    </Button>
-                  </div>
-                </div>
-              )}
-            </>
-          )}
-        </CardContent>
-      </Card>
+        </Card>
+      )}
 
       <CommonUploadDialog
         open={uploadOpen}
         onOpenChange={setUploadOpen}
         token={token}
-        onUploaded={fetchDocuments}
+        onUploaded={() => { fetchGroups(); }}
       />
     </div>
   );
 }
 
-/* ---- Document Row ---- */
+/* ---- Document Row within a group ---- */
 
-function CommonDocRow({
+function GroupDocRow({
   doc,
+  sourceType,
   onDownload,
   onDelete,
   onReindex,
   onReplace,
 }: {
   doc: Document;
+  sourceType: string;
   onDownload: (id: string) => void;
-  onDelete: (id: string) => void;
-  onReindex: (id: string) => void;
-  onReplace: (id: string, file: File) => void;
+  onDelete: (id: string, sourceType: string) => void;
+  onReindex: (id: string, sourceType: string) => void;
+  onReplace: (id: string, file: File, sourceType: string) => void;
 }) {
   const replaceRef = useRef<HTMLInputElement>(null);
-  const sourceLabel =
-    SOURCE_TYPE_OPTIONS.find((s) => s.value === doc.source_type)?.label ??
-    doc.source_type;
 
   return (
     <TableRow>
-      <TableCell className="truncate font-medium">
+      <TableCell className="text-sm truncate max-w-[400px]" title={doc.name}>
         {doc.name}
       </TableCell>
-      <TableCell className="text-sm">{sourceLabel}</TableCell>
       <TableCell>
-        <Badge
-          variant="outline"
-          className={STATUS_CLASSES[doc.indexation_status] ?? "rounded-full"}
-        >
-          {doc.indexation_status === "indexing" && (
-            <Loader2 className="mr-1 h-3 w-3 animate-spin" />
-          )}
+        <Badge variant="outline" className={STATUS_CLASSES[doc.indexation_status] ?? "rounded-full"}>
+          {doc.indexation_status === "indexing" && <Loader2 className="mr-1 h-3 w-3 animate-spin" />}
           {STATUS_LABEL[doc.indexation_status] ?? doc.indexation_status}
         </Badge>
-      </TableCell>
-      <TableCell className="text-sm uppercase">
-        {doc.file_format ?? "—"}
       </TableCell>
       <TableCell className="text-sm">{formatFileSize(doc.file_size)}</TableCell>
       <TableCell className="text-sm">
@@ -593,13 +451,8 @@ function CommonDocRow({
       </TableCell>
       <TableCell className="text-right">
         <div className="flex justify-end gap-1">
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => onDownload(doc.id)}
-            title="Télécharger"
-          >
-            <Download className="h-4 w-4" />
+          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => onDownload(doc.id)} title="Télécharger">
+            <Download className="h-3.5 w-3.5" />
           </Button>
           <input
             ref={replaceRef}
@@ -608,35 +461,20 @@ function CommonDocRow({
             className="hidden"
             onChange={(e) => {
               const f = e.target.files?.[0];
-              if (f) onReplace(doc.id, f);
+              if (f) onReplace(doc.id, f, sourceType);
               e.target.value = "";
             }}
           />
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => replaceRef.current?.click()}
-            title="Remplacer le fichier"
-          >
-            <Replace className="h-4 w-4 text-blue-500" />
+          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => replaceRef.current?.click()} title="Remplacer">
+            <Replace className="h-3.5 w-3.5 text-blue-500" />
           </Button>
           {doc.indexation_status === "error" && (
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => onReindex(doc.id)}
-              title="Réindexer"
-            >
-              <RefreshCw className="h-4 w-4 text-orange-500" />
+            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => onReindex(doc.id, sourceType)} title="Réindexer">
+              <RefreshCw className="h-3.5 w-3.5 text-orange-500" />
             </Button>
           )}
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => onDelete(doc.id)}
-            title="Supprimer"
-          >
-            <Trash2 className="h-4 w-4 text-destructive" />
+          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => onDelete(doc.id, sourceType)} title="Supprimer">
+            <Trash2 className="h-3.5 w-3.5 text-destructive" />
           </Button>
         </div>
       </TableCell>
@@ -677,9 +515,7 @@ function CommonUploadDialog({
   const isJurisprudence = JURISPRUDENCE_SOURCE_TYPES.has(sourceType);
   const isBatch = files.length > 1;
 
-  const selectedOption = SOURCE_TYPE_OPTIONS.find(
-    (s) => s.value === sourceType
-  );
+  const selectedOption = SOURCE_TYPE_OPTIONS.find((s) => s.value === sourceType);
   const niveau = selectedOption?.niveau;
   const poids = niveau ? NORME_POIDS[niveau] : null;
 
@@ -708,7 +544,6 @@ function CommonUploadDialog({
 
     try {
       if (isBatch) {
-        // Batch upload — multiple files, same source_type, no jurisprudence metadata
         const formData = new FormData();
         for (const f of files) formData.append("files", f);
         formData.append("source_type", sourceType);
@@ -735,10 +570,9 @@ function CommonUploadDialog({
             { description: failedNames, duration: 8000 }
           );
         } else {
-          toast.success(`${data.succeeded} document${data.succeeded > 1 ? "s" : ""} commun${data.succeeded > 1 ? "s" : ""} ajouté${data.succeeded > 1 ? "s" : ""}`);
+          toast.success(`${data.succeeded} document${data.succeeded > 1 ? "s" : ""} ajouté${data.succeeded > 1 ? "s" : ""}`);
         }
       } else {
-        // Single upload — with full metadata support
         const formData = new FormData();
         formData.append("file", files[0]);
         formData.append("source_type", sourceType);
@@ -769,9 +603,7 @@ function CommonUploadDialog({
       onOpenChange(false);
       onUploaded();
     } catch (err) {
-      setError(
-        err instanceof Error ? err.message : "Erreur lors de l'upload"
-      );
+      setError(err instanceof Error ? err.message : "Erreur lors de l'upload");
     } finally {
       setSubmitting(false);
     }
@@ -824,11 +656,7 @@ function CommonUploadDialog({
                 {files.map((f, i) => (
                   <div key={i} className="flex items-center justify-between text-xs">
                     <span className="truncate mr-2">{f.name}</span>
-                    <button
-                      type="button"
-                      onClick={() => removeFile(i)}
-                      className="text-destructive hover:underline shrink-0"
-                    >
+                    <button type="button" onClick={() => removeFile(i)} className="text-destructive hover:underline shrink-0">
                       Retirer
                     </button>
                   </div>
@@ -864,9 +692,7 @@ function CommonUploadDialog({
             <div className="flex gap-6 rounded-md border p-3 text-sm">
               <div>
                 <span className="text-muted-foreground">Niveau : </span>
-                <span className="font-medium">
-                  {niveau} — {NIVEAU_LABELS[niveau]}
-                </span>
+                <span className="font-medium">{niveau} — {NIVEAU_LABELS[niveau]}</span>
               </div>
               <div>
                 <span className="text-muted-foreground">Poids : </span>
@@ -878,95 +704,48 @@ function CommonUploadDialog({
           {isJurisprudence && !isBatch && (
             <div className="space-y-3 rounded-md border border-border bg-muted/50 p-4">
               <p className="text-sm font-medium">Métadonnées jurisprudence</p>
-
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1">
                   <Label htmlFor="c-juridiction" className="text-xs">Juridiction</Label>
                   <Select value={juridiction} onValueChange={setJuridiction}>
-                    <SelectTrigger id="c-juridiction">
-                      <SelectValue placeholder="Sélectionner..." />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {JURIDICTION_OPTIONS.map((j) => (
-                        <SelectItem key={j} value={j}>{j}</SelectItem>
-                      ))}
-                    </SelectContent>
+                    <SelectTrigger id="c-juridiction"><SelectValue placeholder="Sélectionner..." /></SelectTrigger>
+                    <SelectContent>{JURIDICTION_OPTIONS.map((j) => <SelectItem key={j} value={j}>{j}</SelectItem>)}</SelectContent>
                   </Select>
                 </div>
-
                 <div className="space-y-1">
                   <Label htmlFor="c-chambre" className="text-xs">Chambre</Label>
                   <Select value={chambre} onValueChange={setChambre}>
-                    <SelectTrigger id="c-chambre">
-                      <SelectValue placeholder="Sélectionner..." />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {CHAMBRE_OPTIONS.map((c) => (
-                        <SelectItem key={c} value={c}>{c}</SelectItem>
-                      ))}
-                    </SelectContent>
+                    <SelectTrigger id="c-chambre"><SelectValue placeholder="Sélectionner..." /></SelectTrigger>
+                    <SelectContent>{CHAMBRE_OPTIONS.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}</SelectContent>
                   </Select>
                 </div>
-
                 <div className="space-y-1">
                   <Label htmlFor="c-formation" className="text-xs">Formation</Label>
                   <Select value={formation} onValueChange={setFormation}>
-                    <SelectTrigger id="c-formation">
-                      <SelectValue placeholder="Sélectionner..." />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {FORMATION_OPTIONS.map((f) => (
-                        <SelectItem key={f} value={f}>{f}</SelectItem>
-                      ))}
-                    </SelectContent>
+                    <SelectTrigger id="c-formation"><SelectValue placeholder="Sélectionner..." /></SelectTrigger>
+                    <SelectContent>{FORMATION_OPTIONS.map((f) => <SelectItem key={f} value={f}>{f}</SelectItem>)}</SelectContent>
                   </Select>
                 </div>
-
                 <div className="space-y-1">
                   <Label htmlFor="c-numero-pourvoi" className="text-xs">N° de pourvoi</Label>
-                  <Input
-                    id="c-numero-pourvoi"
-                    placeholder="ex: 21-14.490"
-                    value={numeroPourvoi}
-                    onChange={(e) => setNumeroPourvoi(e.target.value)}
-                  />
+                  <Input id="c-numero-pourvoi" placeholder="ex: 21-14.490" value={numeroPourvoi} onChange={(e) => setNumeroPourvoi(e.target.value)} />
                 </div>
-
                 <div className="space-y-1">
                   <Label htmlFor="c-date-decision" className="text-xs">Date de décision</Label>
-                  <Input
-                    id="c-date-decision"
-                    type="date"
-                    value={dateDecision}
-                    onChange={(e) => setDateDecision(e.target.value)}
-                  />
+                  <Input id="c-date-decision" type="date" value={dateDecision} onChange={(e) => setDateDecision(e.target.value)} />
                 </div>
-
                 <div className="space-y-1">
                   <Label htmlFor="c-solution" className="text-xs">Solution</Label>
                   <Select value={solution} onValueChange={setSolution}>
-                    <SelectTrigger id="c-solution">
-                      <SelectValue placeholder="Sélectionner..." />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {SOLUTION_OPTIONS.map((s) => (
-                        <SelectItem key={s} value={s}>{s}</SelectItem>
-                      ))}
-                    </SelectContent>
+                    <SelectTrigger id="c-solution"><SelectValue placeholder="Sélectionner..." /></SelectTrigger>
+                    <SelectContent>{SOLUTION_OPTIONS.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}</SelectContent>
                   </Select>
                 </div>
-
                 <div className="col-span-2 space-y-1">
                   <Label htmlFor="c-publication" className="text-xs">Publication</Label>
                   <Select value={publication} onValueChange={setPublication}>
-                    <SelectTrigger id="c-publication">
-                      <SelectValue placeholder="Sélectionner..." />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {PUBLICATION_OPTIONS.map((p) => (
-                        <SelectItem key={p} value={p}>{p}</SelectItem>
-                      ))}
-                    </SelectContent>
+                    <SelectTrigger id="c-publication"><SelectValue placeholder="Sélectionner..." /></SelectTrigger>
+                    <SelectContent>{PUBLICATION_OPTIONS.map((p) => <SelectItem key={p} value={p}>{p}</SelectItem>)}</SelectContent>
                   </Select>
                 </div>
               </div>
@@ -982,15 +761,8 @@ function CommonUploadDialog({
           {error && <p className="text-sm text-destructive">{error}</p>}
 
           <DialogFooter>
-            <Button
-              type="submit"
-              disabled={submitting || files.length === 0 || !sourceType}
-            >
-              {submitting
-                ? "Upload en cours..."
-                : files.length > 1
-                  ? `Ajouter ${files.length} documents`
-                  : "Ajouter"}
+            <Button type="submit" disabled={submitting || files.length === 0 || !sourceType}>
+              {submitting ? "Upload en cours..." : files.length > 1 ? `Ajouter ${files.length} documents` : "Ajouter"}
             </Button>
           </DialogFooter>
         </form>
