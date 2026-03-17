@@ -32,6 +32,7 @@ class DashboardStats(BaseModel):
     indexed_documents: int
     pending_documents: int
     error_documents: int
+    bocc_reserve: int
     total_chunks: int
 
     # Usage (last 7 days)
@@ -79,16 +80,34 @@ async def get_dashboard(
     total_orgs = orgs_count.scalar() or 0
 
     # --- Documents ---
+    # Exclude BOCC reserve docs (pending but stored intentionally until CCN installed)
+    bocc_reserve_filter = ~(
+        Document.organisation_id.is_(None)
+        & Document.storage_path.ilike("common/ccn/%/bocc_%")
+        & (Document.indexation_status == "pending")
+    )
     docs_q = await db.execute(
         select(
             func.count().label("total"),
             func.count().filter(Document.indexation_status == "indexed").label("indexed"),
-            func.count().filter(Document.indexation_status == "pending").label("pending"),
+            func.count().filter(
+                (Document.indexation_status == "pending") & bocc_reserve_filter
+            ).label("pending"),
             func.count().filter(Document.indexation_status == "error").label("error"),
             func.coalesce(func.sum(Document.chunk_count), 0).label("chunks"),
         ).select_from(Document)
     )
     docs_row = docs_q.one()
+
+    # Count BOCC reserve separately
+    bocc_reserve_q = await db.execute(
+        select(func.count()).select_from(Document).where(
+            Document.organisation_id.is_(None),
+            Document.storage_path.ilike("common/ccn/%/bocc_%"),
+            Document.indexation_status == "pending",
+        )
+    )
+    bocc_reserve = bocc_reserve_q.scalar() or 0
 
     # --- Usage 7 days ---
     usage_7d = await db.execute(
@@ -154,6 +173,7 @@ async def get_dashboard(
         indexed_documents=docs_row.indexed,
         pending_documents=docs_row.pending,
         error_documents=docs_row.error,
+        bocc_reserve=bocc_reserve,
         total_chunks=docs_row.chunks,
         questions_7d=usage_7d_row.questions,
         questions_today=today_row.questions,

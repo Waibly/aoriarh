@@ -30,6 +30,7 @@ interface DashboardStats {
   indexed_documents: number;
   pending_documents: number;
   error_documents: number;
+  bocc_reserve: number;
   total_chunks: number;
   questions_7d: number;
   questions_today: number;
@@ -93,7 +94,7 @@ export default function AdminHomePage() {
 
   if (!stats) return null;
 
-  const hasAlerts = stats.error_documents > 0 || stats.failed_syncs_24h > 0 || stats.pending_documents > 5;
+  const hasAlerts = stats.error_documents > 0 || stats.failed_syncs_24h > 0 || stats.pending_documents > 0;
 
   return (
     <div className="space-y-6">
@@ -115,9 +116,9 @@ export default function AdminHomePage() {
                   <strong>{stats.failed_syncs_24h}</strong> sync{stats.failed_syncs_24h > 1 ? "s" : ""} échouée{stats.failed_syncs_24h > 1 ? "s" : ""} (24h)
                 </span>
               )}
-              {stats.pending_documents > 5 && (
+              {stats.pending_documents > 0 && (
                 <span className="text-orange-800 dark:text-orange-300">
-                  <strong>{stats.pending_documents}</strong> documents en attente d&apos;indexation
+                  <strong>{stats.pending_documents}</strong> document{stats.pending_documents > 1 ? "s" : ""} en attente d&apos;indexation
                 </span>
               )}
             </div>
@@ -217,6 +218,14 @@ export default function AdminHomePage() {
                 <span className="flex items-center gap-1.5 font-medium text-red-600">
                   <XCircle className="h-3.5 w-3.5" />
                   {stats.error_documents}
+                </span>
+              </div>
+            )}
+            {stats.bocc_reserve > 0 && (
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-muted-foreground">BOCC en réserve</span>
+                <span className="text-sm font-medium text-muted-foreground">
+                  {stats.bocc_reserve.toLocaleString("fr-FR")}
                 </span>
               </div>
             )}
