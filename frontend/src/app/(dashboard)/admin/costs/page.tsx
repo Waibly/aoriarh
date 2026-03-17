@@ -225,6 +225,40 @@ export default function AdminCostsPage() {
   const [pricingDraft, setPricingDraft] = useState<PricingEntry[]>([]);
   const [savingPricing, setSavingPricing] = useState(false);
 
+  // LLM model switch state
+  const [currentModel, setCurrentModel] = useState<string>("");
+  const [availableModels, setAvailableModels] = useState<{ id: string; label: string; input_1m: number; output_1m: number }[]>([]);
+  const [switchingModel, setSwitchingModel] = useState(false);
+
+  const fetchLlmModel = useCallback(async () => {
+    if (!token) return;
+    try {
+      const data = await apiFetch<{ current_model: string; available_models: { id: string; label: string; input_1m: number; output_1m: number }[] }>(
+        "/admin/costs/llm-model", { token }
+      );
+      setCurrentModel(data.current_model);
+      setAvailableModels(data.available_models);
+    } catch { /* ignore */ }
+  }, [token]);
+
+  const handleSwitchModel = async (modelId: string) => {
+    if (!token || modelId === currentModel) return;
+    setSwitchingModel(true);
+    try {
+      await apiFetch("/admin/costs/llm-model", {
+        method: "PUT",
+        token,
+        body: JSON.stringify({ model: modelId }),
+      });
+      setCurrentModel(modelId);
+      toast.success(`Modèle changé : ${modelId}`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Erreur");
+    } finally {
+      setSwitchingModel(false);
+    }
+  };
+
   const fetchDashboard = useCallback(async () => {
     if (!token) return;
     try {
@@ -249,7 +283,8 @@ export default function AdminCostsPage() {
   useEffect(() => {
     setLoading(true);
     fetchDashboard();
-  }, [fetchDashboard]);
+    fetchLlmModel();
+  }, [fetchDashboard, fetchLlmModel]);
 
   if (loading) {
     return (
@@ -322,6 +357,38 @@ export default function AdminCostsPage() {
           </Select>
         </div>
       </div>
+
+      {/* LLM Model Switch */}
+      {availableModels.length > 0 && (
+        <Card>
+          <CardContent className="flex items-center justify-between py-3">
+            <div className="flex items-center gap-3">
+              <span className="text-sm font-medium">Modèle LLM actif :</span>
+              <div className="flex gap-1.5">
+                {availableModels.map((m) => (
+                  <Button
+                    key={m.id}
+                    variant={m.id === currentModel ? "default" : "outline"}
+                    size="sm"
+                    disabled={switchingModel}
+                    onClick={() => handleSwitchModel(m.id)}
+                    className="text-xs"
+                  >
+                    {m.label}
+                  </Button>
+                ))}
+              </div>
+            </div>
+            <div className="flex items-center gap-4 text-xs text-muted-foreground">
+              {availableModels.map((m) => (
+                <span key={m.id} className={m.id === currentModel ? "font-medium text-foreground" : ""}>
+                  {m.label}: <span className="font-mono">${m.input_1m}</span> / <span className="font-mono">${m.output_1m}</span> /1M
+                </span>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Summary cards */}
       <div className="grid gap-4 md:grid-cols-4">

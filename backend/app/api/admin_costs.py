@@ -461,3 +461,54 @@ async def update_pricing(
         )
         for k, v in PRICING.items()
     ]
+
+
+# --- LLM Model Switch ---
+
+AVAILABLE_MODELS = [
+    {"id": "gpt-5-mini", "label": "GPT-5 Mini", "input_1m": 0.25, "output_1m": 2.00},
+    {"id": "gpt-5.2", "label": "GPT-5.2", "input_1m": 1.75, "output_1m": 14.00},
+    {"id": "gpt-5", "label": "GPT-5", "input_1m": 1.25, "output_1m": 10.00},
+]
+
+
+class LlmModelInfo(BaseModel):
+    current_model: str
+    available_models: list[dict]
+
+
+class LlmModelUpdate(BaseModel):
+    model: str
+
+
+@router.get("/llm-model", response_model=LlmModelInfo)
+async def get_llm_model(
+    _user: User = Depends(require_role(["admin"])),
+) -> LlmModelInfo:
+    """Return the current LLM model and available options."""
+    from app.rag.config import LLM_MODEL
+    return LlmModelInfo(
+        current_model=LLM_MODEL,
+        available_models=AVAILABLE_MODELS,
+    )
+
+
+@router.put("/llm-model", response_model=LlmModelInfo)
+async def set_llm_model(
+    body: LlmModelUpdate,
+    _user: User = Depends(require_role(["admin"])),
+) -> LlmModelInfo:
+    """Switch the active LLM model at runtime (no restart needed)."""
+    valid_ids = {m["id"] for m in AVAILABLE_MODELS}
+    if body.model not in valid_ids:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=400, detail=f"Modèle inconnu: {body.model}")
+
+    import app.rag.config as rag_config
+    rag_config.LLM_MODEL = body.model
+    logger.info("LLM model switched to: %s", body.model)
+
+    return LlmModelInfo(
+        current_model=body.model,
+        available_models=AVAILABLE_MODELS,
+    )
