@@ -344,57 +344,70 @@ export default function DocumentsCommunsPage() {
                       </div>
                     ) : (
                       <>
-                        <Table>
-                          <TableHeader>
-                            <TableRow>
-                              <TableHead className="w-[50%]">Nom</TableHead>
-                              <TableHead>Statut</TableHead>
-                              <TableHead>Taille</TableHead>
-                              <TableHead>Date</TableHead>
-                              <TableHead className="text-right">Actions</TableHead>
-                            </TableRow>
-                          </TableHeader>
-                          <TableBody>
-                            {(groupDocs[group.source_type] ?? []).map((doc) => (
-                              <GroupDocRow
-                                key={doc.id}
-                                doc={doc}
-                                sourceType={group.source_type}
-                                onDownload={handleDownload}
-                                onDelete={handleDelete}
-                                onReindex={handleReindex}
-                                onReplace={handleReplace}
-                              />
-                            ))}
-                          </TableBody>
-                        </Table>
+                        <div className="max-h-[60vh] overflow-y-auto">
+                          <Table className="table-fixed">
+                            <TableHeader>
+                              <TableRow>
+                                <TableHead className="w-[50%]">Nom</TableHead>
+                                <TableHead className="w-[10%]">Statut</TableHead>
+                                <TableHead className="w-[10%]">Taille</TableHead>
+                                <TableHead className="w-[10%]">Date</TableHead>
+                                <TableHead className="w-[20%] text-right">Actions</TableHead>
+                              </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                              {(groupDocs[group.source_type] ?? []).map((doc) => (
+                                <GroupDocRow
+                                  key={doc.id}
+                                  doc={doc}
+                                  sourceType={group.source_type}
+                                  onDownload={handleDownload}
+                                  onDelete={handleDelete}
+                                  onReindex={handleReindex}
+                                  onReplace={handleReplace}
+                                />
+                              ))}
+                            </TableBody>
+                          </Table>
+                        </div>
 
-                        {/* Pagination within group */}
-                        {group.count > 50 && (
-                          <div className="flex items-center justify-between pt-3 pb-1">
-                            <p className="text-xs text-muted-foreground">
-                              Page {groupPages[group.source_type] || 1} / {Math.ceil(group.count / 50)}
-                            </p>
-                            <div className="flex gap-2">
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                disabled={(groupPages[group.source_type] || 1) <= 1}
-                                onClick={() => fetchGroupDocs(group.source_type, (groupPages[group.source_type] || 1) - 1)}
-                              >
-                                Précédent
-                              </Button>
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                disabled={(groupPages[group.source_type] || 1) >= Math.ceil(group.count / 50)}
-                                onClick={() => fetchGroupDocs(group.source_type, (groupPages[group.source_type] || 1) + 1)}
-                              >
-                                Suivant
-                              </Button>
+                        {/* Numbered pagination */}
+                        {group.count > 50 && (() => {
+                          const currentPage = groupPages[group.source_type] || 1;
+                          const totalPages = Math.ceil(group.count / 50);
+                          const pages: (number | "...")[] = [];
+                          for (let i = 1; i <= totalPages; i++) {
+                            if (i === 1 || i === totalPages || (i >= currentPage - 2 && i <= currentPage + 2)) {
+                              pages.push(i);
+                            } else if (pages[pages.length - 1] !== "...") {
+                              pages.push("...");
+                            }
+                          }
+                          return (
+                            <div className="flex items-center justify-between pt-3 pb-1">
+                              <p className="text-xs text-muted-foreground">
+                                {(currentPage - 1) * 50 + 1}–{Math.min(currentPage * 50, group.count)} sur {group.count}
+                              </p>
+                              <div className="flex gap-1">
+                                {pages.map((p, idx) =>
+                                  p === "..." ? (
+                                    <span key={`ellipsis-${idx}`} className="px-2 py-1 text-xs text-muted-foreground">…</span>
+                                  ) : (
+                                    <Button
+                                      key={p}
+                                      variant={p === currentPage ? "default" : "outline"}
+                                      size="sm"
+                                      className="h-7 w-7 p-0 text-xs"
+                                      onClick={() => fetchGroupDocs(group.source_type, p)}
+                                    >
+                                      {p}
+                                    </Button>
+                                  )
+                                )}
+                              </div>
                             </div>
-                          </div>
-                        )}
+                          );
+                        })()}
                       </>
                     )}
                   </div>
@@ -436,8 +449,8 @@ function GroupDocRow({
 
   return (
     <TableRow>
-      <TableCell className="text-sm truncate max-w-[400px]" title={doc.name}>
-        {doc.name}
+      <TableCell className="text-sm">
+        <span className="line-clamp-2">{doc.name}</span>
       </TableCell>
       <TableCell>
         <Badge variant="outline" className={STATUS_CLASSES[doc.indexation_status] ?? "rounded-full"}>
