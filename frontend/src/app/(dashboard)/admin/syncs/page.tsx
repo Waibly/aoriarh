@@ -291,7 +291,7 @@ export default function SyncsPage() {
               Aucune synchronisation enregistrée.
             </p>
           ) : (
-            <Table>
+            <Table className="table-fixed">
               <TableHeader>
                 <TableRow>
                   <TableHead>Date</TableHead>
@@ -342,8 +342,8 @@ export default function SyncsPage() {
                     <TableCell className="text-sm whitespace-nowrap">
                       {formatDuration(log.duration_ms)}
                     </TableCell>
-                    <TableCell className="text-xs text-muted-foreground max-w-[200px] truncate" title={log.error_message ?? ""}>
-                      {log.error_message ?? "—"}
+                    <TableCell className="text-xs text-muted-foreground" title={log.error_message ?? ""}>
+                      <span className="line-clamp-2">{log.error_message ?? "—"}</span>
                     </TableCell>
                   </TableRow>
                 ))}

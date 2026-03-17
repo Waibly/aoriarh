@@ -263,7 +263,7 @@ export default function JurisprudencePage() {
             </div>
           ) : (
             <>
-            <Table>
+            <Table className="table-fixed">
               <TableHeader>
                 <TableRow>
                   <TableHead>Date</TableHead>

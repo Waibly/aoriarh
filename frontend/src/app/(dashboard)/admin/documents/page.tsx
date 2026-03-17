@@ -216,7 +216,7 @@ export default function AdminDocumentsPage() {
               Aucun document.
             </p>
           ) : (
-            <Table>
+            <Table className="table-fixed">
               <TableHeader>
                 <TableRow>
                   <TableHead className="w-[35%]">Nom</TableHead>
@@ -249,13 +249,13 @@ function DocRow({ doc }: { doc: AdminDocument }) {
 
   return (
     <TableRow>
-      <TableCell className="max-w-[200px] truncate font-medium">
-        {doc.name}
+      <TableCell className="font-medium">
+        <span className="line-clamp-2 break-all">{doc.name}</span>
       </TableCell>
       <TableCell>
         {doc.organisation_name ? (
           <span
-            className="max-w-[120px] truncate block text-sm"
+            className="line-clamp-1 break-all block text-sm"
             title={doc.organisation_name}
           >
             {doc.organisation_name}

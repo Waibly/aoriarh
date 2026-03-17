@@ -568,7 +568,7 @@ export default function AdminCostsPage() {
         <TabsContent value="provider">
           <Card>
             <CardContent className="pt-6">
-              <Table>
+              <Table className="table-fixed">
                 <TableHeader>
                   <TableRow>
                     <TableHead>Provider</TableHead>
@@ -586,7 +586,7 @@ export default function AdminCostsPage() {
                       <TableCell>
                         <Badge variant="outline">{row.provider}</Badge>
                       </TableCell>
-                      <TableCell className="font-mono text-sm">
+                      <TableCell className="font-mono text-sm break-all">
                         {row.model}
                       </TableCell>
                       <TableCell>
@@ -627,7 +627,7 @@ export default function AdminCostsPage() {
         <TabsContent value="organisation">
           <Card>
             <CardContent className="pt-6">
-              <Table>
+              <Table className="table-fixed">
                 <TableHeader>
                   <TableRow>
                     <TableHead>Organisation</TableHead>
@@ -641,7 +641,7 @@ export default function AdminCostsPage() {
                 <TableBody>
                   {by_organisation.map((row, i) => (
                     <TableRow key={i}>
-                      <TableCell className="font-medium">
+                      <TableCell className="font-medium break-all">
                         {row.organisation_name || (
                           <span className="text-muted-foreground italic">
                             Non attribué
@@ -685,7 +685,7 @@ export default function AdminCostsPage() {
         <TabsContent value="user">
           <Card>
             <CardContent className="pt-6">
-              <Table>
+              <Table className="table-fixed">
                 <TableHeader>
                   <TableRow>
                     <TableHead>Utilisateur</TableHead>
@@ -699,7 +699,7 @@ export default function AdminCostsPage() {
                 <TableBody>
                   {by_user.map((row, i) => (
                     <TableRow key={i}>
-                      <TableCell className="font-medium">
+                      <TableCell className="font-medium break-all">
                         {row.user_email || (
                           <span className="text-muted-foreground italic">
                             Non attribué
@@ -805,7 +805,7 @@ export default function AdminCostsPage() {
               )}
             </CardHeader>
             <CardContent>
-              <Table>
+              <Table className="table-fixed">
                 <TableHeader>
                   <TableRow>
                     <TableHead>Provider</TableHead>
@@ -821,7 +821,7 @@ export default function AdminCostsPage() {
                         <TableCell>
                           <Badge variant="outline">{row.provider}</Badge>
                         </TableCell>
-                        <TableCell className="font-mono text-sm">
+                        <TableCell className="font-mono text-sm break-all">
                           {row.model}
                         </TableCell>
                         <TableCell className="text-right">

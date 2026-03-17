@@ -108,7 +108,7 @@ export default function FeedbacksPage() {
           ) : (
             <>
               <TooltipProvider delayDuration={300}>
-                <Table>
+                <Table className="table-fixed">
                   <TableHeader>
                     <TableRow>
                       <TableHead>Utilisateur</TableHead>
@@ -128,10 +128,10 @@ export default function FeedbacksPage() {
                             {item.organisation_name}
                           </div>
                         </TableCell>
-                        <TableCell className="text-sm max-w-[200px]">
+                        <TableCell className="text-sm">
                           <Tooltip>
                             <TooltipTrigger asChild>
-                              <span className="cursor-default block truncate">
+                              <span className="cursor-default block line-clamp-2">
                                 {truncate(item.question, 80)}
                               </span>
                             </TooltipTrigger>
@@ -140,10 +140,10 @@ export default function FeedbacksPage() {
                             </TooltipContent>
                           </Tooltip>
                         </TableCell>
-                        <TableCell className="text-sm max-w-[250px]">
+                        <TableCell className="text-sm">
                           <Tooltip>
                             <TooltipTrigger asChild>
-                              <span className="cursor-default block truncate">
+                              <span className="cursor-default block line-clamp-2">
                                 {truncate(item.answer, 100)}
                               </span>
                             </TooltipTrigger>
@@ -159,11 +159,11 @@ export default function FeedbacksPage() {
                             <ThumbsDown className="size-4 text-destructive" />
                           )}
                         </TableCell>
-                        <TableCell className="text-sm text-muted-foreground max-w-[200px]">
+                        <TableCell className="text-sm text-muted-foreground">
                           {item.feedback_comment ? (
                             <Tooltip>
                               <TooltipTrigger asChild>
-                                <span className="cursor-default block truncate">
+                                <span className="cursor-default block line-clamp-2">
                                   {truncate(item.feedback_comment, 50)}
                                 </span>
                               </TooltipTrigger>

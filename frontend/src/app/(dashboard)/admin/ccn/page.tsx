@@ -204,7 +204,7 @@ export default function AdminCcnPage() {
               {debouncedSearch ? "Aucun résultat." : "Aucune CCN installée. Cliquez sur \"Installer une CCN\" pour commencer."}
             </p>
           ) : (
-            <Table>
+            <Table className="table-fixed">
               <TableHeader>
                 <TableRow>
                   <TableHead className="w-16">IDCC</TableHead>
@@ -231,7 +231,7 @@ export default function AdminCcnPage() {
                     <TableRow key={ccn.idcc}>
                       <TableCell className="font-mono text-sm">{ccn.idcc}</TableCell>
                       <TableCell>
-                        <p className="text-sm font-medium line-clamp-1">
+                        <p className="text-sm font-medium line-clamp-2 break-all">
                           {ccn.titre_court || ccn.titre}
                         </p>
                         {ccn.articles_count != null && (

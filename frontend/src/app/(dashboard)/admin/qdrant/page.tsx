@@ -307,7 +307,7 @@ export default function QdrantPage() {
               </p>
             ) : (
               <>
-                <Table>
+                <Table className="table-fixed">
                   <TableHeader>
                     <TableRow>
                       <TableHead className="w-12">#</TableHead>
@@ -333,8 +333,8 @@ export default function QdrantPage() {
                         <TableCell className="text-xs text-muted-foreground">
                           {point.chunk_index ?? "—"}
                         </TableCell>
-                        <TableCell className="max-w-[150px] truncate text-sm font-medium">
-                          {point.doc_name ?? "—"}
+                        <TableCell className="text-sm font-medium">
+                          <span className="line-clamp-2 break-all">{point.doc_name ?? "—"}</span>
                         </TableCell>
                         <TableCell>
                           <Badge variant="outline" className="rounded-full text-xs">
@@ -348,7 +348,7 @@ export default function QdrantPage() {
                             </Badge>
                           ) : (
                             <span
-                              className="max-w-[100px] truncate block"
+                              className="line-clamp-1 break-all block"
                               title={point.organisation_id ?? ""}
                             >
                               {point.organisation_id?.slice(0, 8) ?? "—"}
