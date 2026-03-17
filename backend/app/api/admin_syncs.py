@@ -156,3 +156,13 @@ async def trigger_code_travail_sync(
     from app.rag.tasks import enqueue_code_travail_sync
     await enqueue_code_travail_sync(str(user.id))
     return {"detail": "Synchronisation du Code du travail lancée"}
+
+
+@router.post("/codes")
+async def trigger_all_codes_sync(
+    user: User = Depends(require_role(["admin"])),
+) -> dict:
+    """Sync all legal codes (Code civil, pénal, sécurité sociale, action sociale)."""
+    from app.rag.tasks import enqueue_all_codes_sync
+    await enqueue_all_codes_sync(str(user.id))
+    return {"detail": "Synchronisation de tous les codes lancée"}

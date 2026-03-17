@@ -98,6 +98,7 @@ export default function SyncsPage() {
   const [triggeringCdt, setTriggeringCdt] = useState(false);
   const [triggeringBocc, setTriggeringBocc] = useState(false);
   const [triggeringBackfill, setTriggeringBackfill] = useState(false);
+  const [triggeringCodes, setTriggeringCodes] = useState(false);
   const [filter, setFilter] = useState<string | null>(null);
   const [page, setPage] = useState(1);
 
@@ -158,6 +159,20 @@ export default function SyncsPage() {
     }
   };
 
+  const handleTriggerCodes = async () => {
+    if (!token) return;
+    setTriggeringCodes(true);
+    try {
+      await apiFetch("/admin/syncs/codes", { method: "POST", token });
+      toast.success("Synchronisation des codes juridiques lancée");
+      setTimeout(fetchLogs, 5000);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Erreur");
+    } finally {
+      setTriggeringCodes(false);
+    }
+  };
+
   const handleTriggerCodeTravail = async () => {
     if (!token) return;
     setTriggeringCdt(true);
@@ -207,11 +222,20 @@ export default function SyncsPage() {
           <Button
             size="sm"
             variant="outline"
+            onClick={handleTriggerCodes}
+            disabled={triggeringCodes}
+          >
+            <BookOpen className="mr-2 h-4 w-4" />
+            {triggeringCodes ? "Sync..." : "Tous les codes"}
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
             onClick={handleTriggerCodeTravail}
             disabled={triggeringCdt}
           >
             <BookOpen className="mr-2 h-4 w-4" />
-            {triggeringCdt ? "Synchronisation..." : "Code du travail"}
+            {triggeringCdt ? "Sync..." : "Code du travail"}
           </Button>
           <Button
             size="sm"

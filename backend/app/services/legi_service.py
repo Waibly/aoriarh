@@ -29,11 +29,49 @@ from app.rag.tasks import enqueue_ingestion
 logger = logging.getLogger(__name__)
 
 _LEGITEXT_CODE_TRAVAIL = "LEGITEXT000006072050"
-_REQUEST_TIMEOUT = 180.0  # Code du travail is a large payload
+_REQUEST_TIMEOUT = 180.0  # Codes are large payloads
 _RETRY_DELAY = 2.0
 _MAX_RETRIES = 3
 _TOKEN_REFRESH_MARGIN = 300
 _API_THROTTLE = 0.2
+
+# All codes that can be synced automatically
+SYNCABLE_CODES: dict[str, dict] = {
+    "code_travail": {
+        "text_id": "LEGITEXT000006072050",
+        "name": "Code du travail",
+        "has_reglementaire": True,
+        "storage_prefix": "common/code_travail",
+    },
+    "code_civil": {
+        "text_id": "LEGITEXT000006070721",
+        "name": "Code civil",
+        "source_type": "code_civil",
+        "has_reglementaire": False,
+        "storage_prefix": "common/code_civil",
+    },
+    "code_penal": {
+        "text_id": "LEGITEXT000006070719",
+        "name": "Code pénal",
+        "source_type": "code_penal",
+        "has_reglementaire": False,
+        "storage_prefix": "common/code_penal",
+    },
+    "code_securite_sociale": {
+        "text_id": "LEGITEXT000006073189",
+        "name": "Code de la sécurité sociale",
+        "source_type": "code_securite_sociale",
+        "has_reglementaire": True,
+        "storage_prefix": "common/code_securite_sociale",
+    },
+    "code_action_sociale": {
+        "text_id": "LEGITEXT000006074069",
+        "name": "Code de l'action sociale et des familles",
+        "source_type": "code_civil",  # reuse code_civil hierarchy for now
+        "has_reglementaire": False,
+        "storage_prefix": "common/code_action_sociale",
+    },
+}
 
 
 @dataclass
@@ -189,6 +227,104 @@ class LegiService:
 
         return result
 
+    async def sync_code(
+        self,
+        db: AsyncSession,
+        user_id: uuid.UUID,
+        code_key: str,
+    ) -> LegiSyncResult:
+        """Generic sync for any code (Code civil, Code pénal, CSS, CASF...).
+
+        Uses the same blue-green logic as sync_code_travail but for any code.
+        """
+        result = LegiSyncResult()
+
+        code_def = SYNCABLE_CODES.get(code_key)
+        if not code_def:
+            result.errors = 1
+            result.error_messages = [f"Code inconnu: {code_key}"]
+            return result
+
+        if not self._client_id or not self._client_secret:
+            result.errors = 1
+            result.error_messages = ["Credentials Légifrance non configurés"]
+            return result
+
+        try:
+            text_id = code_def["text_id"]
+            code_name = code_def["name"]
+            source_type = code_def.get("source_type", code_key)
+            has_regl = code_def.get("has_reglementaire", False)
+            storage_prefix = code_def["storage_prefix"]
+
+            logger.info("LegiService: fetching %s (%s)...", code_name, text_id)
+
+            articles_leg: list[dict] = []
+            articles_regl: list[dict] = []
+
+            async with httpx.AsyncClient(timeout=_REQUEST_TIMEOUT) as client:
+                data = await self._api_post(client, "/consult/legiPart", {
+                    "textId": text_id,
+                    "date": datetime.now(UTC).strftime("%Y-%m-%d"),
+                })
+                if data is None:
+                    raise ValueError(f"Impossible de récupérer {code_name}")
+
+                sections = data.get("sections", [])
+                for section in sections:
+                    section_title = section.get("title", section.get("titre", ""))
+                    articles = self._extract_articles_from_section(section, section_title)
+
+                    if has_regl and self._is_reglementaire_section(section_title):
+                        articles_regl.extend(articles)
+                    else:
+                        articles_leg.extend(articles)
+
+            result.articles_legislatif = len(articles_leg)
+            result.articles_reglementaire = len(articles_regl)
+            logger.info(
+                "LegiService: %s — %d articles législatifs, %d réglementaires",
+                code_name, len(articles_leg), len(articles_regl),
+            )
+
+            from app.services.storage_service import StorageService
+            storage = StorageService()
+
+            if articles_leg:
+                doc_name = f"{code_name} — Partie législative" if has_regl else code_name
+                changed, doc_id = await self._sync_part(
+                    db=db,
+                    articles=articles_leg,
+                    source_type=source_type,
+                    doc_name=doc_name,
+                    user_id=user_id,
+                    storage=storage,
+                    storage_prefix=storage_prefix,
+                )
+                result.legislatif_changed = changed
+                result.doc_legislatif_id = doc_id
+
+            if has_regl and articles_regl:
+                regl_source_type = f"{source_type}_reglementaire"
+                changed, doc_id = await self._sync_part(
+                    db=db,
+                    articles=articles_regl,
+                    source_type=regl_source_type,
+                    doc_name=f"{code_name} — Partie réglementaire",
+                    user_id=user_id,
+                    storage=storage,
+                    storage_prefix=storage_prefix,
+                )
+                result.reglementaire_changed = changed
+                result.doc_reglementaire_id = doc_id
+
+        except Exception as exc:
+            result.errors += 1
+            result.error_messages.append(str(exc)[:500])
+            logger.exception("LegiService: sync %s failed", code_key)
+
+        return result
+
     # --- Private methods ---
 
     async def _sync_part(
@@ -199,6 +335,7 @@ class LegiService:
         doc_name: str,
         user_id: uuid.UUID,
         storage,
+        storage_prefix: str = "common/code_travail",
     ) -> tuple[bool, str | None]:
         """Sync one part (législative or réglementaire) with blue-green.
 
@@ -226,7 +363,7 @@ class LegiService:
         # Create new document (blue)
         text_bytes = text_content.encode("utf-8")
         file_id = uuid.uuid4()
-        storage_path = f"common/code_travail/{file_id}.txt"
+        storage_path = f"{storage_prefix}/{file_id}.txt"
         storage.put_file_bytes(storage_path, text_bytes, content_type="text/plain")
 
         new_doc = Document(

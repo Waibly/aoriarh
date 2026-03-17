@@ -201,6 +201,51 @@ async def run_code_travail_sync(ctx: dict, user_id: str) -> None:
         logger.exception("Worker: Code du travail sync failed")
 
 
+async def run_code_sync(ctx: dict, user_id: str, code_key: str) -> None:
+    """Tâche de synchronisation d'un code juridique (civil, pénal, CSS, CASF)."""
+    logger.info("Worker: sync %s started", code_key)
+    session_factory = ctx["session_factory"]
+    try:
+        from app.services.legi_service import LegiService
+
+        service = LegiService()
+        async with session_factory() as db:
+            result = await service.sync_code(db, uuid.UUID(user_id), code_key)
+        logger.info(
+            "Worker: %s sync completed — %d leg, %d regl, changed=%s/%s, %d errors",
+            code_key, result.articles_legislatif, result.articles_reglementaire,
+            result.legislatif_changed, result.reglementaire_changed, result.errors,
+        )
+    except Exception:
+        logger.exception("Worker: %s sync failed", code_key)
+
+
+async def run_all_codes_sync(ctx: dict, user_id: str) -> None:
+    """Sync all legal codes (code civil, pénal, CSS, CASF)."""
+    logger.info("Worker: all codes sync started")
+    session_factory = ctx["session_factory"]
+    try:
+        from app.services.legi_service import SYNCABLE_CODES, LegiService
+
+        service = LegiService()
+        for code_key in SYNCABLE_CODES:
+            if code_key == "code_travail":
+                continue  # Already has its own sync
+            try:
+                async with session_factory() as db:
+                    result = await service.sync_code(db, uuid.UUID(user_id), code_key)
+                logger.info(
+                    "Worker: %s — %d articles, changed=%s, %d errors",
+                    code_key, result.articles_legislatif + result.articles_reglementaire,
+                    result.legislatif_changed or result.reglementaire_changed,
+                    result.errors,
+                )
+            except Exception:
+                logger.exception("Worker: %s sync failed, continuing", code_key)
+    except Exception:
+        logger.exception("Worker: all codes sync failed")
+
+
 async def run_scheduled_sync(ctx: dict) -> None:
     """Tâche planifiée bimensuelle : sync jurisprudence + rotation CCN."""
     import time as _time
@@ -374,6 +419,28 @@ async def run_scheduled_sync(ctx: dict) -> None:
         except Exception:
             logger.exception("Scheduled sync: BOCC sync failed")
 
+        # --- 4. All legal codes sync (Code civil, pénal, CSS, CASF) ---
+        try:
+            from app.services.legi_service import SYNCABLE_CODES, LegiService
+
+            legi_service = LegiService()
+            for code_key, code_def in SYNCABLE_CODES.items():
+                if code_key == "code_travail":
+                    continue  # Already synced as part of Code du travail step
+                try:
+                    result = await legi_service.sync_code(db, code_key=code_key, user_id=admin_id)
+                    status = "changed" if (result.legislatif_changed or result.reglementaire_changed) else "unchanged"
+                    logger.info(
+                        "Scheduled sync: %s — %s (%d articles, %d errors)",
+                        code_def["name"], status,
+                        result.articles_legislatif + result.articles_reglementaire,
+                        result.errors,
+                    )
+                except Exception:
+                    logger.exception("Scheduled sync: %s failed, continuing", code_def["name"])
+        except Exception:
+            logger.exception("Scheduled sync: codes sync failed")
+
     logger.info("Worker: scheduled sync completed")
 
 
@@ -433,6 +500,8 @@ class WorkerSettings:
         run_bocc_sync,
         run_bocc_backfill,
         run_code_travail_sync,
+        run_code_sync,
+        run_all_codes_sync,
         run_scheduled_sync,
     ]
     # Cron: 1st and 15th of each month at 3:00 AM UTC

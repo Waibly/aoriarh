@@ -27,6 +27,11 @@ from app.rag.norme_hierarchy import JURISPRUDENCE_SOURCE_TYPES
 ARTICLE_AWARE_SOURCE_TYPES = {
     "code_travail",
     "code_travail_reglementaire",
+    "code_civil",
+    "code_penal",
+    "code_securite_sociale",
+    "code_securite_sociale_reglementaire",
+    "code_action_sociale",
     "convention_collective_nationale",
 }
 from app.rag.qdrant_store import COLLECTION_NAME, ensure_collection, get_qdrant_client
