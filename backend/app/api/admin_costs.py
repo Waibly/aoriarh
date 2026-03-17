@@ -481,14 +481,53 @@ class LlmModelUpdate(BaseModel):
     model: str
 
 
+_REDIS_LLM_KEY = "aoriarh:llm_model"
+
+
+async def _get_redis():
+    """Get async Redis connection."""
+    import redis.asyncio as aioredis
+    from app.core.config import settings
+    return aioredis.from_url(settings.redis_url, decode_responses=True)
+
+
+async def _get_active_model() -> str:
+    """Read active model from Redis, fallback to config default."""
+    try:
+        r = await _get_redis()
+        model = await r.get(_REDIS_LLM_KEY)
+        await r.aclose()
+        if model:
+            return model
+    except Exception:
+        pass
+    from app.rag.config import LLM_MODEL
+    return LLM_MODEL
+
+
+async def _set_active_model(model: str) -> None:
+    """Persist active model in Redis + update runtime config."""
+    import app.rag.config as rag_config
+    rag_config.LLM_MODEL = model
+    try:
+        r = await _get_redis()
+        await r.set(_REDIS_LLM_KEY, model)
+        await r.aclose()
+    except Exception:
+        logger.warning("Failed to persist LLM model to Redis")
+
+
 @router.get("/llm-model", response_model=LlmModelInfo)
 async def get_llm_model(
     _user: User = Depends(require_role(["admin"])),
 ) -> LlmModelInfo:
     """Return the current LLM model and available options."""
-    from app.rag.config import LLM_MODEL
+    model = await _get_active_model()
+    # Also sync runtime config in case it drifted
+    import app.rag.config as rag_config
+    rag_config.LLM_MODEL = model
     return LlmModelInfo(
-        current_model=LLM_MODEL,
+        current_model=model,
         available_models=AVAILABLE_MODELS,
     )
 
@@ -498,14 +537,13 @@ async def set_llm_model(
     body: LlmModelUpdate,
     _user: User = Depends(require_role(["admin"])),
 ) -> LlmModelInfo:
-    """Switch the active LLM model at runtime (no restart needed)."""
+    """Switch the active LLM model at runtime. Persisted in Redis."""
     valid_ids = {m["id"] for m in AVAILABLE_MODELS}
     if body.model not in valid_ids:
         from fastapi import HTTPException
         raise HTTPException(status_code=400, detail=f"Modèle inconnu: {body.model}")
 
-    import app.rag.config as rag_config
-    rag_config.LLM_MODEL = body.model
+    await _set_active_model(body.model)
     logger.info("LLM model switched to: %s", body.model)
 
     return LlmModelInfo(

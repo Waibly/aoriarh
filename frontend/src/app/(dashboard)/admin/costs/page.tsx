@@ -361,29 +361,20 @@ export default function AdminCostsPage() {
       {/* LLM Model Switch */}
       {availableModels.length > 0 && (
         <Card>
-          <CardContent className="flex items-center justify-between py-3">
-            <div className="flex items-center gap-3">
-              <span className="text-sm font-medium">Modèle LLM actif :</span>
-              <div className="flex gap-1.5">
-                {availableModels.map((m) => (
-                  <Button
-                    key={m.id}
-                    variant={m.id === currentModel ? "default" : "outline"}
-                    size="sm"
-                    disabled={switchingModel}
-                    onClick={() => handleSwitchModel(m.id)}
-                    className="text-xs"
-                  >
-                    {m.label}
-                  </Button>
-                ))}
-              </div>
-            </div>
-            <div className="flex items-center gap-4 text-xs text-muted-foreground">
+          <CardContent className="flex items-center gap-3 py-3">
+            <span className="text-sm font-medium">Modèle LLM :</span>
+            <div className="flex gap-1.5">
               {availableModels.map((m) => (
-                <span key={m.id} className={m.id === currentModel ? "font-medium text-foreground" : ""}>
-                  {m.label}: <span className="font-mono">${m.input_1m}</span> / <span className="font-mono">${m.output_1m}</span> /1M
-                </span>
+                <Button
+                  key={m.id}
+                  variant={m.id === currentModel ? "default" : "outline"}
+                  size="sm"
+                  disabled={switchingModel}
+                  onClick={() => handleSwitchModel(m.id)}
+                  className="text-xs"
+                >
+                  {m.label}
+                </Button>
               ))}
             </div>
           </CardContent>

@@ -105,6 +105,15 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
         await seed_admin()
     else:
         logger.info("Admin seeding disabled (SEED_ADMIN=false)")
+    # Sync LLM model from Redis (persisted by admin switch)
+    try:
+        from app.api.admin_costs import _get_active_model
+        import app.rag.config as rag_config
+        model = await _get_active_model()
+        rag_config.LLM_MODEL = model
+        logger.info("LLM model loaded from Redis: %s", model)
+    except Exception:
+        logger.info("LLM model: using default from config")
     yield
 
 
