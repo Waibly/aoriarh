@@ -36,6 +36,8 @@ logger = logging.getLogger(__name__)
 PRICING: dict[tuple[str, str], tuple[float, float | None]] = {
     # OpenAI — https://platform.openai.com/docs/pricing
     ("openai", "gpt-5-mini"): (0.25, 2.00),
+    ("openai", "gpt-5.2"): (1.75, 14.00),
+    ("openai", "gpt-5"): (1.25, 10.00),
     ("openai", "gpt-4o-mini"): (0.15, 0.60),
     # Voyage AI — https://docs.voyageai.com/pricing/
     ("voyageai", "voyage-law-2"): (0.12, None),
