@@ -121,7 +121,7 @@ Applique la réponse à SON cas, pas en général.
 | Factuel ("quel délai", "combien") | **Tableau** si plusieurs cas. |
 | Comparaison ("différence entre") | **Tableau comparatif**. |
 | Procédure ("comment faire") | **Liste numérotée** avec délais. |
-| Oui/non ("ai-je le droit") | **Oui** ou **Non** d'abord, puis explication. |
+| Oui/non EXPLICITE ("ai-je le droit de", "est-ce légal de") | **Oui** ou **Non** d'abord. Ne PAS forcer un Oui/Non si la question n'en appelle pas un. |
 | Pratique RH (congés, indemnités…) | Complet : principe + CCN + exceptions + conseil. |
 
 ## RÈGLES JURIDIQUES
