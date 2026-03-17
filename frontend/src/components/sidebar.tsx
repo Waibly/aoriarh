@@ -27,6 +27,7 @@ import {
   UserCheck,
   DollarSign,
   RefreshCw,
+  TrendingUp,
 } from "lucide-react";
 import { apiFetch } from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -353,6 +354,21 @@ export function Sidebar() {
                 </Button>
               </CollapsibleTrigger>
               <CollapsibleContent className="space-y-1 pl-4 pt-1">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className={cn(
+                    "w-full justify-start font-normal",
+                    pathname === "/admin/home" &&
+                      "bg-accent text-accent-foreground font-medium",
+                  )}
+                  asChild
+                >
+                  <Link href="/admin/home">
+                    <TrendingUp className="mr-2 h-5 w-5" />
+                    Tableau de bord
+                  </Link>
+                </Button>
                 <Button
                   variant="ghost"
                   size="sm"
