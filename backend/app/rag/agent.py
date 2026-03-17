@@ -231,20 +231,31 @@ Règles :
 - Réponds UNIQUEMENT avec les 3 variantes, sans explication."""
 
 _CONDENSE_PROMPT = """\
-Étant donné l'historique de conversation suivant et une question de suivi, \
-reformule la question de suivi en une question autonome et complète.
+Tu reformules une question de suivi en question autonome et complète.
+
+Méthode :
+1. Lis l'historique et identifie le SUJET EN COURS (ex: mutation, licenciement, \
+congés) et la SITUATION FACTUELLE accumulée (type de contrat, statut du salarié, \
+CCN, ce qui a été décidé/proposé dans les échanges précédents).
+2. Lis les CONCLUSIONS de l'assistant dans les réponses précédentes — elles \
+contiennent des faits établis (ex: "le site ferme", "salarié protégé", \
+"autorisation de l'inspection du travail nécessaire").
+3. Reformule la question de suivi en intégrant TOUT ce contexte.
+
+Exemple :
+- Q1: "Un salarié refuse sa mutation, quelles options ?"
+- R1: (explique les cas, salarié protégé, modification du contrat...)
+- Q2: "Le site ferme, je peux le licencier ?"
+- R2: (oui avec autorisation, obligation de reclassement...)
+- Q3: "Je n'ai qu'un seul poste, c'est un élu CSE"
+- → Reformulation : "Dans le cas d'une fermeture de site avec un élu CSE \
+qui refuse sa mutation, l'employeur ne peut proposer qu'un seul poste de \
+reclassement correspondant à ses fonctions actuelles. Quelles sont les options \
+et la procédure (autorisation inspection du travail) ?"
 
 Règles :
-- La question autonome doit être compréhensible SANS l'historique.
-- INTÈGRE TOUS LES FAITS ÉTABLIS dans les échanges précédents. Par exemple :
-  - Si Q1 = "délai de prévenance pour rupture d'essai" et R1 mentionne la CCN IDCC 0413
-  - Et Q2 = "elle est cadre en CDI"
-  - → Reformule en : "Quel est le délai de prévenance pour rupture de la période \
-d'essai d'un salarié cadre en CDI sous la CCN IDCC 0413 (établissements handicapés) ?"
-- CONSERVE SYSTÉMATIQUEMENT : organisation, CCN/IDCC, catégorie du salarié \
-(cadre/non-cadre), type de contrat (CDI/CDD), et tout contexte factuel accumulé.
-- Intègre les sources déjà citées (articles de loi, arrêts, avenants CCN) dans \
-la reformulation pour que la recherche les retrouve.
+- La question reformulée doit être compréhensible SANS l'historique.
+- CONSERVE : organisation, CCN/IDCC, statut salarié, type contrat, situation factuelle.
 - Si la question introduit un nouveau sujet sans lien, retourne-la telle quelle.
 - Réponds UNIQUEMENT avec la question reformulée."""
 
@@ -605,7 +616,7 @@ class RAGAgent:
         history_lines: list[str] = []
         for msg in recent:
             role_label = "Utilisateur" if msg["role"] == "user" else "Assistant"
-            content = msg["content"][:500]
+            content = msg["content"][:1500]
             history_lines.append(f"{role_label}: {content}")
         history_text = "\n".join(history_lines)
 
@@ -630,18 +641,18 @@ class RAGAgent:
         user_content += f"Question de suivi : {query}"
 
         response = await self.llm.chat.completions.create(
-            model="gpt-4o-mini",
+            model="gpt-5-mini",
             messages=[
                 {"role": "system", "content": _CONDENSE_PROMPT},
                 {"role": "user", "content": user_content},
             ],
             temperature=0.0,
-            max_tokens=300,
+            max_tokens=400,
         )
         if response.usage:
             await cost_tracker.log(
                 provider="openai",
-                model="gpt-4o-mini",
+                model="gpt-5-mini",
                 operation_type="condense",
                 tokens_input=response.usage.prompt_tokens,
                 tokens_output=response.usage.completion_tokens,
