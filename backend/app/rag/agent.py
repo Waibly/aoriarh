@@ -9,9 +9,9 @@ import httpx
 from openai import AsyncOpenAI
 
 from app.core.config import settings
+import app.rag.config as rag_config
 from app.rag.config import (
     CONDENSE_HISTORY_LIMIT,
-    LLM_MODEL,
     RAG_MAX_ITERATIONS,
     RAG_TIMEOUT_GLOBAL,
     RAG_TIMEOUT_PER_STEP,
@@ -526,7 +526,7 @@ class RAGAgent:
 
         t_api = time.perf_counter()
         response = await self.llm.chat.completions.create(
-            model=LLM_MODEL,
+            model=rag_config.LLM_MODEL,
             messages=[
                 {"role": "system", "content": _SYSTEM_PROMPT},
                 {"role": "user", "content": user_content},
@@ -572,7 +572,7 @@ class RAGAgent:
         if stream_usage:
             await cost_tracker.log(
                 provider="openai",
-                model=LLM_MODEL,
+                model=rag_config.LLM_MODEL,
                 operation_type="generate",
                 tokens_input=stream_usage.prompt_tokens,
                 tokens_output=stream_usage.completion_tokens,
@@ -946,7 +946,7 @@ class RAGAgent:
         )
 
         response = await self.llm.chat.completions.create(
-            model=LLM_MODEL,
+            model=rag_config.LLM_MODEL,
             messages=[
                 {"role": "system", "content": _SYSTEM_PROMPT},
                 {"role": "user", "content": user_content},
@@ -957,7 +957,7 @@ class RAGAgent:
         if response.usage:
             await cost_tracker.log(
                 provider="openai",
-                model=LLM_MODEL,
+                model=rag_config.LLM_MODEL,
                 operation_type="generate",
                 tokens_input=response.usage.prompt_tokens,
                 tokens_output=response.usage.completion_tokens,

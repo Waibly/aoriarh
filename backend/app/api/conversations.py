@@ -253,6 +253,9 @@ async def chat_stream(
             )
             org_idcc_list = [r[0] for r in idcc_result.all()] or None
 
+            # 2b. Send status: analyzing
+            yield _sse_event("chat_status", {"step": "Analyse de votre question..."})
+
             # 3. Prepare context (steps 0-5: condensation, reformulation, search, rerank)
             results, reformulated = await agent.prepare_context(
                 query=data.message,
@@ -275,7 +278,10 @@ async def chat_stream(
                 })
                 return
 
-            # 3. Send sources before generation starts
+            # 3. Send status: searching done, preparing response
+            yield _sse_event("chat_status", {"step": "Recherche dans les sources..."})
+
+            # 3b. Send sources before generation starts
             sources = agent.format_sources(results)
             sources_dicts = [dataclasses.asdict(s) for s in sources]
             yield _sse_event("chat_sources", {"sources": sources_dicts})
@@ -286,6 +292,8 @@ async def chat_stream(
             )
 
             # 4. Stream LLM generation
+            yield _sse_event("chat_status", {"step": "Rédaction de la réponse..."})
+
             if await request.is_disconnected():
                 return
 

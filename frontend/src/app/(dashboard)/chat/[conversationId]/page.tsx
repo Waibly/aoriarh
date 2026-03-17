@@ -24,6 +24,7 @@ export default function ConversationPage() {
 
   const [messages, setMessages] = useState<Message[]>([]);
   const [isStreaming, setIsStreaming] = useState(false);
+  const [streamingStatus, setStreamingStatus] = useState<string | null>(null);
   const [streamingContent, setStreamingContent] = useState("");
   const [streamingSources, setStreamingSources] = useState<
     MessageSource[] | null
@@ -91,11 +92,15 @@ export default function ConversationPage() {
           content,
           token,
           {
+            onStatus: (step) => {
+              setStreamingStatus(step);
+            },
             onSources: (sources) => {
               accumulatedSources = sources;
               setStreamingSources(sources);
             },
             onDelta: (delta) => {
+              setStreamingStatus(null); // Clear status when content starts
               accumulatedContent += delta;
               setStreamingContent((prev) => prev + delta);
             },
@@ -213,6 +218,7 @@ export default function ConversationPage() {
       <MessageList
         messages={messages}
         isStreaming={isStreaming}
+        streamingStatus={streamingStatus}
         streamingContent={streamingContent}
         streamingSources={streamingSources}
         onFeedback={handleFeedback}

@@ -358,29 +358,6 @@ export default function AdminCostsPage() {
         </div>
       </div>
 
-      {/* LLM Model Switch */}
-      {availableModels.length > 0 && (
-        <Card>
-          <CardContent className="flex items-center gap-3 py-3">
-            <span className="text-sm font-medium">Modèle LLM :</span>
-            <div className="flex gap-1.5">
-              {availableModels.map((m) => (
-                <Button
-                  key={m.id}
-                  variant={m.id === currentModel ? "default" : "outline"}
-                  size="sm"
-                  disabled={switchingModel}
-                  onClick={() => handleSwitchModel(m.id)}
-                  className="text-xs"
-                >
-                  {m.label}
-                </Button>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
       {/* Summary cards */}
       <div className="grid gap-4 md:grid-cols-4">
         <Card>
@@ -556,6 +533,29 @@ export default function AdminCostsPage() {
       )}
 
       {/* Tabs: Provider / Organisation / User / Pricing */}
+      {/* LLM Model Switch */}
+      {availableModels.length > 0 && (
+        <Card>
+          <CardContent className="flex items-center gap-3 py-3">
+            <span className="text-sm font-medium">Modèle LLM :</span>
+            <div className="flex gap-1.5">
+              {availableModels.map((m) => (
+                <Button
+                  key={m.id}
+                  variant={m.id === currentModel ? "default" : "outline"}
+                  size="sm"
+                  disabled={switchingModel}
+                  onClick={() => handleSwitchModel(m.id)}
+                  className="text-xs"
+                >
+                  {m.label}
+                </Button>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       <Tabs defaultValue="organisation">
         <TabsList>
           <TabsTrigger value="organisation">Par organisation</TabsTrigger>

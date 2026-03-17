@@ -77,6 +77,7 @@ export async function updateMessageFeedback(
 }
 
 export interface StreamCallbacks {
+  onStatus?: (step: string) => void;
   onSources: (sources: MessageSource[]) => void;
   onDelta: (content: string) => void;
   onDone: (ids: { message_id: string; answer_id: string }) => void;
@@ -130,6 +131,9 @@ export async function streamMessage(
       try {
         const parsed = JSON.parse(dataStr);
         switch (eventType) {
+          case "chat_status":
+            callbacks.onStatus?.(parsed.step);
+            break;
           case "chat_sources":
             callbacks.onSources(parsed.sources);
             break;
