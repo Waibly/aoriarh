@@ -183,17 +183,38 @@ async def _load_org_context(
     db: AsyncSession, organisation_id: uuid.UUID
 ) -> dict[str, str | None] | None:
     """Load organisation profile for RAG context injection."""
+    from app.models.ccn import CcnReference, OrganisationConvention
+
     result = await db.execute(
         select(Organisation).where(Organisation.id == organisation_id)
     )
     org = result.scalar_one_or_none()
     if org is None:
         return None
+
+    # Get installed CCNs with their names
+    ccn_result = await db.execute(
+        select(OrganisationConvention.idcc, CcnReference.titre)
+        .join(CcnReference, CcnReference.idcc == OrganisationConvention.idcc)
+        .where(
+            OrganisationConvention.organisation_id == organisation_id,
+            OrganisationConvention.status.in_(["ready", "indexing", "fetching"]),
+        )
+    )
+    installed_ccns = ccn_result.all()
+
+    # Build convention_collective string from installed CCNs if not manually set
+    convention_str = org.convention_collective
+    if not convention_str and installed_ccns:
+        convention_str = "; ".join(
+            f"{row.titre} (IDCC {row.idcc})" for row in installed_ccns
+        )
+
     ctx = {
         "nom": org.name,
         "forme_juridique": org.forme_juridique,
         "taille": org.taille,
-        "convention_collective": org.convention_collective,
+        "convention_collective": convention_str,
         "secteur_activite": org.secteur_activite,
     }
     return ctx
