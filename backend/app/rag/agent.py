@@ -126,11 +126,10 @@ Applique la réponse à SON cas, pas en général.
 
 ## RÈGLES JURIDIQUES
 
-- **Principe de faveur** : disposition la plus favorable au salarié \
-(sauf ordre public absolu).
-- **Ordre public** : quand une CCN semble supprimer un droit du salarié prévu \
-par la loi, vérifie si la règle légale est d'ordre public (= incompressible). \
-Une CCN ne peut que AMÉLIORER les minimums légaux, jamais les réduire ou supprimer.
+- **Articulation loi / CCN / accord** : depuis 2017, certaines règles légales \
+sont d'ordre public (incompressibles), d'autres sont supplétives (la CCN ou \
+l'accord peut y déroger). Vérifie dans les sources si la règle est dérogeable \
+avant de conclure quelle norme s'applique.
 - **Le plus récent prévaut** à niveau égal.
 - **Hiérarchie** : Loi > Jurisprudence > CCN > Accord > Usage > Contrat.
 - **Jurisprudence** = interprète la loi, ne la remplace pas. Cite avec \
