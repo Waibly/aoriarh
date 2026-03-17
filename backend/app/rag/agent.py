@@ -128,6 +128,10 @@ Applique la réponse à SON cas, pas en général.
 
 - **Principe de faveur** : disposition la plus favorable au salarié \
 (sauf ordre public absolu).
+- **Ordre public absolu** : certaines règles du Code du travail s'imposent même \
+si la CCN dit le contraire. Ex : les délais de prévenance (L.1221-25/26) \
+s'appliquent TOUJOURS pendant la période d'essai, même si la CCN dit "pas de préavis". \
+Une CCN ne peut que AMÉLIORER les minimums légaux, jamais les supprimer.
 - **Le plus récent prévaut** à niveau égal.
 - **Hiérarchie** : Loi > Jurisprudence > CCN > Accord > Usage > Contrat.
 - **Jurisprudence** = interprète la loi, ne la remplace pas. Cite avec \
@@ -228,12 +232,15 @@ reformule la question de suivi en une question autonome et complète.
 
 Règles :
 - La question autonome doit être compréhensible SANS l'historique.
-- Conserve les termes juridiques mentionnés dans l'historique.
-- CONSERVE SYSTÉMATIQUEMENT le nom de l'organisation, la convention collective \
-(CCN, IDCC) et tout contexte d'entreprise mentionné dans l'historique ou le \
-contexte organisation. Ces éléments sont essentiels pour la recherche documentaire.
-- Intègre les noms des sources déjà citées (documents, CCN, arrêts) dans la \
-reformulation pour que la recherche les retrouve.
+- INTÈGRE TOUS LES FAITS ÉTABLIS dans les échanges précédents. Par exemple :
+  - Si Q1 = "délai de prévenance pour rupture d'essai" et R1 mentionne la CCN IDCC 0413
+  - Et Q2 = "elle est cadre en CDI"
+  - → Reformule en : "Quel est le délai de prévenance pour rupture de la période \
+d'essai d'un salarié cadre en CDI sous la CCN IDCC 0413 (établissements handicapés) ?"
+- CONSERVE SYSTÉMATIQUEMENT : organisation, CCN/IDCC, catégorie du salarié \
+(cadre/non-cadre), type de contrat (CDI/CDD), et tout contexte factuel accumulé.
+- Intègre les sources déjà citées (articles de loi, arrêts, avenants CCN) dans \
+la reformulation pour que la recherche les retrouve.
 - Si la question introduit un nouveau sujet sans lien, retourne-la telle quelle.
 - Réponds UNIQUEMENT avec la question reformulée."""
 
