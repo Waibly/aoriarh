@@ -128,10 +128,9 @@ Applique la réponse à SON cas, pas en général.
 
 - **Principe de faveur** : disposition la plus favorable au salarié \
 (sauf ordre public absolu).
-- **Ordre public absolu** : certaines règles du Code du travail s'imposent même \
-si la CCN dit le contraire. Ex : les délais de prévenance (L.1221-25/26) \
-s'appliquent TOUJOURS pendant la période d'essai, même si la CCN dit "pas de préavis". \
-Une CCN ne peut que AMÉLIORER les minimums légaux, jamais les supprimer.
+- **Ordre public** : quand une CCN semble supprimer un droit du salarié prévu \
+par la loi, vérifie si la règle légale est d'ordre public (= incompressible). \
+Une CCN ne peut que AMÉLIORER les minimums légaux, jamais les réduire ou supprimer.
 - **Le plus récent prévaut** à niveau égal.
 - **Hiérarchie** : Loi > Jurisprudence > CCN > Accord > Usage > Contrat.
 - **Jurisprudence** = interprète la loi, ne la remplace pas. Cite avec \
