@@ -238,6 +238,7 @@ export default function AdminCcnPage() {
                   <TableHead className="text-right">Docs</TableHead>
                   <TableHead className="text-right">Orgs</TableHead>
                   <TableHead>Date source</TableHead>
+                  <TableHead>Statut</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
@@ -279,6 +280,26 @@ export default function AdminCcnPage() {
                         ) : (
                           <span className="text-xs text-muted-foreground">—</span>
                         )}
+                      </TableCell>
+                      <TableCell>
+                        {(() => {
+                          const s = ccn.status;
+                          const label =
+                            s === "ready" ? "Prêt" :
+                            s === "pending" ? "En attente" :
+                            s === "fetching" ? "Téléchargement" :
+                            s === "indexing" ? "Indexation" :
+                            s === "error" ? "Erreur" : s;
+                          const color =
+                            s === "ready" ? "border-green-500 bg-green-500/10 text-green-700" :
+                            s === "error" ? "border-red-500 bg-red-500/10 text-red-700" :
+                            "border-orange-500 bg-orange-500/10 text-orange-700";
+                          return (
+                            <Badge variant="outline" className={`rounded-full text-[11px] ${color}`}>
+                              {label}
+                            </Badge>
+                          );
+                        })()}
                       </TableCell>
                       <TableCell className="text-right">
                         <div className="flex justify-end gap-1">
