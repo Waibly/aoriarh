@@ -271,24 +271,28 @@ class KaliService:
             result.articles_count = len(all_articles)
 
             base_articles = [a for a in all_articles if a.get("category") == "base"]
-            annexe_articles = [a for a in all_articles if a.get("category") == "annexe"]
+            annexe_articles = [a for a in all_articles if a.get("category") in ("annexe", "avenant")]
             salaire_articles = [a for a in all_articles if a.get("category") == "salaire"]
+            accord_articles = [a for a in all_articles if a.get("category") == "accord"]
 
             logger.info(
-                "KALI IDCC %s: %d articles (base=%d, annexes=%d, salaires=%d)",
+                "KALI IDCC %s: %d articles "
+                "(base=%d, accords=%d, annexes=%d, salaires=%d)",
                 org_conv.idcc, len(all_articles),
-                len(base_articles), len(annexe_articles), len(salaire_articles),
+                len(base_articles), len(accord_articles),
+                len(annexe_articles), len(salaire_articles),
             )
 
-            parts: list[tuple[str, str]] = []
+            # CCN parts (base, annexes, salaires)
+            ccn_parts: list[tuple[str, str]] = []
             if base_articles:
-                parts.append(("", self._format_articles_as_markdown(base_articles, ccn_ref)))
+                ccn_parts.append(("", self._format_articles_as_markdown(base_articles, ccn_ref)))
             if annexe_articles:
-                parts.append((" — Avenants et annexes", self._format_articles_as_markdown(annexe_articles, ccn_ref)))
+                ccn_parts.append((" — Avenants et annexes", self._format_articles_as_markdown(annexe_articles, ccn_ref)))
             if salaire_articles:
-                parts.append((" — Grilles de salaires", self._format_articles_as_markdown(salaire_articles, ccn_ref)))
+                ccn_parts.append((" — Grilles de salaires", self._format_articles_as_markdown(salaire_articles, ccn_ref)))
 
-            combined = "".join(text for _, text in parts)
+            combined = "".join(text for _, text in ccn_parts)
             new_hash = hashlib.sha256(combined.encode("utf-8")).hexdigest()
 
             org_conv.status = "indexing"
@@ -297,7 +301,7 @@ class KaliService:
             from app.services.storage_service import StorageService
             storage = StorageService()
 
-            for suffix, text_content in parts:
+            for suffix, text_content in ccn_parts:
                 doc = await self._create_common_ccn_document(
                     db, ccn_ref, text_content,
                     user_id=user_id,
@@ -307,7 +311,26 @@ class KaliService:
                 )
                 await enqueue_ingestion(str(doc.id))
 
-            result.documents_created = len(parts)
+            # Accords de branche — stored as separate documents
+            if accord_articles:
+                accord_text = self._format_accords_as_markdown(
+                    accord_articles, ccn_ref,
+                )
+                doc = await self._create_common_ccn_document(
+                    db, ccn_ref, accord_text,
+                    user_id=user_id,
+                    storage=storage,
+                    name_suffix=" — Accords de branche",
+                    source_type_override="accord_branche",
+                )
+                await enqueue_ingestion(str(doc.id))
+                logger.info(
+                    "KALI IDCC %s: created accord_branche document "
+                    "(%d articles)",
+                    org_conv.idcc, len(accord_articles),
+                )
+
+            result.documents_created = len(ccn_parts) + (1 if accord_articles else 0)
 
             org_conv.status = "ready"
             org_conv.articles_count = result.articles_count
@@ -583,40 +606,57 @@ class KaliService:
                 etat = section.get("etat") or ""
 
                 if "salaire" in title:
-                    category = "salaire"
+                    section_category = "salaire"
                 elif "attaché" in title or "attach" in title:
-                    category = "annexe"
+                    section_category = "attaché"
                 else:
-                    category = "base"
+                    section_category = "base"
 
                 # Collect KALITEXT IDs from this section
-                section_ids: list[str] = []
+                section_ids: list[tuple[str, str]] = []  # (id, child_title)
+
                 def _walk(items: list[dict]) -> None:
                     for item in items:
                         tid = item.get("id") or ""
                         ie = item.get("etat") or ""
+                        child_title = item.get("title") or item.get("titre") or ""
                         if tid.startswith("KALITEXT") and ie.startswith("VIGUEUR"):
-                            section_ids.append(tid)
+                            section_ids.append((tid, child_title))
                         children = item.get("sections", [])
                         if children:
                             _walk(children)
 
                 sid = section.get("id") or ""
+                section_title_orig = section.get("title") or section.get("titre") or ""
                 if sid.startswith("KALITEXT") and etat.startswith("VIGUEUR"):
-                    section_ids.append(sid)
+                    section_ids.append((sid, section_title_orig))
                 _walk(section.get("sections", []))
 
-                for tid in section_ids:
+                for tid, child_title in section_ids:
+                    if section_category == "attaché":
+                        # Within "Textes Attachés", distinguish accords from annexes
+                        child_lower = child_title.lower()
+                        if "accord" in child_lower or "protocole d'accord" in child_lower:
+                            category = "accord"
+                        elif "avenant" in child_lower:
+                            category = "avenant"
+                        else:
+                            category = "annexe"
+                    else:
+                        category = section_category
                     categorized_ids.append((tid, category))
 
             if not categorized_ids:
                 raise ValueError("Aucun texte trouvé dans le container KALI")
 
             logger.info(
-                "KALI fetch IDCC %s: %d text(s) to fetch (base=%d, annexes=%d, salaires=%d)",
+                "KALI fetch IDCC %s: %d text(s) to fetch "
+                "(base=%d, accords=%d, avenants=%d, annexes=%d, salaires=%d)",
                 ccn_ref.idcc,
                 len(categorized_ids),
                 sum(1 for _, c in categorized_ids if c == "base"),
+                sum(1 for _, c in categorized_ids if c == "accord"),
+                sum(1 for _, c in categorized_ids if c == "avenant"),
                 sum(1 for _, c in categorized_ids if c == "annexe"),
                 sum(1 for _, c in categorized_ids if c == "salaire"),
             )
@@ -665,11 +705,16 @@ class KaliService:
     async def _find_common_ccn_docs(
         db: AsyncSession, idcc: str
     ) -> list[Document]:
-        """Find common (shared) CCN documents for an IDCC."""
+        """Find common (shared) CCN documents for an IDCC (CCN + accords de branche)."""
+        from sqlalchemy import or_
+
         result = await db.execute(
             select(Document).where(
                 Document.organisation_id.is_(None),
-                Document.source_type == "convention_collective_nationale",
+                or_(
+                    Document.source_type == "convention_collective_nationale",
+                    Document.source_type == "accord_branche",
+                ),
                 Document.name.ilike(f"%IDCC {idcc}%"),
             ).order_by(Document.created_at.desc())
         )
@@ -684,13 +729,17 @@ class KaliService:
         storage,
         name_suffix: str = "",
         file_hash_override: str | None = None,
+        source_type_override: str | None = None,
     ) -> Document:
         """Create a common (shared) CCN document — org_id = NULL."""
-        source_type = "convention_collective_nationale"
+        source_type = source_type_override or "convention_collective_nationale"
         hierarchy = DOCUMENT_TYPE_HIERARCHY[source_type]
 
         titre = ccn_ref.titre_court or ccn_ref.titre
-        name = f"CCN {titre} (IDCC {ccn_ref.idcc}){name_suffix}"
+        if source_type == "accord_branche":
+            name = f"Accords de branche — {titre} (IDCC {ccn_ref.idcc})"
+        else:
+            name = f"CCN {titre} (IDCC {ccn_ref.idcc}){name_suffix}"
 
         file_id = uuid.uuid4()
         storage_path = f"common/ccn/{ccn_ref.idcc}/{file_id}.txt"
@@ -917,6 +966,31 @@ class KaliService:
         """Format articles as a Markdown document for ingestion."""
         lines = [
             f"# Convention collective — {ccn_ref.titre} (IDCC {ccn_ref.idcc})",
+            "",
+        ]
+        current_section = ""
+        for art in articles:
+            section = art.get("section", "")
+            if section and section != current_section:
+                current_section = section
+                lines.append(f"\n## {section}\n")
+
+            num = art.get("num", "")
+            if num:
+                lines.append(f"### Article {num}\n")
+            lines.append(art["content"])
+            lines.append("")
+
+        return "\n".join(lines)
+
+    @staticmethod
+    def _format_accords_as_markdown(
+        articles: list[dict], ccn_ref: CcnReference,
+    ) -> str:
+        """Format accord de branche articles as Markdown for ingestion."""
+        titre = ccn_ref.titre_court or ccn_ref.titre
+        lines = [
+            f"# Accords de branche — {titre} (IDCC {ccn_ref.idcc})",
             "",
         ]
         current_section = ""

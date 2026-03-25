@@ -33,6 +33,7 @@ ARTICLE_AWARE_SOURCE_TYPES = {
     "code_securite_sociale_reglementaire",
     "code_action_sociale",
     "convention_collective_nationale",
+    "accord_branche",
 }
 from app.rag.qdrant_store import COLLECTION_NAME, ensure_collection, get_qdrant_client
 from app.rag.text_cleaner import clean_text

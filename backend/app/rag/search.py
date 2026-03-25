@@ -126,28 +126,38 @@ class HybridSearch:
             ),
         ]
 
+        # Source types tied to a specific CCN/IDCC
+        _ccn_source_types = [
+            "convention_collective_nationale",
+            "accord_branche",
+        ]
+
         if org_idcc_list:
-            # Common docs that are NOT CCN (code du travail, jurisprudence, etc.)
+            # Common docs that are NOT CCN/accord (code du travail, jurisprudence, etc.)
             should_conditions.append(
                 Filter(
                     must=[
                         FieldCondition(key="organisation_id", match=MatchValue(value="common")),
                     ],
                     must_not=[
-                        FieldCondition(key="source_type", match=MatchValue(value="convention_collective_nationale")),
+                        FieldCondition(
+                            key="source_type",
+                            match=MatchAny(any=_ccn_source_types),
+                        ),
                     ],
                 )
             )
-            # Common CCN docs only for org's selected IDCCs
-            should_conditions.append(
-                Filter(
-                    must=[
-                        FieldCondition(key="organisation_id", match=MatchValue(value="common")),
-                        FieldCondition(key="source_type", match=MatchValue(value="convention_collective_nationale")),
-                        FieldCondition(key="idcc", match=MatchAny(any=org_idcc_list)),
-                    ],
+            # Common CCN + accord_branche docs only for org's selected IDCCs
+            for st in _ccn_source_types:
+                should_conditions.append(
+                    Filter(
+                        must=[
+                            FieldCondition(key="organisation_id", match=MatchValue(value="common")),
+                            FieldCondition(key="source_type", match=MatchValue(value=st)),
+                            FieldCondition(key="idcc", match=MatchAny(any=org_idcc_list)),
+                        ],
+                    )
                 )
-            )
         else:
             # No IDCC list — include all common docs (backward compatible)
             should_conditions.append(
