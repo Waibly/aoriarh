@@ -71,10 +71,34 @@ class OrganisationService:
         return org
 
     async def list_organisations(self, user: User) -> list[Organisation]:
-        if user.role == "admin":
-            result = await self.db.execute(select(Organisation))
+        from app.models.account import Account
+        from app.models.account_member import AccountMember
+
+        # Find the user's account(s): either as owner or as member
+        account_ids: list[uuid.UUID] = []
+
+        # Accounts owned by the user
+        owned = await self.db.execute(
+            select(Account.id).where(Account.owner_id == user.id)
+        )
+        account_ids.extend(row[0] for row in owned.all())
+
+        # Accounts where the user is a member
+        member_of = await self.db.execute(
+            select(AccountMember.account_id).where(AccountMember.user_id == user.id)
+        )
+        account_ids.extend(row[0] for row in member_of.all())
+
+        if account_ids:
+            # Return orgs belonging to the user's account(s)
+            result = await self.db.execute(
+                select(Organisation).where(
+                    Organisation.account_id.in_(account_ids)
+                )
+            )
             return list(result.scalars().all())
 
+        # Fallback: orgs where the user has a direct membership
         result = await self.db.execute(
             select(Organisation)
             .join(Membership, Membership.organisation_id == Organisation.id)
