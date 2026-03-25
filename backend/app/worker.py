@@ -99,9 +99,11 @@ async def run_judilibre_sync(
         logger.exception("Worker: Judilibre sync failed")
 
 
-async def run_kali_install(ctx: dict, org_convention_id: str, user_id: str) -> None:
+async def run_kali_install(
+    ctx: dict, org_convention_id: str, user_id: str, force_refetch: bool = False,
+) -> None:
     """Tâche d'installation d'une convention collective depuis KALI."""
-    logger.info("Worker: KALI install started for org_convention %s", org_convention_id)
+    logger.info("Worker: KALI install started for org_convention %s (force_refetch=%s)", org_convention_id, force_refetch)
     session_factory = ctx["session_factory"]
     try:
         from app.models.ccn import OrganisationConvention
@@ -113,7 +115,9 @@ async def run_kali_install(ctx: dict, org_convention_id: str, user_id: str) -> N
             if org_conv is None:
                 logger.error("OrganisationConvention %s not found", org_convention_id)
                 return
-            result = await service.install_convention(db, org_conv, uuid.UUID(user_id))
+            result = await service.install_convention(
+                db, org_conv, uuid.UUID(user_id), force_refetch=force_refetch,
+            )
         logger.info(
             "Worker: KALI install completed — %d articles, %d docs, %d errors",
             result.articles_count, result.documents_created, result.errors,

@@ -38,16 +38,19 @@ async def enqueue_ingestion(document_id: str) -> None:
     logger.info("Ingestion job enqueued for document %s", document_id)
 
 
-async def enqueue_kali_install(org_convention_id: str, user_id: str) -> None:
+async def enqueue_kali_install(
+    org_convention_id: str, user_id: str, force_refetch: bool = False,
+) -> None:
     """Enqueue a KALI convention installation job to the ARQ worker."""
     pool = await get_arq_pool()
     await pool.enqueue_job(
         "run_kali_install",
         org_convention_id,
         user_id,
+        force_refetch,
         _job_id=f"kali_install_{org_convention_id}",
     )
-    logger.info("KALI install job enqueued for org_convention %s", org_convention_id)
+    logger.info("KALI install job enqueued for org_convention %s (force_refetch=%s)", org_convention_id, force_refetch)
 
 
 async def enqueue_bocc_sync(user_id: str, year: int | None = None, week: int | None = None) -> None:

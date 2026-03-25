@@ -230,12 +230,14 @@ class KaliService:
         db: AsyncSession,
         org_conv: OrganisationConvention,
         user_id: uuid.UUID,
+        force_refetch: bool = False,
     ) -> KaliInstallResult:
         """Fetch a CCN from KALI and ingest as COMMON documents (shared).
 
         If common docs already exist for this IDCC, just link (no re-fetch).
         If not, fetch from KALI and create common docs.
         Blue-green for updates.
+        If force_refetch=True, delete existing common docs and re-fetch.
         """
         result = KaliInstallResult()
 
@@ -249,6 +251,16 @@ class KaliService:
 
             # Check if common docs already exist for this IDCC
             existing_common = await self._find_common_ccn_docs(db, org_conv.idcc)
+
+            if existing_common and force_refetch:
+                # Force re-fetch: delete old common docs first
+                old_ids = [str(d.id) for d in existing_common]
+                logger.info(
+                    "KALI IDCC %s: force_refetch — deleting %d existing common docs",
+                    org_conv.idcc, len(existing_common),
+                )
+                await self._cleanup_old_ccn_docs(db, old_ids)
+                existing_common = []
 
             if existing_common:
                 # Common docs exist — just link, no need to re-fetch

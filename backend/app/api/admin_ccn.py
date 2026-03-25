@@ -186,7 +186,7 @@ async def admin_sync_ccn(
     await db.commit()
 
     from app.rag.tasks import enqueue_kali_install
-    await enqueue_kali_install(str(org_conv.id), str(user.id))
+    await enqueue_kali_install(str(org_conv.id), str(user.id), force_refetch=True)
     return {"detail": f"Mise à jour de la CCN IDCC {idcc} lancée"}
 
 
