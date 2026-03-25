@@ -190,6 +190,39 @@ async def admin_sync_ccn(
     return {"detail": f"Mise à jour de la CCN IDCC {idcc} lancée"}
 
 
+@router.post("/sync-all")
+async def admin_sync_all_ccn(
+    user: User = Depends(require_role(["admin"])),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Force re-sync ALL installed CCN from KALI (with accord de branche separation)."""
+    from app.rag.tasks import enqueue_kali_install
+
+    # Find one org_conv per IDCC
+    result = await db.execute(
+        select(OrganisationConvention)
+        .distinct(OrganisationConvention.idcc)
+        .order_by(OrganisationConvention.idcc, OrganisationConvention.created_at)
+    )
+    org_convs = list(result.scalars().all())
+
+    if not org_convs:
+        raise HTTPException(status_code=404, detail="Aucune CCN installée")
+
+    count = 0
+    for org_conv in org_convs:
+        org_conv.status = "pending"
+        org_conv.error_message = None
+        count += 1
+
+    await db.commit()
+
+    for org_conv in org_convs:
+        await enqueue_kali_install(str(org_conv.id), str(user.id), force_refetch=True)
+
+    return {"detail": f"Synchronisation lancée pour {count} CCN"}
+
+
 @router.delete("/{idcc}")
 async def admin_delete_ccn(
     idcc: str,

@@ -71,6 +71,7 @@ export default function AdminCcnPage() {
   const [installing, setInstalling] = useState(false);
   const [deleteIdcc, setDeleteIdcc] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [syncingAll, setSyncingAll] = useState(false);
 
   useEffect(() => {
     const timer = setTimeout(() => setDebouncedSearch(search), 300);
@@ -141,6 +142,20 @@ export default function AdminCcnPage() {
     }
   };
 
+  const handleSyncAll = async () => {
+    if (!token) return;
+    setSyncingAll(true);
+    try {
+      await apiFetch("/admin/ccn/sync-all", { method: "POST", token });
+      toast.success("Synchronisation de toutes les CCN lancée");
+      fetchData();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Erreur");
+    } finally {
+      setSyncingAll(false);
+    }
+  };
+
   const handleDelete = async () => {
     if (!token || !deleteIdcc) return;
     setDeleting(true);
@@ -167,10 +182,21 @@ export default function AdminCcnPage() {
             Référentiel partagé des CCN. Les documents sont communs à toutes les organisations.
           </p>
         </div>
-        <Button size="sm" onClick={() => setInstallOpen(true)}>
-          <Plus className="mr-2 h-4 w-4" />
-          Installer une CCN
-        </Button>
+        <div className="flex gap-2">
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={handleSyncAll}
+            disabled={syncingAll || !data || data.total === 0}
+          >
+            <RefreshCw className={`mr-2 h-4 w-4 ${syncingAll ? "animate-spin" : ""}`} />
+            {syncingAll ? "Synchronisation..." : "Tout synchroniser"}
+          </Button>
+          <Button size="sm" onClick={() => setInstallOpen(true)}>
+            <Plus className="mr-2 h-4 w-4" />
+            Installer une CCN
+          </Button>
+        </div>
       </div>
 
       {/* Search */}
