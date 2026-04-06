@@ -97,9 +97,29 @@ _SOURCE_TYPE_LABELS: dict[str, str] = {
     "divers": "Divers",
 }
 
+_OUT_OF_SCOPE_MARKER = "[HORS_SCOPE]"
+_OUT_OF_SCOPE_ANSWER = (
+    "Je suis spécialisé en droit social et ressources humaines. "
+    "Je ne peux pas répondre à cette question. N'hésitez pas à me poser "
+    "une question sur le droit du travail, la gestion RH, la paie, les "
+    "relations sociales, la formation professionnelle, ou tout autre sujet "
+    "lié à la vie en entreprise."
+)
+
 _SYSTEM_PROMPT = """\
 Tu es un expert RH en droit social français. Tu parles à des professionnels \
 RH qui veulent des réponses pratiques, complètes et applicables.
+
+## PÉRIMÈTRE STRICT
+Tu ne réponds QU'AUX questions liées au droit du travail, aux ressources humaines, \
+à la paie, la protection sociale, les relations sociales, la santé/sécurité au travail, \
+la formation professionnelle, le recrutement, le management, et plus largement la vie \
+en entreprise et les obligations employeur/salarié.
+Si une question est hors de ce périmètre, réponds : "Je suis spécialisé en droit \
+social et ressources humaines. Je ne peux pas répondre à cette question. N'hésitez \
+pas à me poser une question sur le droit du travail, la gestion RH, la paie, les \
+relations sociales, la formation professionnelle, ou tout autre sujet lié à la vie \
+en entreprise."
 
 ## MÉTHODE (applique dans cet ordre, mentalement)
 
@@ -228,7 +248,15 @@ les différentes interprétations possibles.
 Règles :
 - PAS de numéros d'articles de loi.
 - Chaque variante sur une ligne précédée de son numéro (1. 2. 3.).
-- Réponds UNIQUEMENT avec les 3 variantes, sans explication."""
+- Réponds UNIQUEMENT avec les 3 variantes, sans explication.
+
+## FILTRE HORS-SCOPE
+Si la question n'a AUCUN rapport avec le droit du travail, les ressources humaines, \
+la paie, la protection sociale, les relations sociales, la santé/sécurité au travail, \
+la formation professionnelle, le recrutement, le management, ou plus largement la vie \
+en entreprise et les obligations employeur/salarié — réponds UNIQUEMENT : [HORS_SCOPE]
+Exemples hors-scope : recettes de cuisine, questions sur les animaux, sport, \
+météo, culture générale, programmation, santé personnelle, etc."""
 
 _CONDENSE_PROMPT = """\
 Tu reformules une question de suivi en question autonome et complète.
@@ -257,7 +285,15 @@ Règles :
 - La question reformulée doit être compréhensible SANS l'historique.
 - CONSERVE : organisation, CCN/IDCC, statut salarié, type contrat, situation factuelle.
 - Si la question introduit un nouveau sujet sans lien, retourne-la telle quelle.
-- Réponds UNIQUEMENT avec la question reformulée."""
+- Réponds UNIQUEMENT avec la question reformulée.
+
+## FILTRE HORS-SCOPE
+Si la question n'a AUCUN rapport avec le droit du travail, les ressources humaines, \
+la paie, la protection sociale, les relations sociales, la santé/sécurité au travail, \
+la formation professionnelle, le recrutement, le management, ou plus largement la vie \
+en entreprise et les obligations employeur/salarié — réponds UNIQUEMENT : [HORS_SCOPE]
+Exemples hors-scope : recettes de cuisine, questions sur les animaux, sport, \
+météo, culture générale, programmation, santé personnelle, etc."""
 
 
 class RAGAgent:
@@ -362,9 +398,15 @@ class RAGAgent:
                 "[PERF] Step 0 — Condensation %.0fms | %s",
                 (time.perf_counter() - t0) * 1000, query[:100],
             )
+            if _OUT_OF_SCOPE_MARKER in query:
+                logger.info("[SCOPE] Question hors-scope détectée (condensation)")
+                return RAGResponse(answer=_OUT_OF_SCOPE_ANSWER, sources=[])
 
         # --- Step 1-2: Query expansion + parallel search + RRF ---
         results, _variants = await self._search_with_expansion(query, organisation_id, org_idcc_list=org_idcc_list)
+        if _variants and _variants[0] == _OUT_OF_SCOPE_MARKER:
+            logger.info("[SCOPE] Question hors-scope détectée (expansion)")
+            return RAGResponse(answer=_OUT_OF_SCOPE_ANSWER, sources=[])
         t2 = time.perf_counter()
 
         # --- Step 3: Cross-encoder reranking ---
@@ -464,9 +506,15 @@ class RAGAgent:
                 "[PERF] Step 0 — Condensation %.0fms | %s",
                 (time.perf_counter() - t0) * 1000, query[:100],
             )
+            if _OUT_OF_SCOPE_MARKER in query:
+                logger.info("[SCOPE] Question hors-scope détectée (condensation)")
+                return [], _OUT_OF_SCOPE_MARKER
 
         # Step 1-2: Query expansion + parallel search + RRF
         results, variants = await self._search_with_expansion(query, organisation_id, org_idcc_list=org_idcc_list)
+        if variants and variants[0] == _OUT_OF_SCOPE_MARKER:
+            logger.info("[SCOPE] Question hors-scope détectée (expansion)")
+            return [], _OUT_OF_SCOPE_MARKER
         reformulated = variants[0] if variants else query
         t2 = time.perf_counter()
 
@@ -687,6 +735,8 @@ class RAGAgent:
                 context_id=self._conversation_id,
             )
         content = response.choices[0].message.content or ""
+        if _OUT_OF_SCOPE_MARKER in content:
+            return [_OUT_OF_SCOPE_MARKER]
         return self._parse_variants(content, query)
 
     @staticmethod

@@ -14,7 +14,7 @@ from app.core.database import get_db
 from app.core.dependencies import get_current_user
 from app.models.organisation import Organisation
 from app.models.user import User
-from app.rag.agent import RAGAgent
+from app.rag.agent import RAGAgent, _OUT_OF_SCOPE_MARKER, _OUT_OF_SCOPE_ANSWER
 from app.schemas.conversation import (
     ChatRequest,
     ChatResponse,
@@ -288,6 +288,28 @@ async def chat_stream(
                 user_id=str(user.id),
                 conversation_id=str(conversation_id),
             )
+
+            # --- Hors-scope: send refusal as a normal answer, save to history ---
+            if reformulated == _OUT_OF_SCOPE_MARKER:
+                logger.info("[SCOPE] Hors-scope — returning refusal for: %s", data.message[:100])
+                yield _sse_event("chat_delta", {"content": _OUT_OF_SCOPE_ANSWER})
+                yield _sse_event("chat_done", {})
+                await service.add_message(
+                    conversation_id=conversation_id,
+                    role="user",
+                    content=data.message,
+                )
+                await service.add_message(
+                    conversation_id=conversation_id,
+                    role="assistant",
+                    content=_OUT_OF_SCOPE_ANSWER,
+                )
+                if conversation.title is None:
+                    title = data.message[:100].strip()
+                    if len(data.message) > 100:
+                        title = title.rsplit(" ", 1)[0] + "…"
+                    await service.update_title(conversation_id, title)
+                return
 
             if not results:
                 yield _sse_event("chat_error", {
