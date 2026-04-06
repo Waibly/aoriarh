@@ -257,8 +257,8 @@ export default function DocumentsCommunsPage() {
     if (!confirm("Réindexer tous les documents ? Cette opération peut prendre plusieurs minutes.")) return;
     setReindexing(true);
     try {
-      const res = await apiFetch("/admin/documents/actions/reindex-all", { method: "POST", token });
-      toast.success(`${res.enqueued} documents en cours de réindexation`);
+      const res = await apiFetch("/admin/documents/actions/reindex-all", { method: "POST", token }) as { enqueued?: number };
+      toast.success(`${res.enqueued ?? 0} documents en cours de réindexation`);
       fetchDocuments();
     } catch {
       toast.error("Erreur lors du lancement de la réindexation");
