@@ -259,7 +259,7 @@ export default function DocumentsCommunsPage() {
     try {
       const res = await apiFetch("/admin/documents/actions/reindex-all", { method: "POST", token }) as { enqueued?: number };
       toast.success(`${res.enqueued ?? 0} documents en cours de réindexation`);
-      fetchDocuments();
+      fetchGroups();
     } catch {
       toast.error("Erreur lors du lancement de la réindexation");
     } finally {
