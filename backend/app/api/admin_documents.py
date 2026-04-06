@@ -472,3 +472,58 @@ async def reindex_common_document(
     await db.commit()
     await enqueue_ingestion(str(doc.id))
     return doc  # type: ignore[return-value]
+
+
+class ReindexAllResponse(BaseModel):
+    enqueued: int
+    skipped: int
+
+
+@router.post("/actions/reindex-all", response_model=ReindexAllResponse)
+async def reindex_all_documents(
+    request: Request,
+    user: User = Depends(require_role(["admin"])),
+    db: AsyncSession = Depends(get_db),
+) -> ReindexAllResponse:
+    """Re-index ALL indexed/error documents (common + org).
+
+    Resets each document to 'pending' and enqueues ingestion.
+    Skips documents already pending or currently indexing.
+    """
+    result = await db.execute(
+        select(Document).where(
+            Document.indexation_status.in_(["indexed", "error"]),
+            Document.storage_path.isnot(None),
+        )
+    )
+    docs = list(result.scalars().all())
+
+    enqueued = 0
+    skipped = 0
+    for doc in docs:
+        if doc.indexation_status == "indexing":
+            skipped += 1
+            continue
+        doc.indexation_status = "pending"
+        doc.indexation_error = None
+        doc.indexation_progress = None
+        enqueued += 1
+
+    await db.commit()
+    await log_admin_action(
+        db,
+        user_id=user.id,
+        action="reindex_all_documents",
+        resource_type="document",
+        resource_id=f"{enqueued} documents",
+        ip_address=request.client.host if request.client else None,
+    )
+    await db.commit()
+
+    # Enqueue ingestion jobs
+    for doc in docs:
+        if doc.indexation_status == "pending":
+            await enqueue_ingestion(str(doc.id))
+
+    logger.info("Reindex all: %d enqueued, %d skipped", enqueued, skipped)
+    return ReindexAllResponse(enqueued=enqueued, skipped=skipped)

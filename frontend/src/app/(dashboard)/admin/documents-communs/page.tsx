@@ -125,6 +125,7 @@ export default function DocumentsCommunsPage() {
   const [loading, setLoading] = useState(true);
   const [uploadOpen, setUploadOpen] = useState(false);
   const [syncingCdt, setSyncingCdt] = useState(false);
+  const [reindexing, setReindexing] = useState(false);
 
   // Expanded groups with their loaded documents
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
@@ -251,6 +252,21 @@ export default function DocumentsCommunsPage() {
     }
   };
 
+  const handleReindexAll = async () => {
+    if (!token) return;
+    if (!confirm("Réindexer tous les documents ? Cette opération peut prendre plusieurs minutes.")) return;
+    setReindexing(true);
+    try {
+      const res = await apiFetch("/admin/documents/actions/reindex-all", { method: "POST", token });
+      toast.success(`${res.enqueued} documents en cours de réindexation`);
+      fetchDocuments();
+    } catch {
+      toast.error("Erreur lors du lancement de la réindexation");
+    } finally {
+      setReindexing(false);
+    }
+  };
+
   const handleSyncCodeTravail = async () => {
     if (!token) return;
     setSyncingCdt(true);
@@ -274,6 +290,10 @@ export default function DocumentsCommunsPage() {
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-semibold tracking-tight">Documents communs</h1>
         <div className="flex gap-2">
+          <Button variant="outline" size="sm" onClick={handleReindexAll} disabled={reindexing}>
+            <RefreshCw className={`mr-2 h-4 w-4 ${reindexing ? "animate-spin" : ""}`} />
+            {reindexing ? "Réindexation..." : "Réindexer tout"}
+          </Button>
           <Button variant="outline" size="sm" onClick={handleSyncCodeTravail} disabled={syncingCdt}>
             <RefreshCw className={`mr-2 h-4 w-4 ${syncingCdt ? "animate-spin" : ""}`} />
             {syncingCdt ? "Sync..." : "Code du travail"}
