@@ -52,6 +52,9 @@ class RAGSource:
     date_decision: str | None = None
     solution: str | None = None
     publication: str | None = None
+    # Structural metadata (optional, from ArticleChunker)
+    article_nums: list[str] | None = None
+    section_path: str | None = None
 
 
 @dataclass
@@ -107,8 +110,9 @@ _OUT_OF_SCOPE_ANSWER = (
 )
 
 _SYSTEM_PROMPT = """\
-Tu es un expert RH en droit social français. Tu parles à des professionnels \
-RH qui veulent des réponses pratiques, complètes et applicables.
+Tu es un DRH expérimenté en droit social français. Tu parles à des professionnels \
+RH qui veulent des réponses pratiques, complètes et actionnables. \
+Ton rôle : les aider à **sécuriser leurs décisions**, pas à leur faire un cours de droit.
 
 ## PÉRIMÈTRE STRICT
 Tu ne réponds QU'AUX questions liées au droit du travail, aux ressources humaines, \
@@ -126,14 +130,25 @@ en entreprise."
 1. **Analyse les sources** : identifie celles qui répondent directement. Ignore le reste.
 2. **Identifie le contexte utilisateur** : sa CCN (IDCC), son secteur, sa situation. \
 Applique la réponse à SON cas, pas en général.
-3. **Construis la réponse** selon cette checklist :
+3. **Si la question décrit une situation avec plusieurs faits** (ex: arrêt maladie + \
+courrier + CSE + inaptitude), relie-les dans un **raisonnement d'ensemble**. \
+Montre la chaîne causale et ses conséquences juridiques. Ne traite PAS chaque fait \
+dans un silo séparé.
+4. **Si la question porte sur un risque ou une situation contentieuse**, identifie \
+d'abord LE **risque principal** (celui qui pèse le plus lourd juridiquement), puis \
+les risques secondaires. Ne liste pas 10 risques au même niveau.
+5. **Construis la réponse** selon cette checklist :
    - Règle de principe (Code du travail)
    - Règle conventionnelle (sa CCN si applicable)
+   - **Sources internes** : vérifie SYSTÉMATIQUEMENT si un accord d'entreprise, \
+règlement intérieur, DUE ou usage interne présent dans les sources prévoit \
+des dispositions différentes (plus favorables ou spécifiques). Si oui, mentionne-le. \
+Si aucune source interne ne déroge, indique-le brièvement \
+(ex: "Aucun accord d'entreprise ne prévoit de disposition différente dans vos sources.").
    - Chiffres concrets (montants, délais, seuils)
    - Exceptions et cas particuliers importants
    - Point d'attention pratique pour l'employeur
-   - ⚠️ si les sources ne couvrent pas un aspect → signale-le
-4. **Choisis le format** adapté à l'intention :
+6. **Choisis le format** adapté à l'intention :
 
 | Intention | Format |
 |---|---|
@@ -143,6 +158,7 @@ Applique la réponse à SON cas, pas en général.
 | Procédure ("comment faire") | **Liste numérotée** avec délais. |
 | Oui/non EXPLICITE ("ai-je le droit de", "est-ce légal de") | **Oui** ou **Non** d'abord. Ne PAS forcer un Oui/Non si la question n'en appelle pas un. |
 | Pratique RH (congés, indemnités…) | Complet : principe + CCN + exceptions + conseil. |
+| Situation à risque ("est-ce que l'employeur prend un risque", "peut-il aller aux prud'hommes") | **Risque principal** d'abord (en gras), puis risques secondaires. Chaîne causale si plusieurs faits. Position claire. |
 
 ## RÈGLES JURIDIQUES
 
@@ -150,7 +166,14 @@ Applique la réponse à SON cas, pas en général.
 sont d'ordre public (incompressibles), d'autres sont supplétives (la CCN ou \
 l'accord peut y déroger). Vérifie dans les sources si la règle est dérogeable \
 avant de conclure quelle norme s'applique.
-- **Hiérarchie** : Loi > Jurisprudence > CCN > Accord > Usage > Contrat.
+- **Hiérarchie** : Loi > Jurisprudence > CCN > Accord d'entreprise > \
+Engagement unilatéral (DUE) > Usage > Contrat.
+- **Respecte le type de chaque source** : chaque source porte un champ "Type" \
+(accord d'entreprise, engagement unilatéral, convention collective, règlement \
+intérieur, arrêt de jurisprudence, etc.). Ces types ont des natures juridiques \
+différentes. Ne les confonds JAMAIS. Quand l'utilisateur demande "nos accords \
+d'entreprise", ne lui cite que les sources de type "Accord d'entreprise" — pas \
+les DUE, pas le règlement intérieur, pas la CCN. Et inversement pour chaque type.
 - **RÉCENCE — RÈGLE CRITIQUE** : quand plusieurs textes (avenants, accords, \
 grilles) fixent une valeur différente pour la même chose (salaire, indemnité, \
 valeur du point, coefficient, durée), retiens TOUJOURS celui dont la **date \
@@ -158,7 +181,12 @@ d'effet est la plus récente**. Un avenant de 2021 remplace un avenant de 2017 \
 sur le même sujet. Ne cite PAS les valeurs obsolètes sauf pour contexte historique.
 - **Jurisprudence** = interprète la loi, ne la remplace pas. Cite avec \
 référence complète (Cass. soc., date, n° pourvoi). Privilégie le plus récent.
-- **Anti-hallucination** : UNIQUEMENT les sources fournies. N'invente rien.
+- **Anti-hallucination** : appuie-toi sur les sources fournies. N'invente PAS \
+d'articles, de chiffres ou de jurisprudence. En revanche, si les sources ne couvrent \
+pas un aspect, tu peux donner la règle générale de droit du travail que tu connais \
+en le signalant brièvement UNE SEULE FOIS en fin de réponse — pas à chaque paragraphe. \
+Ne JAMAIS écrire "vos sources ne couvrent pas" ou "vos sources ne permettent pas" \
+de façon répétée : le RH attend une position claire, pas des hésitations.
 
 ## LISIBILITÉ
 
@@ -168,7 +196,11 @@ référence complète (Cass. soc., date, n° pourvoi). Privilégie le plus réce
 - **Gras** sur chiffres, délais, montants, mots clés.
 - **Tableaux** dès qu'il y a des cas, barèmes ou comparaisons.
 - **Items de liste : 1-2 lignes.** Pas de pavé dans une puce.
-- Ne cite PAS les sources (affichées séparément). Français uniquement.
+- **Cite les références légales dans le texte** : articles de loi (art. L.1234-1), \
+articles de CCN (art. 33 CCNT66), jurisprudence (Cass. soc., date, n° pourvoi). \
+Le RH doit pouvoir copier-coller ta réponse avec ses fondements juridiques. \
+En revanche, ne cite PAS les noms des documents sources (affichés séparément dans l'UI). \
+Français uniquement.
 - **JAMAIS** de "Souhaitez-vous que je…", "Je peux aussi…", "N'hésitez pas…".
 - **Termine par 2-3 questions complémentaires** sous ce format exact :
 
@@ -283,6 +315,10 @@ et la procédure (autorisation inspection du travail) ?"
 
 Règles :
 - La question reformulée doit être compréhensible SANS l'historique.
+- RÉSOUS les références pronominales et démonstratifs : "cet accord", "ce texte", \
+"cette convention", "ce salarié", "cette procédure" → remplace par le nom exact \
+du document, de l'accord ou du sujet identifié dans l'historique ou les sources citées. \
+C'est CRITIQUE pour que la recherche trouve le bon document.
 - CONSERVE : organisation, CCN/IDCC, statut salarié, type contrat, situation factuelle.
 - Si la question introduit un nouveau sujet sans lien, retourne-la telle quelle.
 - Réponds UNIQUEMENT avec la question reformulée.
@@ -403,7 +439,7 @@ class RAGAgent:
                 return RAGResponse(answer=_OUT_OF_SCOPE_ANSWER, sources=[])
 
         # --- Step 1-2: Query expansion + parallel search + RRF ---
-        results, _variants = await self._search_with_expansion(query, organisation_id, org_idcc_list=org_idcc_list)
+        results, _variants = await self._search_with_expansion(query, organisation_id, org_idcc_list=org_idcc_list, org_context=org_context)
         if _variants and _variants[0] == _OUT_OF_SCOPE_MARKER:
             logger.info("[SCOPE] Question hors-scope détectée (expansion)")
             return RAGResponse(answer=_OUT_OF_SCOPE_ANSWER, sources=[])
@@ -511,7 +547,7 @@ class RAGAgent:
                 return [], _OUT_OF_SCOPE_MARKER
 
         # Step 1-2: Query expansion + parallel search + RRF
-        results, variants = await self._search_with_expansion(query, organisation_id, org_idcc_list=org_idcc_list)
+        results, variants = await self._search_with_expansion(query, organisation_id, org_idcc_list=org_idcc_list, org_context=org_context)
         if variants and variants[0] == _OUT_OF_SCOPE_MARKER:
             logger.info("[SCOPE] Question hors-scope détectée (expansion)")
             return [], _OUT_OF_SCOPE_MARKER
@@ -711,12 +747,25 @@ class RAGAgent:
             )
         return response.choices[0].message.content or query
 
-    async def _expand_queries(self, query: str) -> list[str]:
+    async def _expand_queries(
+        self,
+        query: str,
+        org_context: dict[str, str | None] | None = None,
+    ) -> list[str]:
         """Step 1: Expand the user query into 3 search variants."""
+        system_prompt = _QUERY_EXPAND_PROMPT
+        if org_context and org_context.get("nom"):
+            system_prompt += (
+                f"\n\n## CONTEXTE ORGANISATION\n"
+                f"L'utilisateur travaille dans l'organisation « {org_context['nom']} ».\n"
+                f"N'inclus PAS le nom de l'organisation dans les variantes de recherche : "
+                f"les documents sont déjà filtrés par organisation. "
+                f"Concentre-toi uniquement sur le sujet juridique/RH de la question."
+            )
         response = await self.llm.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
-                {"role": "system", "content": _QUERY_EXPAND_PROMPT},
+                {"role": "system", "content": system_prompt},
                 {"role": "user", "content": query},
             ],
             temperature=0.3,
@@ -787,12 +836,13 @@ class RAGAgent:
         query: str,
         organisation_id: str,
         org_idcc_list: list[str] | None = None,
+        org_context: dict[str, str | None] | None = None,
     ) -> tuple[list[SearchResult], list[str]]:
         """Expand query into variants, search in parallel, fuse with RRF."""
         t0 = time.perf_counter()
 
         variants = await self._step_with_timeout(
-            self._expand_queries(query),
+            self._expand_queries(query, org_context=org_context),
             fallback=[query],
         )
         t1 = time.perf_counter()
@@ -884,6 +934,19 @@ class RAGAgent:
                 f"Type : {label} (niveau hiérarchique {niveau}/9 — "
                 f"{'norme supérieure' if isinstance(niveau, int) and niveau <= 4 else 'norme inférieure'})\n"
             )
+
+            # Add article/section metadata when available (CCN, codes)
+            if r.article_nums or r.section_path:
+                article_label = ""
+                if r.article_nums:
+                    nums = ", ".join(r.article_nums)
+                    article_label = f"Article{'s' if len(r.article_nums) > 1 else ''} {nums}"
+                if r.section_path:
+                    if article_label:
+                        article_label = f"{article_label} — {r.section_path}"
+                    else:
+                        article_label = r.section_path
+                header += f"Localisation : {article_label}\n"
 
             # Add jurisprudence metadata when available
             if r.numero_pourvoi or r.date_decision:
@@ -1033,12 +1096,20 @@ class RAGAgent:
         """Step 7: Format search results into source references."""
         doc_chunks: dict[str, list[str]] = {}
         doc_meta: dict[str, SearchResult] = {}
+        doc_article_nums: dict[str, list[str]] = {}
+        doc_section_paths: dict[str, set[str]] = {}
 
         for r in results:
             if r.document_id not in doc_meta:
                 doc_meta[r.document_id] = r
                 doc_chunks[r.document_id] = []
+                doc_article_nums[r.document_id] = []
+                doc_section_paths[r.document_id] = set()
             doc_chunks[r.document_id].append(r.text)
+            if r.article_nums:
+                doc_article_nums[r.document_id].extend(r.article_nums)
+            if r.section_path:
+                doc_section_paths[r.document_id].add(r.section_path)
 
         sources: list[RAGSource] = []
         for doc_id, meta in doc_meta.items():
@@ -1048,6 +1119,15 @@ class RAGAgent:
             excerpt = chunks[0][:300].strip()
             if len(chunks[0]) > 300:
                 excerpt = excerpt.rsplit(" ", 1)[0] + "…"
+
+            # Deduplicate article nums preserving order
+            all_nums = doc_article_nums[doc_id]
+            seen: set[str] = set()
+            unique_nums = []
+            for n in all_nums:
+                if n not in seen:
+                    seen.add(n)
+                    unique_nums.append(n)
 
             sources.append(
                 RAGSource(
@@ -1066,6 +1146,8 @@ class RAGAgent:
                     date_decision=meta.date_decision,
                     solution=meta.solution,
                     publication=meta.publication,
+                    article_nums=unique_nums or None,
+                    section_path="; ".join(sorted(doc_section_paths[doc_id])) or None,
                 )
             )
 

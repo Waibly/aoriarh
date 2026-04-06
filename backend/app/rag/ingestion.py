@@ -16,7 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.models.document import Document
-from app.rag.article_chunker import ArticleChunker
+from app.rag.article_chunker import ArticleChunker, ChunkWithMeta
 from app.rag.chunker import LegalChunker
 from app.rag.config import EMBEDDING_MODEL
 from app.services.cost_tracker import cost_tracker
@@ -48,16 +48,16 @@ RETRY_BASE_DELAY = 2.0
 EMBEDDING_BATCH_SIZE = 32  # Reduced from 64 to handle large legal code chunks
 
 # --- Date extraction for recency boosting ---
-import re as _re_mod
+import re
 
 _FRENCH_MONTHS = {
     "janvier": "01", "février": "02", "mars": "03", "avril": "04",
     "mai": "05", "juin": "06", "juillet": "07", "août": "08",
     "septembre": "09", "octobre": "10", "novembre": "11", "décembre": "12",
 }
-_DATE_PATTERN = _re_mod.compile(
+_DATE_PATTERN = re.compile(
     r"(?:1er|(\d{1,2}))\s+(janvier|février|mars|avril|mai|juin|juillet|août|septembre|octobre|novembre|décembre)\s+(\d{4})",
-    _re_mod.IGNORECASE,
+    re.IGNORECASE,
 )
 
 
@@ -281,13 +281,15 @@ class IngestionPipeline:
                 return
 
             # 6. Chunk (route to specialized chunker by source type)
+            chunks_meta: list[ChunkWithMeta] | None = None
             if doc.source_type in JURISPRUDENCE_SOURCE_TYPES:
                 metadata_header = self._build_jurisprudence_header(doc)
                 chunks = self.jurisprudence_chunker.chunk(
                     cleaned_text, metadata_header=metadata_header,
                 )
             elif doc.source_type in ARTICLE_AWARE_SOURCE_TYPES:
-                chunks = self.article_chunker.chunk(cleaned_text)
+                chunks_meta = self.article_chunker.chunk_with_meta(cleaned_text)
+                chunks = [c.text for c in chunks_meta]
             else:
                 chunks = self.chunker.chunk(cleaned_text)
             if not chunks:
@@ -338,16 +340,22 @@ class IngestionPipeline:
                     "norme_poids": doc.norme_poids,
                     "chunk_index": i,
                 }
-                # Propagate CCN IDCC into Qdrant payload for per-org filtering
+                # Propagate CCN IDCC + article metadata into Qdrant payload
                 if doc.source_type in ARTICLE_AWARE_SOURCE_TYPES:
-                    import re as _re
-                    idcc_match = _re.search(r"IDCC\s+(\d{4})", doc.name)
+                    idcc_match = re.search(r"IDCC\s+(\d{4})", doc.name)
                     if idcc_match:
                         payload["idcc"] = idcc_match.group(1)
                     # Extract most recent date from chunk for recency boosting
                     content_date = _extract_content_date(chunk_text)
                     if content_date:
                         payload["content_date"] = content_date
+                    # Structural metadata from ArticleChunker
+                    if chunks_meta:
+                        meta = chunks_meta[i]
+                        if meta.article_nums:
+                            payload["article_nums"] = meta.article_nums
+                        if meta.section_path:
+                            payload["section_path"] = meta.section_path
 
                 # Propagate jurisprudence metadata into Qdrant payload
                 if doc.source_type in JURISPRUDENCE_SOURCE_TYPES:

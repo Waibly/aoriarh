@@ -218,7 +218,7 @@ export default function AcceptInvitationPage() {
           <CardDescription>
             {joinDescription}
             <br />
-            Connectez-vous pour accepter l&apos;invitation.
+            Connectez-vous avec l&apos;adresse <strong>{invitation?.email}</strong> pour accepter l&apos;invitation.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">

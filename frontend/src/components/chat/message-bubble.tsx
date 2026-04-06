@@ -94,9 +94,6 @@ export function MessageBubble({ message, onFeedback }: MessageBubbleProps) {
               {message.content}
             </ReactMarkdown>
           </div>
-        {message.sources && message.sources.length > 0 && (
-          <MessageSources sources={message.sources} />
-        )}
         <div className="mt-2 flex items-center gap-2 opacity-0 transition-opacity group-hover/message:opacity-100">
           {!isTemp && (
             <>
@@ -168,6 +165,9 @@ export function MessageBubble({ message, onFeedback }: MessageBubbleProps) {
               <Send className="size-3.5" />
             </Button>
           </div>
+        )}
+        {message.sources && message.sources.length > 0 && (
+          <MessageSources sources={message.sources} />
         )}
       </div>
     </div>

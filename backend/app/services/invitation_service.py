@@ -241,7 +241,7 @@ class InvitationService:
         if user.email.lower() != invitation.email.lower():
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="Cette invitation a été envoyée à une autre adresse email",
+                detail=f"Cette invitation a été envoyée à {invitation.email}. Connectez-vous avec cette adresse pour l'accepter.",
             )
 
         # Account-level invitation

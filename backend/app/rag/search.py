@@ -1,4 +1,5 @@
 import asyncio
+import datetime
 import logging
 import threading
 import time
@@ -30,6 +31,26 @@ _SPARSE_LOCK = threading.Lock()
 # Retry config for Voyage AI
 _MAX_RETRIES = 3
 _RETRY_BASE_DELAY = 2.0
+
+# Recency boost: linear decay from 1.10 (today) to 1.00 (>5 years old)
+_RECENCY_MAX_BOOST = 1.10  # +10% for very recent content
+_RECENCY_YEARS = 5  # Content older than this gets no boost
+
+
+def _recency_boost(content_date: str) -> float:
+    """Return a multiplier (1.0–1.10) based on how recent the content is."""
+    try:
+        d = datetime.date.fromisoformat(content_date)
+    except (ValueError, TypeError):
+        return 1.0
+    age_days = (datetime.date.today() - d).days
+    if age_days <= 0:
+        return _RECENCY_MAX_BOOST
+    max_days = _RECENCY_YEARS * 365
+    if age_days >= max_days:
+        return 1.0
+    # Linear interpolation: recent → 1.10, old → 1.00
+    return 1.0 + (_RECENCY_MAX_BOOST - 1.0) * (1.0 - age_days / max_days)
 
 
 def _get_sparse_model():
@@ -68,6 +89,9 @@ class SearchResult:
     publication: str | None = None
     # Recency metadata (optional, for CCN/code du travail)
     content_date: str | None = None
+    # Structural metadata (optional, from ArticleChunker)
+    article_nums: list[str] | None = None
+    section_path: str | None = None
 
 
 class HybridSearch:
@@ -205,6 +229,11 @@ class HybridSearch:
             rrf_score = point.score if point.score is not None else 0.0
             weighted_score = rrf_score * (0.6 + 0.4 * norme_poids)
 
+            # Recency boost: more recent content scores higher
+            content_date = payload.get("content_date")
+            if content_date:
+                weighted_score *= _recency_boost(content_date)
+
             search_results.append(
                 SearchResult(
                     text=payload.get("text", ""),
@@ -223,6 +252,8 @@ class HybridSearch:
                     solution=payload.get("solution"),
                     publication=payload.get("publication"),
                     content_date=payload.get("content_date"),
+                    article_nums=payload.get("article_nums"),
+                    section_path=payload.get("section_path"),
                 )
             )
 

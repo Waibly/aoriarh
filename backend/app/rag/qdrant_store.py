@@ -88,4 +88,32 @@ def ensure_collection(client: QdrantClient) -> None:
             field_name="source_type",
             field_schema=PayloadSchemaType.KEYWORD,
         )
+        client.create_payload_index(
+            collection_name=COLLECTION_NAME,
+            field_name="idcc",
+            field_schema=PayloadSchemaType.KEYWORD,
+        )
         logger.info("Created Qdrant collection '%s' with indexes", COLLECTION_NAME)
+
+    # Ensure newer indexes exist (added after initial collection creation)
+    _ensure_payload_index(client, "idcc", PayloadSchemaType.KEYWORD)
+
+
+def _ensure_payload_index(
+    client: QdrantClient,
+    field_name: str,
+    field_schema: PayloadSchemaType,
+) -> None:
+    """Create a payload index if it doesn't already exist (idempotent)."""
+    try:
+        info = client.get_collection(COLLECTION_NAME)
+        existing = info.payload_schema or {}
+        if field_name not in existing:
+            client.create_payload_index(
+                collection_name=COLLECTION_NAME,
+                field_name=field_name,
+                field_schema=field_schema,
+            )
+            logger.info("Created payload index '%s' on '%s'", field_name, COLLECTION_NAME)
+    except Exception:
+        logger.debug("Could not ensure index '%s' (collection may not exist yet)", field_name)

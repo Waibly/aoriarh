@@ -854,61 +854,6 @@ class KaliService:
             len(old_doc_ids), old_doc_ids,
         )
 
-    def _extract_text_ids(self, container: dict) -> list[str]:
-        """Extract in-force KALITEXT IDs from a container response.
-
-        The real API structure has a flat `sections` list where each item
-        can be a KALITEXT reference or a grouping section (like "Textes Attachés")
-        whose own `sections` contain KALITEXT references.
-        """
-        text_ids: list[str] = []
-
-        def _walk(items: list[dict]) -> None:
-            for item in items:
-                tid = item.get("id") or ""
-                etat = item.get("etat", "")
-                if tid.startswith("KALITEXT") and etat.startswith("VIGUEUR"):
-                    text_ids.append(tid)
-                # Recurse into nested sections (e.g. "Textes Attachés" grouping)
-                children = item.get("sections", [])
-                if children:
-                    _walk(children)
-
-        # Primary structure: container.sections
-        sections = container.get("sections", [])
-        if sections:
-            _walk(sections)
-
-        # Also check texteBaseId (can be a string or a list)
-        base_id = container.get("texteBaseId", "")
-        if isinstance(base_id, list):
-            for bid in base_id:
-                if isinstance(bid, str) and bid.startswith("KALITEXT") and bid not in text_ids:
-                    text_ids.insert(0, bid)
-        elif isinstance(base_id, str) and base_id.startswith("KALITEXT") and base_id not in text_ids:
-            text_ids.insert(0, base_id)
-
-        # Fallback: recursive search for any KALITEXT references
-        if not text_ids:
-            text_ids = self._find_kalitext_ids_recursive(container)
-
-        return text_ids
-
-    def _find_kalitext_ids_recursive(self, data, found: list[str] | None = None) -> list[str]:
-        """Recursively search for KALITEXT IDs in nested structure."""
-        if found is None:
-            found = []
-        if isinstance(data, dict):
-            for key, value in data.items():
-                if isinstance(value, str) and value.startswith("KALITEXT") and value not in found:
-                    found.append(value)
-                elif isinstance(value, (dict, list)):
-                    self._find_kalitext_ids_recursive(value, found)
-        elif isinstance(data, list):
-            for item in data:
-                self._find_kalitext_ids_recursive(item, found)
-        return found
-
     def _extract_articles_from_text(self, text_data: dict) -> list[dict]:
         """Extract all in-force articles from a KALITEXT response.
 
@@ -917,6 +862,7 @@ class KaliService:
         etat can be None (treat as in-force since parent text is in-force).
         """
         articles: list[dict] = []
+        excluded_count = 0
 
         def _is_in_force(etat: str | None) -> bool:
             if etat is None:
@@ -924,16 +870,29 @@ class KaliService:
             return etat.startswith("VIGUEUR")
 
         def _extract_article(art: dict, section_path: str) -> None:
-            if not _is_in_force(art.get("etat")):
+            nonlocal excluded_count
+            num = art.get("num") or ""
+            etat = art.get("etat")
+            if not _is_in_force(etat):
+                excluded_count += 1
+                logger.debug(
+                    "[KALI] Excluded article %s (etat=%s, section=%s)",
+                    num, etat, section_path,
+                )
                 return
             content = art.get("content", art.get("texte", art.get("texteHtml", "")))
             if not content:
+                excluded_count += 1
+                logger.warning(
+                    "[KALI] Article %s has no content (etat=%s, section=%s)",
+                    num, etat, section_path,
+                )
                 return
             articles.append({
-                "num": art.get("num") or "",
+                "num": num,
                 "content": self._clean_html(content),
                 "section": section_path,
-                "etat": art.get("etat", ""),
+                "etat": etat or "",
                 "date_debut": art.get("dateDebut", ""),
             })
 
@@ -958,6 +917,10 @@ class KaliService:
         if sections:
             _walk_sections(sections)
 
+        logger.info(
+            "[KALI] Extracted %d in-force articles, excluded %d",
+            len(articles), excluded_count,
+        )
         return articles
 
     @staticmethod
@@ -981,6 +944,7 @@ class KaliService:
             "",
         ]
         current_section = ""
+        unnamed_counter = 0
         for art in articles:
             section = art.get("section", "")
             if section and section != current_section:
@@ -990,6 +954,10 @@ class KaliService:
             num = art.get("num", "")
             if num:
                 lines.append(f"### Article {num}\n")
+            else:
+                # Ensure every article has a heading so the chunker can detect it
+                unnamed_counter += 1
+                lines.append(f"### Article (sans numéro {unnamed_counter})\n")
             lines.append(art["content"])
             lines.append("")
 
@@ -1006,6 +974,7 @@ class KaliService:
             "",
         ]
         current_section = ""
+        unnamed_counter = 0
         for art in articles:
             section = art.get("section", "")
             if section and section != current_section:
@@ -1015,6 +984,9 @@ class KaliService:
             num = art.get("num", "")
             if num:
                 lines.append(f"### Article {num}\n")
+            else:
+                unnamed_counter += 1
+                lines.append(f"### Article (sans numéro {unnamed_counter})\n")
             lines.append(art["content"])
             lines.append("")
 
