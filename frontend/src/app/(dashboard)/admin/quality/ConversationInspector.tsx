@@ -3,6 +3,9 @@
 import { useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
 import { toast } from "sonner";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+import rehypeSanitize from "rehype-sanitize";
 import { apiFetch } from "@/lib/api";
 import {
   Sheet,
@@ -14,7 +17,7 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { ThumbsUp, ThumbsDown, Clock, DollarSign, Layers, FileSearch } from "lucide-react";
+import { ThumbsUp, ThumbsDown, Clock, DollarSign, Layers, FileSearch, BookOpen } from "lucide-react";
 
 interface InspectChunk {
   document_id: string;
@@ -41,6 +44,19 @@ interface RagTrace {
   error: string | null;
 }
 
+interface CitedSource {
+  document_name: string;
+  source_type: string;
+  source_type_label: string;
+  norme_niveau: number;
+  excerpt: string;
+  full_text: string;
+  juridiction?: string | null;
+  numero_pourvoi?: string | null;
+  date_decision?: string | null;
+  article_nums?: string[] | null;
+}
+
 interface MessageInspect {
   message_id: string;
   conversation_id: string;
@@ -49,7 +65,7 @@ interface MessageInspect {
   organisation_name: string | null;
   question: string;
   answer: string;
-  sources: Array<Record<string, unknown>> | null;
+  sources: CitedSource[] | null;
   feedback: string | null;
   feedback_comment: string | null;
   cost_usd: number | null;
@@ -173,23 +189,23 @@ export function ConversationInspector({
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent side="right" className="sm:max-w-3xl w-full overflow-hidden flex flex-col">
-        <SheetHeader>
+      <SheetContent side="right" className="sm:max-w-3xl w-full overflow-hidden flex flex-col p-0">
+        <SheetHeader className="px-6 pt-6 pb-2">
           <SheetTitle>Inspection du message</SheetTitle>
           <SheetDescription>
             Trace complète du pipeline RAG pour cette question.
           </SheetDescription>
         </SheetHeader>
 
-        <ScrollArea className="flex-1 -mx-6 px-6">
+        <ScrollArea className="flex-1">
           {loading || !data ? (
-            <div className="space-y-3 py-4">
+            <div className="space-y-3 px-6 py-4">
               <Skeleton className="h-20 w-full" />
               <Skeleton className="h-32 w-full" />
               <Skeleton className="h-40 w-full" />
             </div>
           ) : (
-            <div className="space-y-4 py-4">
+            <div className="space-y-4 px-6 py-4">
               {/* Métadonnées */}
               <div className="flex flex-wrap gap-2 text-xs">
                 {data.user_email && <Badge variant="outline">{data.user_email}</Badge>}
@@ -225,10 +241,51 @@ export function ConversationInspector({
               {/* Réponse */}
               <div>
                 <h3 className="text-xs uppercase font-semibold text-muted-foreground mb-1">Réponse</h3>
-                <div className="text-sm whitespace-pre-wrap bg-muted/30 rounded-md p-3 max-h-64 overflow-y-auto">
-                  {data.answer}
+                <div className="bg-muted/30 rounded-md p-4 max-h-96 overflow-y-auto">
+                  <div className="prose prose-sm dark:prose-invert max-w-none text-[0.875rem] leading-6 [&_h1]:mt-4 [&_h1]:mb-2 [&_h1]:text-base [&_h2]:mt-4 [&_h2]:mb-2 [&_h2]:text-sm [&_h2]:font-semibold [&_h3]:mt-3 [&_h3]:mb-1 [&_h3]:text-sm [&_h3]:font-semibold [&_p]:my-2 [&_ul]:my-2 [&_ul]:pl-5 [&_ul]:list-disc [&_ol]:my-2 [&_ol]:pl-5 [&_ol]:list-decimal [&_li]:my-0.5 [&_strong]:font-semibold [&_table]:my-3 [&_table]:border [&_th]:border [&_th]:px-2 [&_th]:py-1 [&_td]:border [&_td]:px-2 [&_td]:py-1 [&>*:first-child]:mt-0 [&>*:last-child]:mb-0">
+                    <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeSanitize]}>
+                      {data.answer}
+                    </ReactMarkdown>
+                  </div>
                 </div>
               </div>
+
+              {/* Sources citées (toujours affichées si présentes) */}
+              {data.sources && data.sources.length > 0 && (
+                <Section title={`Sources citées (${data.sources.length})`} icon={<BookOpen className="h-4 w-4" />}>
+                  <div className="space-y-2">
+                    {data.sources.map((s, i) => (
+                      <div key={i} className="border rounded-md p-3 text-xs space-y-1 bg-muted/20">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="font-medium text-sm">{s.document_name}</div>
+                          <Badge variant="outline" className="text-[10px] h-5 shrink-0">
+                            {s.source_type_label || s.source_type} · niv. {s.norme_niveau}
+                          </Badge>
+                        </div>
+                        {(s.juridiction || s.numero_pourvoi || s.date_decision) && (
+                          <div className="text-muted-foreground text-[11px]">
+                            {[s.juridiction, s.date_decision, s.numero_pourvoi && `n° ${s.numero_pourvoi}`]
+                              .filter(Boolean)
+                              .join(" · ")}
+                          </div>
+                        )}
+                        {s.article_nums && s.article_nums.length > 0 && (
+                          <div className="flex flex-wrap gap-1">
+                            {s.article_nums.map((a) => (
+                              <Badge key={a} variant="secondary" className="text-[10px] h-4">
+                                Art. {a}
+                              </Badge>
+                            ))}
+                          </div>
+                        )}
+                        {s.excerpt && (
+                          <div className="text-muted-foreground line-clamp-3 mt-1">{s.excerpt}</div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </Section>
+              )}
 
               {data.feedback_comment && (
                 <div>
