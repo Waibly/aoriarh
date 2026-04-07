@@ -16,7 +16,7 @@ import {
 } from "@/components/ui/sheet";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
-import { ThumbsUp, ThumbsDown, Clock, DollarSign, Layers, FileSearch, BookOpen } from "lucide-react";
+import { ThumbsUp, ThumbsDown, Clock, DollarSign, Layers, FileSearch, BookOpen, ChevronDown, ChevronRight } from "lucide-react";
 
 interface InspectChunk {
   document_id: string;
@@ -145,6 +145,60 @@ function ChunkRow({ chunk, rank }: { chunk: InspectChunk; rank: number }) {
   );
 }
 
+function CitedSourceItem({ source }: { source: CitedSource }) {
+  const [open, setOpen] = useState(false);
+  const meta = [
+    source.juridiction,
+    source.date_decision,
+    source.numero_pourvoi && `n° ${source.numero_pourvoi}`,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+  return (
+    <div className="border rounded-md text-xs bg-muted/20 overflow-hidden">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className="w-full p-3 flex items-start justify-between gap-2 text-left hover:bg-muted/40 transition-colors"
+      >
+        <div className="flex items-start gap-2 min-w-0 flex-1">
+          {open ? (
+            <ChevronDown className="h-4 w-4 shrink-0 mt-0.5 text-muted-foreground" />
+          ) : (
+            <ChevronRight className="h-4 w-4 shrink-0 mt-0.5 text-muted-foreground" />
+          )}
+          <div className="min-w-0 flex-1 space-y-1">
+            <div className="font-medium text-sm">{source.document_name}</div>
+            {meta && <div className="text-muted-foreground text-[11px]">{meta}</div>}
+            {source.article_nums && source.article_nums.length > 0 && (
+              <div className="flex flex-wrap gap-1">
+                {source.article_nums.map((a) => (
+                  <Badge key={a} variant="secondary" className="text-[10px] h-4">
+                    Art. {a}
+                  </Badge>
+                ))}
+              </div>
+            )}
+            {!open && source.excerpt && (
+              <div className="text-muted-foreground line-clamp-2 mt-1">{source.excerpt}</div>
+            )}
+          </div>
+        </div>
+        <Badge variant="outline" className="text-[10px] h-5 shrink-0">
+          {source.source_type_label || source.source_type} · niv. {source.norme_niveau}
+        </Badge>
+      </button>
+      {open && source.full_text && (
+        <div className="px-3 pb-3 pt-1 border-t bg-background/50">
+          <div className="text-xs whitespace-pre-wrap text-foreground/90 leading-5 font-mono max-h-[600px] overflow-y-auto">
+            {source.full_text}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function Section({ title, icon, children }: { title: string; icon?: React.ReactNode; children: React.ReactNode }) {
   return (
     <div className="border-t pt-4">
@@ -265,33 +319,7 @@ export function ConversationInspector({
                 <Section title={`Sources citées (${data.sources.length})`} icon={<BookOpen className="h-4 w-4" />}>
                   <div className="space-y-2">
                     {data.sources.map((s, i) => (
-                      <div key={i} className="border rounded-md p-3 text-xs space-y-1 bg-muted/20">
-                        <div className="flex items-start justify-between gap-2">
-                          <div className="font-medium text-sm">{s.document_name}</div>
-                          <Badge variant="outline" className="text-[10px] h-5 shrink-0">
-                            {s.source_type_label || s.source_type} · niv. {s.norme_niveau}
-                          </Badge>
-                        </div>
-                        {(s.juridiction || s.numero_pourvoi || s.date_decision) && (
-                          <div className="text-muted-foreground text-[11px]">
-                            {[s.juridiction, s.date_decision, s.numero_pourvoi && `n° ${s.numero_pourvoi}`]
-                              .filter(Boolean)
-                              .join(" · ")}
-                          </div>
-                        )}
-                        {s.article_nums && s.article_nums.length > 0 && (
-                          <div className="flex flex-wrap gap-1">
-                            {s.article_nums.map((a) => (
-                              <Badge key={a} variant="secondary" className="text-[10px] h-4">
-                                Art. {a}
-                              </Badge>
-                            ))}
-                          </div>
-                        )}
-                        {s.excerpt && (
-                          <div className="text-muted-foreground line-clamp-3 mt-1">{s.excerpt}</div>
-                        )}
-                      </div>
+                      <CitedSourceItem key={i} source={s} />
                     ))}
                   </div>
                 </Section>
