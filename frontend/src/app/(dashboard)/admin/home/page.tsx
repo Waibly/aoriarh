@@ -334,7 +334,7 @@ export default function AdminHomePage() {
 
   if (loading) {
     return (
-      <div className="container mx-auto px-4 py-6 max-w-7xl space-y-6">
+      <div className="space-y-6">
         <h1 className="text-2xl font-bold tracking-tight">Vue d&apos;ensemble</h1>
         <Skeleton className="h-20 w-full" />
         <div className="grid gap-4 md:grid-cols-4">
@@ -366,7 +366,7 @@ export default function AdminHomePage() {
   const projection = projectedMonthlyCost(stats.cost_30d);
 
   return (
-    <div className="container mx-auto px-4 py-6 max-w-7xl space-y-6">
+    <div className="space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>

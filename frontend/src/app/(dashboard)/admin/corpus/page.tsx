@@ -494,7 +494,7 @@ export default function CorpusPage() {
   if (!token) return null;
 
   return (
-    <div className="container mx-auto px-4 py-6 max-w-7xl space-y-4">
+    <div className="space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
