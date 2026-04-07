@@ -1,7 +1,7 @@
 import uuid
 
-from sqlalchemy import ForeignKey, String, Text
-from sqlalchemy.dialects.postgresql import JSON
+from sqlalchemy import JSON, ForeignKey, Integer, Numeric, String, Text
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, TimestampMixin, generate_uuid
@@ -36,5 +36,11 @@ class Message(TimestampMixin, Base):
     sources: Mapped[dict | None] = mapped_column(JSON)
     feedback: Mapped[str | None] = mapped_column(String(20))
     feedback_comment: Mapped[str | None] = mapped_column(Text)
+    # Admin Quality v1: full RAG pipeline trace + per-question cost & latency.
+    # Populated only on assistant messages, only after the feature was deployed.
+    # JSON in Postgres compiles to JSONB via the variant; SQLite (tests) gets TEXT.
+    rag_trace: Mapped[dict | None] = mapped_column(JSON().with_variant(JSONB, "postgresql"))
+    cost_usd: Mapped[float | None] = mapped_column(Numeric(10, 6))
+    latency_ms: Mapped[int | None] = mapped_column(Integer)
 
     conversation = relationship("Conversation", back_populates="messages")

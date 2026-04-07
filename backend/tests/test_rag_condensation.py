@@ -98,7 +98,7 @@ class TestCondensation:
             {"role": "assistant", "content": "previous answer"},
         ]
 
-        results, reformulated = await agent.prepare_context(
+        results, reformulated, trace = await agent.prepare_context(
             "follow up", "org-123", history=history,
         )
 

@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from app.core.database import get_db
 from app.core.dependencies import get_current_user
@@ -278,7 +278,12 @@ async def chat_stream(
             yield _sse_event("chat_status", {"step": "Analyse de votre question..."})
 
             # 3. Prepare context (steps 0-5: condensation, reformulation, search, rerank)
-            results, reformulated = await agent.prepare_context(
+            # Generate a per-question UUID used as cost-tracker context_id, so
+            # api_usage_logs are attributable to a single question (and not to
+            # the whole conversation as before). The agent's `conversation_id`
+            # parameter is in fact used as the cost context id.
+            question_id = uuid.uuid4()
+            results, reformulated, rag_trace = await agent.prepare_context(
                 query=data.message,
                 organisation_id=str(conversation.organisation_id),
                 org_context=org_context,
@@ -286,7 +291,7 @@ async def chat_stream(
                 cited_sources=cited_sources if cited_sources else None,
                 org_idcc_list=org_idcc_list,
                 user_id=str(user.id),
-                conversation_id=str(conversation_id),
+                conversation_id=str(question_id),
             )
 
             # --- Hors-scope: send refusal as a normal answer, save to history ---
@@ -299,11 +304,21 @@ async def chat_stream(
                     role="user",
                     content=data.message,
                 )
-                await service.add_message(
+                oos_assistant = await service.add_message(
                     conversation_id=conversation_id,
                     role="assistant",
                     content=_OUT_OF_SCOPE_ANSWER,
                 )
+                # Persist minimal trace for the Quality page
+                try:
+                    oos_assistant.rag_trace = rag_trace.to_dict()
+                    oos_assistant.latency_ms = int((time.perf_counter() - t_total) * 1000)
+                    await db.commit()
+                except Exception:
+                    logger.exception(
+                        "[QUALITY] Failed to persist out-of-scope trace for message %s",
+                        oos_assistant.id,
+                    )
                 if conversation.title is None:
                     title = data.message[:100].strip()
                     if len(data.message) > 100:
@@ -367,6 +382,11 @@ async def chat_stream(
 
             t_stream_done = time.perf_counter()
 
+            # Finalize trace : add stream perf + compute total latency
+            rag_trace.perf_ms["generate"] = (t_stream_done - t_sources) * 1000
+            total_latency_ms = int((t_stream_done - t_total) * 1000)
+            rag_trace.perf_ms["total"] = float(total_latency_ms)
+
             # 5. Save messages to DB (user + assistant)
             user_message = await service.add_message(
                 conversation_id=conversation_id,
@@ -379,6 +399,26 @@ async def chat_stream(
                 content=full_answer,
                 sources=sources_dicts if sources_dicts else None,
             )
+
+            # 5b. Persist trace + cost + latency on the assistant message.
+            # Best-effort : a failure here must NOT break the user response.
+            try:
+                from app.models.api_usage import ApiUsageLog
+                cost_q = await db.execute(
+                    select(func.coalesce(func.sum(ApiUsageLog.cost_usd), 0)).where(
+                        ApiUsageLog.context_id == question_id,
+                    )
+                )
+                question_cost = float(cost_q.scalar() or 0.0)
+                assistant_message.rag_trace = rag_trace.to_dict()
+                assistant_message.cost_usd = question_cost
+                assistant_message.latency_ms = total_latency_ms
+                await db.commit()
+            except Exception:
+                logger.exception(
+                    "[QUALITY] Failed to persist rag_trace for message %s",
+                    assistant_message.id,
+                )
 
             # 6. Auto-generate title
             if conversation.title is None:

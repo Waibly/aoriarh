@@ -28,6 +28,7 @@ import {
   DollarSign,
   RefreshCw,
   TrendingUp,
+  Gauge,
 } from "lucide-react";
 import { apiFetch } from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -427,6 +428,21 @@ export function Sidebar() {
                   <Link href="/admin/jurisprudence">
                     <Scale className="mr-2 h-5 w-5" />
                     Jurisprudence
+                  </Link>
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className={cn(
+                    "w-full justify-start font-normal",
+                    pathname.startsWith("/admin/quality") &&
+                      "bg-accent text-accent-foreground font-medium",
+                  )}
+                  asChild
+                >
+                  <Link href="/admin/quality">
+                    <Gauge className="mr-2 h-5 w-5" />
+                    Qualité & conversations
                   </Link>
                 </Button>
                 <Button

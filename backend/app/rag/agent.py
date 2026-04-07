@@ -3,7 +3,7 @@ import logging
 import re
 import time
 from collections.abc import AsyncGenerator
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import httpx
 from openai import AsyncOpenAI
@@ -69,6 +69,63 @@ class RAGResponse:
     answer: str
     sources: list[RAGSource]
     is_error: bool = False
+
+
+@dataclass
+class RagTrace:
+    """Lightweight trace of one RAG pipeline execution.
+
+    Captured during prepare_context / stream_generate and persisted as JSONB
+    on the assistant Message. Used by the admin Quality page to inspect any
+    past question. Sized to stay under ~15 KB per trace.
+    """
+
+    query_original: str = ""
+    query_condensed: str | None = None
+    variants: list[str] = field(default_factory=list)
+    identifiers_detected: dict = field(default_factory=dict)
+    boost_injected: int = 0
+    # Each chunk = {document_id, doc_name, chunk_index, score, source_type, text_preview}
+    hybrid_results: list[dict] = field(default_factory=list)
+    rerank_results: list[dict] = field(default_factory=list)
+    parent_groups: list[dict] = field(default_factory=list)
+    perf_ms: dict[str, float] = field(default_factory=dict)
+    model: str | None = None
+    out_of_scope: bool = False
+    no_results: bool = False
+    error: str | None = None
+
+    def to_dict(self) -> dict:
+        return {
+            "query_original": self.query_original,
+            "query_condensed": self.query_condensed,
+            "variants": self.variants,
+            "identifiers_detected": self.identifiers_detected,
+            "boost_injected": self.boost_injected,
+            "hybrid_results": self.hybrid_results,
+            "rerank_results": self.rerank_results,
+            "parent_groups": self.parent_groups,
+            "perf_ms": self.perf_ms,
+            "model": self.model,
+            "out_of_scope": self.out_of_scope,
+            "no_results": self.no_results,
+            "error": self.error,
+        }
+
+
+def _serialize_chunks(results: list, limit: int = 30, text_chars: int = 250) -> list[dict]:
+    """Serialize a list of SearchResult into a compact dict for the trace."""
+    out: list[dict] = []
+    for r in results[:limit]:
+        out.append({
+            "document_id": r.document_id,
+            "doc_name": (r.doc_name or "")[:120],
+            "chunk_index": r.chunk_index,
+            "score": round(float(r.score), 4),
+            "source_type": r.source_type,
+            "text_preview": (r.text or "")[:text_chars],
+        })
+    return out
 
 
 # Map source_type keys to human-readable French labels
@@ -511,16 +568,19 @@ class RAGAgent:
         org_idcc_list: list[str] | None = None,
         user_id: str | None = None,
         conversation_id: str | None = None,
-    ) -> tuple[list[SearchResult], str]:
-        """Run steps 0-5 (non-streaming) and return results + reformulated query."""
+    ) -> tuple[list[SearchResult], str, RagTrace]:
+        """Run steps 0-5 (non-streaming) and return results + reformulated query + trace."""
         self._org_id = organisation_id
         self._user_id = user_id
         self._conversation_id = conversation_id
         self._propagate_cost_context()
         t0 = time.perf_counter()
 
+        trace = RagTrace(query_original=query, model=rag_config.LLM_MODEL)
+
         # Step 0: Condensation (multi-turn)
         if history:
+            t_cond = time.perf_counter()
             query = await self._step_with_timeout(
                 self._condense_question(
                     query, history,
@@ -529,25 +589,43 @@ class RAGAgent:
                 ),
                 fallback=query,
             )
+            trace.perf_ms["condense"] = (time.perf_counter() - t_cond) * 1000
+            trace.query_condensed = query
             logger.info(
                 "[PERF] Step 0 — Condensation %.0fms | %s",
-                (time.perf_counter() - t0) * 1000, query[:100],
+                trace.perf_ms["condense"], query[:100],
             )
             if _OUT_OF_SCOPE_MARKER in query:
                 logger.info("[SCOPE] Question hors-scope détectée (condensation)")
-                return [], _OUT_OF_SCOPE_MARKER
+                trace.out_of_scope = True
+                trace.perf_ms["total"] = (time.perf_counter() - t0) * 1000
+                return [], _OUT_OF_SCOPE_MARKER, trace
 
         # Step 1-2: Query expansion + parallel search + RRF
+        t_exp_q = time.perf_counter()
         results, variants = await self._search_with_expansion(query, organisation_id, org_idcc_list=org_idcc_list, org_context=org_context)
+        trace.perf_ms["expand_search"] = (time.perf_counter() - t_exp_q) * 1000
+        trace.variants = list(variants) if variants else []
         if variants and variants[0] == _OUT_OF_SCOPE_MARKER:
             logger.info("[SCOPE] Question hors-scope détectée (expansion)")
-            return [], _OUT_OF_SCOPE_MARKER
+            trace.out_of_scope = True
+            trace.perf_ms["total"] = (time.perf_counter() - t0) * 1000
+            return [], _OUT_OF_SCOPE_MARKER, trace
         reformulated = variants[0] if variants else query
 
         # Step 1.5: Identifier-based retrieval boost
+        try:
+            trace.identifiers_detected = detect_identifiers(query)
+        except Exception:
+            trace.identifiers_detected = {}
+        pool_before_boost = len(results)
         results = self._inject_identifier_matches(
             query, results, organisation_id, org_idcc_list,
         )
+        trace.boost_injected = max(0, len(results) - pool_before_boost)
+
+        # Snapshot the candidate pool right before rerank
+        trace.hybrid_results = _serialize_chunks(results, limit=30)
         t2 = time.perf_counter()
 
         # Step 3: Reranking
@@ -555,18 +633,21 @@ class RAGAgent:
             self.reranker.rerank(query, results, top_k=RERANK_TOP_K),
             fallback=results[:RERANK_TOP_K],
         )
-        t_rerank = time.perf_counter()
+        trace.perf_ms["rerank"] = (time.perf_counter() - t2) * 1000
+        trace.rerank_results = _serialize_chunks(results, limit=RERANK_TOP_K)
         logger.info(
             "[PERF] Step 3 — Reranking %.0fms | %d results",
-            (t_rerank - t2) * 1000, len(results),
+            trace.perf_ms["rerank"], len(results),
         )
 
         # Step 3.5: Parent expansion (small-to-big)
         t_exp = time.perf_counter()
         results = expand_to_parents(results, self.search_engine.qdrant)
+        trace.perf_ms["parent_expansion"] = (time.perf_counter() - t_exp) * 1000
+        trace.parent_groups = _serialize_chunks(results, limit=15, text_chars=400)
         logger.info(
             "[PERF] Step 3.5 — Parent expansion %.0fms | %d groups",
-            (time.perf_counter() - t_exp) * 1000, len(results),
+            trace.perf_ms["parent_expansion"], len(results),
         )
 
         iteration = 0
@@ -600,12 +681,16 @@ class RAGAgent:
             (time.perf_counter() - t3) * 1000,
         )
 
+        if not results:
+            trace.no_results = True
+
         total = (time.perf_counter() - t0) * 1000
+        trace.perf_ms["context_total"] = total
         logger.info(
             "[PERF] ══ Context ready %.0fms | %d results",
             total, len(results),
         )
-        return results, reformulated
+        return results, reformulated, trace
 
     async def stream_generate(
         self,
