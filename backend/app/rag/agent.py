@@ -19,6 +19,11 @@ from app.rag.config import (
     TOP_K,
 )
 from app.rag.norme_hierarchy import DOCUMENT_TYPE_HIERARCHY
+from app.rag.parent_expansion import (
+    detect_identifiers,
+    expand_to_parents,
+    fetch_by_identifiers,
+)
 from app.rag.reranker import get_reranker
 from app.rag.search import HybridSearch, SearchResult
 from app.services.cost_tracker import cost_tracker
@@ -416,6 +421,11 @@ class RAGAgent:
         if _variants and _variants[0] == _OUT_OF_SCOPE_MARKER:
             logger.info("[SCOPE] Question hors-scope détectée (expansion)")
             return RAGResponse(answer=_OUT_OF_SCOPE_ANSWER, sources=[])
+
+        # --- Step 1.5: Identifier-based retrieval boost ---
+        results = self._inject_identifier_matches(
+            query, results, organisation_id, org_idcc_list,
+        )
         t2 = time.perf_counter()
 
         # --- Step 3: Cross-encoder reranking ---
@@ -427,6 +437,14 @@ class RAGAgent:
         logger.info(
             "[PERF] Step 3 — Reranking %.0fms | %d results",
             (t3 - t2) * 1000, len(results),
+        )
+
+        # --- Step 3.5: Parent expansion (small-to-big) ---
+        t_exp = time.perf_counter()
+        results = expand_to_parents(results, self.search_engine.qdrant)
+        logger.info(
+            "[PERF] Step 3.5 — Parent expansion %.0fms | %d groups",
+            (time.perf_counter() - t_exp) * 1000, len(results),
         )
 
         # --- Re-search if insufficient results ---
@@ -525,6 +543,11 @@ class RAGAgent:
             logger.info("[SCOPE] Question hors-scope détectée (expansion)")
             return [], _OUT_OF_SCOPE_MARKER
         reformulated = variants[0] if variants else query
+
+        # Step 1.5: Identifier-based retrieval boost
+        results = self._inject_identifier_matches(
+            query, results, organisation_id, org_idcc_list,
+        )
         t2 = time.perf_counter()
 
         # Step 3: Reranking
@@ -536,6 +559,14 @@ class RAGAgent:
         logger.info(
             "[PERF] Step 3 — Reranking %.0fms | %d results",
             (t_rerank - t2) * 1000, len(results),
+        )
+
+        # Step 3.5: Parent expansion (small-to-big)
+        t_exp = time.perf_counter()
+        results = expand_to_parents(results, self.search_engine.qdrant)
+        logger.info(
+            "[PERF] Step 3.5 — Parent expansion %.0fms | %d groups",
+            (time.perf_counter() - t_exp) * 1000, len(results),
         )
 
         iteration = 0
@@ -803,6 +834,50 @@ class RAGAgent:
 
         fused.sort(key=lambda r: r.score, reverse=True)
         return fused
+
+    def _inject_identifier_matches(
+        self,
+        query: str,
+        results: list[SearchResult],
+        organisation_id: str,
+        org_idcc_list: list[str] | None,
+    ) -> list[SearchResult]:
+        """Step 1.5: detect identifiers in query and inject matching chunks at top.
+
+        Pourvois (e.g. "22-18.875") and code articles (e.g. "L4121-1") match
+        very weakly with semantic search when the query is identifier-only.
+        We pull them directly via Qdrant filter and inject them at the top of
+        the candidate pool so the reranker can promote them.
+        """
+        identifiers = detect_identifiers(query)
+        if not any(identifiers.values()):
+            return results
+        try:
+            extra = fetch_by_identifiers(
+                self.search_engine.qdrant,
+                identifiers,
+                organisation_id=organisation_id,
+                org_idcc_list=org_idcc_list,
+            )
+        except Exception:
+            logger.exception("[BOOST] Identifier injection failed")
+            return results
+        if not extra:
+            return results
+        seen = {(r.document_id, r.chunk_index) for r in results}
+        injected = 0
+        for r in extra:
+            key = (r.document_id, r.chunk_index)
+            if key in seen:
+                continue
+            seen.add(key)
+            results.insert(0, r)
+            injected += 1
+        logger.info(
+            "[BOOST] Identifier injection: %d new chunks (total pool: %d)",
+            injected, len(results),
+        )
+        return results
 
     async def _search_with_expansion(
         self,
