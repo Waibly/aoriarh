@@ -478,15 +478,18 @@ function KpiCard({
   trendInverted?: boolean;
   severity: "green" | "orange" | "red" | "neutral";
 }) {
-  const borderColor = {
-    green: "border-l-green-500",
-    orange: "border-l-orange-500",
-    red: "border-l-red-500",
-    neutral: "border-l-muted-foreground/30",
+  const bgClass = {
+    green:
+      "bg-green-50 dark:bg-green-950/30 border-green-200 dark:border-green-900",
+    orange:
+      "bg-orange-50 dark:bg-orange-950/30 border-orange-200 dark:border-orange-900",
+    red:
+      "bg-red-50 dark:bg-red-950/30 border-red-200 dark:border-red-900",
+    neutral: "",
   }[severity];
 
   return (
-    <Card className={`border-l-4 ${borderColor}`}>
+    <Card className={bgClass}>
       <CardHeader className="pb-2 flex flex-row items-center justify-between space-y-0">
         <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
           {icon}
