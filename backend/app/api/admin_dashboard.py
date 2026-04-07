@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
 from app.core.dependencies import require_role
 from app.models.api_usage import ApiUsageLog
+from app.models.conversation import Message
 from app.models.document import Document
 from app.models.organisation import Organisation
 from app.models.sync_log import SyncLog
@@ -19,6 +20,27 @@ from app.models.user import User
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+class Incident(BaseModel):
+    id: str
+    severity: str  # "critical" | "warning" | "info"
+    title: str
+    detail: str | None = None
+    action_label: str
+    action_href: str
+
+
+class QualityHealth(BaseModel):
+    feedback_negative_rate_7d: float
+    no_sources_rate_7d: float
+    out_of_scope_count_7d: int
+    latency_p95_ms_7d: float | None
+
+
+class TimeseriesPoint(BaseModel):
+    date: str
+    questions: int
 
 
 class DashboardStats(BaseModel):
@@ -53,6 +75,15 @@ class DashboardStats(BaseModel):
 
     # LLM model
     current_model: str
+
+    # New: RAG quality health
+    quality_health: QualityHealth
+
+    # New: incidents
+    incidents: list[Incident]
+
+    # New: 30-day questions timeline for the home graph
+    questions_timeline_30d: list[TimeseriesPoint]
 
 
 @router.get("/", response_model=DashboardStats)
@@ -187,6 +218,111 @@ async def get_dashboard(
     import app.rag.config as rag_config
     current_model = rag_config.LLM_MODEL
 
+    # --- Quality health (last 7 days) ---
+    msgs_q = await db.execute(
+        select(Message).where(
+            Message.role == "assistant",
+            Message.created_at >= seven_days_ago,
+        )
+    )
+    msgs = msgs_q.scalars().all()
+    total_msgs = len(msgs)
+    if total_msgs > 0:
+        fb_down = sum(1 for m in msgs if m.feedback == "down")
+        no_src = sum(1 for m in msgs if not m.sources or len(m.sources) == 0)
+        oos = sum(
+            1 for m in msgs
+            if m.rag_trace and m.rag_trace.get("out_of_scope") is True
+        )
+        latencies = sorted(m.latency_ms for m in msgs if m.latency_ms is not None)
+        if latencies:
+            k = (len(latencies) - 1) * 0.95
+            f = int(k)
+            c = min(f + 1, len(latencies) - 1)
+            p95 = float(latencies[f] + (latencies[c] - latencies[f]) * (k - f))
+        else:
+            p95 = None
+        quality_health = QualityHealth(
+            feedback_negative_rate_7d=round(fb_down / total_msgs, 4),
+            no_sources_rate_7d=round(no_src / total_msgs, 4),
+            out_of_scope_count_7d=oos,
+            latency_p95_ms_7d=p95,
+        )
+    else:
+        quality_health = QualityHealth(
+            feedback_negative_rate_7d=0.0,
+            no_sources_rate_7d=0.0,
+            out_of_scope_count_7d=0,
+            latency_p95_ms_7d=None,
+        )
+
+    # --- Incidents (rules-based detection) ---
+    incidents: list[Incident] = []
+    if docs_row.error > 0:
+        incidents.append(Incident(
+            id="docs_in_error",
+            severity="critical" if docs_row.error >= 5 else "warning",
+            title=f"{docs_row.error} document(s) en erreur d'indexation",
+            detail="Ces documents ne sont pas interrogeables par le RAG.",
+            action_label="Voir les documents",
+            action_href="/admin/documents-communs?status=error",
+        ))
+    if failed_24h > 0:
+        incidents.append(Incident(
+            id="syncs_failed_24h",
+            severity="critical",
+            title=f"{failed_24h} synchronisation(s) échouée(s) (24h)",
+            detail=(
+                f"Dernière sync : {last_sync.sync_type if last_sync else '—'} "
+                f"({last_sync.status if last_sync else '—'})"
+            ),
+            action_label="Voir l'historique",
+            action_href="/admin/syncs",
+        ))
+    if quality_health.feedback_negative_rate_7d > 0.15 and total_msgs >= 10:
+        incidents.append(Incident(
+            id="feedback_negative_high",
+            severity="warning",
+            title=f"Taux de feedback négatif élevé ({quality_health.feedback_negative_rate_7d * 100:.0f}%)",
+            detail="Certaines réponses dégradent l'expérience utilisateur.",
+            action_label="Inspecter",
+            action_href="/admin/quality?feedback=down",
+        ))
+    if (
+        quality_health.latency_p95_ms_7d is not None
+        and quality_health.latency_p95_ms_7d > 25000
+    ):
+        incidents.append(Incident(
+            id="latency_p95_high",
+            severity="warning",
+            title=f"Latence p95 élevée ({quality_health.latency_p95_ms_7d / 1000:.1f}s)",
+            detail="95% des réponses dépassent ce seuil — vérifie la perf RAG.",
+            action_label="Voir la qualité",
+            action_href="/admin/quality",
+        ))
+    # Sort by severity: critical first
+    severity_order = {"critical": 0, "warning": 1, "info": 2}
+    incidents.sort(key=lambda i: severity_order.get(i.severity, 99))
+
+    # --- Questions timeline (30 days) ---
+    timeline_q = await db.execute(
+        select(
+            func.date_trunc("day", ApiUsageLog.created_at).label("day"),
+            func.count(func.distinct(ApiUsageLog.context_id)).label("count"),
+        )
+        .where(
+            ApiUsageLog.created_at >= thirty_days_ago,
+            ApiUsageLog.context_type == "question",
+            ApiUsageLog.is_replay.is_(False),
+        )
+        .group_by("day")
+        .order_by("day")
+    )
+    timeline = [
+        TimeseriesPoint(date=row.day.date().isoformat(), questions=int(row.count))
+        for row in timeline_q.all()
+    ]
+
     return DashboardStats(
         total_users=users_row.total,
         active_users=users_row.active,
@@ -208,4 +344,7 @@ async def get_dashboard(
         last_sync_at=last_sync.started_at.isoformat() if last_sync else None,
         failed_syncs_24h=failed_24h,
         current_model=current_model,
+        quality_health=quality_health,
+        incidents=incidents,
+        questions_timeline_30d=timeline,
     )
