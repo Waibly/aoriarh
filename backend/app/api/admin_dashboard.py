@@ -110,6 +110,9 @@ async def get_dashboard(
     bocc_reserve = bocc_reserve_q.scalar() or 0
 
     # --- Usage 7 days ---
+    # cost is filtered on context_type='question' so the home page's
+    # "cost / questions" ratio reflects only question-related operations,
+    # matching the avg_cost_per_question shown on the costs page.
     usage_7d = await db.execute(
         select(
             func.count(func.distinct(ApiUsageLog.context_id)).filter(
@@ -118,7 +121,12 @@ async def get_dashboard(
             func.count(func.distinct(ApiUsageLog.context_id)).filter(
                 ApiUsageLog.context_type == "ingestion"
             ).label("ingestions"),
-            func.coalesce(func.sum(ApiUsageLog.cost_usd), 0).label("cost"),
+            func.coalesce(
+                func.sum(ApiUsageLog.cost_usd).filter(
+                    ApiUsageLog.context_type == "question"
+                ),
+                0,
+            ).label("cost"),
         ).where(ApiUsageLog.created_at >= seven_days_ago)
     )
     usage_7d_row = usage_7d.one()
@@ -139,7 +147,12 @@ async def get_dashboard(
             func.count(func.distinct(ApiUsageLog.context_id)).filter(
                 ApiUsageLog.context_type == "question"
             ).label("questions"),
-            func.coalesce(func.sum(ApiUsageLog.cost_usd), 0).label("cost"),
+            func.coalesce(
+                func.sum(ApiUsageLog.cost_usd).filter(
+                    ApiUsageLog.context_type == "question"
+                ),
+                0,
+            ).label("cost"),
         ).where(ApiUsageLog.created_at >= thirty_days_ago)
     )
     usage_30d_row = usage_30d.one()
