@@ -82,6 +82,7 @@ class CostTracker:
         organisation_name: str | None = None,
         context_type: str = "question",
         context_id: str | None = None,
+        is_replay: bool = False,
     ) -> None:
         """Log a single API call. Non-blocking — errors are swallowed."""
         try:
@@ -117,6 +118,7 @@ class CostTracker:
                     organisation_name_snapshot=resolved_org_name,
                     context_type=context_type,
                     context_id=uuid.UUID(context_id) if context_id else None,
+                    is_replay=is_replay,
                 )
                 session.add(log_entry)
                 await session.commit()

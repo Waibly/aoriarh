@@ -127,7 +127,10 @@ async def get_dashboard(
                 ),
                 0,
             ).label("cost"),
-        ).where(ApiUsageLog.created_at >= seven_days_ago)
+        ).where(
+            ApiUsageLog.created_at >= seven_days_ago,
+            ApiUsageLog.is_replay.is_(False),
+        )
     )
     usage_7d_row = usage_7d.one()
 
@@ -137,7 +140,10 @@ async def get_dashboard(
             func.count(func.distinct(ApiUsageLog.context_id)).filter(
                 ApiUsageLog.context_type == "question"
             ).label("questions"),
-        ).where(ApiUsageLog.created_at >= today_start)
+        ).where(
+            ApiUsageLog.created_at >= today_start,
+            ApiUsageLog.is_replay.is_(False),
+        )
     )
     today_row = usage_today.one()
 
@@ -153,7 +159,10 @@ async def get_dashboard(
                 ),
                 0,
             ).label("cost"),
-        ).where(ApiUsageLog.created_at >= thirty_days_ago)
+        ).where(
+            ApiUsageLog.created_at >= thirty_days_ago,
+            ApiUsageLog.is_replay.is_(False),
+        )
     )
     usage_30d_row = usage_30d.one()
 

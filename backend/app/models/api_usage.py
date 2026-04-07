@@ -2,6 +2,7 @@ import uuid
 from datetime import datetime
 
 from sqlalchemy import (
+    Boolean,
     DateTime,
     ForeignKey,
     Index,
@@ -86,9 +87,15 @@ class ApiUsageLog(Base):
     )
     context_id: Mapped[uuid.UUID | None] = mapped_column(nullable=True)
 
+    # True for admin Quality sandbox calls — excluded from billing metrics
+    is_replay: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default="false", default=False
+    )
+
     __table_args__ = (
         Index("ix_api_usage_logs_created_at", "created_at"),
         Index("ix_api_usage_logs_organisation_id", "organisation_id"),
         Index("ix_api_usage_logs_user_id", "user_id"),
         Index("ix_api_usage_logs_context", "context_type", "context_id"),
+        Index("ix_api_usage_logs_is_replay", "is_replay"),
     )

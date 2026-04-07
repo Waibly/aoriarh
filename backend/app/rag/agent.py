@@ -378,6 +378,7 @@ class RAGAgent:
         self._org_id: str | None = None
         self._user_id: str | None = None
         self._conversation_id: str | None = None
+        self._is_replay: bool = False
 
     def _propagate_cost_context(self) -> None:
         """Push cost tracking context to search engine and reranker."""
@@ -385,11 +386,13 @@ class RAGAgent:
             organisation_id=self._org_id,
             user_id=self._user_id,
             context_id=self._conversation_id,
+            is_replay=self._is_replay,
         )
         self.reranker.set_cost_context(
             organisation_id=self._org_id,
             user_id=self._user_id,
             context_id=self._conversation_id,
+            is_replay=self._is_replay,
         )
 
     async def run(
@@ -400,11 +403,13 @@ class RAGAgent:
         history: list[dict[str, str]] | None = None,
         user_id: str | None = None,
         conversation_id: str | None = None,
+        is_replay: bool = False,
     ) -> RAGResponse:
         """Execute the full RAG pipeline with global timeout."""
         self._org_id = organisation_id
         self._user_id = user_id
         self._conversation_id = conversation_id
+        self._is_replay = is_replay
         self._propagate_cost_context()
         t0 = time.perf_counter()
         try:
@@ -568,11 +573,13 @@ class RAGAgent:
         org_idcc_list: list[str] | None = None,
         user_id: str | None = None,
         conversation_id: str | None = None,
+        is_replay: bool = False,
     ) -> tuple[list[SearchResult], str, RagTrace]:
         """Run steps 0-5 (non-streaming) and return results + reformulated query + trace."""
         self._org_id = organisation_id
         self._user_id = user_id
         self._conversation_id = conversation_id
+        self._is_replay = is_replay
         self._propagate_cost_context()
         t0 = time.perf_counter()
 
@@ -764,6 +771,7 @@ class RAGAgent:
                 user_id=self._user_id,
                 context_type="question",
                 context_id=self._conversation_id,
+                is_replay=self._is_replay,
             )
 
         logger.info(
@@ -833,6 +841,7 @@ class RAGAgent:
                 user_id=self._user_id,
                 context_type="question",
                 context_id=self._conversation_id,
+                is_replay=self._is_replay,
             )
         return response.choices[0].message.content or query
 
@@ -871,6 +880,7 @@ class RAGAgent:
                 user_id=self._user_id,
                 context_type="question",
                 context_id=self._conversation_id,
+                is_replay=self._is_replay,
             )
         content = response.choices[0].message.content or ""
         if _OUT_OF_SCOPE_MARKER in content:
@@ -1222,6 +1232,7 @@ class RAGAgent:
                 user_id=self._user_id,
                 context_type="question",
                 context_id=self._conversation_id,
+                is_replay=self._is_replay,
             )
         return response.choices[0].message.content or ""
 

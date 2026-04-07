@@ -19,7 +19,6 @@ from app.api import (
     admin_costs,
     admin_dashboard,
     admin_documents,
-    admin_feedbacks,
     admin_judilibre,
     admin_qdrant,
     admin_quality,
@@ -189,9 +188,6 @@ app.include_router(
 )
 app.include_router(
     admin_qdrant.router, prefix="/api/v1/admin/qdrant", tags=["admin-qdrant"]
-)
-app.include_router(
-    admin_feedbacks.router, prefix="/api/v1/admin/feedbacks", tags=["admin-feedbacks"]
 )
 app.include_router(
     admin_judilibre.router, prefix="/api/v1/admin/jurisprudence", tags=["admin-jurisprudence"]
