@@ -1,0 +1,376 @@
+"""Admin Quality endpoints — KPIs RAG, exploration de conversations, inspection détaillée.
+
+Trois endpoints:
+- GET  /metrics?days=7              → KPIs agrégés sur la période
+- GET  /conversations               → liste paginée filtrable + recherche full-text
+- GET  /messages/{message_id}/inspect  → trace RAG complet d'un message
+"""
+from __future__ import annotations
+
+import logging
+import uuid
+from datetime import UTC, datetime, timedelta
+
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from pydantic import BaseModel
+from sqlalchemy import and_, func, or_, select, text
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.core.database import get_db
+from app.core.dependencies import require_role
+from app.models.conversation import Conversation, Message
+from app.models.organisation import Organisation
+from app.models.user import User
+
+logger = logging.getLogger(__name__)
+
+router = APIRouter()
+
+
+# ----------------- Schemas -----------------
+
+
+class KpiTrend(BaseModel):
+    current: float
+    previous: float
+    delta_pct: float | None  # null si previous = 0
+
+
+class QualityKpis(BaseModel):
+    period_days: int
+    total_questions: int
+    feedback_positive: int
+    feedback_negative: int
+    feedback_none: int
+    feedback_negative_rate: float
+    out_of_scope_count: int
+    out_of_scope_rate: float
+    no_sources_count: int
+    no_sources_rate: float
+    error_count: int
+    latency_p50_ms: float | None
+    latency_p95_ms: float | None
+    latency_p99_ms: float | None
+    cost_total_usd: float
+    cost_avg_per_question_usd: float | None
+    trends: dict[str, KpiTrend]  # negative_rate, latency_p95, cost_avg
+
+
+class ConversationListItem(BaseModel):
+    message_id: uuid.UUID
+    conversation_id: uuid.UUID
+    created_at: datetime
+    user_email: str | None
+    organisation_name: str | None
+    question: str
+    answer_preview: str
+    feedback: str | None
+    latency_ms: int | None
+    cost_usd: float | None
+    has_trace: bool
+
+
+class ConversationListResponse(BaseModel):
+    items: list[ConversationListItem]
+    page: int
+    page_size: int
+    total: int
+
+
+class MessageInspect(BaseModel):
+    message_id: uuid.UUID
+    conversation_id: uuid.UUID
+    created_at: datetime
+    user_email: str | None
+    organisation_name: str | None
+    question: str
+    answer: str
+    sources: list[dict] | None
+    feedback: str | None
+    feedback_comment: str | None
+    cost_usd: float | None
+    latency_ms: int | None
+    rag_trace: dict | None
+
+
+# ----------------- Helpers -----------------
+
+
+def _get_assistant_with_question_subquery():
+    """Build a CTE-style join: assistant message + its preceding user question.
+
+    Strategy: for each assistant message, find the immediately preceding user
+    message in the same conversation (ordered by created_at).
+    """
+    # We use a lateral correlated subquery for the preceding user message.
+    return None  # Implemented inline in queries below.
+
+
+# ----------------- Endpoints -----------------
+
+
+@router.get("/metrics", response_model=QualityKpis)
+async def get_quality_metrics(
+    days: int = Query(7, ge=1, le=90),
+    user: User = Depends(require_role(["admin"])),
+    db: AsyncSession = Depends(get_db),
+) -> QualityKpis:
+    """KPIs Qualité agrégés sur la période."""
+    now = datetime.now(UTC)
+    period_start = now - timedelta(days=days)
+    prev_start = now - timedelta(days=days * 2)
+    prev_end = period_start
+
+    async def _compute(start: datetime, end: datetime) -> dict:
+        """Compute raw aggregates over a period."""
+        # Only assistant messages count as "questions answered"
+        base_q = select(Message).where(
+            Message.role == "assistant",
+            Message.created_at >= start,
+            Message.created_at < end,
+        )
+        rows = (await db.execute(base_q)).scalars().all()
+        total = len(rows)
+        if total == 0:
+            return {
+                "total": 0, "fb_up": 0, "fb_down": 0, "fb_none": 0,
+                "oos": 0, "no_src": 0, "errors": 0,
+                "latencies": [], "costs": [],
+            }
+        fb_up = sum(1 for m in rows if m.feedback == "up")
+        fb_down = sum(1 for m in rows if m.feedback == "down")
+        fb_none = total - fb_up - fb_down
+        oos = sum(
+            1 for m in rows
+            if m.rag_trace and m.rag_trace.get("out_of_scope") is True
+        )
+        no_src = sum(1 for m in rows if not m.sources or len(m.sources) == 0)
+        errors = sum(
+            1 for m in rows
+            if m.rag_trace and m.rag_trace.get("error")
+        )
+        latencies = [m.latency_ms for m in rows if m.latency_ms is not None]
+        costs = [float(m.cost_usd) for m in rows if m.cost_usd is not None]
+        return {
+            "total": total, "fb_up": fb_up, "fb_down": fb_down, "fb_none": fb_none,
+            "oos": oos, "no_src": no_src, "errors": errors,
+            "latencies": latencies, "costs": costs,
+        }
+
+    cur = await _compute(period_start, now)
+    prev = await _compute(prev_start, prev_end)
+
+    def _percentile(values: list[int], pct: float) -> float | None:
+        if not values:
+            return None
+        sorted_vals = sorted(values)
+        k = (len(sorted_vals) - 1) * (pct / 100.0)
+        f = int(k)
+        c = min(f + 1, len(sorted_vals) - 1)
+        if f == c:
+            return float(sorted_vals[f])
+        return float(sorted_vals[f] + (sorted_vals[c] - sorted_vals[f]) * (k - f))
+
+    def _rate(num: int, denom: int) -> float:
+        return (num / denom) if denom > 0 else 0.0
+
+    def _trend(cur_val: float, prev_val: float) -> KpiTrend:
+        if prev_val == 0:
+            return KpiTrend(current=cur_val, previous=prev_val, delta_pct=None)
+        delta = ((cur_val - prev_val) / prev_val) * 100.0
+        return KpiTrend(current=cur_val, previous=prev_val, delta_pct=round(delta, 1))
+
+    cur_neg_rate = _rate(cur["fb_down"], cur["total"])
+    prev_neg_rate = _rate(prev["fb_down"], prev["total"])
+    cur_p95 = _percentile(cur["latencies"], 95) or 0.0
+    prev_p95 = _percentile(prev["latencies"], 95) or 0.0
+    cur_avg_cost = (sum(cur["costs"]) / len(cur["costs"])) if cur["costs"] else 0.0
+    prev_avg_cost = (sum(prev["costs"]) / len(prev["costs"])) if prev["costs"] else 0.0
+
+    return QualityKpis(
+        period_days=days,
+        total_questions=cur["total"],
+        feedback_positive=cur["fb_up"],
+        feedback_negative=cur["fb_down"],
+        feedback_none=cur["fb_none"],
+        feedback_negative_rate=round(cur_neg_rate, 4),
+        out_of_scope_count=cur["oos"],
+        out_of_scope_rate=round(_rate(cur["oos"], cur["total"]), 4),
+        no_sources_count=cur["no_src"],
+        no_sources_rate=round(_rate(cur["no_src"], cur["total"]), 4),
+        error_count=cur["errors"],
+        latency_p50_ms=_percentile(cur["latencies"], 50),
+        latency_p95_ms=_percentile(cur["latencies"], 95),
+        latency_p99_ms=_percentile(cur["latencies"], 99),
+        cost_total_usd=round(sum(cur["costs"]), 4),
+        cost_avg_per_question_usd=round(cur_avg_cost, 6) if cur["costs"] else None,
+        trends={
+            "negative_rate": _trend(cur_neg_rate, prev_neg_rate),
+            "latency_p95_ms": _trend(cur_p95, prev_p95),
+            "cost_avg": _trend(cur_avg_cost, prev_avg_cost),
+        },
+    )
+
+
+@router.get("/conversations", response_model=ConversationListResponse)
+async def list_conversations(
+    q: str | None = Query(None, description="Recherche full-text français"),
+    organisation_id: uuid.UUID | None = None,
+    user_id: uuid.UUID | None = None,
+    feedback: str | None = Query(None, pattern="^(up|down|none|any)$"),
+    date_from: datetime | None = None,
+    date_to: datetime | None = None,
+    min_latency_ms: int | None = Query(None, ge=0),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1, le=200),
+    user: User = Depends(require_role(["admin"])),
+    db: AsyncSession = Depends(get_db),
+) -> ConversationListResponse:
+    """Liste paginée des questions assistant avec filtres."""
+    # Base : assistant messages join conversation join user join org
+    stmt = (
+        select(
+            Message,
+            Conversation,
+            User.email.label("user_email"),
+            Organisation.name.label("org_name"),
+        )
+        .join(Conversation, Message.conversation_id == Conversation.id)
+        .outerjoin(User, Conversation.user_id == User.id)
+        .outerjoin(Organisation, Conversation.organisation_id == Organisation.id)
+        .where(Message.role == "assistant")
+    )
+
+    filters = []
+    if organisation_id:
+        filters.append(Conversation.organisation_id == organisation_id)
+    if user_id:
+        filters.append(Conversation.user_id == user_id)
+    if date_from:
+        filters.append(Message.created_at >= date_from)
+    if date_to:
+        filters.append(Message.created_at < date_to)
+    if min_latency_ms is not None:
+        filters.append(Message.latency_ms >= min_latency_ms)
+    if feedback == "up":
+        filters.append(Message.feedback == "up")
+    elif feedback == "down":
+        filters.append(Message.feedback == "down")
+    elif feedback == "none":
+        filters.append(Message.feedback.is_(None))
+    # feedback="any" or None → no filter
+
+    if q:
+        # Postgres full-text search en français sur le contenu (utilise le GIN index)
+        ts_query = func.plainto_tsquery("french", q)
+        ts_vector = func.to_tsvector("french", Message.content)
+        filters.append(ts_vector.op("@@")(ts_query))
+
+    if filters:
+        stmt = stmt.where(and_(*filters))
+
+    # Total count
+    count_stmt = select(func.count()).select_from(stmt.subquery())
+    total = (await db.execute(count_stmt)).scalar() or 0
+
+    # Page
+    stmt = stmt.order_by(Message.created_at.desc()).offset(
+        (page - 1) * page_size
+    ).limit(page_size)
+    rows = (await db.execute(stmt)).all()
+
+    # For each assistant message, find the preceding user question (best-effort).
+    items: list[ConversationListItem] = []
+    for msg, conv, email, org_name in rows:
+        prev_q = await db.execute(
+            select(Message.content)
+            .where(
+                Message.conversation_id == conv.id,
+                Message.role == "user",
+                Message.created_at <= msg.created_at,
+            )
+            .order_by(Message.created_at.desc())
+            .limit(1)
+        )
+        question_text = prev_q.scalar() or ""
+        items.append(
+            ConversationListItem(
+                message_id=msg.id,
+                conversation_id=conv.id,
+                created_at=msg.created_at,
+                user_email=email,
+                organisation_name=org_name,
+                question=question_text[:300],
+                answer_preview=(msg.content or "")[:300],
+                feedback=msg.feedback,
+                latency_ms=msg.latency_ms,
+                cost_usd=float(msg.cost_usd) if msg.cost_usd is not None else None,
+                has_trace=msg.rag_trace is not None,
+            )
+        )
+
+    return ConversationListResponse(
+        items=items, page=page, page_size=page_size, total=total
+    )
+
+
+@router.get("/messages/{message_id}/inspect", response_model=MessageInspect)
+async def inspect_message(
+    message_id: uuid.UUID,
+    user: User = Depends(require_role(["admin"])),
+    db: AsyncSession = Depends(get_db),
+) -> MessageInspect:
+    """Détail complet d'un message assistant pour le drawer d'inspection."""
+    stmt = (
+        select(
+            Message,
+            Conversation,
+            User.email.label("user_email"),
+            Organisation.name.label("org_name"),
+        )
+        .join(Conversation, Message.conversation_id == Conversation.id)
+        .outerjoin(User, Conversation.user_id == User.id)
+        .outerjoin(Organisation, Conversation.organisation_id == Organisation.id)
+        .where(Message.id == message_id)
+    )
+    row = (await db.execute(stmt)).first()
+    if row is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Message non trouvé"
+        )
+    msg, conv, email, org_name = row
+
+    if msg.role != "assistant":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Seuls les messages assistant peuvent être inspectés",
+        )
+
+    # Question = previous user message
+    prev_q = await db.execute(
+        select(Message.content)
+        .where(
+            Message.conversation_id == conv.id,
+            Message.role == "user",
+            Message.created_at <= msg.created_at,
+        )
+        .order_by(Message.created_at.desc())
+        .limit(1)
+    )
+    question_text = prev_q.scalar() or ""
+
+    return MessageInspect(
+        message_id=msg.id,
+        conversation_id=conv.id,
+        created_at=msg.created_at,
+        user_email=email,
+        organisation_name=org_name,
+        question=question_text,
+        answer=msg.content or "",
+        sources=msg.sources,
+        feedback=msg.feedback,
+        feedback_comment=msg.feedback_comment,
+        cost_usd=float(msg.cost_usd) if msg.cost_usd is not None else None,
+        latency_ms=msg.latency_ms,
+        rag_trace=msg.rag_trace,
+    )

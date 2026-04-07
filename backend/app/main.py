@@ -22,6 +22,7 @@ from app.api import (
     admin_feedbacks,
     admin_judilibre,
     admin_qdrant,
+    admin_quality,
     admin_ccn,
     admin_syncs,
     admin_users,
@@ -212,6 +213,9 @@ app.include_router(
 )
 app.include_router(
     admin_costs.router, prefix="/api/v1/admin/costs", tags=["admin-costs"]
+)
+app.include_router(
+    admin_quality.router, prefix="/api/v1/admin/quality", tags=["admin-quality"]
 )
 app.include_router(
     conventions.router, prefix="/api/v1/conventions", tags=["conventions"]
