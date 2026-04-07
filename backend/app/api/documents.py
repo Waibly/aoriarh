@@ -168,11 +168,15 @@ async def download_document(
     elif doc.file_format == "txt":
         content_type = "text/plain"
 
+    filename = doc.name
+    if doc.file_format and not filename.lower().endswith("." + doc.file_format.lower()):
+        filename = f"{filename}.{doc.file_format}"
+
     return Response(
         content=file_bytes,
         media_type=content_type,
         headers={
-            "Content-Disposition": "attachment; filename*=UTF-8''" + urllib.parse.quote(doc.name, safe=""),
+            "Content-Disposition": "attachment; filename*=UTF-8''" + urllib.parse.quote(filename, safe=""),
         },
     )
 
