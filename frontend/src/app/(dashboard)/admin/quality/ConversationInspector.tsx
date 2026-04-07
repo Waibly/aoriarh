@@ -223,6 +223,17 @@ export function ConversationInspector({
                 {data.rag_trace?.out_of_scope && (
                   <Badge variant="outline" className="text-orange-600 border-orange-300">Hors-scope</Badge>
                 )}
+                <Badge variant="outline" className="font-mono">
+                  <DollarSign className="h-3 w-3 mr-1" />
+                  {fmtUsd(data.cost_usd)}
+                </Badge>
+                <Badge variant="outline" className="font-mono">
+                  <Clock className="h-3 w-3 mr-1" />
+                  {fmtMs(data.latency_ms)}
+                </Badge>
+                {data.rag_trace?.model && (
+                  <Badge variant="outline">{data.rag_trace.model}</Badge>
+                )}
               </div>
 
               {/* Question */}
@@ -303,18 +314,6 @@ export function ConversationInspector({
                   <PerfBar perf={data.rag_trace.perf_ms} />
                 </Section>
               )}
-
-              {/* Coût */}
-              <Section title="Coût" icon={<DollarSign className="h-4 w-4" />}>
-                <div className="text-sm">
-                  <span className="font-bold">{fmtUsd(data.cost_usd)}</span>
-                  {data.rag_trace?.model && (
-                    <span className="ml-2 text-xs text-muted-foreground">
-                      via {data.rag_trace.model}
-                    </span>
-                  )}
-                </div>
-              </Section>
 
               {/* Trace details */}
               {!data.rag_trace ? (
