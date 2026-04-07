@@ -2,25 +2,50 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
+import Link from "next/link";
 import {
   Users,
-  FileText,
-  MessageSquare,
-  DollarSign,
+  Library,
   RefreshCw,
   AlertTriangle,
+  AlertOctagon,
   CheckCircle2,
-  XCircle,
   Clock,
   Database,
   Cpu,
   TrendingUp,
+  Gauge,
+  DollarSign,
+  Activity,
+  ArrowRight,
 } from "lucide-react";
 import { toast } from "sonner";
 import { apiFetch } from "@/lib/api";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+
+interface Incident {
+  id: string;
+  severity: "critical" | "warning" | "info";
+  title: string;
+  detail: string | null;
+  action_label: string;
+  action_href: string;
+}
+
+interface QualityHealth {
+  feedback_negative_rate_7d: number;
+  no_sources_rate_7d: number;
+  out_of_scope_count_7d: number;
+  latency_p95_ms_7d: number | null;
+}
+
+interface TimeseriesPoint {
+  date: string;
+  questions: number;
+}
 
 interface DashboardStats {
   total_users: number;
@@ -43,12 +68,241 @@ interface DashboardStats {
   last_sync_at: string | null;
   failed_syncs_24h: number;
   current_model: string;
+  quality_health: QualityHealth;
+  incidents: Incident[];
+  questions_timeline_30d: TimeseriesPoint[];
 }
 
-function formatCost(v: number): string {
+// ----------------- Helpers -----------------
+
+function fmtCost(v: number): string {
   if (v < 0.01 && v > 0) return `$${v.toFixed(4)}`;
   return `$${v.toFixed(2)}`;
 }
+
+function fmtMs(ms: number | null): string {
+  if (ms === null) return "—";
+  if (ms < 1000) return `${Math.round(ms)} ms`;
+  return `${(ms / 1000).toFixed(1)} s`;
+}
+
+function fmtPct(rate: number): string {
+  return `${(rate * 100).toFixed(1)}%`;
+}
+
+function fmtRelativeDate(iso: string | null): string {
+  if (!iso) return "jamais";
+  const d = new Date(iso);
+  const diffMs = Date.now() - d.getTime();
+  const mins = Math.floor(diffMs / 60000);
+  if (mins < 1) return "à l'instant";
+  if (mins < 60) return `il y a ${mins} min`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `il y a ${hours} h`;
+  const days = Math.floor(hours / 24);
+  return `il y a ${days} j`;
+}
+
+function projectedMonthlyCost(cost30d: number): number {
+  // Linear projection for the current month
+  return cost30d * (30 / 30);
+}
+
+// ----------------- KPI Card -----------------
+
+function KpiCard({
+  href,
+  title,
+  icon,
+  value,
+  subValue,
+  severity,
+}: {
+  href: string;
+  title: string;
+  icon: React.ReactNode;
+  value: string;
+  subValue?: string;
+  severity: "green" | "orange" | "red" | "neutral";
+}) {
+  const bgClass = {
+    green: "bg-green-50 dark:bg-green-950/30 border-green-200 dark:border-green-900 hover:bg-green-100 dark:hover:bg-green-950/50",
+    orange: "bg-orange-50 dark:bg-orange-950/30 border-orange-200 dark:border-orange-900 hover:bg-orange-100 dark:hover:bg-orange-950/50",
+    red: "bg-red-50 dark:bg-red-950/30 border-red-200 dark:border-red-900 hover:bg-red-100 dark:hover:bg-red-950/50",
+    neutral: "hover:bg-muted/50",
+  }[severity];
+
+  return (
+    <Link href={href}>
+      <Card className={`${bgClass} cursor-pointer transition-colors h-full`}>
+        <CardHeader className="pb-2 flex flex-row items-center justify-between space-y-0">
+          <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+            {icon}
+            {title}
+          </CardTitle>
+          <ArrowRight className="h-4 w-4 text-muted-foreground" />
+        </CardHeader>
+        <CardContent>
+          <div className="text-3xl font-bold">{value}</div>
+          {subValue && (
+            <div className="text-xs text-muted-foreground mt-1">{subValue}</div>
+          )}
+        </CardContent>
+      </Card>
+    </Link>
+  );
+}
+
+// ----------------- Incident banner -----------------
+
+function IncidentsBanner({ incidents }: { incidents: Incident[] }) {
+  if (incidents.length === 0) {
+    return (
+      <Card className="bg-green-50 dark:bg-green-950/30 border-green-200 dark:border-green-900">
+        <CardContent className="p-4 flex items-center gap-3">
+          <CheckCircle2 className="h-5 w-5 text-green-600 dark:text-green-400" />
+          <div className="text-sm font-medium text-green-700 dark:text-green-300">
+            Aucun incident en cours.
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+  return (
+    <Card>
+      <CardHeader className="pb-2">
+        <CardTitle className="text-base font-semibold flex items-center gap-2">
+          <AlertOctagon className="h-4 w-4" />
+          Incidents en cours ({incidents.length})
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-2">
+        {incidents.map((inc) => {
+          const colors =
+            inc.severity === "critical"
+              ? "bg-red-50 dark:bg-red-950/30 border-red-200 dark:border-red-900 text-red-700 dark:text-red-300"
+              : inc.severity === "warning"
+              ? "bg-orange-50 dark:bg-orange-950/30 border-orange-200 dark:border-orange-900 text-orange-700 dark:text-orange-300"
+              : "bg-blue-50 dark:bg-blue-950/30 border-blue-200 dark:border-blue-900 text-blue-700 dark:text-blue-300";
+          const Icon = inc.severity === "critical" ? AlertOctagon : AlertTriangle;
+          return (
+            <div
+              key={inc.id}
+              className={`border rounded-md p-3 flex items-start gap-3 ${colors}`}
+            >
+              <Icon className="h-4 w-4 mt-0.5 shrink-0" />
+              <div className="flex-1 min-w-0">
+                <div className="font-medium text-sm">{inc.title}</div>
+                {inc.detail && (
+                  <div className="text-xs opacity-80 mt-0.5">{inc.detail}</div>
+                )}
+              </div>
+              <Link href={inc.action_href}>
+                <Button size="sm" variant="outline" className="bg-background shrink-0">
+                  {inc.action_label}
+                </Button>
+              </Link>
+            </div>
+          );
+        })}
+      </CardContent>
+    </Card>
+  );
+}
+
+// ----------------- Timeline chart (SVG) -----------------
+
+function TimelineChart({ data }: { data: TimeseriesPoint[] }) {
+  if (data.length === 0) {
+    return (
+      <div className="text-xs text-muted-foreground py-12 text-center">
+        Pas de données sur les 30 derniers jours.
+      </div>
+    );
+  }
+  const max = Math.max(...data.map((d) => d.questions), 1);
+  const width = 800;
+  const height = 160;
+  const padding = { top: 10, right: 10, bottom: 25, left: 30 };
+  const chartW = width - padding.left - padding.right;
+  const chartH = height - padding.top - padding.bottom;
+  const barWidth = (chartW / data.length) * 0.7;
+  const step = chartW / data.length;
+
+  return (
+    <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-40">
+      {/* Y-axis lines */}
+      {[0, 0.25, 0.5, 0.75, 1].map((p) => {
+        const y = padding.top + chartH - chartH * p;
+        return (
+          <g key={p}>
+            <line
+              x1={padding.left}
+              x2={width - padding.right}
+              y1={y}
+              y2={y}
+              stroke="currentColor"
+              strokeOpacity="0.1"
+              strokeWidth="1"
+            />
+            <text
+              x={padding.left - 4}
+              y={y + 3}
+              textAnchor="end"
+              fontSize="9"
+              fill="currentColor"
+              fillOpacity="0.5"
+            >
+              {Math.round(max * p)}
+            </text>
+          </g>
+        );
+      })}
+      {/* Bars */}
+      {data.map((d, i) => {
+        const h = (d.questions / max) * chartH;
+        const x = padding.left + i * step + (step - barWidth) / 2;
+        const y = padding.top + chartH - h;
+        return (
+          <g key={d.date}>
+            <rect
+              x={x}
+              y={y}
+              width={barWidth}
+              height={h}
+              className="fill-primary"
+              opacity={0.85}
+            >
+              <title>{`${d.date}: ${d.questions} question(s)`}</title>
+            </rect>
+          </g>
+        );
+      })}
+      {/* X-axis labels (first, middle, last) */}
+      {[0, Math.floor(data.length / 2), data.length - 1].map((i) => {
+        if (i < 0 || i >= data.length) return null;
+        const x = padding.left + i * step + step / 2;
+        const date = new Date(data[i].date);
+        const label = date.toLocaleDateString("fr-FR", { day: "2-digit", month: "short" });
+        return (
+          <text
+            key={i}
+            x={x}
+            y={height - 8}
+            textAnchor="middle"
+            fontSize="10"
+            fill="currentColor"
+            fillOpacity="0.6"
+          >
+            {label}
+          </text>
+        );
+      })}
+    </svg>
+  );
+}
+
+// ----------------- Page -----------------
 
 export default function AdminHomePage() {
   const { data: session } = useSession();
@@ -80,254 +334,178 @@ export default function AdminHomePage() {
 
   if (loading) {
     return (
-      <div className="space-y-6">
-        <h1 className="text-2xl font-semibold tracking-tight">Tableau de bord</h1>
+      <div className="container mx-auto px-4 py-6 max-w-7xl space-y-6">
+        <h1 className="text-2xl font-bold tracking-tight">Vue d&apos;ensemble</h1>
+        <Skeleton className="h-20 w-full" />
         <div className="grid gap-4 md:grid-cols-4">
-          {[1, 2, 3, 4].map((i) => <Skeleton key={i} className="h-28" />)}
+          {[1, 2, 3, 4].map((i) => <Skeleton key={i} className="h-32" />)}
         </div>
-        <div className="grid gap-4 md:grid-cols-3">
-          {[1, 2, 3].map((i) => <Skeleton key={i} className="h-40" />)}
-        </div>
+        <Skeleton className="h-40 w-full" />
       </div>
     );
   }
 
   if (!stats) return null;
 
-  const hasAlerts = stats.error_documents > 0 || stats.failed_syncs_24h > 0 || stats.pending_documents > 0;
+  // Severity logic for the 4 main cards
+  const ragSeverity: "green" | "orange" | "red" =
+    stats.quality_health.feedback_negative_rate_7d > 0.15
+      ? "red"
+      : stats.quality_health.feedback_negative_rate_7d > 0.05 ||
+        stats.quality_health.no_sources_rate_7d > 0.05
+      ? "orange"
+      : "green";
+
+  const corpusSeverity: "green" | "orange" | "red" =
+    stats.error_documents > 0
+      ? "red"
+      : stats.pending_documents > 10
+      ? "orange"
+      : "green";
+
+  const projection = projectedMonthlyCost(stats.cost_30d);
 
   return (
-    <div className="space-y-6">
-      <h1 className="text-2xl font-semibold tracking-tight">Tableau de bord</h1>
-
-      {/* Alerts banner */}
-      {hasAlerts && (
-        <Card className="border-orange-300 bg-orange-50 dark:border-orange-800 dark:bg-orange-950/30">
-          <CardContent className="flex items-center gap-3 py-3">
-            <AlertTriangle className="h-5 w-5 text-orange-600 shrink-0" />
-            <div className="flex flex-wrap gap-3 text-sm">
-              {stats.error_documents > 0 && (
-                <span className="text-orange-800 dark:text-orange-300">
-                  <strong>{stats.error_documents}</strong> document{stats.error_documents > 1 ? "s" : ""} en erreur
-                </span>
-              )}
-              {stats.failed_syncs_24h > 0 && (
-                <span className="text-orange-800 dark:text-orange-300">
-                  <strong>{stats.failed_syncs_24h}</strong> sync{stats.failed_syncs_24h > 1 ? "s" : ""} échouée{stats.failed_syncs_24h > 1 ? "s" : ""} (24h)
-                </span>
-              )}
-              {stats.pending_documents > 0 && (
-                <span className="text-orange-800 dark:text-orange-300">
-                  <strong>{stats.pending_documents}</strong> document{stats.pending_documents > 1 ? "s" : ""} en attente d&apos;indexation
-                </span>
-              )}
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Row 1: Key metrics */}
-      <div className="grid gap-4 md:grid-cols-4">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Questions aujourd&apos;hui</CardTitle>
-            <MessageSquare className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{stats.questions_today}</div>
-            <p className="text-xs text-muted-foreground">
-              {stats.questions_7d} cette semaine · {stats.questions_30d} ce mois
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Coûts API (7j)</CardTitle>
-            <DollarSign className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{formatCost(stats.cost_7d)}</div>
-            <p className="text-xs text-muted-foreground">
-              {formatCost(stats.cost_30d)} sur 30 jours
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Utilisateurs</CardTitle>
-            <Users className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{stats.active_users}</div>
-            <p className="text-xs text-muted-foreground">
-              {stats.total_users} total · {stats.total_organisations} organisation{stats.total_organisations > 1 ? "s" : ""}
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Modèle LLM</CardTitle>
-            <Cpu className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{stats.current_model}</div>
-            <p className="text-xs text-muted-foreground">
-              {stats.questions_7d > 0 ? `~${formatCost(stats.cost_7d / stats.questions_7d)}/question` : "—"}
-            </p>
-          </CardContent>
-        </Card>
+    <div className="container mx-auto px-4 py-6 max-w-7xl space-y-6">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">Vue d&apos;ensemble</h1>
+          <p className="text-sm text-muted-foreground">
+            État de santé d&apos;AORIA RH en temps réel.
+          </p>
+        </div>
+        <Button variant="outline" size="sm" onClick={fetchStats}>
+          <RefreshCw className="h-4 w-4" />
+        </Button>
       </div>
 
-      {/* Row 2: Documents + Syncs + Index */}
-      <div className="grid gap-4 md:grid-cols-3">
-        {/* Documents health */}
+      {/* Incidents banner */}
+      <IncidentsBanner incidents={stats.incidents} />
+
+      {/* 4 main KPI cards (clickable) */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <KpiCard
+          href="/admin/quality"
+          title="Santé RAG"
+          icon={<Gauge className="h-4 w-4" />}
+          value={fmtPct(stats.quality_health.feedback_negative_rate_7d)}
+          subValue={`${fmtPct(stats.quality_health.no_sources_rate_7d)} sans source · p95 ${fmtMs(stats.quality_health.latency_p95_ms_7d)}`}
+          severity={ragSeverity}
+        />
+        <KpiCard
+          href="/admin/costs"
+          title="Coût (30j)"
+          icon={<DollarSign className="h-4 w-4" />}
+          value={fmtCost(stats.cost_30d)}
+          subValue={`projection mensuelle ~ ${fmtCost(projection)}`}
+          severity="neutral"
+        />
+        <KpiCard
+          href="/admin/corpus"
+          title="Corpus juridique"
+          icon={<Library className="h-4 w-4" />}
+          value={`${stats.indexed_documents.toLocaleString("fr-FR")}`}
+          subValue={`${stats.error_documents} erreur · ${stats.pending_documents} en attente`}
+          severity={corpusSeverity}
+        />
+        <KpiCard
+          href="/admin/quality"
+          title="Activité (7j)"
+          icon={<Activity className="h-4 w-4" />}
+          value={stats.questions_7d.toLocaleString("fr-FR")}
+          subValue={`${stats.questions_today} aujourd'hui · ${stats.active_users}/${stats.total_users} utilisateurs actifs`}
+          severity="neutral"
+        />
+      </div>
+
+      {/* Timeline chart */}
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-base font-semibold flex items-center gap-2">
+            <TrendingUp className="h-4 w-4" />
+            Questions par jour (30 jours)
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <TimelineChart data={stats.questions_timeline_30d} />
+        </CardContent>
+      </Card>
+
+      {/* Secondary info row */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-base">
-              <FileText className="h-4 w-4" />
-              Base documentaire
+          <CardHeader className="pb-2">
+            <CardTitle className="text-xs uppercase font-medium text-muted-foreground flex items-center gap-2">
+              <Clock className="h-3 w-3" />
+              Dernière sync
             </CardTitle>
           </CardHeader>
-          <CardContent className="space-y-3">
-            <div className="flex items-center justify-between">
-              <span className="text-sm text-muted-foreground">Documents total</span>
-              <span className="font-medium">{stats.total_documents.toLocaleString("fr-FR")}</span>
+          <CardContent>
+            <div className="text-sm font-medium">
+              {stats.last_sync_type ?? "—"}
             </div>
-            <div className="flex items-center justify-between">
-              <span className="text-sm text-muted-foreground">Indexés</span>
-              <span className="flex items-center gap-1.5 font-medium text-green-600">
-                <CheckCircle2 className="h-3.5 w-3.5" />
-                {stats.indexed_documents.toLocaleString("fr-FR")}
-              </span>
-            </div>
-            {stats.pending_documents > 0 && (
-              <div className="flex items-center justify-between">
-                <span className="text-sm text-muted-foreground">En attente</span>
-                <span className="flex items-center gap-1.5 font-medium text-orange-600">
-                  <Clock className="h-3.5 w-3.5" />
-                  {stats.pending_documents.toLocaleString("fr-FR")}
-                </span>
-              </div>
-            )}
-            {stats.error_documents > 0 && (
-              <div className="flex items-center justify-between">
-                <span className="text-sm text-muted-foreground">En erreur</span>
-                <span className="flex items-center gap-1.5 font-medium text-red-600">
-                  <XCircle className="h-3.5 w-3.5" />
-                  {stats.error_documents}
-                </span>
-              </div>
-            )}
-            {stats.bocc_reserve > 0 && (
-              <div className="flex items-center justify-between">
-                <span className="text-sm text-muted-foreground">BOCC en réserve</span>
-                <span className="text-sm font-medium text-muted-foreground">
-                  {stats.bocc_reserve.toLocaleString("fr-FR")}
-                </span>
-              </div>
-            )}
-            <div className="border-t pt-2 flex items-center justify-between">
-              <span className="text-sm text-muted-foreground">Chunks Qdrant</span>
-              <span className="flex items-center gap-1.5 font-medium">
-                <Database className="h-3.5 w-3.5 text-muted-foreground" />
-                {stats.total_chunks.toLocaleString("fr-FR")}
-              </span>
+            <div className="text-xs text-muted-foreground mt-1">
+              {fmtRelativeDate(stats.last_sync_at)}
+              {stats.last_sync_status && (
+                <Badge
+                  variant="outline"
+                  className={`ml-2 text-[10px] h-4 ${
+                    stats.last_sync_status === "ok"
+                      ? "border-green-300 text-green-700 dark:text-green-400"
+                      : "border-red-300 text-red-700 dark:text-red-400"
+                  }`}
+                >
+                  {stats.last_sync_status}
+                </Badge>
+              )}
             </div>
           </CardContent>
         </Card>
-
-        {/* Sync status */}
         <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-base">
-              <RefreshCw className="h-4 w-4" />
-              Synchronisations
+          <CardHeader className="pb-2">
+            <CardTitle className="text-xs uppercase font-medium text-muted-foreground flex items-center gap-2">
+              <Cpu className="h-3 w-3" />
+              Modèle LLM
             </CardTitle>
           </CardHeader>
-          <CardContent className="space-y-3">
-            {stats.last_sync_at ? (
-              <>
-                <div className="flex items-center justify-between">
-                  <span className="text-sm text-muted-foreground">Dernière sync</span>
-                  <span className="text-sm font-medium">
-                    {new Date(stats.last_sync_at).toLocaleDateString("fr-FR", {
-                      day: "2-digit",
-                      month: "2-digit",
-                      hour: "2-digit",
-                      minute: "2-digit",
-                    })}
-                  </span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-sm text-muted-foreground">Type</span>
-                  <Badge variant="outline" className="rounded-full text-xs">
-                    {stats.last_sync_type === "jurisprudence" ? "Jurisprudence" :
-                     stats.last_sync_type === "code_travail" ? "Code travail" : "CCN"}
-                  </Badge>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-sm text-muted-foreground">Statut</span>
-                  {stats.last_sync_status === "success" ? (
-                    <Badge variant="outline" className="rounded-full border-green-500 bg-green-500/10 text-green-600 text-xs">
-                      <CheckCircle2 className="mr-1 h-3 w-3" /> Succès
-                    </Badge>
-                  ) : stats.last_sync_status === "error" ? (
-                    <Badge variant="outline" className="rounded-full border-red-500 bg-red-500/10 text-red-600 text-xs">
-                      <XCircle className="mr-1 h-3 w-3" /> Erreur
-                    </Badge>
-                  ) : (
-                    <Badge variant="outline" className="rounded-full text-xs">
-                      {stats.last_sync_status}
-                    </Badge>
-                  )}
-                </div>
-              </>
-            ) : (
-              <p className="text-sm text-muted-foreground">Aucune synchronisation</p>
-            )}
-            {stats.failed_syncs_24h > 0 && (
-              <div className="border-t pt-2 flex items-center justify-between">
-                <span className="text-sm text-muted-foreground">Échecs (24h)</span>
-                <span className="font-medium text-red-600">{stats.failed_syncs_24h}</span>
-              </div>
-            )}
-            <div className="border-t pt-2 flex items-center justify-between">
-              <span className="text-sm text-muted-foreground">Ingestions (7j)</span>
-              <span className="font-medium">{stats.ingestions_7d}</span>
-            </div>
+          <CardContent>
+            <div className="text-sm font-mono font-medium">{stats.current_model}</div>
+            <Link href="/admin/costs" className="text-xs text-muted-foreground hover:underline mt-1 block">
+              Changer →
+            </Link>
           </CardContent>
         </Card>
-
-        {/* Usage trends */}
         <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-base">
-              <TrendingUp className="h-4 w-4" />
-              Activité
+          <CardHeader className="pb-2">
+            <CardTitle className="text-xs uppercase font-medium text-muted-foreground flex items-center gap-2">
+              <Database className="h-3 w-3" />
+              Index Qdrant
             </CardTitle>
           </CardHeader>
-          <CardContent className="space-y-3">
-            <div className="flex items-center justify-between">
-              <span className="text-sm text-muted-foreground">Questions (7j)</span>
-              <span className="font-medium">{stats.questions_7d}</span>
+          <CardContent>
+            <div className="text-sm font-medium">
+              {stats.total_chunks.toLocaleString("fr-FR")} chunks
             </div>
-            <div className="flex items-center justify-between">
-              <span className="text-sm text-muted-foreground">Questions (30j)</span>
-              <span className="font-medium">{stats.questions_30d}</span>
+            <Link href="/admin/qdrant" className="text-xs text-muted-foreground hover:underline mt-1 block">
+              Inspecter →
+            </Link>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-xs uppercase font-medium text-muted-foreground flex items-center gap-2">
+              <Users className="h-3 w-3" />
+              Comptes
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-sm font-medium">
+              {stats.total_organisations} orgs · {stats.total_users} users
             </div>
-            <div className="border-t pt-2 flex items-center justify-between">
-              <span className="text-sm text-muted-foreground">Coût moyen/question</span>
-              <span className="font-medium">
-                {stats.questions_30d > 0 ? formatCost(stats.cost_30d / stats.questions_30d) : "—"}
-              </span>
-            </div>
-            <div className="flex items-center justify-between">
-              <span className="text-sm text-muted-foreground">Coût total (30j)</span>
-              <span className="font-medium">{formatCost(stats.cost_30d)}</span>
-            </div>
+            <Link href="/admin/users" className="text-xs text-muted-foreground hover:underline mt-1 block">
+              Gérer →
+            </Link>
           </CardContent>
         </Card>
       </div>
