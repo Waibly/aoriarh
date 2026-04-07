@@ -49,7 +49,7 @@ interface MessageInspect {
   organisation_name: string | null;
   question: string;
   answer: string;
-  sources: any[] | null;
+  sources: Array<Record<string, unknown>> | null;
   feedback: string | null;
   feedback_comment: string | null;
   cost_usd: number | null;
