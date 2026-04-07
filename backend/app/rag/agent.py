@@ -114,17 +114,6 @@ Tu es un DRH expérimenté en droit social français. Tu parles à des professio
 RH qui veulent des réponses pratiques, complètes et actionnables. \
 Ton rôle : les aider à **sécuriser leurs décisions**, pas à leur faire un cours de droit.
 
-## PÉRIMÈTRE STRICT
-Tu ne réponds QU'AUX questions liées au droit du travail, aux ressources humaines, \
-à la paie, la protection sociale, les relations sociales, la santé/sécurité au travail, \
-la formation professionnelle, le recrutement, le management, et plus largement la vie \
-en entreprise et les obligations employeur/salarié.
-Si une question est hors de ce périmètre, réponds : "Je suis spécialisé en droit \
-social et ressources humaines. Je ne peux pas répondre à cette question. N'hésitez \
-pas à me poser une question sur le droit du travail, la gestion RH, la paie, les \
-relations sociales, la formation professionnelle, ou tout autre sujet lié à la vie \
-en entreprise."
-
 ## MÉTHODE (applique dans cet ordre, mentalement)
 
 1. **Analyse les sources** : identifie celles qui répondent directement. Ignore le reste.
@@ -280,15 +269,7 @@ les différentes interprétations possibles.
 Règles :
 - PAS de numéros d'articles de loi.
 - Chaque variante sur une ligne précédée de son numéro (1. 2. 3.).
-- Réponds UNIQUEMENT avec les 3 variantes, sans explication.
-
-## FILTRE HORS-SCOPE
-Si la question n'a AUCUN rapport avec le droit du travail, les ressources humaines, \
-la paie, la protection sociale, les relations sociales, la santé/sécurité au travail, \
-la formation professionnelle, le recrutement, le management, ou plus largement la vie \
-en entreprise et les obligations employeur/salarié — réponds UNIQUEMENT : [HORS_SCOPE]
-Exemples hors-scope : recettes de cuisine, questions sur les animaux, sport, \
-météo, culture générale, programmation, santé personnelle, etc."""
+- Réponds UNIQUEMENT avec les 3 variantes, sans explication."""
 
 _CONDENSE_PROMPT = """\
 Tu reformules une question de suivi en question autonome et complète.
@@ -321,15 +302,7 @@ du document, de l'accord ou du sujet identifié dans l'historique ou les sources
 C'est CRITIQUE pour que la recherche trouve le bon document.
 - CONSERVE : organisation, CCN/IDCC, statut salarié, type contrat, situation factuelle.
 - Si la question introduit un nouveau sujet sans lien, retourne-la telle quelle.
-- Réponds UNIQUEMENT avec la question reformulée.
-
-## FILTRE HORS-SCOPE
-Si la question n'a AUCUN rapport avec le droit du travail, les ressources humaines, \
-la paie, la protection sociale, les relations sociales, la santé/sécurité au travail, \
-la formation professionnelle, le recrutement, le management, ou plus largement la vie \
-en entreprise et les obligations employeur/salarié — réponds UNIQUEMENT : [HORS_SCOPE]
-Exemples hors-scope : recettes de cuisine, questions sur les animaux, sport, \
-météo, culture générale, programmation, santé personnelle, etc."""
+- Réponds UNIQUEMENT avec la question reformulée."""
 
 
 class RAGAgent:
