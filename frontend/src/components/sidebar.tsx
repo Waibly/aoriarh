@@ -12,7 +12,6 @@ import {
   ShieldCheck,
   Library,
   Database,
-  Scale,
   Users,
   UsersRound,
   ChevronRight,
@@ -25,7 +24,6 @@ import {
   Gift,
   UserCheck,
   DollarSign,
-  RefreshCw,
   TrendingUp,
   Gauge,
 } from "lucide-react";
@@ -389,44 +387,14 @@ export function Sidebar() {
                   size="sm"
                   className={cn(
                     "w-full justify-start font-normal",
-                    pathname.startsWith("/admin/documents-communs") &&
+                    pathname.startsWith("/admin/corpus") &&
                       "bg-accent text-accent-foreground font-medium",
                   )}
                   asChild
                 >
-                  <Link href="/admin/documents-communs">
+                  <Link href="/admin/corpus">
                     <Library className="mr-2 h-5 w-5" />
-                    Documents communs
-                  </Link>
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className={cn(
-                    "w-full justify-start font-normal",
-                    pathname.startsWith("/admin/ccn") &&
-                      "bg-accent text-accent-foreground font-medium",
-                  )}
-                  asChild
-                >
-                  <Link href="/admin/ccn">
-                    <Scale className="mr-2 h-5 w-5" />
-                    Conventions collectives
-                  </Link>
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className={cn(
-                    "w-full justify-start font-normal",
-                    pathname.startsWith("/admin/jurisprudence") &&
-                      "bg-accent text-accent-foreground font-medium",
-                  )}
-                  asChild
-                >
-                  <Link href="/admin/jurisprudence">
-                    <Scale className="mr-2 h-5 w-5" />
-                    Jurisprudence
+                    Corpus juridique
                   </Link>
                 </Button>
                 <Button
@@ -472,21 +440,6 @@ export function Sidebar() {
                   <Link href="/admin/costs">
                     <DollarSign className="mr-2 h-5 w-5" />
                     Suivi des coûts
-                  </Link>
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className={cn(
-                    "w-full justify-start font-normal",
-                    pathname.startsWith("/admin/syncs") &&
-                      "bg-accent text-accent-foreground font-medium",
-                  )}
-                  asChild
-                >
-                  <Link href="/admin/syncs">
-                    <RefreshCw className="mr-2 h-5 w-5" />
-                    Synchronisations
                   </Link>
                 </Button>
               </CollapsibleContent>

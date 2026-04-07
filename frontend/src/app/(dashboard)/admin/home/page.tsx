@@ -402,7 +402,7 @@ export default function AdminHomePage() {
           severity="neutral"
         />
         <KpiCard
-          href="/admin/documents-communs"
+          href="/admin/corpus"
           title="Corpus juridique"
           icon={<Library className="h-4 w-4" />}
           value={`${stats.indexed_documents.toLocaleString("fr-FR")}`}

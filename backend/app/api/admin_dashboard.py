@@ -265,7 +265,7 @@ async def get_dashboard(
             title=f"{docs_row.error} document(s) en erreur d'indexation",
             detail="Ces documents ne sont pas interrogeables par le RAG.",
             action_label="Voir les documents",
-            action_href="/admin/documents-communs?status=error",
+            action_href="/admin/corpus",
         ))
     if failed_24h > 0:
         incidents.append(Incident(
@@ -277,7 +277,7 @@ async def get_dashboard(
                 f"({last_sync.status if last_sync else '—'})"
             ),
             action_label="Voir l'historique",
-            action_href="/admin/syncs",
+            action_href="/admin/corpus",
         ))
     if quality_health.feedback_negative_rate_7d > 0.15 and total_msgs >= 10:
         incidents.append(Incident(
