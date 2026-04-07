@@ -39,9 +39,11 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { ConversationInspector } from "./ConversationInspector";
+import { SandboxRunner } from "./SandboxRunner";
 
 // ----------------- Types -----------------
 
@@ -177,6 +179,8 @@ export default function QualityPage() {
   const [feedbackFilter, setFeedbackFilter] = useState<string>("any");
 
   const [selectedMessageId, setSelectedMessageId] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState("conversations");
+  const [sandboxReplayMessageId, setSandboxReplayMessageId] = useState<string | undefined>(undefined);
 
   const fetchKpis = useCallback(async () => {
     if (!session?.access_token) return;
@@ -327,6 +331,14 @@ export default function QualityPage() {
         />
       </div>
 
+      {/* ----------------- Tabs ----------------- */}
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+        <TabsList className="mb-4">
+          <TabsTrigger value="conversations">Conversations</TabsTrigger>
+          <TabsTrigger value="sandbox">Bac à sable</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="conversations">
       {/* ----------------- Filters ----------------- */}
       <div className="flex flex-col md:flex-row gap-3 mb-4">
         <div className="relative flex-1">
@@ -445,12 +457,26 @@ export default function QualityPage() {
         </div>
       )}
 
+        </TabsContent>
+
+        <TabsContent value="sandbox">
+          <SandboxRunner
+            replayMessageId={sandboxReplayMessageId}
+            onConsumed={() => setSandboxReplayMessageId(undefined)}
+          />
+        </TabsContent>
+      </Tabs>
+
       {/* ----------------- Drawer ----------------- */}
       <ConversationInspector
         messageId={selectedMessageId}
         open={selectedMessageId !== null}
         onOpenChange={(open) => {
           if (!open) setSelectedMessageId(null);
+        }}
+        onReplayRequest={(mid) => {
+          setSandboxReplayMessageId(mid);
+          setActiveTab("sandbox");
         }}
       />
     </div>

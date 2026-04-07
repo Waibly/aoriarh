@@ -13,7 +13,6 @@ import {
   Library,
   Database,
   Scale,
-  MessageSquareQuote,
   Users,
   UsersRound,
   ChevronRight,
@@ -443,21 +442,6 @@ export function Sidebar() {
                   <Link href="/admin/quality">
                     <Gauge className="mr-2 h-5 w-5" />
                     Qualité & conversations
-                  </Link>
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className={cn(
-                    "w-full justify-start font-normal",
-                    pathname.startsWith("/admin/feedbacks") &&
-                      "bg-accent text-accent-foreground font-medium",
-                  )}
-                  asChild
-                >
-                  <Link href="/admin/feedbacks">
-                    <MessageSquareQuote className="mr-2 h-5 w-5" />
-                    Avis utilisateurs
                   </Link>
                 </Button>
                 <Button

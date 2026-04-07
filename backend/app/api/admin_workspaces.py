@@ -179,10 +179,11 @@ async def list_workspaces(
                     is_owner=False,
                 ))
 
-        # Question count
+        # Question count (excludes sandbox replays)
         question_q = await db.execute(
             select(func.count(distinct(ApiUsageLog.context_id))).where(
                 ApiUsageLog.context_type == "question",
+                ApiUsageLog.is_replay.is_(False),
                 ApiUsageLog.organisation_id.in_([o.id for o in orgs]) if orgs else ApiUsageLog.id.is_(None),
             )
         )

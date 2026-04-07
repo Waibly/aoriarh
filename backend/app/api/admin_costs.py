@@ -124,10 +124,11 @@ async def get_cost_dashboard(
     if date_from is None:
         date_from = date_to - timedelta(days=30)
 
-    # Base filter
+    # Base filter — exclude sandbox/replay calls from production cost metrics
     filters = [
         ApiUsageLog.created_at >= datetime.combine(date_from, datetime.min.time()),
         ApiUsageLog.created_at < datetime.combine(date_to + timedelta(days=1), datetime.min.time()),
+        ApiUsageLog.is_replay.is_(False),
     ]
     if organisation_id:
         filters.append(ApiUsageLog.organisation_id == organisation_id)

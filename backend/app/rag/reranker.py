@@ -50,16 +50,19 @@ class VoyageReranker:
         self._cost_org_id: str | None = None
         self._cost_user_id: str | None = None
         self._cost_context_id: str | None = None
+        self._cost_is_replay: bool = False
 
     def set_cost_context(
         self,
         organisation_id: str | None = None,
         user_id: str | None = None,
         context_id: str | None = None,
+        is_replay: bool = False,
     ) -> None:
         self._cost_org_id = organisation_id
         self._cost_user_id = user_id
         self._cost_context_id = context_id
+        self._cost_is_replay = is_replay
 
     async def rerank(
         self,
@@ -99,6 +102,7 @@ class VoyageReranker:
                 user_id=self._cost_user_id,
                 context_type="question",
                 context_id=self._cost_context_id,
+                is_replay=self._cost_is_replay,
             )
 
         # Map reranked scores back to SearchResult objects,

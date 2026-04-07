@@ -1,9 +1,11 @@
 """Admin Quality endpoints — KPIs RAG, exploration de conversations, inspection détaillée.
 
-Trois endpoints:
-- GET  /metrics?days=7              → KPIs agrégés sur la période
-- GET  /conversations               → liste paginée filtrable + recherche full-text
-- GET  /messages/{message_id}/inspect  → trace RAG complet d'un message
+Endpoints:
+- GET  /metrics?days=7                  → KPIs agrégés sur la période
+- GET  /conversations                   → liste paginée filtrable + recherche full-text
+- GET  /messages/{message_id}/inspect   → trace RAG complet d'un message
+- POST /sandbox/run                     → exécute une question dans le sandbox (sans persistance)
+- POST /sandbox/replay/{message_id}     → rejoue une question existante via le sandbox
 """
 from __future__ import annotations
 
@@ -373,4 +375,218 @@ async def inspect_message(
         cost_usd=float(msg.cost_usd) if msg.cost_usd is not None else None,
         latency_ms=msg.latency_ms,
         rag_trace=msg.rag_trace,
+    )
+
+
+# ----------------- Sandbox -----------------
+
+
+class OrganisationItem(BaseModel):
+    id: uuid.UUID
+    name: str
+
+
+@router.get("/sandbox/organisations", response_model=list[OrganisationItem])
+async def list_organisations_for_sandbox(
+    user: User = Depends(require_role(["admin"])),
+    db: AsyncSession = Depends(get_db),
+) -> list[OrganisationItem]:
+    """Lightweight org list for the sandbox selector (admin only)."""
+    rows = (
+        await db.execute(
+            select(Organisation.id, Organisation.name).order_by(Organisation.name)
+        )
+    ).all()
+    return [OrganisationItem(id=r[0], name=r[1]) for r in rows]
+
+
+class SandboxRunRequest(BaseModel):
+    query: str
+    organisation_id: uuid.UUID
+    history: list[dict] | None = None
+    skip_generation: bool = False  # if True, skip the LLM call (retrieval-only)
+
+
+class SandboxRunResponse(BaseModel):
+    answer: str | None
+    sources: list[dict]
+    rag_trace: dict
+    cost_usd: float
+    duration_ms: int
+
+
+async def _run_sandbox_pipeline(
+    db: AsyncSession,
+    query: str,
+    organisation_id: uuid.UUID,
+    history: list[dict] | None,
+    skip_generation: bool,
+) -> SandboxRunResponse:
+    """Execute the RAG pipeline in sandbox mode (no message persistence)."""
+    import dataclasses
+    import time as _time
+    from app.rag.agent import RAGAgent
+    from app.models.ccn import OrganisationConvention
+    from app.models.api_usage import ApiUsageLog as _ApiUsageLog
+
+    # Verify the organisation exists
+    org_q = await db.execute(
+        select(Organisation).where(Organisation.id == organisation_id)
+    )
+    org = org_q.scalar_one_or_none()
+    if org is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Organisation introuvable",
+        )
+
+    # Load org's IDCC list (same logic as the chat endpoint)
+    idcc_result = await db.execute(
+        select(OrganisationConvention.idcc).where(
+            OrganisationConvention.organisation_id == organisation_id,
+            OrganisationConvention.use_custom.is_(False),
+        )
+    )
+    org_idcc_list = [r[0] for r in idcc_result.all()] or None
+
+    org_context = {
+        "nom": org.name,
+        "convention_collective": getattr(org, "convention_collective", None),
+        "secteur_activite": getattr(org, "secteur_activite", None),
+        "forme_juridique": getattr(org, "forme_juridique", None),
+        "taille": getattr(org, "taille", None),
+        "profil_metier": None,
+    }
+
+    sandbox_id = uuid.uuid4()
+    agent = RAGAgent()
+    t_start = _time.perf_counter()
+
+    results, reformulated, rag_trace = await agent.prepare_context(
+        query=query,
+        organisation_id=str(organisation_id),
+        org_context=org_context,
+        history=history,
+        org_idcc_list=org_idcc_list,
+        user_id=None,
+        conversation_id=str(sandbox_id),
+        is_replay=True,
+    )
+
+    answer: str | None = None
+    sources_dicts: list[dict] = []
+
+    if not skip_generation and reformulated != "[HORS_SCOPE]" and results:
+        sources = agent.format_sources(results)
+        sources_dicts = [dataclasses.asdict(s) for s in sources]
+        full_answer = ""
+        async for chunk in agent.stream_generate(query, results, org_context=org_context):
+            full_answer += chunk
+        answer = full_answer
+        rag_trace.perf_ms["generate"] = (
+            _time.perf_counter() - t_start
+        ) * 1000 - rag_trace.perf_ms.get("context_total", 0)
+    elif results:
+        sources = agent.format_sources(results)
+        sources_dicts = [dataclasses.asdict(s) for s in sources]
+
+    duration_ms = int((_time.perf_counter() - t_start) * 1000)
+    rag_trace.perf_ms["total"] = float(duration_ms)
+
+    # Sum costs for this sandbox run
+    cost_q = await db.execute(
+        select(func.coalesce(func.sum(_ApiUsageLog.cost_usd), 0)).where(
+            _ApiUsageLog.context_id == sandbox_id,
+        )
+    )
+    cost_usd = float(cost_q.scalar() or 0.0)
+
+    return SandboxRunResponse(
+        answer=answer,
+        sources=sources_dicts,
+        rag_trace=rag_trace.to_dict(),
+        cost_usd=cost_usd,
+        duration_ms=duration_ms,
+    )
+
+
+@router.post("/sandbox/run", response_model=SandboxRunResponse)
+async def sandbox_run(
+    body: SandboxRunRequest,
+    user: User = Depends(require_role(["admin"])),
+    db: AsyncSession = Depends(get_db),
+) -> SandboxRunResponse:
+    """Lance une question dans le sandbox sans la persister ni facturer le client."""
+    return await _run_sandbox_pipeline(
+        db,
+        query=body.query,
+        organisation_id=body.organisation_id,
+        history=body.history,
+        skip_generation=body.skip_generation,
+    )
+
+
+@router.post("/sandbox/replay/{message_id}", response_model=SandboxRunResponse)
+async def sandbox_replay(
+    message_id: uuid.UUID,
+    user: User = Depends(require_role(["admin"])),
+    db: AsyncSession = Depends(get_db),
+) -> SandboxRunResponse:
+    """Rejoue une question existante avec le RAG actuel.
+
+    Récupère la question originale + l'historique de la conversation jusqu'à
+    ce message, puis exécute en mode sandbox.
+    """
+    stmt = (
+        select(Message, Conversation)
+        .join(Conversation, Message.conversation_id == Conversation.id)
+        .where(Message.id == message_id)
+    )
+    row = (await db.execute(stmt)).first()
+    if row is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Message non trouvé"
+        )
+    msg, conv = row
+
+    # Find the question (previous user message)
+    prev_q = await db.execute(
+        select(Message.content)
+        .where(
+            Message.conversation_id == conv.id,
+            Message.role == "user",
+            Message.created_at <= msg.created_at,
+        )
+        .order_by(Message.created_at.desc())
+        .limit(1)
+    )
+    question_text = prev_q.scalar()
+    if not question_text:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Aucune question utilisateur trouvée pour ce message",
+        )
+
+    # Build history from messages strictly before the question
+    hist_q = await db.execute(
+        select(Message)
+        .where(
+            Message.conversation_id == conv.id,
+            Message.created_at < msg.created_at,
+        )
+        .order_by(Message.created_at.asc())
+        .limit(12)
+    )
+    history = [
+        {"role": m.role, "content": m.content}
+        for m in hist_q.scalars().all()
+        if m.content != question_text
+    ]
+
+    return await _run_sandbox_pipeline(
+        db,
+        query=question_text,
+        organisation_id=conv.organisation_id,
+        history=history if history else None,
+        skip_generation=False,
     )
