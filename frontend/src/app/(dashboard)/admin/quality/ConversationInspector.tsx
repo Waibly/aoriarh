@@ -16,7 +16,6 @@ import {
 } from "@/components/ui/sheet";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { ThumbsUp, ThumbsDown, Clock, DollarSign, Layers, FileSearch, BookOpen } from "lucide-react";
 
 interface InspectChunk {
@@ -197,7 +196,7 @@ export function ConversationInspector({
           </SheetDescription>
         </SheetHeader>
 
-        <ScrollArea className="flex-1">
+        <div className="flex-1 min-h-0 overflow-y-auto">
           {loading || !data ? (
             <div className="space-y-3 px-6 py-4">
               <Skeleton className="h-20 w-full" />
@@ -241,7 +240,7 @@ export function ConversationInspector({
               {/* Réponse */}
               <div>
                 <h3 className="text-xs uppercase font-semibold text-muted-foreground mb-1">Réponse</h3>
-                <div className="bg-muted/30 rounded-md p-4 max-h-96 overflow-y-auto">
+                <div className="bg-muted/30 rounded-md p-4">
                   <div className="prose prose-sm dark:prose-invert max-w-none text-[0.875rem] leading-6 [&_h1]:mt-4 [&_h1]:mb-2 [&_h1]:text-base [&_h2]:mt-4 [&_h2]:mb-2 [&_h2]:text-sm [&_h2]:font-semibold [&_h3]:mt-3 [&_h3]:mb-1 [&_h3]:text-sm [&_h3]:font-semibold [&_p]:my-2 [&_ul]:my-2 [&_ul]:pl-5 [&_ul]:list-disc [&_ol]:my-2 [&_ol]:pl-5 [&_ol]:list-decimal [&_li]:my-0.5 [&_strong]:font-semibold [&_table]:my-3 [&_table]:border [&_th]:border [&_th]:px-2 [&_th]:py-1 [&_td]:border [&_td]:px-2 [&_td]:py-1 [&>*:first-child]:mt-0 [&>*:last-child]:mb-0">
                     <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeSanitize]}>
                       {data.answer}
@@ -396,7 +395,7 @@ export function ConversationInspector({
               )}
             </div>
           )}
-        </ScrollArea>
+        </div>
       </SheetContent>
     </Sheet>
   );
