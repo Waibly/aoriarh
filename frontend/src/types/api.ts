@@ -219,6 +219,8 @@ export const SOURCE_TYPE_OPTIONS: {
   { value: "code_securite_sociale", label: "Code de la sécurité sociale", niveau: 3 },
   { value: "code_penal", label: "Code pénal", niveau: 3 },
   { value: "code_civil", label: "Code civil", niveau: 3 },
+  { value: "code_action_sociale", label: "Code de l'action sociale et des familles", niveau: 3 },
+  { value: "code_sante_publique", label: "Code de la santé publique", niveau: 3 },
   // Niveau 4 — Jurisprudence
   { value: "arret_cour_cassation", label: "Arrêt Cour de cassation", niveau: 4 },
   { value: "arret_cour_appel", label: "Arrêt Cour d'appel", niveau: 4 },

@@ -35,7 +35,8 @@ _REQUEST_TIMEOUT = 60.0
 _MAX_RETRIES = 3
 _RETRY_DELAY = 2.0
 _TOKEN_REFRESH_MARGIN = 60  # seconds before expiry to refresh proactively
-_PAGE_SIZE = 20  # /search results per page
+_PAGE_SIZE = 50  # /search results per page
+_MAX_PAGES = 5  # safety cap (5 × 50 = 250 max decisions per sync call)
 
 _FOND = "CONSTIT"  # validé en phase A — fond Légifrance Conseil constitutionnel
 
@@ -197,9 +198,8 @@ class ConseilConstitService:
         from app.services.storage_service import StorageService
         storage = StorageService()
 
-        async with httpx.AsyncClient(timeout=_REQUEST_TIMEOUT) as client:
-            # --- Step 1 : list decisions ---
-            search_payload = {
+        def _build_search_payload(page_number: int) -> dict:
+            return {
                 "fond": _FOND,
                 "recherche": {
                     "champs": [
@@ -224,23 +224,44 @@ class ConseilConstitService:
                             },
                         }
                     ],
-                    "pageNumber": 1,
+                    "pageNumber": page_number,
                     "pageSize": _PAGE_SIZE,
-                    "sort": "PERTINENCE",
+                    "sort": "DATE_DESC",
                     "typePagination": "DEFAUT",
                 },
             }
-            search_data = await self._api_post(client, "/search", search_payload)
-            if not search_data:
-                result.errors = 1
-                result.error_messages.append("Échec /search CONSTIT")
-                return result
 
-            results_list = search_data.get("results", [])
-            result.total_fetched = search_data.get("totalResultNumber", len(results_list))
+        async with httpx.AsyncClient(timeout=_REQUEST_TIMEOUT) as client:
+            # --- Step 1 : list decisions across pages (capped) ---
+            results_list: list[dict] = []
+            for page_number in range(1, _MAX_PAGES + 1):
+                search_data = await self._api_post(
+                    client, "/search", _build_search_payload(page_number)
+                )
+                if not search_data:
+                    if page_number == 1:
+                        result.errors = 1
+                        result.error_messages.append("Échec /search CONSTIT")
+                        return result
+                    break
+                page_results = search_data.get("results", [])
+                if page_number == 1:
+                    result.total_fetched = search_data.get(
+                        "totalResultNumber", 0
+                    )
+                if not page_results:
+                    break
+                results_list.extend(page_results)
+                # Stop if we've fetched everything available
+                if len(results_list) >= result.total_fetched:
+                    break
+                # Stop early if we already have enough for the cap
+                if max_decisions and len(results_list) >= max_decisions * 2:
+                    break
+
             logger.info(
-                "ConseilConstit sync: %d decisions found (%s → %s)",
-                result.total_fetched, date_start, date_end,
+                "ConseilConstit sync: %d decisions found total (%d collected, %s → %s)",
+                result.total_fetched, len(results_list), date_start, date_end,
             )
 
             # --- Step 2 : fetch each decision text ---
@@ -271,8 +292,9 @@ class ConseilConstitService:
                     text_obj = consult_data.get("text") or {}
                     full_text = text_obj.get("texte") or ""
                     if not full_text or len(full_text) < 100:
-                        # No usable content
-                        result.errors += 1
+                        # No usable content — count as skipped, not error
+                        # (happens for very old or in-progress decisions)
+                        result.already_exists += 1
                         continue
 
                     # Parse meta
@@ -351,23 +373,24 @@ class ConseilConstitService:
         hierarchy = DOCUMENT_TYPE_HIERARCHY[source_type]
 
         # Build display name : Cons. const., DD/MM/YYYY, n° 2025-1175 QPC
-        date_str = (
-            decision.decision_date.strftime("%d/%m/%Y")
-            if decision.decision_date
-            else ""
-        )
-        # Extract decision number from title (eg "2025-1175 QPC")
+        # Robust to missing date / missing number — never produces double commas
+        # or trailing 'n°' fragments. Falls back to the raw PISTE title.
         import re
         num_match = re.search(r"(\d{4}-\d{1,4})\s*(QPC|DC|LP|FNR|L|I|D)?", decision.title)
+        num_str = ""
         if num_match:
             num_part = num_match.group(1)
             type_part = num_match.group(2) or decision.nature.upper()
             num_str = f"{num_part} {type_part}".strip()
-        else:
-            num_str = decision.nature.upper() if decision.nature else "—"
 
-        name = f"Cons. const., {date_str}, n° {num_str}".strip()
-        if name.endswith(", n° "):
+        parts = ["Cons. const."]
+        if decision.decision_date:
+            parts.append(decision.decision_date.strftime("%d/%m/%Y"))
+        if num_str:
+            parts.append(f"n° {num_str}")
+        name = ", ".join(parts)
+        # If we have only the prefix (no date AND no num), fall back to raw title
+        if name == "Cons. const." and decision.title:
             name = decision.title[:200]
 
         file_id = uuid.uuid4()

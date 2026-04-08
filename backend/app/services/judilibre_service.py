@@ -34,6 +34,7 @@ _MAX_RETRIES = 3
 _TOKEN_REFRESH_MARGIN = 300
 
 _CHAMBER_MAP = {
+    # Cour de cassation
     "soc": "Chambre sociale",
     "civ1": "Chambre civile 1",
     "civ2": "Chambre civile 2",
@@ -42,6 +43,15 @@ _CHAMBER_MAP = {
     "crim": "Chambre criminelle",
     "mi": "Chambre mixte",
     "pl": "Assemblée plénière",
+    # Cour d'appel — codes Judilibre les plus courants (best-effort, le code
+    # brut est gardé en fallback si non mappé)
+    "ch_soc": "Chambre sociale",
+    "ch_civ_1": "Chambre civile 1",
+    "ch_civ_2": "Chambre civile 2",
+    "ch_civ_3": "Chambre civile 3",
+    "ch_com": "Chambre commerciale",
+    "ch_crim": "Chambre criminelle",
+    "ch_corr": "Chambre correctionnelle",
 }
 
 
@@ -49,7 +59,6 @@ _CHAMBER_MAP = {
 class JudilibreDecision:
     """Parsed decision from the Judilibre API."""
 
-    judilibre_id: str
     numero_pourvoi: str
     date_decision: date
     juridiction: str
@@ -205,10 +214,16 @@ class JudilibreService:
                 total = data.get("total", 0)
                 if batch_num == 0:
                     result.total_fetched = total
-                    logger.info(
-                        "Judilibre sync: %d decisions found (%s → %s, chamber=%s, pub=%s)",
-                        total, date_start, date_end, chamber, publication,
-                    )
+                    if jurisdiction == "cc":
+                        logger.info(
+                            "Judilibre sync: %d decisions found (%s → %s, juri=cc, chamber=%s, pub=%s)",
+                            total, date_start, date_end, chamber, publication,
+                        )
+                    else:
+                        logger.info(
+                            "Judilibre sync: %d decisions found (%s → %s, juri=%s, pub=%s)",
+                            total, date_start, date_end, jurisdiction, publication,
+                        )
 
                 items = data.get("results", [])
                 if not items:
@@ -221,6 +236,13 @@ class JudilibreService:
                     try:
                         decision = self._parse_decision(raw)
                         if decision is None:
+                            result.errors += 1
+                            continue
+
+                        # Skip decisions without an identifier — they can't be
+                        # deduplicated reliably and would pollute the set with
+                        # an empty string.
+                        if not decision.numero_pourvoi:
                             result.errors += 1
                             continue
 
@@ -365,8 +387,9 @@ class JudilibreService:
                 import re
                 textes_appliques.append(re.sub(r"<[^>]+>", "", v["title"]))
 
+        # Use the Judilibre 'id' as fallback if 'number' is missing
+        # (for some old or unpublished decisions)
         return JudilibreDecision(
-            judilibre_id=raw.get("id", ""),
             numero_pourvoi=raw.get("number", "") or raw.get("id", ""),
             date_decision=decision_date,
             juridiction=juridiction_label,

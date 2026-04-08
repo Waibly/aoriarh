@@ -407,9 +407,12 @@ async def run_scheduled_sync(ctx: dict) -> None:
         admin_id = admin.id
 
         # --- 1. Jurisprudence sync (multi-juridictions) ---
-        # Quatre passes successives : Cass. soc + Cass. crim + Cass. com + CA.
+        # Cinq passes successives via Judilibre :
+        #   Cass. soc + Cass. crim + Cass. com + Cour d'appel + Conseil d'État.
         # Chacune écrit son propre SyncLog row avec sync_type='jurisprudence'
         # pour rester groupé sous la même rubrique côté admin.
+        # Une 6e passe (Conseil constitutionnel) est faite plus bas en 1bis,
+        # via PISTE Légifrance et non Judilibre (qui ne couvre pas le CC).
         from app.services.judilibre_service import JudilibreService
 
         juris_service = JudilibreService()
@@ -465,8 +468,6 @@ async def run_scheduled_sync(ctx: dict) -> None:
             ),
         ]
 
-        # Conseil constitutionnel uses a different service (PISTE Légifrance,
-        # not Judilibre) so we handle it separately below the Judilibre loop.
 
         for pass_label, pass_kwargs in jurisprudence_passes:
             t_start = _time.perf_counter()
