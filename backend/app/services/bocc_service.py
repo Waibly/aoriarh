@@ -176,28 +176,30 @@ class BoccService:
         return result
 
     async def ingest_bocc_for_idcc(self, db: AsyncSession, idcc: str) -> int:
-        """Ingest all pending BOCC documents for a given IDCC.
+        """Ingest all reserved BOCC documents for a given IDCC.
 
-        Called after a CCN is installed to ingest stored BOCC avenants.
-        Returns the number of documents enqueued for ingestion.
+        Called after a CCN is installed. Flips the 'reserved' avenants
+        for that IDCC to 'pending' and enqueues them. Also catches any
+        legacy 'pending' rows from before the reserved-status migration.
         """
-        # Find all BOCC docs for this IDCC that are stored but not yet indexed
         bocc_docs = await db.execute(
             select(Document).where(
                 Document.organisation_id.is_(None),
                 Document.storage_path.ilike(f"common/ccn/{idcc}/bocc_%"),
-                Document.indexation_status == "pending",
+                Document.indexation_status.in_(["reserved", "pending"]),
             )
         )
         docs = bocc_docs.scalars().all()
 
         count = 0
         for doc in docs:
+            if doc.indexation_status == "reserved":
+                doc.indexation_status = "pending"
             await enqueue_ingestion(str(doc.id))
             count += 1
-
         if count:
-            logger.info("BOCC: enqueued %d pending docs for IDCC %s", count, idcc)
+            await db.commit()
+            logger.info("BOCC: enqueued %d reserved docs for IDCC %s", count, idcc)
         return count
 
     async def process_issue(
@@ -261,7 +263,19 @@ class BoccService:
 
                     storage.put_file_bytes(storage_path, md_bytes, content_type="text/plain")
 
-                    # Create document in DB
+                    # Check if this CCN is installed — drives the initial status
+                    installed = await db.execute(
+                        select(OrganisationConvention).where(
+                            OrganisationConvention.idcc == avenant["idcc"],
+                        ).limit(1)
+                    )
+                    is_installed = installed.scalar_one_or_none() is not None
+
+                    # Create document in DB. We use the 'reserved' status for
+                    # avenants whose CCN is not installed in any org : they are
+                    # NOT actually waiting in the worker queue, just stored for
+                    # later ingestion at install time. Marking them 'pending'
+                    # would inflate the queue counter and never resolve.
                     hierarchy = DOCUMENT_TYPE_HIERARCHY["convention_collective_nationale"]
                     doc = Document(
                         organisation_id=None,  # Common document
@@ -270,7 +284,7 @@ class BoccService:
                         norme_niveau=hierarchy["niveau"],
                         norme_poids=hierarchy["poids"],
                         storage_path=storage_path,
-                        indexation_status="pending",
+                        indexation_status="pending" if is_installed else "reserved",
                         uploaded_by=user_id,
                         file_size=len(md_bytes),
                         file_format="md",
@@ -280,13 +294,7 @@ class BoccService:
                     await db.commit()
                     await db.refresh(doc)
 
-                    # Check if this CCN is installed — if yes, ingest now
-                    installed = await db.execute(
-                        select(OrganisationConvention).where(
-                            OrganisationConvention.idcc == avenant["idcc"],
-                        ).limit(1)
-                    )
-                    if installed.scalar_one_or_none():
+                    if is_installed:
                         await enqueue_ingestion(str(doc.id))
                         result.avenants_ingested += 1
                     else:

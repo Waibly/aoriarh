@@ -196,6 +196,16 @@ function StatusBadge({ status }: { status: string }) {
     );
   if (status === "pending")
     return <Badge variant="outline">en attente</Badge>;
+  if (status === "reserved")
+    return (
+      <Badge
+        variant="outline"
+        className="border-amber-300 text-amber-700 dark:text-amber-400"
+        title="En réserve : sera ingéré quand une organisation installera la CCN correspondante"
+      >
+        en réserve
+      </Badge>
+    );
   if (status === "indexing")
     return (
       <Badge className="bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400 border-0">
