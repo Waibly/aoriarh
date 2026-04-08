@@ -152,7 +152,10 @@ function StatusBadge({ status }: { status: string }) {
 function SyncBanner({ token, onRefresh }: { token: string; onRefresh: () => void }) {
   const [lastSyncs, setLastSyncs] = useState<{ [key: string]: SyncLogItem | null }>({});
   const [loading, setLoading] = useState(true);
-  const [running, setRunning] = useState<string | null>(null);
+  // running[key] = true while we wait for the trigger HTTP call to return
+  const [running, setRunning] = useState<{ [key: string]: boolean }>({});
+  // pollingIds[key] = id of the SyncLog row we're tracking (created right after trigger)
+  const [pollingIds, setPollingIds] = useState<{ [key: string]: string | null }>({});
 
   const loadLastSyncs = useCallback(async () => {
     try {
@@ -188,8 +191,50 @@ function SyncBanner({ token, onRefresh }: { token: string; onRefresh: () => void
     loadLastSyncs();
   }, [loadLastSyncs]);
 
+  // Poll while at least one job is being tracked
+  useEffect(() => {
+    const trackedKeys = Object.entries(pollingIds).filter(([, id]) => id !== null);
+    if (trackedKeys.length === 0) return;
+    const interval = setInterval(() => {
+      loadLastSyncs();
+    }, 3000);
+    return () => clearInterval(interval);
+  }, [pollingIds, loadLastSyncs]);
+
+  // Detect when a tracked job finishes (status changes from running to ok/error)
+  useEffect(() => {
+    Object.entries(pollingIds).forEach(([key, id]) => {
+      if (!id) return;
+      const log = lastSyncs[key];
+      if (!log) return;
+      if (log.id === id) {
+        const finished =
+          log.status &&
+          ["ok", "success", "completed", "error", "failed"].includes(
+            log.status.toLowerCase()
+          );
+        if (finished) {
+          setPollingIds((prev) => ({ ...prev, [key]: null }));
+          const isOk = ["ok", "success", "completed"].includes(
+            log.status.toLowerCase()
+          );
+          if (isOk) {
+            toast.success(
+              `Sync ${key} terminée — ${log.items_created ?? 0} créé(s), ${
+                log.items_fetched ?? 0
+              } récupéré(s)`,
+            );
+          } else {
+            toast.error(`Sync ${key} échouée : ${log.error_message ?? "erreur"}`);
+          }
+          onRefresh();
+        }
+      }
+    });
+  }, [lastSyncs, pollingIds, onRefresh]);
+
   const triggerSync = async (key: string) => {
-    setRunning(key);
+    setRunning((prev) => ({ ...prev, [key]: true }));
     try {
       let path = "";
       if (key === "kali") path = "/admin/ccn/sync-all";
@@ -203,13 +248,30 @@ function SyncBanner({ token, onRefresh }: { token: string; onRefresh: () => void
         headers: { "Content-Type": "application/json" },
         body: key === "judilibre" ? JSON.stringify({}) : undefined,
       });
-      toast.success("Sync lancée");
-      onRefresh();
-      setTimeout(loadLastSyncs, 1000);
+      toast.info(`Sync ${key} lancée — suivi en cours…`);
+      // Refresh logs to capture the freshly created sync_log entry
+      await loadLastSyncs();
+      // Find the most recent log for this key (just created) and start tracking it
+      const fresh = await apiFetch<{ logs: SyncLogItem[]; total: number }>(
+        "/admin/syncs/logs?page=1&page_size=10",
+        { token },
+      );
+      const matcher = (t: string) => {
+        const tt = t.toLowerCase();
+        if (key === "kali") return tt.includes("kali") || tt.includes("ccn");
+        if (key === "judilibre") return tt.includes("juris") || tt.includes("judilibre");
+        if (key === "code_travail") return tt.includes("code");
+        if (key === "bocc") return tt.includes("bocc");
+        return false;
+      };
+      const freshest = fresh.logs.find((l) => matcher(l.sync_type));
+      if (freshest) {
+        setPollingIds((prev) => ({ ...prev, [key]: freshest.id }));
+      }
     } catch {
-      toast.error("Échec de la sync");
+      toast.error("Échec du déclenchement de la sync");
     } finally {
-      setRunning(null);
+      setRunning((prev) => ({ ...prev, [key]: false }));
     }
   };
 
@@ -238,26 +300,36 @@ function SyncBanner({ token, onRefresh }: { token: string; onRefresh: () => void
 
   return (
     <Card>
-      <CardContent className="p-3 grid grid-cols-2 md:grid-cols-4 gap-2">
+      <CardContent className="p-3 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-2">
         {sources.map((s) => {
           const log = lastSyncs[s.key];
-          const ok = log
-            ? ["ok", "success", "completed"].includes(log.status.toLowerCase())
-            : false;
+          const isPolling = pollingIds[s.key] !== null && pollingIds[s.key] !== undefined;
+          const isTriggering = running[s.key] === true;
+          const isRunning = isPolling || isTriggering;
+          const status = log?.status?.toLowerCase() ?? "";
+          const ok = ["ok", "success", "completed"].includes(status);
+          const isErr = ["error", "failed"].includes(status);
+
           return (
             <div
               key={s.key}
-              className="flex items-center justify-between gap-2 border rounded-md p-2 text-xs"
+              className={`flex flex-col gap-1 border rounded-md p-3 text-xs transition-colors ${
+                isRunning ? "border-blue-300 bg-blue-50/50 dark:bg-blue-950/20" : ""
+              }`}
             >
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-1">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-1.5 min-w-0">
                   {loading ? (
                     <Skeleton className="h-3 w-3" />
+                  ) : isRunning ? (
+                    <Loader2 className="h-3 w-3 text-blue-600 animate-spin" />
                   ) : log ? (
                     ok ? (
                       <CheckCircle2 className="h-3 w-3 text-green-600" />
-                    ) : (
+                    ) : isErr ? (
                       <AlertCircle className="h-3 w-3 text-red-600" />
+                    ) : (
+                      <Loader2 className="h-3 w-3 text-blue-600 animate-spin" />
                     )
                   ) : (
                     <span className="h-3 w-3 inline-block rounded-full bg-muted-foreground/30" />
@@ -265,23 +337,67 @@ function SyncBanner({ token, onRefresh }: { token: string; onRefresh: () => void
                   <span className="font-medium truncate">{s.label}</span>
                   <InfoTooltip>{s.help}</InfoTooltip>
                 </div>
-                <div className="text-muted-foreground text-[10px] truncate">
-                  {log ? fmtRelative(log.started_at) : "—"}
-                </div>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={isRunning}
+                  onClick={() => triggerSync(s.key)}
+                  className="h-7 px-2 text-[11px] shrink-0"
+                  title="Lancer la sync"
+                >
+                  {isRunning ? (
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                  ) : (
+                    <RefreshCw className="h-3 w-3" />
+                  )}
+                </Button>
               </div>
-              <Button
-                size="sm"
-                variant="outline"
-                disabled={running === s.key}
-                onClick={() => triggerSync(s.key)}
-                className="h-7 px-2 text-[11px]"
-              >
-                {running === s.key ? (
-                  <Loader2 className="h-3 w-3 animate-spin" />
-                ) : (
-                  <RefreshCw className="h-3 w-3" />
-                )}
-              </Button>
+
+              {/* Status line */}
+              <div className="text-muted-foreground text-[10px] truncate min-h-[14px]">
+                {isRunning
+                  ? "En cours..."
+                  : log
+                  ? `${fmtRelative(log.started_at)}${
+                      log.duration_ms ? ` · ${(log.duration_ms / 1000).toFixed(0)}s` : ""
+                    }`
+                  : "—"}
+              </div>
+
+              {/* Progress / counts (visible when running OR after completion) */}
+              {log && (log.items_fetched !== null || log.items_created !== null) && (
+                <div className="text-[10px] flex flex-wrap gap-x-2 gap-y-0.5">
+                  {log.items_fetched !== null && (
+                    <span className="text-muted-foreground">
+                      <span className="font-mono font-semibold text-foreground">
+                        {log.items_fetched}
+                      </span>{" "}
+                      récupéré
+                    </span>
+                  )}
+                  {log.items_created !== null && (
+                    <span className="text-muted-foreground">
+                      <span className="font-mono font-semibold text-foreground">
+                        {log.items_created}
+                      </span>{" "}
+                      créé
+                    </span>
+                  )}
+                  {log.errors_count !== null && log.errors_count > 0 && (
+                    <span className="text-red-600 dark:text-red-400">
+                      <span className="font-mono font-semibold">{log.errors_count}</span>{" "}
+                      erreur
+                    </span>
+                  )}
+                </div>
+              )}
+
+              {/* Error message if failed */}
+              {isErr && log?.error_message && (
+                <div className="text-[10px] text-red-600 dark:text-red-400 truncate" title={log.error_message}>
+                  {log.error_message}
+                </div>
+              )}
             </div>
           );
         })}
@@ -614,15 +730,15 @@ export default function CorpusPage() {
           </div>
 
           <Card>
-            <CardContent className="p-0">
+            <CardContent>
               {docsLoading ? (
-                <div className="p-4 space-y-2">
+                <div className="space-y-2">
                   {[1, 2, 3, 4, 5].map((i) => (
                     <Skeleton key={i} className="h-10 w-full" />
                   ))}
                 </div>
               ) : filteredDocs.length === 0 ? (
-                <div className="p-12 text-center text-sm text-muted-foreground">
+                <div className="py-12 text-center text-sm text-muted-foreground">
                   Aucun document dans cette catégorie pour ces filtres.
                 </div>
               ) : (

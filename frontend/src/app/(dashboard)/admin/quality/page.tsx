@@ -400,15 +400,15 @@ export default function QualityPage() {
             Conversations ({total.toLocaleString("fr-FR")})
           </CardTitle>
         </CardHeader>
-        <CardContent className="p-0">
+        <CardContent>
           {convLoading ? (
-            <div className="p-6 space-y-2">
+            <div className="space-y-2">
               {Array.from({ length: 8 }).map((_, i) => (
                 <Skeleton key={i} className="h-12 w-full" />
               ))}
             </div>
           ) : conversations.length === 0 ? (
-            <div className="p-12 text-center text-muted-foreground text-sm">
+            <div className="py-12 text-center text-muted-foreground text-sm">
               Aucune conversation trouvée pour ces filtres.
             </div>
           ) : (
