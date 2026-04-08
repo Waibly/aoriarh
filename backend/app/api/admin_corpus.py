@@ -14,18 +14,128 @@ from __future__ import annotations
 import dataclasses
 import logging
 import time
+from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
+from sqlalchemy import desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.dependencies import require_role
+from app.models.document import Document
+from app.models.sync_log import SyncLog
 from app.models.user import User
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+class CorpusHealthResponse(BaseModel):
+    """Snapshot of corpus state for the admin Corpus page.
+
+    Used both for live progress tracking (during reindex / init runs)
+    and for the daily health card. Single endpoint so the frontend can
+    poll one URL on a 3s interval without hammering the API.
+    """
+    docs_by_status: dict[str, int]
+    docs_by_source_type: dict[str, int]
+    common_total: int
+    pending_count: int
+    indexing_count: int
+    indexed_count: int
+    error_count: int
+    reserved_count: int
+    recent_sync_errors: list[dict]
+    last_sync_per_type: dict[str, dict | None]
+    is_busy: bool
+
+
+@router.get("/health", response_model=CorpusHealthResponse)
+async def get_corpus_health(
+    user: User = Depends(require_role(["admin"])),
+    db: AsyncSession = Depends(get_db),
+) -> CorpusHealthResponse:
+    """Health snapshot of the common corpus.
+
+    Aggregates in a single query the data the admin Corpus page needs
+    for both the live progress banner and the health card. Cheap to
+    poll (~ms thanks to indexes on indexation_status and source_type).
+    """
+    # 1. Documents by status (common docs only)
+    status_rows = (await db.execute(
+        select(Document.indexation_status, func.count(Document.id))
+        .where(Document.organisation_id.is_(None))
+        .group_by(Document.indexation_status)
+    )).all()
+    docs_by_status = {row[0]: row[1] for row in status_rows}
+
+    # 2. Documents by source_type (common only)
+    type_rows = (await db.execute(
+        select(Document.source_type, func.count(Document.id))
+        .where(Document.organisation_id.is_(None))
+        .group_by(Document.source_type)
+        .order_by(desc(func.count(Document.id)))
+    )).all()
+    docs_by_source_type = {row[0]: row[1] for row in type_rows}
+
+    # 3. Sync errors in the last 24h
+    cutoff = datetime.now(UTC) - timedelta(hours=24)
+    error_logs = (await db.execute(
+        select(SyncLog)
+        .where(SyncLog.status == "error", SyncLog.started_at >= cutoff)
+        .order_by(desc(SyncLog.started_at))
+        .limit(20)
+    )).scalars().all()
+    recent_sync_errors = [
+        {
+            "id": str(log.id),
+            "sync_type": log.sync_type,
+            "started_at": log.started_at.isoformat(),
+            "error_message": log.error_message,
+            "duration_ms": log.duration_ms,
+        }
+        for log in error_logs
+    ]
+
+    # 4. Last sync per known type
+    last_per_type: dict[str, dict | None] = {}
+    for sync_type in ("kali", "ccn", "jurisprudence", "codes", "code_travail", "bocc"):
+        row = (await db.execute(
+            select(SyncLog)
+            .where(SyncLog.sync_type == sync_type)
+            .order_by(desc(SyncLog.started_at))
+            .limit(1)
+        )).scalar_one_or_none()
+        last_per_type[sync_type] = (
+            {
+                "status": row.status,
+                "started_at": row.started_at.isoformat(),
+                "items_created": row.items_created,
+                "items_fetched": row.items_fetched,
+                "errors": row.errors,
+            }
+            if row else None
+        )
+
+    pending = docs_by_status.get("pending", 0)
+    indexing = docs_by_status.get("indexing", 0)
+
+    return CorpusHealthResponse(
+        docs_by_status=docs_by_status,
+        docs_by_source_type=docs_by_source_type,
+        common_total=sum(docs_by_status.values()),
+        pending_count=pending,
+        indexing_count=indexing,
+        indexed_count=docs_by_status.get("indexed", 0),
+        error_count=docs_by_status.get("error", 0),
+        reserved_count=docs_by_status.get("reserved", 0),
+        recent_sync_errors=recent_sync_errors,
+        last_sync_per_type=last_per_type,
+        # is_busy : something is actively being processed by the worker
+        is_busy=(pending + indexing) > 0,
+    )
 
 
 class TestRetrievalRequest(BaseModel):

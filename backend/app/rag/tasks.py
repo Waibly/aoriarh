@@ -128,10 +128,25 @@ async def enqueue_judilibre_sync(
 
 
 async def enqueue_full_jurisprudence_sync(user_id: str) -> None:
-    """Enqueue a FULL jurisprudence sync : 6 passes (Cass × 3 + CA + CE + Conseil constit)."""
+    """Enqueue a FULL jurisprudence sync : Cass soc/cr/comm/civ2 + CA soc + Conseil constit (30j)."""
     pool = await get_arq_pool()
     await pool.enqueue_job(
         "run_full_jurisprudence_sync",
         user_id,
     )
     logger.info("Full jurisprudence sync job enqueued")
+
+
+async def enqueue_jurisprudence_initialization(user_id: str) -> None:
+    """Enqueue ONE-SHOT initialization of jurisprudence corpus.
+
+    Cass passes on 1 year publié + CA chambre sociale on 3 months capped
+    at 3000. To be triggered manually from the admin Corpus page only
+    once at deployment time. Idempotent thanks to numero_pourvoi dedup.
+    """
+    pool = await get_arq_pool()
+    await pool.enqueue_job(
+        "run_jurisprudence_initialization",
+        user_id,
+    )
+    logger.info("Jurisprudence initialization job enqueued")

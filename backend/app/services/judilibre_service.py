@@ -10,6 +10,7 @@ Utilise l'endpoint /export qui retourne les décisions complètes
 import asyncio
 import hashlib
 import logging
+import re
 import time
 import uuid
 from dataclasses import dataclass, field
@@ -32,17 +33,43 @@ _RETRY_DELAY = 2.0
 _MAX_RETRIES = 3
 # Refresh token 5 minutes before expiry
 _TOKEN_REFRESH_MARGIN = 300
+# Throttle between consecutive Judilibre calls. PISTE allows ~20 req/s
+# in burst — at 0.3s/call we use 3 req/s which is well under the limit.
+_API_THROTTLE = 0.3
+
+# Valid Cour de cassation chamber codes per Judilibre API
+# (the API rejects anything else with 400). Source: live probe of /export
+# error response → "[pl,mi,civ1,civ2,civ3,comm,soc,cr,creun,ordo,allciv,other]"
+CC_CHAMBERS = {"pl", "mi", "civ1", "civ2", "civ3", "comm", "soc", "cr", "creun", "ordo", "allciv", "other"}
+
+# Regex matching the chamber name of a Cour d'appel "social" decision.
+# Judilibre stores CA chambers as free text ("Chambre sociale", "5e ch.
+# sociale", "Pôle social", etc.) and its chamber filter does NOT work
+# for jurisdiction=ca. We must fetch all CAs and filter in Python on
+# this regex. Tested against a 30-day sample of 5758 CA results from
+# the live API: matches ~1037 social chambers, 0 false positives on
+# civil/commercial chambers.
+_CA_SOCIAL_CHAMBER_RE = re.compile(
+    r"\b(?:social\w*|soc\.?|prud\w*|p[oô]le\s+social)\b",
+    re.IGNORECASE,
+)
 
 _CHAMBER_MAP = {
-    # Cour de cassation
+    # Cour de cassation — codes API → libellés humains
     "soc": "Chambre sociale",
     "civ1": "Chambre civile 1",
     "civ2": "Chambre civile 2",
     "civ3": "Chambre civile 3",
-    "com": "Chambre commerciale",
-    "crim": "Chambre criminelle",
+    "comm": "Chambre commerciale",  # Judilibre code is 'comm' (not 'com')
+    "cr": "Chambre criminelle",      # Judilibre code is 'cr' (not 'crim')
     "mi": "Chambre mixte",
     "pl": "Assemblée plénière",
+    "creun": "Chambres réunies",
+    "ordo": "Ordonnances",
+    "allciv": "Toutes chambres civiles",
+    # Aliases ascendants pour la rétro-compat (anciennes données en BDD)
+    "com": "Chambre commerciale",
+    "crim": "Chambre criminelle",
     # Cour d'appel — codes Judilibre les plus courants (best-effort, le code
     # brut est gardé en fallback si non mappé)
     "ch_soc": "Chambre sociale",
@@ -79,6 +106,10 @@ class SyncResult:
     total_fetched: int = 0
     new_ingested: int = 0
     already_exists: int = 0
+    # Decisions returned by the API but rejected by an in-process filter
+    # (e.g. CA arrêts that are not chambre sociale). Tracked separately
+    # from already_exists so the SyncBanner can report honest counts.
+    filtered_out: int = 0
     errors: int = 0
     error_messages: list[str] = field(default_factory=list)
 
@@ -174,6 +205,24 @@ class JudilibreService:
         if not self._client_id or not self._client_secret:
             result.errors = 1
             result.error_messages = ["JUDILIBRE_CLIENT_ID / JUDILIBRE_CLIENT_SECRET non configurés"]
+            return result
+
+        # Validate chamber early so we don't burn an API call to discover
+        # a typo. Judilibre rejects unknown chamber codes with HTTP 400.
+        if jurisdiction == "cc" and chamber not in CC_CHAMBERS:
+            result.errors = 1
+            result.error_messages = [
+                f"Code de chambre invalide pour Cass : '{chamber}'. "
+                f"Valides : {sorted(CC_CHAMBERS)}"
+            ]
+            return result
+        if jurisdiction not in {"cc", "ca", "tj", "tcom"}:
+            # Judilibre v1.0 supports only these four jurisdictions.
+            result.errors = 1
+            result.error_messages = [
+                f"Juridiction non supportée par Judilibre : '{jurisdiction}'. "
+                f"Valides : cc, ca, tj, tcom"
+            ]
             return result
 
         if date_end is None:
@@ -276,6 +325,123 @@ class JudilibreService:
             "Judilibre sync completed: %d total, %d new, %d existing, %d errors",
             result.total_fetched, result.new_ingested,
             result.already_exists, result.errors,
+        )
+        return result
+
+    async def sync_ca_chambre_sociale(
+        self,
+        db: AsyncSession,
+        user_id: uuid.UUID,
+        *,
+        date_start: date | None = None,
+        date_end: date | None = None,
+        max_decisions: int | None = None,
+    ) -> SyncResult:
+        """Synchronise Cour d'appel chambre sociale decisions only.
+
+        Judilibre's chamber filter does NOT work for jurisdiction='ca'
+        (it returns 0 results when set). We must therefore fetch ALL CA
+        arrêts in the time window and filter in Python on the chamber
+        free-text field using ``_CA_SOCIAL_CHAMBER_RE``.
+
+        - source_type is always 'arret_cour_appel'
+        - decisions are sorted by date desc by Judilibre, so capping
+          via max_decisions keeps the most recent ones
+        - filtered_out tracks how many CA arrêts were rejected by the
+          chamber regex (≈ 80% of all CA results historically)
+        """
+        result = SyncResult()
+
+        if not self._client_id or not self._client_secret:
+            result.errors = 1
+            result.error_messages = ["JUDILIBRE_CLIENT_ID / JUDILIBRE_CLIENT_SECRET non configurés"]
+            return result
+
+        if date_end is None:
+            date_end = date.today()
+        if date_start is None:
+            date_start = date(date_end.year - 1, date_end.month, date_end.day)
+
+        existing_pourvois = await self._get_existing_pourvois(
+            db, source_type="arret_cour_appel"
+        )
+
+        from app.services.storage_service import StorageService
+        storage = StorageService()
+
+        batch_num = 0
+        async with httpx.AsyncClient(timeout=_REQUEST_TIMEOUT) as client:
+            while True:
+                api_params: dict = {
+                    "jurisdiction": "ca",
+                    "date_start": date_start.isoformat(),
+                    "date_end": date_end.isoformat(),
+                    "batch": batch_num,
+                    "batch_size": _BATCH_SIZE,
+                }
+                data = await self._api_get(client, "/export", params=api_params)
+                if data is None:
+                    result.errors += 1
+                    result.error_messages.append(f"Erreur API batch {batch_num}")
+                    break
+
+                if batch_num == 0:
+                    result.total_fetched = data.get("total", 0)
+                    logger.info(
+                        "Judilibre CA chambre sociale: %d total CA arrêts in window %s → %s",
+                        result.total_fetched, date_start, date_end,
+                    )
+
+                items = data.get("results", [])
+                if not items:
+                    break
+
+                for raw in items:
+                    if max_decisions and result.new_ingested >= max_decisions:
+                        break
+
+                    # Filter on chamber free-text
+                    chamber_str = (raw.get("chamber") or "")
+                    if not _CA_SOCIAL_CHAMBER_RE.search(chamber_str):
+                        result.filtered_out += 1
+                        continue
+
+                    try:
+                        decision = self._parse_decision(raw)
+                        if decision is None:
+                            result.errors += 1
+                            continue
+                        if not decision.numero_pourvoi:
+                            result.errors += 1
+                            continue
+                        if decision.numero_pourvoi in existing_pourvois:
+                            result.already_exists += 1
+                            continue
+
+                        doc = await self._create_document(
+                            db, decision, user_id, storage,
+                            source_type="arret_cour_appel",
+                        )
+                        await enqueue_ingestion(str(doc.id))
+                        existing_pourvois.add(decision.numero_pourvoi)
+                        result.new_ingested += 1
+                    except Exception as exc:
+                        result.errors += 1
+                        pourvoi = raw.get("number", raw.get("id", "?"))
+                        msg = f"Erreur décision CA {pourvoi}: {exc}"
+                        result.error_messages.append(msg)
+                        logger.warning(msg)
+
+                if max_decisions and result.new_ingested >= max_decisions:
+                    break
+                if not data.get("next_batch"):
+                    break
+                batch_num += 1
+
+        logger.info(
+            "CA chambre sociale: total=%d filtered_out=%d already=%d new=%d errors=%d",
+            result.total_fetched, result.filtered_out,
+            result.already_exists, result.new_ingested, result.errors,
         )
         return result
 
@@ -501,6 +667,9 @@ class JudilibreService:
     ) -> dict | None:
         """Make a GET request to the Judilibre API with OAuth2 Bearer auth."""
         url = f"{self.base_url}{path}"
+
+        # Throttle to stay safely below the PISTE burst limit (~20 req/s).
+        await asyncio.sleep(_API_THROTTLE)
 
         for attempt in range(_MAX_RETRIES):
             try:

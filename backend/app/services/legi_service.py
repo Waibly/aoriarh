@@ -77,6 +77,29 @@ SYNCABLE_CODES: dict[str, dict] = {
         "has_reglementaire": True,
         "storage_prefix": "common/code_sante_publique",
     },
+    # Sprint 2 — codes manquants pour crédibilité RH
+    # IDs validés contre l'API Légifrance le 2026-04-09
+    "code_commerce": {
+        "text_id": "LEGITEXT000005634379",
+        "name": "Code de commerce",
+        "source_type": "code_commerce",
+        "has_reglementaire": True,
+        "storage_prefix": "common/code_commerce",
+    },
+    "code_monetaire_financier": {
+        "text_id": "LEGITEXT000006072026",
+        "name": "Code monétaire et financier",
+        "source_type": "code_monetaire_financier",
+        "has_reglementaire": True,
+        "storage_prefix": "common/code_monetaire_financier",
+    },
+    "code_general_impots": {
+        "text_id": "LEGITEXT000006069577",
+        "name": "Code général des impôts",
+        "source_type": "code_general_impots",
+        "has_reglementaire": True,
+        "storage_prefix": "common/code_general_impots",
+    },
 }
 
 

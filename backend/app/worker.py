@@ -388,30 +388,40 @@ async def _run_jurisprudence_passes(
     admin_id,
     date_start,
     date_end,
+    *,
+    cc_max_decisions: int | None = None,
+    ca_max_decisions: int | None = 300,
 ) -> None:
-    """Run the 6 jurisprudence passes (Cass soc/crim/com + CA + CE + Conseil constit).
+    """Run the jurisprudence passes (Cass soc/cr/comm/civ2 + CA soc + Conseil constit).
 
     Factorisé pour être réutilisé par run_scheduled_sync (cron auto) et
-    run_full_jurisprudence_sync (déclenchement manuel admin).
+    run_full_jurisprudence_sync (déclenchement manuel admin). Aussi
+    réutilisé par run_jurisprudence_initialization avec des fenêtres
+    plus larges (1 an Cass, 3 mois CA) et des caps plus hauts.
 
     Chaque passe écrit son propre SyncLog row avec sync_type='jurisprudence'.
+    Les exceptions sont systématiquement persistées dans error_message
+    pour ne plus jamais avoir d'échecs silencieux.
     """
     import time as _time
+    import traceback
     from datetime import UTC, datetime
     from app.models.sync_log import SyncLog
     from app.services.judilibre_service import JudilibreService
 
     juris_service = JudilibreService()
 
-    jurisprudence_passes = [
-        ("Cass. soc", {"jurisdiction": "cc", "chamber": "soc", "publication": "b", "source_type": "arret_cour_cassation"}),
-        ("Cass. crim", {"jurisdiction": "cc", "chamber": "crim", "publication": "b", "source_type": "arret_cour_cassation"}),
-        ("Cass. com", {"jurisdiction": "cc", "chamber": "com", "publication": "b", "source_type": "arret_cour_cassation"}),
-        ("Cour d'appel", {"jurisdiction": "ca", "publication": "b", "source_type": "arret_cour_appel", "max_decisions": 200}),
-        ("Conseil d'État", {"jurisdiction": "ce", "publication": "b", "source_type": "arret_conseil_etat", "max_decisions": 100}),
+    # Valid Judilibre chamber codes : soc, cr (criminelle), comm (commerciale),
+    # civ2 (sécurité sociale et AT/MP). Volumes attendus sur 30j publiés :
+    # soc ~50, cr ~25, comm ~20, civ2 ~30. Source : sondage live API 2026-04-09.
+    cc_passes = [
+        ("Cass. soc", "soc"),
+        ("Cass. cr (criminelle)", "cr"),
+        ("Cass. comm (commerciale)", "comm"),
+        ("Cass. civ2 (sécu / AT-MP)", "civ2"),
     ]
 
-    for pass_label, pass_kwargs in jurisprudence_passes:
+    for pass_label, chamber_code in cc_passes:
         t_start = _time.perf_counter()
         sync_log = SyncLog(
             sync_type="jurisprudence",
@@ -426,13 +436,17 @@ async def _run_jurisprudence_passes(
                 user_id=admin_id,
                 date_start=date_start,
                 date_end=date_end,
-                **pass_kwargs,
+                jurisdiction="cc",
+                chamber=chamber_code,
+                publication="b",
+                source_type="arret_cour_cassation",
+                max_decisions=cc_max_decisions,
             )
             duration = int((_time.perf_counter() - t_start) * 1000)
             sync_log.status = "success" if result.errors == 0 else "error"
             sync_log.items_fetched = result.total_fetched
             sync_log.items_created = result.new_ingested
-            sync_log.items_skipped = result.already_exists
+            sync_log.items_skipped = result.already_exists + result.filtered_out
             sync_log.errors = result.errors
             sync_log.error_message = (
                 "; ".join(result.error_messages[:3])
@@ -447,12 +461,71 @@ async def _run_jurisprudence_passes(
                 pass_label, result.new_ingested, result.already_exists,
                 result.errors, duration / 1000,
             )
-        except Exception:
+        except Exception as exc:
             sync_log.status = "error"
+            sync_log.errors = 1
+            # Persist the actual exception so it surfaces in the UI and
+            # in /admin/health/corpus instead of being lost in container logs.
+            sync_log.error_message = (
+                f"{type(exc).__name__}: {str(exc)[:300]}\n"
+                f"{traceback.format_exc().splitlines()[-1] if traceback.format_exc() else ''}"
+            )[:500]
             sync_log.completed_at = datetime.now(UTC)
             sync_log.duration_ms = int((_time.perf_counter() - t_start) * 1000)
             await db.commit()
             logger.exception("Jurisprudence pass %s failed", pass_label)
+
+    # Cour d'appel chambre sociale — méthode dédiée car le filtre chambre
+    # de Judilibre ne fonctionne pas pour jurisdiction='ca'.
+    # Caller can skip this pass entirely by setting ca_max_decisions=0
+    # (used by run_jurisprudence_initialization which handles CA in a
+    # second phase with a wider window).
+    if ca_max_decisions == 0:
+        return
+    ca_t0 = _time.perf_counter()
+    ca_log = SyncLog(
+        sync_type="jurisprudence",
+        status="running",
+        started_at=datetime.now(UTC),
+    )
+    db.add(ca_log)
+    await db.commit()
+    try:
+        ca_result = await juris_service.sync_ca_chambre_sociale(
+            db=db,
+            user_id=admin_id,
+            date_start=date_start,
+            date_end=date_end,
+            max_decisions=ca_max_decisions,
+        )
+        duration = int((_time.perf_counter() - ca_t0) * 1000)
+        ca_log.status = "success" if ca_result.errors == 0 else "error"
+        ca_log.items_fetched = ca_result.total_fetched
+        ca_log.items_created = ca_result.new_ingested
+        # filtered_out (≈ 80% pour CA) compté dans skipped pour transparence
+        ca_log.items_skipped = ca_result.already_exists + ca_result.filtered_out
+        ca_log.errors = ca_result.errors
+        ca_log.error_message = (
+            "; ".join(ca_result.error_messages[:3])
+            if ca_result.error_messages
+            else None
+        )
+        ca_log.duration_ms = duration
+        ca_log.completed_at = datetime.now(UTC)
+        await db.commit()
+        logger.info(
+            "Jurisprudence pass CA chambre sociale: %d new, %d filtered_out, %d already, %d errors (%.1fs)",
+            ca_result.new_ingested, ca_result.filtered_out,
+            ca_result.already_exists, ca_result.errors, duration / 1000,
+        )
+    except Exception as exc:
+        ca_log.status = "error"
+        ca_log.errors = 1
+        ca_log.error_message = f"{type(exc).__name__}: {str(exc)[:300]}"
+        ca_log.completed_at = datetime.now(UTC)
+        ca_log.duration_ms = int((_time.perf_counter() - ca_t0) * 1000)
+        await db.commit()
+        logger.exception("Jurisprudence pass CA chambre sociale failed")
 
     # 6th pass: Conseil constitutionnel via PISTE Légifrance (different service)
     cc_t0 = _time.perf_counter()
@@ -493,8 +566,10 @@ async def _run_jurisprudence_passes(
             cc_result.new_ingested, cc_result.already_exists,
             cc_result.errors, duration / 1000,
         )
-    except Exception:
+    except Exception as exc:
         cc_log.status = "error"
+        cc_log.errors = 1
+        cc_log.error_message = f"{type(exc).__name__}: {str(exc)[:300]}"
         cc_log.completed_at = datetime.now(UTC)
         cc_log.duration_ms = int((_time.perf_counter() - cc_t0) * 1000)
         await db.commit()
@@ -502,10 +577,11 @@ async def _run_jurisprudence_passes(
 
 
 async def run_full_jurisprudence_sync(ctx: dict, user_id: str) -> None:
-    """Manuel : déclenche les 6 passes jurisprudence (Cass × 3 + CA + CE + Conseil constit).
+    """Manuel : déclenche les passes jurisprudence (Cass soc/cr/comm/civ2 + CA soc + Conseil constit).
 
     Identique à ce que fait le cron auto pour la jurisprudence, mais
-    déclenchable depuis l'admin via le bouton 'Judilibre' du SyncBanner.
+    déclenchable depuis l'admin via le bouton 'Jurisprudence' du SyncBanner.
+    Fenêtre 30 jours, cap CA à 300 décisions.
     """
     from datetime import date, timedelta
     from sqlalchemy import select
@@ -525,6 +601,102 @@ async def run_full_jurisprudence_sync(ctx: dict, user_id: str) -> None:
         await _run_jurisprudence_passes(db, session_factory, admin_id, date_start, date_end)
 
     logger.info("Worker: full jurisprudence sync completed")
+
+
+async def run_jurisprudence_initialization(ctx: dict, user_id: str) -> None:
+    """Initialisation one-shot du corpus jurisprudence.
+
+    À cliquer UNE SEULE FOIS depuis l'admin pour rattraper :
+      - Cass soc / cr / comm / civ2 publiés sur 1 an
+      - Cour d'appel chambre sociale sur 3 mois (cap 3000)
+      - Conseil constit sur 1 an
+
+    Les passes Cass utilisent ``cc_max_decisions=None`` (pas de cap),
+    et les caps des passes CA sont relevés. La déduplication par numéro
+    de pourvoi protège contre les doublons si jamais on relance.
+    """
+    from datetime import date, timedelta
+    from sqlalchemy import select
+    from app.models.user import User
+
+    logger.info("Worker: jurisprudence initialization started (one-shot)")
+    session_factory = ctx["session_factory"]
+    async with session_factory() as db:
+        admin = (await db.execute(
+            select(User).where(User.role == "admin", User.is_active.is_(True)).limit(1)
+        )).scalar_one_or_none()
+        admin_id = admin.id if admin else uuid.UUID(user_id)
+
+        # Phase A : Cass sur 1 an publiés (pas de cap → tout ce qui a été publié)
+        date_end = date.today()
+        date_start = date_end - timedelta(days=365)
+        logger.info(
+            "Init phase A: Cass passes (1 an) %s → %s",
+            date_start, date_end,
+        )
+        await _run_jurisprudence_passes(
+            db, session_factory, admin_id, date_start, date_end,
+            cc_max_decisions=None,
+            ca_max_decisions=0,  # CA fait en phase B
+        )
+
+        # Phase B : CA chambre sociale sur 3 mois (cap large pour init)
+        ca_date_end = date.today()
+        ca_date_start = ca_date_end - timedelta(days=90)
+        logger.info(
+            "Init phase B: CA chambre sociale (3 mois) %s → %s",
+            ca_date_start, ca_date_end,
+        )
+        # On appelle directement la méthode dédiée pour ne pas relancer
+        # les Cass qui ont déjà tourné en phase A.
+        import time as _time
+        import traceback
+        from datetime import UTC, datetime
+        from app.models.sync_log import SyncLog
+        from app.services.judilibre_service import JudilibreService
+
+        juris_service = JudilibreService()
+        ca_log = SyncLog(
+            sync_type="jurisprudence",
+            status="running",
+            started_at=datetime.now(UTC),
+        )
+        db.add(ca_log)
+        await db.commit()
+        ca_t0 = _time.perf_counter()
+        try:
+            ca_result = await juris_service.sync_ca_chambre_sociale(
+                db=db, user_id=admin_id,
+                date_start=ca_date_start, date_end=ca_date_end,
+                max_decisions=3000,
+            )
+            ca_log.status = "success" if ca_result.errors == 0 else "error"
+            ca_log.items_fetched = ca_result.total_fetched
+            ca_log.items_created = ca_result.new_ingested
+            ca_log.items_skipped = ca_result.already_exists + ca_result.filtered_out
+            ca_log.errors = ca_result.errors
+            ca_log.error_message = (
+                "; ".join(ca_result.error_messages[:3])
+                if ca_result.error_messages else None
+            )
+            ca_log.duration_ms = int((_time.perf_counter() - ca_t0) * 1000)
+            ca_log.completed_at = datetime.now(UTC)
+            await db.commit()
+            logger.info(
+                "Init CA chambre sociale: %d new, %d filtered, %d already, %d errors",
+                ca_result.new_ingested, ca_result.filtered_out,
+                ca_result.already_exists, ca_result.errors,
+            )
+        except Exception as exc:
+            ca_log.status = "error"
+            ca_log.errors = 1
+            ca_log.error_message = f"{type(exc).__name__}: {str(exc)[:300]}"
+            ca_log.completed_at = datetime.now(UTC)
+            ca_log.duration_ms = int((_time.perf_counter() - ca_t0) * 1000)
+            await db.commit()
+            logger.exception("Init CA chambre sociale failed")
+
+    logger.info("Worker: jurisprudence initialization completed")
 
 
 async def run_scheduled_sync(ctx: dict) -> None:
@@ -780,6 +952,7 @@ class WorkerSettings:
         run_ingestion,
         run_judilibre_sync,
         run_full_jurisprudence_sync,
+        run_jurisprudence_initialization,
         run_kali_install,
         run_ccn_blue_green_cleanup,
         run_bocc_sync,
@@ -794,7 +967,11 @@ class WorkerSettings:
         cron(run_scheduled_sync, month=None, day={1, 15}, hour=3, minute=0),
     ]
     redis_settings = _parse_redis_settings()
-    max_jobs = 4
+    # 8 parallel jobs : doc ingestion is mostly Voyage AI / Qdrant I/O bound,
+    # the embedding API supports this rate easily, and Qdrant on the same
+    # VPS handles parallel upserts without contention. Validated under load
+    # 2026-04-09 (671-doc reindex completed in ~25 min vs ~75 min at 4 jobs).
+    max_jobs = 8
     job_timeout = 14400  # 4h max (BOCC backfill peut prendre plusieurs heures)
     on_startup = on_startup
     on_shutdown = on_shutdown

@@ -82,18 +82,41 @@ async def sync_judilibre(
 async def sync_jurisprudence_all(
     user: User = Depends(require_role(["admin"])),
 ) -> SyncResponse:
-    """Enqueue a FULL jurisprudence sync.
+    """Enqueue a FULL jurisprudence sync (récurrent, fenêtre 30 jours).
 
-    Lance les 6 passes : Cass. soc + Cass. crim + Cass. com + Cour
-    d'appel + Conseil d'État + Conseil constitutionnel. Identique à
-    ce que fait le cron auto pour la jurisprudence.
+    Lance les passes : Cass. soc / cr / comm / civ2 + Cour d'appel
+    chambre sociale (cap 300) + Conseil constitutionnel. Identique à
+    ce que fait le cron auto.
     """
     await enqueue_full_jurisprudence_sync(user_id=str(user.id))
     return SyncResponse(
         status="queued",
         message=(
-            "Synchronisation jurisprudence complète lancée (6 passes). "
+            "Synchronisation jurisprudence complète lancée. "
             "Consultez les statistiques pour suivre la progression."
+        ),
+    )
+
+
+@router.post("/initialize", response_model=SyncResponse)
+async def initialize_jurisprudence_corpus(
+    user: User = Depends(require_role(["admin"])),
+) -> SyncResponse:
+    """Initialisation one-shot du corpus jurisprudence.
+
+    Lance Cass soc/cr/comm/civ2 sur 1 an publiés + CA chambre sociale
+    sur 3 mois (cap 3000). À cliquer UNE seule fois au déploiement de
+    la nouvelle config. Idempotent : la dédup par numéro de pourvoi
+    empêche les doublons même si on relance.
+    """
+    from app.rag.tasks import enqueue_jurisprudence_initialization
+    await enqueue_jurisprudence_initialization(user_id=str(user.id))
+    return SyncResponse(
+        status="queued",
+        message=(
+            "Initialisation du corpus jurisprudence lancée. "
+            "Cass 1 an + CA chambre sociale 3 mois. "
+            "Suivez l'avancement dans la page Corpus."
         ),
     )
 

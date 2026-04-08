@@ -15,6 +15,7 @@ import {
   Trash2,
   Play,
   ChevronRight,
+  Database,
 } from "lucide-react";
 import { apiFetch } from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -185,6 +186,142 @@ function aggregateBatch(batch: SyncLogItem[]): SyncLogItem {
     errors: sum("errors"),
     error_message: errorMessage,
   };
+}
+
+// ----------------- Live ingestion progress banner -----------------
+
+interface CorpusHealth {
+  docs_by_status: { [status: string]: number };
+  docs_by_source_type: { [src: string]: number };
+  common_total: number;
+  pending_count: number;
+  indexing_count: number;
+  indexed_count: number;
+  error_count: number;
+  reserved_count: number;
+  recent_sync_errors: {
+    id: string;
+    sync_type: string;
+    started_at: string;
+    error_message: string | null;
+    duration_ms: number | null;
+  }[];
+  last_sync_per_type: { [t: string]: { status: string; started_at: string; items_created: number; items_fetched: number; errors: number } | null };
+  is_busy: boolean;
+}
+
+function IngestionProgressBanner({ token }: { token: string }) {
+  const [health, setHealth] = useState<CorpusHealth | null>(null);
+  // Track the highest "in flight" count we've seen during the current
+  // run so the progress bar reflects start → end of THIS batch and
+  // doesn't shrink as new docs are enqueued.
+  const [batchTotal, setBatchTotal] = useState<number | null>(null);
+  const [batchStartedAt, setBatchStartedAt] = useState<number | null>(null);
+
+  const fetchHealth = useCallback(async () => {
+    try {
+      const data = await apiFetch<CorpusHealth>("/admin/corpus/health", { token });
+      setHealth(data);
+    } catch {
+      // silent — don't spam toasts on transient errors
+    }
+  }, [token]);
+
+  // Initial load + 3s polling while busy
+  useEffect(() => {
+    fetchHealth();
+  }, [fetchHealth]);
+
+  useEffect(() => {
+    if (!health?.is_busy) return;
+    const i = setInterval(fetchHealth, 3000);
+    return () => clearInterval(i);
+  }, [health?.is_busy, fetchHealth]);
+
+  // Track batch start
+  useEffect(() => {
+    if (!health) return;
+    const inFlight = health.pending_count + health.indexing_count;
+    if (inFlight > 0 && batchTotal === null) {
+      setBatchTotal(inFlight);
+      setBatchStartedAt(Date.now());
+    } else if (inFlight === 0 && batchTotal !== null) {
+      // Done — reset after a 4s linger so the user sees "100%"
+      const t = setTimeout(() => {
+        setBatchTotal(null);
+        setBatchStartedAt(null);
+      }, 4000);
+      return () => clearTimeout(t);
+    } else if (inFlight > (batchTotal ?? 0)) {
+      // Bigger batch enqueued mid-flight — track the new total
+      setBatchTotal(inFlight);
+    }
+  }, [health, batchTotal]);
+
+  if (!health) return null;
+  const inFlight = health.pending_count + health.indexing_count;
+  const showBanner = inFlight > 0 || batchTotal !== null;
+  if (!showBanner) return null;
+
+  const total = batchTotal ?? inFlight;
+  const done = Math.max(0, total - inFlight);
+  const pct = total > 0 ? Math.min(100, Math.round((done / total) * 100)) : 0;
+
+  let etaLabel = "";
+  if (batchStartedAt && done > 0 && inFlight > 0) {
+    const elapsed = (Date.now() - batchStartedAt) / 1000;
+    const rate = done / elapsed; // docs/sec
+    if (rate > 0) {
+      const remaining = inFlight / rate;
+      if (remaining < 90) etaLabel = `~${Math.ceil(remaining)}s`;
+      else if (remaining < 5400) etaLabel = `~${Math.ceil(remaining / 60)} min`;
+      else etaLabel = `~${(remaining / 3600).toFixed(1)} h`;
+    }
+  }
+
+  const isFinished = inFlight === 0 && batchTotal !== null;
+
+  return (
+    <Card
+      className={`border-2 ${isFinished ? "border-green-400 bg-green-50/60 dark:bg-green-950/20" : "border-blue-400 bg-blue-50/60 dark:bg-blue-950/20"}`}
+    >
+      <CardContent className="p-3 space-y-2">
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2 text-sm font-medium">
+            {isFinished ? (
+              <CheckCircle2 className="h-4 w-4 text-green-600" />
+            ) : (
+              <Loader2 className="h-4 w-4 text-blue-600 animate-spin" />
+            )}
+            {isFinished
+              ? "Indexation terminée"
+              : `Indexation en cours… ${done.toLocaleString("fr-FR")} / ${total.toLocaleString("fr-FR")}`}
+          </div>
+          <div className="flex items-center gap-3 text-xs text-muted-foreground">
+            {!isFinished && etaLabel && <span>ETA {etaLabel}</span>}
+            <span className="font-mono">{pct}%</span>
+          </div>
+        </div>
+        <div className="h-2 rounded bg-muted overflow-hidden">
+          <div
+            className={`h-full transition-all ${isFinished ? "bg-green-500" : "bg-blue-500"}`}
+            style={{ width: `${pct}%` }}
+          />
+        </div>
+        <div className="text-[10px] text-muted-foreground flex flex-wrap gap-x-3 gap-y-0.5">
+          <span>en file : <span className="font-mono text-foreground">{health.pending_count}</span></span>
+          <span>en cours : <span className="font-mono text-foreground">{health.indexing_count}</span></span>
+          <span>indexés : <span className="font-mono text-foreground">{health.indexed_count.toLocaleString("fr-FR")}</span></span>
+          {health.error_count > 0 && (
+            <span className="text-red-600 dark:text-red-400">
+              erreurs : <span className="font-mono">{health.error_count}</span>
+            </span>
+          )}
+          <span>en réserve : <span className="font-mono text-foreground">{health.reserved_count.toLocaleString("fr-FR")}</span></span>
+        </div>
+      </CardContent>
+    </Card>
+  );
 }
 
 function StatusBadge({ status }: { status: string }) {
@@ -385,15 +522,15 @@ function SyncBanner({ token, onRefresh }: { token: string; onRefresh: () => void
       key: "judilibre",
       label: "Jurisprudence",
       auto: true,
-      autoDetail: "Cass. soc/crim/com + Cour d'appel + Conseil d'État + Conseil constitutionnel",
-      help: "Récupère les arrêts récents de toute la jurisprudence sociale française : Cour de cassation (chambres sociale, criminelle, commerciale), Cour d'appel, Conseil d'État, Conseil constitutionnel. Le déclenchement manuel lance les 6 passes en parallèle.",
+      autoDetail: "Cass. soc / cr / comm / civ2 + CA chambre sociale (cap 300) + Conseil constit",
+      help: "Récupère les arrêts récents de la jurisprudence sociale française : Cour de cassation (chambres sociale, criminelle, commerciale, 2e civile pour AT/MP), Cour d'appel chambre sociale (filtrée à ~300 arrêts les plus récents) et Conseil constitutionnel. Fenêtre de 30 jours, exécuté à chaque sync.",
     },
     {
       key: "code_travail",
       label: "Codes",
       auto: true,
-      autoDetail: "Tous les codes (travail, civil, pénal, sécurité sociale, action sociale, santé publique). Hash SHA-256 — réingéré uniquement si différent.",
-      help: "Récupère et met à jour TOUS les codes juridiques pertinents : Code du travail, Code civil, Code pénal, Code de la sécurité sociale, Code de l'action sociale et des familles, Code de la santé publique. Seuls les codes dont le contenu Légifrance a changé sont réingérés.",
+      autoDetail: "9 codes (travail, civil, pénal, CSS, action sociale, santé publique, commerce, monétaire et financier, CGI). Hash SHA-256 — réingéré uniquement si différent.",
+      help: "Récupère et met à jour les 9 codes juridiques pertinents : Code du travail, Code civil, Code pénal, Code de la sécurité sociale, Code de l'action sociale et des familles, Code de la santé publique, Code de commerce, Code monétaire et financier, Code général des impôts. Seuls les codes dont le contenu Légifrance a changé sont réingérés.",
     },
     {
       key: "bocc",
@@ -409,13 +546,12 @@ function SyncBanner({ token, onRefresh }: { token: string; onRefresh: () => void
       <div className="flex items-center justify-between px-4 pt-3 pb-2 border-b">
         <div className="flex items-center gap-2 text-xs font-semibold">
           Synchronisations
-          <span className="text-[9px] font-mono bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 rounded px-1">v2</span>
           <InfoTooltip>
             <strong>Synchronisation automatique</strong> bimensuelle :
             les <strong>1er et 15</strong> de chaque mois à <strong>03:00 UTC</strong>.
             <br />
-            Inclus : KALI (rotation 15 CCN), Judilibre (30j), BOCC (1 numéro),
-            <strong> Code du travail</strong>, codes civil / pénal / CSS / CASF.
+            Inclus : KALI (rotation 15 CCN), Jurisprudence 30j (Cass soc/cr/comm/civ2 + CA ch. soc + Conseil constit),
+            BOCC (1 numéro), 9 codes (hash SHA-256).
             <br />
             Pour les codes, un hash SHA-256 du contenu est comparé à la
             version stockée : si identique, rien n&apos;est réingéré (zéro
@@ -747,7 +883,7 @@ export default function CorpusPage() {
     if (
       !confirm(
         "Réindexer TOUS les documents du corpus commun ? Cette opération " +
-          "peut prendre plusieurs heures et consomme du budget embeddings.",
+          "peut prendre ~30 minutes et consomme du budget embeddings.",
       )
     )
       return;
@@ -765,6 +901,36 @@ export default function CorpusPage() {
       toast.error("Échec du déclenchement");
     } finally {
       setReindexAllRunning(false);
+    }
+  };
+
+  const [initJurisRunning, setInitJurisRunning] = useState(false);
+  const handleInitJurisprudence = async () => {
+    if (!token) return;
+    if (
+      !confirm(
+        "INITIALISATION du corpus jurisprudence — opération one-shot.\n\n" +
+          "• Cass. soc / cr / comm / civ2 publiés sur 1 an (~1 500 arrêts)\n" +
+          "• Cour d'appel chambre sociale sur 3 mois (cap 3 000)\n\n" +
+          "Idempotent (la dédup par numéro de pourvoi évite les doublons).\n" +
+          "Coût embeddings estimé : ~10 $.\n\n" +
+          "Continuer ?",
+      )
+    )
+      return;
+    setInitJurisRunning(true);
+    try {
+      await apiFetch("/admin/jurisprudence/initialize", {
+        method: "POST",
+        token,
+      });
+      toast.success(
+        "Initialisation jurisprudence lancée — suis l'avancement dans le bandeau.",
+      );
+    } catch {
+      toast.error("Échec du déclenchement");
+    } finally {
+      setInitJurisRunning(false);
     }
   };
 
@@ -804,6 +970,19 @@ export default function CorpusPage() {
         <div className="flex items-center gap-2">
           <Button
             variant="outline"
+            onClick={handleInitJurisprudence}
+            disabled={initJurisRunning}
+            title="Initialise le corpus jurisprudence (one-shot)"
+          >
+            {initJurisRunning ? (
+              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+            ) : (
+              <Database className="h-4 w-4 mr-2" />
+            )}
+            Init jurisprudence
+          </Button>
+          <Button
+            variant="outline"
             onClick={handleReindexAll}
             disabled={reindexAllRunning}
             title="Réindexer tous les documents du corpus commun"
@@ -829,6 +1008,9 @@ export default function CorpusPage() {
           </Button>
         </div>
       </div>
+
+      {/* Live ingestion progress (visible only when worker is busy) */}
+      <IngestionProgressBanner token={token} />
 
       {/* Sync banner */}
       <SyncBanner token={token} onRefresh={fetchGroups} />
