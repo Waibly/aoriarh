@@ -2,18 +2,34 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSession } from "next-auth/react";
-import { Check, CheckCircle2, ChevronDown, ChevronsUpDown, Download, FileUp, Loader2, Plus, RefreshCw, Replace, Scale, Search, Trash2, Upload, X } from "lucide-react";
+import {
+  CheckCircle2,
+  ChevronRight,
+  Download,
+  FileText,
+  FileUp,
+  Files,
+  FolderOpen,
+  Library,
+  Loader2,
+  Plus,
+  RefreshCw,
+  Replace,
+  ScrollText,
+  Search,
+  Trash2,
+  X,
+} from "lucide-react";
 import { toast } from "sonner";
 import { useOrg } from "@/lib/org-context";
 import { apiFetch, authFetch } from "@/lib/api";
 import type { Document, OrganisationConvention, CcnReference } from "@/types/api";
-import { SOURCE_TYPE_OPTIONS, NORME_POIDS } from "@/types/api";
+import { SOURCE_TYPE_OPTIONS } from "@/types/api";
 import { CcnSelector } from "@/components/ccn-selector";
 import { Button } from "@/components/ui/button";
 import {
   Card,
   CardContent,
-  CardDescription,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
@@ -25,15 +41,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import {
   Table,
   TableBody,
@@ -42,36 +50,20 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
-import {
-  Command,
-  CommandEmpty,
-  CommandGroup,
-  CommandInput,
-  CommandItem,
-  CommandList,
-} from "@/components/ui/command";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import { InfoTooltip } from "@/components/admin/info-tooltip";
 import { cn } from "@/lib/utils";
+import { UploadDialog } from "./upload-dialog";
 
-// API_BASE_URL importé via authFetch — plus de fetch direct
+// ----------------- Constants -----------------
 
-const NIVEAU_LABELS: Record<number, string> = {
-  1: "Constitution",
-  2: "Normes internationales",
-  3: "Lois & Ordonnances",
-  4: "Jurisprudence",
-  5: "Réglementaire",
-  6: "Conventions collectives",
-  7: "Usages & Engagements",
-  8: "Règlement intérieur",
-  9: "Contrat de travail",
-  10: "Divers",
+const STATUS_LABEL: Record<string, string> = {
+  pending: "En attente",
+  indexing: "En cours",
+  indexed: "Indexé",
+  error: "Erreur",
 };
 
 const STATUS_CLASSES: Record<string, string> = {
@@ -81,55 +73,56 @@ const STATUS_CLASSES: Record<string, string> = {
   error: "rounded-full border-red-500 bg-red-500/10 text-red-600 dark:text-red-400",
 };
 
-const JURISPRUDENCE_SOURCE_TYPES = new Set([
-  "arret_cour_cassation",
-  "arret_conseil_etat",
-  "decision_conseil_constitutionnel",
-]);
+interface CategoryDef {
+  key: string;
+  label: string;
+  icon: React.ComponentType<{ className?: string }>;
+  sourceTypes: string[];
+  help: React.ReactNode;
+}
 
-const JURIDICTION_OPTIONS = [
-  "Cour de cassation",
-  "Conseil d'État",
-  "Conseil constitutionnel",
-] as const;
-
-const CHAMBRE_OPTIONS = [
-  "Chambre sociale",
-  "Chambre civile 1",
-  "Chambre civile 2",
-  "Chambre civile 3",
-  "Chambre commerciale",
-  "Chambre criminelle",
-  "Assemblée plénière",
-  "Chambre mixte",
-] as const;
-
-const FORMATION_OPTIONS = [
-  "Formation plénière de chambre",
-  "Formation restreinte",
-  "Section",
-] as const;
-
-const SOLUTION_OPTIONS = [
-  "Cassation",
-  "Cassation partielle",
-  "Rejet",
-  "QPC",
-  "Non-lieu à statuer",
-] as const;
-
-const PUBLICATION_OPTIONS = [
-  "Publié au Bulletin",
-  "Inédit",
-  "Mentionné aux tables",
-] as const;
-
-const STATUS_LABEL: Record<string, string> = {
-  pending: "En attente",
-  indexing: "En cours",
-  indexed: "Indexé",
-  error: "Erreur",
-};
+const CATEGORIES: CategoryDef[] = [
+  {
+    key: "all",
+    label: "Tous les documents",
+    icon: Files,
+    sourceTypes: [],
+    help: "Vue agrégée de tous vos documents internes (hors conventions collectives).",
+  },
+  {
+    key: "accords",
+    label: "Accords collectifs",
+    icon: ScrollText,
+    sourceTypes: [
+      "accord_entreprise",
+      "accord_performance_collective",
+      "accord_branche",
+      "accord_national_interprofessionnel",
+    ],
+    help: "Accords collectifs propres à votre entreprise : accords d'entreprise, APC, accords de branche, ANI.",
+  },
+  {
+    key: "rules",
+    label: "Règles internes",
+    icon: FolderOpen,
+    sourceTypes: ["reglement_interieur", "engagement_unilateral", "usage_entreprise"],
+    help: "Règlement intérieur, engagements unilatéraux (DUE), usages d'entreprise — règles fixées par l'employeur.",
+  },
+  {
+    key: "contracts",
+    label: "Contrats",
+    icon: FileText,
+    sourceTypes: ["contrat_travail"],
+    help: "Modèles de contrats de travail et avenants types utilisés dans votre organisation.",
+  },
+  {
+    key: "other",
+    label: "Autres",
+    icon: Files,
+    sourceTypes: ["divers"],
+    help: "Documents divers ne rentrant dans aucune autre catégorie (chartes, plans, notes…).",
+  },
+];
 
 function formatFileSize(bytes: number | null): string {
   if (!bytes) return "—";
@@ -137,6 +130,22 @@ function formatFileSize(bytes: number | null): string {
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} Ko`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} Mo`;
 }
+
+function formatDate(iso: string): string {
+  return new Date(iso).toLocaleDateString("fr-FR", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  });
+}
+
+// ----------------- Types -----------------
+
+type Selection =
+  | { type: "ccn"; idcc: string }
+  | { type: "category"; key: string };
+
+// ----------------- Page -----------------
 
 export default function DocumentsPage() {
   const { data: session } = useSession();
@@ -154,6 +163,7 @@ export default function DocumentsPage() {
   const [selectedNewCcn, setSelectedNewCcn] = useState<CcnReference[]>([]);
   const [installingCcn, setInstallingCcn] = useState(false);
   const [removeCcnIdcc, setRemoveCcnIdcc] = useState<string | null>(null);
+  const [selection, setSelection] = useState<Selection>({ type: "category", key: "all" });
 
   const initialLoadDone = useRef(false);
 
@@ -165,7 +175,7 @@ export default function DocumentsPage() {
         apiFetch<Document[]>(`/documents/${currentOrg.id}/`, { token }),
         apiFetch<OrganisationConvention[]>(
           `/conventions/organisations/${currentOrg.id}`,
-          { token }
+          { token },
         ).catch(() => [] as OrganisationConvention[]),
       ]);
       setDocuments(docs);
@@ -183,13 +193,13 @@ export default function DocumentsPage() {
     fetchDocuments();
   }, [fetchDocuments]);
 
-  // Polling : rafraîchir tant qu'un document ou une CCN est en cours de traitement
+  // Polling : refresh while a document or CCN is being processed
   const hasPending = useMemo(() => {
     const pendingDocs = documents.some(
-      (d) => d.indexation_status === "pending" || d.indexation_status === "indexing"
+      (d) => d.indexation_status === "pending" || d.indexation_status === "indexing",
     );
     const pendingCcn = conventions.some(
-      (c) => c.status === "pending" || c.status === "fetching" || c.status === "indexing"
+      (c) => c.status === "pending" || c.status === "fetching" || c.status === "indexing",
     );
     return pendingDocs || pendingCcn;
   }, [documents, conventions]);
@@ -202,9 +212,23 @@ export default function DocumentsPage() {
 
   useEffect(() => {
     setIsManager(
-      session?.user?.role === "admin" || session?.user?.role === "manager"
+      session?.user?.role === "admin" || session?.user?.role === "manager",
     );
   }, [session]);
+
+  // Default to first installed CCN if any (better UX than empty page)
+  useEffect(() => {
+    if (!initialLoadDone.current) return;
+    if (selection.type === "category" && selection.key === "all" && conventions.length > 0) {
+      const firstReady = conventions.find((c) => c.status === "ready");
+      if (firstReady) {
+        setSelection({ type: "ccn", idcc: firstReady.idcc });
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [conventions.length]);
+
+  // ---- Document actions ----
 
   const handleDelete = async (docId: string) => {
     if (!currentOrg || !token) return;
@@ -223,20 +247,16 @@ export default function DocumentsPage() {
   const handleDownload = async (docId: string) => {
     if (!currentOrg || !token) return;
     try {
-      const res = await authFetch(`/documents/${currentOrg.id}/${docId}/download`, {
-        token,
-      });
+      const res = await authFetch(`/documents/${currentOrg.id}/${docId}/download`, { token });
       if (!res.ok) throw new Error("Erreur");
       const blob = await res.blob();
       const disposition = res.headers.get("Content-Disposition");
       let filename = "document";
       if (disposition) {
-        // Try UTF-8 encoded filename (filename*=UTF-8''...)
         const utf8Match = disposition.match(/filename\*=UTF-8''(.+)/i);
         if (utf8Match) {
           filename = decodeURIComponent(utf8Match[1].replace(/;.*$/, "").trim());
         } else {
-          // Fallback to regular filename="..."
           const asciiMatch = disposition.match(/filename="(.+?)"/);
           if (asciiMatch) filename = asciiMatch[1];
         }
@@ -283,13 +303,11 @@ export default function DocumentsPage() {
       toast.success("Document remplacé — réindexation en cours");
       fetchDocuments();
     } catch (err) {
-      toast.error(
-        err instanceof Error ? err.message : "Erreur lors du remplacement"
-      );
+      toast.error(err instanceof Error ? err.message : "Erreur lors du remplacement");
     }
   };
 
-  /* ---- CCN actions ---- */
+  // ---- CCN actions ----
 
   const handleInstallCcn = async () => {
     if (!currentOrg || !token || selectedNewCcn.length === 0) return;
@@ -305,7 +323,7 @@ export default function DocumentsPage() {
       toast.success(
         selectedNewCcn.length === 1
           ? "Convention en cours d'installation"
-          : `${selectedNewCcn.length} conventions en cours d'installation`
+          : `${selectedNewCcn.length} conventions en cours d'installation`,
       );
       setSelectedNewCcn([]);
       setAddCcnOpen(false);
@@ -340,26 +358,28 @@ export default function DocumentsPage() {
       });
       toast.success("Convention retirée");
       setRemoveCcnIdcc(null);
+      // If the removed CCN was selected, fall back to "all"
+      if (selection.type === "ccn" && selection.idcc === idcc) {
+        setSelection({ type: "category", key: "all" });
+      }
       fetchDocuments();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Erreur lors de la suppression");
     }
   };
 
-  /* ---- Drag & Drop ---- */
+  // ---- Drag & Drop ----
 
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
     setDragging(true);
   };
-
   const handleDragLeave = (e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
     setDragging(false);
   };
-
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
@@ -367,25 +387,60 @@ export default function DocumentsPage() {
     const droppedFiles = e.dataTransfer.files;
     if (droppedFiles && droppedFiles.length > 0) {
       setUploadOpen(true);
-      // Small delay to let the dialog mount before setting the files
       setTimeout(() => {
         if (droppedFiles.length === 1) {
-          window.dispatchEvent(
-            new CustomEvent("dropped-file", { detail: droppedFiles[0] })
-          );
+          window.dispatchEvent(new CustomEvent("dropped-file", { detail: droppedFiles[0] }));
         } else {
-          window.dispatchEvent(
-            new CustomEvent("dropped-files", { detail: Array.from(droppedFiles) })
-          );
+          window.dispatchEvent(new CustomEvent("dropped-files", { detail: Array.from(droppedFiles) }));
         }
       }, 100);
     }
   };
 
+  // ---- Derived data ----
+
+  // Internal docs (excluding CCN documents)
+  const internalDocs = useMemo(
+    () => documents.filter((d) => d.source_type !== "convention_collective_nationale"),
+    [documents],
+  );
+
+  // Counts per category
+  const categoryCounts = useMemo(() => {
+    const counts: Record<string, number> = { all: internalDocs.length };
+    for (const cat of CATEGORIES) {
+      if (cat.key === "all") continue;
+      counts[cat.key] = internalDocs.filter((d) => cat.sourceTypes.includes(d.source_type)).length;
+    }
+    return counts;
+  }, [internalDocs]);
+
+  // Documents to show in the main pane
+  const filteredDocs = useMemo(() => {
+    if (selection.type !== "category") return [];
+    let docs: Document[];
+    if (selection.key === "all") {
+      docs = internalDocs;
+    } else {
+      const cat = CATEGORIES.find((c) => c.key === selection.key);
+      if (!cat) return [];
+      docs = internalDocs.filter((d) => cat.sourceTypes.includes(d.source_type));
+    }
+    if (search.trim()) {
+      const q = search.toLowerCase();
+      docs = docs.filter((d) => {
+        const sourceLabel =
+          SOURCE_TYPE_OPTIONS.find((s) => s.value === d.source_type)?.label ?? d.source_type;
+        return d.name.toLowerCase().includes(q) || sourceLabel.toLowerCase().includes(q);
+      });
+    }
+    return docs;
+  }, [selection, internalDocs, search]);
+
   if (!currentOrg) {
     return (
-      <div>
-        <h1 className="mb-6 text-2xl font-semibold tracking-tight">Documents</h1>
+      <div className="space-y-6">
+        <h1 className="text-2xl font-semibold tracking-tight">Documents</h1>
         <p className="text-muted-foreground">
           Aucune organisation sélectionnée. Créez ou rejoignez une organisation.
         </p>
@@ -393,269 +448,191 @@ export default function DocumentsPage() {
     );
   }
 
+  const selectedCcn =
+    selection.type === "ccn" ? conventions.find((c) => c.idcc === selection.idcc) ?? null : null;
+  const selectedCategory =
+    selection.type === "category"
+      ? CATEGORIES.find((c) => c.key === selection.key) ?? CATEGORIES[0]
+      : null;
+
   return (
-    <div className="space-y-6">
-      <h1 className="text-2xl font-semibold tracking-tight">Documents</h1>
+    <div
+      className="space-y-6"
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+    >
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight">Documents</h1>
+          <p className="text-sm text-muted-foreground mt-1">
+            Tous les documents propres à votre organisation, interrogeables par l&apos;IA.
+          </p>
+        </div>
+        {isManager && (
+          <Button onClick={() => setUploadOpen(true)}>
+            <FileUp className="mr-2 h-4 w-4" />
+            Ajouter un document
+          </Button>
+        )}
+      </div>
 
-      {/* Conventions collectives — checklist */}
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between">
-          <div className="space-y-1.5">
-            <CardTitle className="flex items-center gap-2 text-base">
-              <Scale className="h-5 w-5" />
-              Conventions collectives
-            </CardTitle>
-            <CardDescription>
-              {conventions.length === 0
-                ? "Aucune convention installée pour cette organisation"
-                : `${conventions.length} convention${conventions.length > 1 ? "s" : ""} installée${conventions.length > 1 ? "s" : ""}`}
-            </CardDescription>
-          </div>
-          {isManager && (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setAddCcnOpen(!addCcnOpen)}
-            >
-              <Plus className="mr-2 h-4 w-4" />
-              Ajouter une convention collective
-            </Button>
-          )}
-        </CardHeader>
-        <CardContent className="space-y-3">
-          {/* Add CCN form */}
-          {addCcnOpen && isManager && token && (
-            <div className="rounded-lg border border-border bg-muted/30 p-4 space-y-3">
-              <CcnSelector
-                token={token}
-                selected={selectedNewCcn}
-                onChange={setSelectedNewCcn}
-              />
-              <div className="flex justify-end gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => {
-                    setAddCcnOpen(false);
-                    setSelectedNewCcn([]);
-                  }}
-                >
-                  Annuler
-                </Button>
-                <Button
-                  size="sm"
-                  disabled={selectedNewCcn.length === 0 || installingCcn}
-                  onClick={handleInstallCcn}
-                >
-                  {installingCcn ? (
-                    <>
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      Installation...
-                    </>
-                  ) : (
-                    "Installer"
-                  )}
-                </Button>
-              </div>
-            </div>
-          )}
+      {dragging && (
+        <div className="border-2 border-dashed border-primary rounded-lg p-12 text-center text-sm text-primary bg-primary/5">
+          Déposez vos fichiers ici
+        </div>
+      )}
 
-          {/* Convention list */}
-          {conventions.length > 0 && (
-            <div className="space-y-2">
-              {conventions.map((c) => (
-                <div
-                  key={c.id}
-                  className="flex items-center gap-3 rounded-lg border border-border p-3"
-                >
-                  {/* Status icon */}
-                  {c.status === "ready" && (
-                    <CheckCircle2 className="h-5 w-5 text-green-600 dark:text-green-400 shrink-0" />
-                  )}
-                  {(c.status === "pending" || c.status === "fetching" || c.status === "indexing") && (
-                    <Loader2 className="h-5 w-5 animate-spin text-blue-600 dark:text-blue-400 shrink-0" />
-                  )}
-                  {c.status === "error" && (
-                    <X className="h-5 w-5 text-destructive shrink-0" />
-                  )}
-
-                  {/* Content */}
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <p className="text-sm font-medium">
-                        {c.titre || c.titre_court || `IDCC ${c.idcc}`}
-                      </p>
-                      {c.status === "ready" && c.source_date && (() => {
-                        const ageMs = Date.now() - new Date(c.source_date).getTime();
-                        const ageYears = ageMs / (365.25 * 24 * 60 * 60 * 1000);
-                        const color = ageYears > 2
-                          ? "border-red-500 bg-red-500/10 text-red-700 dark:text-red-400"
-                          : ageYears > 1
-                            ? "border-orange-500 bg-orange-500/10 text-orange-700 dark:text-orange-400"
-                            : "border-green-500 bg-green-500/10 text-green-700 dark:text-green-400";
-                        return (
-                          <Badge variant="outline" className={`rounded-full text-[11px] ${color}`}>
-                            Textes au {new Date(c.source_date).toLocaleDateString("fr-FR")}
-                          </Badge>
-                        );
-                      })()}
-                    </div>
-                    <p className="text-xs text-foreground/70">
-                      IDCC {c.idcc}
-                      {c.status === "ready" && c.articles_count != null && ` — ${c.articles_count} articles`}
-                      {c.status === "pending" && " — En attente"}
-                      {c.status === "fetching" && " — Téléchargement en cours"}
-                      {c.status === "indexing" && " — Indexation en cours"}
-                      {c.status === "error" && " — Erreur de mise à jour"}
-                    </p>
-                    {/* List CCN documents — ordered: base first, then annexes, then salaires, then BOCC */}
-                    {c.status === "ready" && (() => {
-                      const ccnDocs = documents
-                        .filter((d) => d.source_type === "convention_collective_nationale" && d.name.includes(`IDCC ${c.idcc}`))
-                        .sort((a, b) => {
-                          const order = (name: string) => {
-                            if (name.includes("BOCC")) return 3;
-                            if (name.includes("Avenants")) return 1;
-                            if (name.includes("Grilles")) return 2;
-                            return 0;
-                          };
-                          return order(a.name) - order(b.name);
-                        });
-                      const kaliDocs = ccnDocs.filter((d) => !d.name.includes("BOCC"));
-                      const boccDocs = ccnDocs.filter((d) => d.name.includes("BOCC"));
-                      return (
-                        <div className="mt-1.5 space-y-0.5">
-                          {kaliDocs.map((d) => {
-                            const suffix = d.name.includes("Avenants") ? "Avenants et annexes" : d.name.includes("Grilles") ? "Grilles de salaires" : "Texte de base";
-                            return (
-                              <p key={d.id} className="text-xs text-foreground/60 pl-3 border-l-2 border-muted">
-                                {suffix}
-                              </p>
-                            );
-                          })}
-                          {boccDocs.length > 0 && (
-                            <p className="text-xs text-foreground/60 pl-3 border-l-2 border-blue-300">
-                              {boccDocs.length} avenant{boccDocs.length > 1 ? "s" : ""} BOCC
-                            </p>
-                          )}
-                        </div>
-                      );
-                    })()}
-                    {c.status === "error" && c.error_message && (
-                      <p className="text-xs text-destructive mt-0.5 truncate" title={c.error_message}>
-                        {c.error_message}
-                      </p>
-                    )}
-                  </div>
-
-                  {/* Actions */}
-                  {isManager && c.status !== "fetching" && c.status !== "indexing" && c.status !== "pending" && (
-                    <div className="flex items-center gap-1 shrink-0">
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8"
-                        title="Mettre à jour"
-                        onClick={() => handleSyncCcn(c.idcc)}
-                      >
-                        <RefreshCw className="h-4 w-4" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8 text-destructive hover:text-destructive"
-                        title="Retirer"
-                        onClick={() => setRemoveCcnIdcc(c.idcc)}
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  )}
+      <div className="grid grid-cols-12 gap-6">
+        {/* ---- Sidebar ---- */}
+        <div className="col-span-12 md:col-span-3 space-y-4">
+          {/* Conventions section */}
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                <Library className="h-4 w-4" />
+                Convention collective
+                <InfoTooltip>
+                  Convention(s) collective(s) installée(s) pour votre organisation.
+                  Elle est récupérée depuis Légifrance et utilisée automatiquement
+                  par l&apos;IA dans toutes vos questions.
+                </InfoTooltip>
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-1 p-2">
+              {loading && conventions.length === 0 ? (
+                <Skeleton className="h-10 w-full" />
+              ) : conventions.length === 0 ? (
+                <div className="text-xs text-muted-foreground px-2 py-3 text-center">
+                  Aucune convention installée
                 </div>
-              ))}
-            </div>
-          )}
-        </CardContent>
-      </Card>
+              ) : (
+                conventions.map((c) => {
+                  const active = selection.type === "ccn" && selection.idcc === c.idcc;
+                  return (
+                    <button
+                      key={c.id}
+                      onClick={() => setSelection({ type: "ccn", idcc: c.idcc })}
+                      className={cn(
+                        "w-full text-left px-2 py-2 rounded text-sm flex items-center gap-2 transition-colors",
+                        active ? "bg-accent text-accent-foreground" : "hover:bg-muted/50",
+                      )}
+                    >
+                      {c.status === "ready" ? (
+                        <CheckCircle2 className="h-3.5 w-3.5 text-green-600 shrink-0" />
+                      ) : c.status === "error" ? (
+                        <X className="h-3.5 w-3.5 text-destructive shrink-0" />
+                      ) : (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin text-blue-600 shrink-0" />
+                      )}
+                      <div className="min-w-0 flex-1">
+                        <div className="font-medium truncate text-xs">
+                          {c.titre_court || c.titre || `IDCC ${c.idcc}`}
+                        </div>
+                        <div className="text-[10px] text-muted-foreground">
+                          IDCC {c.idcc}
+                          {c.status === "ready" && c.articles_count != null
+                            ? ` · ${c.articles_count} articles`
+                            : c.status === "fetching"
+                              ? " · téléchargement..."
+                              : c.status === "indexing"
+                                ? " · indexation..."
+                                : c.status === "pending"
+                                  ? " · en attente"
+                                  : c.status === "error"
+                                    ? " · erreur"
+                                    : ""}
+                        </div>
+                      </div>
+                      <ChevronRight className="h-3 w-3 shrink-0" />
+                    </button>
+                  );
+                })
+              )}
+              {isManager && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="w-full justify-start text-xs h-8"
+                  onClick={() => setAddCcnOpen(true)}
+                >
+                  <Plus className="h-3 w-3 mr-1" />
+                  Installer une convention
+                </Button>
+              )}
+            </CardContent>
+          </Card>
 
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between">
-          <div className="space-y-1.5">
-            <CardTitle>Vos documents — {currentOrg.name}</CardTitle>
-            <CardDescription>
-              {documents.filter((d) => d.source_type !== "convention_collective_nationale").length} document
-              {documents.filter((d) => d.source_type !== "convention_collective_nationale").length !== 1 ? "s" : ""}
-            </CardDescription>
-          </div>
-          {isManager && (
-            <Button size="sm" onClick={() => setUploadOpen(true)}>
-              <FileUp className="mr-2 h-4 w-4" />
-              Ajouter un document
-            </Button>
-          )}
-        </CardHeader>
-        <CardContent>
-          {!loading && documents.length > 0 && (
-            <div className="mb-4">
-              <div className="relative max-w-sm">
-                <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-                <Input
-                  placeholder="Rechercher un document..."
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  className="pl-9"
-                />
-              </div>
-            </div>
-          )}
-          {loading ? (
-            <div className="space-y-3">
-              {[1, 2, 3].map((i) => (
-                <Skeleton key={i} className="h-12 w-full" />
-              ))}
-            </div>
-          ) : documents.filter((d) => d.source_type !== "convention_collective_nationale").length === 0 ? (
-            <p className="py-8 text-center text-muted-foreground">
-              Aucun document. Ajoutez votre premier document.
-            </p>
-          ) : (
-            <DocumentTable
-              documents={
-                (() => {
-                  // Exclude CCN documents — shown in the CCN block above
-                  const userDocs = documents.filter((d) => d.source_type !== "convention_collective_nationale");
-                  if (!search.trim()) return userDocs;
-                  const q = search.toLowerCase();
-                  return userDocs
-                    .filter((d) => {
-                      const sourceLabel =
-                        SOURCE_TYPE_OPTIONS.find((s) => s.value === d.source_type)?.label ?? d.source_type;
-                      return (
-                        d.name.toLowerCase().includes(q) ||
-                        sourceLabel.toLowerCase().includes(q)
-                      );
-                    })
-                    .sort((a, b) => {
-                      const scoreDoc = (d: Document) => {
-                        const name = d.name.toLowerCase();
-                        if (name === q) return 0;
-                        if (name.startsWith(q)) return 1;
-                        if (name.includes(q)) return 2;
-                        return 3;
-                      };
-                      return scoreDoc(a) - scoreDoc(b);
-                    });
-                })()
-              }
+          {/* Internal documents section */}
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                <FolderOpen className="h-4 w-4" />
+                Vos documents
+                <InfoTooltip>
+                  Documents propres à votre organisation, classés par catégorie.
+                  Tous sont indexés et disponibles pour l&apos;IA.
+                </InfoTooltip>
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-1 p-2">
+              {CATEGORIES.map((cat) => {
+                const Icon = cat.icon;
+                const active = selection.type === "category" && selection.key === cat.key;
+                const count = categoryCounts[cat.key] ?? 0;
+                return (
+                  <button
+                    key={cat.key}
+                    onClick={() => setSelection({ type: "category", key: cat.key })}
+                    className={cn(
+                      "w-full text-left px-2 py-2 rounded text-sm flex items-center gap-2 transition-colors",
+                      active ? "bg-accent text-accent-foreground" : "hover:bg-muted/50",
+                    )}
+                  >
+                    <Icon className="h-3.5 w-3.5 shrink-0" />
+                    <span className="flex-1 truncate text-xs font-medium">{cat.label}</span>
+                    <Badge variant="outline" className="text-[10px] h-4 px-1.5">
+                      {count}
+                    </Badge>
+                  </button>
+                );
+              })}
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* ---- Main pane ---- */}
+        <div className="col-span-12 md:col-span-9">
+          {selectedCcn ? (
+            <CcnDetailPane
+              ccn={selectedCcn}
+              docs={documents.filter(
+                (d) =>
+                  d.source_type === "convention_collective_nationale" &&
+                  d.name.includes(`IDCC ${selectedCcn.idcc}`),
+              )}
               isManager={isManager}
+              onSync={() => handleSyncCcn(selectedCcn.idcc)}
+              onRemove={() => setRemoveCcnIdcc(selectedCcn.idcc)}
+              onDownload={handleDownload}
+            />
+          ) : selectedCategory ? (
+            <CategoryPane
+              category={selectedCategory}
+              docs={filteredDocs}
+              loading={loading}
+              search={search}
+              onSearchChange={setSearch}
+              isManager={isManager}
+              onUpload={() => setUploadOpen(true)}
               onDownload={handleDownload}
               onDelete={handleDelete}
               onReindex={handleReindex}
               onReplace={handleReplace}
             />
-          )}
-        </CardContent>
-      </Card>
+          ) : null}
+        </div>
+      </div>
 
       <UploadDialog
         open={uploadOpen}
@@ -663,10 +640,59 @@ export default function DocumentsPage() {
         orgId={currentOrg.id}
         token={token}
         onUploaded={fetchDocuments}
+        initialSourceType={
+          selection.type === "category" && selection.key !== "all"
+            ? CATEGORIES.find((c) => c.key === selection.key)?.sourceTypes[0]
+            : undefined
+        }
       />
 
+      {/* Install CCN dialog */}
+      <Dialog open={addCcnOpen} onOpenChange={setAddCcnOpen}>
+        <DialogContent className="sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Installer une convention collective</DialogTitle>
+            <DialogDescription>
+              Recherchez par IDCC ou par nom. La convention sera téléchargée depuis
+              Légifrance puis indexée automatiquement.
+            </DialogDescription>
+          </DialogHeader>
+          {token && (
+            <CcnSelector
+              token={token}
+              selected={selectedNewCcn}
+              onChange={setSelectedNewCcn}
+            />
+          )}
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setAddCcnOpen(false);
+                setSelectedNewCcn([]);
+              }}
+            >
+              Annuler
+            </Button>
+            <Button
+              disabled={selectedNewCcn.length === 0 || installingCcn}
+              onClick={handleInstallCcn}
+            >
+              {installingCcn ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Installation...
+                </>
+              ) : (
+                "Installer"
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* CCN removal confirmation */}
-      <Dialog open={removeCcnIdcc !== null} onOpenChange={(open) => { if (!open) setRemoveCcnIdcc(null); }}>
+      <Dialog open={removeCcnIdcc !== null} onOpenChange={(open) => !open && setRemoveCcnIdcc(null)}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Retirer la convention collective</DialogTitle>
@@ -679,7 +705,10 @@ export default function DocumentsPage() {
             <Button variant="outline" onClick={() => setRemoveCcnIdcc(null)}>
               Annuler
             </Button>
-            <Button variant="destructive" onClick={() => removeCcnIdcc && handleRemoveCcn(removeCcnIdcc)}>
+            <Button
+              variant="destructive"
+              onClick={() => removeCcnIdcc && handleRemoveCcn(removeCcnIdcc)}
+            >
               Retirer
             </Button>
           </DialogFooter>
@@ -689,172 +718,331 @@ export default function DocumentsPage() {
   );
 }
 
-/* ---- Shared Document Table ---- */
+// ----------------- CCN Detail Pane -----------------
 
-function ColumnFilter({
-  label,
-  value,
-  options,
-  onChange,
+function CcnDetailPane({
+  ccn,
+  docs,
+  isManager,
+  onSync,
+  onRemove,
+  onDownload,
 }: {
-  label: string;
-  value: string;
-  options: { value: string; label: string }[];
-  onChange: (value: string) => void;
+  ccn: OrganisationConvention;
+  docs: Document[];
+  isManager: boolean;
+  onSync: () => void;
+  onRemove: () => void;
+  onDownload: (id: string) => void;
 }) {
-  const [open, setOpen] = useState(false);
-  const isActive = value !== "";
+  // Split docs by KALI vs BOCC
+  const kaliDocs = docs.filter((d) => !d.name.includes("BOCC"));
+  const boccDocs = docs.filter((d) => d.name.includes("BOCC"));
+
+  // Source date freshness color
+  const sourceDateBadge = ccn.source_date
+    ? (() => {
+        const ageMs = Date.now() - new Date(ccn.source_date).getTime();
+        const ageYears = ageMs / (365.25 * 24 * 60 * 60 * 1000);
+        const color =
+          ageYears > 2
+            ? "border-red-500 bg-red-500/10 text-red-700 dark:text-red-400"
+            : ageYears > 1
+              ? "border-orange-500 bg-orange-500/10 text-orange-700 dark:text-orange-400"
+              : "border-green-500 bg-green-500/10 text-green-700 dark:text-green-400";
+        return { color, label: `Textes au ${new Date(ccn.source_date).toLocaleDateString("fr-FR")}` };
+      })()
+    : null;
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
-        <button
-          className={cn(
-            "flex items-center gap-1 font-medium transition-colors hover:text-foreground",
-            isActive ? "text-primary" : "text-foreground"
-          )}
-        >
-          {isActive ? options.find((o) => o.value === value)?.label ?? label : label}
-          {isActive ? (
-            <X
-              className="h-3 w-3 shrink-0"
-              onClick={(e) => {
-                e.stopPropagation();
-                onChange("");
-              }}
-            />
-          ) : (
-            <ChevronDown className="h-3 w-3 shrink-0" />
-          )}
-        </button>
-      </PopoverTrigger>
-      <PopoverContent className="w-48 p-1" align="start">
-        <div className="max-h-64 overflow-y-auto">
-          {options.map((opt) => (
-            <button
-              key={opt.value}
-              onClick={() => {
-                onChange(opt.value === value ? "" : opt.value);
-                setOpen(false);
-              }}
-              className={cn(
-                "flex w-full items-center rounded-sm px-2 py-1.5 text-sm transition-colors hover:bg-accent",
-                opt.value === value && "bg-accent font-medium"
+    <div className="space-y-4">
+      {/* Header */}
+      <Card>
+        <CardHeader>
+          <div className="flex items-start justify-between gap-4">
+            <div className="min-w-0 flex-1">
+              <CardTitle className="text-base">
+                {ccn.titre || ccn.titre_court || `IDCC ${ccn.idcc}`}
+              </CardTitle>
+              <div className="flex flex-wrap items-center gap-2 mt-2 text-xs">
+                <Badge variant="outline" className="font-mono">
+                  IDCC {ccn.idcc}
+                </Badge>
+                {ccn.articles_count != null && (
+                  <Badge variant="outline">{ccn.articles_count} articles</Badge>
+                )}
+                {sourceDateBadge && (
+                  <Badge variant="outline" className={`rounded-full text-[11px] ${sourceDateBadge.color}`}>
+                    {sourceDateBadge.label}
+                  </Badge>
+                )}
+                {ccn.status === "ready" && (
+                  <Badge className="bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 border-0">
+                    <CheckCircle2 className="h-3 w-3 mr-1" /> Prête
+                  </Badge>
+                )}
+                {(ccn.status === "fetching" || ccn.status === "indexing" || ccn.status === "pending") && (
+                  <Badge className="bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400 border-0">
+                    <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                    {ccn.status === "fetching"
+                      ? "Téléchargement"
+                      : ccn.status === "indexing"
+                        ? "Indexation"
+                        : "En attente"}
+                  </Badge>
+                )}
+                {ccn.status === "error" && (
+                  <Badge className="bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400 border-0">
+                    Erreur
+                  </Badge>
+                )}
+              </div>
+              {ccn.status === "error" && ccn.error_message && (
+                <p className="text-xs text-destructive mt-2">{ccn.error_message}</p>
               )}
-            >
-              {opt.label}
-            </button>
-          ))}
-        </div>
-      </PopoverContent>
-    </Popover>
+            </div>
+            {isManager && (
+              <div className="flex items-center gap-1 shrink-0">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={onSync}
+                  disabled={
+                    ccn.status === "fetching" ||
+                    ccn.status === "indexing" ||
+                    ccn.status === "pending"
+                  }
+                >
+                  <RefreshCw className="h-3 w-3 mr-1" />
+                  Mettre à jour
+                </Button>
+                <Button variant="outline" size="sm" onClick={onRemove}>
+                  <Trash2 className="h-3 w-3 mr-1 text-destructive" />
+                  Retirer
+                </Button>
+              </div>
+            )}
+          </div>
+        </CardHeader>
+      </Card>
+
+      {/* Tabs : KALI / BOCC */}
+      <Tabs defaultValue="kali">
+        <TabsList>
+          <TabsTrigger value="kali">
+            Documents officiels
+            <Badge variant="outline" className="ml-2 text-[10px] h-4 px-1.5">
+              {kaliDocs.length}
+            </Badge>
+          </TabsTrigger>
+          <TabsTrigger value="bocc">
+            Avenants BOCC
+            <Badge variant="outline" className="ml-2 text-[10px] h-4 px-1.5">
+              {boccDocs.length}
+            </Badge>
+          </TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="kali">
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                Documents officiels — Légifrance
+                <InfoTooltip>
+                  Documents publiés officiellement et récupérés depuis la base
+                  KALI de Légifrance : texte de base, parties législative et
+                  réglementaire, avenants et annexes intégrés. Ces documents
+                  contiennent les articles structurés de la convention.
+                </InfoTooltip>
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <DocsList docs={kaliDocs} onDownload={onDownload} emptyText="Aucun document officiel" />
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="bocc">
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                Avenants publiés au BOCC
+                <InfoTooltip>
+                  Avenants récents publiés au <strong>Bulletin Officiel des
+                  Conventions Collectives</strong>. Ils complètent le texte
+                  officiel KALI avant que celui-ci ne soit consolidé. L&apos;IA
+                  s&apos;appuie aussi sur ces avenants pour répondre.
+                </InfoTooltip>
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <DocsList
+                docs={boccDocs}
+                onDownload={onDownload}
+                emptyText="Aucun avenant BOCC ingéré pour cette convention"
+              />
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
+    </div>
   );
 }
 
-function DocumentTable({
-  documents,
+function DocsList({
+  docs,
+  onDownload,
+  emptyText,
+}: {
+  docs: Document[];
+  onDownload: (id: string) => void;
+  emptyText: string;
+}) {
+  if (docs.length === 0) {
+    return <div className="py-8 text-center text-xs text-muted-foreground">{emptyText}</div>;
+  }
+  return (
+    <div className="space-y-1">
+      {docs.map((d) => (
+        <div
+          key={d.id}
+          className="flex items-center gap-3 px-3 py-2 rounded border hover:bg-muted/30 transition-colors"
+        >
+          <FileText className="h-4 w-4 shrink-0 text-muted-foreground" />
+          <div className="min-w-0 flex-1">
+            <div className="text-sm font-medium truncate">{d.name}</div>
+            <div className="text-[11px] text-muted-foreground">
+              {formatDate(d.created_at)} · {formatFileSize(d.file_size)}
+              {d.indexation_status !== "indexed" && (
+                <Badge
+                  variant="outline"
+                  className={`ml-2 text-[10px] h-4 ${STATUS_CLASSES[d.indexation_status] ?? ""}`}
+                >
+                  {STATUS_LABEL[d.indexation_status] ?? d.indexation_status}
+                </Badge>
+              )}
+            </div>
+          </div>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => onDownload(d.id)}
+            title="Télécharger"
+          >
+            <Download className="h-3 w-3" />
+          </Button>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ----------------- Category Pane -----------------
+
+function CategoryPane({
+  category,
+  docs,
+  loading,
+  search,
+  onSearchChange,
   isManager,
+  onUpload,
   onDownload,
   onDelete,
   onReindex,
   onReplace,
 }: {
-  documents: Document[];
+  category: CategoryDef;
+  docs: Document[];
+  loading: boolean;
+  search: string;
+  onSearchChange: (v: string) => void;
   isManager: boolean;
+  onUpload: () => void;
   onDownload: (id: string) => void;
   onDelete: (id: string) => void;
   onReindex: (id: string) => void;
   onReplace: (id: string, file: File) => void;
 }) {
-  const [filterType, setFilterType] = useState("");
-  const [filterStatus, setFilterStatus] = useState("");
-  const [filterFormat, setFilterFormat] = useState("");
-
-  // Build filter options from actual data
-  const typeOptions = useMemo(() => {
-    const types = new Set(documents.map((d) => d.source_type));
-    return Array.from(types)
-      .map((t) => ({
-        value: t,
-        label: SOURCE_TYPE_OPTIONS.find((s) => s.value === t)?.label ?? t,
-      }))
-      .sort((a, b) => a.label.localeCompare(b.label));
-  }, [documents]);
-
-  const statusOptions = useMemo(() => {
-    const statuses = new Set(documents.map((d) => d.indexation_status));
-    return Array.from(statuses).map((s) => ({
-      value: s,
-      label: STATUS_LABEL[s] ?? s,
-    }));
-  }, [documents]);
-
-  const formatOptions = useMemo(() => {
-    const formats = new Set(documents.map((d) => d.file_format ?? "—"));
-    return Array.from(formats)
-      .map((f) => ({ value: f, label: f.toUpperCase() }))
-      .sort((a, b) => a.label.localeCompare(b.label));
-  }, [documents]);
-
-  const filtered = documents.filter((doc) => {
-    if (filterType && doc.source_type !== filterType) return false;
-    if (filterStatus && doc.indexation_status !== filterStatus) return false;
-    if (filterFormat && (doc.file_format ?? "—") !== filterFormat) return false;
-    return true;
-  });
-
+  const Icon = category.icon;
   return (
-    <>
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead className="max-w-[250px]">Nom</TableHead>
-            <TableHead>
-              <ColumnFilter label="Type" value={filterType} options={typeOptions} onChange={setFilterType} />
-            </TableHead>
-            <TableHead>
-              <ColumnFilter label="Statut" value={filterStatus} options={statusOptions} onChange={setFilterStatus} />
-            </TableHead>
-            <TableHead>
-              <ColumnFilter label="Format" value={filterFormat} options={formatOptions} onChange={setFilterFormat} />
-            </TableHead>
-            <TableHead>Taille</TableHead>
-            <TableHead>Date</TableHead>
-            <TableHead className="text-right whitespace-nowrap">Actions</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {filtered.length === 0 ? (
-            <TableRow>
-              <TableCell colSpan={7} className="py-6 text-center text-muted-foreground">
-                Aucun document ne correspond aux filtres.
-              </TableCell>
-            </TableRow>
-          ) : (
-            filtered.map((doc) => (
-              <DocumentRow
-                key={doc.id}
-                doc={doc}
-                isManager={isManager}
-                onDownload={onDownload}
-                onDelete={onDelete}
-                onReindex={onReindex}
-                onReplace={onReplace}
-              />
-            ))
+    <Card>
+      <CardHeader>
+        <div className="flex items-center justify-between gap-3">
+          <div className="min-w-0">
+            <CardTitle className="text-base flex items-center gap-2">
+              <Icon className="h-4 w-4" />
+              {category.label}
+              <InfoTooltip>{category.help}</InfoTooltip>
+            </CardTitle>
+            <p className="text-xs text-muted-foreground mt-1">
+              {docs.length} document{docs.length > 1 ? "s" : ""}
+            </p>
+          </div>
+          {isManager && (
+            <Button size="sm" onClick={onUpload}>
+              <Plus className="h-3 w-3 mr-1" />
+              Ajouter
+            </Button>
           )}
-        </TableBody>
-      </Table>
-      {(filterType || filterStatus || filterFormat) && (
-        <p className="mt-2 text-xs text-muted-foreground">
-          {filtered.length} / {documents.length} document{documents.length !== 1 ? "s" : ""}
-        </p>
-      )}
-    </>
+        </div>
+      </CardHeader>
+      <CardContent>
+        <div className="relative mb-4">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Input
+            placeholder="Rechercher dans cette catégorie..."
+            value={search}
+            onChange={(e) => onSearchChange(e.target.value)}
+            className="pl-9"
+          />
+        </div>
+
+        {loading ? (
+          <div className="space-y-2">
+            {[1, 2, 3, 4].map((i) => (
+              <Skeleton key={i} className="h-10 w-full" />
+            ))}
+          </div>
+        ) : docs.length === 0 ? (
+          <div className="py-12 text-center text-sm text-muted-foreground">
+            {search.trim()
+              ? "Aucun document ne correspond à votre recherche."
+              : "Aucun document dans cette catégorie."}
+          </div>
+        ) : (
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Nom</TableHead>
+                <TableHead className="w-[160px]">Type</TableHead>
+                <TableHead className="w-[100px]">Statut</TableHead>
+                <TableHead className="w-[80px] text-right">Taille</TableHead>
+                <TableHead className="w-[100px] text-right">Date</TableHead>
+                <TableHead className="w-[140px]"></TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {docs.map((d) => (
+                <DocRow
+                  key={d.id}
+                  doc={d}
+                  isManager={isManager}
+                  onDownload={onDownload}
+                  onDelete={onDelete}
+                  onReindex={onReindex}
+                  onReplace={onReplace}
+                />
+              ))}
+            </TableBody>
+          </Table>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 
-function DocumentRow({
+function DocRow({
   doc,
   isManager,
   onDownload,
@@ -871,15 +1059,14 @@ function DocumentRow({
 }) {
   const replaceRef = useRef<HTMLInputElement>(null);
   const sourceLabel =
-    SOURCE_TYPE_OPTIONS.find((s) => s.value === doc.source_type)?.label ??
-    doc.source_type;
+    SOURCE_TYPE_OPTIONS.find((s) => s.value === doc.source_type)?.label ?? doc.source_type;
 
   return (
     <TableRow>
-      <TableCell className="max-w-[250px] font-medium">
-        <span className="line-clamp-2 break-words">{doc.name}</span>
+      <TableCell className="max-w-[300px] font-medium">
+        <span className="line-clamp-2 break-words text-sm">{doc.name}</span>
       </TableCell>
-      <TableCell className="text-sm">{sourceLabel}</TableCell>
+      <TableCell className="text-xs text-muted-foreground">{sourceLabel}</TableCell>
       <TableCell>
         <Badge
           variant="outline"
@@ -888,25 +1075,21 @@ function DocumentRow({
           {doc.indexation_status === "indexing" && (
             <Loader2 className="mr-1 h-3 w-3 animate-spin" />
           )}
-          {STATUS_LABEL[doc.indexation_status] ?? doc.indexation_status}
+          <span className="text-[10px]">
+            {STATUS_LABEL[doc.indexation_status] ?? doc.indexation_status}
+          </span>
         </Badge>
       </TableCell>
-      <TableCell className="text-sm uppercase">
-        {doc.file_format ?? "—"}
+      <TableCell className="text-xs text-right text-muted-foreground">
+        {formatFileSize(doc.file_size)}
       </TableCell>
-      <TableCell className="text-sm">{formatFileSize(doc.file_size)}</TableCell>
-      <TableCell className="text-sm">
+      <TableCell className="text-xs text-right text-muted-foreground">
         {new Date(doc.created_at).toLocaleDateString("fr-FR")}
       </TableCell>
-      <TableCell className="text-right">
-        <div className="flex justify-end gap-1">
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => onDownload(doc.id)}
-            title="Télécharger"
-          >
-            <Download className="h-4 w-4" />
+      <TableCell>
+        <div className="flex items-center justify-end gap-1">
+          <Button variant="ghost" size="sm" onClick={() => onDownload(doc.id)} title="Télécharger">
+            <Download className="h-3 w-3" />
           </Button>
           {isManager && (
             <>
@@ -923,462 +1106,36 @@ function DocumentRow({
               />
               <Button
                 variant="ghost"
-                size="icon"
+                size="sm"
                 onClick={() => replaceRef.current?.click()}
                 title="Remplacer le fichier"
               >
-                <Replace className="h-4 w-4 text-blue-500" />
+                <Replace className="h-3 w-3 text-blue-500" />
               </Button>
             </>
           )}
           {doc.indexation_status === "error" && (
             <Button
               variant="ghost"
-              size="icon"
+              size="sm"
               onClick={() => onReindex(doc.id)}
               title="Réindexer"
             >
-              <RefreshCw className="h-4 w-4 text-orange-500" />
+              <RefreshCw className="h-3 w-3 text-orange-500" />
             </Button>
           )}
           {isManager && (
             <Button
               variant="ghost"
-              size="icon"
+              size="sm"
               onClick={() => onDelete(doc.id)}
               title="Supprimer"
             >
-              <Trash2 className="h-4 w-4 text-destructive" />
+              <Trash2 className="h-3 w-3 text-destructive" />
             </Button>
           )}
         </div>
       </TableCell>
     </TableRow>
-  );
-}
-
-/* ---- Upload Dialog ---- */
-
-interface UploadDialogProps {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  orgId: string;
-  token?: string;
-  onUploaded: () => void;
-}
-
-function UploadDialog({
-  open,
-  onOpenChange,
-  orgId,
-  token,
-  onUploaded,
-}: UploadDialogProps) {
-  const fileRef = useRef<HTMLInputElement>(null);
-  const [files, setFiles] = useState<File[]>([]);
-  const [sourceType, setSourceType] = useState("");
-  const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  // Jurisprudence metadata
-  const [juridiction, setJuridiction] = useState("");
-  const [chambre, setChambre] = useState("");
-  const [formation, setFormation] = useState("");
-  const [numeroPourvoi, setNumeroPourvoi] = useState("");
-  const [dateDecision, setDateDecision] = useState("");
-  const [solution, setSolution] = useState("");
-  const [publication, setPublication] = useState("");
-
-  const isJurisprudence = JURISPRUDENCE_SOURCE_TYPES.has(sourceType);
-  const isBatch = files.length > 1;
-
-  const selectedOption = SOURCE_TYPE_OPTIONS.find(
-    (s) => s.value === sourceType
-  );
-  const niveau = selectedOption?.niveau;
-  const poids = niveau ? NORME_POIDS[niveau] : null;
-
-  const [typeSearchOpen, setTypeSearchOpen] = useState(false);
-  const [typeSearch, setTypeSearch] = useState("");
-
-  useEffect(() => {
-    if (open) {
-      setFiles([]);
-      setSourceType("");
-      setError(null);
-      setJuridiction("");
-      setChambre("");
-      setFormation("");
-      setNumeroPourvoi("");
-      setDateDecision("");
-      setSolution("");
-      setPublication("");
-      setTypeSearch("");
-      setTypeSearchOpen(false);
-      if (fileRef.current) fileRef.current.value = "";
-    }
-  }, [open]);
-
-  // Listen for dropped files from drag & drop zone
-  useEffect(() => {
-    const handleOne = (e: Event) => {
-      const droppedFile = (e as CustomEvent<File>).detail;
-      if (droppedFile) setFiles([droppedFile]);
-    };
-    const handleMany = (e: Event) => {
-      const droppedFiles = (e as CustomEvent<File[]>).detail;
-      if (droppedFiles?.length) setFiles(droppedFiles);
-    };
-    window.addEventListener("dropped-file", handleOne);
-    window.addEventListener("dropped-files", handleMany);
-    return () => {
-      window.removeEventListener("dropped-file", handleOne);
-      window.removeEventListener("dropped-files", handleMany);
-    };
-  }, []);
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (files.length === 0 || !sourceType) return;
-
-    setSubmitting(true);
-    setError(null);
-
-    try {
-      if (isBatch) {
-        // Batch upload — multiple files, same source_type, no jurisprudence metadata
-        const formData = new FormData();
-        for (const f of files) formData.append("files", f);
-        formData.append("source_type", sourceType);
-
-        const res = await authFetch(`/documents/${orgId}/batch`, {
-          method: "POST",
-          body: formData,
-          token: token ?? undefined,
-        });
-
-        if (!res.ok) {
-          const data = await res.json().catch(() => null);
-          throw new Error(data?.detail ?? "Erreur lors de l'upload");
-        }
-
-        const data = await res.json();
-        if (data.failed > 0 && data.succeeded === 0) {
-          // All failed (likely all duplicates)
-          toast.warning(
-            `${data.failed} document${data.failed > 1 ? "s" : ""} déjà présent${data.failed > 1 ? "s" : ""}`,
-            { description: "Aucun nouveau document ajouté.", duration: 5000 }
-          );
-        } else if (data.failed > 0) {
-          toast.success(
-            `${data.succeeded} document${data.succeeded > 1 ? "s" : ""} ajouté${data.succeeded > 1 ? "s" : ""}`,
-            {
-              description: `${data.failed} ignoré${data.failed > 1 ? "s" : ""} (déjà présent${data.failed > 1 ? "s" : ""}).`,
-              duration: 5000,
-            }
-          );
-        } else {
-          toast.success(`${data.succeeded} document${data.succeeded > 1 ? "s" : ""} ajouté${data.succeeded > 1 ? "s" : ""}`);
-        }
-      } else {
-        // Single upload — with full metadata support
-        const formData = new FormData();
-        formData.append("file", files[0]);
-        formData.append("source_type", sourceType);
-        if (isJurisprudence) {
-          if (juridiction) formData.append("juridiction", juridiction);
-          if (chambre) formData.append("chambre", chambre);
-          if (formation) formData.append("formation", formation);
-          if (numeroPourvoi) formData.append("numero_pourvoi", numeroPourvoi);
-          if (dateDecision) formData.append("date_decision", dateDecision);
-          if (solution) formData.append("solution", solution);
-          if (publication) formData.append("publication", publication);
-        }
-
-        const res = await authFetch(`/documents/${orgId}/`, {
-          method: "POST",
-          body: formData,
-          token: token ?? undefined,
-        });
-
-        if (!res.ok) {
-          const data = await res.json().catch(() => null);
-          throw new Error(data?.detail ?? "Erreur lors de l'upload");
-        }
-
-        toast.success("Document ajouté");
-      }
-
-      onOpenChange(false);
-      onUploaded();
-    } catch (err) {
-      setError(
-        err instanceof Error ? err.message : "Erreur lors de l'upload"
-      );
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  const removeFile = (index: number) => {
-    setFiles((prev) => prev.filter((_, i) => i !== index));
-  };
-
-  // Filter to org-relevant types (niveaux 6+) and group by niveau
-  const orgTypeOptions = SOURCE_TYPE_OPTIONS.filter((o) => o.niveau >= 6);
-  const grouped = new Map<number, typeof SOURCE_TYPE_OPTIONS>();
-  for (const opt of orgTypeOptions) {
-    const group = grouped.get(opt.niveau) ?? [];
-    group.push(opt);
-    grouped.set(opt.niveau, group);
-  }
-
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg">
-        <DialogHeader>
-          <DialogTitle>Ajouter des documents</DialogTitle>
-          <DialogDescription>
-            Sélectionnez un ou plusieurs fichiers du même type. Formats
-            acceptés : PDF, Word (.docx), Texte (.txt)
-          </DialogDescription>
-        </DialogHeader>
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor="doc-file">
-              Fichier{files.length > 1 ? "s" : ""} *
-              {files.length > 0 && (
-                <span className="text-muted-foreground ml-1">
-                  ({files.length} sélectionné{files.length > 1 ? "s" : ""})
-                </span>
-              )}
-            </Label>
-            <input
-              ref={fileRef}
-              id="doc-file"
-              type="file"
-              multiple
-              accept=".pdf,.docx,.txt,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain"
-              onChange={(e) => setFiles(Array.from(e.target.files ?? []))}
-              className="block w-full text-sm file:mr-4 file:rounded-md file:border-0 file:bg-primary file:px-4 file:py-2 file:text-sm file:font-medium file:text-primary-foreground hover:file:bg-primary/90"
-              required={files.length === 0}
-            />
-            {files.length > 1 && (
-              <div className="max-h-32 overflow-y-auto rounded-md border p-2 space-y-1">
-                {files.map((f, i) => (
-                  <div key={i} className="flex items-center justify-between text-xs">
-                    <span className="truncate mr-2">{f.name}</span>
-                    <button
-                      type="button"
-                      onClick={() => removeFile(i)}
-                      className="text-destructive hover:underline shrink-0"
-                    >
-                      Retirer
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-
-          <div className="space-y-2">
-            <Label>Type de document *</Label>
-            <Popover open={typeSearchOpen} onOpenChange={setTypeSearchOpen}>
-              <PopoverTrigger asChild>
-                <Button
-                  variant="outline"
-                  role="combobox"
-                  aria-expanded={typeSearchOpen}
-                  className="w-full justify-between font-normal"
-                >
-                  <span className={cn(!sourceType && "text-muted-foreground")}>
-                    {sourceType
-                      ? orgTypeOptions.find((o) => o.value === sourceType)?.label ?? sourceType
-                      : "Sélectionner le type..."}
-                  </span>
-                  <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
-                <Command shouldFilter={false}>
-                  <CommandInput
-                    placeholder="Rechercher un type..."
-                    value={typeSearch}
-                    onValueChange={setTypeSearch}
-                  />
-                  <CommandList className="max-h-none">
-                    <CommandEmpty>Aucun type trouvé.</CommandEmpty>
-                    {Array.from(grouped.entries()).map(([niv, options]) => {
-                      const filtered = typeSearch
-                        ? options.filter((o) =>
-                            o.label.toLowerCase().includes(typeSearch.toLowerCase())
-                          )
-                        : options;
-                      if (filtered.length === 0) return null;
-                      return (
-                        <CommandGroup key={niv} heading={NIVEAU_LABELS[niv]}>
-                          {filtered.map((opt) => (
-                            <CommandItem
-                              key={opt.value}
-                              onSelect={() => {
-                                setSourceType(opt.value);
-                                setTypeSearchOpen(false);
-                                setTypeSearch("");
-                              }}
-                            >
-                              <Check
-                                className={cn(
-                                  "mr-2 h-4 w-4",
-                                  sourceType === opt.value ? "opacity-100" : "opacity-0"
-                                )}
-                              />
-                              {opt.label}
-                            </CommandItem>
-                          ))}
-                        </CommandGroup>
-                      );
-                    })}
-                  </CommandList>
-                </Command>
-              </PopoverContent>
-            </Popover>
-          </div>
-
-          {niveau && (
-            <div className="flex gap-6 rounded-md border p-3 text-sm">
-              <div>
-                <span className="text-muted-foreground">Niveau : </span>
-                <span className="font-medium">
-                  {niveau} — {NIVEAU_LABELS[niveau]}
-                </span>
-              </div>
-              <div>
-                <span className="text-muted-foreground">Poids : </span>
-                <span className="font-medium">{poids}</span>
-              </div>
-            </div>
-          )}
-
-          {isJurisprudence && !isBatch && (
-            <div className="space-y-3 rounded-md border border-border bg-muted/50 p-4">
-              <p className="text-sm font-medium">Métadonnées jurisprudence</p>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1">
-                  <Label htmlFor="juridiction" className="text-xs">Juridiction</Label>
-                  <Select value={juridiction} onValueChange={setJuridiction}>
-                    <SelectTrigger id="juridiction">
-                      <SelectValue placeholder="Sélectionner..." />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {JURIDICTION_OPTIONS.map((j) => (
-                        <SelectItem key={j} value={j}>{j}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div className="space-y-1">
-                  <Label htmlFor="chambre" className="text-xs">Chambre</Label>
-                  <Select value={chambre} onValueChange={setChambre}>
-                    <SelectTrigger id="chambre">
-                      <SelectValue placeholder="Sélectionner..." />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {CHAMBRE_OPTIONS.map((c) => (
-                        <SelectItem key={c} value={c}>{c}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div className="space-y-1">
-                  <Label htmlFor="formation" className="text-xs">Formation</Label>
-                  <Select value={formation} onValueChange={setFormation}>
-                    <SelectTrigger id="formation">
-                      <SelectValue placeholder="Sélectionner..." />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {FORMATION_OPTIONS.map((f) => (
-                        <SelectItem key={f} value={f}>{f}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div className="space-y-1">
-                  <Label htmlFor="numero-pourvoi" className="text-xs">N° de pourvoi</Label>
-                  <Input
-                    id="numero-pourvoi"
-                    placeholder="ex: 21-14.490"
-                    value={numeroPourvoi}
-                    onChange={(e) => setNumeroPourvoi(e.target.value)}
-                  />
-                </div>
-
-                <div className="space-y-1">
-                  <Label htmlFor="date-decision" className="text-xs">Date de décision</Label>
-                  <Input
-                    id="date-decision"
-                    type="date"
-                    value={dateDecision}
-                    onChange={(e) => setDateDecision(e.target.value)}
-                  />
-                </div>
-
-                <div className="space-y-1">
-                  <Label htmlFor="solution" className="text-xs">Solution</Label>
-                  <Select value={solution} onValueChange={setSolution}>
-                    <SelectTrigger id="solution">
-                      <SelectValue placeholder="Sélectionner..." />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {SOLUTION_OPTIONS.map((s) => (
-                        <SelectItem key={s} value={s}>{s}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div className="col-span-2 space-y-1">
-                  <Label htmlFor="publication" className="text-xs">Publication</Label>
-                  <Select value={publication} onValueChange={setPublication}>
-                    <SelectTrigger id="publication">
-                      <SelectValue placeholder="Sélectionner..." />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {PUBLICATION_OPTIONS.map((p) => (
-                        <SelectItem key={p} value={p}>{p}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {isBatch && isJurisprudence && (
-            <p className="text-xs text-muted-foreground">
-              Les métadonnées de jurisprudence ne sont pas disponibles en upload par lot.
-            </p>
-          )}
-
-          {error && <p className="text-sm text-destructive">{error}</p>}
-
-          <DialogFooter>
-            <Button
-              type="submit"
-              disabled={submitting || files.length === 0 || !sourceType}
-            >
-              {submitting
-                ? "Upload en cours..."
-                : files.length > 1
-                  ? `Ajouter ${files.length} documents`
-                  : "Ajouter"}
-            </Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
   );
 }
