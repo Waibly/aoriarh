@@ -302,17 +302,18 @@ export default function QualityPage() {
           }
         />
         <KpiCard
-          title="Sans source"
+          title="Trous de corpus"
           icon={<AlertTriangle className="h-4 w-4" />}
           loading={kpisLoading}
           value={kpis ? fmtPct(kpis.no_sources_rate) : "—"}
-          subValue={kpis ? `${kpis.no_sources_count} questions` : ""}
+          subValue={kpis ? `${kpis.no_sources_count} question(s) RH sans source` : ""}
           severity={kpis ? (kpis.no_sources_rate > 0.05 ? "orange" : "green") : "neutral"}
           help={
             <>
-              Questions où la recherche RAG n&apos;a remonté aucun document.
-              Le LLM répond à partir de ses connaissances générales — risque
-              élevé d&apos;hallucination. Indique souvent un trou dans le corpus.
+              Questions <strong>RH</strong> où la recherche RAG n&apos;a remonté
+              aucun document. Indique souvent un trou dans le corpus à
+              combler. <em>Les refus hors-périmètre RH (météo, etc.) sont
+              comptés séparément ci-après et n&apos;apparaissent PAS ici.</em>
             </>
           }
         />

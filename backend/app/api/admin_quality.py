@@ -146,7 +146,15 @@ async def get_quality_metrics(
             1 for m in rows
             if m.rag_trace and m.rag_trace.get("out_of_scope") is True
         )
-        no_src = sum(1 for m in rows if not m.sources or len(m.sources) == 0)
+        # no_src counts ONLY in-scope questions where the RAG returned no
+        # source : that's a real warning signal (corpus gap). Out-of-scope
+        # refusals legitimately have no sources and are tracked separately
+        # in `oos`, so we exclude them here to avoid inflating the metric.
+        no_src = sum(
+            1 for m in rows
+            if (not m.sources or len(m.sources) == 0)
+            and not (m.rag_trace and m.rag_trace.get("out_of_scope") is True)
+        )
         errors = sum(
             1 for m in rows
             if m.rag_trace and m.rag_trace.get("error")

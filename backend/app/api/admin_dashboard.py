@@ -239,10 +239,17 @@ async def get_dashboard(
     total_msgs = len(msgs)
     if total_msgs > 0:
         fb_down = sum(1 for m in msgs if m.feedback == "down")
-        no_src = sum(1 for m in msgs if not m.sources or len(m.sources) == 0)
         oos = sum(
             1 for m in msgs
             if m.rag_trace and m.rag_trace.get("out_of_scope") is True
+        )
+        # In-scope questions without any source returned : real warning
+        # signal (corpus gap). Out-of-scope refusals are excluded since
+        # they legitimately have no sources.
+        no_src = sum(
+            1 for m in msgs
+            if (not m.sources or len(m.sources) == 0)
+            and not (m.rag_trace and m.rag_trace.get("out_of_scope") is True)
         )
         latencies = sorted(m.latency_ms for m in msgs if m.latency_ms is not None)
         if latencies:
