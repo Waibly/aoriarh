@@ -51,6 +51,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { InfoTooltip } from "@/components/admin/info-tooltip";
+import { InspectorBody, type InspectorPayload, type RagTrace, type CitedSource } from "../quality/InspectorBody";
 
 // ----------------- Types -----------------
 
@@ -86,21 +87,12 @@ interface SyncLogItem {
   error_message: string | null;
 }
 
-interface RetrievalChunk {
-  document_id: string;
-  doc_name: string;
-  chunk_index: number;
-  score: number;
-  source_type: string;
-  text_preview: string;
-}
-
 interface RetrievalResponse {
-  query: string;
+  answer: string | null;
+  sources: CitedSource[];
+  rag_trace: RagTrace;
+  cost_usd: number;
   duration_ms: number;
-  chunks_hybrid: RetrievalChunk[];
-  chunks_reranked: RetrievalChunk[];
-  chunks_expanded: RetrievalChunk[];
 }
 
 // ----------------- Helpers -----------------
@@ -580,67 +572,21 @@ function TestRetrievalDialog({
         </div>
 
         {result && (
-          <div className="space-y-4 mt-4">
-            <div className="text-xs text-muted-foreground">
-              Durée : <span className="font-mono">{result.duration_ms} ms</span>
-            </div>
-
-            <div>
-              <h3 className="text-sm font-semibold mb-2">
-                Sources finales envoyées au LLM ({result.chunks_expanded.length})
-              </h3>
-              <div className="space-y-2">
-                {result.chunks_expanded.map((c, i) => (
-                  <ChunkRow key={`exp-${i}`} chunk={c} rank={i + 1} />
-                ))}
-              </div>
-            </div>
-
-            <div>
-              <h3 className="text-sm font-semibold mb-2">
-                Top après rerank ({result.chunks_reranked.length})
-              </h3>
-              <div className="space-y-2">
-                {result.chunks_reranked.map((c, i) => (
-                  <ChunkRow key={`rk-${i}`} chunk={c} rank={i + 1} />
-                ))}
-              </div>
-            </div>
-
-            <div>
-              <h3 className="text-sm font-semibold mb-2">
-                Pool initial avant rerank ({result.chunks_hybrid.length})
-              </h3>
-              <div className="space-y-2">
-                {result.chunks_hybrid.map((c, i) => (
-                  <ChunkRow key={`h-${i}`} chunk={c} rank={i + 1} />
-                ))}
-              </div>
-            </div>
+          <div className="mt-4">
+            <InspectorBody
+              data={{
+                question: query,
+                answer: result.answer,
+                sources: result.sources,
+                rag_trace: result.rag_trace,
+                cost_usd: result.cost_usd,
+                latency_ms: result.duration_ms,
+              } as InspectorPayload}
+            />
           </div>
         )}
       </DialogContent>
     </Dialog>
-  );
-}
-
-function ChunkRow({ chunk, rank }: { chunk: RetrievalChunk; rank: number }) {
-  return (
-    <div className="border rounded-md p-2 text-xs space-y-1 bg-muted/20">
-      <div className="flex items-center justify-between gap-2">
-        <div className="flex items-center gap-2 min-w-0">
-          <span className="text-muted-foreground font-mono shrink-0">#{rank}</span>
-          <span className="font-medium truncate">{chunk.doc_name}</span>
-        </div>
-        <div className="flex items-center gap-2 shrink-0">
-          <Badge variant="outline" className="text-[10px] h-5">
-            chunk {chunk.chunk_index}
-          </Badge>
-          <span className="font-mono text-muted-foreground">{chunk.score.toFixed(3)}</span>
-        </div>
-      </div>
-      <div className="text-muted-foreground line-clamp-2">{chunk.text_preview}</div>
-    </div>
   );
 }
 

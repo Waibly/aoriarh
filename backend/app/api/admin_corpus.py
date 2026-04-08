@@ -1,17 +1,19 @@
 """Admin Corpus endpoints — unified utilities for the new fused Corpus page.
 
 For now, only one endpoint :
-- POST /admin/corpus/test-retrieval → runs retrieval (hybrid + rerank +
-  parent expansion) without calling the LLM, for QA on the corpus.
+- POST /admin/corpus/test-retrieval → runs the full RAG pipeline
+  (retrieval + rerank + parent expansion) on the common corpus,
+  WITHOUT calling the LLM. Returns the same payload shape as the
+  Quality sandbox so the frontend can reuse InspectorBody.
 
 The Corpus page reuses existing endpoints from admin_documents, admin_ccn,
 admin_judilibre, admin_syncs for everything else (no breaking change).
 """
 from __future__ import annotations
 
+import dataclasses
 import logging
 import time
-import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
@@ -28,40 +30,15 @@ router = APIRouter()
 
 class TestRetrievalRequest(BaseModel):
     query: str
-    organisation_id: uuid.UUID | None = None  # if None, only common docs
-
-
-class TestRetrievalChunk(BaseModel):
-    document_id: str
-    doc_name: str
-    chunk_index: int
-    score: float
-    source_type: str
-    text_preview: str
 
 
 class TestRetrievalResponse(BaseModel):
-    query: str
+    """Same shape as SandboxRunResponse so the frontend can use InspectorBody."""
+    answer: str | None
+    sources: list[dict]
+    rag_trace: dict
+    cost_usd: float
     duration_ms: int
-    chunks_hybrid: list[TestRetrievalChunk]
-    chunks_reranked: list[TestRetrievalChunk]
-    chunks_expanded: list[TestRetrievalChunk]
-
-
-def _serialize(results, limit: int = 30, text_chars: int = 350) -> list[TestRetrievalChunk]:
-    out: list[TestRetrievalChunk] = []
-    for r in results[:limit]:
-        out.append(
-            TestRetrievalChunk(
-                document_id=str(r.document_id),
-                doc_name=(r.doc_name or "")[:160],
-                chunk_index=int(r.chunk_index),
-                score=round(float(r.score), 4),
-                source_type=str(r.source_type or ""),
-                text_preview=(r.text or "")[:text_chars],
-            )
-        )
-    return out
 
 
 @router.post("/test-retrieval", response_model=TestRetrievalResponse)
@@ -70,55 +47,70 @@ async def test_retrieval(
     user: User = Depends(require_role(["admin"])),
     db: AsyncSession = Depends(get_db),
 ) -> TestRetrievalResponse:
-    """Run retrieval-only (no LLM) for QA on the corpus."""
-    from app.rag.search import HybridSearch
-    from app.rag.reranker import get_reranker
-    from app.rag.parent_expansion import (
-        expand_to_parents,
-        detect_identifiers,
-        fetch_by_identifiers,
-    )
-    from app.rag.config import TOP_K, RERANK_TOP_K
+    """Run the full RAG retrieval pipeline against the common corpus only.
 
+    Same code path as the Quality sandbox (so the frontend can reuse
+    InspectorBody) but :
+    - organisation_id = '__corpus_test__' (no org docs are matched, only
+      the common pool — code, jurisprudence, doctrine, etc.)
+    - skip generation (no LLM call, no answer text)
+    - tagged is_replay=True so the cost doesn't appear in client metrics
+    """
     if not body.query.strip():
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Question vide",
         )
 
-    org_id = str(body.organisation_id) if body.organisation_id else "common"
-    se = HybridSearch()
-    rk = get_reranker()
-    se.set_cost_context(is_replay=True)
-    rk.set_cost_context(is_replay=True)
+    from app.rag.agent import RAGAgent
 
-    t0 = time.perf_counter()
-    hybrid = await se.search(body.query, organisation_id=org_id, top_k=TOP_K * 2)
+    agent = RAGAgent()
+    t_start = time.perf_counter()
 
-    # Identifier boost
-    ids = detect_identifiers(body.query)
-    if any(ids.values()):
-        try:
-            extra = fetch_by_identifiers(
-                se.qdrant, ids, organisation_id=org_id, org_idcc_list=None
+    # Use a synthetic org id that won't match any real org documents — the
+    # search engine's `should=[org_id, "common"]` filter will then only
+    # return common docs. We pass an UUID-shaped string so the type check
+    # in HybridSearch doesn't blow up.
+    fake_org_id = "00000000-0000-0000-0000-000000000000"
+
+    results, reformulated, rag_trace = await agent.prepare_context(
+        query=body.query.strip(),
+        organisation_id=fake_org_id,
+        org_context=None,
+        history=None,
+        org_idcc_list=None,
+        user_id=None,
+        conversation_id=None,
+        is_replay=True,
+    )
+
+    sources_dicts: list[dict] = []
+    if results:
+        sources = agent.format_sources(results)
+        sources_dicts = [dataclasses.asdict(s) for s in sources]
+
+    duration_ms = int((time.perf_counter() - t_start) * 1000)
+    rag_trace.perf_ms["total"] = float(duration_ms)
+
+    # Sum costs for this run (will be 0 unless embeddings ran)
+    from app.models.api_usage import ApiUsageLog
+    from sqlalchemy import func, select
+
+    cost_q = await db.execute(
+        select(func.coalesce(func.sum(ApiUsageLog.cost_usd), 0)).where(
+            ApiUsageLog.is_replay.is_(True),
+            ApiUsageLog.created_at >= __import__("datetime").datetime.now(
+                __import__("datetime").UTC
             )
-            seen = {(r.document_id, r.chunk_index) for r in hybrid}
-            for r in extra:
-                key = (r.document_id, r.chunk_index)
-                if key not in seen:
-                    seen.add(key)
-                    hybrid.insert(0, r)
-        except Exception:
-            logger.exception("[CORPUS-TEST] identifier boost failed")
-
-    reranked = await rk.rerank(body.query, hybrid, top_k=RERANK_TOP_K)
-    expanded = expand_to_parents(reranked, se.qdrant)
-    duration_ms = int((time.perf_counter() - t0) * 1000)
+            - __import__("datetime").timedelta(seconds=duration_ms / 1000 + 5),
+        )
+    )
+    cost_usd = float(cost_q.scalar() or 0.0)
 
     return TestRetrievalResponse(
-        query=body.query,
+        answer=None,
+        sources=sources_dicts,
+        rag_trace=rag_trace.to_dict(),
+        cost_usd=cost_usd,
         duration_ms=duration_ms,
-        chunks_hybrid=_serialize(hybrid, limit=30),
-        chunks_reranked=_serialize(reranked, limit=15),
-        chunks_expanded=_serialize(expanded, limit=15, text_chars=600),
     )

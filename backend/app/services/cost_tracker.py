@@ -84,6 +84,12 @@ class CostTracker:
         context_id: str | None = None,
         is_replay: bool = False,
     ) -> None:
+        # For replay/sandbox calls, drop org_id and user_id : they may
+        # reference fake/synthetic ids (eg the corpus retrieval test) that
+        # would violate FK constraints. Replays are not billed to clients.
+        if is_replay:
+            organisation_id = None
+            user_id = None
         """Log a single API call. Non-blocking — errors are swallowed."""
         try:
             cost = compute_cost(provider, model, tokens_input, tokens_output)
