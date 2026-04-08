@@ -263,6 +263,7 @@ class JudilibreService:
 
         juris_types = [
             "arret_cour_cassation",
+            "arret_cour_appel",
             "arret_conseil_etat",
             "decision_conseil_constitutionnel",
         ]
