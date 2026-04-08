@@ -116,6 +116,30 @@ function fmtRelative(iso: string | null): string {
   return `il y a ${days} j`;
 }
 
+/**
+ * Compute the next scheduled auto-sync date.
+ * Cron: 1st and 15th of each month at 03:00 UTC.
+ */
+function nextAutoSync(): string {
+  const now = new Date();
+  // Try this month's 1st and 15th, then next month's 1st
+  const candidates = [
+    new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1, 3, 0, 0)),
+    new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 15, 3, 0, 0)),
+    new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1, 3, 0, 0)),
+    new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 15, 3, 0, 0)),
+  ];
+  const next = candidates.find((d) => d.getTime() > now.getTime());
+  if (!next) return "—";
+  return next.toLocaleString("fr-FR", {
+    weekday: "long",
+    day: "2-digit",
+    month: "long",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
 function fmtSize(bytes: number | null): string {
   if (bytes === null) return "—";
   if (bytes < 1024) return `${bytes} B`;
@@ -279,27 +303,52 @@ function SyncBanner({ token, onRefresh }: { token: string; onRefresh: () => void
     {
       key: "kali",
       label: "KALI (CCN)",
+      auto: true,
+      autoDetail: "Rotation des 15 CCN installées les plus anciennement synchronisées",
       help: "Synchronise les conventions collectives nationales depuis la base KALI de Légifrance. Met à jour le contenu des CCN installées dans les organisations.",
     },
     {
       key: "judilibre",
       label: "Judilibre",
+      auto: true,
+      autoDetail: "Derniers 30 jours, chambre sociale, publication B",
       help: "Récupère les arrêts de la Cour de cassation depuis l'API Judilibre (PISTE). Permet d'enrichir le corpus jurisprudentiel.",
     },
     {
       key: "code_travail",
       label: "Code travail",
-      help: "Récupère et met à jour le Code du travail consolidé depuis Légifrance (parties législative et réglementaire).",
+      auto: false,
+      autoDetail: null,
+      help: "Récupère et met à jour le Code du travail consolidé depuis Légifrance (parties législative et réglementaire). À déclencher manuellement — n'est PAS inclus dans la sync automatique bimensuelle.",
     },
     {
       key: "bocc",
       label: "BOCC",
+      auto: true,
+      autoDetail: "1 numéro à chaque exécution (semaine en cours - 2)",
       help: "Bulletin Officiel des Conventions Collectives — récupère les nouveaux avenants publiés. Ils sont mis en réserve et ingérés automatiquement à l'installation de la CCN concernée.",
     },
   ];
 
   return (
     <Card>
+      <div className="flex items-center justify-between px-4 pt-3 pb-2 border-b">
+        <div className="flex items-center gap-2 text-xs font-semibold">
+          Synchronisations
+          <InfoTooltip>
+            <strong>Synchronisation automatique</strong> bimensuelle :
+            les <strong>1er et 15</strong> de chaque mois à <strong>03:00 UTC</strong>.
+            <br />
+            Inclus : KALI (rotation 15 CCN), Judilibre (30j), BOCC (1 numéro),
+            codes civil/pénal/CSS/CASF.
+            <br />
+            <strong>Code du travail = manuel uniquement</strong> — n&apos;est PAS dans le cron.
+          </InfoTooltip>
+        </div>
+        <div className="text-[10px] text-muted-foreground">
+          Prochaine sync auto : <span className="font-medium text-foreground">{nextAutoSync()}</span>
+        </div>
+      </div>
       <CardContent className="p-3 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-2">
         {sources.map((s) => {
           const log = lastSyncs[s.key];
@@ -335,6 +384,22 @@ function SyncBanner({ token, onRefresh }: { token: string; onRefresh: () => void
                     <span className="h-3 w-3 inline-block rounded-full bg-muted-foreground/30" />
                   )}
                   <span className="font-medium truncate">{s.label}</span>
+                  {s.auto ? (
+                    <Badge
+                      variant="outline"
+                      className="text-[9px] h-4 px-1 border-green-300 text-green-700 dark:text-green-400 shrink-0"
+                      title={s.autoDetail ?? undefined}
+                    >
+                      auto
+                    </Badge>
+                  ) : (
+                    <Badge
+                      variant="outline"
+                      className="text-[9px] h-4 px-1 border-amber-300 text-amber-700 dark:text-amber-400 shrink-0"
+                    >
+                      manuel
+                    </Badge>
+                  )}
                   <InfoTooltip>{s.help}</InfoTooltip>
                 </div>
                 <Button
