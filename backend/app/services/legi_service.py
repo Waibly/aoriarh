@@ -67,14 +67,14 @@ SYNCABLE_CODES: dict[str, dict] = {
     "code_action_sociale": {
         "text_id": "LEGITEXT000006074069",
         "name": "Code de l'action sociale et des familles",
-        "source_type": "code_civil",  # reuse code_civil hierarchy for now
+        "source_type": "code_action_sociale",
         "has_reglementaire": False,
         "storage_prefix": "common/code_action_sociale",
     },
     "code_sante_publique": {
         "text_id": "LEGITEXT000006072665",
         "name": "Code de la santé publique",
-        "source_type": "code_civil",  # reuse code_civil hierarchy for now
+        "source_type": "code_sante_publique",
         "has_reglementaire": True,
         "storage_prefix": "common/code_sante_publique",
     },

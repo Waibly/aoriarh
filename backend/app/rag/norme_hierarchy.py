@@ -60,7 +60,11 @@ DOCUMENT_TYPE_HIERARCHY: dict[str, dict] = {
     "code_securite_sociale_reglementaire": {"niveau": 5, "poids": 0.80},
     "code_penal": {"niveau": 3, "poids": 0.90},
     "code_civil": {"niveau": 3, "poids": 0.90},
+    "code_civil_reglementaire": {"niveau": 5, "poids": 0.80},
     "code_action_sociale": {"niveau": 3, "poids": 0.90},
+    "code_action_sociale_reglementaire": {"niveau": 5, "poids": 0.80},
+    "code_sante_publique": {"niveau": 3, "poids": 0.90},
+    "code_sante_publique_reglementaire": {"niveau": 5, "poids": 0.80},
     # Niveau 4 — Jurisprudence
     "arret_cour_cassation": {"niveau": 4, "poids": 0.85},
     "arret_cour_appel": {"niveau": 4, "poids": 0.75},
