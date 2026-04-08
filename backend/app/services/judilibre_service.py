@@ -143,14 +143,22 @@ class JudilibreService:
         *,
         date_start: date | None = None,
         date_end: date | None = None,
+        jurisdiction: str = "cc",
         chamber: str = "soc",
         publication: str = "b",
+        source_type: str = "arret_cour_cassation",
         max_decisions: int | None = None,
     ) -> SyncResult:
         """Synchronise decisions from Judilibre into the documents table.
 
-        Uses the /export endpoint which returns full decisions by batch,
-        avoiding the need for individual /decision/{id} calls.
+        Uses the /export endpoint which returns full decisions by batch.
+
+        - jurisdiction : 'cc' (Cour de cassation), 'ca' (Cour d'appel),
+                         'ce' (Conseil d'État), 'cc_ag' (CA admin), etc.
+        - chamber      : only used for 'cc' (soc, crim, com, civ1, civ2, civ3, mi, pl).
+                         For 'ca', the API filters using its own chamber codes.
+        - source_type  : DB source_type to assign to ingested decisions
+                         (arret_cour_cassation / arret_cour_appel / arret_conseil_etat).
         """
         result = SyncResult()
 
@@ -164,8 +172,8 @@ class JudilibreService:
         if date_start is None:
             date_start = date(date_end.year - 3, date_end.month, date_end.day)
 
-        # Load existing pourvois for deduplication
-        existing_pourvois = await self._get_existing_pourvois(db)
+        # Load existing pourvois for deduplication (per source_type)
+        existing_pourvois = await self._get_existing_pourvois(db, source_type=source_type)
 
         # Lazy-init storage service once
         from app.services.storage_service import StorageService
@@ -175,14 +183,20 @@ class JudilibreService:
         batch_num = 0
         async with httpx.AsyncClient(timeout=_REQUEST_TIMEOUT) as client:
             while True:
-                data = await self._api_get(client, "/export", params={
-                    "chamber": chamber,
+                api_params: dict = {
+                    "jurisdiction": jurisdiction,
                     "publication": publication,
                     "date_start": date_start.isoformat(),
                     "date_end": date_end.isoformat(),
                     "batch": batch_num,
                     "batch_size": _BATCH_SIZE,
-                })
+                }
+                # Chamber filter only applies to Cour de cassation in Judilibre.
+                # For other jurisdictions we omit it (Judilibre returns all
+                # chambers of that jurisdiction).
+                if jurisdiction == "cc":
+                    api_params["chamber"] = chamber
+                data = await self._api_get(client, "/export", params=api_params)
                 if data is None:
                     result.errors += 1
                     result.error_messages.append(f"Erreur API batch {batch_num}")
@@ -214,7 +228,9 @@ class JudilibreService:
                             result.already_exists += 1
                             continue
 
-                        doc = await self._create_document(db, decision, user_id, storage)
+                        doc = await self._create_document(
+                            db, decision, user_id, storage, source_type=source_type
+                        )
                         await enqueue_ingestion(str(doc.id))
                         existing_pourvois.add(decision.numero_pourvoi)
                         result.new_ingested += 1
@@ -315,6 +331,24 @@ class JudilibreService:
         chambre_raw = raw.get("chamber", "")
         chambre = _CHAMBER_MAP.get(chambre_raw, chambre_raw)
 
+        # Build juridiction label depending on the raw 'jurisdiction' field
+        # returned by Judilibre. For CA, fall back to the location label
+        # (eg 'Cour d'appel de Paris') so the document name is meaningful.
+        jurisdiction_raw = (raw.get("jurisdiction") or "cc").lower()
+        location_raw = raw.get("location") or ""
+        if jurisdiction_raw == "cc":
+            juridiction_label = "Cour de cassation"
+        elif jurisdiction_raw == "ca":
+            # Judilibre location codes look like "ca_paris", "ca_versailles"…
+            location_label = location_raw.replace("ca_", "").replace("_", " ").title()
+            juridiction_label = (
+                f"Cour d'appel de {location_label}" if location_label else "Cour d'appel"
+            )
+        elif jurisdiction_raw == "ce":
+            juridiction_label = "Conseil d'État"
+        else:
+            juridiction_label = jurisdiction_raw.upper()
+
         # Extract summary from titlesAndSummaries or summary field
         sommaire = raw.get("summary")
         if not sommaire:
@@ -332,9 +366,9 @@ class JudilibreService:
 
         return JudilibreDecision(
             judilibre_id=raw.get("id", ""),
-            numero_pourvoi=raw.get("number", ""),
+            numero_pourvoi=raw.get("number", "") or raw.get("id", ""),
             date_decision=decision_date,
-            juridiction="Cour de cassation",
+            juridiction=juridiction_label,
             chambre=chambre,
             formation=raw.get("formation"),
             solution=raw.get("solution", ""),
@@ -351,18 +385,41 @@ class JudilibreService:
         decision: JudilibreDecision,
         user_id: uuid.UUID,
         storage: "StorageService",
+        *,
+        source_type: str = "arret_cour_cassation",
     ) -> Document:
         """Create a Document record from a Judilibre decision."""
         from app.services.storage_service import StorageService  # noqa: F811
 
-        source_type = "arret_cour_cassation"
         hierarchy = DOCUMENT_TYPE_HIERARCHY[source_type]
 
-        name = (
-            f"Cass. {decision.chambre}, "
-            f"{decision.date_decision.strftime('%d/%m/%Y')}, "
-            f"n° {decision.numero_pourvoi}"
-        )
+        # Build display name based on source type
+        if source_type == "arret_cour_cassation":
+            name = (
+                f"Cass. {decision.chambre}, "
+                f"{decision.date_decision.strftime('%d/%m/%Y')}, "
+                f"n° {decision.numero_pourvoi}"
+            )
+        elif source_type == "arret_cour_appel":
+            location = decision.juridiction or "Cour d'appel"
+            name = (
+                f"{location}, "
+                f"{decision.chambre}, "
+                f"{decision.date_decision.strftime('%d/%m/%Y')}, "
+                f"n° {decision.numero_pourvoi}"
+            )
+        elif source_type == "arret_conseil_etat":
+            name = (
+                f"CE, "
+                f"{decision.date_decision.strftime('%d/%m/%Y')}, "
+                f"n° {decision.numero_pourvoi}"
+            )
+        else:
+            name = (
+                f"{decision.juridiction}, "
+                f"{decision.date_decision.strftime('%d/%m/%Y')}, "
+                f"n° {decision.numero_pourvoi}"
+            )
 
         file_id = uuid.uuid4()
         safe_pourvoi = decision.numero_pourvoi.replace(" ", "_").replace("/", "-")
@@ -397,11 +454,15 @@ class JudilibreService:
         await db.refresh(doc)
         return doc
 
-    async def _get_existing_pourvois(self, db: AsyncSession) -> set[str]:
-        """Get set of already-ingested pourvoi numbers to avoid duplicates."""
+    async def _get_existing_pourvois(
+        self, db: AsyncSession, *, source_type: str = "arret_cour_cassation"
+    ) -> set[str]:
+        """Get set of already-ingested pourvoi numbers to avoid duplicates,
+        scoped to a single source_type so different jurisdictions don't
+        cross-contaminate the dedup."""
         result = await db.execute(
             select(Document.numero_pourvoi).where(
-                Document.source_type == "arret_cour_cassation",
+                Document.source_type == source_type,
                 Document.organisation_id.is_(None),
                 Document.numero_pourvoi.isnot(None),
             )

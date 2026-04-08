@@ -36,6 +36,7 @@ NORME_POIDS: dict[int, float] = {
 # Types de documents nécessitant le chunker jurisprudence
 JURISPRUDENCE_SOURCE_TYPES = frozenset({
     "arret_cour_cassation",
+    "arret_cour_appel",
     "arret_conseil_etat",
     "decision_conseil_constitutionnel",
 })
@@ -62,6 +63,7 @@ DOCUMENT_TYPE_HIERARCHY: dict[str, dict] = {
     "code_action_sociale": {"niveau": 3, "poids": 0.90},
     # Niveau 4 — Jurisprudence
     "arret_cour_cassation": {"niveau": 4, "poids": 0.85},
+    "arret_cour_appel": {"niveau": 4, "poids": 0.75},
     "arret_conseil_etat": {"niveau": 4, "poids": 0.85},
     "decision_conseil_constitutionnel": {"niveau": 4, "poids": 0.85},
     # Niveau 5 — Réglementaire

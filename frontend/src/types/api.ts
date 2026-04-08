@@ -221,6 +221,7 @@ export const SOURCE_TYPE_OPTIONS: {
   { value: "code_civil", label: "Code civil", niveau: 3 },
   // Niveau 4 — Jurisprudence
   { value: "arret_cour_cassation", label: "Arrêt Cour de cassation", niveau: 4 },
+  { value: "arret_cour_appel", label: "Arrêt Cour d'appel", niveau: 4 },
   { value: "arret_conseil_etat", label: "Arrêt Conseil d'État", niveau: 4 },
   { value: "decision_conseil_constitutionnel", label: "Décision Conseil constitutionnel", niveau: 4 },
   // Niveau 5 — Réglementaire

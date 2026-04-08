@@ -406,54 +406,99 @@ async def run_scheduled_sync(ctx: dict) -> None:
             return
         admin_id = admin.id
 
-        # --- 1. Jurisprudence sync ---
-        t_start = _time.perf_counter()
-        started_at = datetime.now(UTC)
-        sync_log = SyncLog(
-            sync_type="jurisprudence",
-            status="running",
-            started_at=started_at,
-        )
-        db.add(sync_log)
-        await db.commit()
+        # --- 1. Jurisprudence sync (multi-juridictions) ---
+        # Quatre passes successives : Cass. soc + Cass. crim + Cass. com + CA.
+        # Chacune écrit son propre SyncLog row avec sync_type='jurisprudence'
+        # pour rester groupé sous la même rubrique côté admin.
+        from app.services.judilibre_service import JudilibreService
 
-        try:
-            from app.services.judilibre_service import JudilibreService
+        juris_service = JudilibreService()
+        date_end = date.today()
+        date_start = date_end - timedelta(days=30)
 
-            service = JudilibreService()
-            # Sync last 30 days only (incremental)
-            date_end = date.today()
-            date_start = date_end - timedelta(days=30)
-            result = await service.sync(
-                db=db,
-                user_id=admin_id,
-                date_start=date_start,
-                date_end=date_end,
-                chamber="soc",
-                publication="b",
+        # Each entry: (label, sync kwargs)
+        jurisprudence_passes = [
+            (
+                "Cass. soc",
+                {
+                    "jurisdiction": "cc",
+                    "chamber": "soc",
+                    "publication": "b",
+                    "source_type": "arret_cour_cassation",
+                },
+            ),
+            (
+                "Cass. crim",
+                {
+                    "jurisdiction": "cc",
+                    "chamber": "crim",
+                    "publication": "b",
+                    "source_type": "arret_cour_cassation",
+                },
+            ),
+            (
+                "Cass. com",
+                {
+                    "jurisdiction": "cc",
+                    "chamber": "com",
+                    "publication": "b",
+                    "source_type": "arret_cour_cassation",
+                },
+            ),
+            (
+                "Cour d'appel",
+                {
+                    "jurisdiction": "ca",
+                    "publication": "b",
+                    "source_type": "arret_cour_appel",
+                    "max_decisions": 200,  # cap initial pour CA (volume élevé)
+                },
+            ),
+        ]
+
+        for pass_label, pass_kwargs in jurisprudence_passes:
+            t_start = _time.perf_counter()
+            sync_log = SyncLog(
+                sync_type="jurisprudence",
+                status="running",
+                started_at=datetime.now(UTC),
             )
-            duration = int((_time.perf_counter() - t_start) * 1000)
-            sync_log.status = "success" if result.errors == 0 else "error"
-            sync_log.items_fetched = result.total_fetched
-            sync_log.items_created = result.new_ingested
-            sync_log.items_skipped = result.already_exists
-            sync_log.errors = result.errors
-            sync_log.error_message = "; ".join(result.error_messages[:3]) if result.error_messages else None
-            sync_log.duration_ms = duration
-            sync_log.completed_at = datetime.now(UTC)
+            db.add(sync_log)
             await db.commit()
-
-            logger.info(
-                "Scheduled sync: jurisprudence done — %d new, %d skipped, %d errors (%.1fs)",
-                result.new_ingested, result.already_exists, result.errors, duration / 1000,
-            )
-        except Exception as exc:
-            sync_log.status = "error"
-            sync_log.error_message = str(exc)[:500]
-            sync_log.completed_at = datetime.now(UTC)
-            sync_log.duration_ms = int((_time.perf_counter() - t_start) * 1000)
-            await db.commit()
-            logger.exception("Scheduled sync: jurisprudence failed")
+            try:
+                result = await juris_service.sync(
+                    db=db,
+                    user_id=admin_id,
+                    date_start=date_start,
+                    date_end=date_end,
+                    **pass_kwargs,
+                )
+                duration = int((_time.perf_counter() - t_start) * 1000)
+                sync_log.status = "success" if result.errors == 0 else "error"
+                sync_log.items_fetched = result.total_fetched
+                sync_log.items_created = result.new_ingested
+                sync_log.items_skipped = result.already_exists
+                sync_log.errors = result.errors
+                sync_log.error_message = (
+                    "; ".join(result.error_messages[:3])
+                    if result.error_messages
+                    else None
+                )
+                sync_log.duration_ms = duration
+                sync_log.completed_at = datetime.now(UTC)
+                await db.commit()
+                logger.info(
+                    "Scheduled sync: %s done — %d new, %d skipped, %d errors (%.1fs)",
+                    pass_label, result.new_ingested, result.already_exists,
+                    result.errors, duration / 1000,
+                )
+            except Exception as exc:
+                sync_log.status = "error"
+                sync_log.error_message = str(exc)[:500]
+                sync_log.completed_at = datetime.now(UTC)
+                sync_log.duration_ms = int((_time.perf_counter() - t_start) * 1000)
+                await db.commit()
+                logger.exception("Scheduled sync: %s failed", pass_label)
 
         # --- 2. CCN rotation sync ---
         # Get 10-15 distinct installed CCN, oldest synced first
