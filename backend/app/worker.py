@@ -423,14 +423,16 @@ async def run_scheduled_sync(ctx: dict) -> None:
         except Exception:
             logger.exception("Scheduled sync: BOCC sync failed")
 
-        # --- 4. All legal codes sync (Code civil, pénal, CSS, CASF) ---
+        # --- 4. All legal codes sync (Code travail + civil + pénal + CSS + CASF) ---
+        # The LegiService computes a SHA-256 of the fetched content and skips
+        # ingestion when the hash matches the latest stored version, so this
+        # is safe to run on every cron tick — only actual updates cost
+        # embeddings.
         try:
             from app.services.legi_service import SYNCABLE_CODES, LegiService
 
             legi_service = LegiService()
             for code_key, code_def in SYNCABLE_CODES.items():
-                if code_key == "code_travail":
-                    continue  # Already synced as part of Code du travail step
                 try:
                     result = await legi_service.sync_code(db, code_key=code_key, user_id=admin_id)
                     status = "changed" if (result.legislatif_changed or result.reglementaire_changed) else "unchanged"

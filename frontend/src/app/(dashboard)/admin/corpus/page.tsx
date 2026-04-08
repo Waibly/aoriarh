@@ -317,9 +317,9 @@ function SyncBanner({ token, onRefresh }: { token: string; onRefresh: () => void
     {
       key: "code_travail",
       label: "Code travail",
-      auto: false,
-      autoDetail: null,
-      help: "Récupère et met à jour le Code du travail consolidé depuis Légifrance (parties législative et réglementaire). À déclencher manuellement — n'est PAS inclus dans la sync automatique bimensuelle.",
+      auto: true,
+      autoDetail: "Hash SHA-256 comparé à la version stockée — réingéré uniquement si différent",
+      help: "Récupère et met à jour le Code du travail consolidé depuis Légifrance (parties législative et réglementaire). Inclus dans la sync automatique bimensuelle ; seul un changement de contenu déclenche une nouvelle ingestion.",
     },
     {
       key: "bocc",
@@ -340,9 +340,11 @@ function SyncBanner({ token, onRefresh }: { token: string; onRefresh: () => void
             les <strong>1er et 15</strong> de chaque mois à <strong>03:00 UTC</strong>.
             <br />
             Inclus : KALI (rotation 15 CCN), Judilibre (30j), BOCC (1 numéro),
-            codes civil/pénal/CSS/CASF.
+            <strong> Code du travail</strong>, codes civil / pénal / CSS / CASF.
             <br />
-            <strong>Code du travail = manuel uniquement</strong> — n&apos;est PAS dans le cron.
+            Pour les codes, un hash SHA-256 du contenu est comparé à la
+            version stockée : si identique, rien n&apos;est réingéré (zéro
+            coût d&apos;embeddings).
           </InfoTooltip>
         </div>
         <div className="text-[10px] text-muted-foreground">
