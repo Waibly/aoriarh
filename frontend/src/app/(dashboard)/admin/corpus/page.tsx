@@ -201,7 +201,9 @@ function SyncBanner({ token, onRefresh }: { token: string; onRefresh: () => void
         let key: string | null = null;
         if (t === "kali" || t === "ccn") key = "kali";
         else if (t === "jurisprudence" || t === "judilibre") key = "judilibre";
-        else if (t === "code_travail") key = "code_travail";
+        // 'codes' = nouveau type pour run_all_codes_sync (tous les codes)
+        // 'code_travail' = ancien type pour run_code_travail_sync (uniquement le code du travail)
+        else if (t === "codes" || t === "code_travail") key = "code_travail";
         else if (t === "bocc") key = "bocc";
         if (key && !byKey[key]) byKey[key] = log;
       }
@@ -285,7 +287,7 @@ function SyncBanner({ token, onRefresh }: { token: string; onRefresh: () => void
         const tt = t.toLowerCase();
         if (key === "kali") return tt === "kali" || tt === "ccn";
         if (key === "judilibre") return tt === "jurisprudence" || tt === "judilibre";
-        if (key === "code_travail") return tt === "code_travail";
+        if (key === "code_travail") return tt === "codes" || tt === "code_travail";
         if (key === "bocc") return tt === "bocc";
         return false;
       };
