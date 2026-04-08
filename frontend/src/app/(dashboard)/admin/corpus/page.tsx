@@ -338,6 +338,7 @@ function SyncBanner({ token, onRefresh }: { token: string; onRefresh: () => void
       <div className="flex items-center justify-between px-4 pt-3 pb-2 border-b">
         <div className="flex items-center gap-2 text-xs font-semibold">
           Synchronisations
+          <span className="text-[9px] font-mono bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 rounded px-1">v2</span>
           <InfoTooltip>
             <strong>Synchronisation automatique</strong> bimensuelle :
             les <strong>1er et 15</strong> de chaque mois à <strong>03:00 UTC</strong>.
