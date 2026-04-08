@@ -731,6 +731,33 @@ export default function CorpusPage() {
     }
   };
 
+  const [reindexAllRunning, setReindexAllRunning] = useState(false);
+  const handleReindexAll = async () => {
+    if (!token) return;
+    if (
+      !confirm(
+        "Réindexer TOUS les documents du corpus commun ? Cette opération " +
+          "peut prendre plusieurs heures et consomme du budget embeddings.",
+      )
+    )
+      return;
+    setReindexAllRunning(true);
+    try {
+      const data = await apiFetch<{ enqueued: number; skipped: number }>(
+        "/admin/documents/actions/reindex-all",
+        { method: "POST", token },
+      );
+      toast.success(
+        `Réindexation lancée — ${data.enqueued} document(s) en file, ${data.skipped} ignoré(s)`,
+      );
+      setTimeout(fetchGroups, 2000);
+    } catch {
+      toast.error("Échec du déclenchement");
+    } finally {
+      setReindexAllRunning(false);
+    }
+  };
+
   const handleDelete = async (id: string, name: string) => {
     if (!token) return;
     if (!confirm(`Supprimer "${name}" ?`)) return;
@@ -765,6 +792,19 @@ export default function CorpusPage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            onClick={handleReindexAll}
+            disabled={reindexAllRunning}
+            title="Réindexer tous les documents du corpus commun"
+          >
+            {reindexAllRunning ? (
+              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+            ) : (
+              <RefreshCw className="h-4 w-4 mr-2" />
+            )}
+            Tout réindexer
+          </Button>
           <Button variant="outline" onClick={() => setTestOpen(true)}>
             <FlaskConical className="h-4 w-4 mr-2" />
             Tester recherche
