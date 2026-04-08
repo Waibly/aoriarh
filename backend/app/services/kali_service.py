@@ -925,16 +925,15 @@ class KaliService:
 
     @staticmethod
     def _clean_html(html: str) -> str:
-        """Strip HTML tags and normalize whitespace."""
-        text = re.sub(r"<br\s*/?>", "\n", html)
-        text = re.sub(r"<[^>]+>", "", text)
-        text = re.sub(r"&nbsp;", " ", text)
-        text = re.sub(r"&amp;", "&", text)
-        text = re.sub(r"&lt;", "<", text)
-        text = re.sub(r"&gt;", ">", text)
-        text = re.sub(r"&#(\d+);", lambda m: chr(int(m.group(1))), text)
-        text = re.sub(r"\n{3,}", "\n\n", text)
-        return text.strip()
+        """Convert HTML to markdown, preserving tables/lists/headings.
+
+        Critical for CCN content : barèmes, grilles de salaire et minima
+        conventionnels sont presque toujours des `<table>` côté Légifrance.
+        Les aplatir en texte les rend illisibles pour l'utilisateur final
+        et empêche le RAG de les retrouver correctement.
+        """
+        from app.services.html_to_markdown import html_to_markdown
+        return html_to_markdown(html)
 
     @staticmethod
     def _format_articles_as_markdown(articles: list[dict], ccn_ref: CcnReference) -> str:

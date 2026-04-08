@@ -17,6 +17,8 @@ from dataclasses import dataclass, field
 
 import tiktoken
 
+from app.rag.chunker import contains_markdown_table
+
 
 # Detect article boundaries in markdown: ### Article L1234-5
 _ARTICLE_HEADING = re.compile(
@@ -245,6 +247,17 @@ class ArticleChunker:
                     current_parts = []
                     current_tokens = 0
                     is_first_chunk = False
+                # Tables stay atomic even when oversized — splitting them
+                # destroys both readability and embedding quality.
+                if contains_markdown_table(para):
+                    piece = para if is_first_chunk else cont_prefix + para
+                    chunks.append(ChunkWithMeta(
+                        text=piece,
+                        article_nums=[article_num],
+                        section_path=section,
+                    ))
+                    is_first_chunk = False
+                    continue
                 max_chars = self.chunk_size * 4
                 for i in range(0, len(para), max_chars):
                     piece = para[i : i + max_chars]

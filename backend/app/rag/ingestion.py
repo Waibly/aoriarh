@@ -330,6 +330,7 @@ class IngestionPipeline:
             ):
                 point_id = str(uuid.uuid4())
                 new_point_ids.append(point_id)
+                from app.rag.chunker import contains_markdown_table
                 payload = {
                     "text": chunk_text,
                     "organisation_id": org_id_str,
@@ -339,6 +340,7 @@ class IngestionPipeline:
                     "norme_niveau": doc.norme_niveau,
                     "norme_poids": doc.norme_poids,
                     "chunk_index": i,
+                    "has_table": contains_markdown_table(chunk_text),
                 }
                 # Propagate CCN IDCC + article metadata into Qdrant payload
                 if doc.source_type in ARTICLE_AWARE_SOURCE_TYPES:

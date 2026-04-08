@@ -11,7 +11,6 @@ Produit 2 documents :
 import asyncio
 import hashlib
 import logging
-import re
 import time
 import uuid
 from dataclasses import dataclass, field
@@ -459,16 +458,14 @@ class LegiService:
 
     @staticmethod
     def _clean_html(html: str) -> str:
-        """Strip HTML tags and normalize whitespace."""
-        text = re.sub(r"<br\s*/?>", "\n", html)
-        text = re.sub(r"<[^>]+>", "", text)
-        text = re.sub(r"&nbsp;", " ", text)
-        text = re.sub(r"&amp;", "&", text)
-        text = re.sub(r"&lt;", "<", text)
-        text = re.sub(r"&gt;", ">", text)
-        text = re.sub(r"&#(\d+);", lambda m: chr(int(m.group(1))), text)
-        text = re.sub(r"\n{3,}", "\n\n", text)
-        return text.strip()
+        """Convert HTML to markdown, preserving tables/lists/headings.
+
+        Les codes Légifrance contiennent peu de tableaux, mais l'usage
+        d'un convertisseur structuré garantit que ceux qui existent
+        (annexes, barèmes) ne seront plus aplatis.
+        """
+        from app.services.html_to_markdown import html_to_markdown
+        return html_to_markdown(html)
 
     @staticmethod
     def _format_articles_as_markdown(articles: list[dict], title: str) -> str:

@@ -78,12 +78,13 @@ interface SyncLogItem {
   sync_type: string;
   status: string;
   started_at: string;
+  completed_at: string | null;
   duration_ms: number | null;
   items_fetched: number | null;
   items_created: number | null;
   items_updated: number | null;
   items_skipped: number | null;
-  errors_count: number | null;
+  errors: number | null;
   error_message: string | null;
 }
 
@@ -141,6 +142,51 @@ function fmtSize(bytes: number | null): string {
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 }
 
+/**
+ * Merge several SyncLog rows (a "batch" — typically the 6 jurisprudence
+ * passes triggered by run_full_jurisprudence_sync) into a single synthetic
+ * row that the SyncBanner can render as one card. Counters are summed,
+ * timestamps span the whole batch, and status reflects the worst case
+ * (running > error > success).
+ */
+function aggregateBatch(batch: SyncLogItem[]): SyncLogItem {
+  if (batch.length === 1) return batch[0];
+  const sortedByStart = [...batch].sort(
+    (a, b) => new Date(a.started_at).getTime() - new Date(b.started_at).getTime(),
+  );
+  const earliest = sortedByStart[0];
+  const completedTimes = batch
+    .map((r) => r.completed_at)
+    .filter((c): c is string => !!c)
+    .map((c) => new Date(c).getTime());
+  const latestCompleted = completedTimes.length
+    ? new Date(Math.max(...completedTimes)).toISOString()
+    : null;
+  const statuses = batch.map((r) => (r.status ?? "").toLowerCase());
+  let status: string;
+  if (statuses.some((s) => s === "running")) status = "running";
+  else if (statuses.some((s) => ["error", "failed"].includes(s))) status = "error";
+  else status = "success";
+  const sum = (key: keyof SyncLogItem) =>
+    batch.reduce((acc, r) => acc + ((r[key] as number | null) ?? 0), 0);
+  const errorMessage =
+    batch.find((r) => r.error_message)?.error_message ?? null;
+  return {
+    id: batch[0].id,
+    sync_type: batch[0].sync_type,
+    status,
+    started_at: earliest.started_at,
+    completed_at: latestCompleted,
+    duration_ms: sum("duration_ms"),
+    items_fetched: sum("items_fetched"),
+    items_created: sum("items_created"),
+    items_updated: sum("items_updated"),
+    items_skipped: sum("items_skipped"),
+    errors: sum("errors"),
+    error_message: errorMessage,
+  };
+}
+
 function StatusBadge({ status }: { status: string }) {
   if (status === "indexed")
     return (
@@ -181,23 +227,47 @@ function SyncBanner({ token, onRefresh }: { token: string; onRefresh: () => void
         "/admin/syncs/logs?page=1&page_size=50",
         { token },
       );
-      // Group: keep the most recent log per sync_type prefix
+      // Map sync_type string -> UI key
+      const keyOf = (t: string): string | null => {
+        const tt = t.toLowerCase();
+        if (tt === "kali" || tt === "ccn") return "kali";
+        if (tt === "jurisprudence" || tt === "judilibre") return "judilibre";
+        if (tt === "codes" || tt === "code_travail") return "code_travail";
+        if (tt === "bocc") return "bocc";
+        return null;
+      };
+      // Group all logs per key, then aggregate the most recent "batch"
+      // (= rows started within 30 min of the most recent row of that key).
+      // This is necessary because a single manual trigger like
+      // run_full_jurisprudence_sync writes 6 SyncLog rows (one per pass)
+      // and we want to display them as a single aggregated card.
+      const grouped: { [key: string]: SyncLogItem[] } = {
+        kali: [],
+        judilibre: [],
+        code_travail: [],
+        bocc: [],
+      };
+      for (const log of data.logs) {
+        const key = keyOf(log.sync_type);
+        if (key) grouped[key].push(log);
+      }
+      const WINDOW_MS = 30 * 60 * 1000;
       const byKey: { [key: string]: SyncLogItem | null } = {
         kali: null,
         judilibre: null,
         code_travail: null,
         bocc: null,
       };
-      for (const log of data.logs) {
-        const t = log.sync_type.toLowerCase();
-        let key: string | null = null;
-        if (t === "kali" || t === "ccn") key = "kali";
-        else if (t === "jurisprudence" || t === "judilibre") key = "judilibre";
-        // 'codes' = nouveau type pour run_all_codes_sync (tous les codes)
-        // 'code_travail' = ancien type pour run_code_travail_sync (uniquement le code du travail)
-        else if (t === "codes" || t === "code_travail") key = "code_travail";
-        else if (t === "bocc") key = "bocc";
-        if (key && !byKey[key]) byKey[key] = log;
+      for (const key of Object.keys(grouped)) {
+        const rows = grouped[key];
+        if (rows.length === 0) continue;
+        // logs come back ordered most-recent first
+        const mostRecent = rows[0];
+        const refMs = new Date(mostRecent.started_at).getTime();
+        const batch = rows.filter(
+          (r) => refMs - new Date(r.started_at).getTime() <= WINDOW_MS,
+        );
+        byKey[key] = aggregateBatch(batch);
       }
       setLastSyncs(byKey);
     } catch {
@@ -221,34 +291,29 @@ function SyncBanner({ token, onRefresh }: { token: string; onRefresh: () => void
     return () => clearInterval(interval);
   }, [pollingIds, loadLastSyncs]);
 
-  // Detect when a tracked job finishes (status changes from running to ok/error)
+  // Detect when a tracked job finishes. We poll on the aggregated status:
+  // a multi-pass batch (e.g. jurisprudence × 6) is "running" until none of
+  // the rows in the time window are in the running state anymore.
   useEffect(() => {
-    Object.entries(pollingIds).forEach(([key, id]) => {
-      if (!id) return;
+    Object.entries(pollingIds).forEach(([key, marker]) => {
+      if (!marker) return;
       const log = lastSyncs[key];
       if (!log) return;
-      if (log.id === id) {
-        const finished =
-          log.status &&
-          ["ok", "success", "completed", "error", "failed"].includes(
-            log.status.toLowerCase()
+      const status = (log.status ?? "").toLowerCase();
+      const finished = ["ok", "success", "completed", "error", "failed"].includes(status);
+      if (finished) {
+        setPollingIds((prev) => ({ ...prev, [key]: null }));
+        const isOk = ["ok", "success", "completed"].includes(status);
+        if (isOk) {
+          toast.success(
+            `Sync ${key} terminée — ${log.items_created ?? 0} créé(s), ${
+              log.items_fetched ?? 0
+            } récupéré(s)`,
           );
-        if (finished) {
-          setPollingIds((prev) => ({ ...prev, [key]: null }));
-          const isOk = ["ok", "success", "completed"].includes(
-            log.status.toLowerCase()
-          );
-          if (isOk) {
-            toast.success(
-              `Sync ${key} terminée — ${log.items_created ?? 0} créé(s), ${
-                log.items_fetched ?? 0
-              } récupéré(s)`,
-            );
-          } else {
-            toast.error(`Sync ${key} échouée : ${log.error_message ?? "erreur"}`);
-          }
-          onRefresh();
+        } else {
+          toast.error(`Sync ${key} échouée : ${log.error_message ?? "erreur"}`);
         }
+        onRefresh();
       }
     });
   }, [lastSyncs, pollingIds, onRefresh]);
@@ -284,8 +349,12 @@ function SyncBanner({ token, onRefresh }: { token: string; onRefresh: () => void
         return false;
       };
       const freshest = fresh.logs.find((l) => matcher(l.sync_type));
+      // Use a sentinel marker (not the row id) since aggregation may
+      // pick a different id every poll cycle as new passes start.
       if (freshest) {
         setPollingIds((prev) => ({ ...prev, [key]: freshest.id }));
+      } else {
+        setPollingIds((prev) => ({ ...prev, [key]: "pending" }));
       }
     } catch {
       toast.error("Échec du déclenchement de la sync");
@@ -475,9 +544,9 @@ function SyncBanner({ token, onRefresh }: { token: string; onRefresh: () => void
                       )}
                     </>
                   )}
-                  {log.errors_count !== null && log.errors_count > 0 && (
+                  {log.errors !== null && log.errors > 0 && (
                     <span className="text-red-600 dark:text-red-400">
-                      <span className="font-mono font-semibold">{log.errors_count}</span>{" "}
+                      <span className="font-mono font-semibold">{log.errors}</span>{" "}
                       erreur
                     </span>
                   )}

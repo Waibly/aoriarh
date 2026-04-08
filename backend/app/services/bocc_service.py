@@ -347,14 +347,24 @@ class BoccService:
         return pdfs
 
     def _parse_avenant_pdf(self, pdf_bytes: bytes) -> dict | None:
-        """Parse a single avenant PDF and extract metadata + content."""
+        """Parse a single avenant PDF and extract metadata + content.
+
+        Use pymupdf4llm to preserve tables in markdown format — BOCC
+        avenants frequently contain salary grids and minima tables that
+        were previously aplattis to unreadable text by ``get_text("text")``.
+        We still keep a plain-text fallback when the markdown extractor
+        fails (corrupted PDF, etc.).
+        """
         import pymupdf
 
         doc = pymupdf.open(stream=pdf_bytes, filetype="pdf")
-        pages_text = [page.get_text("text") for page in doc]
+        try:
+            import pymupdf4llm
+            full_text = pymupdf4llm.to_markdown(doc)
+        except Exception:
+            pages_text = [page.get_text("text") for page in doc]
+            full_text = "\n".join(pages_text)
         doc.close()
-
-        full_text = "\n".join(pages_text)
 
         # Try both header patterns
         match = HEADER_PATTERN_1.search(full_text)

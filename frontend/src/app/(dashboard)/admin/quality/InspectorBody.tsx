@@ -198,8 +198,10 @@ function CitedSourceItem({ source }: { source: CitedSource }) {
       </button>
       {open && source.full_text && (
         <div className="px-3 pb-3 pt-1 border-t bg-background/50">
-          <div className="text-xs whitespace-pre-wrap text-foreground/90 leading-5 font-mono max-h-[600px] overflow-y-auto">
-            {source.full_text}
+          <div className="text-xs text-foreground/90 max-h-[600px] overflow-y-auto prose prose-xs dark:prose-invert max-w-none prose-headings:my-2 prose-p:my-1 prose-table:text-[11px] prose-th:bg-muted prose-th:px-2 prose-th:py-1 prose-td:px-2 prose-td:py-1 prose-td:border prose-th:border">
+            <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeSanitize]}>
+              {source.full_text}
+            </ReactMarkdown>
           </div>
         </div>
       )}

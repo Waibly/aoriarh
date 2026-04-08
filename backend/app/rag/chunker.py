@@ -16,6 +16,17 @@ ARTICLE_PATTERN = re.compile(
 
 MARKDOWN_HEADING_PATTERN = re.compile(r"(?m)^(?=#{1,4}\s)")
 
+# A markdown table starts with a header row "| ... |" followed by a
+# separator row "| --- | --- |". Used to detect table blocks so the
+# chunker can treat them atomically (cf. _chunk_by_sentences).
+_TABLE_HEAD = re.compile(r"^\s*\|.*\|\s*\n\s*\|[\s:|-]+\|", re.MULTILINE)
+
+
+def contains_markdown_table(text: str) -> bool:
+    """Cheap detector — used both for chunking and for the has_table flag
+    propagated to Qdrant payload metadata."""
+    return bool(_TABLE_HEAD.search(text))
+
 
 class LegalChunker:
     """Chunks legal text with article-aware splitting."""
@@ -117,8 +128,17 @@ class LegalChunker:
         paragraphs = re.split(r"\n\n+", text)
         sentences: list[str] = []
         for para in paragraphs:
+            stripped = para.strip()
+            if not stripped:
+                continue
+            # Tables are kept as a single atomic "sentence" — we never split
+            # inside the pipe rows, otherwise both rendering and embeddings
+            # become garbage.
+            if contains_markdown_table(stripped):
+                sentences.append(stripped)
+                continue
             # Split sentences on period/exclamation/question followed by space or end
-            parts = re.split(r"(?<=[.!?])\s+", para.strip())
+            parts = re.split(r"(?<=[.!?])\s+", stripped)
             sentences.extend(p for p in parts if p.strip())
 
         if not sentences:
@@ -130,6 +150,18 @@ class LegalChunker:
 
         for sentence in sentences:
             s_count = self._token_count(sentence)
+
+            # Markdown tables must NEVER be force-split: a table cut at an
+            # arbitrary token boundary becomes unreadable junk and breaks
+            # the rendering downstream. We keep it as its own chunk even
+            # if it slightly exceeds chunk_size.
+            if contains_markdown_table(sentence):
+                if current_tokens:
+                    chunks.append(" ".join(current_tokens))
+                    current_tokens = []
+                    current_count = 0
+                chunks.append(sentence)
+                continue
 
             if s_count > effective_size:
                 # Flush current buffer
