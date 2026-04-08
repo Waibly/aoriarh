@@ -224,7 +224,9 @@ function SyncBanner({ token, onRefresh }: { token: string; onRefresh: () => void
       <CardContent className="p-3 grid grid-cols-2 md:grid-cols-4 gap-2">
         {sources.map((s) => {
           const log = lastSyncs[s.key];
-          const ok = log?.status === "ok";
+          const ok = log
+            ? ["ok", "success", "completed"].includes(log.status.toLowerCase())
+            : false;
           return (
             <div
               key={s.key}

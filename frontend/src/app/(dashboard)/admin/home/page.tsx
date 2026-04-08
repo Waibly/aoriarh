@@ -451,7 +451,7 @@ export default function AdminHomePage() {
                 <Badge
                   variant="outline"
                   className={`ml-2 text-[10px] h-4 ${
-                    stats.last_sync_status === "ok"
+                    ["ok", "success", "completed"].includes(stats.last_sync_status.toLowerCase())
                       ? "border-green-300 text-green-700 dark:text-green-400"
                       : "border-red-300 text-red-700 dark:text-red-400"
                   }`}
