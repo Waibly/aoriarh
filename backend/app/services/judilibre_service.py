@@ -256,8 +256,13 @@ class JudilibreService:
                     api_params["chamber"] = chamber
                 data = await self._api_get(client, "/export", params=api_params)
                 if data is None:
-                    result.errors += 1
-                    result.error_messages.append(f"Erreur API batch {batch_num}")
+                    # _api_get returns None for 404 / 416 / exhausted retries.
+                    # If we've already received at least one batch, treat it
+                    # as end of pagination (no error). If batch_num == 0, the
+                    # source is genuinely unreachable → report it.
+                    if batch_num == 0:
+                        result.errors += 1
+                        result.error_messages.append(f"Erreur API batch {batch_num}")
                     break
 
                 total = data.get("total", 0)
@@ -381,8 +386,12 @@ class JudilibreService:
                 }
                 data = await self._api_get(client, "/export", params=api_params)
                 if data is None:
-                    result.errors += 1
-                    result.error_messages.append(f"Erreur API batch {batch_num}")
+                    # See comment in sync(): None on batch 0 = real error,
+                    # None on later batches = end of pagination (e.g. 416
+                    # when we hit Judilibre's 10 000-result hard cap on CA).
+                    if batch_num == 0:
+                        result.errors += 1
+                        result.error_messages.append(f"Erreur API batch {batch_num}")
                     break
 
                 if batch_num == 0:
@@ -690,6 +699,18 @@ class JudilibreService:
                     continue
 
                 if response.status_code == 404:
+                    return None
+
+                # Judilibre returns 416 (Range Not Satisfiable) when the
+                # caller paginates past the API's hard cap (~10 000 results
+                # = batch=200 × batch_size=50). Treat it as end-of-pagination
+                # rather than a real error : the data already collected is
+                # valid, only the next page is unavailable.
+                if response.status_code == 416:
+                    logger.info(
+                        "Judilibre 416 — pagination cap reached at %s, stopping",
+                        params.get("batch") if params else "?",
+                    )
                     return None
 
                 response.raise_for_status()
