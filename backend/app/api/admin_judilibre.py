@@ -12,7 +12,7 @@ from app.core.database import get_db
 from app.core.dependencies import require_role
 from app.models.document import Document
 from app.models.user import User
-from app.rag.tasks import enqueue_judilibre_sync
+from app.rag.tasks import enqueue_full_jurisprudence_sync, enqueue_judilibre_sync
 from app.schemas.document import DocumentRead
 from app.services.judilibre_service import JudilibreService, SyncResult
 
@@ -61,7 +61,8 @@ async def sync_judilibre(
 ) -> SyncResponse:
     """Enqueue a Judilibre synchronization job to the background worker.
 
-    The sync runs asynchronously — check the stats endpoint to follow progress.
+    Single chamber/jurisdiction sync. The sync runs asynchronously —
+    check the stats endpoint to follow progress.
     """
     await enqueue_judilibre_sync(
         user_id=str(user.id),
@@ -74,6 +75,26 @@ async def sync_judilibre(
     return SyncResponse(
         status="queued",
         message="Synchronisation lancée en arrière-plan. Consultez les statistiques pour suivre la progression.",
+    )
+
+
+@router.post("/sync-all", response_model=SyncResponse)
+async def sync_jurisprudence_all(
+    user: User = Depends(require_role(["admin"])),
+) -> SyncResponse:
+    """Enqueue a FULL jurisprudence sync.
+
+    Lance les 6 passes : Cass. soc + Cass. crim + Cass. com + Cour
+    d'appel + Conseil d'État + Conseil constitutionnel. Identique à
+    ce que fait le cron auto pour la jurisprudence.
+    """
+    await enqueue_full_jurisprudence_sync(user_id=str(user.id))
+    return SyncResponse(
+        status="queued",
+        message=(
+            "Synchronisation jurisprudence complète lancée (6 passes). "
+            "Consultez les statistiques pour suivre la progression."
+        ),
     )
 
 
