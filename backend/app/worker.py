@@ -331,7 +331,11 @@ async def run_code_sync(ctx: dict, user_id: str, code_key: str) -> None:
 
 
 async def run_all_codes_sync(ctx: dict, user_id: str) -> None:
-    """Sync all legal codes (code civil, pénal, CSS, CASF)."""
+    """Sync ALL legal codes (Code travail + civil + pénal + CSS + action sociale + santé publique).
+
+    Hash-gated : chaque code n'est ré-ingéré que si son contenu Légifrance
+    a réellement changé depuis la dernière sync.
+    """
     import time as _time
     logger.info("Worker: all codes sync started")
     session_factory = ctx["session_factory"]
@@ -345,8 +349,6 @@ async def run_all_codes_sync(ctx: dict, user_id: str) -> None:
 
         service = LegiService()
         for code_key in SYNCABLE_CODES:
-            if code_key == "code_travail":
-                continue  # Already has its own sync
             try:
                 async with session_factory() as db:
                     result = await service.sync_code(db, uuid.UUID(user_id), code_key)
@@ -380,6 +382,151 @@ async def run_all_codes_sync(ctx: dict, user_id: str) -> None:
         )
 
 
+async def _run_jurisprudence_passes(
+    db,
+    session_factory,
+    admin_id,
+    date_start,
+    date_end,
+) -> None:
+    """Run the 6 jurisprudence passes (Cass soc/crim/com + CA + CE + Conseil constit).
+
+    Factorisé pour être réutilisé par run_scheduled_sync (cron auto) et
+    run_full_jurisprudence_sync (déclenchement manuel admin).
+
+    Chaque passe écrit son propre SyncLog row avec sync_type='jurisprudence'.
+    """
+    import time as _time
+    from datetime import UTC, datetime
+    from app.models.sync_log import SyncLog
+    from app.services.judilibre_service import JudilibreService
+
+    juris_service = JudilibreService()
+
+    jurisprudence_passes = [
+        ("Cass. soc", {"jurisdiction": "cc", "chamber": "soc", "publication": "b", "source_type": "arret_cour_cassation"}),
+        ("Cass. crim", {"jurisdiction": "cc", "chamber": "crim", "publication": "b", "source_type": "arret_cour_cassation"}),
+        ("Cass. com", {"jurisdiction": "cc", "chamber": "com", "publication": "b", "source_type": "arret_cour_cassation"}),
+        ("Cour d'appel", {"jurisdiction": "ca", "publication": "b", "source_type": "arret_cour_appel", "max_decisions": 200}),
+        ("Conseil d'État", {"jurisdiction": "ce", "publication": "b", "source_type": "arret_conseil_etat", "max_decisions": 100}),
+    ]
+
+    for pass_label, pass_kwargs in jurisprudence_passes:
+        t_start = _time.perf_counter()
+        sync_log = SyncLog(
+            sync_type="jurisprudence",
+            status="running",
+            started_at=datetime.now(UTC),
+        )
+        db.add(sync_log)
+        await db.commit()
+        try:
+            result = await juris_service.sync(
+                db=db,
+                user_id=admin_id,
+                date_start=date_start,
+                date_end=date_end,
+                **pass_kwargs,
+            )
+            duration = int((_time.perf_counter() - t_start) * 1000)
+            sync_log.status = "success" if result.errors == 0 else "error"
+            sync_log.items_fetched = result.total_fetched
+            sync_log.items_created = result.new_ingested
+            sync_log.items_skipped = result.already_exists
+            sync_log.errors = result.errors
+            sync_log.error_message = (
+                "; ".join(result.error_messages[:3])
+                if result.error_messages
+                else None
+            )
+            sync_log.duration_ms = duration
+            sync_log.completed_at = datetime.now(UTC)
+            await db.commit()
+            logger.info(
+                "Jurisprudence pass %s: %d new, %d skipped, %d errors (%.1fs)",
+                pass_label, result.new_ingested, result.already_exists,
+                result.errors, duration / 1000,
+            )
+        except Exception:
+            sync_log.status = "error"
+            sync_log.completed_at = datetime.now(UTC)
+            sync_log.duration_ms = int((_time.perf_counter() - t_start) * 1000)
+            await db.commit()
+            logger.exception("Jurisprudence pass %s failed", pass_label)
+
+    # 6th pass: Conseil constitutionnel via PISTE Légifrance (different service)
+    cc_t0 = _time.perf_counter()
+    cc_log = SyncLog(
+        sync_type="jurisprudence",
+        status="running",
+        started_at=datetime.now(UTC),
+    )
+    db.add(cc_log)
+    await db.commit()
+    try:
+        from app.services.conseil_constit_service import ConseilConstitService
+
+        cc_service = ConseilConstitService()
+        cc_result = await cc_service.sync(
+            db=db,
+            user_id=admin_id,
+            date_start=date_start,
+            date_end=date_end,
+            max_decisions=30,
+        )
+        duration = int((_time.perf_counter() - cc_t0) * 1000)
+        cc_log.status = "success" if cc_result.errors == 0 else "error"
+        cc_log.items_fetched = cc_result.total_fetched
+        cc_log.items_created = cc_result.new_ingested
+        cc_log.items_skipped = cc_result.already_exists
+        cc_log.errors = cc_result.errors
+        cc_log.error_message = (
+            "; ".join(cc_result.error_messages[:3])
+            if cc_result.error_messages
+            else None
+        )
+        cc_log.duration_ms = duration
+        cc_log.completed_at = datetime.now(UTC)
+        await db.commit()
+        logger.info(
+            "Jurisprudence pass Conseil constit: %d new, %d skipped, %d errors (%.1fs)",
+            cc_result.new_ingested, cc_result.already_exists,
+            cc_result.errors, duration / 1000,
+        )
+    except Exception:
+        cc_log.status = "error"
+        cc_log.completed_at = datetime.now(UTC)
+        cc_log.duration_ms = int((_time.perf_counter() - cc_t0) * 1000)
+        await db.commit()
+        logger.exception("Jurisprudence pass Conseil constit failed")
+
+
+async def run_full_jurisprudence_sync(ctx: dict, user_id: str) -> None:
+    """Manuel : déclenche les 6 passes jurisprudence (Cass × 3 + CA + CE + Conseil constit).
+
+    Identique à ce que fait le cron auto pour la jurisprudence, mais
+    déclenchable depuis l'admin via le bouton 'Judilibre' du SyncBanner.
+    """
+    from datetime import date, timedelta
+    from sqlalchemy import select
+    from app.models.user import User
+
+    logger.info("Worker: full jurisprudence sync started")
+    session_factory = ctx["session_factory"]
+    async with session_factory() as db:
+        # Find admin user (le user_id passé par l'API peut être un user normal)
+        admin = (await db.execute(
+            select(User).where(User.role == "admin", User.is_active.is_(True)).limit(1)
+        )).scalar_one_or_none()
+        admin_id = admin.id if admin else uuid.UUID(user_id)
+
+        date_end = date.today()
+        date_start = date_end - timedelta(days=30)
+        await _run_jurisprudence_passes(db, session_factory, admin_id, date_start, date_end)
+
+    logger.info("Worker: full jurisprudence sync completed")
+
+
 async def run_scheduled_sync(ctx: dict) -> None:
     """Tâche planifiée bimensuelle : sync jurisprudence + rotation CCN."""
     import time as _time
@@ -406,159 +553,12 @@ async def run_scheduled_sync(ctx: dict) -> None:
             return
         admin_id = admin.id
 
-        # --- 1. Jurisprudence sync (multi-juridictions) ---
-        # Cinq passes successives via Judilibre :
-        #   Cass. soc + Cass. crim + Cass. com + Cour d'appel + Conseil d'État.
-        # Chacune écrit son propre SyncLog row avec sync_type='jurisprudence'
-        # pour rester groupé sous la même rubrique côté admin.
-        # Une 6e passe (Conseil constitutionnel) est faite plus bas en 1bis,
-        # via PISTE Légifrance et non Judilibre (qui ne couvre pas le CC).
-        from app.services.judilibre_service import JudilibreService
-
-        juris_service = JudilibreService()
+        # --- 1. Jurisprudence sync (6 passes : Cass × 3 + CA + CE + Conseil constit) ---
+        # Délégué au helper réutilisable pour rester en sync avec
+        # run_full_jurisprudence_sync (déclencheur manuel admin).
         date_end = date.today()
         date_start = date_end - timedelta(days=30)
-
-        # Each entry: (label, sync kwargs)
-        jurisprudence_passes = [
-            (
-                "Cass. soc",
-                {
-                    "jurisdiction": "cc",
-                    "chamber": "soc",
-                    "publication": "b",
-                    "source_type": "arret_cour_cassation",
-                },
-            ),
-            (
-                "Cass. crim",
-                {
-                    "jurisdiction": "cc",
-                    "chamber": "crim",
-                    "publication": "b",
-                    "source_type": "arret_cour_cassation",
-                },
-            ),
-            (
-                "Cass. com",
-                {
-                    "jurisdiction": "cc",
-                    "chamber": "com",
-                    "publication": "b",
-                    "source_type": "arret_cour_cassation",
-                },
-            ),
-            (
-                "Cour d'appel",
-                {
-                    "jurisdiction": "ca",
-                    "publication": "b",
-                    "source_type": "arret_cour_appel",
-                    "max_decisions": 200,  # cap initial pour CA (volume élevé)
-                },
-            ),
-            (
-                "Conseil d'État",
-                {
-                    "jurisdiction": "ce",
-                    "publication": "b",
-                    "source_type": "arret_conseil_etat",
-                    "max_decisions": 100,  # cap initial sur le contentieux administratif
-                },
-            ),
-        ]
-
-
-        for pass_label, pass_kwargs in jurisprudence_passes:
-            t_start = _time.perf_counter()
-            sync_log = SyncLog(
-                sync_type="jurisprudence",
-                status="running",
-                started_at=datetime.now(UTC),
-            )
-            db.add(sync_log)
-            await db.commit()
-            try:
-                result = await juris_service.sync(
-                    db=db,
-                    user_id=admin_id,
-                    date_start=date_start,
-                    date_end=date_end,
-                    **pass_kwargs,
-                )
-                duration = int((_time.perf_counter() - t_start) * 1000)
-                sync_log.status = "success" if result.errors == 0 else "error"
-                sync_log.items_fetched = result.total_fetched
-                sync_log.items_created = result.new_ingested
-                sync_log.items_skipped = result.already_exists
-                sync_log.errors = result.errors
-                sync_log.error_message = (
-                    "; ".join(result.error_messages[:3])
-                    if result.error_messages
-                    else None
-                )
-                sync_log.duration_ms = duration
-                sync_log.completed_at = datetime.now(UTC)
-                await db.commit()
-                logger.info(
-                    "Scheduled sync: %s done — %d new, %d skipped, %d errors (%.1fs)",
-                    pass_label, result.new_ingested, result.already_exists,
-                    result.errors, duration / 1000,
-                )
-            except Exception as exc:
-                sync_log.status = "error"
-                sync_log.error_message = str(exc)[:500]
-                sync_log.completed_at = datetime.now(UTC)
-                sync_log.duration_ms = int((_time.perf_counter() - t_start) * 1000)
-                await db.commit()
-                logger.exception("Scheduled sync: %s failed", pass_label)
-
-        # --- 1bis. Conseil constitutionnel via PISTE Légifrance ---
-        cc_t0 = _time.perf_counter()
-        cc_log = SyncLog(
-            sync_type="jurisprudence",
-            status="running",
-            started_at=datetime.now(UTC),
-        )
-        db.add(cc_log)
-        await db.commit()
-        try:
-            from app.services.conseil_constit_service import ConseilConstitService
-
-            cc_service = ConseilConstitService()
-            cc_result = await cc_service.sync(
-                db=db,
-                user_id=admin_id,
-                date_start=date_start,
-                date_end=date_end,
-                max_decisions=30,
-            )
-            duration = int((_time.perf_counter() - cc_t0) * 1000)
-            cc_log.status = "success" if cc_result.errors == 0 else "error"
-            cc_log.items_fetched = cc_result.total_fetched
-            cc_log.items_created = cc_result.new_ingested
-            cc_log.items_skipped = cc_result.already_exists
-            cc_log.errors = cc_result.errors
-            cc_log.error_message = (
-                "; ".join(cc_result.error_messages[:3])
-                if cc_result.error_messages
-                else None
-            )
-            cc_log.duration_ms = duration
-            cc_log.completed_at = datetime.now(UTC)
-            await db.commit()
-            logger.info(
-                "Scheduled sync: Cons. const. done — %d new, %d skipped, %d errors (%.1fs)",
-                cc_result.new_ingested, cc_result.already_exists,
-                cc_result.errors, duration / 1000,
-            )
-        except Exception as exc:
-            cc_log.status = "error"
-            cc_log.error_message = str(exc)[:500]
-            cc_log.completed_at = datetime.now(UTC)
-            cc_log.duration_ms = int((_time.perf_counter() - cc_t0) * 1000)
-            await db.commit()
-            logger.exception("Scheduled sync: Conseil constitutionnel failed")
+        await _run_jurisprudence_passes(db, session_factory, admin_id, date_start, date_end)
 
         # --- 2. CCN rotation sync ---
         # Get 10-15 distinct installed CCN, oldest synced first
@@ -779,6 +779,7 @@ class WorkerSettings:
     functions = [
         run_ingestion,
         run_judilibre_sync,
+        run_full_jurisprudence_sync,
         run_kali_install,
         run_ccn_blue_green_cleanup,
         run_bocc_sync,

@@ -113,7 +113,7 @@ async def enqueue_judilibre_sync(
     publication: str = "b",
     max_decisions: int | None = None,
 ) -> None:
-    """Enqueue a Judilibre sync job to the ARQ worker."""
+    """Enqueue a Judilibre sync job to the ARQ worker (single chamber/jurisdiction)."""
     pool = await get_arq_pool()
     await pool.enqueue_job(
         "run_judilibre_sync",
@@ -125,3 +125,13 @@ async def enqueue_judilibre_sync(
         max_decisions=max_decisions,
     )
     logger.info("Judilibre sync job enqueued")
+
+
+async def enqueue_full_jurisprudence_sync(user_id: str) -> None:
+    """Enqueue a FULL jurisprudence sync : 6 passes (Cass × 3 + CA + CE + Conseil constit)."""
+    pool = await get_arq_pool()
+    await pool.enqueue_job(
+        "run_full_jurisprudence_sync",
+        user_id,
+    )
+    logger.info("Full jurisprudence sync job enqueued")

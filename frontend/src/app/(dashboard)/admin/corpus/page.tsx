@@ -264,15 +264,14 @@ function SyncBanner({ token, onRefresh }: { token: string; onRefresh: () => void
     try {
       let path = "";
       if (key === "kali") path = "/admin/ccn/sync-all";
-      else if (key === "code_travail") path = "/admin/syncs/code-travail";
+      else if (key === "code_travail") path = "/admin/syncs/codes";
       else if (key === "bocc") path = "/admin/syncs/bocc";
-      else if (key === "judilibre") path = "/admin/jurisprudence/sync";
+      else if (key === "judilibre") path = "/admin/jurisprudence/sync-all";
 
       await apiFetch(path, {
         method: "POST",
         token,
         headers: { "Content-Type": "application/json" },
-        body: key === "judilibre" ? JSON.stringify({}) : undefined,
       });
       toast.info(`Sync ${key} lancée — suivi en cours…`);
       // Refresh logs to capture the freshly created sync_log entry
@@ -311,17 +310,17 @@ function SyncBanner({ token, onRefresh }: { token: string; onRefresh: () => void
     },
     {
       key: "judilibre",
-      label: "Judilibre",
+      label: "Jurisprudence",
       auto: true,
-      autoDetail: "Derniers 30 jours, chambre sociale, publication B",
-      help: "Récupère les arrêts de la Cour de cassation depuis l'API Judilibre (PISTE). Permet d'enrichir le corpus jurisprudentiel.",
+      autoDetail: "Cass. soc/crim/com + Cour d'appel + Conseil d'État + Conseil constitutionnel",
+      help: "Récupère les arrêts récents de toute la jurisprudence sociale française : Cour de cassation (chambres sociale, criminelle, commerciale), Cour d'appel, Conseil d'État, Conseil constitutionnel. Le déclenchement manuel lance les 6 passes en parallèle.",
     },
     {
       key: "code_travail",
-      label: "Code travail",
+      label: "Codes",
       auto: true,
-      autoDetail: "Hash SHA-256 comparé à la version stockée — réingéré uniquement si différent",
-      help: "Récupère et met à jour le Code du travail consolidé depuis Légifrance (parties législative et réglementaire). Inclus dans la sync automatique bimensuelle ; seul un changement de contenu déclenche une nouvelle ingestion.",
+      autoDetail: "Tous les codes (travail, civil, pénal, sécurité sociale, action sociale, santé publique). Hash SHA-256 — réingéré uniquement si différent.",
+      help: "Récupère et met à jour TOUS les codes juridiques pertinents : Code du travail, Code civil, Code pénal, Code de la sécurité sociale, Code de l'action sociale et des familles, Code de la santé publique. Seuls les codes dont le contenu Légifrance a changé sont réingérés.",
     },
     {
       key: "bocc",
