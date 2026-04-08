@@ -205,14 +205,24 @@ async def get_dashboard(
     )
     last_sync = last_sync_q.scalar_one_or_none()
 
-    # --- Failed syncs 24h ---
+    # --- Failed syncs 24h (excluding soft errors) ---
+    # Soft errors = upstream sources not yet available (DILA delay on
+    # BOCC, etc.). They're not real failures, they resolve themselves
+    # the next time the cron runs. We exclude them from the dashboard
+    # incident count so it doesn't stay red on legitimate situations.
     failed_syncs = await db.execute(
-        select(func.count()).select_from(SyncLog).where(
+        select(SyncLog).where(
             SyncLog.status == "error",
             SyncLog.started_at >= twenty_four_hours_ago,
         )
     )
-    failed_24h = failed_syncs.scalar() or 0
+    soft_error_patterns = ("introuvable", "not yet available", "not yet published", "404")
+    hard_failures = [
+        log for log in failed_syncs.scalars().all()
+        if not log.error_message
+        or not any(p in log.error_message.lower() for p in soft_error_patterns)
+    ]
+    failed_24h = len(hard_failures)
 
     # --- LLM model ---
     import app.rag.config as rag_config
@@ -292,11 +302,16 @@ async def get_dashboard(
         quality_health.latency_p95_ms_7d is not None
         and quality_health.latency_p95_ms_7d > 25000
     ):
+        # p95 = 95% of requests complete in LESS than this value (not "above"!)
         incidents.append(Incident(
             id="latency_p95_high",
             severity="warning",
             title=f"Latence p95 élevée ({quality_health.latency_p95_ms_7d / 1000:.1f}s)",
-            detail="95% des réponses dépassent ce seuil — vérifie la perf RAG.",
+            detail=(
+                "95% des réponses sont servies en moins de ce seuil. "
+                "Cible normale : < 10s. Vérifie les questions récentes les "
+                "plus lentes pour identifier les requêtes problématiques."
+            ),
             action_label="Voir la qualité",
             action_href="/admin/quality",
         ))
