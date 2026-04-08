@@ -479,53 +479,54 @@ async def _run_jurisprudence_passes(
     # de Judilibre ne fonctionne pas pour jurisdiction='ca'.
     # Caller can skip this pass entirely by setting ca_max_decisions=0
     # (used by run_jurisprudence_initialization which handles CA in a
-    # second phase with a wider window).
-    if ca_max_decisions == 0:
-        return
-    ca_t0 = _time.perf_counter()
-    ca_log = SyncLog(
-        sync_type="jurisprudence",
-        status="running",
-        started_at=datetime.now(UTC),
-    )
-    db.add(ca_log)
-    await db.commit()
-    try:
-        ca_result = await juris_service.sync_ca_chambre_sociale(
-            db=db,
-            user_id=admin_id,
-            date_start=date_start,
-            date_end=date_end,
-            max_decisions=ca_max_decisions,
+    # second phase with a wider window). The Conseil constit pass that
+    # follows still runs in either case.
+    skip_ca = ca_max_decisions == 0
+    if not skip_ca:
+        ca_t0 = _time.perf_counter()
+        ca_log = SyncLog(
+            sync_type="jurisprudence",
+            status="running",
+            started_at=datetime.now(UTC),
         )
-        duration = int((_time.perf_counter() - ca_t0) * 1000)
-        ca_log.status = "success" if ca_result.errors == 0 else "error"
-        ca_log.items_fetched = ca_result.total_fetched
-        ca_log.items_created = ca_result.new_ingested
-        # filtered_out (≈ 80% pour CA) compté dans skipped pour transparence
-        ca_log.items_skipped = ca_result.already_exists + ca_result.filtered_out
-        ca_log.errors = ca_result.errors
-        ca_log.error_message = (
-            "; ".join(ca_result.error_messages[:3])
-            if ca_result.error_messages
-            else None
-        )
-        ca_log.duration_ms = duration
-        ca_log.completed_at = datetime.now(UTC)
+        db.add(ca_log)
         await db.commit()
-        logger.info(
-            "Jurisprudence pass CA chambre sociale: %d new, %d filtered_out, %d already, %d errors (%.1fs)",
-            ca_result.new_ingested, ca_result.filtered_out,
-            ca_result.already_exists, ca_result.errors, duration / 1000,
-        )
-    except Exception as exc:
-        ca_log.status = "error"
-        ca_log.errors = 1
-        ca_log.error_message = f"{type(exc).__name__}: {str(exc)[:300]}"
-        ca_log.completed_at = datetime.now(UTC)
-        ca_log.duration_ms = int((_time.perf_counter() - ca_t0) * 1000)
-        await db.commit()
-        logger.exception("Jurisprudence pass CA chambre sociale failed")
+        try:
+            ca_result = await juris_service.sync_ca_chambre_sociale(
+                db=db,
+                user_id=admin_id,
+                date_start=date_start,
+                date_end=date_end,
+                max_decisions=ca_max_decisions,
+            )
+            duration = int((_time.perf_counter() - ca_t0) * 1000)
+            ca_log.status = "success" if ca_result.errors == 0 else "error"
+            ca_log.items_fetched = ca_result.total_fetched
+            ca_log.items_created = ca_result.new_ingested
+            # filtered_out (≈ 80% pour CA) compté dans skipped pour transparence
+            ca_log.items_skipped = ca_result.already_exists + ca_result.filtered_out
+            ca_log.errors = ca_result.errors
+            ca_log.error_message = (
+                "; ".join(ca_result.error_messages[:3])
+                if ca_result.error_messages
+                else None
+            )
+            ca_log.duration_ms = duration
+            ca_log.completed_at = datetime.now(UTC)
+            await db.commit()
+            logger.info(
+                "Jurisprudence pass CA chambre sociale: %d new, %d filtered_out, %d already, %d errors (%.1fs)",
+                ca_result.new_ingested, ca_result.filtered_out,
+                ca_result.already_exists, ca_result.errors, duration / 1000,
+            )
+        except Exception as exc:
+            ca_log.status = "error"
+            ca_log.errors = 1
+            ca_log.error_message = f"{type(exc).__name__}: {str(exc)[:300]}"
+            ca_log.completed_at = datetime.now(UTC)
+            ca_log.duration_ms = int((_time.perf_counter() - ca_t0) * 1000)
+            await db.commit()
+            logger.exception("Jurisprudence pass CA chambre sociale failed")
 
     # 6th pass: Conseil constitutionnel via PISTE Légifrance (different service)
     cc_t0 = _time.perf_counter()
