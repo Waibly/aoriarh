@@ -85,6 +85,10 @@ class RagTrace:
     variants: list[str] = field(default_factory=list)
     identifiers_detected: dict = field(default_factory=dict)
     boost_injected: int = 0
+    # True when an identifier (article, pourvoi) was found in the query but
+    # the boost matched 0 chunks. Strong signal of a potential hallucination
+    # because the LLM context likely doesn't contain the requested identifier.
+    identifier_no_match: bool = False
     # Each chunk = {document_id, doc_name, chunk_index, score, source_type, text_preview}
     hybrid_results: list[dict] = field(default_factory=list)
     rerank_results: list[dict] = field(default_factory=list)
@@ -102,6 +106,7 @@ class RagTrace:
             "variants": self.variants,
             "identifiers_detected": self.identifiers_detected,
             "boost_injected": self.boost_injected,
+            "identifier_no_match": self.identifier_no_match,
             "hybrid_results": self.hybrid_results,
             "rerank_results": self.rerank_results,
             "parent_groups": self.parent_groups,
@@ -326,10 +331,14 @@ vocabulaire qu'utiliserait un professionnel RH au quotidien.
 2. TERMINOLOGIE JURIDIQUE : reformulation enrichie avec les termes techniques \
 du droit social français (notions clés, synonymes juridiques, concepts associés).
 3. MOTS-CLÉS : 5-8 mots-clés et synonymes séparés par des espaces, couvrant \
-les différentes interprétations possibles.
+les différentes interprétations possibles. Si la question contient un numéro \
+d'article (ex: "L4121-1", "R.1234-2") ou un numéro de pourvoi (ex: "22-18.875"), \
+INCLUS-LE TEL QUEL dans cette variante mots-clés.
 
 Règles :
-- PAS de numéros d'articles de loi.
+- Variantes 1 et 2 : PAS de numéros d'articles de loi (reformulation sémantique).
+- Variante 3 (mots-clés) : conserve les identifiants explicites s'ils sont \
+présents dans la question d'origine.
 - Chaque variante sur une ligne précédée de son numéro (1. 2. 3.).
 - Réponds UNIQUEMENT avec les 3 variantes, sans explication."""
 
@@ -630,6 +639,19 @@ class RAGAgent:
             query, results, organisation_id, org_idcc_list,
         )
         trace.boost_injected = max(0, len(results) - pool_before_boost)
+        # Detect "identifier in query but no chunk matched the boost".
+        # Strong signal of risk: the LLM may answer about another article
+        # whose topic the expansion LLM guessed.
+        has_identifiers = bool(
+            trace.identifiers_detected.get("numero_pourvoi")
+            or trace.identifiers_detected.get("article_nums")
+        )
+        if has_identifiers and trace.boost_injected == 0:
+            trace.identifier_no_match = True
+            logger.warning(
+                "[QUALITY] identifier_no_match: %s — search relies on semantic guess",
+                trace.identifiers_detected,
+            )
 
         # Snapshot the candidate pool right before rerank
         trace.hybrid_results = _serialize_chunks(results, limit=30)
@@ -995,6 +1017,13 @@ class RAGAgent:
             len(variants),
             " | ".join(v[:60] for v in variants),
         )
+
+        # Always include the original query as variant #0 so identifiers like
+        # article numbers / numéros de pourvoi (which are stripped from LLM
+        # variants by design) are still searched. Skip if it's the OOS marker.
+        if variants and variants[0] != _OUT_OF_SCOPE_MARKER:
+            if query not in variants:
+                variants = [query] + variants
 
         # Search all variants in parallel
         search_tasks = [

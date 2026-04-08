@@ -15,6 +15,7 @@ import {
   BookOpen,
   ChevronDown,
   ChevronRight,
+  AlertTriangle,
 } from "lucide-react";
 
 // ----------------- Shared types -----------------
@@ -34,6 +35,7 @@ export interface RagTrace {
   variants: string[];
   identifiers_detected: { numero_pourvoi?: string[]; article_nums?: string[] };
   boost_injected: number;
+  identifier_no_match?: boolean;
   hybrid_results: InspectChunk[];
   rerank_results: InspectChunk[];
   parent_groups: InspectChunk[];
@@ -261,6 +263,21 @@ export function InspectorBody({ data }: { data: InspectorPayload }) {
         </Badge>
         {data.rag_trace?.model && <Badge variant="outline">{data.rag_trace.model}</Badge>}
       </div>
+
+      {/* Risk banner: identifier in query but no chunk matched */}
+      {data.rag_trace?.identifier_no_match && (
+        <div className="border border-orange-300 dark:border-orange-900 bg-orange-50 dark:bg-orange-950/30 rounded-md p-3 flex items-start gap-2">
+          <AlertTriangle className="h-4 w-4 text-orange-600 dark:text-orange-400 mt-0.5 shrink-0" />
+          <div className="text-xs text-orange-800 dark:text-orange-200">
+            <div className="font-semibold mb-0.5">Risque d&apos;hallucination détecté</div>
+            La question contient un identifiant explicite (article ou numéro de pourvoi)
+            mais aucun chunk correspondant n&apos;a été trouvé dans le corpus indexé.
+            La réponse ci-dessous a été générée à partir de chunks remontés
+            <strong> par devinette sémantique du LLM d&apos;expansion</strong>, pas à partir de l&apos;identifiant demandé.
+            Vérifiez que la réponse traite bien du sujet attendu.
+          </div>
+        </div>
+      )}
 
       {/* Question */}
       <div>
