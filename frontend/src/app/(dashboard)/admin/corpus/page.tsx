@@ -197,10 +197,10 @@ function SyncBanner({ token, onRefresh }: { token: string; onRefresh: () => void
       for (const log of data.logs) {
         const t = log.sync_type.toLowerCase();
         let key: string | null = null;
-        if (t.includes("kali") || t.includes("ccn")) key = "kali";
-        else if (t.includes("juris") || t.includes("judilibre")) key = "judilibre";
-        else if (t.includes("code")) key = "code_travail";
-        else if (t.includes("bocc")) key = "bocc";
+        if (t === "kali" || t === "ccn") key = "kali";
+        else if (t === "jurisprudence" || t === "judilibre") key = "judilibre";
+        else if (t === "code_travail") key = "code_travail";
+        else if (t === "bocc") key = "bocc";
         if (key && !byKey[key]) byKey[key] = log;
       }
       setLastSyncs(byKey);
@@ -282,10 +282,10 @@ function SyncBanner({ token, onRefresh }: { token: string; onRefresh: () => void
       );
       const matcher = (t: string) => {
         const tt = t.toLowerCase();
-        if (key === "kali") return tt.includes("kali") || tt.includes("ccn");
-        if (key === "judilibre") return tt.includes("juris") || tt.includes("judilibre");
-        if (key === "code_travail") return tt.includes("code");
-        if (key === "bocc") return tt.includes("bocc");
+        if (key === "kali") return tt === "kali" || tt === "ccn";
+        if (key === "judilibre") return tt === "jurisprudence" || tt === "judilibre";
+        if (key === "code_travail") return tt === "code_travail";
+        if (key === "bocc") return tt === "bocc";
         return false;
       };
       const freshest = fresh.logs.find((l) => matcher(l.sync_type));

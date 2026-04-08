@@ -50,6 +50,70 @@ async def on_shutdown(ctx: dict) -> None:
         await engine.dispose()
 
 
+# --- SyncLog helpers ---------------------------------------------------------
+
+async def _create_sync_log(
+    session_factory,
+    sync_type: str,
+    idcc: str | None = None,
+):
+    """Create a SyncLog row with status='running' in its own session.
+
+    Returns the row id (str). The caller must call _finish_sync_log later.
+    Using a dedicated short session avoids holding a long transaction open.
+    """
+    from datetime import UTC, datetime
+    from app.models.sync_log import SyncLog
+
+    async with session_factory() as db:
+        row = SyncLog(
+            sync_type=sync_type,
+            idcc=idcc,
+            status="running",
+            started_at=datetime.now(UTC),
+        )
+        db.add(row)
+        await db.commit()
+        await db.refresh(row)
+        return str(row.id)
+
+
+async def _finish_sync_log(
+    session_factory,
+    sync_log_id: str,
+    *,
+    success: bool,
+    items_fetched: int = 0,
+    items_created: int = 0,
+    items_updated: int = 0,
+    items_skipped: int = 0,
+    errors: int = 0,
+    error_message: str | None = None,
+    duration_ms: int | None = None,
+) -> None:
+    """Mark a SyncLog row as completed (success or error)."""
+    from datetime import UTC, datetime
+    from app.models.sync_log import SyncLog
+    import uuid as _uuid
+
+    async with session_factory() as db:
+        row = await db.get(SyncLog, _uuid.UUID(sync_log_id))
+        if row is None:
+            return
+        row.status = "success" if success else "error"
+        row.items_fetched = items_fetched
+        row.items_created = items_created
+        row.items_updated = items_updated
+        row.items_skipped = items_skipped
+        row.errors = errors
+        if error_message:
+            row.error_message = error_message[:500]
+        row.completed_at = datetime.now(UTC)
+        if duration_ms is not None:
+            row.duration_ms = duration_ms
+        await db.commit()
+
+
 async def run_ingestion(ctx: dict, document_id: str) -> None:
     """Tâche d'ingestion exécutée par le worker ARQ."""
     logger.info("Worker: ingestion started for document %s", document_id)
@@ -134,8 +198,12 @@ async def run_bocc_sync(
     week: int | None = None,
 ) -> None:
     """Tâche de synchronisation BOCC."""
+    import time as _time
+    from datetime import UTC, datetime
     logger.info("Worker: BOCC sync started (year=%s, week=%s)", year, week)
     session_factory = ctx["session_factory"]
+    sync_log_id = await _create_sync_log(session_factory, "bocc")
+    t0 = _time.perf_counter()
     try:
         from app.models.bocc_issue import BoccIssue
         from app.services.bocc_service import BoccService
@@ -158,6 +226,12 @@ async def run_bocc_sync(
             )
             if existing.scalar_one_or_none():
                 logger.info("BOCC %d-%02d already processed, skipping", year, week)
+                await _finish_sync_log(
+                    session_factory, sync_log_id,
+                    success=True, items_skipped=1,
+                    error_message=f"BOCC {year}-{week:02d} déjà traité",
+                    duration_ms=int((_time.perf_counter() - t0) * 1000),
+                )
                 return
 
             result = await service.process_issue(db, year, week, uuid.UUID(user_id))
@@ -181,14 +255,31 @@ async def run_bocc_sync(
             year, week, result.avenants_found, result.avenants_ingested,
             result.avenants_stored, result.errors,
         )
-    except Exception:
+        await _finish_sync_log(
+            session_factory, sync_log_id,
+            success=result.errors == 0 or result.avenants_found > 0,
+            items_fetched=result.avenants_found,
+            items_created=result.avenants_ingested,
+            errors=result.errors,
+            error_message="; ".join(result.error_messages[:3]) if result.error_messages else None,
+            duration_ms=int((_time.perf_counter() - t0) * 1000),
+        )
+    except Exception as exc:
         logger.exception("Worker: BOCC sync failed")
+        await _finish_sync_log(
+            session_factory, sync_log_id,
+            success=False, errors=1, error_message=str(exc),
+            duration_ms=int((_time.perf_counter() - t0) * 1000),
+        )
 
 
 async def run_code_travail_sync(ctx: dict, user_id: str) -> None:
     """Tâche de synchronisation du Code du travail."""
+    import time as _time
     logger.info("Worker: Code du travail sync started")
     session_factory = ctx["session_factory"]
+    sync_log_id = await _create_sync_log(session_factory, "code_travail")
+    t0 = _time.perf_counter()
     try:
         from app.services.legi_service import LegiService
 
@@ -201,8 +292,23 @@ async def run_code_travail_sync(ctx: dict, user_id: str) -> None:
             result.articles_legislatif, result.articles_reglementaire,
             result.legislatif_changed, result.reglementaire_changed, result.errors,
         )
-    except Exception:
+        changed = result.legislatif_changed or result.reglementaire_changed
+        await _finish_sync_log(
+            session_factory, sync_log_id,
+            success=result.errors == 0,
+            items_fetched=result.articles_legislatif + result.articles_reglementaire,
+            items_created=1 if changed else 0,
+            items_skipped=0 if changed else 1,
+            errors=result.errors,
+            duration_ms=int((_time.perf_counter() - t0) * 1000),
+        )
+    except Exception as exc:
         logger.exception("Worker: Code du travail sync failed")
+        await _finish_sync_log(
+            session_factory, sync_log_id,
+            success=False, errors=1, error_message=str(exc),
+            duration_ms=int((_time.perf_counter() - t0) * 1000),
+        )
 
 
 async def run_code_sync(ctx: dict, user_id: str, code_key: str) -> None:
@@ -226,8 +332,14 @@ async def run_code_sync(ctx: dict, user_id: str, code_key: str) -> None:
 
 async def run_all_codes_sync(ctx: dict, user_id: str) -> None:
     """Sync all legal codes (code civil, pénal, CSS, CASF)."""
+    import time as _time
     logger.info("Worker: all codes sync started")
     session_factory = ctx["session_factory"]
+    sync_log_id = await _create_sync_log(session_factory, "codes")
+    t0 = _time.perf_counter()
+    total_articles = 0
+    total_changed = 0
+    total_errors = 0
     try:
         from app.services.legi_service import SYNCABLE_CODES, LegiService
 
@@ -244,10 +356,28 @@ async def run_all_codes_sync(ctx: dict, user_id: str) -> None:
                     result.legislatif_changed or result.reglementaire_changed,
                     result.errors,
                 )
+                total_articles += result.articles_legislatif + result.articles_reglementaire
+                if result.legislatif_changed or result.reglementaire_changed:
+                    total_changed += 1
+                total_errors += result.errors
             except Exception:
                 logger.exception("Worker: %s sync failed, continuing", code_key)
-    except Exception:
+                total_errors += 1
+        await _finish_sync_log(
+            session_factory, sync_log_id,
+            success=total_errors == 0,
+            items_fetched=total_articles,
+            items_created=total_changed,
+            errors=total_errors,
+            duration_ms=int((_time.perf_counter() - t0) * 1000),
+        )
+    except Exception as exc:
         logger.exception("Worker: all codes sync failed")
+        await _finish_sync_log(
+            session_factory, sync_log_id,
+            success=False, errors=1, error_message=str(exc),
+            duration_ms=int((_time.perf_counter() - t0) * 1000),
+        )
 
 
 async def run_scheduled_sync(ctx: dict) -> None:
@@ -383,6 +513,8 @@ async def run_scheduled_sync(ctx: dict) -> None:
             logger.info("Scheduled sync: no CCN installed, skipping")
 
         # --- 3. BOCC weekly sync ---
+        bocc_log_id = await _create_sync_log(session_factory, "bocc")
+        bocc_t0 = _time.perf_counter()
         try:
             import datetime as dt
 
@@ -402,6 +534,12 @@ async def run_scheduled_sync(ctx: dict) -> None:
             )
             if existing_bocc.scalar_one_or_none():
                 logger.info("Scheduled sync: BOCC %s already processed, skipping", bocc_numero)
+                await _finish_sync_log(
+                    session_factory, bocc_log_id,
+                    success=True, items_skipped=1,
+                    error_message=f"BOCC {bocc_numero} déjà traité",
+                    duration_ms=int((_time.perf_counter() - bocc_t0) * 1000),
+                )
             else:
                 bocc_result = await bocc_service.process_issue(db, bocc_year, bocc_week, admin_id)
                 issue = BoccIssue(
@@ -420,19 +558,39 @@ async def run_scheduled_sync(ctx: dict) -> None:
                     "Scheduled sync: BOCC %s done — %d avenants, %d ingested, %d errors",
                     bocc_numero, bocc_result.avenants_found, bocc_result.avenants_ingested, bocc_result.errors,
                 )
-        except Exception:
+                await _finish_sync_log(
+                    session_factory, bocc_log_id,
+                    success=bocc_result.errors == 0 or bocc_result.avenants_found > 0,
+                    items_fetched=bocc_result.avenants_found,
+                    items_created=bocc_result.avenants_ingested,
+                    errors=bocc_result.errors,
+                    error_message="; ".join(bocc_result.error_messages[:3]) if bocc_result.error_messages else None,
+                    duration_ms=int((_time.perf_counter() - bocc_t0) * 1000),
+                )
+        except Exception as exc:
             logger.exception("Scheduled sync: BOCC sync failed")
+            await _finish_sync_log(
+                session_factory, bocc_log_id,
+                success=False, errors=1, error_message=str(exc),
+                duration_ms=int((_time.perf_counter() - bocc_t0) * 1000),
+            )
 
         # --- 4. All legal codes sync (Code travail + civil + pénal + CSS + CASF) ---
         # The LegiService computes a SHA-256 of the fetched content and skips
         # ingestion when the hash matches the latest stored version, so this
         # is safe to run on every cron tick — only actual updates cost
-        # embeddings.
+        # embeddings. One SyncLog row per code is written so the admin
+        # corpus banner can show the status of each code individually.
         try:
             from app.services.legi_service import SYNCABLE_CODES, LegiService
 
             legi_service = LegiService()
             for code_key, code_def in SYNCABLE_CODES.items():
+                # sync_type = "code_travail" for the labour code, "codes" for others
+                # so the admin SyncBanner can map them correctly.
+                code_log_type = "code_travail" if code_key == "code_travail" else "codes"
+                code_log_id = await _create_sync_log(session_factory, code_log_type)
+                code_t0 = _time.perf_counter()
                 try:
                     result = await legi_service.sync_code(db, code_key=code_key, user_id=admin_id)
                     status = "changed" if (result.legislatif_changed or result.reglementaire_changed) else "unchanged"
@@ -442,8 +600,23 @@ async def run_scheduled_sync(ctx: dict) -> None:
                         result.articles_legislatif + result.articles_reglementaire,
                         result.errors,
                     )
-                except Exception:
+                    changed = result.legislatif_changed or result.reglementaire_changed
+                    await _finish_sync_log(
+                        session_factory, code_log_id,
+                        success=result.errors == 0,
+                        items_fetched=result.articles_legislatif + result.articles_reglementaire,
+                        items_created=1 if changed else 0,
+                        items_skipped=0 if changed else 1,
+                        errors=result.errors,
+                        duration_ms=int((_time.perf_counter() - code_t0) * 1000),
+                    )
+                except Exception as exc:
                     logger.exception("Scheduled sync: %s failed, continuing", code_def["name"])
+                    await _finish_sync_log(
+                        session_factory, code_log_id,
+                        success=False, errors=1, error_message=str(exc),
+                        duration_ms=int((_time.perf_counter() - code_t0) * 1000),
+                    )
         except Exception:
             logger.exception("Scheduled sync: codes sync failed")
 
