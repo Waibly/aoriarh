@@ -494,8 +494,8 @@ export default function DocumentsPage() {
                 Convention collective
                 <InfoTooltip>
                   Convention(s) collective(s) installée(s) pour votre organisation.
-                  Elle est récupérée depuis Légifrance et utilisée automatiquement
-                  par l&apos;IA dans toutes vos questions.
+                  Elle est récupérée depuis les sources officielles et utilisée
+                  automatiquement par l&apos;IA dans toutes vos questions.
                 </InfoTooltip>
               </CardTitle>
             </CardHeader>
@@ -653,8 +653,8 @@ export default function DocumentsPage() {
           <DialogHeader>
             <DialogTitle>Installer une convention collective</DialogTitle>
             <DialogDescription>
-              Recherchez par IDCC ou par nom. La convention sera téléchargée depuis
-              Légifrance puis indexée automatiquement.
+              Recherchez par IDCC ou par nom. La convention sera téléchargée
+              depuis la source officielle puis indexée automatiquement.
             </DialogDescription>
           </DialogHeader>
           {token && (
@@ -735,9 +735,9 @@ function CcnDetailPane({
   onRemove: () => void;
   onDownload: (id: string) => void;
 }) {
-  // Split docs by KALI vs BOCC
-  const kaliDocs = docs.filter((d) => !d.name.includes("BOCC"));
-  const boccDocs = docs.filter((d) => d.name.includes("BOCC"));
+  // Split docs : consolidated official text vs recently published amendments
+  const consolidatedDocs = docs.filter((d) => !d.name.includes("BOCC"));
+  const amendmentDocs = docs.filter((d) => d.name.includes("BOCC"));
 
   // Source date freshness color
   const sourceDateBadge = ccn.source_date
@@ -826,60 +826,63 @@ function CcnDetailPane({
         </CardHeader>
       </Card>
 
-      {/* Tabs : KALI / BOCC */}
-      <Tabs defaultValue="kali">
+      {/* Tabs : Texte consolidé / Avenants récents */}
+      <Tabs defaultValue="consolidated">
         <TabsList>
-          <TabsTrigger value="kali">
-            Documents officiels
+          <TabsTrigger value="consolidated">
+            Texte officiel
             <Badge variant="outline" className="ml-2 text-[10px] h-4 px-1.5">
-              {kaliDocs.length}
+              {consolidatedDocs.length}
             </Badge>
           </TabsTrigger>
-          <TabsTrigger value="bocc">
-            Avenants BOCC
+          <TabsTrigger value="amendments">
+            Avenants récents
             <Badge variant="outline" className="ml-2 text-[10px] h-4 px-1.5">
-              {boccDocs.length}
+              {amendmentDocs.length}
             </Badge>
           </TabsTrigger>
         </TabsList>
 
-        <TabsContent value="kali">
+        <TabsContent value="consolidated">
           <Card>
             <CardHeader>
               <CardTitle className="text-sm font-semibold flex items-center gap-2">
-                Documents officiels — Légifrance
+                Texte officiel consolidé
                 <InfoTooltip>
-                  Documents publiés officiellement et récupérés depuis la base
-                  KALI de Légifrance : texte de base, parties législative et
-                  réglementaire, avenants et annexes intégrés. Ces documents
-                  contiennent les articles structurés de la convention.
-                </InfoTooltip>
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <DocsList docs={kaliDocs} onDownload={onDownload} emptyText="Aucun document officiel" />
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="bocc">
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-sm font-semibold flex items-center gap-2">
-                Avenants publiés au BOCC
-                <InfoTooltip>
-                  Avenants récents publiés au <strong>Bulletin Officiel des
-                  Conventions Collectives</strong>. Ils complètent le texte
-                  officiel KALI avant que celui-ci ne soit consolidé. L&apos;IA
-                  s&apos;appuie aussi sur ces avenants pour répondre.
+                  Texte officiel de votre convention collective, à jour à la
+                  date affichée en haut. Contient les articles structurés
+                  (texte de base, parties législative et réglementaire,
+                  avenants et annexes intégrés).
                 </InfoTooltip>
               </CardTitle>
             </CardHeader>
             <CardContent>
               <DocsList
-                docs={boccDocs}
+                docs={consolidatedDocs}
                 onDownload={onDownload}
-                emptyText="Aucun avenant BOCC ingéré pour cette convention"
+                emptyText="Aucun texte officiel disponible"
+              />
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="amendments">
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                Avenants récents
+                <InfoTooltip>
+                  Avenants publiés récemment qui complètent le texte officiel
+                  avant que celui-ci ne soit consolidé. L&apos;IA s&apos;appuie
+                  aussi sur ces avenants pour répondre aux questions.
+                </InfoTooltip>
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <DocsList
+                docs={amendmentDocs}
+                onDownload={onDownload}
+                emptyText="Aucun avenant récent pour cette convention"
               />
             </CardContent>
           </Card>
@@ -887,6 +890,20 @@ function CcnDetailPane({
       </Tabs>
     </div>
   );
+}
+
+/** Strip internal source markers (BOCC, KALI, Légifrance) from doc names
+ * before showing them to end users. These references are internal sourcing
+ * details and should never leak to the customer-facing UI. */
+function cleanDocName(name: string): string {
+  return name
+    .replace(/\bBOCC\s*\d{4}-\d{2}\s*[—-]?\s*/gi, "")
+    .replace(/\bBOCC\s*[—-]?\s*/gi, "")
+    .replace(/\bKALI\b/gi, "")
+    .replace(/\bLégifrance\b/gi, "")
+    .replace(/\s+—\s+—/g, " —")
+    .replace(/\s{2,}/g, " ")
+    .trim();
 }
 
 function DocsList({
@@ -910,7 +927,7 @@ function DocsList({
         >
           <FileText className="h-4 w-4 shrink-0 text-muted-foreground" />
           <div className="min-w-0 flex-1">
-            <div className="text-sm font-medium truncate">{d.name}</div>
+            <div className="text-sm font-medium truncate">{cleanDocName(d.name)}</div>
             <div className="text-[11px] text-muted-foreground">
               {formatDate(d.created_at)} · {formatFileSize(d.file_size)}
               {d.indexation_status !== "indexed" && (
@@ -1064,7 +1081,7 @@ function DocRow({
   return (
     <TableRow>
       <TableCell className="max-w-[300px] font-medium">
-        <span className="line-clamp-2 break-words text-sm">{doc.name}</span>
+        <span className="line-clamp-2 break-words text-sm">{cleanDocName(doc.name)}</span>
       </TableCell>
       <TableCell className="text-xs text-muted-foreground">{sourceLabel}</TableCell>
       <TableCell>
