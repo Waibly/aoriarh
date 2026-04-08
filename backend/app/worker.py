@@ -465,6 +465,9 @@ async def run_scheduled_sync(ctx: dict) -> None:
             ),
         ]
 
+        # Conseil constitutionnel uses a different service (PISTE Légifrance,
+        # not Judilibre) so we handle it separately below the Judilibre loop.
+
         for pass_label, pass_kwargs in jurisprudence_passes:
             t_start = _time.perf_counter()
             sync_log = SyncLog(
@@ -508,6 +511,53 @@ async def run_scheduled_sync(ctx: dict) -> None:
                 sync_log.duration_ms = int((_time.perf_counter() - t_start) * 1000)
                 await db.commit()
                 logger.exception("Scheduled sync: %s failed", pass_label)
+
+        # --- 1bis. Conseil constitutionnel via PISTE Légifrance ---
+        cc_t0 = _time.perf_counter()
+        cc_log = SyncLog(
+            sync_type="jurisprudence",
+            status="running",
+            started_at=datetime.now(UTC),
+        )
+        db.add(cc_log)
+        await db.commit()
+        try:
+            from app.services.conseil_constit_service import ConseilConstitService
+
+            cc_service = ConseilConstitService()
+            cc_result = await cc_service.sync(
+                db=db,
+                user_id=admin_id,
+                date_start=date_start,
+                date_end=date_end,
+                max_decisions=30,
+            )
+            duration = int((_time.perf_counter() - cc_t0) * 1000)
+            cc_log.status = "success" if cc_result.errors == 0 else "error"
+            cc_log.items_fetched = cc_result.total_fetched
+            cc_log.items_created = cc_result.new_ingested
+            cc_log.items_skipped = cc_result.already_exists
+            cc_log.errors = cc_result.errors
+            cc_log.error_message = (
+                "; ".join(cc_result.error_messages[:3])
+                if cc_result.error_messages
+                else None
+            )
+            cc_log.duration_ms = duration
+            cc_log.completed_at = datetime.now(UTC)
+            await db.commit()
+            logger.info(
+                "Scheduled sync: Cons. const. done — %d new, %d skipped, %d errors (%.1fs)",
+                cc_result.new_ingested, cc_result.already_exists,
+                cc_result.errors, duration / 1000,
+            )
+        except Exception as exc:
+            cc_log.status = "error"
+            cc_log.error_message = str(exc)[:500]
+            cc_log.completed_at = datetime.now(UTC)
+            cc_log.duration_ms = int((_time.perf_counter() - cc_t0) * 1000)
+            await db.commit()
+            logger.exception("Scheduled sync: Conseil constitutionnel failed")
 
         # --- 2. CCN rotation sync ---
         # Get 10-15 distinct installed CCN, oldest synced first
