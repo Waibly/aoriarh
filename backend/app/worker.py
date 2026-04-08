@@ -454,6 +454,15 @@ async def run_scheduled_sync(ctx: dict) -> None:
                     "max_decisions": 200,  # cap initial pour CA (volume élevé)
                 },
             ),
+            (
+                "Conseil d'État",
+                {
+                    "jurisdiction": "ce",
+                    "publication": "b",
+                    "source_type": "arret_conseil_etat",
+                    "max_decisions": 100,  # cap initial sur le contentieux administratif
+                },
+            ),
         ]
 
         for pass_label, pass_kwargs in jurisprudence_passes:
