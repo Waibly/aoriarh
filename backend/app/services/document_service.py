@@ -97,6 +97,22 @@ class DocumentService:
                 detail=f"Fichier trop volumineux ({file_size / (1024 * 1024):.1f} Mo). "
                 f"Taille maximale : {max_file_size // (1024 * 1024)} Mo",
             )
+
+        # Reject scanned PDFs (image-only, no text layer) — they cannot be
+        # ingested reliably and would degrade RAG quality.
+        if file_format == "pdf":
+            from app.rag.text_extractor import is_scanned_pdf
+            if is_scanned_pdf(contents):
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=(
+                        "Ce document semble être un PDF scanné (sans couche de texte). "
+                        "AORIA RH ne traite pas encore les documents scannés afin de "
+                        "garantir la qualité des réponses. Merci de fournir un PDF "
+                        "avec texte sélectionnable, un fichier Word (.docx) ou un .txt."
+                    ),
+                )
+
         file_hash = hashlib.sha256(contents).hexdigest()
 
         await self._check_duplicate(file_hash, org_id)
@@ -290,6 +306,21 @@ class DocumentService:
                 detail=f"Fichier trop volumineux ({file_size / (1024 * 1024):.1f} Mo). "
                 f"Taille maximale : {max_file_size // (1024 * 1024)} Mo",
             )
+
+        # Reject scanned PDFs (same rule as create_document)
+        if file_format == "pdf":
+            from app.rag.text_extractor import is_scanned_pdf
+            if is_scanned_pdf(contents):
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=(
+                        "Ce document semble être un PDF scanné (sans couche de texte). "
+                        "AORIA RH ne traite pas encore les documents scannés afin de "
+                        "garantir la qualité des réponses. Merci de fournir un PDF "
+                        "avec texte sélectionnable, un fichier Word (.docx) ou un .txt."
+                    ),
+                )
+
         file_hash = hashlib.sha256(contents).hexdigest()
 
         if file_hash == doc.file_hash:

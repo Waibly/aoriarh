@@ -1,7 +1,53 @@
 import io
+import logging
 
 import docx
 import pymupdf4llm
+
+logger = logging.getLogger(__name__)
+
+
+# --- Scanned PDF detection -------------------------------------------------
+# Heuristic : a PDF is considered "scanned" (image-only, no selectable text)
+# when the average text length per page is below this threshold AND the
+# document is not trivially short. Tuned conservatively to avoid false
+# positives on real text PDFs that contain a few graphics.
+_SCANNED_MIN_CHARS_PER_PAGE = 80
+_SCANNED_MIN_TOTAL_CHARS = 200
+
+
+def is_scanned_pdf(file_bytes: bytes) -> bool:
+    """Return True if the PDF appears to be a scan (image-only, no text layer).
+
+    Strategy:
+    1. Open the PDF with PyMuPDF and read up to 5 pages.
+    2. Sum the extracted text length.
+    3. If avg text per page < 80 chars AND total text < 200 chars,
+       the PDF has effectively no selectable text → it's a scan.
+    Falls back to False (i.e. accept the document) on any error so a
+    detection bug never blocks a legitimate upload.
+    """
+    try:
+        import pymupdf
+
+        doc = pymupdf.open(stream=file_bytes, filetype="pdf")
+        try:
+            page_count = doc.page_count
+            if page_count == 0:
+                return False
+            # Sample the first 5 pages — enough to decide on most scans
+            sample = min(page_count, 5)
+            total_chars = 0
+            for i in range(sample):
+                text = doc.load_page(i).get_text("text") or ""
+                total_chars += len(text.strip())
+            avg = total_chars / sample
+            return avg < _SCANNED_MIN_CHARS_PER_PAGE and total_chars < _SCANNED_MIN_TOTAL_CHARS
+        finally:
+            doc.close()
+    except Exception:
+        logger.exception("is_scanned_pdf: detection failed, accepting document")
+        return False
 
 
 class TextExtractor:
