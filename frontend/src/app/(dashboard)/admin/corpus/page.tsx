@@ -80,6 +80,8 @@ interface SyncLogItem {
   duration_ms: number | null;
   items_fetched: number | null;
   items_created: number | null;
+  items_updated: number | null;
+  items_skipped: number | null;
   errors_count: number | null;
   error_message: string | null;
 }
@@ -360,13 +362,26 @@ function SyncBanner({ token, onRefresh }: { token: string; onRefresh: () => void
           const status = log?.status?.toLowerCase() ?? "";
           const ok = ["ok", "success", "completed"].includes(status);
           const isErr = ["error", "failed"].includes(status);
+          // "Soft" warnings: unchanged content (hash skip) or upstream-not-ready
+          const isUpToDate =
+            ok &&
+            log?.items_skipped !== null &&
+            (log?.items_skipped ?? 0) > 0 &&
+            (log?.items_created ?? 0) === 0;
+          // BOCC may report 'Archive ... introuvable' which is a DILA delay,
+          // not a real error from our side — render as a warning, not red.
+          const isUpstreamMissing =
+            isErr && (log?.error_message ?? "").toLowerCase().includes("introuvable");
+          const cardBorder = isRunning
+            ? "border-blue-300 bg-blue-50/50 dark:bg-blue-950/20"
+            : isUpstreamMissing
+            ? "border-amber-300 bg-amber-50/50 dark:bg-amber-950/20"
+            : "";
 
           return (
             <div
               key={s.key}
-              className={`flex flex-col gap-1 border rounded-md p-3 text-xs transition-colors ${
-                isRunning ? "border-blue-300 bg-blue-50/50 dark:bg-blue-950/20" : ""
-              }`}
+              className={`flex flex-col gap-1 border rounded-md p-3 text-xs transition-colors ${cardBorder}`}
             >
               <div className="flex items-center justify-between gap-2">
                 <div className="flex items-center gap-1.5 min-w-0">
@@ -377,6 +392,8 @@ function SyncBanner({ token, onRefresh }: { token: string; onRefresh: () => void
                   ) : log ? (
                     ok ? (
                       <CheckCircle2 className="h-3 w-3 text-green-600" />
+                    ) : isUpstreamMissing ? (
+                      <AlertCircle className="h-3 w-3 text-amber-600" />
                     ) : isErr ? (
                       <AlertCircle className="h-3 w-3 text-red-600" />
                     ) : (
@@ -432,23 +449,37 @@ function SyncBanner({ token, onRefresh }: { token: string; onRefresh: () => void
               </div>
 
               {/* Progress / counts (visible when running OR after completion) */}
-              {log && (log.items_fetched !== null || log.items_created !== null) && (
+              {log && (
                 <div className="text-[10px] flex flex-wrap gap-x-2 gap-y-0.5">
-                  {log.items_fetched !== null && (
-                    <span className="text-muted-foreground">
-                      <span className="font-mono font-semibold text-foreground">
-                        {log.items_fetched}
-                      </span>{" "}
-                      récupéré
+                  {isUpToDate ? (
+                    <span className="text-green-700 dark:text-green-400 font-medium">
+                      ✓ déjà à jour
+                      {log.items_fetched !== null && log.items_fetched > 0 && (
+                        <span className="text-muted-foreground font-normal">
+                          {" "}
+                          ({log.items_fetched.toLocaleString("fr-FR")} vérifiés)
+                        </span>
+                      )}
                     </span>
-                  )}
-                  {log.items_created !== null && (
-                    <span className="text-muted-foreground">
-                      <span className="font-mono font-semibold text-foreground">
-                        {log.items_created}
-                      </span>{" "}
-                      créé
-                    </span>
+                  ) : (
+                    <>
+                      {log.items_fetched !== null && log.items_fetched > 0 && (
+                        <span className="text-muted-foreground">
+                          <span className="font-mono font-semibold text-foreground">
+                            {log.items_fetched.toLocaleString("fr-FR")}
+                          </span>{" "}
+                          récupéré
+                        </span>
+                      )}
+                      {log.items_created !== null && log.items_created > 0 && (
+                        <span className="text-muted-foreground">
+                          <span className="font-mono font-semibold text-foreground">
+                            {log.items_created.toLocaleString("fr-FR")}
+                          </span>{" "}
+                          créé
+                        </span>
+                      )}
+                    </>
                   )}
                   {log.errors_count !== null && log.errors_count > 0 && (
                     <span className="text-red-600 dark:text-red-400">
@@ -459,8 +490,18 @@ function SyncBanner({ token, onRefresh }: { token: string; onRefresh: () => void
                 </div>
               )}
 
-              {/* Error message if failed */}
-              {isErr && log?.error_message && (
+              {/* Soft error: upstream missing (DILA delay etc.) */}
+              {isUpstreamMissing && log?.error_message && (
+                <div
+                  className="text-[10px] text-amber-700 dark:text-amber-400 truncate"
+                  title={`${log.error_message}\n\nLa source externe n'a pas encore publié cette donnée. Réessayez plus tard.`}
+                >
+                  ⏳ Source externe pas encore disponible
+                </div>
+              )}
+
+              {/* Hard error message */}
+              {isErr && !isUpstreamMissing && log?.error_message && (
                 <div className="text-[10px] text-red-600 dark:text-red-400 truncate" title={log.error_message}>
                   {log.error_message}
                 </div>
