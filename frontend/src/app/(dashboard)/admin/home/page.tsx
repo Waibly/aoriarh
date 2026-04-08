@@ -25,6 +25,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { InfoTooltip } from "@/components/admin/info-tooltip";
 
 interface Incident {
   id: string;
@@ -117,6 +118,7 @@ function KpiCard({
   value,
   subValue,
   severity,
+  help,
 }: {
   href: string;
   title: string;
@@ -124,6 +126,7 @@ function KpiCard({
   value: string;
   subValue?: string;
   severity: "green" | "orange" | "red" | "neutral";
+  help?: React.ReactNode;
 }) {
   const bgClass = {
     green: "bg-green-50 dark:bg-green-950/30 border-green-200 dark:border-green-900 hover:bg-green-100 dark:hover:bg-green-950/50",
@@ -139,6 +142,11 @@ function KpiCard({
           <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
             {icon}
             {title}
+            {help && (
+              <span onClick={(e) => e.preventDefault()}>
+                <InfoTooltip>{help}</InfoTooltip>
+              </span>
+            )}
           </CardTitle>
           <ArrowRight className="h-4 w-4 text-muted-foreground" />
         </CardHeader>
@@ -392,6 +400,14 @@ export default function AdminHomePage() {
           value={fmtPct(stats.quality_health.feedback_negative_rate_7d)}
           subValue={`${fmtPct(stats.quality_health.no_sources_rate_7d)} sans source · p95 ${fmtMs(stats.quality_health.latency_p95_ms_7d)}`}
           severity={ragSeverity}
+          help={
+            <>
+              Indicateur de santé du moteur RAG sur les 7 derniers jours.
+              Valeur affichée = taux de feedback négatif.
+              Sous-info = taux de questions sans source + latence p95.
+              Cliquez pour ouvrir la page Qualité.
+            </>
+          }
         />
         <KpiCard
           href="/admin/costs"
@@ -400,6 +416,13 @@ export default function AdminHomePage() {
           value={fmtCost(stats.cost_30d)}
           subValue={`projection mensuelle ~ ${fmtCost(projection)}`}
           severity="neutral"
+          help={
+            <>
+              Coût total des appels API (OpenAI + Voyage AI) sur 30 jours,
+              uniquement pour les questions utilisateurs (les ingestions et
+              le bac à sable admin sont exclus).
+            </>
+          }
         />
         <KpiCard
           href="/admin/corpus"
@@ -408,6 +431,13 @@ export default function AdminHomePage() {
           value={`${stats.indexed_documents.toLocaleString("fr-FR")}`}
           subValue={`${stats.error_documents} erreur · ${stats.pending_documents} en attente`}
           severity={corpusSeverity}
+          help={
+            <>
+              Nombre de documents communs indexés et interrogeables par le
+              RAG (codes, conventions collectives, jurisprudence). Carte
+              orange si docs en attente, rouge si docs en erreur.
+            </>
+          }
         />
         <KpiCard
           href="/admin/quality"
@@ -416,6 +446,13 @@ export default function AdminHomePage() {
           value={stats.questions_7d.toLocaleString("fr-FR")}
           subValue={`${stats.questions_today} aujourd'hui · ${stats.active_users}/${stats.total_users} utilisateurs actifs`}
           severity="neutral"
+          help={
+            <>
+              Nombre de questions posées dans le chat sur 7 jours, hors
+              tests admin. <strong>Utilisateurs actifs</strong> = comptes
+              ayant posé au moins 1 question récemment.
+            </>
+          }
         />
       </div>
 

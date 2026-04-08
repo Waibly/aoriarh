@@ -50,6 +50,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { InfoTooltip } from "@/components/admin/info-tooltip";
 
 // ----------------- Types -----------------
 
@@ -213,10 +214,26 @@ function SyncBanner({ token, onRefresh }: { token: string; onRefresh: () => void
   };
 
   const sources = [
-    { key: "kali", label: "KALI (CCN)" },
-    { key: "judilibre", label: "Judilibre" },
-    { key: "code_travail", label: "Code travail" },
-    { key: "bocc", label: "BOCC" },
+    {
+      key: "kali",
+      label: "KALI (CCN)",
+      help: "Synchronise les conventions collectives nationales depuis la base KALI de Légifrance. Met à jour le contenu des CCN installées dans les organisations.",
+    },
+    {
+      key: "judilibre",
+      label: "Judilibre",
+      help: "Récupère les arrêts de la Cour de cassation depuis l'API Judilibre (PISTE). Permet d'enrichir le corpus jurisprudentiel.",
+    },
+    {
+      key: "code_travail",
+      label: "Code travail",
+      help: "Récupère et met à jour le Code du travail consolidé depuis Légifrance (parties législative et réglementaire).",
+    },
+    {
+      key: "bocc",
+      label: "BOCC",
+      help: "Bulletin Officiel des Conventions Collectives — récupère les nouveaux avenants publiés. Ils sont mis en réserve et ingérés automatiquement à l'installation de la CCN concernée.",
+    },
   ];
 
   return (
@@ -246,6 +263,7 @@ function SyncBanner({ token, onRefresh }: { token: string; onRefresh: () => void
                     <span className="h-3 w-3 inline-block rounded-full bg-muted-foreground/30" />
                   )}
                   <span className="font-medium truncate">{s.label}</span>
+                  <InfoTooltip>{s.help}</InfoTooltip>
                 </div>
                 <div className="text-muted-foreground text-[10px] truncate">
                   {log ? fmtRelative(log.started_at) : "—"}
@@ -505,11 +523,16 @@ export default function CorpusPage() {
             Tous les documents communs : codes, conventions collectives, jurisprudence, doctrine.
           </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex items-center gap-2">
           <Button variant="outline" onClick={() => setTestOpen(true)}>
             <FlaskConical className="h-4 w-4 mr-2" />
             Tester recherche
           </Button>
+          <InfoTooltip side="bottom">
+            Lance la recherche RAG (hybride + rerank + parent expansion) sur
+            le corpus commun, sans appeler le LLM. Permet de vérifier que
+            les bons chunks remontent pour une question donnée.
+          </InfoTooltip>
           <Button variant="outline" size="sm" onClick={fetchGroups}>
             <RefreshCw className="h-4 w-4" />
           </Button>

@@ -17,6 +17,7 @@ import {
   ChevronRight,
   AlertTriangle,
 } from "lucide-react";
+import { InfoTooltip } from "@/components/admin/info-tooltip";
 
 // ----------------- Shared types -----------------
 
@@ -210,16 +211,19 @@ function Section({
   title,
   icon,
   children,
+  help,
 }: {
   title: string;
   icon?: React.ReactNode;
   children: React.ReactNode;
+  help?: React.ReactNode;
 }) {
   return (
     <div className="border-t pt-4">
       <h3 className="text-sm font-semibold mb-2 flex items-center gap-2">
         {icon}
         {title}
+        {help && <InfoTooltip>{help}</InfoTooltip>}
       </h3>
       {children}
     </div>
@@ -308,7 +312,17 @@ export function InspectorBody({ data }: { data: InspectorPayload }) {
 
       {/* Sources citées */}
       {data.sources && data.sources.length > 0 && (
-        <Section title={`Sources citées (${data.sources.length})`} icon={<BookOpen className="h-4 w-4" />}>
+        <Section
+          title={`Sources citées (${data.sources.length})`}
+          icon={<BookOpen className="h-4 w-4" />}
+          help={
+            <>
+              Documents que l&apos;utilisateur a vus dans le panneau Sources
+              de sa réponse. Cliquez sur une source pour afficher son texte
+              intégral tel qu&apos;il a été envoyé au LLM.
+            </>
+          }
+        >
           <div className="space-y-2">
             {data.sources.map((s, i) => (
               <CitedSourceItem key={i} source={s} />
@@ -330,7 +344,22 @@ export function InspectorBody({ data }: { data: InspectorPayload }) {
 
       {/* Performance */}
       {data.rag_trace && Object.keys(data.rag_trace.perf_ms || {}).length > 0 && (
-        <Section title="Performance" icon={<Clock className="h-4 w-4" />}>
+        <Section
+          title="Performance"
+          icon={<Clock className="h-4 w-4" />}
+          help={
+            <>
+              Temps passé dans chaque étape du pipeline RAG.
+              <br />• <strong>condense</strong> : reformulation multi-tour
+              <br />• <strong>expand_search</strong> : génération des
+              variantes + recherche hybride parallèle
+              <br />• <strong>rerank</strong> : tri par cross-encoder
+              <br />• <strong>parent_expansion</strong> : élargissement
+              aux chunks frères
+              <br />• <strong>generate</strong> : appel LLM final
+            </>
+          }
+        >
           <PerfBar perf={data.rag_trace.perf_ms} />
         </Section>
       )}
@@ -345,7 +374,18 @@ export function InspectorBody({ data }: { data: InspectorPayload }) {
       ) : (
         <>
           {data.rag_trace.variants.length > 0 && (
-            <Section title="Reformulation pour la recherche">
+            <Section
+              title="Reformulation pour la recherche"
+              help={
+                <>
+                  Variantes de la question utilisées pour la recherche.
+                  La <strong>1ère est la question originale</strong> (recherche
+                  texte exact via BM25). Les suivantes sont générées par un
+                  petit LLM pour couvrir l&apos;intention sémantique, la
+                  terminologie juridique et des mots-clés.
+                </>
+              }
+            >
               <ol className="space-y-1 text-xs">
                 {data.rag_trace.variants.map((v, i) => (
                   <li key={i} className="flex gap-2">
@@ -359,7 +399,18 @@ export function InspectorBody({ data }: { data: InspectorPayload }) {
 
           {(data.rag_trace.identifiers_detected.numero_pourvoi?.length ||
             data.rag_trace.identifiers_detected.article_nums?.length) ? (
-            <Section title="Identifiants détectés dans la query">
+            <Section
+              title="Identifiants détectés dans la query"
+              help={
+                <>
+                  Numéros d&apos;article ou de pourvoi trouvés dans la
+                  question via regex. Pour ces identifiants, on cherche
+                  directement dans Qdrant via filtre payload (boost) pour
+                  garantir que les chunks correspondants remontent, même
+                  si leur contenu est sémantiquement éloigné de la query.
+                </>
+              }
+            >
               <div className="flex flex-wrap gap-2">
                 {data.rag_trace.identifiers_detected.numero_pourvoi?.map((p) => (
                   <Badge key={p} variant="secondary">Pourvoi {p}</Badge>
@@ -379,6 +430,14 @@ export function InspectorBody({ data }: { data: InspectorPayload }) {
           <Section
             title={`Sources finales envoyées au LLM (${data.rag_trace.parent_groups.length})`}
             icon={<Layers className="h-4 w-4" />}
+            help={
+              <>
+                Liste finale des chunks que le LLM a réellement reçus pour
+                rédiger sa réponse, après élargissement aux chunks frères
+                (small-to-big). Chaque ligne représente un parent group
+                (souvent plusieurs chunks fusionnés en un seul contexte).
+              </>
+            }
           >
             <div className="space-y-2">
               {data.rag_trace.parent_groups.length === 0 ? (
@@ -394,6 +453,14 @@ export function InspectorBody({ data }: { data: InspectorPayload }) {
           <Section
             title={`Chunks après rerank (${data.rag_trace.rerank_results.length})`}
             icon={<FileSearch className="h-4 w-4" />}
+            help={
+              <>
+                Top chunks après tri par cross-encoder Voyage rerank-2.
+                Le rerank prend les ~30 candidats du pool initial et les
+                trie selon la pertinence réelle (modèle plus précis mais
+                plus coûteux que la recherche initiale).
+              </>
+            }
           >
             <div className="space-y-2">
               {data.rag_trace.rerank_results.map((c, i) => (
@@ -402,7 +469,17 @@ export function InspectorBody({ data }: { data: InspectorPayload }) {
             </div>
           </Section>
 
-          <Section title={`Pool initial avant rerank (${data.rag_trace.hybrid_results.length})`}>
+          <Section
+            title={`Pool initial avant rerank (${data.rag_trace.hybrid_results.length})`}
+            help={
+              <>
+                Candidats remontés par la recherche hybride (dense Voyage
+                law-2 + sparse BM25, fusion RRF), avant le rerank. C&apos;est
+                à cette étape que tu vois si le bon document a au moins
+                été trouvé par le moteur de recherche.
+              </>
+            }
+          >
             <div className="space-y-2">
               {data.rag_trace.hybrid_results.map((c, i) => (
                 <ChunkRow key={`h-${c.document_id}-${c.chunk_index}-${i}`} chunk={c} rank={i + 1} />

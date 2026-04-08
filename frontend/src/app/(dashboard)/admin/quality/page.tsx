@@ -42,6 +42,7 @@ import {
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
+import { InfoTooltip } from "@/components/admin/info-tooltip";
 import { ConversationInspector } from "./ConversationInspector";
 import { SandboxRunner } from "./SandboxRunner";
 
@@ -292,6 +293,13 @@ export default function QualityPage() {
           severity={
             kpis ? (kpis.feedback_negative_rate > 0.15 ? "red" : kpis.feedback_negative_rate > 0.05 ? "orange" : "green") : "neutral"
           }
+          help={
+            <>
+              Pourcentage de questions sur lesquelles l&apos;utilisateur a cliqué 👎.
+              Au-delà de 5% : à surveiller. Au-delà de 15% : urgence.
+              La flèche compare à la période précédente.
+            </>
+          }
         />
         <KpiCard
           title="Sans source"
@@ -300,6 +308,13 @@ export default function QualityPage() {
           value={kpis ? fmtPct(kpis.no_sources_rate) : "—"}
           subValue={kpis ? `${kpis.no_sources_count} questions` : ""}
           severity={kpis ? (kpis.no_sources_rate > 0.05 ? "orange" : "green") : "neutral"}
+          help={
+            <>
+              Questions où la recherche RAG n&apos;a remonté aucun document.
+              Le LLM répond à partir de ses connaissances générales — risque
+              élevé d&apos;hallucination. Indique souvent un trou dans le corpus.
+            </>
+          }
         />
         <KpiCard
           title="Latence p95"
@@ -318,6 +333,14 @@ export default function QualityPage() {
                 : "green"
               : "neutral"
           }
+          help={
+            <>
+              <strong>p95</strong> = 95% des questions répondent en moins de
+              ce temps. Mieux que la moyenne pour mesurer l&apos;expérience
+              réelle. <strong>p50</strong> = temps médian (1 question sur 2).
+              Au-delà de 20s : à investiguer.
+            </>
+          }
         />
         <KpiCard
           title="Coût moyen / question"
@@ -328,6 +351,13 @@ export default function QualityPage() {
           trend={kpis?.trends.cost_avg.delta_pct ?? null}
           trendInverted
           severity="neutral"
+          help={
+            <>
+              Coût moyen d&apos;une question (embeddings + LLM + rerank).
+              <strong> m$</strong> = millième de dollar (1 m$ = 0.001$).
+              Exclut le bac à sable.
+            </>
+          }
         />
       </div>
 
@@ -494,6 +524,7 @@ function KpiCard({
   trend,
   trendInverted,
   severity,
+  help,
 }: {
   title: string;
   icon: React.ReactNode;
@@ -503,6 +534,7 @@ function KpiCard({
   trend?: number | null;
   trendInverted?: boolean;
   severity: "green" | "orange" | "red" | "neutral";
+  help?: React.ReactNode;
 }) {
   const bgClass = {
     green:
@@ -520,6 +552,7 @@ function KpiCard({
         <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
           {icon}
           {title}
+          {help && <InfoTooltip>{help}</InfoTooltip>}
         </CardTitle>
       </CardHeader>
       <CardContent>
