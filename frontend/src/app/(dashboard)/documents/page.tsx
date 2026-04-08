@@ -335,20 +335,6 @@ export default function DocumentsPage() {
     }
   };
 
-  const handleSyncCcn = async (idcc: string) => {
-    if (!currentOrg || !token) return;
-    try {
-      await apiFetch(`/conventions/organisations/${currentOrg.id}/${idcc}/sync`, {
-        method: "POST",
-        token,
-      });
-      toast.success("Mise à jour lancée");
-      fetchDocuments();
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Erreur lors de la mise à jour");
-    }
-  };
-
   const handleRemoveCcn = async (idcc: string) => {
     if (!currentOrg || !token) return;
     try {
@@ -612,7 +598,6 @@ export default function DocumentsPage() {
                   d.name.includes(`IDCC ${selectedCcn.idcc}`),
               )}
               isManager={isManager}
-              onSync={() => handleSyncCcn(selectedCcn.idcc)}
               onRemove={() => setRemoveCcnIdcc(selectedCcn.idcc)}
               onDownload={handleDownload}
             />
@@ -697,8 +682,8 @@ export default function DocumentsPage() {
           <DialogHeader>
             <DialogTitle>Retirer la convention collective</DialogTitle>
             <DialogDescription>
-              Cette action supprimera la convention et tous ses documents indexés.
-              Les réponses du chat ne pourront plus s&apos;appuyer sur cette convention.
+              Cette convention ne sera plus utilisée par l&apos;IA pour répondre
+              à vos questions. Vous pourrez la réinstaller à tout moment.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
@@ -724,14 +709,12 @@ function CcnDetailPane({
   ccn,
   docs,
   isManager,
-  onSync,
   onRemove,
   onDownload,
 }: {
   ccn: OrganisationConvention;
   docs: Document[];
   isManager: boolean;
-  onSync: () => void;
   onRemove: () => void;
   onDownload: (id: string) => void;
 }) {
@@ -803,19 +786,6 @@ function CcnDetailPane({
             </div>
             {isManager && (
               <div className="flex items-center gap-1 shrink-0">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={onSync}
-                  disabled={
-                    ccn.status === "fetching" ||
-                    ccn.status === "indexing" ||
-                    ccn.status === "pending"
-                  }
-                >
-                  <RefreshCw className="h-3 w-3 mr-1" />
-                  Mettre à jour
-                </Button>
                 <Button variant="outline" size="sm" onClick={onRemove}>
                   <Trash2 className="h-3 w-3 mr-1 text-destructive" />
                   Retirer
