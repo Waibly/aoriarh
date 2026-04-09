@@ -142,18 +142,26 @@ async def get_quality_metrics(
         fb_up = sum(1 for m in rows if m.feedback == "up")
         fb_down = sum(1 for m in rows if m.feedback == "down")
         fb_none = total - fb_up - fb_down
-        oos = sum(
-            1 for m in rows
-            if m.rag_trace and m.rag_trace.get("out_of_scope") is True
-        )
+        # An out-of-scope refusal is detected by EITHER a flagged trace OR
+        # the canned refusal text prefix. The text fallback catches old
+        # messages from before rag_trace persistence was added, and any
+        # future message where the trace failed to write.
+        from app.rag.agent import _OUT_OF_SCOPE_ANSWER
+        oos_prefix = _OUT_OF_SCOPE_ANSWER[:60]
+
+        def _is_oos(m) -> bool:
+            if m.rag_trace and m.rag_trace.get("out_of_scope") is True:
+                return True
+            return bool(m.content and m.content.startswith(oos_prefix))
+
+        oos = sum(1 for m in rows if _is_oos(m))
         # no_src counts ONLY in-scope questions where the RAG returned no
         # source : that's a real warning signal (corpus gap). Out-of-scope
         # refusals legitimately have no sources and are tracked separately
         # in `oos`, so we exclude them here to avoid inflating the metric.
         no_src = sum(
             1 for m in rows
-            if (not m.sources or len(m.sources) == 0)
-            and not (m.rag_trace and m.rag_trace.get("out_of_scope") is True)
+            if (not m.sources or len(m.sources) == 0) and not _is_oos(m)
         )
         errors = sum(
             1 for m in rows
