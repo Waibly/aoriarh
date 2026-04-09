@@ -474,7 +474,7 @@ export default function DocumentsPage() {
         <div className="col-span-12 md:col-span-3 space-y-4">
           {/* Conventions section */}
           <Card>
-            <CardHeader className="pb-3">
+            <CardHeader className="pb-1 px-3 pt-3">
               <CardTitle className="text-sm font-semibold flex items-center gap-2">
                 <Library className="h-4 w-4" />
                 Convention collective
@@ -485,7 +485,7 @@ export default function DocumentsPage() {
                 </InfoTooltip>
               </CardTitle>
             </CardHeader>
-            <CardContent className="space-y-1 p-2">
+            <CardContent className="space-y-1 p-2 pt-1">
               {loading && conventions.length === 0 ? (
                 <Skeleton className="h-10 w-full" />
               ) : conventions.length === 0 ? (
@@ -551,7 +551,7 @@ export default function DocumentsPage() {
 
           {/* Internal documents section */}
           <Card>
-            <CardHeader className="pb-3">
+            <CardHeader className="pb-1 px-3 pt-3">
               <CardTitle className="text-sm font-semibold flex items-center gap-2">
                 <FolderOpen className="h-4 w-4" />
                 Vos documents
@@ -561,7 +561,7 @@ export default function DocumentsPage() {
                 </InfoTooltip>
               </CardTitle>
             </CardHeader>
-            <CardContent className="space-y-1 p-2">
+            <CardContent className="space-y-1 p-2 pt-1">
               {CATEGORIES.map((cat) => {
                 const Icon = cat.icon;
                 const active = selection.type === "category" && selection.key === cat.key;
