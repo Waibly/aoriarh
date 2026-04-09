@@ -473,8 +473,8 @@ export default function DocumentsPage() {
         {/* ---- Sidebar ---- */}
         <div className="col-span-12 md:col-span-3 space-y-4">
           {/* Conventions section */}
-          <Card>
-            <CardHeader className="pb-1 px-3 pt-3">
+          <Card className="gap-1 py-2">
+            <CardHeader className="pb-1 px-3 pt-1">
               <CardTitle className="text-sm font-semibold flex items-center gap-2">
                 <Library className="h-4 w-4" />
                 Convention collective
@@ -550,8 +550,8 @@ export default function DocumentsPage() {
           </Card>
 
           {/* Internal documents section */}
-          <Card>
-            <CardHeader className="pb-1 px-3 pt-3">
+          <Card className="gap-1 py-2">
+            <CardHeader className="pb-1 px-3 pt-1">
               <CardTitle className="text-sm font-semibold flex items-center gap-2">
                 <FolderOpen className="h-4 w-4" />
                 Vos documents
