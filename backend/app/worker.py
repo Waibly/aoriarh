@@ -791,6 +791,12 @@ async def run_scheduled_sync(ctx: dict) -> None:
             logger.info("Scheduled sync: no CCN installed, skipping")
 
         # --- 3. BOCC weekly sync ---
+        # Catch up ALL un-processed weeks between (today - 12 weeks) and
+        # (today - 2 weeks). DILA publishes one BOCC issue per week with a
+        # ~2 week lag, so the cron previously synced only 1 issue per run
+        # which left 50% of new issues uncovered. We now scan a 10-week
+        # window and ingest every issue not already in BoccIssue, capped
+        # at 6 issues per cron run to keep the worker time bounded.
         bocc_log_id = await _create_sync_log(session_factory, "bocc")
         bocc_t0 = _time.perf_counter()
         try:
@@ -800,51 +806,89 @@ async def run_scheduled_sync(ctx: dict) -> None:
             from app.services.bocc_service import BoccService
 
             bocc_service = BoccService()
-            # Sync latest available (current week - 2, DILA has ~2 week delay)
             today = dt.date.today()
-            target = today - dt.timedelta(weeks=2)
-            bocc_year = target.isocalendar()[0]
-            bocc_week = target.isocalendar()[1]
-            bocc_numero = f"{bocc_year}-{bocc_week:02d}"
+            window_start = today - dt.timedelta(weeks=12)
+            window_end = today - dt.timedelta(weeks=2)
 
-            existing_bocc = await db.execute(
-                select(BoccIssue).where(BoccIssue.numero == bocc_numero)
+            # Build the list of (year, week) candidates in the window
+            candidates: list[tuple[int, int]] = []
+            d = window_end
+            while d >= window_start:
+                yw = d.isocalendar()
+                candidates.append((yw[0], yw[1]))
+                d -= dt.timedelta(weeks=1)
+            # candidates ordered most-recent first → process newest first
+
+            BOCC_PER_RUN_CAP = 6
+            total_avenants_found = 0
+            total_avenants_ingested = 0
+            total_errors = 0
+            total_processed = 0
+            total_skipped = 0
+            error_messages: list[str] = []
+
+            for year, week in candidates:
+                if total_processed >= BOCC_PER_RUN_CAP:
+                    break
+                numero = f"{year}-{week:02d}"
+                existing = await db.execute(
+                    select(BoccIssue).where(BoccIssue.numero == numero)
+                )
+                if existing.scalar_one_or_none():
+                    total_skipped += 1
+                    continue
+                try:
+                    res = await bocc_service.process_issue(db, year, week, admin_id)
+                    issue = BoccIssue(
+                        numero=numero,
+                        year=year,
+                        week=week,
+                        avenants_count=res.avenants_found,
+                        avenants_ingested=res.avenants_ingested,
+                        status=(
+                            "error"
+                            if res.errors > 0 and res.avenants_found == 0
+                            else "processed"
+                        ),
+                        error_message=(
+                            "; ".join(res.error_messages[:3])
+                            if res.error_messages else None
+                        ),
+                        processed_at=datetime.now(UTC),
+                    )
+                    db.add(issue)
+                    await db.commit()
+                    total_avenants_found += res.avenants_found
+                    total_avenants_ingested += res.avenants_ingested
+                    total_errors += res.errors
+                    total_processed += 1
+                    if res.error_messages:
+                        error_messages.extend(res.error_messages[:2])
+                    logger.info(
+                        "Scheduled sync: BOCC %s done — %d avenants, %d ingested",
+                        numero, res.avenants_found, res.avenants_ingested,
+                    )
+                except Exception as exc:
+                    logger.exception("Scheduled sync: BOCC %s failed", numero)
+                    total_errors += 1
+                    error_messages.append(f"{numero}: {str(exc)[:120]}")
+
+            await _finish_sync_log(
+                session_factory, bocc_log_id,
+                success=total_errors == 0 or total_avenants_ingested > 0,
+                items_fetched=total_avenants_found,
+                items_created=total_avenants_ingested,
+                items_skipped=total_skipped,
+                errors=total_errors,
+                error_message="; ".join(error_messages[:3]) if error_messages else None,
+                duration_ms=int((_time.perf_counter() - bocc_t0) * 1000),
             )
-            if existing_bocc.scalar_one_or_none():
-                logger.info("Scheduled sync: BOCC %s already processed, skipping", bocc_numero)
-                await _finish_sync_log(
-                    session_factory, bocc_log_id,
-                    success=True, items_skipped=1,
-                    error_message=f"BOCC {bocc_numero} déjà traité",
-                    duration_ms=int((_time.perf_counter() - bocc_t0) * 1000),
-                )
-            else:
-                bocc_result = await bocc_service.process_issue(db, bocc_year, bocc_week, admin_id)
-                issue = BoccIssue(
-                    numero=bocc_numero,
-                    year=bocc_year,
-                    week=bocc_week,
-                    avenants_count=bocc_result.avenants_found,
-                    avenants_ingested=bocc_result.avenants_ingested,
-                    status="error" if bocc_result.errors > 0 and bocc_result.avenants_found == 0 else "processed",
-                    error_message="; ".join(bocc_result.error_messages[:3]) if bocc_result.error_messages else None,
-                    processed_at=datetime.now(UTC),
-                )
-                db.add(issue)
-                await db.commit()
-                logger.info(
-                    "Scheduled sync: BOCC %s done — %d avenants, %d ingested, %d errors",
-                    bocc_numero, bocc_result.avenants_found, bocc_result.avenants_ingested, bocc_result.errors,
-                )
-                await _finish_sync_log(
-                    session_factory, bocc_log_id,
-                    success=bocc_result.errors == 0 or bocc_result.avenants_found > 0,
-                    items_fetched=bocc_result.avenants_found,
-                    items_created=bocc_result.avenants_ingested,
-                    errors=bocc_result.errors,
-                    error_message="; ".join(bocc_result.error_messages[:3]) if bocc_result.error_messages else None,
-                    duration_ms=int((_time.perf_counter() - bocc_t0) * 1000),
-                )
+            logger.info(
+                "Scheduled sync: BOCC catch-up done — %d issues processed, "
+                "%d skipped, %d avenants found, %d ingested, %d errors",
+                total_processed, total_skipped,
+                total_avenants_found, total_avenants_ingested, total_errors,
+            )
         except Exception as exc:
             logger.exception("Scheduled sync: BOCC sync failed")
             await _finish_sync_log(
