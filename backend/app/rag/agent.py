@@ -43,6 +43,7 @@ _search_engine = HybridSearch()
 class RAGSource:
     """A source reference returned alongside the answer."""
 
+    document_id: str
     document_name: str
     source_type: str
     source_type_label: str
@@ -1304,6 +1305,7 @@ class RAGAgent:
 
             sources.append(
                 RAGSource(
+                    document_id=meta.document_id,
                     document_name=meta.doc_name,
                     source_type=meta.source_type,
                     source_type_label=_SOURCE_TYPE_LABELS.get(

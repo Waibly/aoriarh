@@ -61,6 +61,24 @@ export async function hideAllConversations(
   );
 }
 
+export interface SourceFullContent {
+  document_id: string;
+  name: string;
+  source_type: string;
+  content: string;
+  size_bytes: number;
+}
+
+export async function getSourceFullContent(
+  documentId: string,
+  token: string,
+): Promise<SourceFullContent> {
+  return apiFetch<SourceFullContent>(
+    `/conversations/sources/${documentId}/full-content`,
+    { token },
+  );
+}
+
 export async function sendMessage(
   conversationId: string,
   message: string,

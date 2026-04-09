@@ -1,10 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { useSession } from "next-auth/react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeSanitize from "rehype-sanitize";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { getSourceFullContent } from "@/lib/chat-api";
 import {
   ThumbsUp,
   ThumbsDown,
@@ -16,6 +19,7 @@ import {
   ChevronDown,
   ChevronRight,
   AlertTriangle,
+  Loader2,
 } from "lucide-react";
 import { InfoTooltip } from "@/components/admin/info-tooltip";
 
@@ -48,6 +52,7 @@ export interface RagTrace {
 }
 
 export interface CitedSource {
+  document_id?: string;
   document_name: string;
   source_type: string;
   source_type_label: string;
@@ -154,7 +159,41 @@ function ChunkRow({ chunk, rank }: { chunk: InspectChunk; rank: number }) {
 }
 
 function CitedSourceItem({ source }: { source: CitedSource }) {
+  const { data: session } = useSession();
+  const token = session?.access_token;
   const [open, setOpen] = useState(false);
+  const [fullContent, setFullContent] = useState<string | null>(null);
+  const [fullContentLoading, setFullContentLoading] = useState(false);
+  const [fullContentError, setFullContentError] = useState<string | null>(null);
+
+  // Reset when the source changes (e.g. re-run of the sandbox)
+  useEffect(() => {
+    setFullContent(null);
+    setFullContentError(null);
+  }, [source.document_id]);
+
+  const displayedText = fullContent ?? source.full_text ?? "";
+  const isTruncated =
+    fullContent === null && source.full_text.trimEnd().endsWith("[…]");
+
+  const handleLoadFullContent = async () => {
+    if (!source.document_id || !token) return;
+    setFullContentLoading(true);
+    setFullContentError(null);
+    try {
+      const data = await getSourceFullContent(source.document_id, token);
+      setFullContent(data.content);
+    } catch (err) {
+      setFullContentError(
+        err instanceof Error
+          ? err.message
+          : "Impossible de charger le document complet.",
+      );
+    } finally {
+      setFullContentLoading(false);
+    }
+  };
+
   const meta = [
     source.juridiction,
     source.date_decision,
@@ -200,9 +239,35 @@ function CitedSourceItem({ source }: { source: CitedSource }) {
         <div className="px-3 pb-3 pt-1 border-t bg-background/50">
           <div className="text-xs text-foreground/90 max-h-[600px] overflow-y-auto prose prose-xs dark:prose-invert max-w-none prose-headings:my-2 prose-p:my-1 prose-table:text-[11px] prose-th:bg-muted prose-th:px-2 prose-th:py-1 prose-td:px-2 prose-td:py-1 prose-td:border prose-th:border">
             <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeSanitize]}>
-              {source.full_text}
+              {displayedText}
             </ReactMarkdown>
           </div>
+          {(isTruncated || fullContentError) && source.document_id && (
+            <div className="mt-2 flex items-center justify-between gap-2 text-[11px]">
+              <span className={fullContentError ? "text-destructive" : "text-muted-foreground"}>
+                {fullContentError ?? "Extrait tronqué pour la lisibilité."}
+              </span>
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-7 text-[11px]"
+                onClick={handleLoadFullContent}
+                disabled={fullContentLoading}
+              >
+                {fullContentLoading ? (
+                  <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+                ) : (
+                  <BookOpen className="mr-1 h-3 w-3" />
+                )}
+                Voir le document complet
+              </Button>
+            </div>
+          )}
+          {fullContent !== null && (
+            <div className="mt-2 text-[11px] text-muted-foreground text-center">
+              Document complet affiché.
+            </div>
+          )}
         </div>
       )}
     </div>

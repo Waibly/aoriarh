@@ -1,10 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { useSession } from "next-auth/react";
 import ReactMarkdown from "react-markdown";
 import rehypeSanitize from "rehype-sanitize";
 import remarkGfm from "remark-gfm";
-import { ChevronRight, FileText } from "lucide-react";
+import { ChevronRight, FileText, Loader2, BookOpen } from "lucide-react";
 import {
   Collapsible,
   CollapsibleContent,
@@ -17,6 +18,8 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { getSourceFullContent } from "@/lib/chat-api";
 import type { MessageSource } from "@/types/api";
 
 function formatJurisprudenceRef(source: MessageSource): string | null {
@@ -37,10 +40,51 @@ interface MessageSourcesProps {
 }
 
 export function MessageSources({ sources }: MessageSourcesProps) {
+  const { data: session } = useSession();
+  const token = session?.access_token;
   const [isOpen, setIsOpen] = useState(false);
   const [selectedSource, setSelectedSource] = useState<MessageSource | null>(
     null,
   );
+  // When the user clicks "Voir le document complet", we replace the
+  // retrieval excerpt with the full text fetched from the storage.
+  const [fullContent, setFullContent] = useState<string | null>(null);
+  const [fullContentLoading, setFullContentLoading] = useState(false);
+  const [fullContentError, setFullContentError] = useState<string | null>(null);
+
+  // Reset the expanded full-content view each time we open a new source.
+  useEffect(() => {
+    setFullContent(null);
+    setFullContentLoading(false);
+    setFullContentError(null);
+  }, [selectedSource]);
+
+  const displayedText = fullContent ?? selectedSource?.full_text ?? selectedSource?.excerpt ?? "";
+  const isTruncated =
+    fullContent === null &&
+    typeof selectedSource?.full_text === "string" &&
+    selectedSource.full_text.trimEnd().endsWith("[…]");
+
+  const handleLoadFullContent = async () => {
+    if (!selectedSource || !token) return;
+    setFullContentLoading(true);
+    setFullContentError(null);
+    try {
+      const data = await getSourceFullContent(
+        selectedSource.document_id,
+        token,
+      );
+      setFullContent(data.content);
+    } catch (err) {
+      setFullContentError(
+        err instanceof Error
+          ? err.message
+          : "Impossible de charger le document complet.",
+      );
+    } finally {
+      setFullContentLoading(false);
+    }
+  };
 
   return (
     <>
@@ -122,9 +166,44 @@ export function MessageSources({ sources }: MessageSourcesProps) {
           <div className="min-h-0 flex-1 overflow-y-auto">
             <div className="prose prose-sm dark:prose-invert max-w-none pr-4 text-[0.9375rem] leading-7 text-foreground [&_h1]:mt-6 [&_h1]:mb-3 [&_h1]:text-lg [&_h1]:font-semibold [&_h2]:mt-5 [&_h2]:mb-2 [&_h2]:text-base [&_h2]:font-semibold [&_h3]:mt-4 [&_h3]:mb-2 [&_h3]:text-[0.9375rem] [&_h3]:font-semibold [&_p]:my-3 [&_p]:leading-7 [&_ul]:my-3 [&_ul]:pl-5 [&_ul]:list-disc [&_ol]:my-3 [&_ol]:pl-5 [&_ol]:list-decimal [&_li]:my-0.5 [&_li]:leading-7 [&_li::marker]:text-foreground/70 [&>*:first-child]:mt-0 [&>*:last-child]:mb-0 [&_table]:my-3 [&_table]:border-collapse [&_table]:text-xs [&_table]:w-full [&_th]:border [&_th]:border-border [&_th]:bg-muted [&_th]:px-2 [&_th]:py-1 [&_th]:text-left [&_th]:font-semibold [&_td]:border [&_td]:border-border [&_td]:px-2 [&_td]:py-1 [&_td]:align-top">
               <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeSanitize]}>
-                {selectedSource?.full_text || selectedSource?.excerpt || ""}
+                {displayedText}
               </ReactMarkdown>
             </div>
+            {(isTruncated || fullContentError) && (
+              <div className="mt-3 flex items-center justify-center gap-3 border-t border-border pt-3">
+                {fullContentError ? (
+                  <span className="text-xs text-destructive">
+                    {fullContentError}
+                  </span>
+                ) : (
+                  <span className="text-xs text-muted-foreground">
+                    Cet extrait a été tronqué pour la lisibilité.
+                  </span>
+                )}
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={handleLoadFullContent}
+                  disabled={fullContentLoading}
+                >
+                  {fullContentLoading ? (
+                    <Loader2 className="mr-2 size-4 animate-spin" />
+                  ) : (
+                    <BookOpen className="mr-2 size-4" />
+                  )}
+                  {fullContentLoading
+                    ? "Chargement…"
+                    : "Voir le document complet"}
+                </Button>
+              </div>
+            )}
+            {fullContent !== null && (
+              <div className="mt-3 border-t border-border pt-3 text-center">
+                <span className="text-xs text-muted-foreground">
+                  Document complet affiché.
+                </span>
+              </div>
+            )}
           </div>
         </DialogContent>
       </Dialog>

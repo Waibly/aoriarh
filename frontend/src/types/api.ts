@@ -89,6 +89,7 @@ export interface Conversation {
 }
 
 export interface MessageSource {
+  document_id: string;
   document_name: string;
   source_type: string;
   source_type_label: string;

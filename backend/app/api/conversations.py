@@ -10,8 +10,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from sqlalchemy import func, select
 
+from pydantic import BaseModel
+
 from app.core.database import get_db
 from app.core.dependencies import get_current_user
+from app.models.document import Document
 from app.models.organisation import Organisation
 from app.models.user import User
 from app.rag.agent import RAGAgent, _OUT_OF_SCOPE_MARKER, _OUT_OF_SCOPE_ANSWER
@@ -105,6 +108,95 @@ async def delete_conversation(
     await service.delete_conversation(
         conversation_id=conversation_id,
         user=user,
+    )
+
+
+class SourceFullContentResponse(BaseModel):
+    document_id: str
+    name: str
+    source_type: str
+    content: str
+    size_bytes: int
+
+
+@router.get(
+    "/sources/{document_id}/full-content",
+    response_model=SourceFullContentResponse,
+)
+async def get_source_full_content(
+    document_id: uuid.UUID,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> SourceFullContentResponse:
+    """Return the full text content of a source document.
+
+    Used by the chat source dialog "Voir le document complet" button
+    when a source was truncated to 9000 characters in the retrieval
+    payload. Access rules :
+
+    - Common documents (organisation_id IS NULL) : readable by any
+      authenticated user (the whole legal corpus is common).
+    - Org documents : user must be a member of the owning org.
+    """
+    doc = (await db.execute(
+        select(Document).where(Document.id == document_id)
+    )).scalar_one_or_none()
+
+    if doc is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Document non trouvé",
+        )
+
+    if doc.organisation_id is not None and user.role != "admin":
+        from app.core.dependencies import verify_org_membership
+        membership = await verify_org_membership(doc.organisation_id, user, db)
+        if membership is None:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Accès non autorisé à ce document",
+            )
+
+    if not doc.storage_path:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Contenu indisponible pour ce document",
+        )
+
+    from app.services.storage_service import StorageService
+    storage = StorageService()
+    try:
+        file_bytes = storage.get_file_bytes(doc.storage_path)
+    except Exception as exc:
+        logger.warning("Failed to fetch storage content for doc %s: %s", doc.id, exc)
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Contenu introuvable en stockage",
+        )
+
+    # Only text-like formats can be rendered inline. PDF/DOCX are binary
+    # and handled by the download endpoint, not this one.
+    fmt = (doc.file_format or "").lower()
+    if fmt in ("pdf", "docx", "xlsx", "pptx"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                f"Format '{fmt}' non affichable inline. "
+                "Utilisez le téléchargement du document."
+            ),
+        )
+
+    try:
+        content = file_bytes.decode("utf-8")
+    except UnicodeDecodeError:
+        content = file_bytes.decode("latin-1", errors="replace")
+
+    return SourceFullContentResponse(
+        document_id=str(doc.id),
+        name=doc.name,
+        source_type=doc.source_type,
+        content=content,
+        size_bytes=len(file_bytes),
     )
 
 
