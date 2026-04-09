@@ -1112,7 +1112,7 @@ export default function CorpusPage() {
                   <TableBody>
                     {filteredDocs.map((d) => (
                       <TableRow key={d.id}>
-                        <TableCell className="text-sm font-medium truncate max-w-md">
+                        <TableCell className="text-sm font-medium max-w-md break-words whitespace-normal align-top">
                           {d.name}
                         </TableCell>
                         <TableCell>

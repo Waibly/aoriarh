@@ -512,7 +512,7 @@ export default function DocumentsPage() {
                         <Loader2 className="h-3.5 w-3.5 animate-spin text-blue-600 shrink-0" />
                       )}
                       <div className="min-w-0 flex-1">
-                        <div className="font-medium truncate text-xs">
+                        <div className="font-medium break-words whitespace-normal text-xs">
                           {c.titre_court || c.titre || `IDCC ${c.idcc}`}
                         </div>
                         <div className="text-[10px] text-muted-foreground">
@@ -893,11 +893,11 @@ function DocsList({
       {docs.map((d) => (
         <div
           key={d.id}
-          className="flex items-center gap-3 px-3 py-2 rounded border hover:bg-muted/30 transition-colors"
+          className="flex items-start gap-3 px-3 py-2 rounded border hover:bg-muted/30 transition-colors"
         >
-          <FileText className="h-4 w-4 shrink-0 text-muted-foreground" />
+          <FileText className="h-4 w-4 shrink-0 text-muted-foreground mt-0.5" />
           <div className="min-w-0 flex-1">
-            <div className="text-sm font-medium truncate">{cleanDocName(d.name)}</div>
+            <div className="text-sm font-medium break-words whitespace-normal">{cleanDocName(d.name)}</div>
             <div className="text-[11px] text-muted-foreground">
               {formatDate(d.created_at)} · {formatFileSize(d.file_size)}
               {d.indexation_status !== "indexed" && (
