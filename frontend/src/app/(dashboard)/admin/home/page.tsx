@@ -466,13 +466,14 @@ export default function AdminHomePage() {
           title="Santé RAG"
           icon={<Gauge className="h-4 w-4" />}
           value={fmtPct(stats.quality_health.feedback_negative_rate_7d)}
-          subValue={`${fmtPct(stats.quality_health.no_sources_rate_7d)} sans source · p95 ${fmtMs(stats.quality_health.latency_p95_ms_7d)}`}
+          subValue={`${fmtPct(stats.quality_health.no_sources_rate_7d)} sans réponse trouvée · cas le plus lent ${fmtMs(stats.quality_health.latency_p95_ms_7d)}`}
           severity={ragSeverity}
           help={
             <>
               Indicateur de santé du moteur RAG sur les 7 derniers jours.
               Valeur affichée = taux de feedback négatif.
-              Sous-info = taux de questions sans source + latence p95.
+              Sous-info = % de questions RH sans réponse trouvée + temps
+              de réponse du cas le plus lent (5% des questions).
               Cliquez pour ouvrir la page Qualité.
             </>
           }

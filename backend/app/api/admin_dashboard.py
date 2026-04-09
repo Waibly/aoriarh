@@ -313,11 +313,16 @@ async def get_dashboard(
         incidents.append(Incident(
             id="latency_p95_high",
             severity="warning",
-            title=f"Latence p95 élevée ({quality_health.latency_p95_ms_7d / 1000:.1f}s)",
+            title=(
+                f"Temps de réponse trop long sur les cas les plus lents "
+                f"({quality_health.latency_p95_ms_7d / 1000:.1f}s)"
+            ),
             detail=(
-                "95% des réponses sont servies en moins de ce seuil. "
-                "Cible normale : < 10s. Vérifie les questions récentes les "
-                "plus lentes pour identifier les requêtes problématiques."
+                "Les 5% de questions les plus lentes mettent plus de "
+                f"{quality_health.latency_p95_ms_7d / 1000:.0f} secondes à "
+                "obtenir une réponse. Cible normale : moins de 20s. "
+                "Vérifie les dernières questions pour identifier celles "
+                "qui ralentissent le système."
             ),
             action_label="Voir la qualité",
             action_href="/admin/quality",

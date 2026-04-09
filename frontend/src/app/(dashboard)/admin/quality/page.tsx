@@ -302,27 +302,46 @@ export default function QualityPage() {
           }
         />
         <KpiCard
-          title="Trous de corpus"
+          title="Questions sans réponse trouvée"
           icon={<AlertTriangle className="h-4 w-4" />}
           loading={kpisLoading}
-          value={kpis ? fmtPct(kpis.no_sources_rate) : "—"}
-          subValue={kpis ? `${kpis.no_sources_count} question(s) RH sans source` : ""}
+          value={
+            kpis
+              ? `${kpis.no_sources_count} / ${kpis.total_questions}`
+              : "—"
+          }
+          subValue={
+            kpis
+              ? kpis.no_sources_count === 0
+                ? "Tout a trouvé une réponse appuyée sur un document"
+                : "Aucun document du corpus ne correspondait"
+              : ""
+          }
           severity={kpis ? (kpis.no_sources_rate > 0.05 ? "orange" : "green") : "neutral"}
           help={
             <>
-              Questions <strong>RH</strong> où la recherche RAG n&apos;a remonté
-              aucun document. Indique souvent un trou dans le corpus à
-              combler. <em>Les refus hors-périmètre RH (météo, etc.) sont
-              comptés séparément ci-après et n&apos;apparaissent PAS ici.</em>
+              Questions RH où le moteur de recherche n&apos;a trouvé{" "}
+              <strong>aucun document</strong> du corpus pour appuyer sa
+              réponse. Plus ce nombre est élevé, plus il manque
+              probablement de documents importants à ajouter.
+              <br />
+              <br />
+              Les questions hors sujet RH (météo, etc.) ne sont pas
+              comptées ici — elles ont leur propre indicateur «&nbsp;Hors
+              périmètre&nbsp;».
             </>
           }
         />
         <KpiCard
-          title="Latence p95"
+          title="Temps de réponse"
           icon={<Clock className="h-4 w-4" />}
           loading={kpisLoading}
-          value={kpis ? fmtMs(kpis.latency_p95_ms) : "—"}
-          subValue={kpis ? `p50 ${fmtMs(kpis.latency_p50_ms)}` : ""}
+          value={kpis ? fmtMs(kpis.latency_p50_ms) : "—"}
+          subValue={
+            kpis
+              ? `Cas le plus lent (5% des questions) : ${fmtMs(kpis.latency_p95_ms)}`
+              : ""
+          }
           trend={kpis?.trends.latency_p95_ms.delta_pct ?? null}
           trendInverted
           severity={
@@ -336,10 +355,19 @@ export default function QualityPage() {
           }
           help={
             <>
-              <strong>p95</strong> = 95% des questions répondent en moins de
-              ce temps. Mieux que la moyenne pour mesurer l&apos;expérience
-              réelle. <strong>p50</strong> = temps médian (1 question sur 2).
-              Au-delà de 20s : à investiguer.
+              Temps que met le système pour répondre à une question, vu
+              côté utilisateur.
+              <br />
+              <br />
+              La grande valeur est le temps <strong>habituel</strong>{" "}
+              (la moitié des questions sont plus rapides, l&apos;autre
+              moitié plus lentes). Le sous-titre montre le{" "}
+              <strong>cas le plus lent</strong> : temps que met la
+              question parmi les 5% les plus longues.
+              <br />
+              <br />
+              Cible normale : moins de 10 secondes pour la majorité,
+              moins de 20 secondes pour les cas les plus lents.
             </>
           }
         />
