@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from sqlalchemy import func, select
+from sqlalchemy import select
 
 from pydantic import BaseModel
 
@@ -425,6 +425,7 @@ async def chat_stream(
                 try:
                     oos_assistant.rag_trace = rag_trace.to_dict()
                     oos_assistant.latency_ms = int((time.perf_counter() - t_total) * 1000)
+                    oos_assistant.question_id = question_id
                     await db.commit()
                 except Exception:
                     logger.exception(
@@ -512,18 +513,14 @@ async def chat_stream(
                 sources=sources_dicts if sources_dicts else None,
             )
 
-            # 5b. Persist trace + cost + latency on the assistant message.
-            # Best-effort : a failure here must NOT break the user response.
+            # 5b. Persist trace + question_id + latency on the assistant message.
+            # The cost is NOT snapshot anymore — it is computed live via JOIN
+            # on api_usage_logs.context_id = question_id, so /admin/quality
+            # and /admin/costs always agree. Best-effort: a failure here must
+            # NOT break the user response.
             try:
-                from app.models.api_usage import ApiUsageLog
-                cost_q = await db.execute(
-                    select(func.coalesce(func.sum(ApiUsageLog.cost_usd), 0)).where(
-                        ApiUsageLog.context_id == question_id,
-                    )
-                )
-                question_cost = float(cost_q.scalar() or 0.0)
                 assistant_message.rag_trace = rag_trace.to_dict()
-                assistant_message.cost_usd = question_cost
+                assistant_message.question_id = question_id
                 assistant_message.latency_ms = total_latency_ms
                 await db.commit()
             except Exception:

@@ -20,6 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.dependencies import require_role
+from app.models.api_usage import ApiUsageLog
 from app.models.conversation import Conversation, Message
 from app.models.organisation import Organisation
 from app.models.user import User
@@ -137,7 +138,8 @@ async def get_quality_metrics(
             return {
                 "total": 0, "fb_up": 0, "fb_down": 0, "fb_none": 0,
                 "oos": 0, "no_src": 0, "errors": 0,
-                "latencies": [], "costs": [],
+                "latencies": [],
+                "cost_total": 0.0, "nb_questions_with_cost": 0,
             }
         fb_up = sum(1 for m in rows if m.feedback == "up")
         fb_down = sum(1 for m in rows if m.feedback == "down")
@@ -168,11 +170,32 @@ async def get_quality_metrics(
             if m.rag_trace and m.rag_trace.get("error")
         )
         latencies = [m.latency_ms for m in rows if m.latency_ms is not None]
-        costs = [float(m.cost_usd) for m in rows if m.cost_usd is not None]
+        # Cost is computed live from api_usage_logs (single source of truth,
+        # same formula as /admin/costs). Sandbox calls are excluded.
+        cost_q = await db.execute(
+            select(func.coalesce(func.sum(ApiUsageLog.cost_usd), 0)).where(
+                ApiUsageLog.context_type == "question",
+                ApiUsageLog.is_replay.is_(False),
+                ApiUsageLog.created_at >= start,
+                ApiUsageLog.created_at < end,
+            )
+        )
+        cost_total = float(cost_q.scalar() or 0.0)
+        nbq_q = await db.execute(
+            select(func.count(func.distinct(ApiUsageLog.context_id))).where(
+                ApiUsageLog.context_type == "question",
+                ApiUsageLog.is_replay.is_(False),
+                ApiUsageLog.created_at >= start,
+                ApiUsageLog.created_at < end,
+            )
+        )
+        nb_questions_with_cost = int(nbq_q.scalar() or 0)
         return {
             "total": total, "fb_up": fb_up, "fb_down": fb_down, "fb_none": fb_none,
             "oos": oos, "no_src": no_src, "errors": errors,
-            "latencies": latencies, "costs": costs,
+            "latencies": latencies,
+            "cost_total": cost_total,
+            "nb_questions_with_cost": nb_questions_with_cost,
         }
 
     cur = await _compute(period_start, now)
@@ -202,8 +225,16 @@ async def get_quality_metrics(
     prev_neg_rate = _rate(prev["fb_down"], prev["total"])
     cur_p95 = _percentile(cur["latencies"], 95) or 0.0
     prev_p95 = _percentile(prev["latencies"], 95) or 0.0
-    cur_avg_cost = (sum(cur["costs"]) / len(cur["costs"])) if cur["costs"] else 0.0
-    prev_avg_cost = (sum(prev["costs"]) / len(prev["costs"])) if prev["costs"] else 0.0
+    cur_avg_cost = (
+        cur["cost_total"] / cur["nb_questions_with_cost"]
+        if cur["nb_questions_with_cost"]
+        else 0.0
+    )
+    prev_avg_cost = (
+        prev["cost_total"] / prev["nb_questions_with_cost"]
+        if prev["nb_questions_with_cost"]
+        else 0.0
+    )
 
     return QualityKpis(
         period_days=days,
@@ -220,8 +251,8 @@ async def get_quality_metrics(
         latency_p50_ms=_percentile(cur["latencies"], 50),
         latency_p95_ms=_percentile(cur["latencies"], 95),
         latency_p99_ms=_percentile(cur["latencies"], 99),
-        cost_total_usd=round(sum(cur["costs"]), 4),
-        cost_avg_per_question_usd=round(cur_avg_cost, 6) if cur["costs"] else None,
+        cost_total_usd=round(cur["cost_total"], 4),
+        cost_avg_per_question_usd=round(cur_avg_cost, 6) if cur["nb_questions_with_cost"] else None,
         trends={
             "negative_rate": _trend(cur_neg_rate, prev_neg_rate),
             "latency_p95_ms": _trend(cur_p95, prev_p95),
@@ -297,7 +328,8 @@ async def list_conversations(
     ).limit(page_size)
     rows = (await db.execute(stmt)).all()
 
-    # For each assistant message, find the preceding user question (best-effort).
+    # For each assistant message, find the preceding user question (best-effort)
+    # and compute the live cost from api_usage_logs.
     items: list[ConversationListItem] = []
     for msg, conv, email, org_name in rows:
         prev_q = await db.execute(
@@ -311,6 +343,15 @@ async def list_conversations(
             .limit(1)
         )
         question_text = prev_q.scalar() or ""
+        cost_value: float | None = None
+        if msg.question_id is not None:
+            cost_q = await db.execute(
+                select(func.coalesce(func.sum(ApiUsageLog.cost_usd), 0)).where(
+                    ApiUsageLog.context_id == msg.question_id,
+                    ApiUsageLog.is_replay.is_(False),
+                )
+            )
+            cost_value = float(cost_q.scalar() or 0.0)
         items.append(
             ConversationListItem(
                 message_id=msg.id,
@@ -322,7 +363,7 @@ async def list_conversations(
                 answer_preview=(msg.content or "")[:300],
                 feedback=msg.feedback,
                 latency_ms=msg.latency_ms,
-                cost_usd=float(msg.cost_usd) if msg.cost_usd is not None else None,
+                cost_usd=cost_value,
                 has_trace=msg.rag_trace is not None,
             )
         )
@@ -377,6 +418,16 @@ async def inspect_message(
     )
     question_text = prev_q.scalar() or ""
 
+    cost_value: float | None = None
+    if msg.question_id is not None:
+        cost_q = await db.execute(
+            select(func.coalesce(func.sum(ApiUsageLog.cost_usd), 0)).where(
+                ApiUsageLog.context_id == msg.question_id,
+                ApiUsageLog.is_replay.is_(False),
+            )
+        )
+        cost_value = float(cost_q.scalar() or 0.0)
+
     return MessageInspect(
         message_id=msg.id,
         conversation_id=conv.id,
@@ -388,7 +439,7 @@ async def inspect_message(
         sources=msg.sources,
         feedback=msg.feedback,
         feedback_comment=msg.feedback_comment,
-        cost_usd=float(msg.cost_usd) if msg.cost_usd is not None else None,
+        cost_usd=cost_value,
         latency_ms=msg.latency_ms,
         rag_trace=msg.rag_trace,
     )
