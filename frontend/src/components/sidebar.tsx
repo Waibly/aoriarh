@@ -63,6 +63,7 @@ import { useOrg } from "@/lib/org-context";
 import {
   listConversations,
   deleteConversation,
+  hideAllConversations,
 } from "@/lib/chat-api";
 import type { Conversation } from "@/types/api";
 
@@ -141,6 +142,8 @@ function ConversationHistory() {
 
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [deleteTarget, setDeleteTarget] = useState<Conversation | null>(null);
+  const [clearAllOpen, setClearAllOpen] = useState(false);
+  const [clearingAll, setClearingAll] = useState(false);
 
   const fetchConversations = useCallback(async () => {
     if (!token || !currentOrg) return;
@@ -180,15 +183,49 @@ function ConversationHistory() {
     setDeleteTarget(null);
   };
 
+  const handleConfirmClearAll = async () => {
+    if (!token || !currentOrg) return;
+    setClearingAll(true);
+    try {
+      await hideAllConversations(currentOrg.id, token);
+      setConversations([]);
+      if (pathname.startsWith("/chat/")) {
+        router.push("/chat");
+      }
+    } catch {
+      // silently fail
+    } finally {
+      setClearingAll(false);
+      setClearAllOpen(false);
+    }
+  };
+
   return (
     <>
       {conversations.length === 0 ? null : (
       <>
       <div className="px-4"><Separator /></div>
       <div className="space-y-0.5 px-2 py-2">
-        <p className="text-muted-foreground px-2 pb-1 pt-2 text-xs font-medium">
-          Historique de chat
-        </p>
+        <div className="flex items-center justify-between px-2 pb-1 pt-2">
+          <p className="text-muted-foreground text-xs font-medium">
+            Historique de chat
+          </p>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                onClick={() => setClearAllOpen(true)}
+                className="text-muted-foreground hover:text-destructive p-1 -m-1 rounded hover:bg-muted/60 transition-colors"
+                aria-label="Effacer tout l'historique"
+              >
+                <Trash2 className="size-3.5" />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="right">
+              Effacer tout l&apos;historique
+            </TooltipContent>
+          </Tooltip>
+        </div>
         {visible.map((conv) => (
           <ConversationItem
             key={conv.id}
@@ -239,8 +276,8 @@ function ConversationHistory() {
             <DialogTitle>Supprimer la conversation</DialogTitle>
             <DialogDescription>
               Voulez-vous vraiment supprimer &laquo;&nbsp;
-              {deleteTarget?.title || "Nouvelle conversation"}&nbsp;&raquo; ? Cette action est
-              irréversible.
+              {deleteTarget?.title || "Nouvelle conversation"}&nbsp;&raquo; ? Cette
+              conversation disparaîtra de votre historique.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
@@ -249,6 +286,40 @@ function ConversationHistory() {
             </Button>
             <Button variant="destructive" onClick={handleConfirmDelete}>
               Supprimer
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={clearAllOpen}
+        onOpenChange={(open) => {
+          if (!clearingAll) setClearAllOpen(open);
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Effacer tout l&apos;historique de chat</DialogTitle>
+            <DialogDescription>
+              Toutes vos conversations vont disparaître de votre historique.
+              Cette action concerne uniquement votre vue : les questions
+              restent enregistrées pour le suivi qualité et la facturation.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setClearAllOpen(false)}
+              disabled={clearingAll}
+            >
+              Annuler
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleConfirmClearAll}
+              disabled={clearingAll}
+            >
+              {clearingAll ? "Effacement…" : "Tout effacer"}
             </Button>
           </DialogFooter>
         </DialogContent>

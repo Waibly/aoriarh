@@ -75,6 +75,26 @@ async def get_conversation(
     return conversation  # type: ignore[return-value]
 
 
+@router.delete("/", status_code=status.HTTP_200_OK)
+async def hide_all_conversations(
+    organisation_id: uuid.UUID = Query(...),
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Soft-delete (hide) ALL the user's conversations in this organisation.
+
+    The conversations and their messages stay in DB so analytics, costs
+    and admin audit keep working — only the user-facing chat sidebar is
+    cleared. Returns the number of conversations hidden.
+    """
+    service = ConversationService(db)
+    n = await service.hide_all_conversations(
+        organisation_id=organisation_id,
+        user=user,
+    )
+    return {"hidden": n}
+
+
 @router.delete("/{conversation_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_conversation(
     conversation_id: uuid.UUID,

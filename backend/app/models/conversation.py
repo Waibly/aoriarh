@@ -1,6 +1,7 @@
 import uuid
+from datetime import datetime
 
-from sqlalchemy import JSON, ForeignKey, Integer, Numeric, String, Text
+from sqlalchemy import JSON, DateTime, ForeignKey, Integer, Numeric, String, Text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -16,6 +17,12 @@ class Conversation(TimestampMixin, Base):
     )
     user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)
     title: Mapped[str | None] = mapped_column(String(500))
+    # Soft-delete marker. When set, the conversation is hidden from the
+    # chat sidebar but the row + its messages stay in DB so analytics
+    # (cost tracking, quality metrics, admin audit) keep working.
+    hidden_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, index=True
+    )
 
     organisation = relationship("Organisation", back_populates="conversations")
     user = relationship("User", back_populates="conversations")

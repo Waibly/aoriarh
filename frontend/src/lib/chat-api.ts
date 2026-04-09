@@ -48,6 +48,19 @@ export async function deleteConversation(
   });
 }
 
+export async function hideAllConversations(
+  organisationId: string,
+  token: string,
+): Promise<{ hidden: number }> {
+  return apiFetch<{ hidden: number }>(
+    `/conversations/?organisation_id=${organisationId}`,
+    {
+      method: "DELETE",
+      token,
+    },
+  );
+}
+
 export async function sendMessage(
   conversationId: string,
   message: string,
