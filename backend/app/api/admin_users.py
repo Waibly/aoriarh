@@ -197,7 +197,15 @@ async def delete_user(
         raise HTTPException(status_code=404, detail="Utilisateur non trouvé")
 
     if user.role == "admin":
-        raise HTTPException(status_code=400, detail="Impossible de supprimer un administrateur")
+        # Allow deleting admins, but ensure at least one remains
+        admin_count_q = await db.execute(
+            select(func.count(User.id)).where(User.role == "admin")
+        )
+        if (admin_count_q.scalar() or 0) <= 1:
+            raise HTTPException(
+                status_code=400,
+                detail="Impossible de supprimer le dernier administrateur du système.",
+            )
 
     # If the user owns an account, transfer or full-delete.
     if user.owned_account:
@@ -249,8 +257,39 @@ async def delete_account(
         raise HTTPException(status_code=404, detail="Compte non trouvé")
 
     owner = await db.get(User, account.owner_id)
-    if owner and owner.role == "admin":
-        raise HTTPException(status_code=400, detail="Impossible de supprimer le compte d'un administrateur")
+
+    # Collect all user IDs in this account (owner + members)
+    am_result = await db.execute(
+        select(AccountMember.user_id).where(AccountMember.account_id == account_id)
+    )
+    member_user_ids = {row[0] for row in am_result.all()}
+    if owner:
+        member_user_ids.add(owner.id)
+
+    # Safety: check we're not deleting ourselves
+    if current_user.id in member_user_ids:
+        raise HTTPException(
+            status_code=400,
+            detail="Impossible de supprimer un compte dont vous êtes membre. "
+                   "Retirez-vous d'abord du compte.",
+        )
+
+    # Safety: if any member is an admin, check at least one admin remains
+    admin_in_account = []
+    for uid in member_user_ids:
+        u = await db.get(User, uid)
+        if u and u.role == "admin":
+            admin_in_account.append(u)
+    if admin_in_account:
+        admin_count_q = await db.execute(
+            select(func.count(User.id)).where(User.role == "admin")
+        )
+        total_admins = admin_count_q.scalar() or 0
+        if total_admins - len(admin_in_account) < 1:
+            raise HTTPException(
+                status_code=400,
+                detail="La suppression de ce compte supprimerait le dernier administrateur du système.",
+            )
 
     # 1. Delete all organisations in this account (Qdrant, MinIO, docs, etc.)
     from app.services.organisation_service import OrganisationService
@@ -261,20 +300,20 @@ async def delete_account(
     for org in org_result.scalars().all():
         await org_service.delete_organisation(org.id, current_user)
 
-    # 2. Delete all account members and their user data
-    am_result = await db.execute(
-        select(AccountMember).where(AccountMember.account_id == account_id)
-    )
-    service = UserService(db)
-    member_user_ids = {am.user_id for am in am_result.scalars().all()}
-    # Add owner
-    if owner:
-        member_user_ids.add(owner.id)
+    # 2. Transfer account ownership away so delete_user_data won't try to
+    #    delete the account row (we handle it explicitly in step 4).
+    #    Use a temporary sentinel: set owner_id to current_user (who is NOT
+    #    being deleted). This satisfies the NOT NULL FK constraint.
+    account.owner_id = current_user.id
+    await db.flush()
 
+    # 3. Delete all member users' data
+    service = UserService(db)
     for uid in member_user_ids:
-        user = await db.get(User, uid)
-        if user and user.role != "admin" and user.id != current_user.id:
-            await service.delete_user_data(uid)
+        await service.delete_user_data(uid)
+
+    # 4. Delete the account itself (after users, to avoid FK issues)
+    await db.delete(account)
 
     await db.commit()
     return {"detail": "Compte client supprimé"}

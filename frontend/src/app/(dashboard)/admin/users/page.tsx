@@ -511,7 +511,7 @@ export default function ClientsPage() {
                                           : "Utilisateur"}
                                       </Badge>
                                     )}
-                                    {!m.is_owner && m.role !== "admin" && (
+                                    {!m.is_owner && (
                                       <Button
                                         variant="ghost"
                                         size="icon"
@@ -580,7 +580,7 @@ export default function ClientsPage() {
                       {fmtDate(u.created_at)}
                     </TableCell>
                     <TableCell className="text-right">
-                      {u.role !== "admin" && (
+                      {(
                         <Button
                           variant="ghost"
                           size="icon"
