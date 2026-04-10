@@ -11,6 +11,7 @@ from app.core.dependencies import get_current_user, require_role
 from app.models.account import Account
 from app.models.account_member import AccountMember
 from app.models.user import User
+from app.models.invitation import Invitation
 from app.models.membership import Membership
 from app.services.user_service import UserService
 from app.models.organisation import Organisation
@@ -300,8 +301,15 @@ async def delete_account(
     for org in org_result.scalars().all():
         await org_service.delete_organisation(org.id, current_user)
 
-    # 2. Delete the account row BEFORE users so that delete_user_data
-    #    step 8 sees owned_account=None and doesn't try to double-delete.
+    # 2. Delete account-level invitations and account members, then the
+    #    account itself — BEFORE user cleanup so delete_user_data step 8
+    #    sees owned_account=None and doesn't try to double-delete.
+    await db.execute(
+        delete(Invitation).where(Invitation.account_id == account_id)
+    )
+    await db.execute(
+        delete(AccountMember).where(AccountMember.account_id == account_id)
+    )
     await db.delete(account)
     await db.flush()
 
