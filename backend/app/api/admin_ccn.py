@@ -223,6 +223,151 @@ async def admin_sync_all_ccn(
     return {"detail": f"Synchronisation lancée pour {count} CCN"}
 
 
+class CcnHealthItem(BaseModel):
+    idcc: str
+    titre_court: str | None
+    status: str
+    articles_count: int | None
+    kali_docs_total: int
+    kali_docs_indexed: int
+    kali_docs_error: int
+    kali_docs_pending: int
+    kali_chunks: int
+    bocc_reserved: int
+    healthy: bool
+    repaired: int
+
+
+class CcnHealthResponse(BaseModel):
+    items: list[CcnHealthItem]
+    total_healthy: int
+    total_unhealthy: int
+    total_repaired: int
+
+
+@router.post("/health", response_model=CcnHealthResponse)
+async def check_ccn_health(
+    repair: bool = Query(True, description="Auto-repair broken docs"),
+    user: User = Depends(require_role(["admin"])),
+    db: AsyncSession = Depends(get_db),
+) -> CcnHealthResponse:
+    """Health check for all installed CCN. Auto-repairs broken indexations."""
+    from app.rag.tasks import enqueue_ingestion
+    from app.services.bocc_service import BoccService
+    from sqlalchemy import or_
+
+    # Get all unique IDCCs with an org_conv
+    oc_q = await db.execute(
+        select(
+            OrganisationConvention.idcc,
+            func.max(OrganisationConvention.status).label("status"),
+            func.max(OrganisationConvention.articles_count).label("articles_count"),
+        ).group_by(OrganisationConvention.idcc)
+    )
+    org_convs = oc_q.all()
+
+    items: list[CcnHealthItem] = []
+    total_repaired = 0
+
+    for row in org_convs:
+        idcc = row.idcc
+        ref = await db.get(CcnReference, idcc)
+
+        # KALI docs (name starts with "CCN ")
+        kali_q = await db.execute(
+            select(Document).where(
+                Document.organisation_id.is_(None),
+                Document.name.like("CCN %"),
+                Document.name.ilike(f"%IDCC {idcc}%"),
+            )
+        )
+        kali_docs = list(kali_q.scalars().all())
+        indexed = [d for d in kali_docs if d.indexation_status == "indexed" or d.indexation_status == "success"]
+        errored = [d for d in kali_docs if d.indexation_status == "error"]
+        pending = [d for d in kali_docs if d.indexation_status in ("pending", "reserved")]
+        total_chunks = sum(d.chunk_count or 0 for d in indexed)
+
+        # BOCC docs stuck in "reserved"
+        bocc_q = await db.execute(
+            select(func.count(Document.id)).where(
+                Document.organisation_id.is_(None),
+                Document.source_type == "convention_collective_nationale",
+                Document.name.ilike(f"%IDCC {idcc}%"),
+                Document.name.not_like("CCN %"),
+                Document.indexation_status == "reserved",
+            )
+        )
+        bocc_reserved = bocc_q.scalar() or 0
+
+        healthy = (
+            len(kali_docs) > 0
+            and len(errored) == 0
+            and len(pending) == 0
+            and total_chunks > 0
+            and bocc_reserved == 0
+        )
+
+        repaired = 0
+        if repair and not healthy:
+            # Re-enqueue errored and pending KALI docs
+            for doc in errored + pending:
+                doc.indexation_status = "pending"
+                doc.indexation_error = None
+                await db.flush()
+                await enqueue_ingestion(str(doc.id))
+                repaired += 1
+
+            # Flip reserved BOCC docs to pending
+            if bocc_reserved > 0:
+                try:
+                    count = await BoccService().ingest_bocc_for_idcc(db, idcc)
+                    repaired += count or 0
+                except Exception:
+                    logger.warning("Health check: BOCC ingest failed for IDCC %s", idcc, exc_info=True)
+
+            # If no KALI docs at all, trigger a full install
+            if len(kali_docs) == 0:
+                from app.rag.tasks import enqueue_kali_install
+                oc_result = await db.execute(
+                    select(OrganisationConvention).where(
+                        OrganisationConvention.idcc == idcc,
+                    ).limit(1)
+                )
+                oc = oc_result.scalar_one_or_none()
+                if oc:
+                    oc.status = "pending"
+                    oc.error_message = None
+                    await db.flush()
+                    await enqueue_kali_install(str(oc.id), str(user.id), force_refetch=True)
+                    repaired += 1
+
+            total_repaired += repaired
+
+        items.append(CcnHealthItem(
+            idcc=idcc,
+            titre_court=ref.titre_court if ref else None,
+            status=row.status or "unknown",
+            articles_count=row.articles_count,
+            kali_docs_total=len(kali_docs),
+            kali_docs_indexed=len(indexed),
+            kali_docs_error=len(errored),
+            kali_docs_pending=len(pending),
+            kali_chunks=total_chunks,
+            bocc_reserved=bocc_reserved,
+            healthy=healthy and repaired == 0,
+            repaired=repaired,
+        ))
+
+    await db.commit()
+
+    return CcnHealthResponse(
+        items=items,
+        total_healthy=sum(1 for i in items if i.healthy),
+        total_unhealthy=sum(1 for i in items if not i.healthy),
+        total_repaired=total_repaired,
+    )
+
+
 @router.delete("/{idcc}")
 async def admin_delete_ccn(
     idcc: str,

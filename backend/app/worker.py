@@ -186,6 +186,35 @@ async def run_kali_install(
             "Worker: KALI install completed — %d articles, %d docs, %d errors",
             result.articles_count, result.documents_created, result.errors,
         )
+
+        # Post-install health check: verify KALI docs exist for this IDCC.
+        # If any docs are stuck in error/pending (e.g. DNS failure during
+        # embedding), re-enqueue them.
+        if result.documents_created > 0:
+            from app.rag.tasks import enqueue_ingestion as _enqueue
+            async with session_factory() as db2:
+                org_conv2 = await db2.get(OrganisationConvention, uuid.UUID(org_convention_id))
+                if org_conv2:
+                    broken_q = await db2.execute(
+                        select(Document).where(
+                            Document.organisation_id.is_(None),
+                            Document.name.like("CCN %"),
+                            Document.name.ilike(f"%IDCC {org_conv2.idcc}%"),
+                            Document.indexation_status.in_(["error", "pending"]),
+                        )
+                    )
+                    broken = list(broken_q.scalars().all())
+                    for doc in broken:
+                        doc.indexation_status = "pending"
+                        doc.indexation_error = None
+                    await db2.commit()
+                    for doc in broken:
+                        await _enqueue(str(doc.id))
+                    if broken:
+                        logger.info(
+                            "Worker: post-install re-enqueued %d broken docs for IDCC %s",
+                            len(broken), org_conv2.idcc,
+                        )
     except Exception:
         logger.exception("Worker: KALI install failed for %s", org_convention_id)
 
