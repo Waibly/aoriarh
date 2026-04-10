@@ -30,6 +30,14 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
   Collapsible,
   CollapsibleContent,
   CollapsibleTrigger,
@@ -105,6 +113,26 @@ export default function WorkspacesPage() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
+  const [deleteTarget, setDeleteTarget] = useState<{ user_id: string; email: string } | null>(null);
+  const [deleteLoading, setDeleteLoading] = useState(false);
+
+  const handleDeleteUser = async () => {
+    if (!deleteTarget || !token) return;
+    setDeleteLoading(true);
+    try {
+      await apiFetch(`/admin/users/${deleteTarget.user_id}`, {
+        method: "DELETE",
+        token,
+      });
+      toast.success(`Utilisateur ${deleteTarget.email} supprimé`);
+      setDeleteTarget(null);
+      fetchData();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Impossible de supprimer cet utilisateur");
+    } finally {
+      setDeleteLoading(false);
+    }
+  };
 
   useEffect(() => {
     const timer = setTimeout(() => setDebouncedSearch(search), 300);
@@ -180,6 +208,7 @@ export default function WorkspacesPage() {
               workspace={ws}
               token={token!}
               onUpdated={fetchData}
+              onDeleteUser={(user_id, email) => setDeleteTarget({ user_id, email })}
             />
           ))}
 
@@ -199,6 +228,17 @@ export default function WorkspacesPage() {
                       <span>{u.email}</span>
                       <span className="text-muted-foreground">({u.full_name})</span>
                       <Badge variant="outline" className="rounded-full text-xs">{u.role}</Badge>
+                      {u.role !== "admin" && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-7 w-7 ml-auto"
+                          onClick={() => setDeleteTarget({ user_id: u.user_id, email: u.email })}
+                          title="Supprimer"
+                        >
+                          <Trash2 className="h-3.5 w-3.5 text-destructive" />
+                        </Button>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -207,6 +247,36 @@ export default function WorkspacesPage() {
           )}
         </div>
       )}
+
+      {/* Delete confirmation dialog */}
+      <Dialog
+        open={deleteTarget !== null}
+        onOpenChange={(open) => { if (!open) setDeleteTarget(null); }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Supprimer l&apos;utilisateur</DialogTitle>
+            <DialogDescription>
+              Voulez-vous vraiment supprimer{" "}
+              <strong>{deleteTarget?.email}</strong> ? Ses conversations et
+              messages seront supprimés. Les documents et organisations ne
+              sont pas impactés.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteTarget(null)}>
+              Annuler
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleDeleteUser}
+              disabled={deleteLoading}
+            >
+              {deleteLoading ? "Suppression..." : "Supprimer"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -231,10 +301,12 @@ function WorkspaceCard({
   workspace: ws,
   token,
   onUpdated,
+  onDeleteUser,
 }: {
   workspace: WorkspaceOverview;
   token: string;
   onUpdated: () => void;
+  onDeleteUser: (user_id: string, email: string) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
   const [planSaving, setPlanSaving] = useState(false);
@@ -385,6 +457,17 @@ function WorkspaceCard({
                       <Badge variant="outline" className="rounded-full text-[10px] px-1.5 py-0">
                         {m.role_in_workspace === "manager" ? "Manager" : "Utilisateur"}
                       </Badge>
+                    )}
+                    {!m.is_owner && m.role !== "admin" && (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-6 w-6 ml-auto"
+                        onClick={() => onDeleteUser(m.user_id, m.email)}
+                        title="Supprimer"
+                      >
+                        <Trash2 className="h-3.5 w-3.5 text-destructive" />
+                      </Button>
                     )}
                   </div>
                 ))}

@@ -9,6 +9,7 @@ from sqlalchemy.orm import selectinload
 from app.core.database import get_db
 from app.core.dependencies import get_current_user, require_role
 from app.models.account import Account
+from app.models.account_member import AccountMember
 from app.models.user import User
 from app.models.membership import Membership
 from app.services.user_service import UserService
@@ -176,7 +177,18 @@ async def delete_user(
     _admin: User = Depends(require_role(["admin"])),
     db: AsyncSession = Depends(get_db),
 ) -> dict:
-    """Delete a user and their related data (memberships, conversations, account)."""
+    """Delete a user and their related data.
+
+    Rules:
+    - Cannot delete yourself or another admin.
+    - If the user owns an Account, ownership is transferred to the next
+      manager in the account. If no other manager exists, deletion is blocked.
+    - Organisation data (documents, CCN links, Qdrant vectors) is NEVER
+      deleted when removing a user — only the user's personal data
+      (conversations, messages, memberships) is removed.
+    - Common documents (org_id=NULL) are never touched.
+    - api_usage_logs are preserved (user_id set to NULL, snapshots kept).
+    """
     if current_user.id == user_id:
         raise HTTPException(status_code=400, detail="Impossible de supprimer votre propre compte")
 
@@ -186,6 +198,29 @@ async def delete_user(
 
     if user.role == "admin":
         raise HTTPException(status_code=400, detail="Impossible de supprimer un administrateur")
+
+    # If the user owns an account, transfer or full-delete.
+    if user.owned_account:
+        account = user.owned_account
+        other_manager_q = await db.execute(
+            select(AccountMember).where(
+                AccountMember.account_id == account.id,
+                AccountMember.user_id != user_id,
+                AccountMember.role_in_org == "manager",
+            ).limit(1)
+        )
+        other_manager = other_manager_q.scalar_one_or_none()
+        if other_manager is not None:
+            # Another manager exists → transfer ownership, keep everything
+            account.owner_id = other_manager.user_id
+        else:
+            # Last manager → block deletion. The account must be deleted
+            # separately (or ownership transferred first).
+            raise HTTPException(
+                status_code=400,
+                detail="Cet utilisateur est le dernier manager du compte. "
+                       "Supprimez d'abord le compte ou transférez la propriété à un autre membre.",
+            )
 
     service = UserService(db)
     await service.delete_user_data(user.id)
