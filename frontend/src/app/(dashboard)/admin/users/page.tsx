@@ -7,14 +7,12 @@ import {
   ChevronDown,
   ChevronRight,
   Crown,
+  HelpCircle,
   Mail,
+  MessageSquare,
   Search,
   Trash2,
   Users,
-  FileText,
-  MessageSquare,
-  UserCheck,
-  Gift,
 } from "lucide-react";
 import { toast } from "sonner";
 import { apiFetch } from "@/lib/api";
@@ -22,9 +20,6 @@ import { Button } from "@/components/ui/button";
 import {
   Card,
   CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -38,17 +33,24 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from "@/components/ui/collapsible";
-import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+
+/* ------------------------------------------------------------------ */
+/*  Types                                                              */
+/* ------------------------------------------------------------------ */
 
 interface WorkspaceMember {
   user_id: string;
@@ -99,13 +101,27 @@ interface WorkspacesResponse {
   };
 }
 
-const PLAN_CONFIG = {
-  gratuit: { label: "Gratuit", className: "rounded-full", icon: UserCheck },
-  invite: { label: "Invité", className: "rounded-full border-[#9952b8] bg-[#9952b8]/10 text-[#9952b8]", icon: Gift },
-  vip: { label: "VIP", className: "rounded-full border-amber-500 bg-amber-500/10 text-amber-600", icon: Crown },
-} as const;
+/* ------------------------------------------------------------------ */
+/*  Plan config                                                        */
+/* ------------------------------------------------------------------ */
 
-export default function WorkspacesPage() {
+const PLAN_CONFIG: Record<string, { label: string; className: string }> = {
+  gratuit: { label: "Gratuit", className: "" },
+  invite: {
+    label: "Invité",
+    className: "border-[#9952b8] bg-[#9952b8]/10 text-[#9952b8]",
+  },
+  vip: {
+    label: "VIP",
+    className: "border-amber-500 bg-amber-500/10 text-amber-600",
+  },
+};
+
+/* ------------------------------------------------------------------ */
+/*  Page                                                               */
+/* ------------------------------------------------------------------ */
+
+export default function ClientsPage() {
   const { data: session } = useSession();
   const token = session?.access_token;
 
@@ -113,26 +129,24 @@ export default function WorkspacesPage() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
-  const [deleteTarget, setDeleteTarget] = useState<{ user_id: string; email: string } | null>(null);
+
+  // Expanded rows
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
+
+  // Delete dialog
+  const [deleteTarget, setDeleteTarget] = useState<{
+    user_id: string;
+    email: string;
+  } | null>(null);
   const [deleteLoading, setDeleteLoading] = useState(false);
 
-  const handleDeleteUser = async () => {
-    if (!deleteTarget || !token) return;
-    setDeleteLoading(true);
-    try {
-      await apiFetch(`/admin/users/${deleteTarget.user_id}`, {
-        method: "DELETE",
-        token,
-      });
-      toast.success(`Utilisateur ${deleteTarget.email} supprimé`);
-      setDeleteTarget(null);
-      fetchData();
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Impossible de supprimer cet utilisateur");
-    } finally {
-      setDeleteLoading(false);
-    }
-  };
+  // Plan change
+  const [planEdit, setPlanEdit] = useState<{
+    accountId: string;
+    plan: string;
+  } | null>(null);
+  const [planDuration, setPlanDuration] = useState("3");
+  const [planSaving, setPlanSaving] = useState(false);
 
   useEffect(() => {
     const timer = setTimeout(() => setDebouncedSearch(search), 300);
@@ -142,14 +156,18 @@ export default function WorkspacesPage() {
   const fetchData = useCallback(async () => {
     if (!token) return;
     try {
-      const params = debouncedSearch ? `?search=${encodeURIComponent(debouncedSearch)}` : "";
+      const params = debouncedSearch
+        ? `?search=${encodeURIComponent(debouncedSearch)}`
+        : "";
       const res = await apiFetch<WorkspacesResponse>(
         `/admin/workspaces/${params}`,
         { token },
       );
       setData(res);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Erreur lors du chargement");
+      toast.error(
+        err instanceof Error ? err.message : "Erreur lors du chargement",
+      );
     } finally {
       setLoading(false);
     }
@@ -160,24 +178,102 @@ export default function WorkspacesPage() {
     fetchData();
   }, [fetchData]);
 
+  const toggleExpand = (id: string) => {
+    setExpandedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const handleDeleteUser = async () => {
+    if (!deleteTarget || !token) return;
+    setDeleteLoading(true);
+    try {
+      await apiFetch(`/admin/users/${deleteTarget.user_id}`, {
+        method: "DELETE",
+        token,
+      });
+      toast.success(`${deleteTarget.email} supprimé`);
+      setDeleteTarget(null);
+      fetchData();
+    } catch (err) {
+      toast.error(
+        err instanceof Error
+          ? err.message
+          : "Impossible de supprimer cet utilisateur",
+      );
+    } finally {
+      setDeleteLoading(false);
+    }
+  };
+
+  const handlePlanConfirm = async () => {
+    if (!planEdit || !token) return;
+    setPlanSaving(true);
+    try {
+      await apiFetch(`/admin/users/accounts/${planEdit.accountId}/plan`, {
+        method: "PUT",
+        token,
+        body: JSON.stringify({
+          plan: planEdit.plan,
+          duration_months:
+            planEdit.plan === "invite" ? Number(planDuration) : null,
+        }),
+      });
+      toast.success(`Plan mis à jour : ${planEdit.plan}`);
+      setPlanEdit(null);
+      fetchData();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Erreur");
+    } finally {
+      setPlanSaving(false);
+    }
+  };
+
+  const fmtDate = (iso: string) => {
+    if (!iso) return "—";
+    return new Date(iso).toLocaleDateString("fr-FR", {
+      day: "2-digit",
+      month: "short",
+      year: "numeric",
+    });
+  };
+
   return (
     <div className="space-y-6">
+      {/* Header */}
       <div>
-        <h1 className="text-2xl font-semibold tracking-tight">
-          Clients et espaces de travail
-        </h1>
+        <h1 className="text-2xl font-semibold tracking-tight">Clients</h1>
         <p className="text-sm text-muted-foreground mt-1">
-          Vue d&apos;ensemble de tous les comptes, organisations et membres.
+          Gestion des comptes clients, plans et membres.
         </p>
       </div>
 
-      {/* Totals */}
+      {/* Stats */}
       {data && (
-        <div className="grid grid-cols-4 gap-4">
-          <StatCard icon={Users} label="Utilisateurs" value={data.totals.users} />
-          <StatCard icon={Building2} label="Espaces de travail" value={data.totals.workspaces} />
-          <StatCard icon={Building2} label="Organisations" value={data.totals.organisations} />
-          <StatCard icon={FileText} label="Documents (orgs)" value={data.totals.documents} />
+        <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+          <StatCard
+            icon={Crown}
+            label="Clients"
+            value={data.totals.workspaces}
+          />
+          <StatCard
+            icon={Users}
+            label="Utilisateurs"
+            value={data.totals.users}
+          />
+          <StatCard
+            icon={Building2}
+            label="Organisations"
+            value={data.totals.organisations}
+          />
+          <StatCard
+            icon={MessageSquare}
+            label="Documents"
+            value={data.totals.documents}
+          />
         </div>
       )}
 
@@ -192,66 +288,284 @@ export default function WorkspacesPage() {
         />
       </div>
 
+      {/* Main table */}
       {loading ? (
-        <div className="space-y-4">
-          {[1, 2, 3].map((i) => <Skeleton key={i} className="h-40 w-full" />)}
+        <div className="space-y-3">
+          {[1, 2, 3, 4].map((i) => (
+            <Skeleton key={i} className="h-12 w-full" />
+          ))}
         </div>
       ) : !data || data.workspaces.length === 0 ? (
         <p className="py-8 text-center text-muted-foreground">
-          {debouncedSearch ? "Aucun résultat pour cette recherche." : "Aucun espace de travail."}
+          {debouncedSearch
+            ? "Aucun résultat pour cette recherche."
+            : "Aucun client."}
         </p>
       ) : (
-        <div className="space-y-4">
-          {data.workspaces.map((ws) => (
-            <WorkspaceCard
-              key={ws.account_id}
-              workspace={ws}
-              token={token!}
-              onUpdated={fetchData}
-              onDeleteUser={(user_id, email) => setDeleteTarget({ user_id, email })}
-            />
-          ))}
+        <Card>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead className="w-8" />
+                <TableHead>Client</TableHead>
+                <TableHead>Plan</TableHead>
+                <TableHead>Propriétaire</TableHead>
+                <TableHead className="text-center">Orgs</TableHead>
+                <TableHead className="text-center">Membres</TableHead>
+                <TableHead>Inscrit le</TableHead>
+                <TableHead className="text-right">Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {data.workspaces.map((ws) => {
+                const isExpanded = expandedIds.has(ws.account_id);
+                const plan =
+                  PLAN_CONFIG[ws.plan] ?? PLAN_CONFIG.gratuit;
 
-          {data.orphan_users.length > 0 && (
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-base">Utilisateurs sans espace</CardTitle>
-                <CardDescription>
-                  {data.orphan_users.length} utilisateur{data.orphan_users.length > 1 ? "s" : ""} sans espace de travail
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-2">
-                  {data.orphan_users.map((u) => (
-                    <div key={u.user_id} className="flex items-center gap-3 text-sm">
-                      <Mail className="h-4 w-4 text-muted-foreground" />
-                      <span>{u.email}</span>
-                      <span className="text-muted-foreground">({u.full_name})</span>
-                      <Badge variant="outline" className="rounded-full text-xs">{u.role}</Badge>
+                return (
+                  <>
+                    {/* Client row */}
+                    <TableRow
+                      key={ws.account_id}
+                      className="cursor-pointer hover:bg-muted/50"
+                      onClick={() => toggleExpand(ws.account_id)}
+                    >
+                      <TableCell className="px-2">
+                        {isExpanded ? (
+                          <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                        ) : (
+                          <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                        )}
+                      </TableCell>
+                      <TableCell className="font-medium">
+                        {ws.name}
+                      </TableCell>
+                      <TableCell>
+                        <Badge
+                          variant="outline"
+                          className={`rounded-full text-xs ${plan.className}`}
+                        >
+                          {plan.label}
+                        </Badge>
+                        {ws.plan === "invite" && ws.plan_expires_at && (
+                          <span className="ml-1.5 text-[10px] text-muted-foreground">
+                            exp. {fmtDate(ws.plan_expires_at)}
+                          </span>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex flex-col">
+                          <span className="text-sm">{ws.owner_email}</span>
+                          <span className="text-xs text-muted-foreground">
+                            {ws.owner_name}
+                          </span>
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-center">
+                        {ws.organisations.length}
+                      </TableCell>
+                      <TableCell className="text-center">
+                        {ws.members.length}
+                      </TableCell>
+                      <TableCell className="text-sm text-muted-foreground">
+                        {fmtDate(ws.created_at)}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <div
+                          className="flex items-center justify-end gap-1"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <Select
+                            value=""
+                            onValueChange={(v) =>
+                              setPlanEdit({
+                                accountId: ws.account_id,
+                                plan: v,
+                              })
+                            }
+                          >
+                            <SelectTrigger className="h-7 w-[110px] text-xs">
+                              <SelectValue placeholder="Plan" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="gratuit">
+                                Gratuit
+                              </SelectItem>
+                              <SelectItem value="invite">
+                                Invité
+                              </SelectItem>
+                              <SelectItem value="vip">VIP</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+
+                    {/* Expanded detail */}
+                    {isExpanded && (
+                      <TableRow key={`${ws.account_id}-detail`}>
+                        <TableCell />
+                        <TableCell colSpan={7} className="bg-muted/30 py-3">
+                          <div className="space-y-4">
+                            {/* Organisations */}
+                            {ws.organisations.length > 0 && (
+                              <div>
+                                <p className="text-xs font-semibold text-muted-foreground mb-2 uppercase tracking-wider">
+                                  Organisations
+                                </p>
+                                <div className="space-y-1 ml-2">
+                                  {ws.organisations.map((org) => (
+                                    <div
+                                      key={org.id}
+                                      className="flex items-center gap-3 text-sm"
+                                    >
+                                      <Building2 className="h-3.5 w-3.5 text-muted-foreground" />
+                                      <span className="font-medium">
+                                        {org.name}
+                                      </span>
+                                      <span className="text-xs text-muted-foreground">
+                                        {org.documents_count} docs,{" "}
+                                        {org.members_count} membres
+                                      </span>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+
+                            {/* Members */}
+                            <div>
+                              <p className="text-xs font-semibold text-muted-foreground mb-2 uppercase tracking-wider">
+                                Membres
+                              </p>
+                              <div className="space-y-1 ml-2">
+                                {ws.members.map((m) => (
+                                  <div
+                                    key={m.user_id}
+                                    className="flex items-center gap-3 text-sm group"
+                                  >
+                                    <Mail className="h-3.5 w-3.5 text-muted-foreground" />
+                                    <span>{m.email}</span>
+                                    <span className="text-xs text-muted-foreground">
+                                      ({m.full_name})
+                                    </span>
+                                    {m.is_owner ? (
+                                      <Badge
+                                        variant="outline"
+                                        className="rounded-full border-amber-500 bg-amber-500/10 text-amber-600 text-[10px] px-1.5 py-0"
+                                      >
+                                        Propriétaire
+                                      </Badge>
+                                    ) : (
+                                      <Badge
+                                        variant="outline"
+                                        className="rounded-full text-[10px] px-1.5 py-0"
+                                      >
+                                        {m.role_in_workspace === "manager"
+                                          ? "Manager"
+                                          : "Utilisateur"}
+                                      </Badge>
+                                    )}
+                                    {!m.is_owner && m.role !== "admin" && (
+                                      <Button
+                                        variant="ghost"
+                                        size="icon"
+                                        className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity"
+                                        onClick={() =>
+                                          setDeleteTarget({
+                                            user_id: m.user_id,
+                                            email: m.email,
+                                          })
+                                        }
+                                        title="Supprimer"
+                                      >
+                                        <Trash2 className="h-3.5 w-3.5 text-destructive" />
+                                      </Button>
+                                    )}
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    )}
+                  </>
+                );
+              })}
+            </TableBody>
+          </Table>
+        </Card>
+      )}
+
+      {/* Orphan users */}
+      {data && data.orphan_users.length > 0 && (
+        <div>
+          <h2 className="text-sm font-semibold text-muted-foreground mb-2 flex items-center gap-2">
+            <HelpCircle className="h-4 w-4" />
+            Utilisateurs orphelins ({data.orphan_users.length})
+          </h2>
+          <Card>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Email</TableHead>
+                  <TableHead>Nom</TableHead>
+                  <TableHead>Rôle</TableHead>
+                  <TableHead>Inscrit le</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {data.orphan_users.map((u) => (
+                  <TableRow key={u.user_id}>
+                    <TableCell className="text-sm">{u.email}</TableCell>
+                    <TableCell className="text-sm text-muted-foreground">
+                      {u.full_name}
+                    </TableCell>
+                    <TableCell>
+                      <Badge
+                        variant="outline"
+                        className="rounded-full text-xs"
+                      >
+                        {u.role}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="text-sm text-muted-foreground">
+                      {fmtDate(u.created_at)}
+                    </TableCell>
+                    <TableCell className="text-right">
                       {u.role !== "admin" && (
                         <Button
                           variant="ghost"
                           size="icon"
-                          className="h-7 w-7 ml-auto"
-                          onClick={() => setDeleteTarget({ user_id: u.user_id, email: u.email })}
+                          className="h-7 w-7"
+                          onClick={() =>
+                            setDeleteTarget({
+                              user_id: u.user_id,
+                              email: u.email,
+                            })
+                          }
                           title="Supprimer"
                         >
                           <Trash2 className="h-3.5 w-3.5 text-destructive" />
                         </Button>
                       )}
-                    </div>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
-          )}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </Card>
         </div>
       )}
 
-      {/* Delete confirmation dialog */}
+      {/* Delete confirmation */}
       <Dialog
         open={deleteTarget !== null}
-        onOpenChange={(open) => { if (!open) setDeleteTarget(null); }}
+        onOpenChange={(open) => {
+          if (!open) setDeleteTarget(null);
+        }}
       >
         <DialogContent>
           <DialogHeader>
@@ -259,8 +573,8 @@ export default function WorkspacesPage() {
             <DialogDescription>
               Voulez-vous vraiment supprimer{" "}
               <strong>{deleteTarget?.email}</strong> ? Ses conversations et
-              messages seront supprimés. Les documents et organisations ne
-              sont pas impactés.
+              messages seront supprimés. Les documents et organisations ne sont
+              pas impactés.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
@@ -277,11 +591,67 @@ export default function WorkspacesPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Plan change confirmation */}
+      <Dialog
+        open={planEdit !== null}
+        onOpenChange={(open) => {
+          if (!open) setPlanEdit(null);
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Changer le plan</DialogTitle>
+            <DialogDescription>
+              Passer ce client en{" "}
+              <strong>
+                {planEdit && PLAN_CONFIG[planEdit.plan]?.label}
+              </strong>{" "}
+              ?
+            </DialogDescription>
+          </DialogHeader>
+          {planEdit?.plan === "invite" && (
+            <div className="flex items-center gap-3">
+              <span className="text-sm">Durée :</span>
+              <Select value={planDuration} onValueChange={setPlanDuration}>
+                <SelectTrigger className="h-8 w-[100px] text-sm">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="1">1 mois</SelectItem>
+                  <SelectItem value="2">2 mois</SelectItem>
+                  <SelectItem value="3">3 mois</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setPlanEdit(null)}>
+              Annuler
+            </Button>
+            <Button onClick={handlePlanConfirm} disabled={planSaving}>
+              {planSaving ? "..." : "Confirmer"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
 
-function StatCard({ icon: Icon, label, value }: { icon: React.ElementType; label: string; value: number }) {
+/* ------------------------------------------------------------------ */
+/*  Stat card                                                          */
+/* ------------------------------------------------------------------ */
+
+function StatCard({
+  icon: Icon,
+  label,
+  value,
+}: {
+  icon: React.ElementType;
+  label: string;
+  value: number;
+}) {
   return (
     <Card>
       <CardContent className="flex items-center gap-3 pt-6">
@@ -293,189 +663,6 @@ function StatCard({ icon: Icon, label, value }: { icon: React.ElementType; label
           <p className="text-xs text-muted-foreground">{label}</p>
         </div>
       </CardContent>
-    </Card>
-  );
-}
-
-function WorkspaceCard({
-  workspace: ws,
-  token,
-  onUpdated,
-  onDeleteUser,
-}: {
-  workspace: WorkspaceOverview;
-  token: string;
-  onUpdated: () => void;
-  onDeleteUser: (user_id: string, email: string) => void;
-}) {
-  const [expanded, setExpanded] = useState(false);
-  const [planSaving, setPlanSaving] = useState(false);
-  const [pendingPlan, setPendingPlan] = useState<string | null>(null);
-  const [pendingDuration, setPendingDuration] = useState("3");
-
-  const planConfig = PLAN_CONFIG[ws.plan as keyof typeof PLAN_CONFIG] ?? PLAN_CONFIG.gratuit;
-
-  const handlePlanConfirm = async () => {
-    if (!pendingPlan) return;
-    setPlanSaving(true);
-    try {
-      await apiFetch(`/admin/users/accounts/${ws.account_id}/plan`, {
-        method: "PUT",
-        token,
-        body: JSON.stringify({
-          plan: pendingPlan,
-          duration_months: pendingPlan === "invite" ? Number(pendingDuration) : null,
-        }),
-      });
-      toast.success(`Plan mis à jour : ${pendingPlan}`);
-      setPendingPlan(null);
-      onUpdated();
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Erreur");
-    } finally {
-      setPlanSaving(false);
-    }
-  };
-
-  return (
-    <Card>
-      {/* Compact header: name + plan on one line */}
-      <div className="flex items-center justify-between px-4 py-3 border-b">
-        <div className="flex items-center gap-2 min-w-0">
-          <Building2 className="h-4 w-4 shrink-0 text-muted-foreground" />
-          <span className="font-semibold truncate">{ws.name}</span>
-          <Badge variant="outline" className={`${planConfig.className} text-xs shrink-0`}>
-            {planConfig.label}
-          </Badge>
-          {ws.plan === "invite" && ws.plan_expires_at && (
-            <span className="text-xs text-muted-foreground shrink-0">
-              exp. {new Date(ws.plan_expires_at).toLocaleDateString("fr-FR")}
-            </span>
-          )}
-        </div>
-        <div className="flex items-center gap-4 text-xs text-muted-foreground shrink-0">
-          <span>{ws.organisations.length} org{ws.organisations.length > 1 ? "s" : ""}</span>
-          <span>{ws.members.length} membre{ws.members.length > 1 ? "s" : ""}</span>
-          <span>{ws.total_documents} docs</span>
-          <span>{ws.total_questions} questions</span>
-        </div>
-      </div>
-
-      {/* Owner info + plan change */}
-      <div className="flex items-center justify-between px-4 py-2 text-sm">
-        <div className="flex items-center gap-2 text-muted-foreground">
-          <Mail className="h-3.5 w-3.5" />
-          <a href={`mailto:${ws.owner_email}`} className="hover:text-primary hover:underline">
-            {ws.owner_email}
-          </a>
-          <span>— {ws.owner_name}</span>
-          {ws.created_at && (
-            <span className="text-xs">
-              — inscrit le {new Date(ws.created_at).toLocaleDateString("fr-FR")}
-            </span>
-          )}
-        </div>
-        <div className="flex items-center gap-2">
-          {pendingPlan ? (
-            <>
-              {pendingPlan === "invite" && (
-                <Select value={pendingDuration} onValueChange={setPendingDuration}>
-                  <SelectTrigger className="h-7 w-[90px] text-xs">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="1">1 mois</SelectItem>
-                    <SelectItem value="2">2 mois</SelectItem>
-                    <SelectItem value="3">3 mois</SelectItem>
-                  </SelectContent>
-                </Select>
-              )}
-              <Button size="sm" variant="default" className="h-7 text-xs" onClick={handlePlanConfirm} disabled={planSaving}>
-                {planSaving ? "..." : `Passer en ${pendingPlan}`}
-              </Button>
-              <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => setPendingPlan(null)}>
-                Annuler
-              </Button>
-            </>
-          ) : (
-            <Select value="" onValueChange={(v) => setPendingPlan(v)}>
-              <SelectTrigger className="h-7 w-[130px] text-xs">
-                <SelectValue placeholder="Changer le plan" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="gratuit">Gratuit</SelectItem>
-                <SelectItem value="invite">Invité</SelectItem>
-                <SelectItem value="vip">VIP</SelectItem>
-              </SelectContent>
-            </Select>
-          )}
-        </div>
-      </div>
-
-      {/* Expandable details */}
-      <Collapsible open={expanded} onOpenChange={setExpanded}>
-        <CollapsibleTrigger asChild>
-          <button className="flex w-full items-center gap-1 border-t px-4 py-1.5 text-xs font-medium text-muted-foreground hover:bg-muted/50 transition-colors">
-            {expanded ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
-            Détails
-          </button>
-        </CollapsibleTrigger>
-        <CollapsibleContent>
-          <div className="px-4 pb-3 space-y-3">
-            {/* Organisations */}
-            {ws.organisations.length > 0 && (
-              <div>
-                <p className="text-xs font-semibold text-muted-foreground mb-1">Organisations</p>
-                <div className="space-y-1 pl-4">
-                  {ws.organisations.map((org) => (
-                    <div key={org.id} className="flex items-center gap-2 text-sm">
-                      <span className="font-medium">{org.name}</span>
-                      <span className="text-xs text-muted-foreground">
-                        — {org.documents_count} docs, {org.members_count} membres
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Members */}
-            <div>
-              <p className="text-xs font-semibold text-muted-foreground mb-1">Membres</p>
-              <div className="space-y-1 pl-4">
-                {ws.members.map((m) => (
-                  <div key={m.user_id} className="flex items-center gap-2 text-sm">
-                    <a href={`mailto:${m.email}`} className="hover:text-primary hover:underline">
-                      {m.email}
-                    </a>
-                    <span className="text-muted-foreground text-xs">({m.full_name})</span>
-                    {m.is_owner ? (
-                      <Badge variant="outline" className="rounded-full border-amber-500 bg-amber-500/10 text-amber-600 text-[10px] px-1.5 py-0">
-                        Propriétaire
-                      </Badge>
-                    ) : (
-                      <Badge variant="outline" className="rounded-full text-[10px] px-1.5 py-0">
-                        {m.role_in_workspace === "manager" ? "Manager" : "Utilisateur"}
-                      </Badge>
-                    )}
-                    {!m.is_owner && m.role !== "admin" && (
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-6 w-6 ml-auto"
-                        onClick={() => onDeleteUser(m.user_id, m.email)}
-                        title="Supprimer"
-                      >
-                        <Trash2 className="h-3.5 w-3.5 text-destructive" />
-                      </Button>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-        </CollapsibleContent>
-      </Collapsible>
     </Card>
   );
 }
