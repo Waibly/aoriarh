@@ -25,7 +25,7 @@ router = APIRouter()
 @router.get("/search", response_model=CcnSearchResult)
 async def search_ccn(
     q: str = Query("", description="Recherche par nom ou IDCC"),
-    limit: int = Query(20, ge=1, le=100),
+    limit: int = Query(20, ge=1, le=500),
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> CcnSearchResult:

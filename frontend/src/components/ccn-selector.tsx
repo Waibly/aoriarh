@@ -44,7 +44,7 @@ export function CcnSelector({
       setLoading(true);
       try {
         const data = await apiFetch<{ results: CcnReference[]; total: number }>(
-          `/conventions/search?q=${encodeURIComponent(q)}&limit=50`,
+          `/conventions/search?q=${encodeURIComponent(q)}&limit=300`,
           { token }
         );
         setResults(data.results);
@@ -113,7 +113,7 @@ export function CcnSelector({
               value={query}
               onValueChange={handleSearch}
             />
-            <CommandList className="max-h-[240px] overflow-y-auto">
+            <CommandList className="max-h-[360px] overflow-y-auto">
               <CommandEmpty>
                 {loading ? "Recherche..." : "Aucune convention trouvée"}
               </CommandEmpty>
