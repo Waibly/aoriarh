@@ -133,12 +133,20 @@ export default function ClientsPage() {
   // Expanded rows
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
 
-  // Delete dialog
+  // Delete user dialog
   const [deleteTarget, setDeleteTarget] = useState<{
     user_id: string;
     email: string;
   } | null>(null);
   const [deleteLoading, setDeleteLoading] = useState(false);
+
+  // Delete account dialog
+  const [deleteAccount, setDeleteAccount] = useState<{
+    account_id: string;
+    name: string;
+  } | null>(null);
+  const [deleteAccountConfirm, setDeleteAccountConfirm] = useState("");
+  const [deleteAccountLoading, setDeleteAccountLoading] = useState(false);
 
   // Plan change
   const [planEdit, setPlanEdit] = useState<{
@@ -206,6 +214,29 @@ export default function ClientsPage() {
       );
     } finally {
       setDeleteLoading(false);
+    }
+  };
+
+  const handleDeleteAccount = async () => {
+    if (!deleteAccount || !token) return;
+    setDeleteAccountLoading(true);
+    try {
+      await apiFetch(`/admin/users/accounts/${deleteAccount.account_id}`, {
+        method: "DELETE",
+        token,
+      });
+      toast.success(`Client "${deleteAccount.name}" supprimé`);
+      setDeleteAccount(null);
+      setDeleteAccountConfirm("");
+      fetchData();
+    } catch (err) {
+      toast.error(
+        err instanceof Error
+          ? err.message
+          : "Impossible de supprimer ce client",
+      );
+    } finally {
+      setDeleteAccountLoading(false);
     }
   };
 
@@ -372,7 +403,7 @@ export default function ClientsPage() {
                       </TableCell>
                       <TableCell className="text-right">
                         <div
-                          className="flex items-center justify-end gap-1"
+                          className="flex items-center justify-end gap-2"
                           onClick={(e) => e.stopPropagation()}
                         >
                           <Select
@@ -397,6 +428,20 @@ export default function ClientsPage() {
                               <SelectItem value="vip">VIP</SelectItem>
                             </SelectContent>
                           </Select>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7"
+                            onClick={() =>
+                              setDeleteAccount({
+                                account_id: ws.account_id,
+                                name: ws.name,
+                              })
+                            }
+                            title="Supprimer le client"
+                          >
+                            <Trash2 className="h-3.5 w-3.5 text-destructive" />
+                          </Button>
                         </div>
                       </TableCell>
                     </TableRow>
@@ -587,6 +632,64 @@ export default function ClientsPage() {
               disabled={deleteLoading}
             >
               {deleteLoading ? "Suppression..." : "Supprimer"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete account confirmation (type name to confirm) */}
+      <Dialog
+        open={deleteAccount !== null}
+        onOpenChange={(open) => {
+          if (!open) {
+            setDeleteAccount(null);
+            setDeleteAccountConfirm("");
+          }
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Supprimer le client</DialogTitle>
+            <DialogDescription>
+              Cette action est <strong>irréversible</strong>. Toutes les
+              organisations, documents, conversations et membres de{" "}
+              <strong>{deleteAccount?.name}</strong> seront définitivement
+              supprimés.
+              <br />
+              <br />
+              Pour confirmer, tapez{" "}
+              <strong className="text-foreground">
+                {deleteAccount?.name}
+              </strong>{" "}
+              ci-dessous.
+            </DialogDescription>
+          </DialogHeader>
+          <Input
+            value={deleteAccountConfirm}
+            onChange={(e) => setDeleteAccountConfirm(e.target.value)}
+            placeholder={deleteAccount?.name}
+          />
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setDeleteAccount(null);
+                setDeleteAccountConfirm("");
+              }}
+            >
+              Annuler
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleDeleteAccount}
+              disabled={
+                deleteAccountConfirm !== deleteAccount?.name ||
+                deleteAccountLoading
+              }
+            >
+              {deleteAccountLoading
+                ? "Suppression..."
+                : "Supprimer le client"}
             </Button>
           </DialogFooter>
         </DialogContent>

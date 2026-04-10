@@ -227,3 +227,54 @@ async def delete_user(
     await db.commit()
 
     return {"detail": "Utilisateur supprimé"}
+
+
+@router.delete("/accounts/{account_id}")
+async def delete_account(
+    account_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    _admin: User = Depends(require_role(["admin"])),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Delete an entire client account and all associated data.
+
+    Deletes: all organisations (docs, Qdrant vectors, MinIO files, CCN links,
+    conversations, messages, memberships), all account members, the account
+    itself, and the owner user.
+    Common documents and CCN references are never touched.
+    api_usage_logs are preserved (FKs set to NULL).
+    """
+    account = await db.get(Account, account_id)
+    if not account:
+        raise HTTPException(status_code=404, detail="Compte non trouvé")
+
+    owner = await db.get(User, account.owner_id)
+    if owner and owner.role == "admin":
+        raise HTTPException(status_code=400, detail="Impossible de supprimer le compte d'un administrateur")
+
+    # 1. Delete all organisations in this account (Qdrant, MinIO, docs, etc.)
+    from app.services.organisation_service import OrganisationService
+    org_service = OrganisationService(db)
+    org_result = await db.execute(
+        select(Organisation).where(Organisation.account_id == account_id)
+    )
+    for org in org_result.scalars().all():
+        await org_service.delete_organisation(org.id, current_user)
+
+    # 2. Delete all account members and their user data
+    am_result = await db.execute(
+        select(AccountMember).where(AccountMember.account_id == account_id)
+    )
+    service = UserService(db)
+    member_user_ids = {am.user_id for am in am_result.scalars().all()}
+    # Add owner
+    if owner:
+        member_user_ids.add(owner.id)
+
+    for uid in member_user_ids:
+        user = await db.get(User, uid)
+        if user and user.role != "admin" and user.id != current_user.id:
+            await service.delete_user_data(uid)
+
+    await db.commit()
+    return {"detail": "Compte client supprimé"}
