@@ -447,18 +447,14 @@ class RAGAgent:
             )
         except Exception as exc:
             logger.exception("RAG pipeline error for query: %s", query[:100])
-            exc_str = str(exc).lower()
-            if "insufficient_quota" in exc_str or "exceeded" in exc_str:
-                msg = (
-                    "Clé API OpenAI : quota dépassé ou crédits insuffisants. "
-                    "Vérifiez votre compte OpenAI."
-                )
-            else:
-                msg = (
+            return RAGResponse(
+                answer=(
                     "Une erreur est survenue lors du traitement "
                     "de votre question. Veuillez réessayer."
-                )
-            return RAGResponse(answer=msg, sources=[], is_error=True)
+                ),
+                sources=[],
+                is_error=True,
+            )
 
     async def _pipeline(
         self,

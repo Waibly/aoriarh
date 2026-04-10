@@ -3,7 +3,7 @@ import urllib.parse
 import uuid
 from datetime import date
 
-from fastapi import APIRouter, Depends, Form, Request, UploadFile, status
+from fastapi import APIRouter, Depends, Form, HTTPException, Request, UploadFile, status
 from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -66,12 +66,18 @@ async def upload_documents_batch(
                 document=DocumentRead.model_validate(doc),
             ))
         except Exception as exc:
-            detail = getattr(exc, "detail", str(exc))
-            logger.warning("Batch upload failed for %s: %s", file.filename, detail)
+            raw_detail = getattr(exc, "detail", str(exc))
+            logger.warning("Batch upload failed for %s: %s", file.filename, raw_detail)
+            # Only expose HTTPException details (user-facing), sanitize the rest
+            safe_detail = (
+                raw_detail
+                if isinstance(exc, HTTPException)
+                else "Impossible de traiter ce fichier. Veuillez réessayer."
+            )
             results.append(BatchUploadFileResult(
                 filename=file.filename or "unknown",
                 success=False,
-                error=detail,
+                error=safe_detail,
             ))
 
     succeeded = sum(1 for r in results if r.success)

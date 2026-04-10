@@ -559,23 +559,11 @@ async def chat_stream(
             logger.exception(
                 "SSE streaming error for conversation %s", conversation_id,
             )
-            # Detect OpenAI quota/auth errors for a clear message
-            exc_str = str(exc).lower()
-            if "insufficient_quota" in exc_str or "exceeded" in exc_str:
-                error_msg = (
-                    "Clé API OpenAI : quota dépassé ou crédits insuffisants. "
-                    "Vérifiez votre compte OpenAI."
-                )
-            elif "invalid_api_key" in exc_str or "unauthorized" in exc_str:
-                error_msg = (
-                    "Clé API OpenAI invalide. "
-                    "Vérifiez la configuration du serveur."
-                )
-            else:
-                error_msg = (
-                    "Une erreur est survenue lors du traitement "
-                    "de votre question. Veuillez réessayer."
-                )
+            # Generic user-facing message — never expose internal service names
+            error_msg = (
+                "Une erreur est survenue lors du traitement "
+                "de votre question. Veuillez réessayer."
+            )
             yield _sse_event("chat_error", {
                 "error": "server_error",
                 "message": error_msg,

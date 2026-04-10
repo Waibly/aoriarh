@@ -1,7 +1,7 @@
 import uuid
 from datetime import date, datetime
 
-from pydantic import BaseModel
+from pydantic import BaseModel, model_validator
 
 
 class DocumentRead(BaseModel):
@@ -18,6 +18,16 @@ class DocumentRead(BaseModel):
     chunk_count: int | None = None
     indexation_progress: int | None = None
     indexation_error: str | None = None
+
+    @model_validator(mode="after")
+    def sanitize_indexation_error(self) -> "DocumentRead":
+        """Never expose raw technical errors to users."""
+        if self.indexation_error:
+            self.indexation_error = (
+                "L'indexation de ce document a échoué. "
+                "Veuillez le réindexer ou contacter le support."
+            )
+        return self
     uploaded_by: uuid.UUID
     file_size: int | None
     file_format: str | None
