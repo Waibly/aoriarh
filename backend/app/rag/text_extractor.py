@@ -58,6 +58,7 @@ class TextExtractor:
             "pdf": self._extract_pdf,
             "docx": self._extract_docx,
             "txt": self._extract_txt,
+            "md": self._extract_txt,
         }
         extractor = extractors.get(file_format)
         if not extractor:
