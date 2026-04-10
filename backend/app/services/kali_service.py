@@ -263,18 +263,41 @@ class KaliService:
                 existing_common = []
 
             if existing_common:
-                # Common docs exist — just link, no need to re-fetch
-                logger.info(
-                    "KALI IDCC %s: common docs already exist (%d docs), linking only",
-                    org_conv.idcc, len(existing_common),
-                )
-                org_conv.status = "ready"
-                org_conv.articles_count = existing_common[0].chunk_count
-                org_conv.installed_at = datetime.now(UTC)
-                org_conv.last_synced_at = datetime.now(UTC)
-                org_conv.error_message = None
-                await db.commit()
-                return result
+                # Only shortcut if we have REAL KALI docs (name starts with
+                # "CCN ") that are properly indexed — not just BOCC avenants
+                # which happen to match the IDCC in their name.
+                kali_docs = [
+                    d for d in existing_common
+                    if d.name.startswith("CCN ")
+                    and d.indexation_status == "success"
+                    and d.chunk_count
+                ]
+                if kali_docs:
+                    logger.info(
+                        "KALI IDCC %s: KALI docs already exist (%d indexed), linking only",
+                        org_conv.idcc, len(kali_docs),
+                    )
+                    total_chunks = sum(d.chunk_count or 0 for d in kali_docs)
+                    org_conv.status = "ready"
+                    org_conv.articles_count = total_chunks
+                    org_conv.installed_at = datetime.now(UTC)
+                    org_conv.last_synced_at = datetime.now(UTC)
+                    org_conv.error_message = None
+                    await db.commit()
+
+                    # Also ingest any pending BOCC docs for this IDCC
+                    try:
+                        from app.services.bocc_service import BoccService
+                        await BoccService().ingest_bocc_for_idcc(db, org_conv.idcc)
+                    except Exception:
+                        logger.warning("KALI IDCC %s: BOCC ingest failed in shortcut path", org_conv.idcc, exc_info=True)
+
+                    return result
+                else:
+                    logger.info(
+                        "KALI IDCC %s: only BOCC docs found (%d), no indexed KALI docs — proceeding with KALI fetch",
+                        org_conv.idcc, len(existing_common),
+                    )
 
             # No common docs — fetch from KALI and create
             all_articles, fetch_errors, source_date = await self._fetch_kali_articles(ccn_ref)
