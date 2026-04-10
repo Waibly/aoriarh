@@ -386,10 +386,18 @@ class KaliService:
 
         except Exception as exc:
             org_conv.status = "error"
-            org_conv.error_message = str(exc)[:500]
+            # User-facing message: never expose internal details (KALI, DNS, etc.)
+            raw = str(exc)
+            if "n'est pas disponible" in raw or "remplacée" in raw:
+                org_conv.error_message = raw[:500]
+            else:
+                org_conv.error_message = (
+                    "L'installation de cette convention collective a échoué. "
+                    "Veuillez réessayer. Si le problème persiste, contactez le support."
+                )
             await db.commit()
             result.errors += 1
-            result.error_messages.append(str(exc))
+            result.error_messages.append(raw)
             logger.exception("KALI install failed for IDCC %s", org_conv.idcc)
 
         return result
@@ -682,7 +690,10 @@ class KaliService:
                     categorized_ids.append((tid, category))
 
             if not categorized_ids:
-                raise ValueError("Aucun texte trouvé dans le container KALI")
+                raise ValueError(
+                    "Cette convention collective n'est pas disponible dans la base Légifrance. "
+                    "Elle a peut-être été remplacée ou fusionnée avec une autre convention."
+                )
 
             logger.info(
                 "KALI fetch IDCC %s: %d text(s) to fetch "
