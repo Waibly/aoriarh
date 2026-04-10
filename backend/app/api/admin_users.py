@@ -300,20 +300,15 @@ async def delete_account(
     for org in org_result.scalars().all():
         await org_service.delete_organisation(org.id, current_user)
 
-    # 2. Transfer account ownership away so delete_user_data won't try to
-    #    delete the account row (we handle it explicitly in step 4).
-    #    Use a temporary sentinel: set owner_id to current_user (who is NOT
-    #    being deleted). This satisfies the NOT NULL FK constraint.
-    account.owner_id = current_user.id
+    # 2. Delete the account row BEFORE users so that delete_user_data
+    #    step 8 sees owned_account=None and doesn't try to double-delete.
+    await db.delete(account)
     await db.flush()
 
     # 3. Delete all member users' data
     service = UserService(db)
     for uid in member_user_ids:
         await service.delete_user_data(uid)
-
-    # 4. Delete the account itself (after users, to avoid FK issues)
-    await db.delete(account)
 
     await db.commit()
     return {"detail": "Compte client supprimé"}
