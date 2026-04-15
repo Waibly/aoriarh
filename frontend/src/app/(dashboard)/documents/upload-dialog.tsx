@@ -197,17 +197,38 @@ export function UploadDialog({
         }
 
         const data = await res.json();
+        type BatchResult = {
+          filename: string;
+          success: boolean;
+          error?: string | null;
+        };
+        const failedResults: BatchResult[] = (data.results ?? []).filter(
+          (r: BatchResult) => !r.success,
+        );
+
+        // Group failures by exact error message to build a precise description
+        const reasonCounts = new Map<string, number>();
+        for (const r of failedResults) {
+          const reason = r.error?.trim() || "Erreur inconnue";
+          reasonCounts.set(reason, (reasonCounts.get(reason) ?? 0) + 1);
+        }
+        const description = Array.from(reasonCounts.entries())
+          .map(([reason, count]) =>
+            count > 1 ? `${count} fichiers : ${reason}` : reason,
+          )
+          .join("\n");
+
         if (data.failed > 0 && data.succeeded === 0) {
           toast.warning(
-            `${data.failed} document${data.failed > 1 ? "s" : ""} déjà présent${data.failed > 1 ? "s" : ""}`,
-            { description: "Aucun nouveau document ajouté.", duration: 5000 },
+            `${data.failed} document${data.failed > 1 ? "s" : ""} non ajouté${data.failed > 1 ? "s" : ""}`,
+            { description, duration: 7000 },
           );
         } else if (data.failed > 0) {
           toast.success(
             `${data.succeeded} document${data.succeeded > 1 ? "s" : ""} ajouté${data.succeeded > 1 ? "s" : ""}`,
             {
-              description: `${data.failed} ignoré${data.failed > 1 ? "s" : ""} (déjà présent${data.failed > 1 ? "s" : ""}).`,
-              duration: 5000,
+              description: `${data.failed} ignoré${data.failed > 1 ? "s" : ""} :\n${description}`,
+              duration: 7000,
             },
           );
         } else {
