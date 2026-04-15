@@ -348,19 +348,37 @@ adhésion obligatoire (PAS des négociations collectives). Pas d'identifiants.
 social français — UNIQUEMENT des synonymes directs et sûrs du vocabulaire de \
 la question. N'ajoute pas de concept voisin ni de notion associée. Pas d'identifiants.
 
+Si la question contient un des termes ci-dessous, intègre SON ÉQUIVALENT \
+CONVENTIONNEL ANCIEN (utilisé dans les CCN rédigées avant 1980, comme la CCN 66) :
+- préavis ↔ délai-congé
+- prescription disciplinaire ↔ annulation de sanction, effacement de sanction
+- indemnité de licenciement ↔ indemnité conventionnelle de rupture
+- congés payés ↔ congés annuels
+- salaire ↔ appointements (cadres) / rémunération conventionnelle
+- période d'essai ↔ essai probatoire, essai
+- rupture du contrat ↔ cessation d'emploi, fin des fonctions
+- promotion ↔ avancement
+- sanction disciplinaire ↔ mesure disciplinaire (observation, avertissement, mise à pied, licenciement)
+
+Règle stricte : n'ajoute AUCUN autre synonyme que ceux listés ci-dessus. Si le \
+terme n'est pas dans la liste, conserve le vocabulaire d'origine.
+
 4. MOTS-CLÉS : 5-8 mots-clés séparés par des espaces, composés des mots de la \
 question et de leurs synonymes directs. Pas de concepts associés, pas de termes \
 juridiques voisins. Si la question contient un identifiant (ex: "L4121-1", \
 "22-18.875"), INCLUS-LE TEL QUEL.
 
-5. VARIANTE CCN/CONTEXTE : le bloc [ORGANISATION] du message utilisateur \
-indique la CCN rattachée et le contexte de l'organisation. Si le sujet de la \
-question est typiquement couvert par une CCN (discipline, sanction, congés, \
-préavis, licenciement, classification, coefficient, rémunération, prime, \
-mutuelle, prévoyance, formation, durée du travail, représentation du personnel, \
-ancienneté, indemnité conventionnelle) ET qu'une CCN est rattachée, génère une \
-variante qui cite le nom court de la CCN (ex: "CCN 66", "Syntec", "CCN HCR"). \
-Sinon, répète la variante 1 à l'identique.
+5. VARIANTE CCN : Si le bloc [ORGANISATION] du message utilisateur indique \
+une CCN rattachée (ligne "- CCN rattachée : ..."), génère SYSTÉMATIQUEMENT \
+une variante au format suivant :
+   <IDCC extrait entre parenthèses> convention collective <mots-clés du sujet>
+   Exemples :
+   - CCN = "CCN Handicapés (IDCC 0413)" + question = "délai de préavis" \
+→ "IDCC 0413 convention collective délai préavis"
+   - CCN = "Syntec (IDCC 1486)" + question = "télétravail" \
+→ "IDCC 1486 convention collective télétravail"
+   Si aucune CCN n'est rattachée (bloc [ORGANISATION] absent ou sans ligne \
+"- CCN rattachée"), répète la variante 1 à l'identique.
 
 ## Format de sortie
 - Chaque variante sur une ligne, précédée de son numéro (1. 2. 3. 4. 5.)
