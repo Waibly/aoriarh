@@ -152,13 +152,13 @@ export function MessageSources({ sources }: MessageSourcesProps) {
                   </li>
                   <li>
                     <strong>Jurisprudence</strong> : décisions de Cour de
-                    cassation, cour d'appel, Conseil d'État, Conseil
+                    cassation, cour d&apos;appel, Conseil d&apos;État, Conseil
                     constitutionnel — triées par date (la plus récente en
                     premier).
                   </li>
                   <li>
                     <strong>Conventions collectives et accords</strong> : votre
-                    CCN, accords de branche et d'entreprise.
+                    CCN, accords de branche et d&apos;entreprise.
                   </li>
                   <li>
                     <strong>Sources internes</strong> : règlement intérieur,
@@ -166,7 +166,7 @@ export function MessageSources({ sources }: MessageSourcesProps) {
                   </li>
                 </ul>
                 <p>
-                  À l'intérieur de chaque catégorie, les sources sont classées
+                  À l&apos;intérieur de chaque catégorie, les sources sont classées
                   par pertinence. La catégorie est choisie selon la nature
                   juridique du document, pas selon la hiérarchie des normes —
                   plusieurs parties du Code du travail (législative et
