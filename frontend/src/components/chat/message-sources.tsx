@@ -5,7 +5,7 @@ import { useSession } from "next-auth/react";
 import ReactMarkdown from "react-markdown";
 import rehypeSanitize from "rehype-sanitize";
 import remarkGfm from "remark-gfm";
-import { ChevronRight, FileText, Loader2, BookOpen } from "lucide-react";
+import { ChevronRight, FileText, Loader2, BookOpen, HelpCircle } from "lucide-react";
 import {
   Collapsible,
   CollapsibleContent,
@@ -20,6 +20,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { getSourceFullContent } from "@/lib/chat-api";
+import { groupSources } from "@/lib/source-groups";
 import type { MessageSource } from "@/types/api";
 
 function formatJurisprudenceRef(source: MessageSource): string | null {
@@ -43,9 +44,11 @@ export function MessageSources({ sources }: MessageSourcesProps) {
   const { data: session } = useSession();
   const token = session?.access_token;
   const [isOpen, setIsOpen] = useState(false);
+  const [isHelpOpen, setIsHelpOpen] = useState(false);
   const [selectedSource, setSelectedSource] = useState<MessageSource | null>(
     null,
   );
+  const groups = groupSources(sources);
   // When the user clicks "Voir le document complet", we replace the
   // retrieval excerpt with the full text fetched from the storage.
   const [fullContent, setFullContent] = useState<string | null>(null);
@@ -98,30 +101,79 @@ export function MessageSources({ sources }: MessageSourcesProps) {
           {sources.length > 1 ? "s" : ""}
         </CollapsibleTrigger>
         <CollapsibleContent>
-          <div className="mt-2 space-y-2">
-            {sources.map((source, index) => (
-              <button
-                key={index}
-                type="button"
-                onClick={() => setSelectedSource(source)}
-                className="flex w-full items-center gap-3 rounded-lg border border-border bg-card px-4 py-3 text-left transition-colors hover:border-[#9952b8]/30 hover:bg-[#9952b8]/5 dark:hover:border-[#9952b8]/40 dark:hover:bg-[#9952b8]/10"
-              >
-                <div className="flex size-8 shrink-0 items-center justify-center rounded-md bg-[#9952b8]/10 dark:bg-[#9952b8]/20">
-                  <FileText className="size-4 text-[#9952b8] dark:text-[#9952b8]" />
+          <div className="mt-2 space-y-4">
+            {groups.map((group) => (
+              <div key={group.key}>
+                <h4 className="mb-2 px-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  {group.label} ({group.sources.length})
+                </h4>
+                <div className="space-y-2">
+                  {group.sources.map((source, index) => (
+                    <button
+                      key={`${group.key}-${index}`}
+                      type="button"
+                      onClick={() => setSelectedSource(source)}
+                      className="flex w-full items-center gap-3 rounded-lg border border-border bg-card px-4 py-3 text-left transition-colors hover:border-[#9952b8]/30 hover:bg-[#9952b8]/5 dark:hover:border-[#9952b8]/40 dark:hover:bg-[#9952b8]/10"
+                    >
+                      <div className="flex size-8 shrink-0 items-center justify-center rounded-md bg-[#9952b8]/10 dark:bg-[#9952b8]/20">
+                        <FileText className="size-4 text-[#9952b8] dark:text-[#9952b8]" />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-medium text-foreground">
+                          {formatJurisprudenceRef(source) || source.document_name}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          {source.source_type_label}
+                          {source.solution ? ` · ${source.solution}` : ""}
+                          {source.publication ? ` · ${source.publication}` : ""}
+                        </p>
+                      </div>
+                      <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
+                    </button>
+                  ))}
                 </div>
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-medium text-foreground">
-                    {formatJurisprudenceRef(source) || source.document_name}
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    {source.source_type_label} · Niveau {source.norme_niveau}
-                    {source.solution ? ` · ${source.solution}` : ""}
-                    {source.publication ? ` · ${source.publication}` : ""}
-                  </p>
-                </div>
-                <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
-              </button>
+              </div>
             ))}
+
+            <Collapsible open={isHelpOpen} onOpenChange={setIsHelpOpen}>
+              <CollapsibleTrigger className="flex items-center gap-1.5 px-1 text-xs text-muted-foreground transition-colors hover:text-foreground">
+                <HelpCircle className="size-3.5" />
+                Comment sont classées les sources ?
+              </CollapsibleTrigger>
+              <CollapsibleContent className="px-1 pt-2 text-xs leading-relaxed text-muted-foreground">
+                <p className="mb-2">
+                  Les sources sont regroupées par catégorie de norme juridique :
+                </p>
+                <ul className="mb-2 list-disc space-y-1 pl-4">
+                  <li>
+                    <strong>Textes légaux et réglementaires</strong> : Code du
+                    travail (parties législative et réglementaire), autres
+                    codes, lois, décrets, traités.
+                  </li>
+                  <li>
+                    <strong>Jurisprudence</strong> : décisions de Cour de
+                    cassation, cour d'appel, Conseil d'État, Conseil
+                    constitutionnel — triées par date (la plus récente en
+                    premier).
+                  </li>
+                  <li>
+                    <strong>Conventions collectives et accords</strong> : votre
+                    CCN, accords de branche et d'entreprise.
+                  </li>
+                  <li>
+                    <strong>Sources internes</strong> : règlement intérieur,
+                    contrats, décisions unilatérales, usages.
+                  </li>
+                </ul>
+                <p>
+                  À l'intérieur de chaque catégorie, les sources sont classées
+                  par pertinence. La catégorie est choisie selon la nature
+                  juridique du document, pas selon la hiérarchie des normes —
+                  plusieurs parties du Code du travail (législative et
+                  réglementaire) apparaissent donc ensemble.
+                </p>
+              </CollapsibleContent>
+            </Collapsible>
           </div>
         </CollapsibleContent>
       </Collapsible>
