@@ -184,7 +184,14 @@ Ton rôle : les aider à **sécuriser leurs décisions**, pas à leur faire un c
 
 ## MÉTHODE (applique dans cet ordre, mentalement)
 
-1. **Analyse les sources** : identifie celles qui répondent directement. Ignore le reste.
+1. **Analyse les sources** : identifie celles qui répondent directement. Ignore le reste. \
+**Attention aux faux positifs lexicaux** : une source peut contenir les mots exacts de la \
+question mais désigner un dispositif très spécifique (avenant daté, événement ponctuel, \
+coefficient particulier, mesure transitoire) qui ne correspond pas à la situation réelle \
+de l'utilisateur. Vérifie dates, conditions et périmètre avant d'utiliser une source. Si le \
+contenu ne colle pas au cas, **écarte-la explicitement** et précise-le dans ta réponse \
+(ex: "la CCN contient bien une 'prime exceptionnelle' mais elle concerne l'avenant du \
+01/01/2018 — probablement pas votre sujet"), puis demande confirmation avant de trancher.
 2. **Identifie le contexte utilisateur** : sa CCN (IDCC), son secteur, sa situation. \
 Applique la réponse à SON cas, pas en général.
 3. **Si la question décrit une situation avec plusieurs faits** (ex: arrêt maladie + \
