@@ -41,33 +41,39 @@ def agent():
 
 
 class TestParseVariants:
-    def test_parse_3_variants(self):
+    def test_parse_5_variants(self):
         content = (
-            "1. Quels sont les délais de préavis en cas de licenciement ?\n"
-            "2. Délai préavis licenciement motif personnel économique ancienneté\n"
-            "3. préavis licenciement durée dispense indemnité compensatrice"
+            "1. Quel est le délai de prescription en matière disciplinaire ?\n"
+            "2. Combien de temps ai-je pour sanctionner un salarié ?\n"
+            "3. Délai de prescription disciplinaire applicable\n"
+            "4. prescription disciplinaire délai sanction faute\n"
+            "5. Prescription disciplinaire CCN 66 handicapés"
         )
-        variants = RAGAgent._parse_variants(content, "préavis licenciement")
-        assert len(variants) == 3
-        assert "délais de préavis" in variants[0].lower()
+        variants = RAGAgent._parse_variants(content, "prescription disciplinaire")
+        assert len(variants) == 5
+        assert "prescription" in variants[0].lower()
 
     def test_parse_with_dashes(self):
         content = (
-            "1. — Reformulation en langage naturel\n"
-            "2. – Terminologie juridique enrichie\n"
-            "3. - mots clés séparés"
+            "1. — Question corrigée\n"
+            "2. – Intention RH\n"
+            "3. - Terminologie juridique\n"
+            "4. — mots clés\n"
+            "5. - variante CCN"
         )
         variants = RAGAgent._parse_variants(content, "query")
-        assert len(variants) == 3
+        assert len(variants) == 5
 
     def test_parse_with_parenthesis(self):
         content = (
-            "1) Reformulation naturelle\n"
-            "2) Terminologie juridique\n"
-            "3) mots clés"
+            "1) Question corrigée\n"
+            "2) Intention RH\n"
+            "3) Terminologie juridique\n"
+            "4) mots clés\n"
+            "5) variante CCN"
         )
         variants = RAGAgent._parse_variants(content, "query")
-        assert len(variants) == 3
+        assert len(variants) == 5
 
     def test_fallback_on_empty_content(self):
         variants = RAGAgent._parse_variants("", "original query")
@@ -81,22 +87,98 @@ class TestParseVariants:
         assert variants == ["original query"]
 
 
+class TestBuildExpandUserMessage:
+    def test_no_org_context(self):
+        msg = RAGAgent._build_expand_user_message("ma question", None)
+        assert msg == "Question : ma question"
+
+    def test_empty_org_context_fields(self):
+        msg = RAGAgent._build_expand_user_message(
+            "ma question",
+            {"nom": "Empreintes", "convention_collective": None},
+        )
+        # Only `nom` is not surfaced to the LLM → no [ORGANISATION] block
+        assert msg == "Question : ma question"
+
+    def test_with_ccn(self):
+        msg = RAGAgent._build_expand_user_message(
+            "prescription disciplinaire",
+            {
+                "nom": "Empreintes",
+                "convention_collective": "CCN Handicapés 66 (IDCC 0413)",
+                "secteur_activite": None,
+                "taille": None,
+                "forme_juridique": None,
+            },
+        )
+        assert "[ORGANISATION]" in msg
+        assert "CCN Handicapés 66 (IDCC 0413)" in msg
+        assert "Question : prescription disciplinaire" in msg
+
+    def test_with_full_context(self):
+        msg = RAGAgent._build_expand_user_message(
+            "mes congés",
+            {
+                "convention_collective": "Syntec (IDCC 1486)",
+                "secteur_activite": "Ingénierie",
+                "taille": "50-249",
+                "forme_juridique": "SAS",
+            },
+        )
+        assert "Syntec" in msg
+        assert "Ingénierie" in msg
+        assert "50-249" in msg
+        assert "SAS" in msg
+
+
 class TestExpandQueries:
     @pytest.mark.asyncio
-    async def test_expand_returns_3_variants(self, agent):
+    async def test_expand_returns_5_variants(self, agent):
         agent.llm.chat.completions.create.return_value = _mock_llm_response(
-            "1. Quels sont les délais de préavis applicables ?\n"
-            "2. Préavis licenciement motif personnel économique durée ancienneté\n"
-            "3. préavis licenciement durée dispense indemnité"
+            "1. Quel est le délai de prescription en matière disciplinaire ?\n"
+            "2. Combien de temps ai-je pour sanctionner un salarié ?\n"
+            "3. Délai de prescription disciplinaire applicable\n"
+            "4. prescription disciplinaire délai sanction faute\n"
+            "5. Prescription disciplinaire CCN 66"
         )
 
-        variants = await agent._expand_queries("préavis licenciement")
+        variants = await agent._expand_queries("prescription disciplinaire")
 
-        assert len(variants) == 3
+        assert len(variants) == 5
         agent.llm.chat.completions.create.assert_called_once()
         call_args = agent.llm.chat.completions.create.call_args
         assert call_args.kwargs["temperature"] == 0.3
-        assert call_args.kwargs["max_tokens"] == 400
+        assert call_args.kwargs["max_tokens"] == 600
+
+    @pytest.mark.asyncio
+    async def test_expand_injects_org_context_in_user_message(self, agent):
+        agent.llm.chat.completions.create.return_value = _mock_llm_response(
+            "1. a\n2. b\n3. c\n4. d\n5. e"
+        )
+        await agent._expand_queries(
+            "prescription disciplinaire",
+            org_context={
+                "convention_collective": "CCN Handicapés 66 (IDCC 0413)",
+                "secteur_activite": "Médico-social",
+                "taille": None,
+                "forme_juridique": None,
+            },
+        )
+        call_args = agent.llm.chat.completions.create.call_args
+        user_msg = call_args.kwargs["messages"][1]["content"]
+        assert "[ORGANISATION]" in user_msg
+        assert "CCN Handicapés 66" in user_msg
+        assert "Médico-social" in user_msg
+
+    @pytest.mark.asyncio
+    async def test_expand_without_org_context_uses_plain_question(self, agent):
+        agent.llm.chat.completions.create.return_value = _mock_llm_response(
+            "1. a\n2. b\n3. c\n4. d\n5. e"
+        )
+        await agent._expand_queries("ma question")
+        call_args = agent.llm.chat.completions.create.call_args
+        user_msg = call_args.kwargs["messages"][1]["content"]
+        assert user_msg == "Question : ma question"
 
     @pytest.mark.asyncio
     async def test_expand_fallback_on_none(self, agent):
@@ -104,6 +186,14 @@ class TestExpandQueries:
 
         variants = await agent._expand_queries("test query")
         assert variants == ["test query"]
+
+    @pytest.mark.asyncio
+    async def test_expand_hors_scope_marker(self, agent):
+        agent.llm.chat.completions.create.return_value = _mock_llm_response(
+            "1. [HORS_SCOPE]"
+        )
+        variants = await agent._expand_queries("quelle est la capitale du Pérou ?")
+        assert variants == ["[HORS_SCOPE]"]
 
 
 class TestReciprocalRankFusion:
@@ -175,9 +265,15 @@ class TestSearchWithExpansion:
 
         call_count = 0
 
-        async def mock_search(query, org_id, top_k=20):
+        async def mock_search(query, org_id, top_k=20, org_idcc_list=None):
             nonlocal call_count
-            result = results_per_variant[call_count]
+            # _search_with_expansion prepends the original query, so we handle
+            # more calls than variants; return empty for extras.
+            result = (
+                results_per_variant[call_count]
+                if call_count < len(results_per_variant)
+                else []
+            )
             call_count += 1
             return result
 
@@ -188,9 +284,11 @@ class TestSearchWithExpansion:
             "test query", "org-123",
         )
 
-        assert len(variants) == 3
-        assert len(results) == 3  # 3 unique chunks
-        assert call_count == 3  # 3 searches ran
+        # Variants from LLM (3) + original query prepended by _search_with_expansion
+        assert len(variants) == 4
+        assert variants[0] == "test query"
+        assert len(results) >= 3  # at least 3 unique chunks
+        assert call_count == 4  # original + 3 variants searched in parallel
 
     @pytest.mark.asyncio
     async def test_search_with_overlap_deduplicates(self, agent):
@@ -202,7 +300,7 @@ class TestSearchWithExpansion:
 
         call_count = 0
 
-        async def mock_search(query, org_id, top_k=20):
+        async def mock_search(query, org_id, top_k=20, org_idcc_list=None):
             nonlocal call_count
             call_count += 1
             # Both variants return the same document
@@ -237,7 +335,7 @@ class TestSearchWithExpansion:
 
         call_count = 0
 
-        async def mock_search(query, org_id, top_k=20):
+        async def mock_search(query, org_id, top_k=20, org_idcc_list=None):
             nonlocal call_count
             call_count += 1
             if call_count == 1:

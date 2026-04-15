@@ -12,32 +12,6 @@ from app.services.cost_tracker import cost_tracker
 logger = logging.getLogger(__name__)
 
 
-def _recency_boost(content_date: str | None) -> float:
-    """Return a recency factor between 0.0 (old/unknown) and 1.0 (recent).
-
-    - No date → 0.5 (neutral)
-    - < 2 years old → 1.0
-    - 2-5 years → 0.7
-    - 5-10 years → 0.4
-    - > 10 years → 0.2
-    """
-    if not content_date:
-        return 0.5
-    try:
-        from datetime import date
-
-        year = int(content_date[:4])
-        age = date.today().year - year
-        if age <= 2:
-            return 1.0
-        if age <= 5:
-            return 0.7
-        if age <= 10:
-            return 0.4
-        return 0.2
-    except (ValueError, IndexError):
-        return 0.5
-
 _MAX_RETRIES = 3
 _RETRY_BASE_DELAY = 2.0
 
@@ -105,16 +79,16 @@ class VoyageReranker:
                 is_replay=self._cost_is_replay,
             )
 
-        # Map reranked scores back to SearchResult objects,
-        # weighted by norme_poids and recency so authoritative, recent sources rank higher
+        # Map reranked scores back to SearchResult objects.
+        # We keep the pure Voyage relevance score — hierarchy is no longer
+        # blended here (it was a category error: hierarchy is an adjudication
+        # signal, applied by the LLM at generation time, not a ranking signal).
+        # Recency is already applied once at retrieval (search.py); we don't
+        # double-dip here.
         ranked_data = rerank_response.get("data", [])
         for item in ranked_data:
             idx = item["index"]
-            relevance = item["relevance_score"]
-            poids = results[idx].norme_poids or 0.5
-            recency = _recency_boost(results[idx].content_date)
-            # Blend: 60% relevance + 25% hierarchy weight + 15% recency
-            results[idx].score = relevance * (0.60 + 0.25 * poids + 0.15 * recency)
+            results[idx].score = item["relevance_score"]
 
         # Sort by weighted score descending
         reranked = sorted(results, key=lambda r: r.score, reverse=True)

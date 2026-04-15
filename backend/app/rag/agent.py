@@ -316,32 +316,55 @@ naissance, décès — durées fixées par la CCN).
 → *Quels sont les congés pour événements familiaux dans ma CCN ?*"""
 
 _QUERY_EXPAND_PROMPT = """\
-Tu es un expert RH spécialisé en droit social français. \
-Analyse d'abord l'INTENTION de l'utilisateur, puis génère 3 variantes de \
-requête de recherche.
+Tu es un expert RH spécialisé en droit social français. Ta mission : transformer \
+la question d'un utilisateur en 5 variantes de recherche pour maximiser la \
+récupération des articles pertinents (Code du travail, CCN, jurisprudence, \
+règlement intérieur, contrats).
 
-Étape 1 — Intention : identifie ce que l'utilisateur cherche vraiment. \
-Par exemple "c'est quoi collectif obligatoire" → il parle probablement d'un \
-régime de prévoyance collectif et obligatoire (mutuelle/prévoyance d'entreprise), \
-PAS des négociations collectives obligatoires. Pense comme un praticien RH, \
-pas comme un juriste académique. Désambiguïse les termes courants du métier RH.
+## Règle absolue — anti-hallucination juridique
+N'introduis JAMAIS un concept juridique qui n'est pas dans la question d'origine. \
+Ne confonds pas :
+- prescription ≠ forclusion ≠ déchéance
+- licenciement ≠ rupture conventionnelle ≠ démission ≠ résiliation judiciaire
+- indemnité ≠ dommages-intérêts ≠ allocation
+- préavis ≠ période d'essai ≠ délai de réflexion
+- CDI ≠ CDD ≠ intérim ≠ contrat de chantier
+- congé ≠ absence ≠ suspension du contrat
+En l'absence de synonyme direct et sûr, RÉPÈTE le terme d'origine.
 
-Étape 2 — Génère exactement 3 variantes :
-1. INTENTION RH : reformulation claire selon l'intention détectée, avec le \
-vocabulaire qu'utiliserait un professionnel RH au quotidien.
-2. TERMINOLOGIE JURIDIQUE : reformulation enrichie avec les termes techniques \
-du droit social français (notions clés, synonymes juridiques, concepts associés).
-3. MOTS-CLÉS : 5-8 mots-clés et synonymes séparés par des espaces, couvrant \
-les différentes interprétations possibles. Si la question contient un numéro \
-d'article (ex: "L4121-1", "R.1234-2") ou un numéro de pourvoi (ex: "22-18.875"), \
-INCLUS-LE TEL QUEL dans cette variante mots-clés.
+## Génère exactement 5 variantes, numérotées 1. à 5.
 
-Règles :
-- Variantes 1 et 2 : PAS de numéros d'articles de loi (reformulation sémantique).
-- Variante 3 (mots-clés) : conserve les identifiants explicites s'ils sont \
-présents dans la question d'origine.
-- Chaque variante sur une ligne précédée de son numéro (1. 2. 3.).
-- Réponds UNIQUEMENT avec les 3 variantes, sans explication."""
+1. QUESTION CORRIGÉE : la question de l'utilisateur, avec uniquement les fautes \
+d'orthographe et de frappe évidentes corrigées. Ne reformule pas, ne change pas \
+le vocabulaire, ne résume pas. Préserve tels quels les identifiants (articles, \
+numéros de pourvoi, IDCC).
+
+2. INTENTION RH : reformulation selon ce que cherche un praticien RH au \
+quotidien. Désambiguïse les termes courants du métier. Ex: "c'est quoi \
+collectif obligatoire" → régime de mutuelle/prévoyance d'entreprise à \
+adhésion obligatoire (PAS des négociations collectives). Pas d'identifiants.
+
+3. TERMINOLOGIE JURIDIQUE : reformulation avec les termes techniques du droit \
+social français — UNIQUEMENT des synonymes directs et sûrs du vocabulaire de \
+la question. N'ajoute pas de concept voisin ni de notion associée. Pas d'identifiants.
+
+4. MOTS-CLÉS : 5-8 mots-clés séparés par des espaces, composés des mots de la \
+question et de leurs synonymes directs. Pas de concepts associés, pas de termes \
+juridiques voisins. Si la question contient un identifiant (ex: "L4121-1", \
+"22-18.875"), INCLUS-LE TEL QUEL.
+
+5. VARIANTE CCN/CONTEXTE : le bloc [ORGANISATION] du message utilisateur \
+indique la CCN rattachée et le contexte de l'organisation. Si le sujet de la \
+question est typiquement couvert par une CCN (discipline, sanction, congés, \
+préavis, licenciement, classification, coefficient, rémunération, prime, \
+mutuelle, prévoyance, formation, durée du travail, représentation du personnel, \
+ancienneté, indemnité conventionnelle) ET qu'une CCN est rattachée, génère une \
+variante qui cite le nom court de la CCN (ex: "CCN 66", "Syntec", "CCN HCR"). \
+Sinon, répète la variante 1 à l'identique.
+
+## Format de sortie
+- Chaque variante sur une ligne, précédée de son numéro (1. 2. 3. 4. 5.)
+- Aucune explication, aucun préambule"""
 
 _CONDENSE_PROMPT = """\
 Tu reformules une question de suivi en question autonome et complète.
@@ -548,9 +571,6 @@ class RAGAgent:
         # --- Step 4: Cross-references ---
         results = self._cross_reference(results)
 
-        # --- Step 5: Hierarchy validation ---
-        results = self._validate_hierarchy(results)
-
         # --- Step 6: Generation ---
         t_gen = time.perf_counter()
         answer = await self._step_with_timeout(
@@ -701,9 +721,8 @@ class RAGAgent:
 
         t3 = time.perf_counter()
         results = self._cross_reference(results)
-        results = self._validate_hierarchy(results)
         logger.info(
-            "[PERF] Step 4-5 — Cross-ref + hierarchy %.0fms",
+            "[PERF] Step 4 — Cross-ref %.0fms",
             (time.perf_counter() - t3) * 1000,
         )
 
@@ -864,29 +883,48 @@ class RAGAgent:
             )
         return response.choices[0].message.content or query
 
+    @staticmethod
+    def _build_expand_user_message(
+        query: str,
+        org_context: dict[str, str | None] | None,
+    ) -> str:
+        """Build the user message for query expansion with tenant context."""
+        if not org_context:
+            return f"Question : {query}"
+        lines = ["[ORGANISATION]"]
+        ccn = org_context.get("convention_collective")
+        if ccn:
+            lines.append(f"- CCN rattachée : {ccn}")
+        secteur = org_context.get("secteur_activite")
+        if secteur:
+            lines.append(f"- Secteur : {secteur}")
+        taille = org_context.get("taille")
+        if taille:
+            lines.append(f"- Taille : {taille}")
+        forme = org_context.get("forme_juridique")
+        if forme:
+            lines.append(f"- Forme juridique : {forme}")
+        if len(lines) == 1:
+            return f"Question : {query}"
+        lines.append("")
+        lines.append(f"Question : {query}")
+        return "\n".join(lines)
+
     async def _expand_queries(
         self,
         query: str,
         org_context: dict[str, str | None] | None = None,
     ) -> list[str]:
-        """Step 1: Expand the user query into 3 search variants."""
-        system_prompt = _QUERY_EXPAND_PROMPT
-        if org_context and org_context.get("nom"):
-            system_prompt += (
-                f"\n\n## CONTEXTE ORGANISATION\n"
-                f"L'utilisateur travaille dans l'organisation « {org_context['nom']} ».\n"
-                f"N'inclus PAS le nom de l'organisation dans les variantes de recherche : "
-                f"les documents sont déjà filtrés par organisation. "
-                f"Concentre-toi uniquement sur le sujet juridique/RH de la question."
-            )
+        """Step 1: Expand the user query into 5 search variants."""
+        user_content = self._build_expand_user_message(query, org_context)
         response = await self.llm.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": query},
+                {"role": "system", "content": _QUERY_EXPAND_PROMPT},
+                {"role": "user", "content": user_content},
             ],
             temperature=0.3,
-            max_tokens=400,
+            max_tokens=600,
         )
         if response.usage:
             await cost_tracker.log(
@@ -1069,24 +1107,6 @@ class RAGAgent:
                 r.score *= 1.0 + 0.05 * (count - 1)
 
         results.sort(key=lambda r: r.score, reverse=True)
-        return results
-
-    def _validate_hierarchy(self, results: list[SearchResult]) -> list[SearchResult]:
-        """Step 5: Ensure higher-level norms take precedence."""
-        if len(results) < 2:
-            return results
-
-        by_level: dict[int, list[SearchResult]] = {}
-        for r in results:
-            by_level.setdefault(r.norme_niveau, []).append(r)
-
-        if len(by_level) > 1:
-            min_level = min(by_level.keys())
-            for r in results:
-                if r.norme_niveau == min_level:
-                    r.score *= 1.15
-
-        results.sort(key=lambda r: (-r.score, r.norme_niveau))
         return results
 
     def _build_context(self, results: list[SearchResult]) -> str:

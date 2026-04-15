@@ -224,13 +224,15 @@ class HybridSearch:
         t2 = time.perf_counter()
         logger.info("[PERF] Qdrant query %.0fms (%d points)", (t2 - t1) * 1000, len(results.points))
 
-        # 4. Build SearchResult list and apply norme_poids weighting
+        # 4. Build SearchResult list. Apply only the recency boost.
+        # Hierarchy (norme_poids) is no longer used as a ranking signal:
+        # it is an adjudication signal, handled at generation time by the LLM.
         search_results: list[SearchResult] = []
         for point in results.points:
             payload = point.payload or {}
             norme_poids = float(payload.get("norme_poids", 0.5))
             rrf_score = point.score if point.score is not None else 0.0
-            weighted_score = rrf_score * (0.6 + 0.4 * norme_poids)
+            weighted_score = rrf_score
 
             # Recency boost: more recent content scores higher
             content_date = payload.get("content_date")
