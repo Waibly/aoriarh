@@ -1229,7 +1229,7 @@ class RAGAgent:
             "l'employeur, les consultations obligatoires et les leviers d'action du CSE."
         ),
         "dirigeant": (
-            "L'utilisateur est dirigeant/gérant (souvent TPE-PME sans service RH) : réponds "
+            "L'utilisateur est dirigeant/gérant : réponds "
             "de manière simple et directe, sans jargon excessif, avec les obligations essentielles "
             "et les risques concrets en cas de non-respect."
         ),
@@ -1274,6 +1274,12 @@ class RAGAgent:
                     lines.append(f"- {label} : {value} salariés")
                 else:
                     lines.append(f"- {label} : {value}")
+        lines.append(
+            "\n**Ces dimensions sont indépendantes.** Ne les combine pas en une "
+            "catégorie mixte (ex: \"TPE associative\" ou \"PME associative\" n'existent "
+            "pas — une association peut être de n'importe quelle taille, et "
+            "inversement). Cite chaque dimension séparément quand pertinent."
+        )
         return "\n".join(lines)
 
     def _build_user_message(
