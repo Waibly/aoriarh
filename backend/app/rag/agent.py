@@ -208,14 +208,16 @@ contenu ne colle pas au cas, **écarte-la explicitement** et précise-le dans ta
 01/01/2018 — probablement pas votre sujet"), puis demande confirmation avant de trancher.
 2. **Identifie le contexte utilisateur** : sa CCN (IDCC), son secteur, sa situation. \
 Applique la réponse à SON cas, pas en général.
-3. **Si la question décrit une situation avec plusieurs faits** (ex: arrêt maladie + \
+3. **Si un historique est fourni**, tu es en conversation. Relis-le, garde le fil, \
+et interprète chaque message de l'utilisateur comme une suite logique de l'échange.
+4. **Si la question décrit une situation avec plusieurs faits** (ex: arrêt maladie + \
 courrier + CSE + inaptitude), relie-les dans un **raisonnement d'ensemble**. \
 Montre la chaîne causale et ses conséquences juridiques. Ne traite PAS chaque fait \
 dans un silo séparé.
-4. **Si la question porte sur un risque ou une situation contentieuse**, identifie \
+5. **Si la question porte sur un risque ou une situation contentieuse**, identifie \
 d'abord LE **risque principal** (celui qui pèse le plus lourd juridiquement), puis \
 les risques secondaires. Ne liste pas 10 risques au même niveau.
-5. **Construis la réponse** selon cette checklist :
+6. **Construis la réponse** selon cette checklist :
    - Règle de principe (Code du travail)
    - Règle conventionnelle (sa CCN si applicable)
    - **Sources internes** : vérifie SYSTÉMATIQUEMENT si un accord d'entreprise, \
@@ -625,7 +627,7 @@ class RAGAgent:
         # --- Step 6: Generation ---
         t_gen = time.perf_counter()
         answer = await self._step_with_timeout(
-            self._generate(query, results, org_context=org_context),
+            self._generate(query, results, org_context=org_context, history=history),
             fallback=self._fallback_answer(results),
         )
         logger.info(
@@ -794,12 +796,13 @@ class RAGAgent:
         query: str,
         results: list[SearchResult],
         org_context: dict[str, str | None] | None = None,
+        history: list[dict[str, str]] | None = None,
         buffer_size: int = 10,
     ) -> AsyncGenerator[str, None]:
         """Stream the LLM generation token by token (buffered)."""
         t_start = time.perf_counter()
         context = self._build_context(results)
-        user_content = self._build_user_message(query, context, org_context)
+        user_content = self._build_user_message(query, context, org_context, history)
         logger.info(
             "[RAG] stream org_context injected: %s",
             org_context if org_context else "None",
@@ -1307,11 +1310,24 @@ class RAGAgent:
         query: str,
         context: str,
         org_context: dict[str, str | None] | None = None,
+        history: list[dict[str, str]] | None = None,
     ) -> str:
-        """Build the user message with sources, optional org context, and question."""
+        """Build the user message with sources, optional org context, history, and question."""
         parts = [f"Sources documentaires :\n\n{context}"]
         if org_context and any(org_context.values()):
             parts.append(self._build_org_context_block(org_context))
+        if history:
+            recent = history[-4:]
+            history_lines = []
+            for msg in recent:
+                role = "Utilisateur" if msg["role"] == "user" else "Assistant"
+                content = msg["content"][:2000]
+                if len(msg["content"]) > 2000:
+                    content += " [...]"
+                history_lines.append(f"{role}: {content}")
+            parts.append(
+                "## Historique de la conversation\n\n" + "\n\n".join(history_lines)
+            )
         parts.append(f"Question : {query}")
         return "\n\n".join(parts)
 
@@ -1320,10 +1336,11 @@ class RAGAgent:
         query: str,
         results: list[SearchResult],
         org_context: dict[str, str | None] | None = None,
+        history: list[dict[str, str]] | None = None,
     ) -> str:
         """Step 6: Generate the answer using the LLM with retrieved context."""
         context = self._build_context(results)
-        user_content = self._build_user_message(query, context, org_context)
+        user_content = self._build_user_message(query, context, org_context, history)
         logger.info(
             "[RAG] org_context injected: %s",
             org_context if org_context else "None",

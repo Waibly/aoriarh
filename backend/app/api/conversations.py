@@ -470,7 +470,7 @@ async def chat_stream(
 
             full_answer = ""
             try:
-                async for chunk in agent.stream_generate(data.message, results, org_context=org_context):
+                async for chunk in agent.stream_generate(data.message, results, org_context=org_context, history=history):
                     if await request.is_disconnected():
                         logger.info("Client disconnected during streaming")
                         return
