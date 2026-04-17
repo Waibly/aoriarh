@@ -565,7 +565,7 @@ class RAGAgent:
         )
 
         # --- Step 1.6: Source-intent injection ---
-        results = self._inject_source_intent(
+        results = await self._inject_source_intent(
             query, results, organisation_id, org_idcc_list,
         )
         t2 = time.perf_counter()
@@ -1087,7 +1087,7 @@ class RAGAgent:
         )
         return results
 
-    def _inject_source_intent(
+    async def _inject_source_intent(
         self,
         query: str,
         results: list[SearchResult],
@@ -1100,12 +1100,18 @@ class RAGAgent:
         we guarantee that source type is represented in the candidate pool
         before reranking — even if RRF didn't surface it.
         """
+        from app.rag.source_intent import detect_source_intent
+
+        if not detect_source_intent(query):
+            return results
         try:
+            dense_embedding = await self.search_engine._encode_dense(query)
             extra = fetch_by_source_intent(
                 self.search_engine.qdrant,
                 query,
                 organisation_id=organisation_id,
                 org_idcc_list=org_idcc_list,
+                dense_embedding=dense_embedding,
             )
         except Exception:
             logger.exception("[INTENT] Source intent injection failed")
