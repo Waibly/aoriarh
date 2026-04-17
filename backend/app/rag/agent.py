@@ -564,16 +564,17 @@ class RAGAgent:
             query, results, organisation_id, org_idcc_list,
         )
 
-        # --- Step 1.6: Source-intent injection ---
-        results = await self._inject_source_intent(
-            query, results, organisation_id, org_idcc_list,
-        )
         t2 = time.perf_counter()
 
         # --- Step 3: Cross-encoder reranking ---
         results = await self._step_with_timeout(
             self.reranker.rerank(query, results, top_k=RERANK_TOP_K),
             fallback=results[:RERANK_TOP_K],
+        )
+
+        # --- Step 3.1: Source-intent injection (post-rerank) ---
+        results = await self._inject_source_intent(
+            query, results, organisation_id, org_idcc_list,
         )
         t3 = time.perf_counter()
         logger.info(
@@ -721,11 +722,6 @@ class RAGAgent:
                 trace.identifiers_detected,
             )
 
-        # Step 1.6: Source-intent injection
-        results = await self._inject_source_intent(
-            query, results, organisation_id, org_idcc_list,
-        )
-
         # Snapshot the candidate pool right before rerank
         trace.hybrid_results = _serialize_chunks(results, limit=30)
         t2 = time.perf_counter()
@@ -734,6 +730,11 @@ class RAGAgent:
         results = await self._step_with_timeout(
             self.reranker.rerank(query, results, top_k=RERANK_TOP_K),
             fallback=results[:RERANK_TOP_K],
+        )
+
+        # Step 3.1: Source-intent injection (post-rerank)
+        results = await self._inject_source_intent(
+            query, results, organisation_id, org_idcc_list,
         )
         trace.perf_ms["rerank"] = (time.perf_counter() - t2) * 1000
         trace.rerank_results = _serialize_chunks(results, limit=RERANK_TOP_K)
