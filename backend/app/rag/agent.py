@@ -25,6 +25,7 @@ from app.rag.parent_expansion import (
     fetch_by_identifiers,
 )
 from app.rag.reranker import get_reranker
+from app.rag.source_intent import fetch_by_source_intent
 from app.rag.search import HybridSearch, SearchResult
 from app.services.cost_tracker import cost_tracker
 
@@ -562,6 +563,11 @@ class RAGAgent:
         results = self._inject_identifier_matches(
             query, results, organisation_id, org_idcc_list,
         )
+
+        # --- Step 1.6: Source-intent injection ---
+        results = self._inject_source_intent(
+            query, results, organisation_id, org_idcc_list,
+        )
         t2 = time.perf_counter()
 
         # --- Step 3: Cross-encoder reranking ---
@@ -714,6 +720,11 @@ class RAGAgent:
                 "[QUALITY] identifier_no_match: %s — search relies on semantic guess",
                 trace.identifiers_detected,
             )
+
+        # Step 1.6: Source-intent injection
+        results = self._inject_source_intent(
+            query, results, organisation_id, org_idcc_list,
+        )
 
         # Snapshot the candidate pool right before rerank
         trace.hybrid_results = _serialize_chunks(results, limit=30)
@@ -1074,6 +1085,47 @@ class RAGAgent:
             "[BOOST] Identifier injection: %d new chunks (total pool: %d)",
             injected, len(results),
         )
+        return results
+
+    def _inject_source_intent(
+        self,
+        query: str,
+        results: list[SearchResult],
+        organisation_id: str,
+        org_idcc_list: list[str] | None,
+    ) -> list[SearchResult]:
+        """Step 1.6: inject chunks matching the user's explicit source-type intent.
+
+        When a user asks "Que dit la CCN..." or "le Code du travail prévoit...",
+        we guarantee that source type is represented in the candidate pool
+        before reranking — even if RRF didn't surface it.
+        """
+        try:
+            extra = fetch_by_source_intent(
+                self.search_engine.qdrant,
+                query,
+                organisation_id=organisation_id,
+                org_idcc_list=org_idcc_list,
+            )
+        except Exception:
+            logger.exception("[INTENT] Source intent injection failed")
+            return results
+        if not extra:
+            return results
+        seen = {(r.document_id, r.chunk_index) for r in results}
+        injected = 0
+        for r in extra:
+            key = (r.document_id, r.chunk_index)
+            if key in seen:
+                continue
+            seen.add(key)
+            results.append(r)
+            injected += 1
+        if injected:
+            logger.info(
+                "[INTENT] Source intent injection: %d new chunks (total pool: %d)",
+                injected, len(results),
+            )
         return results
 
     async def _search_with_expansion(
