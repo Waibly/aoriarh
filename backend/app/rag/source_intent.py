@@ -18,6 +18,7 @@ from qdrant_client.models import (
     MatchAny,
     MatchValue,
     Prefetch,
+    SparseVector,
 )
 
 from app.rag.qdrant_store import COLLECTION_NAME
@@ -128,21 +129,48 @@ def detect_source_intent(query: str) -> list[tuple[list[str], bool]]:
     return matches
 
 
+def _point_to_result(payload: dict, score: float) -> SearchResult:
+    """Convert a Qdrant point payload to a SearchResult."""
+    return SearchResult(
+        text=payload.get("text", ""),
+        doc_name=payload.get("doc_name", ""),
+        document_id=payload.get("document_id", ""),
+        source_type=payload.get("source_type", ""),
+        norme_niveau=int(payload.get("norme_niveau", 9)),
+        norme_poids=float(payload.get("norme_poids", 0.5)),
+        chunk_index=int(payload.get("chunk_index", 0)),
+        score=score,
+        juridiction=payload.get("juridiction"),
+        chambre=payload.get("chambre"),
+        formation=payload.get("formation"),
+        numero_pourvoi=payload.get("numero_pourvoi"),
+        date_decision=payload.get("date_decision"),
+        solution=payload.get("solution"),
+        publication=payload.get("publication"),
+        content_date=payload.get("content_date"),
+        article_nums=payload.get("article_nums"),
+        section_path=payload.get("section_path"),
+    )
+
+
 def fetch_by_source_intent(
     qdrant: QdrantClient,
     query: str,
     organisation_id: str,
     org_idcc_list: list[str] | None = None,
     dense_embedding: list[float] | None = None,
+    sparse_vector: dict | None = None,
     limit: int = _INTENT_INJECT_LIMIT,
 ) -> list[SearchResult]:
     """Fetch chunks matching the user's explicit source-type intent.
 
-    Uses dense-only search (no BM25) filtered to the requested source types.
-    If no dense_embedding is provided, falls back to Qdrant scroll (no ranking).
+    Uses hybrid search (dense + sparse RRF) filtered to the requested
+    source types. Both embeddings are required for proper results.
     """
     intents = detect_source_intent(query)
     if not intents:
+        return []
+    if not dense_embedding:
         return []
 
     all_results: list[SearchResult] = []
@@ -158,7 +186,6 @@ def fetch_by_source_intent(
         ]
 
         if needs_org:
-            # Org-specific documents
             must_conditions.append(
                 FieldCondition(
                     key="organisation_id",
@@ -166,7 +193,6 @@ def fetch_by_source_intent(
                 ),
             )
         else:
-            # Common documents — filter by idcc for CCN types
             must_conditions.append(
                 FieldCondition(
                     key="organisation_id",
@@ -184,80 +210,45 @@ def fetch_by_source_intent(
 
         intent_filter = Filter(must=must_conditions)
 
-        if dense_embedding:
-            # Dense search with filter
-            points = qdrant.query_points(
-                collection_name=COLLECTION_NAME,
+        # Hybrid search: dense + sparse RRF (same as main pipeline)
+        prefetches = [
+            Prefetch(
                 query=dense_embedding,
-                query_filter=intent_filter,
                 using="dense",
-                limit=limit,
-                with_payload=True,
-            )
-            for point in points.points:
-                payload = point.payload or {}
-                key = (payload.get("document_id", ""), int(payload.get("chunk_index", 0)))
-                if key in seen:
-                    continue
-                seen.add(key)
-                all_results.append(
-                    SearchResult(
-                        text=payload.get("text", ""),
-                        doc_name=payload.get("doc_name", ""),
-                        document_id=payload.get("document_id", ""),
-                        source_type=payload.get("source_type", ""),
-                        norme_niveau=int(payload.get("norme_niveau", 9)),
-                        norme_poids=float(payload.get("norme_poids", 0.5)),
-                        chunk_index=int(payload.get("chunk_index", 0)),
-                        score=point.score if point.score is not None else 0.0,
-                        juridiction=payload.get("juridiction"),
-                        chambre=payload.get("chambre"),
-                        formation=payload.get("formation"),
-                        numero_pourvoi=payload.get("numero_pourvoi"),
-                        date_decision=payload.get("date_decision"),
-                        solution=payload.get("solution"),
-                        publication=payload.get("publication"),
-                        content_date=payload.get("content_date"),
-                        article_nums=payload.get("article_nums"),
-                        section_path=payload.get("section_path"),
+                limit=limit * 2,
+                filter=intent_filter,
+            ),
+        ]
+        if sparse_vector:
+            prefetches.append(
+                Prefetch(
+                    query=SparseVector(
+                        indices=sparse_vector["indices"],
+                        values=sparse_vector["values"],
                     ),
-                )
-        else:
-            # Fallback: scroll without ranking
-            scroll_result = qdrant.scroll(
-                collection_name=COLLECTION_NAME,
-                scroll_filter=intent_filter,
-                limit=limit,
-                with_payload=True,
+                    using="sparse-bm25",
+                    limit=limit * 2,
+                    filter=intent_filter,
+                ),
             )
-            for point in scroll_result[0]:
-                payload = point.payload or {}
-                key = (payload.get("document_id", ""), int(payload.get("chunk_index", 0)))
-                if key in seen:
-                    continue
-                seen.add(key)
-                all_results.append(
-                    SearchResult(
-                        text=payload.get("text", ""),
-                        doc_name=payload.get("doc_name", ""),
-                        document_id=payload.get("document_id", ""),
-                        source_type=payload.get("source_type", ""),
-                        norme_niveau=int(payload.get("norme_niveau", 9)),
-                        norme_poids=float(payload.get("norme_poids", 0.5)),
-                        chunk_index=int(payload.get("chunk_index", 0)),
-                        score=0.0,
-                        juridiction=payload.get("juridiction"),
-                        chambre=payload.get("chambre"),
-                        formation=payload.get("formation"),
-                        numero_pourvoi=payload.get("numero_pourvoi"),
-                        date_decision=payload.get("date_decision"),
-                        solution=payload.get("solution"),
-                        publication=payload.get("publication"),
-                        content_date=payload.get("content_date"),
-                        article_nums=payload.get("article_nums"),
-                        section_path=payload.get("section_path"),
-                    ),
-                )
+
+        points = qdrant.query_points(
+            collection_name=COLLECTION_NAME,
+            prefetch=prefetches,
+            query=FusionQuery(fusion="rrf"),
+            limit=limit,
+            with_payload=True,
+        )
+
+        for point in points.points:
+            payload = point.payload or {}
+            key = (payload.get("document_id", ""), int(payload.get("chunk_index", 0)))
+            if key in seen:
+                continue
+            seen.add(key)
+            all_results.append(
+                _point_to_result(payload, point.score or 0.0),
+            )
 
     logger.info(
         "[INTENT] Source intent detected: %s → %d chunks injected",

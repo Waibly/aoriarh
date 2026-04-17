@@ -1105,13 +1105,20 @@ class RAGAgent:
         if not detect_source_intent(query):
             return results
         try:
-            dense_embedding = await self.search_engine._encode_dense(query)
+            dense_task = self.search_engine._encode_dense(query)
+            sparse_task = asyncio.to_thread(
+                self.search_engine._encode_sparse_sync, query,
+            )
+            dense_embedding, sparse_vector = await asyncio.gather(
+                dense_task, sparse_task,
+            )
             extra = fetch_by_source_intent(
                 self.search_engine.qdrant,
                 query,
                 organisation_id=organisation_id,
                 org_idcc_list=org_idcc_list,
                 dense_embedding=dense_embedding,
+                sparse_vector=sparse_vector,
             )
         except Exception:
             logger.exception("[INTENT] Source intent injection failed")
