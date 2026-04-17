@@ -41,5 +41,5 @@ export default auth((req) => {
 });
 
 export const config = {
-  matcher: ["/((?!api|_next/static|_next/image|favicon\\.ico|icon\\.png|apple-icon\\.png|logo-aoria\\.png|robots\\.txt).*)"],
+  matcher: ["/((?!api|_next/static|_next/image|favicon\\.ico|icon\\.png|apple-icon\\.png|logo-aoria\\.png|icon-aoria\\.png|robots\\.txt).*)"],
 };

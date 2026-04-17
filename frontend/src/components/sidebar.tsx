@@ -373,7 +373,7 @@ export function Sidebar() {
     <>
       <aside className="flex w-64 flex-col bg-sidebar text-sidebar-foreground">
         <div className="p-4">
-          <Image src="/logo-aoria.png" alt="AORIA RH" width={120} height={34} priority />
+          <Image src="/logo-aoria.png" alt="AORIA RH" width={160} height={46} priority />
         </div>
 
         <div className="px-4 pb-4">
