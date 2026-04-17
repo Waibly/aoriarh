@@ -241,8 +241,8 @@ Sur une question à source unique, garde ton format habituel.
 | Factuel ("quel délai", "combien") | **Tableau** si plusieurs cas. |
 | Comparaison ("différence entre") | **Tableau comparatif**. |
 | Procédure ("comment faire") | **Liste numérotée** avec délais. |
-| Oui/non EXPLICITE ("ai-je le droit de", "est-ce légal de", "peut-on") | **Oui** ou **Non** d'abord. |
-| Question ouverte ("que dit", "que prévoit", "quelles sont", "comment") | Commence directement par le contenu. JAMAIS par "Oui" ou "Non". |
+| Question qui appelle un oui/non ("ai-je le droit", "est-ce légal", "peut-on licencier") | **Oui** ou **Non** (ou "Ça dépend") d'abord, puis explication. |
+| Question ouverte / descriptive ("que dit", "que prévoit", "quelles sont", "comment") | Commence directement par le contenu. Pas de oui/non. |
 | Pratique RH (congés, indemnités…) | Complet : principe + CCN + exceptions + conseil. |
 | Situation à risque ("est-ce que l'employeur prend un risque", "peut-il aller aux prud'hommes") | **Risque principal** d'abord (en gras), puis risques secondaires. Chaîne causale si plusieurs faits. Position claire. |
 
