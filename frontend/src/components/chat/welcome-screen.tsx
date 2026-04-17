@@ -46,7 +46,7 @@ export function WelcomeScreen({ onSend }: WelcomeScreenProps) {
   return (
     <div className="flex flex-1 flex-col items-center justify-center rounded-xl bg-white px-4 dark:bg-card animate-in fade-in duration-500">
       <div className="mb-6 animate-in fade-in zoom-in-95 duration-500">
-        <Image src="/logo-aoria.svg" alt="AORIA RH" width={36} height={48} priority />
+        <Image src="/logo-aoria.png" alt="AORIA RH" width={140} height={40} priority />
       </div>
       <h1 className="text-2xl font-semibold tracking-tight animate-in fade-in slide-in-from-bottom-2 duration-500 delay-100">AORIA RH</h1>
       <p className="text-muted-foreground mt-1 text-base animate-in fade-in slide-in-from-bottom-2 duration-500 delay-150">
@@ -95,7 +95,7 @@ export function WelcomeScreen({ onSend }: WelcomeScreenProps) {
         {suggestions.map((suggestion) => (
           <button
             key={suggestion}
-            className="flex items-start gap-2 rounded-xl bg-muted/50 px-4 py-3 text-left text-sm text-muted-foreground transition-colors hover:bg-[#9952b8]/10 hover:text-foreground"
+            className="flex items-start gap-2 rounded-xl bg-muted/50 px-4 py-3 text-left text-sm text-muted-foreground transition-colors hover:bg-[#652bb0]/10 hover:text-foreground"
             onClick={() => onSend(suggestion)}
           >
             <Scale className="mt-0.5 size-4 shrink-0" />

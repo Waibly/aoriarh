@@ -361,7 +361,7 @@ export function Sidebar() {
 
   const planDisplay = {
     gratuit: { label: "Gratuit", icon: UserCheck, textClass: "text-muted-foreground", iconBg: "bg-muted" },
-    invite: { label: "Invité", icon: Gift, textClass: "text-[#9952b8]", iconBg: "bg-[#9952b8]/15" },
+    invite: { label: "Invité", icon: Gift, textClass: "text-[#652bb0]", iconBg: "bg-[#652bb0]/15" },
     vip: { label: "VIP", icon: Crown, textClass: "text-amber-700 dark:text-amber-300", iconBg: "bg-amber-400/20 dark:bg-amber-500/20" },
   } as const;
 

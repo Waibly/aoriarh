@@ -304,7 +304,7 @@ function StepBadge({
     <div
       className={`flex items-center gap-2 rounded-full px-3.5 py-2 text-xs font-semibold transition-all ${
         isActive || isDone
-          ? "bg-[#9952b8]/10 text-[#7b2da0]"
+          ? "bg-[#652bb0]/10 text-[#7b2da0]"
           : "bg-muted text-muted-foreground"
       }`}
     >

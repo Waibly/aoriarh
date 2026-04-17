@@ -109,7 +109,7 @@ const PLAN_CONFIG: Record<string, { label: string; className: string }> = {
   gratuit: { label: "Gratuit", className: "" },
   invite: {
     label: "Invité",
-    className: "border-[#9952b8] bg-[#9952b8]/10 text-[#9952b8]",
+    className: "border-[#652bb0] bg-[#652bb0]/10 text-[#652bb0]",
   },
   vip: {
     label: "VIP",

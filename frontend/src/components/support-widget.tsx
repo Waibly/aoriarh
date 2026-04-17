@@ -97,7 +97,7 @@ export function SupportWidget() {
       {!open && (
         <button
           onClick={() => setOpen(true)}
-          className="fixed bottom-6 right-6 z-50 flex h-12 w-12 items-center justify-center rounded-full bg-[#9952b8] text-white shadow-lg transition-transform hover:scale-105 active:scale-95"
+          className="fixed bottom-6 right-6 z-50 flex h-12 w-12 items-center justify-center rounded-full bg-[#652bb0] text-white shadow-lg transition-transform hover:scale-105 active:scale-95"
           title="Contacter le support"
         >
           <Headset className="h-5 w-5" />
@@ -132,7 +132,7 @@ export function SupportWidget() {
                   className={cn(
                     "rounded-full border px-3 py-1 text-xs font-medium transition-colors",
                     type === t.value
-                      ? "border-[#9952b8] bg-[#9952b8]/10 text-[#9952b8]"
+                      ? "border-[#652bb0] bg-[#652bb0]/10 text-[#652bb0]"
                       : "border-border hover:bg-muted"
                   )}
                 >

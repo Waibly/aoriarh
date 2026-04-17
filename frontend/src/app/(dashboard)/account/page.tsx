@@ -117,7 +117,7 @@ export default function AccountPage() {
             <span className="w-32 text-sm text-muted-foreground">Rôle</span>
             <Badge variant="outline" className={
               user.role === "admin" ? "rounded-full border-amber-400 bg-amber-50 text-amber-700 dark:border-amber-500 dark:bg-amber-950 dark:text-amber-300" :
-              user.role === "manager" ? "rounded-full border-[#9952b8] bg-[#9952b8]/10 text-[#9952b8]" :
+              user.role === "manager" ? "rounded-full border-[#652bb0] bg-[#652bb0]/10 text-[#652bb0]" :
               "rounded-full"
             }>{ROLE_LABELS[user.role] ?? user.role}</Badge>
           </div>

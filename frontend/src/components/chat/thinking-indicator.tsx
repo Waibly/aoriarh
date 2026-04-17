@@ -10,14 +10,14 @@ export function ThinkingIndicator() {
         aria-label="Recherche en cours"
       >
         <span
-          className="inline-block size-2 rounded-full bg-[#9952b8] animate-[bounce-dot_1s_ease-in-out_infinite]"
+          className="inline-block size-2 rounded-full bg-[#652bb0] animate-[bounce-dot_1s_ease-in-out_infinite]"
         />
         <span
-          className="inline-block size-2 rounded-full bg-[#9952b8] animate-[bounce-dot_1s_ease-in-out_infinite]"
+          className="inline-block size-2 rounded-full bg-[#652bb0] animate-[bounce-dot_1s_ease-in-out_infinite]"
           style={{ animationDelay: "0.15s" }}
         />
         <span
-          className="inline-block size-2 rounded-full bg-[#9952b8] animate-[bounce-dot_1s_ease-in-out_infinite]"
+          className="inline-block size-2 rounded-full bg-[#652bb0] animate-[bounce-dot_1s_ease-in-out_infinite]"
           style={{ animationDelay: "0.3s" }}
         />
       </div>

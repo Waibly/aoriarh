@@ -223,7 +223,7 @@ export default function TeamPage() {
                         variant="outline"
                         className={
                           member.role_in_org === "manager"
-                            ? "rounded-full border-[#9952b8] bg-[#9952b8]/10 text-[#9952b8]"
+                            ? "rounded-full border-[#652bb0] bg-[#652bb0]/10 text-[#652bb0]"
                             : "rounded-full"
                         }
                       >
@@ -828,7 +828,7 @@ function InvitationRow({
           variant="outline"
           className={
             invitation.role_in_org === "manager"
-              ? "rounded-full border-[#9952b8] bg-[#9952b8]/10 text-[#9952b8]"
+              ? "rounded-full border-[#652bb0] bg-[#652bb0]/10 text-[#652bb0]"
               : "rounded-full"
           }
         >

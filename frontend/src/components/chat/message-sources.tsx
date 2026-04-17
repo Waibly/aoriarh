@@ -92,7 +92,7 @@ export function MessageSources({ sources }: MessageSourcesProps) {
   return (
     <>
       <Collapsible open={isOpen} onOpenChange={setIsOpen}>
-        <CollapsibleTrigger className="mt-4 flex items-center gap-2 rounded-md px-2 py-1.5 text-sm font-medium text-[#9952b8] transition-colors hover:bg-[#9952b8]/5 dark:text-[#9952b8] dark:hover:bg-[#9952b8]/10">
+        <CollapsibleTrigger className="mt-4 flex items-center gap-2 rounded-md px-2 py-1.5 text-sm font-medium text-[#652bb0] transition-colors hover:bg-[#652bb0]/5 dark:text-[#652bb0] dark:hover:bg-[#652bb0]/10">
           <ChevronRight
             className={`size-4 transition-transform duration-200 ${isOpen ? "rotate-90" : ""}`}
           />
@@ -113,10 +113,10 @@ export function MessageSources({ sources }: MessageSourcesProps) {
                       key={`${group.key}-${index}`}
                       type="button"
                       onClick={() => setSelectedSource(source)}
-                      className="flex w-full items-center gap-3 rounded-lg border border-border bg-card px-4 py-3 text-left transition-colors hover:border-[#9952b8]/30 hover:bg-[#9952b8]/5 dark:hover:border-[#9952b8]/40 dark:hover:bg-[#9952b8]/10"
+                      className="flex w-full items-center gap-3 rounded-lg border border-border bg-card px-4 py-3 text-left transition-colors hover:border-[#652bb0]/30 hover:bg-[#652bb0]/5 dark:hover:border-[#652bb0]/40 dark:hover:bg-[#652bb0]/10"
                     >
-                      <div className="flex size-8 shrink-0 items-center justify-center rounded-md bg-[#9952b8]/10 dark:bg-[#9952b8]/20">
-                        <FileText className="size-4 text-[#9952b8] dark:text-[#9952b8]" />
+                      <div className="flex size-8 shrink-0 items-center justify-center rounded-md bg-[#652bb0]/10 dark:bg-[#652bb0]/20">
+                        <FileText className="size-4 text-[#652bb0] dark:text-[#652bb0]" />
                       </div>
                       <div className="min-w-0 flex-1">
                         <p className="truncate text-sm font-medium text-foreground">
@@ -187,15 +187,15 @@ export function MessageSources({ sources }: MessageSourcesProps) {
         <DialogContent className="flex max-h-[85vh] sm:max-w-5xl flex-col overflow-hidden">
           <DialogHeader className="shrink-0 border-b border-border pb-4">
             <div className="flex items-center gap-3">
-              <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-[#9952b8]/10 dark:bg-[#9952b8]/20">
-                <FileText className="size-5 text-[#9952b8] dark:text-[#9952b8]" />
+              <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-[#652bb0]/10 dark:bg-[#652bb0]/20">
+                <FileText className="size-5 text-[#652bb0] dark:text-[#652bb0]" />
               </div>
               <div className="min-w-0">
                 <DialogTitle className="truncate text-base">
                   {selectedSource && (formatJurisprudenceRef(selectedSource) || selectedSource.document_name)}
                 </DialogTitle>
                 <div className="mt-1 flex flex-wrap items-center gap-2">
-                  <Badge variant="outline" className="rounded-full border-[#9952b8] bg-[#9952b8]/10 text-[#9952b8] hover:bg-[#9952b8]/10 dark:bg-[#9952b8]/20 dark:text-[#9952b8] dark:hover:bg-[#9952b8]/20 text-xs">
+                  <Badge variant="outline" className="rounded-full border-[#652bb0] bg-[#652bb0]/10 text-[#652bb0] hover:bg-[#652bb0]/10 dark:bg-[#652bb0]/20 dark:text-[#652bb0] dark:hover:bg-[#652bb0]/20 text-xs">
                     {selectedSource?.source_type_label}
                   </Badge>
                   <span className="text-muted-foreground text-xs">
