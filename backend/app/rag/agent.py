@@ -722,7 +722,7 @@ class RAGAgent:
             )
 
         # Step 1.6: Source-intent injection
-        results = self._inject_source_intent(
+        results = await self._inject_source_intent(
             query, results, organisation_id, org_idcc_list,
         )
 
