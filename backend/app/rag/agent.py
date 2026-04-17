@@ -25,7 +25,7 @@ from app.rag.parent_expansion import (
     fetch_by_identifiers,
 )
 from app.rag.reranker import get_reranker
-from app.rag.source_intent import fetch_by_source_intent
+from app.rag.source_intent import detect_source_intent
 from app.rag.search import HybridSearch, SearchResult
 from app.services.cost_tracker import cost_tracker
 
@@ -571,11 +571,6 @@ class RAGAgent:
             self.reranker.rerank(query, results, top_k=RERANK_TOP_K),
             fallback=results[:RERANK_TOP_K],
         )
-
-        # --- Step 3.1: Source-intent injection (post-rerank) ---
-        results = await self._inject_source_intent(
-            query, results, organisation_id, org_idcc_list,
-        )
         t3 = time.perf_counter()
         logger.info(
             "[PERF] Step 3 — Reranking %.0fms | %d results",
@@ -732,10 +727,6 @@ class RAGAgent:
             fallback=results[:RERANK_TOP_K],
         )
 
-        # Step 3.1: Source-intent injection (post-rerank)
-        results = await self._inject_source_intent(
-            query, results, organisation_id, org_idcc_list,
-        )
         trace.perf_ms["rerank"] = (time.perf_counter() - t2) * 1000
         trace.rerank_results = _serialize_chunks(results, limit=RERANK_TOP_K)
         logger.info(
@@ -1088,60 +1079,6 @@ class RAGAgent:
         )
         return results
 
-    async def _inject_source_intent(
-        self,
-        query: str,
-        results: list[SearchResult],
-        organisation_id: str,
-        org_idcc_list: list[str] | None,
-    ) -> list[SearchResult]:
-        """Step 1.6: inject chunks matching the user's explicit source-type intent.
-
-        When a user asks "Que dit la CCN..." or "le Code du travail prévoit...",
-        we guarantee that source type is represented in the candidate pool
-        before reranking — even if RRF didn't surface it.
-        """
-        from app.rag.source_intent import detect_source_intent
-
-        if not detect_source_intent(query):
-            return results
-        try:
-            dense_task = self.search_engine._encode_dense(query)
-            sparse_task = asyncio.to_thread(
-                self.search_engine._encode_sparse_sync, query,
-            )
-            dense_embedding, sparse_vector = await asyncio.gather(
-                dense_task, sparse_task,
-            )
-            extra = fetch_by_source_intent(
-                self.search_engine.qdrant,
-                query,
-                organisation_id=organisation_id,
-                org_idcc_list=org_idcc_list,
-                dense_embedding=dense_embedding,
-                sparse_vector=sparse_vector,
-            )
-        except Exception:
-            logger.exception("[INTENT] Source intent injection failed")
-            return results
-        if not extra:
-            return results
-        seen = {(r.document_id, r.chunk_index) for r in results}
-        injected = 0
-        for r in extra:
-            key = (r.document_id, r.chunk_index)
-            if key in seen:
-                continue
-            seen.add(key)
-            results.append(r)
-            injected += 1
-        if injected:
-            logger.info(
-                "[INTENT] Source intent injection: %d new chunks (total pool: %d)",
-                injected, len(results),
-            )
-        return results
-
     async def _search_with_expansion(
         self,
         query: str,
@@ -1151,6 +1088,18 @@ class RAGAgent:
     ) -> tuple[list[SearchResult], list[str]]:
         """Expand query into variants, search in parallel, fuse with RRF."""
         t0 = time.perf_counter()
+
+        # Detect explicit source-type intent (e.g. "que dit la CCN...")
+        intents = detect_source_intent(query)
+        source_type_filter: list[str] | None = None
+        if intents:
+            source_type_filter = []
+            for source_types, _needs_org in intents:
+                source_type_filter.extend(source_types)
+            logger.info(
+                "[INTENT] Source-type filter detected: %s",
+                ", ".join(source_type_filter),
+            )
 
         variants = await self._step_with_timeout(
             self._expand_queries(query, org_context=org_context),
@@ -1176,6 +1125,7 @@ class RAGAgent:
             self.search_engine.search(
                 variant, organisation_id, top_k=TOP_K,
                 org_idcc_list=org_idcc_list,
+                source_type_filter=source_type_filter,
             )
             for variant in variants
         ]

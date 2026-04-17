@@ -123,11 +123,16 @@ class HybridSearch:
         organisation_id: str,
         top_k: int = TOP_K,
         org_idcc_list: list[str] | None = None,
+        source_type_filter: list[str] | None = None,
     ) -> list[SearchResult]:
         """Execute a hybrid search combining dense and sparse vectors.
 
         org_idcc_list: if provided, CCN common docs are filtered to only include
         these IDCCs. Other common docs (code du travail, jurisprudence) are always included.
+
+        source_type_filter: if provided, restrict search to ONLY these source_types.
+        Used when the user explicitly asks about a specific source category
+        (e.g. "Que dit la CCN..." → search only in CCN documents).
         """
         t0 = time.perf_counter()
 
@@ -195,6 +200,19 @@ class HybridSearch:
             )
 
         org_filter = Filter(should=should_conditions)
+
+        # 2b. If source_type_filter is set, wrap the org filter with a
+        # source_type constraint so we only search in the requested types.
+        if source_type_filter:
+            org_filter = Filter(
+                must=[
+                    org_filter,
+                    FieldCondition(
+                        key="source_type",
+                        match=MatchAny(any=source_type_filter),
+                    ),
+                ],
+            )
 
         # 3. Hybrid query with RRF fusion via prefetch
         prefetch_dense = Prefetch(
