@@ -60,11 +60,12 @@ _INTENT_PATTERNS: list[tuple[re.Pattern, list[str], bool]] = [
         ["code_travail", "code_travail_reglementaire"],
         False,
     ),
-    # Jurisprudence
+    # Jurisprudence — "arrêt" seul est exclu car il matche "arrêt maladie"
     (
         re.compile(
             r"\b(?:jurisprudence|cour\s+de\s+cassation|cassation"
-            r"|arr[eê]t|cour\s+d['\u2019]appel)\b",
+            r"|arr[eê]ts?\s+(?:de\s+)?(?:la\s+)?(?:cour|cassation|conseil)"
+            r"|cour\s+d['\u2019]appel)\b",
             re.IGNORECASE,
         ),
         [
