@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useSession, signOut } from "next-auth/react";
@@ -372,7 +373,7 @@ export function Sidebar() {
     <>
       <aside className="flex w-64 flex-col bg-sidebar text-sidebar-foreground">
         <div className="p-4">
-          <h1 className="text-xl font-semibold tracking-tight">AORIA RH</h1>
+          <Image src="/logo-aoria.png" alt="AORIA RH" width={120} height={34} priority />
         </div>
 
         <div className="px-4 pb-4">

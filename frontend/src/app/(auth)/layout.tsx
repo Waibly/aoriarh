@@ -1,3 +1,5 @@
+import Image from "next/image";
+
 export default function AuthLayout({
   children,
 }: {
@@ -7,19 +9,7 @@ export default function AuthLayout({
     <div className="container relative grid min-h-svh flex-col items-center justify-center bg-white dark:bg-background lg:max-w-none lg:grid-cols-2 lg:px-0">
       <div className="bg-primary text-primary-foreground relative hidden h-full flex-col p-10 lg:flex">
         <div className="relative z-20 flex items-center text-lg font-medium">
-          <svg
-            xmlns="http://www.w3.org/2000/svg"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            className="mr-2 h-6 w-6"
-          >
-            <path d="M15 6v12a3 3 0 1 0 3-3H6a3 3 0 1 0 3 3V6a3 3 0 1 0-3 3h12a3 3 0 1 0-3-3" />
-          </svg>
-          AORIA RH
+          <Image src="/logo-aoria.png" alt="AORIA RH" width={130} height={37} className="brightness-0 invert" />
         </div>
         <div className="relative z-20 mt-auto">
           <blockquote className="space-y-2">
