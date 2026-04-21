@@ -687,9 +687,25 @@ function CcnDetailPane({
   onRemove: () => void;
   onDownload: (id: string) => void;
 }) {
-  // Split docs : consolidated official text vs recently published amendments
-  const consolidatedDocs = docs.filter((d) => !d.name.includes("BOCC"));
-  const amendmentDocs = docs.filter((d) => d.name.includes("BOCC"));
+  // Split docs : consolidated official text vs recently published amendments.
+  // The amendments list is read-only from the client's perspective — they
+  // are common documents managed by AORIA RH and synchronised by the BOCC
+  // cron. The user can neither modify, re-sync nor delete them from here.
+  const consolidatedDocs = useMemo(
+    () => docs.filter((d) => !d.name.includes("BOCC")),
+    [docs],
+  );
+  const amendmentDocs = useMemo(
+    () =>
+      [...docs]
+        .filter((d) => d.name.includes("BOCC"))
+        .sort((a, b) => (a.created_at < b.created_at ? 1 : -1)),
+    [docs],
+  );
+
+  // Most recent avenant date — for the "Dernière maj" badge.
+  const latestAvenantDate =
+    amendmentDocs.length > 0 ? new Date(amendmentDocs[0].created_at) : null;
 
   // Source date freshness color
   const sourceDateBadge = ccn.source_date
@@ -746,6 +762,11 @@ function CcnDetailPane({
                 {ccn.status === "error" && (
                   <Badge className="bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400 border-0">
                     Erreur
+                  </Badge>
+                )}
+                {latestAvenantDate && (
+                  <Badge variant="outline" className="rounded-full text-[11px]">
+                    Dernier avenant le {latestAvenantDate.toLocaleDateString("fr-FR")}
                   </Badge>
                 )}
               </div>
@@ -811,9 +832,13 @@ function CcnDetailPane({
               <CardTitle className="text-sm font-semibold flex items-center gap-2">
                 Avenants récents
                 <InfoTooltip>
-                  Avenants publiés récemment qui complètent le texte officiel
-                  avant que celui-ci ne soit consolidé. L&apos;IA s&apos;appuie
-                  aussi sur ces avenants pour répondre aux questions.
+                  Avenants publiés au Bulletin officiel des conventions
+                  collectives (BOCC), ajoutés automatiquement par AORIA RH
+                  dès leur publication. L&apos;IA les utilise dans ses réponses
+                  au même titre que le texte officiel. Lecture seule — vous
+                  ne pouvez ni les modifier ni les supprimer, ce sont des
+                  documents partagés entre tous les clients qui ont installé
+                  cette convention.
                 </InfoTooltip>
               </CardTitle>
             </CardHeader>
@@ -821,7 +846,8 @@ function CcnDetailPane({
               <DocsList
                 docs={amendmentDocs}
                 onDownload={onDownload}
-                emptyText="Aucun avenant récent pour cette convention"
+                emptyText="Aucun avenant récent pour cette convention. Les nouveaux avenants seront ajoutés automatiquement dès leur publication."
+                collapseAfter={5}
               />
             </CardContent>
           </Card>
@@ -849,17 +875,27 @@ function DocsList({
   docs,
   onDownload,
   emptyText,
+  collapseAfter,
 }: {
   docs: Document[];
   onDownload: (id: string) => void;
   emptyText: string;
+  /** When set, only show `collapseAfter` items initially and offer a
+   *  "Voir les X plus anciens" button to reveal the rest. */
+  collapseAfter?: number;
 }) {
+  const [expanded, setExpanded] = useState(false);
   if (docs.length === 0) {
     return <div className="py-8 text-center text-xs text-muted-foreground">{emptyText}</div>;
   }
+
+  const shouldCollapse = collapseAfter && docs.length > collapseAfter && !expanded;
+  const visibleDocs = shouldCollapse ? docs.slice(0, collapseAfter) : docs;
+  const hiddenCount = docs.length - (collapseAfter ?? 0);
+
   return (
     <div className="space-y-1">
-      {docs.map((d) => (
+      {visibleDocs.map((d) => (
         <div
           key={d.id}
           className="flex items-start gap-3 px-3 py-2 rounded border hover:bg-muted/30 transition-colors"
@@ -889,6 +925,24 @@ function DocsList({
           </Button>
         </div>
       ))}
+      {shouldCollapse && (
+        <button
+          type="button"
+          onClick={() => setExpanded(true)}
+          className="w-full text-center text-xs text-primary hover:underline py-2"
+        >
+          Voir les {hiddenCount} plus anciens
+        </button>
+      )}
+      {expanded && collapseAfter && docs.length > collapseAfter && (
+        <button
+          type="button"
+          onClick={() => setExpanded(false)}
+          className="w-full text-center text-xs text-muted-foreground hover:underline py-2"
+        >
+          Réduire
+        </button>
+      )}
     </div>
   );
 }
