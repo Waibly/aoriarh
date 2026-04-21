@@ -10,6 +10,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Download,
+  Edit,
   FileText,
   FileUp,
   Files,
@@ -46,6 +47,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
   Table,
   TableBody,
@@ -60,6 +62,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { InfoTooltip } from "@/components/admin/info-tooltip";
 import { cn } from "@/lib/utils";
 import { UploadDialog } from "./upload-dialog";
+import { MetadataEditDialog } from "./metadata-edit-dialog";
+import { useDocumentActions, type BulkResult } from "./use-document-actions";
 
 // ----------------- Constants -----------------
 
@@ -253,103 +257,21 @@ export default function DocumentsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [conventions.length]);
 
-  // ---- Document actions ----
+  // ---- Document actions (single + bulk + metadata) ----
 
-  const handleDelete = async (docId: string, docName?: string) => {
-    if (!currentOrg || !token) return;
-    const label = docName ? `« ${docName} »` : "ce document";
-    if (
-      !confirm(
-        `Supprimer ${label} ?\n\nLe fichier et son indexation seront définitivement supprimés. Cette action est irréversible.`,
-      )
-    ) {
-      return;
-    }
-    try {
-      await apiFetch(`/documents/${currentOrg.id}/${docId}`, {
-        method: "DELETE",
-        token,
-      });
-      toast.success("Document supprimé");
-      fetchDocuments();
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : "";
-      toast.error(
-        msg.includes("404")
-          ? "Ce document a déjà été supprimé."
-          : msg.includes("indexation")
-            ? "Impossible de supprimer : le document est en cours d'indexation, réessayez dans quelques secondes."
-            : msg || "Impossible de supprimer le document. Réessayez dans un instant.",
-      );
-    }
-  };
-
-  const handleDownload = async (docId: string) => {
-    if (!currentOrg || !token) return;
-    try {
-      const res = await authFetch(`/documents/${currentOrg.id}/${docId}/download`, { token });
-      if (!res.ok) throw new Error("Erreur");
-      const blob = await res.blob();
-      const disposition = res.headers.get("Content-Disposition");
-      let filename = "document";
-      if (disposition) {
-        const utf8Match = disposition.match(/filename\*=UTF-8''(.+)/i);
-        if (utf8Match) {
-          filename = decodeURIComponent(utf8Match[1].replace(/;.*$/, "").trim());
-        } else {
-          const asciiMatch = disposition.match(/filename="(.+?)"/);
-          if (asciiMatch) filename = asciiMatch[1];
-        }
-      }
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = filename;
-      a.click();
-      URL.revokeObjectURL(url);
-    } catch (err) {
-      toast.error(
-        err instanceof Error && err.message
-          ? err.message
-          : "Le téléchargement a échoué. Le fichier original est peut-être indisponible, contactez le support.",
-      );
-    }
-  };
-
-  const handleReindex = async (docId: string) => {
-    if (!currentOrg || !token) return;
-    try {
-      await apiFetch(`/documents/${currentOrg.id}/${docId}/reindex`, {
-        method: "POST",
-        token,
-      });
-      toast.success("Réindexation lancée");
-      fetchDocuments();
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Erreur lors de la réindexation");
-    }
-  };
-
-  const handleReplace = async (docId: string, file: File) => {
-    if (!currentOrg || !token) return;
-    const formData = new FormData();
-    formData.append("file", file);
-    try {
-      const res = await authFetch(`/documents/${currentOrg.id}/${docId}`, {
-        method: "PUT",
-        body: formData,
-        token,
-      });
-      if (!res.ok) {
-        const data = await res.json().catch(() => null);
-        throw new Error(data?.detail ?? "Erreur lors du remplacement");
-      }
-      toast.success("Document remplacé — réindexation en cours");
-      fetchDocuments();
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Erreur lors du remplacement");
-    }
-  };
+  const {
+    handleDelete,
+    handleDownload,
+    handleReindex,
+    handleReplace,
+    handleBulkDelete,
+    handleBulkReindex,
+    handleUpdateMetadata,
+  } = useDocumentActions({
+    orgId: currentOrg?.id,
+    token,
+    onChanged: fetchDocuments,
+  });
 
   // ---- CCN actions ----
 
@@ -658,6 +580,9 @@ export default function DocumentsPage() {
               onDelete={handleDelete}
               onReindex={handleReindex}
               onReplace={handleReplace}
+              onBulkDelete={handleBulkDelete}
+              onBulkReindex={handleBulkReindex}
+              onUpdateMetadata={handleUpdateMetadata}
             />
           ) : null}
         </div>
@@ -982,6 +907,9 @@ function CategoryPane({
   onDelete,
   onReindex,
   onReplace,
+  onBulkDelete,
+  onBulkReindex,
+  onUpdateMetadata,
 }: {
   category: CategoryDef;
   docs: Document[];
@@ -994,6 +922,9 @@ function CategoryPane({
   onDelete: (id: string, name?: string) => void;
   onReindex: (id: string) => void;
   onReplace: (id: string, file: File) => void;
+  onBulkDelete: (ids: string[]) => Promise<BulkResult | null>;
+  onBulkReindex: (ids: string[]) => Promise<BulkResult | null>;
+  onUpdateMetadata: (id: string, data: Record<string, string | null>) => Promise<boolean>;
 }) {
   const Icon = category.icon;
 
@@ -1004,6 +935,11 @@ function CategoryPane({
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [page, setPage] = useState(1);
   const PAGE_SIZE = 25;
+
+  // Multi-selection for bulk actions (delete, reindex).
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const [editingDoc, setEditingDoc] = useState<Document | null>(null);
 
   const toggleSort = (key: SortKey) => {
     if (key === sortKey) {
@@ -1067,6 +1003,57 @@ function CategoryPane({
   useEffect(() => {
     setPage(1);
   }, [statusFilter, search, category.key]);
+
+  // Clear the selection whenever the filter, search or category changes —
+  // otherwise we'd keep IDs that are no longer visible, and "Tout
+  // sélectionner" would be in a confusing partial state.
+  useEffect(() => {
+    setSelectedIds(new Set());
+  }, [statusFilter, search, category.key]);
+
+  // Selection helpers
+  const visibleIds = useMemo(() => new Set(paginated.map((d) => d.id)), [paginated]);
+  const selectedVisibleCount = useMemo(
+    () => paginated.filter((d) => selectedIds.has(d.id)).length,
+    [paginated, selectedIds],
+  );
+  const allVisibleChecked = paginated.length > 0 && selectedVisibleCount === paginated.length;
+  const someVisibleChecked = selectedVisibleCount > 0 && !allVisibleChecked;
+
+  const toggleOne = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleAllVisible = () => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (allVisibleChecked) {
+        for (const id of visibleIds) next.delete(id);
+      } else {
+        for (const id of visibleIds) next.add(id);
+      }
+      return next;
+    });
+  };
+
+  const runBulkDelete = async () => {
+    setBulkBusy(true);
+    const res = await onBulkDelete(Array.from(selectedIds));
+    setBulkBusy(false);
+    if (res) setSelectedIds(new Set());
+  };
+
+  const runBulkReindex = async () => {
+    setBulkBusy(true);
+    const res = await onBulkReindex(Array.from(selectedIds));
+    setBulkBusy(false);
+    if (res) setSelectedIds(new Set());
+  };
 
   // Counts per status for the filter pills
   const statusCounts = useMemo(() => {
@@ -1160,15 +1147,71 @@ function CategoryPane({
           </div>
         ) : (
           <>
+            {/* Bulk action bar — only shown when at least one row is selected */}
+            {isManager && selectedIds.size > 0 && (
+              <div className="mb-3 flex items-center justify-between gap-3 rounded-lg border border-primary/30 bg-primary/5 px-4 py-2">
+                <span className="text-sm">
+                  <strong>{selectedIds.size}</strong> document
+                  {selectedIds.size > 1 ? "s" : ""} sélectionné{selectedIds.size > 1 ? "s" : ""}
+                </span>
+                <div className="flex gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={bulkBusy}
+                    onClick={runBulkReindex}
+                  >
+                    <RefreshCw className="h-3.5 w-3.5 mr-1" />
+                    Réindexer
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={bulkBusy}
+                    onClick={() => setSelectedIds(new Set())}
+                  >
+                    Tout désélectionner
+                  </Button>
+                  <Button
+                    variant="destructive"
+                    size="sm"
+                    disabled={bulkBusy}
+                    onClick={runBulkDelete}
+                  >
+                    {bulkBusy ? (
+                      <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />
+                    ) : (
+                      <Trash2 className="h-3.5 w-3.5 mr-1" />
+                    )}
+                    Supprimer
+                  </Button>
+                </div>
+              </div>
+            )}
+
             <Table>
               <TableHeader>
                 <TableRow>
+                  {isManager && (
+                    <TableHead className="w-[40px]">
+                      <input
+                        type="checkbox"
+                        aria-label="Tout sélectionner"
+                        checked={allVisibleChecked}
+                        ref={(el) => {
+                          if (el) el.indeterminate = someVisibleChecked;
+                        }}
+                        onChange={toggleAllVisible}
+                        className="h-4 w-4 cursor-pointer accent-primary"
+                      />
+                    </TableHead>
+                  )}
                   <SortableHead label="Nom" sortKey="name" currentKey={sortKey} currentDir={sortDir} onSort={toggleSort} />
                   <SortableHead label="Type" sortKey="source_type" currentKey={sortKey} currentDir={sortDir} onSort={toggleSort} className="w-[160px]" />
                   <SortableHead label="Statut" sortKey="indexation_status" currentKey={sortKey} currentDir={sortDir} onSort={toggleSort} className="w-[100px]" />
                   <SortableHead label="Taille" sortKey="file_size" currentKey={sortKey} currentDir={sortDir} onSort={toggleSort} className="w-[80px] text-right" align="right" />
                   <SortableHead label="Date" sortKey="created_at" currentKey={sortKey} currentDir={sortDir} onSort={toggleSort} className="w-[100px] text-right" align="right" />
-                  <TableHead className="w-[140px]"></TableHead>
+                  <TableHead className="w-[160px]"></TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -1177,14 +1220,28 @@ function CategoryPane({
                     key={d.id}
                     doc={d}
                     isManager={isManager}
+                    isSelected={selectedIds.has(d.id)}
+                    onToggleSelect={toggleOne}
                     onDownload={onDownload}
                     onDelete={onDelete}
                     onReindex={onReindex}
                     onReplace={onReplace}
+                    onEditMetadata={() => setEditingDoc(d)}
                   />
                 ))}
               </TableBody>
             </Table>
+
+            {/* Metadata edit dialog */}
+            <MetadataEditDialog
+              doc={editingDoc}
+              onClose={() => setEditingDoc(null)}
+              onSave={async (data) => {
+                if (!editingDoc) return;
+                const ok = await onUpdateMetadata(editingDoc.id, data);
+                if (ok) setEditingDoc(null);
+              }}
+            />
 
             {/* Pagination */}
             {totalPages > 1 && (
@@ -1262,24 +1319,41 @@ function SortableHead({
 function DocRow({
   doc,
   isManager,
+  isSelected = false,
+  onToggleSelect,
   onDownload,
   onDelete,
   onReindex,
   onReplace,
+  onEditMetadata,
 }: {
   doc: Document;
   isManager: boolean;
+  isSelected?: boolean;
+  onToggleSelect?: (id: string) => void;
   onDownload: (id: string) => void;
   onDelete: (id: string, name?: string) => void;
   onReindex: (id: string) => void;
   onReplace: (id: string, file: File) => void;
+  onEditMetadata?: () => void;
 }) {
   const replaceRef = useRef<HTMLInputElement>(null);
   const sourceLabel =
     SOURCE_TYPE_OPTIONS.find((s) => s.value === doc.source_type)?.label ?? doc.source_type;
 
   return (
-    <TableRow>
+    <TableRow className={isSelected ? "bg-primary/5" : undefined}>
+      {isManager && onToggleSelect && (
+        <TableCell className="w-[40px]">
+          <input
+            type="checkbox"
+            aria-label={`Sélectionner ${doc.name}`}
+            checked={isSelected}
+            onChange={() => onToggleSelect(doc.id)}
+            className="h-4 w-4 cursor-pointer accent-primary"
+          />
+        </TableCell>
+      )}
       <TableCell className="max-w-[300px] font-medium">
         <span className="line-clamp-2 break-words text-sm">{cleanDocName(doc.name)}</span>
       </TableCell>
@@ -1339,6 +1413,16 @@ function DocRow({
               title="Réindexer"
             >
               <RefreshCw className="h-3.5 w-3.5 text-orange-500" />
+            </Button>
+          )}
+          {isManager && onEditMetadata && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={onEditMetadata}
+              title="Modifier les métadonnées"
+            >
+              <Edit className="h-3.5 w-3.5" />
             </Button>
           )}
           {isManager && (

@@ -354,6 +354,35 @@ class DocumentService:
         await self.db.refresh(doc)
         return doc
 
+    # ---- Metadata edit ----
+
+    async def update_metadata(
+        self,
+        doc_id: uuid.UUID,
+        org_id: uuid.UUID,
+        data: dict,
+    ) -> Document:
+        """Update human-editable fields on a document. Does not reindex."""
+        doc = await self.get_document(doc_id, org_id)
+
+        editable_fields = {
+            "name",
+            "juridiction",
+            "chambre",
+            "formation",
+            "numero_pourvoi",
+            "date_decision",
+            "solution",
+            "publication",
+        }
+        for key, value in data.items():
+            if key in editable_fields:
+                setattr(doc, key, value)
+
+        await self.db.commit()
+        await self.db.refresh(doc)
+        return doc
+
     # ---- Reindex ----
 
     async def reset_for_reindex(

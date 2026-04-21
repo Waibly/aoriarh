@@ -5,6 +5,7 @@ from datetime import date
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request, UploadFile, status
 from fastapi.responses import Response
+from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -259,4 +260,112 @@ async def reindex_document(
     service = DocumentService(db)
     doc = await service.reset_for_reindex(document_id, organisation_id)
     await enqueue_ingestion(str(doc.id))
+    return doc  # type: ignore[return-value]
+
+
+# --- Bulk operations ---
+
+
+class BulkDocumentIds(BaseModel):
+    document_ids: list[uuid.UUID]
+
+
+class BulkResult(BaseModel):
+    requested: int
+    succeeded: int
+    failed: int
+    errors: list[str] = []
+
+
+@router.post(
+    "/{organisation_id}/bulk-delete",
+    response_model=BulkResult,
+)
+async def bulk_delete_documents(
+    organisation_id: uuid.UUID,
+    body: BulkDocumentIds,
+    user: User = Depends(require_org_role(["manager"])),
+    db: AsyncSession = Depends(get_db),
+) -> BulkResult:
+    """Delete a batch of documents in one call. Errors on individual docs are
+    collected but don't abort the batch."""
+    service = DocumentService(db)
+    succeeded = 0
+    errors: list[str] = []
+    for doc_id in body.document_ids:
+        try:
+            await service.delete_document(doc_id, organisation_id)
+            succeeded += 1
+        except Exception as exc:
+            errors.append(f"{doc_id}: {str(exc)[:120]}")
+    return BulkResult(
+        requested=len(body.document_ids),
+        succeeded=succeeded,
+        failed=len(body.document_ids) - succeeded,
+        errors=errors,
+    )
+
+
+@router.post(
+    "/{organisation_id}/bulk-reindex",
+    response_model=BulkResult,
+)
+async def bulk_reindex_documents(
+    organisation_id: uuid.UUID,
+    body: BulkDocumentIds,
+    user: User = Depends(require_org_role(["manager"])),
+    db: AsyncSession = Depends(get_db),
+) -> BulkResult:
+    """Relaunch indexation for a batch of documents."""
+    service = DocumentService(db)
+    succeeded = 0
+    errors: list[str] = []
+    for doc_id in body.document_ids:
+        try:
+            doc = await service.reset_for_reindex(doc_id, organisation_id)
+            await enqueue_ingestion(str(doc.id))
+            succeeded += 1
+        except Exception as exc:
+            errors.append(f"{doc_id}: {str(exc)[:120]}")
+    return BulkResult(
+        requested=len(body.document_ids),
+        succeeded=succeeded,
+        failed=len(body.document_ids) - succeeded,
+        errors=errors,
+    )
+
+
+# --- Metadata edit ---
+
+
+class DocumentMetadataUpdate(BaseModel):
+    name: str | None = None
+    juridiction: str | None = None
+    chambre: str | None = None
+    formation: str | None = None
+    numero_pourvoi: str | None = None
+    date_decision: date | None = None
+    solution: str | None = None
+    publication: str | None = None
+
+
+@router.patch(
+    "/{organisation_id}/{document_id}",
+    response_model=DocumentRead,
+)
+async def update_document_metadata(
+    organisation_id: uuid.UUID,
+    document_id: uuid.UUID,
+    body: DocumentMetadataUpdate,
+    user: User = Depends(require_org_role(["manager"])),
+    db: AsyncSession = Depends(get_db),
+) -> DocumentRead:
+    """Update a document's human-editable metadata (name, jurisprudence fields).
+    Does not touch the file content or the indexation status."""
+    service = DocumentService(db)
+    doc = await service.update_metadata(
+        doc_id=document_id,
+        org_id=organisation_id,
+        data=body.model_dump(exclude_none=True),
+    )
     return doc  # type: ignore[return-value]
