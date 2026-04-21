@@ -7,7 +7,6 @@ import {
   TrendingUp,
   Users,
   AlertTriangle,
-  Loader2,
   Trash2,
   Download,
 } from "lucide-react";
@@ -165,7 +164,7 @@ export default function AdminBillingPage() {
       <div>
         <h1 className="text-2xl font-semibold">Facturation & abonnements</h1>
         <p className="text-sm text-muted-foreground mt-1">
-          Vue d'ensemble des revenus récurrents, du pipeline d'essais et de la rétention RGPD.
+          Vue d&apos;ensemble des revenus récurrents, du pipeline d&apos;essais et de la rétention RGPD.
         </p>
       </div>
 

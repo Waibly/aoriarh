@@ -44,7 +44,7 @@ export default function PricingPage() {
           <nav className="flex items-center gap-3">
             {isAuthed ? (
               <Button asChild variant="outline" size="sm">
-                <Link href="/chat">Accéder à l'application</Link>
+                <Link href="/chat">Accéder à l&apos;application</Link>
               </Button>
             ) : (
               <>
@@ -143,8 +143,8 @@ export default function PricingPage() {
           <p className="font-semibold">Fair use</p>
           <p className="text-muted-foreground">
             Les quotas de questions sont mensuels et partagés entre tous les utilisateurs de votre équipe.
-            Aucun blocage sec : en cas de dépassement, nous vous proposons simplement de passer à l'offre supérieure
-            ou d'acheter un pack booster ponctuel (+500 questions, 25 €).
+            Aucun blocage sec : en cas de dépassement, nous vous proposons simplement de passer à l&apos;offre supérieure
+            ou d&apos;acheter un pack booster ponctuel (+500 questions, 25 €).
           </p>
         </div>
 
