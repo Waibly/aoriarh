@@ -332,6 +332,10 @@
     <tbody>
       <tr><td>GET</td><td><code>/api/v1/billing/quota</code></td><td>Quota + statut du plan (affiché par la bannière et <code>/billing</code>)</td></tr>
       <tr><td>GET</td><td><code>/api/v1/billing/subscription</code></td><td>Résumé subscription active</td></tr>
+      <tr><td>GET</td><td><code>/api/v1/billing/usage-summary</code></td><td>Compteurs users / orgs / docs par org / questions pour la page Utilisation</td></tr>
+      <tr><td>GET</td><td><code>/api/v1/billing/addons</code></td><td>Liste des add-ons actifs de la subscription</td></tr>
+      <tr><td>POST</td><td><code>/api/v1/billing/addons</code></td><td>Ajoute un add-on (<code>extra_user</code> / <code>extra_org</code> / <code>extra_docs</code>) +1</td></tr>
+      <tr><td>DELETE</td><td><code>/api/v1/billing/addons/{id}</code></td><td>Retire entièrement un add-on</td></tr>
       <tr><td>POST</td><td><code>/api/v1/billing/checkout</code></td><td>Crée une session Checkout pour un plan + cycle</td></tr>
       <tr><td>POST</td><td><code>/api/v1/billing/booster/checkout</code></td><td>Crée une session Checkout one-shot pour un booster</td></tr>
       <tr><td>POST</td><td><code>/api/v1/billing/portal</code></td><td>Ouvre le Stripe Customer Portal (self-service)</td></tr>
@@ -350,7 +354,8 @@
       <tr><td>GET</td><td><code>/api/v1/admin/accounts/pending-purge</code></td><td>Comptes éligibles à la purge RGPD</td></tr>
       <tr><td>GET</td><td><code>/api/v1/admin/accounts/{id}/export</code></td><td>Export JSON RGPD (art. 15/20)</td></tr>
       <tr><td>POST</td><td><code>/api/v1/admin/accounts/{id}/erase</code></td><td>Suppression immédiate (RGPD art. 17)</td></tr>
-      <tr><td>PUT</td><td><code>/api/v1/admin/users/{id}/plan</code></td><td>Override plan (assignation manuelle invite/vip)</td></tr>
+      <tr><td>POST</td><td><code>/api/v1/admin/billing/subscriptions/{id}/cancel</code></td><td>Résilie une subscription (par défaut à l'échéance)</td></tr>
+      <tr><td>PUT</td><td><code>/api/v1/admin/users/{id}/plan</code></td><td>Override plan (assignation manuelle invite/vip). Renvoie 409 + liste des excès si le nouveau plan est plus petit que l'état actuel.</td></tr>
     </tbody>
   </table>
 </div>
@@ -387,9 +392,30 @@
       <tr><td><code>customer.subscription.deleted</code></td><td>Subscription.status = <code>canceled</code>, Account.status = <code>canceled</code></td></tr>
       <tr><td><code>invoice.paid</code></td><td>Remet Account.status = <code>active</code> après un past_due</td></tr>
       <tr><td><code>invoice.payment_failed</code></td><td>past_due au 1<sup>er</sup> échec, suspended au 2<sup>e</sup></td></tr>
+      <tr><td><code>checkout.session.async_payment_succeeded</code></td><td>Paiement SEPA différé validé → même traitement que <code>.completed</code></td></tr>
+      <tr><td><code>checkout.session.expired</code></td><td>Log-only : trace des paniers abandonnés pour debug conversion</td></tr>
+      <tr><td><code>charge.refunded</code></td><td>Refund total subscription → annulation auto ; refund booster → questions_remaining = 0</td></tr>
+      <tr><td><code>customer.tax_id.created/updated/deleted</code></td><td>Log-only : trace les ajouts/retraits de N° TVA B2B (l'info reste sur Stripe Customer)</td></tr>
     </tbody>
   </table>
 </div>
+
+<h3 class="sub">Synchronisation du plan via Customer Portal</h3>
+<p>
+  Quand un client change de plan via le Stripe Customer Portal (Solo ↔ Équipe ↔ Groupe, ou cycle mensuel/annuel),
+  Stripe envoie <code>customer.subscription.updated</code> avec les nouveaux items. Le handler parcourt
+  <code>items.data</code>, match le <code>price.id</code> contre les env vars <code>STRIPE_PRICE_*</code>, et met à jour
+  <code>Subscription.plan</code>, <code>Subscription.billing_cycle</code> et <code>Account.plan</code> en conséquence.
+  Les add-ons (<code>extra_user</code>, etc.) sont ignorés à cette étape — ils ont leurs propres lignes
+  <code>SubscriptionAddon</code>.
+</p>
+<p>
+  Si le changement est un <strong>downgrade</strong> et que le compte a déjà plus d'éléments
+  (users, orgs, docs, CCN) que le nouveau plan n'autorise, un email d'alerte est envoyé au propriétaire
+  avec la liste des excès à supprimer. Le downgrade Stripe n'est <em>pas</em> annulé — le client
+  reste libre de choisir, mais les nouvelles créations sont bloquées par <code>check_*_limit</code>
+  jusqu'à ce qu'il soit revenu sous les limites.
+</p>
 
 <div class="callout warn">
   <p><strong>Cloisonnement test / live</strong> : le compte Stripe est strictement séparé entre les deux modes. Les produits / prix / customers créés en test n'existent pas en live et inversement. Il faut relancer <code>stripe_bootstrap.py</code> en mode live après activation KYC.</p>
@@ -644,7 +670,7 @@ stripe listen --forward-to localhost:8000/api/v1/billing/webhook
   <li><strong>Add-ons commandés depuis l'UI</strong> — les endpoints Stripe sont prêts mais il manque l'UI pour ajouter / retirer des add-ons depuis <code>/billing</code> (actuellement via Stripe Customer Portal uniquement).</li>
   <li><strong>Dunning emails custom</strong> — aujourd'hui Stripe envoie ses propres mails de relance. On peut surcharger avec nos templates Brevo.</li>
   <li><strong>Dashboard analytics historiques</strong> — évolution MRR / churn dans le temps, cohortes (actuellement seulement un snapshot).</li>
-  <li><strong>Tests d'intégration automatisés</strong> — tests E2E sur le flow signup → trial → checkout → webhook → purge.</li>
+  <li><strong>Tests d'intégration automatisés</strong> — une première suite pytest a été posée dans <code>backend/tests/test_billing_service.py</code> (signup trial, fair-use booster FIFO, hard limits, PlanOverflowError, recalc quota à l'upgrade). Restent à ajouter : mocks des webhooks Stripe, tests E2E Playwright sur le front.</li>
 </ul>
 
 <footer>

@@ -542,6 +542,43 @@ class StripeService:
         self.db.add(booster)
         await self.db.flush()
 
+    def _sync_plan_from_items(
+        self, sub: "Subscription", sub_obj: dict
+    ) -> bool:
+        """Reconcile sub.plan / sub.billing_cycle with the Stripe items.
+
+        Parses subscription.items.data and looks for an item whose price
+        ID matches one of our commercial plan prices. If found and it
+        differs from sub.plan, updates in place. Returns True if anything
+        changed on the local row.
+        """
+        price_to_plan: dict[str, tuple[str, str]] = {}
+        mapping = [
+            (settings.stripe_price_solo_monthly, "solo", "monthly"),
+            (settings.stripe_price_solo_yearly, "solo", "yearly"),
+            (settings.stripe_price_equipe_monthly, "equipe", "monthly"),
+            (settings.stripe_price_equipe_yearly, "equipe", "yearly"),
+            (settings.stripe_price_groupe_monthly, "groupe", "monthly"),
+            (settings.stripe_price_groupe_yearly, "groupe", "yearly"),
+        ]
+        for price_id, plan_code, cycle in mapping:
+            if price_id:
+                price_to_plan[price_id] = (plan_code, cycle)
+
+        items = _get(sub_obj, "items") or {}
+        items_data = _get(items, "data") or []
+        for item in items_data:
+            price = _get(item, "price") or {}
+            price_id = _get(price, "id")
+            if price_id and price_id in price_to_plan:
+                new_plan, new_cycle = price_to_plan[price_id]
+                if sub.plan != new_plan or sub.billing_cycle != new_cycle:
+                    sub.plan = new_plan
+                    sub.billing_cycle = new_cycle
+                    return True
+                return False
+        return False
+
     async def _on_tax_id_changed(self, tax_id_obj: dict) -> None:
         """Log the tax_id update — the info lives on Stripe's Customer so we
         don't need to mirror it locally. Useful trail for B2B audits."""
@@ -595,6 +632,14 @@ class StripeService:
         if canceled_at:
             sub.canceled_at = _ts_to_dt(canceled_at)
 
+        # Sync the primary plan from Stripe items. A client can switch
+        # between Solo/Équipe/Groupe (or cycle monthly/yearly) via the
+        # Customer Portal — Stripe sends us customer.subscription.updated
+        # with the new price in items.data. We must reflect that locally
+        # so the limits apply to the new plan. Add-on items (extra_user
+        # etc.) are ignored here.
+        plan_changed = self._sync_plan_from_items(sub, sub_obj)
+
         # Sync the Account status on known bad states
         account = await self.db.get(Account, sub.account_id)
         if account is None:
@@ -603,6 +648,9 @@ class StripeService:
             account.status = "past_due"
         elif sub_obj["status"] in ("active", "trialing"):
             account.status = "active"
+        # Mirror the plan change on Account.
+        if plan_changed:
+            account.plan = sub.plan
 
         await self.db.flush()
 

@@ -236,6 +236,11 @@ export function UploadDialog({
             `${data.succeeded} document${data.succeeded > 1 ? "s" : ""} ajouté${data.succeeded > 1 ? "s" : ""}`,
           );
         }
+        // Batch upload changed the docs counter — ping listeners so
+        // the sidebar and /billing usage card refresh without a reload.
+        if (typeof window !== "undefined" && data.succeeded > 0) {
+          window.dispatchEvent(new Event("quota-updated"));
+        }
       } else {
         const formData = new FormData();
         formData.append("file", files[0]);
