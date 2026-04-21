@@ -426,6 +426,9 @@ class StripeService:
             "invoice.paid": self._on_invoice_paid,
             "invoice.payment_failed": self._on_invoice_payment_failed,
             "charge.refunded": self._on_charge_refunded,
+            "customer.tax_id.created": self._on_tax_id_changed,
+            "customer.tax_id.updated": self._on_tax_id_changed,
+            "customer.tax_id.deleted": self._on_tax_id_changed,
         }
         handler = handlers.get(event_type)
         if handler is None:
@@ -539,7 +542,29 @@ class StripeService:
         self.db.add(booster)
         await self.db.flush()
 
+    async def _on_tax_id_changed(self, tax_id_obj: dict) -> None:
+        """Log the tax_id update — the info lives on Stripe's Customer so we
+        don't need to mirror it locally. Useful trail for B2B audits."""
+        logger.info(
+            "Stripe tax_id event for customer=%s type=%s value=%s",
+            _get(tax_id_obj, "customer"),
+            _get(tax_id_obj, "type"),
+            _get(tax_id_obj, "value"),
+        )
+
     async def _on_subscription_updated(self, sub_obj: dict) -> None:
+        # Remember the plan before we mutate the local row — used to detect
+        # downgrades initiated from the Stripe Customer Portal.
+        previous_plan: str | None = None
+        result0 = await self.db.execute(
+            select(Subscription).where(
+                Subscription.stripe_subscription_id == sub_obj["id"]
+            )
+        )
+        existing_for_plan_compare = result0.scalar_one_or_none()
+        if existing_for_plan_compare is not None:
+            previous_plan = existing_for_plan_compare.plan
+
         result = await self.db.execute(
             select(Subscription).where(
                 Subscription.stripe_subscription_id == sub_obj["id"]
@@ -580,6 +605,65 @@ class StripeService:
             account.status = "active"
 
         await self.db.flush()
+
+        # Detect a downgrade initiated via Stripe Customer Portal: the
+        # subscription has been changed to a plan with a smaller quota
+        # than before. If the account already has more users/orgs/docs
+        # than the new plan authorises, alert the owner by email so they
+        # clean up before we do.
+        _COMMERCIAL_ORDER = ["solo", "equipe", "groupe"]
+        current_plan_after = sub.plan
+        if (
+            previous_plan is not None
+            and previous_plan in _COMMERCIAL_ORDER
+            and current_plan_after in _COMMERCIAL_ORDER
+            and _COMMERCIAL_ORDER.index(current_plan_after)
+                < _COMMERCIAL_ORDER.index(previous_plan)
+        ):
+            await self._notify_downgrade_overflow(account, previous_plan, current_plan_after)
+
+    async def _notify_downgrade_overflow(
+        self, account: Account, previous_plan: str, new_plan: str
+    ) -> None:
+        """Send an email if the post-downgrade state has more data than the new plan allows."""
+        try:
+            from app.services.plan_service import (
+                PlanOverflowError,
+                _validate_plan_fits_existing_data,
+            )
+
+            await _validate_plan_fits_existing_data(self.db, account.id, new_plan)
+            return  # nothing to warn about
+        except PlanOverflowError as exc:
+            pass
+        except Exception:
+            logger.exception("downgrade overflow check failed for account %s", account.id)
+            return
+
+        try:
+            from app.models.user import User as UserModel
+            from app.services.email.sender import send_email
+
+            owner = await self.db.get(UserModel, account.owner_id)
+            if owner is None or not owner.is_active:
+                return
+
+            reasons_html = "".join(f"<li>{r}</li>" for r in exc.reasons)
+            subject = "Downgrade AORIA RH — action requise"
+            body = f"""
+<p>Bonjour {owner.full_name},</p>
+<p>Votre abonnement vient de passer de <strong>{previous_plan}</strong> à <strong>{new_plan}</strong>.
+Votre compte contient actuellement plus d'éléments que ce que le plan <strong>{new_plan}</strong>
+autorise&nbsp;:</p>
+<ul>{reasons_html}</ul>
+<p>La création de nouveaux éléments est désormais bloquée tant que vous n'êtes pas revenu
+sous les limites. Merci de supprimer les éléments excédentaires sous 14 jours.</p>
+<p>Si vous voulez garder l'existant, vous pouvez
+<a href="{settings.frontend_url}/billing">remonter d'offre ici</a>.</p>
+"""
+            await send_email(owner.email, owner.full_name, subject, body)
+        except Exception:
+            logger.exception("downgrade overflow email failed for account %s", account.id)
 
     async def _on_subscription_deleted(self, sub_obj: dict) -> None:
         result = await self.db.execute(
