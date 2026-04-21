@@ -29,6 +29,24 @@ from app.models.subscription import Subscription
 logger = logging.getLogger(__name__)
 
 
+def _get(obj, key, default=None):
+    """Safe dict-like accessor that works on both plain dicts and Stripe objects.
+
+    The Stripe SDK returns ``StripeObject`` instances that support bracket
+    indexing and ``in`` membership checks but **not** ``.get()``. Using
+    ``.get()`` on them raises ``AttributeError: get``. This helper papers
+    over the difference so webhook handlers can be written naturally.
+    """
+    try:
+        if obj is None:
+            return default
+        if key in obj:
+            return obj[key]
+        return default
+    except (TypeError, KeyError):
+        return default
+
+
 class StripeNotConfiguredError(HTTPException):
     def __init__(self) -> None:
         super().__init__(
@@ -277,7 +295,8 @@ class StripeService:
 
     async def _on_checkout_completed(self, session: dict) -> None:
         """Checkout complete: flip the account to the new plan, persist Subscription or Booster."""
-        account_id = (session.get("metadata") or {}).get("account_id")
+        meta = _get(session, "metadata") or {}
+        account_id = _get(meta, "account_id")
         if not account_id:
             logger.warning("checkout.session.completed without account_id metadata")
             return
@@ -286,7 +305,7 @@ class StripeService:
             logger.warning("Account %s not found for checkout session", account_id)
             return
 
-        mode = session.get("mode")
+        mode = _get(session, "mode")
         if mode == "subscription":
             await self._create_or_update_subscription_from_checkout(account, session)
         elif mode == "payment":
@@ -295,12 +314,12 @@ class StripeService:
     async def _create_or_update_subscription_from_checkout(
         self, account: Account, session: dict
     ) -> None:
-        stripe_subscription_id = session.get("subscription")
+        stripe_subscription_id = _get(session, "subscription")
         if not stripe_subscription_id:
             return
-        meta = session.get("metadata") or {}
-        plan = meta.get("plan")
-        cycle = meta.get("cycle")
+        meta = _get(session, "metadata") or {}
+        plan = _get(meta, "plan")
+        cycle = _get(meta, "cycle")
 
         # Fetch full subscription to read period dates
         sub_obj = stripe.Subscription.retrieve(stripe_subscription_id)
@@ -323,9 +342,9 @@ class StripeService:
             self.db.add(sub)
 
         sub.status = sub_obj["status"]
-        sub.current_period_start = _ts_to_dt(sub_obj.get("current_period_start"))
-        sub.current_period_end = _ts_to_dt(sub_obj.get("current_period_end"))
-        sub.cancel_at_period_end = bool(sub_obj.get("cancel_at_period_end"))
+        sub.current_period_start = _ts_to_dt(_get(sub_obj, "current_period_start"))
+        sub.current_period_end = _ts_to_dt(_get(sub_obj, "current_period_end"))
+        sub.cancel_at_period_end = bool(_get(sub_obj, "cancel_at_period_end"))
 
         # Mirror onto the Account
         account.plan = plan or account.plan
@@ -338,8 +357,8 @@ class StripeService:
     async def _create_booster_from_checkout(
         self, account: Account, session: dict
     ) -> None:
-        payment_intent_id = session.get("payment_intent")
-        amount_total = session.get("amount_total", 0)
+        payment_intent_id = _get(session, "payment_intent")
+        amount_total = _get(session, "amount_total", 0)
 
         # No time-based expiry: booster questions stay available until consumed.
         # The monthly quota is always consumed first (see
@@ -381,24 +400,26 @@ class StripeService:
         if sub is None:
             # Subscription not yet known locally (can happen if webhook arrives
             # before checkout.session.completed). Create a placeholder.
-            account_id_meta = (sub_obj.get("metadata") or {}).get("account_id")
+            meta = _get(sub_obj, "metadata") or {}
+            account_id_meta = _get(meta, "account_id")
             if not account_id_meta:
                 return
             sub = Subscription(
                 account_id=uuid.UUID(account_id_meta),
-                plan=(sub_obj.get("metadata") or {}).get("plan", "solo"),
-                billing_cycle=(sub_obj.get("metadata") or {}).get("cycle", "monthly"),
+                plan=_get(meta, "plan", "solo"),
+                billing_cycle=_get(meta, "cycle", "monthly"),
                 status=sub_obj["status"],
                 stripe_subscription_id=sub_obj["id"],
             )
             self.db.add(sub)
 
         sub.status = sub_obj["status"]
-        sub.current_period_start = _ts_to_dt(sub_obj.get("current_period_start"))
-        sub.current_period_end = _ts_to_dt(sub_obj.get("current_period_end"))
-        sub.cancel_at_period_end = bool(sub_obj.get("cancel_at_period_end"))
-        if sub_obj.get("canceled_at"):
-            sub.canceled_at = _ts_to_dt(sub_obj["canceled_at"])
+        sub.current_period_start = _ts_to_dt(_get(sub_obj, "current_period_start"))
+        sub.current_period_end = _ts_to_dt(_get(sub_obj, "current_period_end"))
+        sub.cancel_at_period_end = bool(_get(sub_obj, "cancel_at_period_end"))
+        canceled_at = _get(sub_obj, "canceled_at")
+        if canceled_at:
+            sub.canceled_at = _ts_to_dt(canceled_at)
 
         # Sync the Account status on known bad states
         account = await self.db.get(Account, sub.account_id)
@@ -431,7 +452,7 @@ class StripeService:
 
     async def _on_invoice_paid(self, invoice: dict) -> None:
         """On a successful renewal, bring the account back to 'active'."""
-        stripe_subscription_id = invoice.get("subscription")
+        stripe_subscription_id = _get(invoice, "subscription")
         if not stripe_subscription_id:
             return
         result = await self.db.execute(
@@ -449,7 +470,7 @@ class StripeService:
         await self.db.flush()
 
     async def _on_invoice_payment_failed(self, invoice: dict) -> None:
-        stripe_subscription_id = invoice.get("subscription")
+        stripe_subscription_id = _get(invoice, "subscription")
         if not stripe_subscription_id:
             return
         result = await self.db.execute(
@@ -461,7 +482,7 @@ class StripeService:
         if sub is None:
             return
         sub.status = "past_due"
-        attempt_count = int(invoice.get("attempt_count") or 0)
+        attempt_count = int(_get(invoice, "attempt_count") or 0)
         account = await self.db.get(Account, sub.account_id)
         if account is None:
             return
