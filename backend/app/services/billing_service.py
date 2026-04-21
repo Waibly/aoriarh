@@ -287,6 +287,85 @@ class BillingService:
         ):
             await self._send_hard_warning_email(account, usage)
 
+    async def get_usage_summary(self, account: Account) -> dict:
+        """Aggregate all usage counters (users, orgs, docs per org, questions)
+        for a given account. Used by the public `GET /billing/usage-summary`
+        endpoint so the client can see their footprint at a glance.
+        """
+        limits = await self.get_effective_limits(account)
+
+        # Users (owner + members)
+        members_count = int(
+            (
+                await self.db.execute(
+                    select(func.count())
+                    .select_from(AccountMember)
+                    .where(AccountMember.account_id == account.id)
+                )
+            ).scalar()
+            or 0
+        )
+        total_users = members_count + 1
+
+        # Organisations
+        orgs_count = int(
+            (
+                await self.db.execute(
+                    select(func.count())
+                    .select_from(Organisation)
+                    .where(Organisation.account_id == account.id)
+                )
+            ).scalar()
+            or 0
+        )
+
+        # Documents per org
+        docs_rows: list[dict] = []
+        orgs_result = await self.db.execute(
+            select(Organisation)
+            .where(Organisation.account_id == account.id)
+            .order_by(Organisation.name)
+        )
+        for org in orgs_result.scalars():
+            used = int(
+                (
+                    await self.db.execute(
+                        select(func.count())
+                        .select_from(Document)
+                        .where(Document.organisation_id == org.id)
+                    )
+                ).scalar()
+                or 0
+            )
+            docs_rows.append(
+                {
+                    "org_id": str(org.id),
+                    "org_name": org.name,
+                    "used": used,
+                    "limit": int(limits["docs_per_org"] or 0),
+                }
+            )
+
+        # Questions (current period)
+        quota_info = await self.check_question_quota(account)
+
+        return {
+            "users": {"used": total_users, "limit": int(limits["users_included"] or 0)},
+            "organisations": {
+                "used": orgs_count,
+                "limit": int(limits["orgs_included"] or 0),
+            },
+            "documents_by_org": docs_rows,
+            "questions": {
+                "used": quota_info.used,
+                "limit": quota_info.quota,
+                "booster_remaining": quota_info.booster_remaining,
+                "period_start": quota_info.period_start.isoformat(),
+                "period_end": quota_info.period_end.isoformat(),
+                "quota_status": quota_info.status.value,
+            },
+        }
+
     async def _send_hard_warning_email(self, account: Account, usage) -> None:
         """Send the over-quota upsell email once per billing period."""
         try:

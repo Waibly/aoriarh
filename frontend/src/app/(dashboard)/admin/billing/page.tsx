@@ -9,6 +9,7 @@ import {
   AlertTriangle,
   Trash2,
   Download,
+  XCircle,
 } from "lucide-react";
 import { toast } from "sonner";
 import { apiFetch } from "@/lib/api";
@@ -126,6 +127,38 @@ export default function AdminBillingPage() {
       toast.success("Export téléchargé");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Échec de l'export");
+    }
+  };
+
+  const handleCancelSubscription = async (
+    subscriptionId: string,
+    ownerEmail: string | null,
+  ) => {
+    if (!token) return;
+    const mode = confirm(
+      `Résilier l'abonnement de ${ownerEmail ?? "ce compte"} ?\n\n` +
+        `OK  = résilier à la fin de la période (recommandé, le client garde son accès jusqu'à l'échéance)\n` +
+        `Annuler = ne rien faire\n\n` +
+        `Pour une résiliation immédiate sans accès restant, fais-le depuis le dashboard Stripe.`,
+    );
+    if (!mode) return;
+    try {
+      const res = await apiFetch<{ status: string; cancel_at_period_end: boolean }>(
+        `/admin/billing/subscriptions/${subscriptionId}/cancel`,
+        {
+          token,
+          method: "POST",
+          body: JSON.stringify({ at_period_end: true }),
+        },
+      );
+      toast.success(
+        res.cancel_at_period_end
+          ? "Résiliation programmée à la fin de la période"
+          : `Subscription résiliée (status: ${res.status})`,
+      );
+      loadAll();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Échec de la résiliation");
     }
   };
 
@@ -261,12 +294,13 @@ export default function AdminBillingPage() {
                 <TableHead>Statut</TableHead>
                 <TableHead>Échéance</TableHead>
                 <TableHead className="text-right">MRR</TableHead>
+                <TableHead className="text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {subs.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
+                  <TableCell colSpan={8} className="text-center text-muted-foreground py-8">
                     Aucun abonnement.
                   </TableCell>
                 </TableRow>
@@ -290,6 +324,21 @@ export default function AdminBillingPage() {
                     </TableCell>
                     <TableCell className="text-right tabular-nums">
                       {(s.mrr_contribution_cents / 100).toFixed(0)} €
+                    </TableCell>
+                    <TableCell className="text-right">
+                      {s.status === "active" || s.status === "trialing" || s.status === "past_due" ? (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleCancelSubscription(s.subscription_id, s.owner_email)}
+                          disabled={s.cancel_at_period_end}
+                        >
+                          <XCircle className="h-3.5 w-3.5 mr-1" />
+                          Résilier
+                        </Button>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">—</span>
+                      )}
                     </TableCell>
                   </TableRow>
                 ))

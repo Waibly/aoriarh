@@ -11,14 +11,18 @@ These routes are reserved for AORIA RH staff (role='admin') and expose:
     used to honour user requests without waiting for the daily cron.
 """
 
+import logging
 import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
+import stripe
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
 from app.core.database import get_db
 from app.core.dependencies import require_role
 from app.core.plans import PRICE_MONTHLY_CENTS, PRICE_YEARLY_CENTS
@@ -26,6 +30,8 @@ from app.models.account import Account
 from app.models.subscription import Subscription
 from app.models.user import User
 from app.services.data_retention_service import DataRetentionService
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -201,6 +207,63 @@ async def list_subscriptions(
         )
 
     return rows
+
+
+class CancelSubscriptionRequest(BaseModel):
+    at_period_end: bool = True
+    """If True (default), schedule cancellation at the end of the current
+    billing period — client keeps access until then. If False, cancel
+    immediately with no refund."""
+
+
+@router.post("/billing/subscriptions/{subscription_id}/cancel")
+async def cancel_subscription(
+    subscription_id: uuid.UUID,
+    body: CancelSubscriptionRequest,
+    _: User = Depends(require_role(["admin"])),
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, Any]:
+    """Admin-triggered cancellation of a Stripe subscription.
+
+    We delegate the actual cancellation to Stripe. The
+    ``customer.subscription.updated`` / ``deleted`` webhook then
+    synchronises the local Subscription + Account rows, so we don't
+    need to mutate them here manually.
+    """
+    sub = await db.get(Subscription, subscription_id)
+    if sub is None:
+        raise HTTPException(status_code=404, detail="Subscription non trouvée")
+    if not sub.stripe_subscription_id:
+        raise HTTPException(
+            status_code=400,
+            detail="Cette subscription n'est pas liée à Stripe (plan technique ?)",
+        )
+    if not settings.stripe_secret_key:
+        raise HTTPException(
+            status_code=501,
+            detail="Stripe non configuré côté serveur",
+        )
+
+    stripe.api_key = settings.stripe_secret_key
+    try:
+        if body.at_period_end:
+            updated = stripe.Subscription.modify(
+                sub.stripe_subscription_id,
+                cancel_at_period_end=True,
+            )
+        else:
+            updated = stripe.Subscription.delete(sub.stripe_subscription_id)
+    except stripe.error.StripeError as exc:
+        logger.exception(
+            "Stripe cancellation failed for %s", sub.stripe_subscription_id
+        )
+        raise HTTPException(status_code=502, detail=f"Erreur Stripe : {exc}") from exc
+
+    return {
+        "status": updated["status"],
+        "cancel_at_period_end": updated.get("cancel_at_period_end", False),
+        "stripe_subscription_id": sub.stripe_subscription_id,
+    }
 
 
 @router.get("/accounts/pending-purge")

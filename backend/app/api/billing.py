@@ -9,14 +9,19 @@
 """
 
 import logging
+import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
+from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.core.plans import get_limits
 
 from app.core.database import get_db
 from app.core.dependencies import get_current_user
 from app.models.subscription import Subscription
+from app.models.subscription_addon import SubscriptionAddon
 from app.models.user import User
 from app.schemas.stripe_billing import (
     BoosterCheckoutResponse,
@@ -81,6 +86,100 @@ async def start_booster_checkout(
 # ---------------------------------------------------------------------------
 # Customer portal (self-service management)
 # ---------------------------------------------------------------------------
+
+
+# ---------------------------------------------------------------------------
+# Add-ons (self-service)
+# ---------------------------------------------------------------------------
+
+
+class AddAddonRequest(BaseModel):
+    addon_type: str = Field(
+        ..., description="extra_user, extra_org or extra_docs"
+    )
+
+
+@router.post("/addons")
+async def add_addon(
+    payload: AddAddonRequest,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Increment an add-on quantity on the active subscription (+1).
+
+    Returns the fresh SubscriptionAddon row. For user add-ons, we enforce
+    the max_extra_users cap defined in plans.py before hitting Stripe.
+    """
+    billing = BillingService(db)
+    account = await billing.get_primary_account_for_user(user)
+    billing.ensure_plan_active(account)
+
+    # Cap on extra_user based on plan config.
+    if payload.addon_type == "extra_user":
+        plan_limits = get_limits(account.plan)
+        existing = await db.execute(
+            select(SubscriptionAddon)
+            .join(Subscription, Subscription.id == SubscriptionAddon.subscription_id)
+            .where(
+                Subscription.account_id == account.id,
+                SubscriptionAddon.addon_type == "extra_user",
+            )
+        )
+        row = existing.scalar_one_or_none()
+        current_extra = row.quantity if row else 0
+        if current_extra + 1 > plan_limits.max_extra_users:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    f"Limite d'add-on utilisateurs atteinte ({plan_limits.max_extra_users} max). "
+                    "Passez à l'offre supérieure pour plus d'utilisateurs inclus."
+                ),
+            )
+
+    stripe_svc = StripeService(db)
+    addon = await stripe_svc.add_addon(account, payload.addon_type, delta=1)
+    return {
+        "id": str(addon.id),
+        "addon_type": addon.addon_type,
+        "quantity": addon.quantity,
+    }
+
+
+@router.get("/addons")
+async def list_addons(
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> list[dict]:
+    """List active add-ons on the current account."""
+    billing = BillingService(db)
+    account = await billing.get_primary_account_for_user(user)
+    result = await db.execute(
+        select(SubscriptionAddon)
+        .join(Subscription, Subscription.id == SubscriptionAddon.subscription_id)
+        .where(Subscription.account_id == account.id)
+    )
+    rows = []
+    for addon in result.scalars():
+        rows.append({
+            "id": str(addon.id),
+            "addon_type": addon.addon_type,
+            "quantity": addon.quantity,
+            "unit_price_cents": addon.unit_price_cents,
+        })
+    return rows
+
+
+@router.delete("/addons/{addon_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def remove_addon(
+    addon_id: uuid.UUID,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    """Fully remove an add-on from the active subscription."""
+    billing = BillingService(db)
+    account = await billing.get_primary_account_for_user(user)
+    stripe_svc = StripeService(db)
+    await stripe_svc.remove_addon(account, addon_id)
 
 
 @router.post("/portal", response_model=PortalResponse)
@@ -149,6 +248,20 @@ async def get_current_quota(
             account.plan_expires_at.isoformat() if account.plan_expires_at else None
         ),
     )
+
+
+@router.get("/usage-summary")
+async def get_usage_summary(
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Return aggregated usage counters for the current user's account:
+    users, organisations, documents per organisation, questions.
+    Consumed by the "Utilisation" panel on /billing.
+    """
+    billing = BillingService(db)
+    account = await billing.get_primary_account_for_user(user)
+    return await billing.get_usage_summary(account)
 
 
 @router.get("/subscription", response_model=SubscriptionRead | None)

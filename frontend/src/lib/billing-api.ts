@@ -45,6 +45,65 @@ export async function fetchSubscription(token: string): Promise<SubscriptionInfo
   return apiFetch<SubscriptionInfo | null>("/billing/subscription", { token });
 }
 
+export type DocsByOrg = {
+  org_id: string;
+  org_name: string;
+  used: number;
+  limit: number;
+};
+
+export type UsageSummary = {
+  users: { used: number; limit: number };
+  organisations: { used: number; limit: number };
+  documents_by_org: DocsByOrg[];
+  questions: {
+    used: number;
+    limit: number;
+    booster_remaining: number;
+    period_start: string;
+    period_end: string;
+    quota_status: QuotaStatus;
+  };
+};
+
+export async function fetchUsageSummary(token: string): Promise<UsageSummary> {
+  return apiFetch<UsageSummary>("/billing/usage-summary", { token });
+}
+
+export type AddonType = "extra_user" | "extra_org" | "extra_docs";
+
+export type ActiveAddon = {
+  id: string;
+  addon_type: AddonType;
+  quantity: number;
+  unit_price_cents: number;
+};
+
+export async function fetchAddons(token: string): Promise<ActiveAddon[]> {
+  return apiFetch<ActiveAddon[]>("/billing/addons", { token });
+}
+
+export async function addAddon(
+  token: string,
+  addon_type: AddonType,
+): Promise<{ id: string; addon_type: AddonType; quantity: number }> {
+  return apiFetch("/billing/addons", {
+    token,
+    method: "POST",
+    body: JSON.stringify({ addon_type }),
+  });
+}
+
+export async function removeAddon(token: string, addon_id: string): Promise<void> {
+  return apiFetch(`/billing/addons/${addon_id}`, { token, method: "DELETE" });
+}
+
+export const ADDON_LABELS: Record<AddonType, string> = {
+  extra_user: "Utilisateur additionnel",
+  extra_org: "Organisation additionnelle",
+  extra_docs: "Pack +500 documents",
+};
+
 export async function startCheckout(
   token: string,
   plan: PlanCode,

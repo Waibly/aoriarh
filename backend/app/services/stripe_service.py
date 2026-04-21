@@ -242,6 +242,129 @@ class StripeService:
         await self.db.commit()
         return {"checkout_url": session["url"], "session_id": session["id"]}
 
+    # ------------------------------------------------------------------
+    # Add-ons (user, org, docs) — self-service from /billing
+    # ------------------------------------------------------------------
+
+    _ADDON_PRICE_ATTR = {
+        "extra_user": "stripe_price_addon_user",
+        "extra_org": "stripe_price_addon_org",
+        "extra_docs": "stripe_price_addon_docs",
+    }
+    _ADDON_UNIT_PRICE_CENTS = {
+        "extra_user": 1500,
+        "extra_org": 1900,
+        "extra_docs": 1000,
+    }
+
+    async def add_addon(
+        self, account: Account, addon_type: str, delta: int = 1
+    ) -> SubscriptionAddon:
+        """Increment the quantity of a recurring add-on on the active sub.
+
+        If no Stripe subscription item of that type exists yet, create one.
+        Otherwise just bump quantity. Also maintains the local
+        SubscriptionAddon row in parallel.
+        """
+        self._ensure_configured()
+        if addon_type not in self._ADDON_PRICE_ATTR:
+            raise HTTPException(
+                status_code=400, detail=f"Add-on type inconnu : {addon_type}"
+            )
+        price_id = getattr(settings, self._ADDON_PRICE_ATTR[addon_type], "")
+        if not price_id:
+            raise HTTPException(
+                status_code=501,
+                detail=f"Add-on {addon_type} non configuré (price ID manquant)",
+            )
+
+        sub = await self._get_active_subscription(account.id)
+        if sub is None or not sub.stripe_subscription_id:
+            raise HTTPException(
+                status_code=400,
+                detail="Aucune souscription active — les add-ons nécessitent un plan commercial.",
+            )
+
+        # Look for an existing SubscriptionAddon of this type
+        result = await self.db.execute(
+            select(SubscriptionAddon).where(
+                SubscriptionAddon.subscription_id == sub.id,
+                SubscriptionAddon.addon_type == addon_type,
+            )
+        )
+        existing = result.scalar_one_or_none()
+
+        stripe_sub = stripe.Subscription.retrieve(sub.stripe_subscription_id)
+
+        if existing and existing.stripe_subscription_item_id:
+            # Bump quantity on the Stripe side and mirror locally.
+            new_qty = existing.quantity + delta
+            if new_qty <= 0:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Utilisez la suppression pour retirer complètement cet add-on.",
+                )
+            stripe.SubscriptionItem.modify(
+                existing.stripe_subscription_item_id,
+                quantity=new_qty,
+                proration_behavior="create_prorations",
+            )
+            existing.quantity = new_qty
+            await self.db.flush()
+            await self.db.commit()
+            return existing
+
+        # Otherwise: add a brand new item to the subscription.
+        updated = stripe.Subscription.modify(
+            sub.stripe_subscription_id,
+            items=[{"price": price_id, "quantity": delta}],
+            proration_behavior="create_prorations",
+        )
+        # Find the newly-added subscription item (match by price id).
+        new_item_id: str | None = None
+        for item in updated["items"]["data"]:
+            if item["price"]["id"] == price_id:
+                new_item_id = item["id"]
+                break
+
+        addon = SubscriptionAddon(
+            subscription_id=sub.id,
+            addon_type=addon_type,
+            quantity=delta,
+            unit_price_cents=self._ADDON_UNIT_PRICE_CENTS[addon_type],
+            stripe_subscription_item_id=new_item_id,
+        )
+        self.db.add(addon)
+        await self.db.flush()
+        await self.db.commit()
+        return addon
+
+    async def remove_addon(self, account: Account, addon_id: uuid.UUID) -> None:
+        """Delete a SubscriptionAddon row and remove its Stripe counterpart."""
+        self._ensure_configured()
+        addon = await self.db.get(SubscriptionAddon, addon_id)
+        if addon is None:
+            raise HTTPException(status_code=404, detail="Add-on non trouvé")
+
+        sub = await self.db.get(Subscription, addon.subscription_id)
+        if sub is None or sub.account_id != account.id:
+            raise HTTPException(status_code=403, detail="Add-on non lié à ce compte")
+
+        if addon.stripe_subscription_item_id:
+            try:
+                stripe.SubscriptionItem.delete(
+                    addon.stripe_subscription_item_id,
+                    proration_behavior="create_prorations",
+                )
+            except stripe.error.StripeError:
+                logger.exception(
+                    "Stripe item deletion failed for %s — removing local row anyway",
+                    addon.stripe_subscription_item_id,
+                )
+
+        await self.db.delete(addon)
+        await self.db.commit()
+
     async def create_portal_session(self, account: Account) -> str:
         """Create a Customer Portal session. Account must have a Stripe customer."""
         self._ensure_configured()

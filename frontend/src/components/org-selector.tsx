@@ -146,6 +146,10 @@ export function OrgSelector() {
                 }).catch(() => {});
               }
             }
+            // Notify the usage dashboard to refresh.
+            if (typeof window !== "undefined") {
+              window.dispatchEvent(new Event("quota-updated"));
+            }
             await refetchOrgs();
             setCurrentOrgId(org.id);
           }}

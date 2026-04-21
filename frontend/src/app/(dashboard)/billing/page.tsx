@@ -17,16 +17,59 @@ import { Skeleton } from "@/components/ui/skeleton";
 import {
   fetchQuota,
   fetchSubscription,
+  fetchUsageSummary,
+  fetchAddons,
+  addAddon,
+  removeAddon,
   openCustomerPortal,
   startBoosterCheckout,
   startCheckout,
+  ADDON_LABELS,
   PLANS_CATALOG,
   PLAN_LABELS,
   type BillingCycle,
   type PlanCode,
   type QuotaInfo,
   type SubscriptionInfo,
+  type UsageSummary,
+  type ActiveAddon,
+  type AddonType,
 } from "@/lib/billing-api";
+
+function UsageRow({
+  label,
+  used,
+  limit,
+  indent = false,
+}: {
+  label: string;
+  used: number;
+  limit: number;
+  indent?: boolean;
+}) {
+  const pct = limit > 0 ? Math.min(100, Math.round((used / limit) * 100)) : 0;
+  const color =
+    pct >= 100 ? "bg-destructive"
+      : pct >= 80 ? "bg-orange-500"
+      : "bg-primary";
+  return (
+    <div className={indent ? "pl-4" : ""}>
+      <div className="flex items-center justify-between text-sm mb-1">
+        <span className={indent ? "text-muted-foreground text-xs" : ""}>{label}</span>
+        <span className="tabular-nums font-medium">
+          {used} / {limit}
+        </span>
+      </div>
+      <div className="h-1.5 w-full rounded-full bg-muted overflow-hidden">
+        <div
+          className={`h-full transition-all ${color}`}
+          style={{ width: `${pct}%` }}
+        />
+      </div>
+    </div>
+  );
+}
+
 
 export default function BillingPage() {
   const { data: session } = useSession();
@@ -34,6 +77,8 @@ export default function BillingPage() {
 
   const [quota, setQuota] = useState<QuotaInfo | null>(null);
   const [subscription, setSubscription] = useState<SubscriptionInfo | null>(null);
+  const [usage, setUsage] = useState<UsageSummary | null>(null);
+  const [addons, setAddons] = useState<ActiveAddon[]>([]);
   const [loading, setLoading] = useState(true);
   const [cycle, setCycle] = useState<BillingCycle>("monthly");
   const [busy, setBusy] = useState(false);
@@ -42,12 +87,16 @@ export default function BillingPage() {
     if (!token) return;
     setLoading(true);
     try {
-      const [q, s] = await Promise.all([
+      const [q, s, u, a] = await Promise.all([
         fetchQuota(token),
         fetchSubscription(token),
+        fetchUsageSummary(token),
+        fetchAddons(token).catch(() => [] as ActiveAddon[]),
       ]);
       setQuota(q);
       setSubscription(s);
+      setUsage(u);
+      setAddons(a);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Impossible de charger l'abonnement");
     } finally {
@@ -57,6 +106,13 @@ export default function BillingPage() {
 
   useEffect(() => {
     loadData();
+  }, [loadData]);
+
+  // Refresh when the user creates or deletes something in another page
+  useEffect(() => {
+    const handler = () => loadData();
+    window.addEventListener("quota-updated", handler);
+    return () => window.removeEventListener("quota-updated", handler);
   }, [loadData]);
 
   const handleCheckout = async (plan: PlanCode) => {
@@ -79,6 +135,35 @@ export default function BillingPage() {
       window.location.href = portal_url;
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Impossible d'ouvrir l'espace client");
+      setBusy(false);
+    }
+  };
+
+  const handleAddAddon = async (addon_type: AddonType) => {
+    if (!token) return;
+    setBusy(true);
+    try {
+      await addAddon(token, addon_type);
+      toast.success(`${ADDON_LABELS[addon_type]} ajouté`);
+      await loadData();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Impossible d'ajouter l'add-on");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleRemoveAddon = async (addon: ActiveAddon) => {
+    if (!token) return;
+    if (!confirm(`Retirer ${ADDON_LABELS[addon.addon_type]} de votre abonnement ?`)) return;
+    setBusy(true);
+    try {
+      await removeAddon(token, addon.id);
+      toast.success("Add-on retiré");
+      await loadData();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Impossible de retirer l'add-on");
+    } finally {
       setBusy(false);
     }
   };
@@ -189,6 +274,110 @@ export default function BillingPage() {
                 Acheter un pack booster (+500 questions, 25 €)
               </Button>
             </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Usage overview (users / orgs / docs / questions) */}
+      {usage && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Utilisation</CardTitle>
+            <CardDescription>
+              Consommation actuelle de vos limites. Mise à jour en temps réel à chaque
+              création ou question posée.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <UsageRow
+              label="Utilisateurs"
+              used={usage.users.used}
+              limit={usage.users.limit}
+            />
+            <UsageRow
+              label="Organisations"
+              used={usage.organisations.used}
+              limit={usage.organisations.limit}
+            />
+            {usage.documents_by_org.length > 0 && (
+              <div className="space-y-2 pt-1">
+                <p className="text-xs text-muted-foreground">Documents par organisation</p>
+                {usage.documents_by_org.map((d) => (
+                  <UsageRow
+                    key={d.org_id}
+                    label={d.org_name}
+                    used={d.used}
+                    limit={d.limit}
+                    indent
+                  />
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Add-ons — self-service */}
+      {isCommercial && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Add-ons</CardTitle>
+            <CardDescription>
+              Ajustez finement votre abonnement sans changer de plan. Facturés au prorata
+              jusqu&apos;à la prochaine échéance.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid gap-3 md:grid-cols-3">
+              <Button
+                variant="outline"
+                disabled={busy}
+                onClick={() => handleAddAddon("extra_user")}
+              >
+                +1 utilisateur · 15 €/mois
+              </Button>
+              <Button
+                variant="outline"
+                disabled={busy}
+                onClick={() => handleAddAddon("extra_org")}
+              >
+                +1 organisation · 19 €/mois
+              </Button>
+              <Button
+                variant="outline"
+                disabled={busy}
+                onClick={() => handleAddAddon("extra_docs")}
+              >
+                +500 documents · 10 €/mois
+              </Button>
+            </div>
+
+            {addons.length > 0 && (
+              <div className="border-t pt-4 space-y-2">
+                <p className="text-xs text-muted-foreground">Add-ons actifs</p>
+                {addons.map((a) => (
+                  <div
+                    key={a.id}
+                    className="flex items-center justify-between text-sm py-1"
+                  >
+                    <span>
+                      <strong>{a.quantity}×</strong> {ADDON_LABELS[a.addon_type]}
+                      <span className="text-muted-foreground ml-2">
+                        ({((a.unit_price_cents * a.quantity) / 100).toFixed(0)} €/mois)
+                      </span>
+                    </span>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => handleRemoveAddon(a)}
+                      disabled={busy}
+                    >
+                      Retirer
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
           </CardContent>
         </Card>
       )}

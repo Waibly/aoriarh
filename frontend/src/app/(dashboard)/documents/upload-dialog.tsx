@@ -262,6 +262,9 @@ export function UploadDialog({
         }
 
         toast.success("Document ajouté");
+        if (typeof window !== "undefined") {
+          window.dispatchEvent(new Event("quota-updated"));
+        }
       }
 
       onOpenChange(false);

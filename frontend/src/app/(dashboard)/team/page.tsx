@@ -433,6 +433,9 @@ function InviteTeamDialog({
         }),
       });
       toast.success("Invitation envoyée");
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new Event("quota-updated"));
+      }
       onInvited();
       onOpenChange(false);
     } catch {
