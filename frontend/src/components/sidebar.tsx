@@ -27,6 +27,7 @@ import {
   DollarSign,
   TrendingUp,
   Gauge,
+  CreditCard,
 } from "lucide-react";
 import { apiFetch } from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -514,6 +515,21 @@ export function Sidebar() {
                     Suivi des coûts
                   </Link>
                 </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className={cn(
+                    "w-full justify-start font-normal",
+                    pathname.startsWith("/admin/billing") &&
+                      "bg-accent text-accent-foreground font-medium",
+                  )}
+                  asChild
+                >
+                  <Link href="/admin/billing">
+                    <CreditCard className="mr-2 h-5 w-5" />
+                    Facturation
+                  </Link>
+                </Button>
               </CollapsibleContent>
             </Collapsible>
           </div>
@@ -584,6 +600,12 @@ export function Sidebar() {
                 <Link href="/account">
                   <User className="mr-2 h-5 w-5" />
                   Mon compte
+                </Link>
+              </DropdownMenuItem>
+              <DropdownMenuItem asChild>
+                <Link href="/billing">
+                  <CreditCard className="mr-2 h-5 w-5" />
+                  Abonnement
                 </Link>
               </DropdownMenuItem>
               <DropdownMenuItem onSelect={() => setSettingsOpen(true)}>

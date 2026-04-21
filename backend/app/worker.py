@@ -994,6 +994,161 @@ async def run_bocc_backfill(ctx: dict, user_id: str) -> None:
         logger.exception("Worker: BOCC backfill failed")
 
 
+async def run_billing_lifecycle(ctx: dict) -> None:
+    """Daily billing lifecycle job.
+
+    - Sends trial reminders J-7 / J-3 / J-1 to any trial ending exactly that
+      many days from now.
+    - Suspends trials whose expiry is in the past (status='trialing' →
+      'suspended') and sends the final notice email.
+    - Revokes expired 'invite' plans back to 'gratuit' (existing behaviour
+      preserved via plan_service.resolve_expired_plans).
+
+    Idempotent: we trigger reminders only when the remaining-days count lands
+    on one of the exact values (7/3/1). Since the cron runs once a day, each
+    account receives each reminder at most once.
+    """
+    from datetime import UTC, datetime
+
+    from sqlalchemy import select
+
+    from app.core.config import settings as app_settings
+    from app.models.account import Account
+    from app.models.user import User
+    from app.services.email.sender import send_email
+    from app.services.email.templates import (
+        render_trial_expired_email,
+        render_trial_reminder_email,
+    )
+    from app.services.plan_service import resolve_expired_plans
+
+    logger.info("Worker: billing lifecycle job started")
+    session_factory = ctx["session_factory"]
+    now = datetime.now(UTC)
+    upgrade_url = f"{app_settings.frontend_url}/settings/billing"
+
+    reminders_sent = 0
+    expirations = 0
+
+    async with session_factory() as db:
+        # 1) Revoke expired 'invite' plans (existing behaviour)
+        try:
+            revoked = await resolve_expired_plans(db)
+            if revoked:
+                logger.info("Worker: revoked %d expired 'invite' plans", revoked)
+        except Exception:
+            logger.exception("Worker: resolve_expired_plans failed")
+
+        # 2) Process trial accounts (plan='gratuit')
+        result = await db.execute(
+            select(Account).where(Account.plan == "gratuit")
+        )
+        trial_accounts = list(result.scalars())
+
+        for account in trial_accounts:
+            if account.plan_expires_at is None:
+                continue
+
+            owner = await db.get(User, account.owner_id)
+            if owner is None or not owner.is_active:
+                continue
+
+            remaining = (account.plan_expires_at - now).total_seconds() / 86400
+
+            # Reminders — fire on days where remaining lands in [n-1, n]
+            # (cron runs once a day, so this window covers exactly one tick).
+            # J-7 gives time to consider + compare, J-1 creates urgency.
+            # J-3 intentionally skipped to avoid perceived spam so close to J-1.
+            if account.status in ("trialing", "active"):
+                if 6 <= remaining < 7:
+                    subject, html = render_trial_reminder_email(
+                        full_name=owner.full_name,
+                        days_remaining=7,
+                        upgrade_url=upgrade_url,
+                    )
+                    await send_email(owner.email, owner.full_name, subject, html)
+                    reminders_sent += 1
+                elif 0 <= remaining < 1:
+                    subject, html = render_trial_reminder_email(
+                        full_name=owner.full_name,
+                        days_remaining=1,
+                        upgrade_url=upgrade_url,
+                    )
+                    await send_email(owner.email, owner.full_name, subject, html)
+                    reminders_sent += 1
+
+            # Expiration — only once per account (status transition).
+            if remaining < 0 and account.status != "suspended":
+                subject, html = render_trial_expired_email(
+                    full_name=owner.full_name,
+                    upgrade_url=upgrade_url,
+                )
+                await send_email(owner.email, owner.full_name, subject, html)
+                account.status = "suspended"
+                expirations += 1
+
+        await db.commit()
+
+    logger.info(
+        "Worker: billing lifecycle done — %d reminders sent, %d trials expired",
+        reminders_sent, expirations,
+    )
+
+
+async def run_data_retention_purge(ctx: dict) -> None:
+    """Daily GDPR purge.
+
+    Deletes accounts that have exceeded their retention window:
+      - trial ended 30 days ago and never converted,
+      - voluntarily canceled 30 days ago,
+      - suspended for non-payment for 60 days.
+
+    Operates in dedicated sessions, one per candidate, so a failure on one
+    account doesn't block the others. Idempotent: once purged, the account
+    row is gone, so the candidate query will no longer match.
+    """
+    from app.services.data_retention_service import DataRetentionService
+
+    logger.info("Worker: data retention purge started")
+    session_factory = ctx["session_factory"]
+
+    purged = 0
+    failed = 0
+
+    async with session_factory() as db:
+        service = DataRetentionService(db)
+        try:
+            candidates = await service.find_candidates()
+        except Exception:
+            logger.exception("Worker: failed to resolve purge candidates")
+            return
+
+    logger.info("Worker: %d account(s) eligible for purge", len(candidates))
+
+    for candidate in candidates:
+        async with session_factory() as db:
+            service = DataRetentionService(db)
+            try:
+                summary = await service.purge_account(candidate.account_id)
+                logger.info(
+                    "Worker: purged account %s (%s) — reason=%s summary=%s",
+                    candidate.account_id, candidate.owner_email,
+                    candidate.reason, summary,
+                )
+                purged += 1
+            except Exception:
+                logger.exception(
+                    "Worker: purge failed for account %s (%s)",
+                    candidate.account_id, candidate.owner_email,
+                )
+                failed += 1
+
+    logger.info(
+        "Worker: data retention purge done — %d purged, %d failed",
+        purged, failed,
+    )
+
+
 async def run_ccn_blue_green_cleanup(ctx: dict, old_doc_ids: list[str]) -> None:
     """Clean up old CCN documents after blue-green sync (new doc is indexed)."""
     logger.info("Worker: blue-green cleanup for %d old doc(s): %s", len(old_doc_ids), old_doc_ids)
@@ -1035,10 +1190,18 @@ class WorkerSettings:
         run_code_sync,
         run_all_codes_sync,
         run_scheduled_sync,
+        run_billing_lifecycle,
+        run_data_retention_purge,
     ]
-    # Cron: 1st and 15th of each month at 3:00 AM UTC
     cron_jobs = [
+        # Legal corpus refresh: 1st and 15th of each month at 3:00 AM UTC
         cron(run_scheduled_sync, month=None, day={1, 15}, hour=3, minute=0),
+        # Billing lifecycle: every day at 9:00 AM UTC (trial reminders + expirations)
+        cron(run_billing_lifecycle, hour=9, minute=0),
+        # GDPR data retention purge: every day at 10:00 AM UTC (after the
+        # billing lifecycle, so newly suspended accounts don't get purged
+        # in the same tick they were suspended in).
+        cron(run_data_retention_purge, hour=10, minute=0),
     ]
     redis_settings = _parse_redis_settings()
     # 8 parallel jobs : doc ingestion is mostly Voyage AI / Qdrant I/O bound,

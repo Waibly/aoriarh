@@ -1,0 +1,438 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AORIA RH — Offres tarifaires</title>
+<style>
+  :root {
+    --bg: #0f172a;
+    --bg-alt: #1e293b;
+    --card: #ffffff;
+    --text: #0f172a;
+    --muted: #64748b;
+    --border: #e2e8f0;
+    --primary: #2563eb;
+    --primary-light: #dbeafe;
+    --accent: #f59e0b;
+    --green: #16a34a;
+    --orange: #ea580c;
+    --red: #dc2626;
+  }
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    margin: 0;
+    background: #f8fafc;
+    color: var(--text);
+    line-height: 1.6;
+  }
+  .container { max-width: 1200px; margin: 0 auto; padding: 48px 24px; }
+  header { text-align: center; margin-bottom: 48px; }
+  header h1 { font-size: 2.5rem; margin: 0 0 8px; color: var(--bg); }
+  header p { color: var(--muted); margin: 0; font-size: 1.05rem; }
+
+  /* Plans grid */
+  .plans {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 20px;
+    margin-bottom: 64px;
+  }
+  @media (max-width: 1024px) { .plans { grid-template-columns: repeat(2, 1fr); } }
+  @media (max-width: 600px)  { .plans { grid-template-columns: 1fr; } }
+
+  .plan {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 28px 24px;
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    transition: transform .2s, box-shadow .2s;
+  }
+  .plan:hover { transform: translateY(-4px); box-shadow: 0 12px 32px rgba(15,23,42,.08); }
+  .plan.featured {
+    border: 2px solid var(--primary);
+    box-shadow: 0 8px 24px rgba(37,99,235,.15);
+  }
+  .badge {
+    position: absolute;
+    top: -12px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: var(--primary);
+    color: #fff;
+    font-size: .75rem;
+    font-weight: 600;
+    padding: 4px 12px;
+    border-radius: 999px;
+    text-transform: uppercase;
+    letter-spacing: .5px;
+  }
+  .plan h2 { margin: 0 0 4px; font-size: 1.4rem; }
+  .plan .target { color: var(--muted); font-size: .85rem; min-height: 38px; margin-bottom: 16px; }
+  .price { display: flex; align-items: baseline; gap: 6px; margin-bottom: 4px; }
+  .price .amount { font-size: 2.4rem; font-weight: 700; color: var(--bg); }
+  .price .period  { color: var(--muted); font-size: .9rem; }
+  .price-sub { color: var(--muted); font-size: .8rem; min-height: 20px; margin-bottom: 20px; }
+  .features { list-style: none; padding: 0; margin: 0 0 16px; flex-grow: 1; }
+  .features li {
+    padding: 8px 0;
+    border-bottom: 1px solid var(--border);
+    font-size: .9rem;
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+  }
+  .features li:last-child { border-bottom: none; }
+  .features .label { color: var(--muted); }
+  .features .val   { font-weight: 600; color: var(--text); text-align: right; }
+  .check { color: var(--green); font-weight: 700; }
+  .dash  { color: var(--muted); }
+
+  /* Section titles */
+  h2.section {
+    font-size: 1.6rem;
+    margin: 0 0 24px;
+    padding-bottom: 12px;
+    border-bottom: 2px solid var(--border);
+  }
+  h3.sub { font-size: 1.1rem; margin: 24px 0 12px; color: var(--bg); }
+
+  /* Tables */
+  .table-wrapper { overflow-x: auto; margin-bottom: 32px; }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    background: var(--card);
+    border-radius: 12px;
+    overflow: hidden;
+    box-shadow: 0 2px 8px rgba(15,23,42,.04);
+  }
+  th, td {
+    padding: 12px 16px;
+    text-align: left;
+    border-bottom: 1px solid var(--border);
+    font-size: .9rem;
+    vertical-align: middle;
+  }
+  th { background: #f1f5f9; font-weight: 600; color: var(--bg); }
+  tr:last-child td { border-bottom: none; }
+  .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  th.num, td.num { text-align: right; }
+  td .pill { white-space: nowrap; }
+  .pill {
+    display: inline-block;
+    padding: 2px 10px;
+    border-radius: 999px;
+    font-size: .8rem;
+    font-weight: 600;
+  }
+  .pill.green  { background: #dcfce7; color: var(--green); }
+  .pill.orange { background: #ffedd5; color: var(--orange); }
+  .pill.red    { background: #fee2e2; color: var(--red); }
+
+  /* Info tooltips */
+  .info-i {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: var(--primary);
+    color: #fff;
+    font-size: .7rem;
+    font-weight: 700;
+    font-style: italic;
+    margin-left: 4px;
+    cursor: help;
+    vertical-align: middle;
+  }
+  .info-i:hover { background: var(--bg); }
+
+  /* Highlight box */
+  .highlight {
+    background: var(--primary-light);
+    border-left: 4px solid var(--primary);
+    padding: 16px 20px;
+    border-radius: 8px;
+    margin: 24px 0;
+  }
+  .highlight strong { color: var(--bg); }
+
+  footer {
+    text-align: center;
+    color: var(--muted);
+    font-size: .85rem;
+    margin-top: 64px;
+    padding-top: 24px;
+    border-top: 1px solid var(--border);
+  }
+</style>
+</head>
+<body>
+<div class="container">
+
+  <header>
+    <h1>AORIA RH — Offres tarifaires</h1>
+    <p>Tarifs HT. Engagement mensuel ou annuel (2 mois offerts).</p>
+  </header>
+
+  <!-- ============ PLANS ============ -->
+  <div class="plans">
+
+    <!-- Essai -->
+    <div class="plan">
+      <h2>Essai</h2>
+      <p class="target">Tester avant d'acheter</p>
+      <div class="price"><span class="amount">0 €</span><span class="period">/14 jours</span></div>
+      <div class="price-sub">Sans CB · Non renouvelable · Upgrade à l'échéance</div>
+      <ul class="features">
+        <li><span class="label">Plan complet testé</span><span class="val">Solo</span></li>
+        <li><span class="label">Utilisateurs</span><span class="val">1</span></li>
+        <li><span class="label">Organisations</span><span class="val">1</span></li>
+        <li><span class="label">Documents / org</span><span class="val">20</span></li>
+        <li><span class="label">Conventions / org</span><span class="val">1</span></li>
+        <li><span class="label">Questions</span><span class="val">150 max / 14 j</span></li>
+      </ul>
+    </div>
+
+    <!-- Solo -->
+    <div class="plan">
+      <h2>Solo</h2>
+      <p class="target">Dirigeant TPE, PME 1 RH, petit CSE</p>
+      <div class="price"><span class="amount">79 €</span><span class="period">/mois</span></div>
+      <div class="price-sub">790 € /an (2 mois offerts)</div>
+      <ul class="features">
+        <li><span class="label">Utilisateurs inclus</span><span class="val">1</span></li>
+        <li><span class="label">+ utilisateur (max 3)</span><span class="val">+15 €/mois</span></li>
+        <li><span class="label">Organisations</span><span class="val">1</span></li>
+        <li><span class="label">+ organisation</span><span class="val">+19 €/mois</span></li>
+        <li><span class="label">Documents / org</span><span class="val">100</span></li>
+        <li><span class="label">+ 500 documents</span><span class="val">+10 €/mois</span></li>
+        <li><span class="label">Conventions / org</span><span class="val">1</span></li>
+        <li><span class="label">Questions / mois</span><span class="val">300</span></li>
+        <li><span class="label">Support</span><span class="val">Chat in-app</span></li>
+      </ul>
+    </div>
+
+    <!-- Équipe (featured) -->
+    <div class="plan featured">
+      <span class="badge">Le plus choisi</span>
+      <h2>Équipe</h2>
+      <p class="target">PME équipe RH, CSE moyen, DRH</p>
+      <div class="price"><span class="amount">149 €</span><span class="period">/mois</span></div>
+      <div class="price-sub">1 490 € /an (2 mois offerts)</div>
+      <ul class="features">
+        <li><span class="label">Utilisateurs inclus</span><span class="val">5</span></li>
+        <li><span class="label">+ utilisateur (max 3)</span><span class="val">+15 €/mois</span></li>
+        <li><span class="label">Organisations</span><span class="val">3</span></li>
+        <li><span class="label">+ organisation</span><span class="val">+19 €/mois</span></li>
+        <li><span class="label">Documents / org</span><span class="val">300</span></li>
+        <li><span class="label">+ 500 documents</span><span class="val">+10 €/mois</span></li>
+        <li><span class="label">Conventions / org</span><span class="val">5</span></li>
+        <li><span class="label">Questions / mois</span><span class="val">900</span></li>
+        <li><span class="label">Support</span><span class="val">Chat in-app</span></li>
+      </ul>
+    </div>
+
+    <!-- Groupe -->
+    <div class="plan">
+      <h2>Groupe</h2>
+      <p class="target">DRH multi-entités, CSE central, ETI</p>
+      <div class="price"><span class="amount">279 €</span><span class="period">/mois</span></div>
+      <div class="price-sub">2 790 € /an (2 mois offerts)</div>
+      <ul class="features">
+        <li><span class="label">Utilisateurs inclus</span><span class="val">10</span></li>
+        <li><span class="label">+ utilisateur (max 3)</span><span class="val">+15 €/mois</span></li>
+        <li><span class="label">Organisations</span><span class="val">10</span></li>
+        <li><span class="label">+ organisation</span><span class="val">+19 €/mois</span></li>
+        <li><span class="label">Documents / org</span><span class="val">1 000</span></li>
+        <li><span class="label">+ 500 documents</span><span class="val">+10 €/mois</span></li>
+        <li><span class="label">Conventions / org</span><span class="val">Illimité</span></li>
+        <li><span class="label">Questions / mois</span><span class="val">2 400</span></li>
+        <li><span class="label">Support</span><span class="val">Chat in-app</span></li>
+        <li><span class="label">Onboarding</span><span class="val">Inclus</span></li>
+      </ul>
+    </div>
+
+  </div>
+
+  <div class="highlight">
+    <strong>Quota mensuel partagé par compte</strong> — 300 / 900 / 2 400 questions/mois selon le plan, mutualisées entre tous les utilisateurs et toutes les organisations. Tolérance de 20 % avant alerte. Jamais de blocage : au-delà, email d'upsell automatique. <strong>Pack booster +500 questions à 25 €</strong> (one-shot) pour absorber les pics exceptionnels.
+  </div>
+
+  <p style="text-align:center;color:var(--muted);font-size:.9rem;margin-top:-8px;">
+    <strong>Support</strong> inclus sur tous les plans · Chat in-app (tickets par email) · Onboarding personnalisé pour l'offre Groupe
+  </p>
+
+  <!-- ============ MARGES ============ -->
+  <h2 class="section">Marges (référence interne)</h2>
+  <p style="color:var(--muted);margin-top:-12px;">Coût LLM réel mesuré en production (admin/costs, sandbox exclu) : <strong>$0.0508 par question</strong> en moyenne, $0.13 au P95 — soit <strong>~0,046 € / question</strong>. Décomposition : 97 % génération LLM (gpt-5-mini), 2,5 % rerank Voyage, le reste négligeable. Ingestion documents négligeable hors conventions collectives. Les marges ci-dessous sont calculées en € pour correspondre aux prix de vente.</p>
+
+  <h3 class="sub">Usage typique (~30 % du quota)</h3>
+  <div class="table-wrapper">
+    <table>
+      <thead>
+        <tr><th>Plan</th><th class="num">Questions/mois</th><th class="num">Coût LLM</th><th class="num">Marge €</th><th class="num">Marge %</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>Solo</td><td class="num">~90</td><td class="num">4 €</td><td class="num"><strong>75 €</strong></td><td class="num"><span class="pill green">95 %</span></td></tr>
+        <tr><td>Équipe</td><td class="num">~270</td><td class="num">12 €</td><td class="num"><strong>137 €</strong></td><td class="num"><span class="pill green">92 %</span></td></tr>
+        <tr><td>Groupe</td><td class="num">~720</td><td class="num">33 €</td><td class="num"><strong>246 €</strong></td><td class="num"><span class="pill green">88 %</span></td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3 class="sub">Worst-case (quota mensuel saturé à 100 %)</h3>
+  <div class="table-wrapper">
+    <table>
+      <thead>
+        <tr><th>Plan</th><th class="num">Questions/mois</th><th class="num">Coût LLM</th><th class="num">Marge €</th><th class="num">Marge %</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>Solo</td><td class="num">300</td><td class="num">14 €</td><td class="num">65 €</td><td class="num"><span class="pill green">82 %</span></td></tr>
+        <tr><td>Équipe</td><td class="num">900</td><td class="num">41 €</td><td class="num">108 €</td><td class="num"><span class="pill green">72 %</span></td></tr>
+        <tr><td>Groupe</td><td class="num">2 400</td><td class="num">110 €</td><td class="num">169 €</td><td class="num"><span class="pill orange">61 %</span></td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3 class="sub">Marges sur add-ons</h3>
+  <div class="table-wrapper">
+    <table>
+      <thead>
+        <tr><th>Add-on</th><th class="num">Prix</th><th class="num">Coût</th><th class="num">Marge</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>+ 1 utilisateur (tous plans, max 3)</td><td class="num">15 €</td><td class="num">0 € <em>(accès, pot commun)</em></td><td class="num"><strong><span class="pill green">~100 %</span></strong></td></tr>
+        <tr><td>+ 1 organisation (tous plans)</td><td class="num">19 €</td><td class="num">2-3 €</td><td class="num"><strong><span class="pill green">~85 %</span></strong></td></tr>
+        <tr><td>+ 500 documents (tous plans)</td><td class="num">10 €</td><td class="num">~0,25 €</td><td class="num"><strong><span class="pill green">~97 %</span></strong></td></tr>
+        <tr><td>Pack booster +500 questions</td><td class="num">25 €</td><td class="num">23 €</td><td class="num"><span class="pill orange">~8 %</span></td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="highlight">
+    <strong>Marge brute moyenne pondérée : ~85 %</strong> — Au-dessus du standard SaaS B2B vertical (70-80 %) grâce au quota mensuel partagé et à un pipeline RAG optimisé. Le pack booster est volontairement à faible marge : c'est un filet de sécurité UX pour les pics, pas une source de revenu (incite au passage au plan supérieur si utilisé régulièrement).
+  </div>
+
+  <h3 class="sub">Coût d'un essai gratuit</h3>
+  <p>150 questions max sur 14 jours → <strong>~7 € de coût LLM max</strong>, ~2 € en usage réel. Rentable dès <strong>9 %</strong> de conversion essai → Solo mensuel, <strong>&lt;1 %</strong> sur Solo annuel <em>(standard SaaS B2B : 15-25 %)</em>.</p>
+
+  <!-- ============ SIMULATION ============ -->
+  <h2 class="section">Projection 15 mai → 31 décembre 2026</h2>
+  <p style="color:var(--muted);margin-top:-12px;">Simulation sur la <strong>première période d'exploitation</strong> après mise en production le 15 mai 2026, soit <strong>7,5 mois d'activité</strong> (230 jours). Hypothèses communes aux 3 scénarios :</p>
+  <ul style="color:var(--muted);font-size:.9rem;">
+    <li>Acquisition <strong>linéaire</strong> sur la période (0 client le 15 mai, N clients le 31 décembre)</li>
+    <li>Mix de clients : <strong>55 % Solo / 35 % Équipe / 10 % Groupe</strong> (pyramide SaaS B2B standard)</li>
+    <li>Mix de facturation : <strong>70 % mensuel / 30 % annuel</strong> (annuel = payé upfront à la souscription)</li>
+    <li>Usage LLM typique : <strong>30 % du quota</strong> de questions mensuelles</li>
+    <li>Pas de churn modélisé (approximation raisonnable sur une 1ère période courte)</li>
+  </ul>
+
+  <div class="table-wrapper">
+    <table>
+      <thead>
+        <tr>
+          <th>Scénario</th>
+          <th class="num">Clients au 31/12<span class="info-i" title="Nombre total de clients actifs à la fin de la période (31 décembre 2026). Point de départ : 0 client le 15 mai 2026.">i</span></th>
+          <th class="num">Mix (S/É/G)<span class="info-i" title="Répartition Solo / Équipe / Groupe selon le mix 55 % / 35 % / 10 %.">i</span></th>
+          <th class="num">MRR fin décembre<span class="info-i" title="Monthly Recurring Revenue = revenu mensuel récurrent à fin décembre 2026, une fois tous les clients présents. C'est le revenu mensuel à plein régime.">i</span></th>
+          <th class="num">ARR projeté<span class="info-i" title="Annual Recurring Revenue = MRR × 12. Ce que tu encaisserais sur 12 mois si tu gardes tous les clients. Chiffre clé pour évaluer la valeur du business (investisseurs, banques).">i</span></th>
+          <th class="num">Trésorerie encaissée<span class="info-i" title="Cash réellement encaissé entre le 15 mai et le 31 décembre. Inclut les paiements annuels upfront (encaissés en 1 fois dès souscription) et les paiements mensuels prorata.">i</span></th>
+          <th class="num">Coût LLM période<span class="info-i" title="Coût cumulé OpenAI + Voyage AI sur la période, basé sur 30 % d'utilisation moyenne du quota. Chaque client est actif en moyenne 3,75 mois sur la période (acquisition linéaire).">i</span></th>
+          <th class="num">Marge brute période<span class="info-i" title="Trésorerie encaissée − coût LLM. Hors coûts fixes (infra, compta, assurance). Représente le cash disponible pour couvrir les autres charges.">i</span></th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><strong>Conservateur</strong><br><span style="color:var(--muted);font-size:.8rem;">bouche-à-oreille, sans budget marketing</span></td>
+          <td class="num">30</td>
+          <td class="num">17 / 10 / 3</td>
+          <td class="num">3 520 €</td>
+          <td class="num">42 240 €</td>
+          <td class="num">20 840 €</td>
+          <td class="num">1 120 €</td>
+          <td class="num"><strong>19 720 €</strong> <span class="pill green">95 %</span></td>
+        </tr>
+        <tr>
+          <td><strong>Réaliste</strong><br><span style="color:var(--muted);font-size:.8rem;">SEO + LinkedIn + 2-3 partenariats experts-comptables</span></td>
+          <td class="num">80</td>
+          <td class="num">44 / 28 / 8</td>
+          <td class="num">9 390 €</td>
+          <td class="num">112 640 €</td>
+          <td class="num">55 580 €</td>
+          <td class="num">2 980 €</td>
+          <td class="num"><strong>52 600 €</strong> <span class="pill green">95 %</span></td>
+        </tr>
+        <tr>
+          <td><strong>Ambitieux</strong><br><span style="color:var(--muted);font-size:.8rem;">marketing actif + commercial dédié + levée seed</span></td>
+          <td class="num">200</td>
+          <td class="num">110 / 70 / 20</td>
+          <td class="num">23 470 €</td>
+          <td class="num">281 600 €</td>
+          <td class="num">138 940 €</td>
+          <td class="num">7 460 €</td>
+          <td class="num"><strong>131 480 €</strong> <span class="pill green">95 %</span></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="highlight">
+    <strong>Lecture du scénario réaliste (80 clients au 31/12/2026)</strong> — Tu as encaissé <strong>55 580 €</strong> de cash entre mai et décembre (dont ~30 000 € d'annuels payés upfront). Ton MRR de fin d'année est de <strong>9 390 €/mois</strong>, soit un ARR de <strong>112 640 €</strong> : c'est la valeur annualisée de ton portefeuille au 31/12 — ce que tu toucheras sur 2027 si tu ne perds ni ne gagnes aucun client.
+  </div>
+
+  <h3 class="sub">Coûts fixes à déduire (vrais chiffres, sur 7,5 mois)</h3>
+  <div class="table-wrapper">
+    <table>
+      <thead>
+        <tr><th>Poste</th><th class="num">Coût unitaire</th><th class="num">Sur la période</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>VPS OVH</td><td class="num">23 €/mois</td><td class="num">~170 €</td></tr>
+        <tr><td>Brevo (plan gratuit : 300 emails/jour suffisants au démarrage)</td><td class="num">0 €</td><td class="num">0 €</td></tr>
+        <tr><td>Certificats SSL (Let's Encrypt)</td><td class="num">0 €</td><td class="num">0 €</td></tr>
+        <tr><td>Noms de domaine (app / api / monitoring)</td><td class="num">~10 €/an × 3</td><td class="num">~25 €</td></tr>
+        <tr><td>Comptabilité (expert-comptable)</td><td class="num">80 €/mois</td><td class="num">~600 €</td></tr>
+        <tr><td>Stripe</td><td class="num">1,4 % + 0,25 €/txn</td><td class="num">1-2 % de la trésorerie</td></tr>
+        <tr><td><strong>Total infrastructure hors salaires / acquisition</strong></td><td class="num"></td><td class="num"><strong>~800 € + 1-2 % de la trésorerie</strong></td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="highlight">
+    <strong>Marge nette hors salaires / marketing — Scénario réaliste</strong><br>
+    Trésorerie 55 580 € − coût LLM 2 980 € − infrastructure 800 € − frais Stripe ~830 € = <strong>50 970 € (92 %)</strong> disponibles sur la période pour rémunérations, acquisition client, produit, imprévus.
+  </div>
+
+  <p style="color:var(--muted);font-size:.85rem;"><em>Projections indicatives. Non modélisés : churn (3-7 %/mois sur SaaS PME), impayés (1-2 %), upgrades de plan en cours d'abonnement (effet positif), saisonnalité RH (creux l'été, pic à l'automne sur la paie / NAO / audit social). Le CA encaissé sur l'annuel couvre plus de 12 mois de service : une partie est du « chiffre d'affaires constaté d'avance » au sens comptable, mais la trésorerie est bien immédiate.</em></p>
+
+  <!-- ============ CONDITIONS ============ -->
+  <h2 class="section">Conditions de facturation</h2>
+  <div class="table-wrapper">
+    <table>
+      <tbody>
+        <tr><th style="width:30%;">Abonnement mensuel</th><td>Résiliable à tout moment sans préavis. Pas d'engagement de durée. Prélèvement automatique via Stripe le jour anniversaire de la souscription.</td></tr>
+        <tr><th>Abonnement annuel</th><td><strong>Paiement 100 % upfront</strong> le jour de souscription (pas de mensualisation). 2 mois offerts par rapport au mensuel. Engagement 12 mois, renouvellement tacite date à date.</td></tr>
+        <tr><th>Renouvellement</th><td><strong>Date à date</strong> (anniversaire de la souscription). Exemple : souscription le 12 mars → renouvellement le 12 mars de l'année suivante.</td></tr>
+        <tr><th>Add-ons (users, orgs, documents)</th><td>Suivent le cycle du plan principal. Ajout en cours d'abonnement : facturation au <strong>prorata</strong> jusqu'à l'échéance, puis renouvellement aligné sur le plan. Retrait possible à tout moment, effectif à l'échéance en cours.</td></tr>
+        <tr><th>Pack booster (+500 questions)</th><td>One-shot, facturé immédiatement. Pas de renouvellement automatique. Questions valables jusqu'à la fin du cycle en cours.</td></tr>
+        <tr><th>Échec de paiement</th><td>Stripe effectue 3 à 4 retentatives automatiques. Après 2 échecs consécutifs : <strong>suspension de l'accès</strong> jusqu'à régularisation. Aucune donnée supprimée pendant 60 jours.</td></tr>
+        <tr><th>Résiliation volontaire</th><td>Effet à l'échéance du cycle en cours. Les données (documents, historique, configurations) sont conservées <strong>30 jours</strong> après la résiliation pour permettre une reprise. Suppression définitive au-delà.</td></tr>
+        <tr><th>Essai gratuit</th><td>14 jours, sans carte bancaire, <strong>non renouvelable</strong>. À l'échéance : bascule vers l'offre choisie ou perte d'accès. Les données uploadées sont conservées 30 jours après l'essai.</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <footer>
+    AORIA RH — Document interne · Tarifs HT
+  </footer>
+
+</div>
+</body>
+</html>

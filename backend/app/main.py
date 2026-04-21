@@ -16,6 +16,7 @@ from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api import (
+    admin_billing,
     admin_corpus,
     admin_costs,
     admin_dashboard,
@@ -28,6 +29,7 @@ from app.api import (
     admin_users,
     admin_workspaces,
     auth,
+    billing,
     conventions,
     conversations,
     documents,
@@ -235,6 +237,12 @@ app.include_router(
 app.include_router(invitations.router, prefix="/api/v1", tags=["invitations"])
 app.include_router(team.router, prefix="/api/v1/team", tags=["team"])
 app.include_router(conversations.router, prefix="/api/v1/conversations", tags=["conversations"])
+app.include_router(billing.router, prefix="/api/v1/billing", tags=["billing"])
+app.include_router(
+    admin_billing.router,
+    prefix="/api/v1/admin",
+    tags=["admin-billing"],
+)
 
 
 @app.get("/health")

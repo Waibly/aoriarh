@@ -108,3 +108,104 @@ def render_team_invitation_email(
         year=datetime.now().year,
     )
     return subject, html
+
+
+# ---------------------------------------------------------------------------
+# Trial lifecycle emails
+# ---------------------------------------------------------------------------
+
+
+TRIAL_REMINDER_CONTENT = """\
+<h2 style="margin-top:0; color:#0f766e; font-size:20px;">Votre essai AORIA RH se termine {when_label}</h2>
+<p style="color:#3f3f46; line-height:1.6;">Bonjour {full_name},</p>
+<p style="color:#3f3f46; line-height:1.6;">
+  Votre période d'essai gratuite de 14 jours prend fin <strong>{when_label}</strong>.
+  Pour continuer à utiliser AORIA RH sans interruption, vous pouvez souscrire à l'offre
+  qui vous convient dès maintenant.
+</p>
+<p style="text-align:center; margin:32px 0;">
+  <a href="{upgrade_url}" style="display:inline-block; background-color:#0d9488; color:#ffffff; padding:14px 32px; border-radius:8px; text-decoration:none; font-weight:600; font-size:15px;">
+    Choisir mon offre
+  </a>
+</p>
+<p style="color:#3f3f46; line-height:1.6;">
+  Pour rappel, nos offres commerciales :
+</p>
+<ul style="color:#3f3f46; line-height:1.8; padding-left:20px;">
+  <li><strong>Solo</strong> — 79 €/mois · 1 utilisateur, 300 questions / mois</li>
+  <li><strong>Équipe</strong> — 149 €/mois · 5 utilisateurs, 900 questions / mois</li>
+  <li><strong>Groupe</strong> — 279 €/mois · 10 utilisateurs, 2 400 questions / mois</li>
+</ul>
+<p style="color:#94a3b8; font-size:13px; line-height:1.5; margin-top:24px;">
+  Vos documents et conversations seront conservés 30 jours après la fin de l'essai.
+  Vous pourrez les retrouver si vous souscrivez pendant cette période.
+</p>"""
+
+
+TRIAL_EXPIRED_CONTENT = """\
+<h2 style="margin-top:0; color:#0f766e; font-size:20px;">Votre essai AORIA RH est terminé</h2>
+<p style="color:#3f3f46; line-height:1.6;">Bonjour {full_name},</p>
+<p style="color:#3f3f46; line-height:1.6;">
+  Votre période d'essai gratuite est arrivée à son terme. L'accès à AORIA RH est
+  temporairement suspendu, mais vos données sont conservées <strong>30 jours</strong>.
+</p>
+<p style="color:#3f3f46; line-height:1.6;">
+  Pour réactiver votre compte et retrouver vos documents, choisissez l'offre qui
+  correspond à votre besoin :
+</p>
+<p style="text-align:center; margin:32px 0;">
+  <a href="{upgrade_url}" style="display:inline-block; background-color:#0d9488; color:#ffffff; padding:14px 32px; border-radius:8px; text-decoration:none; font-weight:600; font-size:15px;">
+    Souscrire maintenant
+  </a>
+</p>
+<p style="color:#94a3b8; font-size:13px; line-height:1.5; margin-top:24px;">
+  Après 30 jours sans souscription, vos documents, conversations et paramètres
+  seront définitivement supprimés conformément à notre politique de conservation.
+</p>"""
+
+
+def render_trial_reminder_email(
+    full_name: str,
+    days_remaining: int,
+    upgrade_url: str,
+) -> tuple[str, str]:
+    """Return (subject, html_body) for a trial reminder email (J-7 / J-3 / J-1)."""
+    if days_remaining == 1:
+        when_label = "demain"
+        subject = "Votre essai AORIA RH se termine demain"
+    elif days_remaining == 3:
+        when_label = "dans 3 jours"
+        subject = "Votre essai AORIA RH se termine dans 3 jours"
+    else:
+        when_label = f"dans {days_remaining} jours"
+        subject = f"Votre essai AORIA RH se termine dans {days_remaining} jours"
+
+    content = TRIAL_REMINDER_CONTENT.format(
+        full_name=full_name,
+        when_label=when_label,
+        upgrade_url=upgrade_url,
+    )
+    html = BASE_TEMPLATE.format(
+        subject=subject,
+        content=content,
+        year=datetime.now().year,
+    )
+    return subject, html
+
+
+def render_trial_expired_email(
+    full_name: str,
+    upgrade_url: str,
+) -> tuple[str, str]:
+    """Return (subject, html_body) for the trial expiration notification."""
+    subject = "Votre essai AORIA RH est terminé"
+    content = TRIAL_EXPIRED_CONTENT.format(
+        full_name=full_name,
+        upgrade_url=upgrade_url,
+    )
+    html = BASE_TEMPLATE.format(
+        subject=subject,
+        content=content,
+        year=datetime.now().year,
+    )
+    return subject, html

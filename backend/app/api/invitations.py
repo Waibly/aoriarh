@@ -11,6 +11,7 @@ from app.schemas.invitation import (
     InvitationRead,
     InvitationValidateResponse,
 )
+from app.services.billing_service import BillingService
 from app.services.invitation_service import InvitationService
 
 router = APIRouter()
@@ -30,6 +31,13 @@ async def create_invitation(
     user: User = Depends(require_org_role(["manager"])),
     db: AsyncSession = Depends(get_db),
 ) -> InvitationRead:
+    # Enforce plan user limit on the underlying account.
+    if user.role != "admin":
+        billing = BillingService(db)
+        account = await billing.get_account_for_organisation(organisation_id)
+        billing.ensure_plan_active(account)
+        await billing.check_user_limit(account)
+
     service = InvitationService(db)
     invitation = await service.create_invitation(organisation_id, data, user)
     return invitation  # type: ignore[return-value]

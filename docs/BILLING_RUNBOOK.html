@@ -1,0 +1,656 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AORIA RH — Runbook billing</title>
+<style>
+  :root {
+    --bg: #0f172a;
+    --bg-alt: #1e293b;
+    --card: #ffffff;
+    --text: #0f172a;
+    --muted: #64748b;
+    --border: #e2e8f0;
+    --primary: #2563eb;
+    --primary-light: #dbeafe;
+    --accent: #f59e0b;
+    --green: #16a34a;
+    --orange: #ea580c;
+    --red: #dc2626;
+    --code-bg: #f1f5f9;
+  }
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    margin: 0;
+    background: #f8fafc;
+    color: var(--text);
+    line-height: 1.6;
+  }
+  .container { max-width: 1100px; margin: 0 auto; padding: 48px 24px; }
+  header.hero { text-align: center; margin-bottom: 48px; }
+  header.hero h1 { font-size: 2.3rem; margin: 0 0 8px; color: var(--bg); }
+  header.hero p { color: var(--muted); margin: 0; font-size: 1rem; }
+
+  h2.section {
+    font-size: 1.5rem;
+    margin: 48px 0 20px;
+    padding-bottom: 10px;
+    border-bottom: 2px solid var(--border);
+  }
+  h3.sub { font-size: 1.1rem; margin: 24px 0 10px; color: var(--bg); }
+  h4 { margin: 20px 0 8px; color: var(--bg); font-size: 1rem; }
+
+  p, li { font-size: .95rem; }
+  code, pre {
+    font-family: "SF Mono", Monaco, Consolas, "Courier New", monospace;
+    background: var(--code-bg);
+    border-radius: 4px;
+    font-size: .85rem;
+  }
+  code { padding: 2px 6px; }
+  pre {
+    padding: 14px 16px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow-x: auto;
+    margin: 12px 0;
+    line-height: 1.5;
+  }
+  pre code { background: transparent; padding: 0; }
+
+  .table-wrapper { overflow-x: auto; margin: 12px 0 24px; }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    background: var(--card);
+    border-radius: 10px;
+    overflow: hidden;
+    box-shadow: 0 2px 8px rgba(15,23,42,.04);
+    font-size: .9rem;
+  }
+  th, td {
+    padding: 10px 14px;
+    text-align: left;
+    border-bottom: 1px solid var(--border);
+    vertical-align: top;
+  }
+  th { background: #f1f5f9; font-weight: 600; color: var(--bg); font-size: .85rem; }
+  tr:last-child td { border-bottom: none; }
+
+  .pill {
+    display: inline-block;
+    padding: 2px 10px;
+    border-radius: 999px;
+    font-size: .75rem;
+    font-weight: 600;
+    vertical-align: middle;
+  }
+  .pill.blue   { background: var(--primary-light); color: var(--primary); }
+  .pill.green  { background: #dcfce7; color: var(--green); }
+  .pill.orange { background: #ffedd5; color: var(--orange); }
+  .pill.red    { background: #fee2e2; color: var(--red); }
+  .pill.grey   { background: #e2e8f0; color: var(--muted); }
+
+  .callout {
+    border-left: 4px solid var(--primary);
+    background: var(--primary-light);
+    padding: 14px 18px;
+    border-radius: 6px;
+    margin: 16px 0;
+  }
+  .callout.warn { border-color: var(--orange); background: #fff7ed; }
+  .callout.danger { border-color: var(--red); background: #fef2f2; }
+  .callout p:first-child { margin-top: 0; }
+  .callout p:last-child { margin-bottom: 0; }
+
+  .toc {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px 20px;
+    margin-bottom: 32px;
+  }
+  .toc h3 { margin: 0 0 8px; font-size: 1rem; }
+  .toc ol { margin: 0; padding-left: 20px; }
+  .toc a { color: var(--primary); text-decoration: none; }
+  .toc a:hover { text-decoration: underline; }
+
+  .diagram {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 20px;
+    margin: 16px 0;
+    overflow-x: auto;
+  }
+  .diagram pre {
+    background: transparent;
+    border: none;
+    margin: 0;
+    padding: 0;
+    font-size: .8rem;
+  }
+
+  footer {
+    text-align: center;
+    color: var(--muted);
+    font-size: .8rem;
+    margin-top: 64px;
+    padding-top: 24px;
+    border-top: 1px solid var(--border);
+  }
+</style>
+</head>
+<body>
+<div class="container">
+
+<header class="hero">
+  <h1>AORIA RH — Runbook billing</h1>
+  <p>Système de souscription, quotas, facturation Stripe et rétention RGPD</p>
+</header>
+
+<!-- ============ TOC ============ -->
+<div class="toc">
+  <h3>Sommaire</h3>
+  <ol>
+    <li><a href="#architecture">Architecture & concepts</a></li>
+    <li><a href="#plans">Plans & tarifs</a></li>
+    <li><a href="#donnees">Modèle de données</a></li>
+    <li><a href="#endpoints">Endpoints API</a></li>
+    <li><a href="#stripe">Intégration Stripe</a></li>
+    <li><a href="#cron">Jobs planifiés (cron)</a></li>
+    <li><a href="#flows">Flows utilisateur</a></li>
+    <li><a href="#config">Configuration (.env)</a></li>
+    <li><a href="#operations">Opérations courantes</a></li>
+    <li><a href="#tests">Test end-to-end</a></li>
+    <li><a href="#rgpd">RGPD & rétention</a></li>
+    <li><a href="#roadmap">Roadmap</a></li>
+  </ol>
+</div>
+
+<!-- ============ ARCHITECTURE ============ -->
+<h2 class="section" id="architecture">1. Architecture & concepts</h2>
+
+<p>AORIA RH distingue deux catégories de plans qui cohabitent sur le champ <code>Account.plan</code> :</p>
+
+<div class="table-wrapper">
+  <table>
+    <thead>
+      <tr><th>Catégorie</th><th>Valeurs</th><th>Facturation</th><th>Assignation</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>Techniques</strong> <span class="pill grey">internes</span></td>
+        <td><code>gratuit</code>, <code>invite</code>, <code>vip</code></td>
+        <td>Hors Stripe</td>
+        <td>Manuel via back-office (ou automatique pour <code>gratuit</code> = essai 14 j)</td>
+      </tr>
+      <tr>
+        <td><strong>Commerciaux</strong> <span class="pill blue">Stripe</span></td>
+        <td><code>solo</code>, <code>equipe</code>, <code>groupe</code></td>
+        <td>Stripe Checkout + webhook</td>
+        <td>Self-service depuis <code>/billing</code></td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<p>Statut du compte (<code>Account.status</code>) indépendant du plan :</p>
+<ul>
+  <li><code>active</code> — accès complet</li>
+  <li><code>trialing</code> — essai en cours</li>
+  <li><code>past_due</code> — 1<sup>er</sup> échec de paiement, accès maintenu</li>
+  <li><code>suspended</code> — 2 échecs ou essai expiré, accès bloqué</li>
+  <li><code>canceled</code> — résiliation volontaire, accès fermé</li>
+</ul>
+
+<div class="callout">
+  <p><strong>Source de vérité des limites</strong> : le fichier <code>backend/app/core/plans.py</code> (dataclass <code>PlanLimits</code>). Modifier un chiffre = modifier du code + déploiement. Aucune migration DB requise.</p>
+</div>
+
+<!-- ============ PLANS ============ -->
+<h2 class="section" id="plans">2. Plans & tarifs</h2>
+
+<div class="table-wrapper">
+  <table>
+    <thead>
+      <tr>
+        <th>Plan</th>
+        <th>Users inclus</th>
+        <th>Orgs</th>
+        <th>Docs / org</th>
+        <th>CCN / org</th>
+        <th>Q / mois</th>
+        <th>Prix mensuel</th>
+        <th>Prix annuel</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>gratuit</strong> (essai 14 j)</td>
+        <td>1</td><td>1</td><td>20</td><td>1</td><td>150 / 14 j</td>
+        <td>—</td><td>—</td>
+      </tr>
+      <tr>
+        <td><strong>invite</strong> / <strong>vip</strong></td>
+        <td>5</td><td>3</td><td>300</td><td>5</td><td>900</td>
+        <td>—</td><td>—</td>
+      </tr>
+      <tr>
+        <td><strong>solo</strong></td>
+        <td>1 <span class="pill grey">+3 max</span></td><td>1</td><td>100</td><td>1</td><td>300</td>
+        <td>79 €</td><td>790 €</td>
+      </tr>
+      <tr>
+        <td><strong>equipe</strong></td>
+        <td>5 <span class="pill grey">+3 max</span></td><td>3</td><td>300</td><td>5</td><td>900</td>
+        <td>149 €</td><td>1 490 €</td>
+      </tr>
+      <tr>
+        <td><strong>groupe</strong></td>
+        <td>10 <span class="pill grey">+3 max</span></td><td>10</td><td>1 000</td><td>Illimité</td><td>2 400</td>
+        <td>279 €</td><td>2 790 €</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<h3 class="sub">Add-ons</h3>
+<div class="table-wrapper">
+  <table>
+    <thead>
+      <tr><th>Add-on</th><th>Prix</th><th>Récurrence</th><th>Effet</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>+1 utilisateur</td><td>15 €/mois</td><td>Récurrent (prorata à l'ajout)</td><td>Augmente la limite <code>users_included</code></td></tr>
+      <tr><td>+1 organisation</td><td>19 €/mois</td><td>Récurrent</td><td>Augmente <code>orgs_included</code></td></tr>
+      <tr><td>+500 documents</td><td>10 €/mois</td><td>Récurrent</td><td>Augmente <code>docs_per_org</code></td></tr>
+      <tr><td>Pack booster (+500 questions)</td><td>25 €</td><td>One-shot</td><td>Consommé après le quota mensuel, expire en fin de cycle</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<h3 class="sub">Politique fair-use</h3>
+<p>Le quota de questions mensuel est <strong>partagé par compte</strong> (pot commun entre tous les users et orgs). Le dépassement ne bloque jamais : seuils d'alerte :</p>
+<ul>
+  <li><strong>Soft warning</strong> ≥ 80 % → bannière orange in-app</li>
+  <li><strong>Hard warning</strong> ≥ 120 % → bannière rouge + incitation à upgrade</li>
+</ul>
+<p>Les seuils sont dans <code>backend/app/schemas/billing.py</code> (<code>SOFT_WARNING_RATIO</code> / <code>HARD_WARNING_RATIO</code>).</p>
+
+<!-- ============ DONNÉES ============ -->
+<h2 class="section" id="donnees">3. Modèle de données</h2>
+
+<h3 class="sub">Tables billing (migration <code>t5u6v7w8x9y0</code>)</h3>
+<div class="table-wrapper">
+  <table>
+    <thead>
+      <tr><th>Table</th><th>Rôle</th><th>Champs clés</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><code>accounts</code> <span class="pill grey">étendue</span></td>
+        <td>Compte principal (1-1 avec owner User)</td>
+        <td><code>plan</code>, <code>status</code>, <code>stripe_customer_id</code>, <code>plan_expires_at</code></td>
+      </tr>
+      <tr>
+        <td><code>subscriptions</code></td>
+        <td>Abonnement Stripe actif/historique</td>
+        <td><code>account_id</code>, <code>plan</code>, <code>billing_cycle</code>, <code>status</code>, <code>stripe_subscription_id</code>, <code>current_period_*</code>, <code>cancel_at_period_end</code></td>
+      </tr>
+      <tr>
+        <td><code>subscription_addons</code></td>
+        <td>Add-ons payants par subscription</td>
+        <td><code>addon_type</code> (<code>extra_user</code>/<code>extra_org</code>/<code>extra_docs</code>), <code>quantity</code>, <code>unit_price_cents</code></td>
+      </tr>
+      <tr>
+        <td><code>booster_purchases</code></td>
+        <td>Packs +500 questions one-shot</td>
+        <td><code>questions_remaining</code>, <code>expires_at</code>, <code>stripe_payment_intent_id</code></td>
+      </tr>
+      <tr>
+        <td><code>monthly_question_usage</code></td>
+        <td>Agrégat questions / compte / période</td>
+        <td><code>account_id</code> × <code>period_start</code> UNIQUE, <code>questions_used</code>, <code>quota_for_period</code></td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<h3 class="sub">Cascades de suppression</h3>
+<p>Toutes les FK vers <code>accounts.id</code> sont en <code>ON DELETE CASCADE</code> (subscriptions, addons, boosters, monthly_usage). La suppression d'un Account nettoie automatiquement ces tables. Les organisations / documents / conversations ne sont <strong>pas</strong> en cascade — ils doivent être supprimés explicitement (voir <code>DataRetentionService.purge_account</code>).</p>
+
+<!-- ============ ENDPOINTS ============ -->
+<h2 class="section" id="endpoints">4. Endpoints API</h2>
+
+<h3 class="sub">Public / utilisateur connecté</h3>
+<div class="table-wrapper">
+  <table>
+    <thead><tr><th>Méthode</th><th>Route</th><th>Rôle</th></tr></thead>
+    <tbody>
+      <tr><td>GET</td><td><code>/api/v1/billing/quota</code></td><td>Quota + statut du plan (affiché par la bannière et <code>/billing</code>)</td></tr>
+      <tr><td>GET</td><td><code>/api/v1/billing/subscription</code></td><td>Résumé subscription active</td></tr>
+      <tr><td>POST</td><td><code>/api/v1/billing/checkout</code></td><td>Crée une session Checkout pour un plan + cycle</td></tr>
+      <tr><td>POST</td><td><code>/api/v1/billing/booster/checkout</code></td><td>Crée une session Checkout one-shot pour un booster</td></tr>
+      <tr><td>POST</td><td><code>/api/v1/billing/portal</code></td><td>Ouvre le Stripe Customer Portal (self-service)</td></tr>
+      <tr><td>POST</td><td><code>/api/v1/billing/webhook</code></td><td>Reçoit les événements Stripe (signature vérifiée)</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<h3 class="sub">Admin (role='admin')</h3>
+<div class="table-wrapper">
+  <table>
+    <thead><tr><th>Méthode</th><th>Route</th><th>Rôle</th></tr></thead>
+    <tbody>
+      <tr><td>GET</td><td><code>/api/v1/admin/billing/metrics</code></td><td>MRR, ARR, actifs, trials, churn 30 j</td></tr>
+      <tr><td>GET</td><td><code>/api/v1/admin/billing/subscriptions</code></td><td>Liste subscriptions filtrable par statut/plan</td></tr>
+      <tr><td>GET</td><td><code>/api/v1/admin/accounts/pending-purge</code></td><td>Comptes éligibles à la purge RGPD</td></tr>
+      <tr><td>GET</td><td><code>/api/v1/admin/accounts/{id}/export</code></td><td>Export JSON RGPD (art. 15/20)</td></tr>
+      <tr><td>POST</td><td><code>/api/v1/admin/accounts/{id}/erase</code></td><td>Suppression immédiate (RGPD art. 17)</td></tr>
+      <tr><td>PUT</td><td><code>/api/v1/admin/users/{id}/plan</code></td><td>Override plan (assignation manuelle invite/vip)</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- ============ STRIPE ============ -->
+<h2 class="section" id="stripe">5. Intégration Stripe</h2>
+
+<h3 class="sub">Catalogue Stripe</h3>
+<p>Créé et entretenu par le script <code>backend/scripts/stripe_bootstrap.py</code> (idempotent, match par <code>metadata.aoria_code</code>).</p>
+
+<div class="table-wrapper">
+  <table>
+    <thead><tr><th>Produit Stripe</th><th>metadata.aoria_code</th><th>Prix</th></tr></thead>
+    <tbody>
+      <tr><td>AORIA RH — Solo</td><td><code>solo</code></td><td><code>solo_monthly</code> (79 €), <code>solo_yearly</code> (790 €)</td></tr>
+      <tr><td>AORIA RH — Équipe</td><td><code>equipe</code></td><td><code>equipe_monthly</code> (149 €), <code>equipe_yearly</code> (1 490 €)</td></tr>
+      <tr><td>AORIA RH — Groupe</td><td><code>groupe</code></td><td><code>groupe_monthly</code> (279 €), <code>groupe_yearly</code> (2 790 €)</td></tr>
+      <tr><td>AORIA RH — Utilisateur additionnel</td><td><code>addon_user</code></td><td><code>addon_user_monthly</code> (15 €)</td></tr>
+      <tr><td>AORIA RH — Organisation additionnelle</td><td><code>addon_org</code></td><td><code>addon_org_monthly</code> (19 €)</td></tr>
+      <tr><td>AORIA RH — +500 documents</td><td><code>addon_docs</code></td><td><code>addon_docs_monthly</code> (10 €)</td></tr>
+      <tr><td>AORIA RH — Pack booster +500 questions</td><td><code>booster</code></td><td><code>booster_oneshot</code> (25 €)</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<h3 class="sub">Webhooks traités</h3>
+<div class="table-wrapper">
+  <table>
+    <thead><tr><th>Événement Stripe</th><th>Effet dans AORIA</th></tr></thead>
+    <tbody>
+      <tr><td><code>checkout.session.completed</code></td><td>Crée la Subscription (ou BoosterPurchase si mode=payment), active le plan sur Account</td></tr>
+      <tr><td><code>customer.subscription.created</code></td><td>Sync état subscription</td></tr>
+      <tr><td><code>customer.subscription.updated</code></td><td>Sync status + périodes, met <code>Account.status</code> = <code>past_due</code>/<code>active</code></td></tr>
+      <tr><td><code>customer.subscription.deleted</code></td><td>Subscription.status = <code>canceled</code>, Account.status = <code>canceled</code></td></tr>
+      <tr><td><code>invoice.paid</code></td><td>Remet Account.status = <code>active</code> après un past_due</td></tr>
+      <tr><td><code>invoice.payment_failed</code></td><td>past_due au 1<sup>er</sup> échec, suspended au 2<sup>e</sup></td></tr>
+    </tbody>
+  </table>
+</div>
+
+<div class="callout warn">
+  <p><strong>Cloisonnement test / live</strong> : le compte Stripe est strictement séparé entre les deux modes. Les produits / prix / customers créés en test n'existent pas en live et inversement. Il faut relancer <code>stripe_bootstrap.py</code> en mode live après activation KYC.</p>
+</div>
+
+<!-- ============ CRON ============ -->
+<h2 class="section" id="cron">6. Jobs planifiés</h2>
+
+<p>Gérés par <code>arq</code> dans <code>backend/app/worker.py</code>.</p>
+
+<div class="table-wrapper">
+  <table>
+    <thead>
+      <tr><th>Tâche</th><th>Fréquence (UTC)</th><th>Rôle</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><code>run_billing_lifecycle</code></td>
+        <td>Tous les jours à 9 h</td>
+        <td>
+          Envoie les emails d'essai J-7 et J-1 (J-3 volontairement omis pour éviter la perception de spam). À J+0, marque l'essai <code>suspended</code> + envoie l'email d'expiration. Révoque aussi les plans <code>invite</code> expirés.
+        </td>
+      </tr>
+      <tr>
+        <td><code>run_data_retention_purge</code></td>
+        <td>Tous les jours à 10 h</td>
+        <td>
+          Supprime définitivement les comptes ayant dépassé leur fenêtre de rétention (30 j après essai/résiliation, 60 j après impayé). Nettoie PostgreSQL + MinIO + Qdrant.
+        </td>
+      </tr>
+      <tr>
+        <td><code>run_scheduled_sync</code></td>
+        <td>1<sup>er</sup> et 15 du mois à 3 h</td>
+        <td>Existait déjà — sync jurisprudence / CCN / codes juridiques. Indépendant du billing.</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<p>Le tick quotidien suffit pour la cadence business (trial 14 j). Chaque email n'est envoyé qu'une seule fois : la fenêtre de match (<code>6 ≤ remaining &lt; 7</code> jours pour J-7, etc.) est exacte sur 24 h.</p>
+
+<!-- ============ FLOWS ============ -->
+<h2 class="section" id="flows">7. Flows utilisateur</h2>
+
+<h3 class="sub">Signup → essai → upgrade</h3>
+<div class="diagram">
+<pre>
+J0   signup /register
+     ├─ User + Account créés via AuthService._new_trial_account()
+     ├─ plan='gratuit', status='trialing'
+     ├─ plan_assigned_at = now(), plan_expires_at = now() + 14 jours
+     └─ Access complet (limites Essai : 1/1/20/150q)
+
+J+1..J+13  utilisation normale
+     ├─ Chaque question → BillingService.check_question_quota()
+     │    + increment_question_count() après succès
+     └─ Banner /dashboard affiche le countdown trial
+
+J+7   email "Votre essai se termine dans 7 jours"
+J+13  email "... demain"
+
+J+14  cron lifecycle détecte remaining &lt; 0
+     ├─ Account.status ← 'suspended'
+     ├─ Email "Votre essai est terminé"
+     └─ Tous endpoints protégés renvoient 402 Payment Required
+
+Opt 1 : user clique "Choisir une offre" → POST /billing/checkout
+     ├─ Stripe Customer créé (get_or_create)
+     ├─ Session Checkout créée avec plan + cycle
+     ├─ Redirect vers Stripe
+     ├─ Paiement → webhook checkout.session.completed
+     │    ├─ Subscription créée
+     │    ├─ Account.plan ← plan commercial
+     │    └─ Account.status ← 'active'
+     └─ Redirect /settings/billing?success=1
+
+Opt 2 : user ne souscrit pas
+     └─ J+44 (14 + 30)  cron purge → suppression définitive
+</pre>
+</div>
+
+<h3 class="sub">Dépassement de quota</h3>
+<p>Les questions ne sont jamais bloquées. Le statut renvoyé par <code>BillingService.check_question_quota()</code> déclenche :</p>
+<ul>
+  <li><code>soft_warning</code> (≥ 80 %) : bannière orange, lien vers <code>/billing</code></li>
+  <li><code>hard_warning</code> (≥ 120 %) : bannière rouge, proposition booster ou upgrade</li>
+</ul>
+<p>Le booster (+500 q à 25 €) est consommé en FIFO après l'épuisement du quota mensuel.</p>
+
+<h3 class="sub">Cas d'impayé</h3>
+<p>Stripe retente 3-4 fois automatiquement. Chaque échec :</p>
+<ul>
+  <li>1<sup>er</sup> échec : <code>invoice.payment_failed</code> → <code>past_due</code>, accès maintenu</li>
+  <li>2<sup>e</sup> échec (<code>attempt_count ≥ 2</code>) : <code>suspended</code>, accès bloqué</li>
+  <li><code>invoice.paid</code> ultérieur : retour à <code>active</code></li>
+  <li>Après 60 j de suspension sans régularisation : purge cron</li>
+</ul>
+
+<!-- ============ CONFIG ============ -->
+<h2 class="section" id="config">8. Configuration (.env)</h2>
+
+<h3 class="sub">Variables obligatoires pour activer Stripe</h3>
+<pre><code># Clés Stripe (récupérables dashboard.stripe.com → Developers → API keys)
+STRIPE_SECRET_KEY=sk_test_...       # ou sk_live_... en prod
+STRIPE_PUBLISHABLE_KEY=pk_test_...
+STRIPE_WEBHOOK_SECRET=whsec_...     # fourni par `stripe listen` ou par le dashboard
+
+# Prix Stripe (remplis par le script stripe_bootstrap.py)
+STRIPE_PRICE_SOLO_MONTHLY=price_...
+STRIPE_PRICE_SOLO_YEARLY=price_...
+STRIPE_PRICE_EQUIPE_MONTHLY=price_...
+STRIPE_PRICE_EQUIPE_YEARLY=price_...
+STRIPE_PRICE_GROUPE_MONTHLY=price_...
+STRIPE_PRICE_GROUPE_YEARLY=price_...
+STRIPE_PRICE_ADDON_USER=price_...
+STRIPE_PRICE_ADDON_ORG=price_...
+STRIPE_PRICE_ADDON_DOCS=price_...
+STRIPE_PRICE_BOOSTER=price_...</code></pre>
+
+<p>Variables optionnelles (URLs de redirection Stripe) :</p>
+<pre><code>STRIPE_CHECKOUT_SUCCESS_URL=https://app.aoriarh.fr/settings/billing?success=1
+STRIPE_CHECKOUT_CANCEL_URL=https://app.aoriarh.fr/settings/billing?canceled=1
+STRIPE_PORTAL_RETURN_URL=https://app.aoriarh.fr/settings/billing</code></pre>
+
+<div class="callout">
+  <p><strong>Fallback</strong> : si une clé Stripe manque, les endpoints billing renvoient 501 avec un message clair. Les trials et les plans techniques continuent de fonctionner.</p>
+</div>
+
+<!-- ============ OPS ============ -->
+<h2 class="section" id="operations">9. Opérations courantes</h2>
+
+<h3 class="sub">Bootstrap / mise à jour du catalogue Stripe</h3>
+<pre><code>docker compose exec -w /app backend python -m scripts.stripe_bootstrap</code></pre>
+<p>Idempotent : relance sans risque. Affiche le bloc <code>STRIPE_PRICE_*</code> à coller dans <code>.env</code>.</p>
+
+<h3 class="sub">Déclencher manuellement le cron lifecycle</h3>
+<pre><code>docker compose exec -w /app backend python -c "
+import asyncio
+from app.worker import run_billing_lifecycle, on_startup
+
+async def main():
+    ctx = {}
+    await on_startup(ctx)
+    await run_billing_lifecycle(ctx)
+    await ctx['engine'].dispose()
+
+asyncio.run(main())
+"</code></pre>
+
+<h3 class="sub">Déclencher manuellement la purge RGPD</h3>
+<pre><code>docker compose exec -w /app backend python -c "
+import asyncio
+from app.worker import run_data_retention_purge, on_startup
+
+async def main():
+    ctx = {}
+    await on_startup(ctx)
+    await run_data_retention_purge(ctx)
+    await ctx['engine'].dispose()
+
+asyncio.run(main())
+"</code></pre>
+
+<h3 class="sub">Assigner manuellement un plan (admin)</h3>
+<p>Depuis le backoffice : <code>/admin/users</code> → sélectionner un user → bouton "Changer de plan" (vip permanent / invite X mois).</p>
+
+<h3 class="sub">Répondre à une demande RGPD</h3>
+<ol>
+  <li>Export art. 15/20 : <code>GET /api/v1/admin/accounts/{id}/export</code> → fichier JSON à envoyer au demandeur.</li>
+  <li>Effacement art. 17 : <code>POST /api/v1/admin/accounts/{id}/erase</code> → supprime immédiatement.</li>
+  <li>UI : <code>/admin/billing</code> → table "Comptes à purger" → boutons Export / Supprimer.</li>
+</ol>
+
+<h3 class="sub">Surveiller les KPIs</h3>
+<p>Page <code>/admin/billing</code> : MRR, ARR, trials actifs, churn 30 j, répartition par plan. Rafraîchie à chaque chargement.</p>
+
+<!-- ============ TESTS ============ -->
+<h2 class="section" id="tests">10. Test end-to-end</h2>
+
+<h3 class="sub">Environnement test Stripe</h3>
+<pre><code># 1. Lancer le forward webhook local
+stripe login
+stripe listen --forward-to localhost:8000/api/v1/billing/webhook
+
+# → Affiche : Ready! Your webhook signing secret is whsec_xxxxx
+# Copier dans .env puis : docker compose up -d backend</code></pre>
+
+<h3 class="sub">Cartes de test</h3>
+<div class="table-wrapper">
+  <table>
+    <thead><tr><th>Numéro</th><th>Comportement</th></tr></thead>
+    <tbody>
+      <tr><td><code>4242 4242 4242 4242</code></td><td>Succès standard</td></tr>
+      <tr><td><code>4000 0025 0000 3155</code></td><td>Succès après SCA (3DS)</td></tr>
+      <tr><td><code>4000 0000 0000 9995</code></td><td>Échec immédiat (insufficient_funds)</td></tr>
+      <tr><td><code>4000 0000 0000 0341</code></td><td>Autorisation OK mais échec au 1<sup>er</sup> renouvellement → tester past_due</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<h3 class="sub">Scénario complet (30 min)</h3>
+<ol>
+  <li>Signup nouveau user → vérifier <code>Account.plan='gratuit'</code>, <code>status='trialing'</code>, <code>plan_expires_at = J+14</code></li>
+  <li>Poser une question → <code>monthly_question_usage.questions_used</code> = 1</li>
+  <li>Naviguer vers <code>/billing</code> → quota affiché, bouton "Souscrire Solo"</li>
+  <li>Cliquer → redirection Stripe → payer avec 4242... → redirection <code>/settings/billing?success=1</code></li>
+  <li>Vérifier webhook reçu : <code>Subscription</code> créée, <code>Account.plan='solo'</code>, <code>status='active'</code></li>
+  <li>Ouvrir le Customer Portal (<code>POST /billing/portal</code>) → résilier → webhook <code>customer.subscription.deleted</code> → <code>status='canceled'</code></li>
+  <li>Lancer le cron purge manuellement (après avoir triché sur <code>updated_at</code> en DB pour simuler 30 j de recul)</li>
+  <li>Vérifier que les tables <code>accounts</code>, <code>organisations</code>, <code>documents</code>, <code>users</code> ne contiennent plus rien pour ce compte</li>
+</ol>
+
+<!-- ============ RGPD ============ -->
+<h2 class="section" id="rgpd">11. RGPD & rétention</h2>
+
+<h3 class="sub">Fenêtres de rétention</h3>
+<div class="table-wrapper">
+  <table>
+    <thead><tr><th>Situation</th><th>Ancre temporelle</th><th>Grâce</th></tr></thead>
+    <tbody>
+      <tr><td>Essai expiré non converti</td><td><code>plan_expires_at</code> (exact)</td><td><strong>30 jours</strong></td></tr>
+      <tr><td>Résiliation volontaire</td><td><code>updated_at</code> (approximation)</td><td><strong>30 jours</strong></td></tr>
+      <tr><td>Impayé / suspension Stripe</td><td><code>updated_at</code> (approximation)</td><td><strong>60 jours</strong></td></tr>
+    </tbody>
+  </table>
+</div>
+
+<h3 class="sub">Effet de la purge</h3>
+<p>Par ordre, pour chaque compte éligible :</p>
+<ol>
+  <li>Vecteurs Qdrant → suppression par <code>FilterSelector(organisation_id)</code></li>
+  <li>Fichiers MinIO → <code>StorageService.delete_file(storage_path)</code> pour chaque <code>Document</code></li>
+  <li>PostgreSQL : messages → conversations → documents → conventions → memberships → organisations → invitations → account_members → account (cascade sur subscriptions/addons/boosters/usage) → user owner</li>
+</ol>
+
+<div class="callout danger">
+  <p><strong>Irréversible</strong> : aucune corbeille, aucun backup auto. Si vous devez préserver une trace (ex : obligations comptables Stripe), <strong>exporter d'abord</strong> via <code>GET /admin/accounts/{id}/export</code>.</p>
+</div>
+
+<h3 class="sub">Données conservées côté Stripe</h3>
+<p>Les factures, reçus et historiques de paiement restent sur Stripe (cf. obligations comptables 10 ans). La purge AORIA ne supprime pas le <code>Customer</code> Stripe — il reste orphelin dans leur système.</p>
+
+<!-- ============ ROADMAP ============ -->
+<h2 class="section" id="roadmap">12. Roadmap (non implémenté)</h2>
+
+<ul>
+  <li><strong>Zero Data Retention OpenAI</strong> — à activer côté OpenAI entreprise (demande support). Mentionné dans la politique de confidentialité.</li>
+  <li><strong>Anonymisation PII avant envoi LLM</strong> — sujet important, reste à spécifier (Presidio / regex NIR-BIC).</li>
+  <li><strong>Chiffrement au repos</strong> (PostgreSQL / Qdrant / MinIO) — prévu, mention honnête dans la politique.</li>
+  <li><strong>Sauvegardes chiffrées externalisées</strong> — hors du VPS principal.</li>
+  <li><strong>Champ <code>Account.status_changed_at</code></strong> — pour ancrer précisément la fenêtre de rétention sur les suspensions / résiliations (aujourd'hui <code>updated_at</code>).</li>
+  <li><strong>Add-ons commandés depuis l'UI</strong> — les endpoints Stripe sont prêts mais il manque l'UI pour ajouter / retirer des add-ons depuis <code>/billing</code> (actuellement via Stripe Customer Portal uniquement).</li>
+  <li><strong>Dunning emails custom</strong> — aujourd'hui Stripe envoie ses propres mails de relance. On peut surcharger avec nos templates Brevo.</li>
+  <li><strong>Dashboard analytics historiques</strong> — évolution MRR / churn dans le temps, cohortes (actuellement seulement un snapshot).</li>
+  <li><strong>Tests d'intégration automatisés</strong> — tests E2E sur le flow signup → trial → checkout → webhook → purge.</li>
+</ul>
+
+<footer>
+  AORIA RH — Runbook billing · Document interne · À mettre à jour après chaque changement de logique billing
+</footer>
+
+</div>
+</body>
+</html>

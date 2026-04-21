@@ -31,9 +31,22 @@ class Taille(StrEnum):
 
 
 class PlanType(StrEnum):
+    # Technical plans (assigned manually, not sold)
     GRATUIT = "gratuit"
     INVITE = "invite"
     VIP = "vip"
+    # Commercial plans (billed through Stripe)
+    SOLO = "solo"
+    EQUIPE = "equipe"
+    GROUPE = "groupe"
+
+
+class AccountStatus(StrEnum):
+    ACTIVE = "active"
+    TRIALING = "trialing"
+    PAST_DUE = "past_due"
+    SUSPENDED = "suspended"
+    CANCELED = "canceled"
 
 
 class RoleInOrg(StrEnum):

@@ -28,6 +28,7 @@ from app.schemas.conversation import (
     MessageRead,
 )
 from app.core.limiter import limiter
+from app.services.billing_service import BillingService
 from app.services.conversation_service import ConversationService
 
 logger = logging.getLogger(__name__)
@@ -227,12 +228,17 @@ async def chat(
     db: AsyncSession = Depends(get_db),
 ) -> ChatResponse:
     service = ConversationService(db)
+    billing = BillingService(db)
 
     # 1. Verify access
     conversation = await service.get_conversation(
         conversation_id=conversation_id,
         user=user,
     )
+
+    # 1b. Enforce quota / plan lifecycle (raises 402 if expired/suspended).
+    account = await billing.get_account_for_organisation(conversation.organisation_id)
+    await billing.check_question_quota(account)
 
     # 2. Load org context for RAG
     org_context = await _load_org_context(db, conversation.organisation_id)
@@ -278,12 +284,17 @@ async def chat(
         sources=sources_dicts,
     )
 
+    # 5b. Increment the monthly question counter (fair-use: never blocks).
+    await billing.increment_question_count(account)
+
     # 6. Auto-generate title from first message
     if conversation.title is None:
         title = data.message[:100].strip()
         if len(data.message) > 100:
             title = title.rsplit(" ", 1)[0] + "…"
         await service.update_title(conversation_id, title)
+
+    await db.commit()
 
     return ChatResponse(
         message=user_message,  # type: ignore[arg-type]
@@ -347,12 +358,17 @@ async def chat_stream(
     db: AsyncSession = Depends(get_db),
 ) -> StreamingResponse:
     service = ConversationService(db)
+    billing = BillingService(db)
 
     # 1. Verify access
     conversation = await service.get_conversation(
         conversation_id=conversation_id,
         user=user,
     )
+
+    # 1b. Enforce quota / plan lifecycle (raises 402 if expired/suspended).
+    account = await billing.get_account_for_organisation(conversation.organisation_id)
+    await billing.check_question_quota(account)
 
     # 2. Load org context for RAG
     org_context = await _load_org_context(db, conversation.organisation_id)
@@ -426,6 +442,7 @@ async def chat_stream(
                     oos_assistant.rag_trace = rag_trace.to_dict()
                     oos_assistant.latency_ms = int((time.perf_counter() - t_total) * 1000)
                     oos_assistant.question_id = question_id
+                    await billing.increment_question_count(account)
                     await db.commit()
                 except Exception:
                     logger.exception(
@@ -522,6 +539,7 @@ async def chat_stream(
                 assistant_message.rag_trace = rag_trace.to_dict()
                 assistant_message.question_id = question_id
                 assistant_message.latency_ms = total_latency_ms
+                await billing.increment_question_count(account)
                 await db.commit()
             except Exception:
                 logger.exception(

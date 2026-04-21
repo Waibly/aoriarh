@@ -18,6 +18,7 @@ from app.schemas.document import (
     DocumentDownload,
     DocumentRead,
 )
+from app.services.billing_service import BillingService
 from app.services.document_service import DocumentService
 
 logger = logging.getLogger(__name__)
@@ -50,6 +51,17 @@ async def upload_documents_batch(
     """Upload multiple documents of the same type to an organisation."""
     service = DocumentService(db)
     results: list[BatchUploadFileResult] = []
+
+    # Enforce plan limit once up-front; the per-file loop will raise if the
+    # batch pushes the org over its cap during the ingestion.
+    if user.role != "admin":
+        billing = BillingService(db)
+        account = await billing.get_account_for_organisation(organisation_id)
+        billing.ensure_plan_active(account)
+        from app.models.organisation import Organisation
+        org = await db.get(Organisation, organisation_id)
+        if org is not None:
+            await billing.check_document_limit(org)
 
     for file in files:
         try:
@@ -110,6 +122,15 @@ async def upload_document(
     user: User = Depends(require_org_role(["manager"])),
     db: AsyncSession = Depends(get_db),
 ) -> DocumentRead:
+    if user.role != "admin":
+        billing = BillingService(db)
+        account = await billing.get_account_for_organisation(organisation_id)
+        billing.ensure_plan_active(account)
+        from app.models.organisation import Organisation
+        org = await db.get(Organisation, organisation_id)
+        if org is not None:
+            await billing.check_document_limit(org)
+
     service = DocumentService(db)
     doc = await service.upload_document(
         file=file,

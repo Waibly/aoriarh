@@ -48,6 +48,29 @@ class Settings(BaseSettings):
     # Stripe
     stripe_secret_key: str = ""
     stripe_webhook_secret: str = ""
+    stripe_publishable_key: str = ""
+
+    # Stripe price IDs — fill in from the Stripe dashboard once products are created.
+    # If empty, billing endpoints return 501 Not Implemented (module disabled).
+    stripe_price_solo_monthly: str = ""
+    stripe_price_solo_yearly: str = ""
+    stripe_price_equipe_monthly: str = ""
+    stripe_price_equipe_yearly: str = ""
+    stripe_price_groupe_monthly: str = ""
+    stripe_price_groupe_yearly: str = ""
+
+    # Add-ons (all monthly recurring, prorated when added mid-cycle)
+    stripe_price_addon_user: str = ""
+    stripe_price_addon_org: str = ""
+    stripe_price_addon_docs: str = ""
+
+    # Booster (one-shot, +500 questions)
+    stripe_price_booster: str = ""
+
+    # Redirect URLs after Stripe checkout / portal
+    stripe_checkout_success_url: str = ""  # defaults to frontend_url + "/settings/billing?success=1"
+    stripe_checkout_cancel_url: str = ""   # defaults to frontend_url + "/settings/billing?canceled=1"
+    stripe_portal_return_url: str = ""     # defaults to frontend_url + "/settings/billing"
 
     # Admin seed
     seed_admin: bool = False  # Activer uniquement en dev / premier déploiement

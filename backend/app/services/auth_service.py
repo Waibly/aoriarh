@@ -1,8 +1,11 @@
+from datetime import UTC, datetime, timedelta
+
 from fastapi import HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
+from app.core.plans import TRIAL_DURATION_DAYS
 from app.core.security import (
     create_access_token,
     create_refresh_token,
@@ -13,6 +16,19 @@ from app.models.account import Account
 from app.models.invitation import Invitation
 from app.models.user import User
 from app.schemas.auth import GoogleAuthRequest, LoginRequest, RegisterRequest, TokenResponse
+
+
+def _new_trial_account(name: str, owner_id) -> Account:
+    """Factory for a freshly-created account in the 14-day trial window."""
+    now = datetime.now(UTC)
+    return Account(
+        name=name,
+        owner_id=owner_id,
+        plan="gratuit",
+        plan_assigned_at=now,
+        plan_expires_at=now + timedelta(days=TRIAL_DURATION_DAYS),
+        status="trialing",
+    )
 
 
 def _build_token_response(user_id: str) -> TokenResponse:
@@ -59,7 +75,7 @@ class AuthService:
         self.db.add(user)
         await self.db.flush()
 
-        account = Account(
+        account = _new_trial_account(
             name=data.workspace_name or f"Espace de {user.full_name}",
             owner_id=user.id,
         )
@@ -134,7 +150,7 @@ class AuthService:
         self.db.add(user)
         await self.db.flush()
 
-        account = Account(
+        account = _new_trial_account(
             name=f"Espace de {user.full_name}",
             owner_id=user.id,
         )

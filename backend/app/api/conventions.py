@@ -14,6 +14,7 @@ from app.schemas.ccn import (
     InstallConventionRequest,
     OrganisationConventionRead,
 )
+from app.services.billing_service import BillingService
 from app.services.ccn_service import CcnService
 
 router = APIRouter()
@@ -68,6 +69,15 @@ async def install_convention(
     db: AsyncSession = Depends(get_db),
 ) -> OrganisationConventionRead:
     """Install a convention collective for an organisation."""
+    if user.role != "admin":
+        billing = BillingService(db)
+        account = await billing.get_account_for_organisation(organisation_id)
+        billing.ensure_plan_active(account)
+        from app.models.organisation import Organisation
+        org = await db.get(Organisation, organisation_id)
+        if org is not None:
+            await billing.check_ccn_limit(org)
+
     service = CcnService(db)
     org_conv = await service.install_convention(organisation_id, body.idcc, user.id)
     return OrganisationConventionRead.from_orm_with_ccn(org_conv)
