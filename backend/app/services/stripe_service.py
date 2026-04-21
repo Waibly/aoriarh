@@ -178,6 +178,16 @@ class StripeService:
             line_items=[{"price": price_id, "quantity": 1}],
             success_url=self._success_url(),
             cancel_url=self._cancel_url(),
+            # Stripe Tax: automatic VAT calculation. Requires a billing
+            # address (below) and at least one tax registration (FR).
+            automatic_tax={"enabled": True},
+            billing_address_collection="required",
+            # Allow Stripe to update the existing customer's address/name
+            # after the client enters them at checkout.
+            customer_update={"address": "auto", "name": "auto"},
+            # Let B2B customers enter their VAT number (reverse-charge when
+            # they are in another EU country).
+            tax_id_collection={"enabled": True},
             subscription_data={
                 "metadata": {
                     "account_id": str(account.id),
@@ -212,6 +222,12 @@ class StripeService:
             line_items=[{"price": settings.stripe_price_booster, "quantity": 1}],
             success_url=self._success_url(),
             cancel_url=self._cancel_url(),
+            # Same tax settings as the subscription flow so the VAT is
+            # calculated consistently for the booster purchase.
+            automatic_tax={"enabled": True},
+            billing_address_collection="required",
+            customer_update={"address": "auto", "name": "auto"},
+            tax_id_collection={"enabled": True},
             metadata={
                 "account_id": str(account.id),
                 "product": "booster",

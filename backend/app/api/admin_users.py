@@ -17,7 +17,7 @@ from app.services.user_service import UserService
 from app.models.organisation import Organisation
 from app.schemas.account import AccountRead
 from app.schemas.organisation import PlanAssign
-from app.services.plan_service import assign_plan, resolve_expired_plans
+from app.services.plan_service import PlanOverflowError, assign_plan, resolve_expired_plans
 
 router = APIRouter()
 
@@ -134,12 +134,24 @@ async def update_account_plan(
     if not account:
         raise HTTPException(status_code=404, detail="Account non trouvé")
 
-    updated = await assign_plan(
-        db,
-        account_id=account_id,
-        plan=body.plan.value,
-        duration_months=body.duration_months,
-    )
+    try:
+        updated = await assign_plan(
+            db,
+            account_id=account_id,
+            plan=body.plan.value,
+            duration_months=body.duration_months,
+        )
+    except PlanOverflowError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "message": (
+                    f"Le plan {body.plan.value} est trop petit pour les données actuelles "
+                    "du compte. Supprimez les éléments excédentaires avant de changer de plan."
+                ),
+                "overflow": exc.reasons,
+            },
+        ) from exc
     return AccountRead.model_validate(updated)
 
 

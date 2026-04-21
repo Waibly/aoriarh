@@ -209,3 +209,57 @@ def render_trial_expired_email(
         year=datetime.now().year,
     )
     return subject, html
+
+
+# ---------------------------------------------------------------------------
+# Over-quota (fair-use hard warning)
+# ---------------------------------------------------------------------------
+
+
+QUOTA_HARD_WARNING_CONTENT = """\
+<h2 style="margin-top:0; color:#0f766e; font-size:20px;">Vous avez dépassé votre quota mensuel</h2>
+<p style="color:#3f3f46; line-height:1.6;">Bonjour {full_name},</p>
+<p style="color:#3f3f46; line-height:1.6;">
+  Vous avez utilisé <strong>{used}</strong> questions ce mois-ci sur les
+  <strong>{quota}</strong> incluses dans votre offre {plan_label}.
+  Dans le cadre de notre politique « fair use », nous ne bloquons jamais
+  vos questions &mdash; mais ce niveau d'usage suggère qu'un plan supérieur
+  vous conviendrait mieux.
+</p>
+<p style="color:#3f3f46; line-height:1.6;">Deux options pour continuer sereinement&nbsp;:</p>
+<ul style="color:#3f3f46; line-height:1.8; padding-left:20px;">
+  <li><strong>Passer à l'offre supérieure</strong> &mdash; plus de questions, pas de limite à surveiller chaque mois.</li>
+  <li><strong>Acheter un pack booster</strong> &mdash; +500 questions pour 25&nbsp;€, valables jusqu'à consommation complète.</li>
+</ul>
+<p style="text-align:center; margin:32px 0;">
+  <a href="{upgrade_url}" style="display:inline-block; background-color:#0d9488; color:#ffffff; padding:14px 32px; border-radius:8px; text-decoration:none; font-weight:600; font-size:15px;">
+    Gérer mon abonnement
+  </a>
+</p>
+<p style="color:#94a3b8; font-size:13px; line-height:1.5;">
+  Cet email est envoyé une seule fois par mois. Le quota se réinitialise au début du mois prochain.
+</p>"""
+
+
+def render_quota_hard_warning_email(
+    full_name: str,
+    plan_label: str,
+    used: int,
+    quota: int,
+    upgrade_url: str,
+) -> tuple[str, str]:
+    """Return (subject, html_body) for the over-quota upsell email."""
+    subject = f"Vous avez dépassé votre quota mensuel AORIA RH ({used}/{quota})"
+    content = QUOTA_HARD_WARNING_CONTENT.format(
+        full_name=full_name,
+        plan_label=plan_label,
+        used=used,
+        quota=quota,
+        upgrade_url=upgrade_url,
+    )
+    html = BASE_TEMPLATE.format(
+        subject=subject,
+        content=content,
+        year=datetime.now().year,
+    )
+    return subject, html

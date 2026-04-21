@@ -90,6 +90,15 @@ class AccountMemberService:
     ) -> Invitation:
         account = await self._get_account(account_id)
 
+        # Enforce plan user limit (belt-and-braces with the API layer).
+        # Admins bypass because they may seed test accounts via the same
+        # helper without being subject to the quota.
+        if inviter.role != "admin":
+            from app.services.billing_service import BillingService
+            billing = BillingService(self.db)
+            billing.ensure_plan_active(account)
+            await billing.check_user_limit(account)
+
         # Check if already an account member
         existing_member = await self.db.execute(
             select(AccountMember)
@@ -313,6 +322,17 @@ class AccountMemberService:
             invitation.status = "accepted"
             await self.db.commit()
             return {"status": "already_member", "account_id": str(invitation.account_id)}
+
+        # Re-check the user limit at acceptance time. This protects against
+        # the race where several pending invitations were created while the
+        # account still had free slots, then accepted later when the slots
+        # are all taken (e.g. other invitations accepted in between or the
+        # account downgraded to a smaller plan).
+        account_for_limit = await self._get_account(invitation.account_id)
+        from app.services.billing_service import BillingService
+        billing = BillingService(self.db)
+        billing.ensure_plan_active(account_for_limit)
+        await billing.check_user_limit(account_for_limit)
 
         account_member = AccountMember(
             account_id=invitation.account_id,

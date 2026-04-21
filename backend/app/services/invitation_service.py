@@ -263,6 +263,17 @@ class InvitationService:
             await self.db.commit()
             return {"status": "already_member", "organisation_id": str(invitation.organisation_id)}
 
+        # Re-check the user limit against the Account that owns the org.
+        # Prevents accepting an invitation after the account has been
+        # downgraded or filled up by concurrent acceptances.
+        from app.services.billing_service import BillingService
+        billing = BillingService(self.db)
+        org_account = await billing.get_account_for_organisation(
+            invitation.organisation_id
+        )
+        billing.ensure_plan_active(org_account)
+        await billing.check_user_limit(org_account)
+
         membership = Membership(
             user_id=user.id,
             organisation_id=invitation.organisation_id,

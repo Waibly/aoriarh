@@ -1,7 +1,7 @@
 import uuid
-from datetime import date
+from datetime import date, datetime
 
-from sqlalchemy import Date, ForeignKey, Integer, UniqueConstraint
+from sqlalchemy import Date, DateTime, ForeignKey, Integer, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, TimestampMixin, generate_uuid
@@ -29,6 +29,12 @@ class MonthlyQuestionUsage(TimestampMixin, Base):
 
     questions_used: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     quota_for_period: Mapped[int] = mapped_column(Integer, nullable=False)
+
+    # Set when the HARD_WARNING upsell email has been sent for this period,
+    # so we don't re-spam the client at every over-quota question.
+    hard_warning_email_sent_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
     # Relations
     account: Mapped["Account"] = relationship(  # noqa: F821

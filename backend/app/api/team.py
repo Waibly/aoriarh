@@ -17,6 +17,7 @@ from app.schemas.account_member import (
 from app.schemas.invitation import InvitationRead
 from app.schemas.organisation import OrganisationRead
 from app.services.account_member_service import AccountMemberService
+from app.services.billing_service import BillingService
 
 router = APIRouter()
 
@@ -56,6 +57,14 @@ async def invite_team_member(
     db: AsyncSession = Depends(get_db),
 ) -> InvitationRead:
     user, account = owner_data
+
+    # Enforce plan user limit on the team account.
+    # Admins (AORIA staff) bypass — they may seed test accounts.
+    if user.role != "admin":
+        billing = BillingService(db)
+        billing.ensure_plan_active(account)
+        await billing.check_user_limit(account)
+
     service = AccountMemberService(db)
     invitation = await service.invite_member(account.id, data, user)
     return invitation  # type: ignore[return-value]

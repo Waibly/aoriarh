@@ -9,6 +9,7 @@ Responsibilities:
     emit an upsell email or banner).
 """
 
+import logging
 import uuid
 from calendar import monthrange
 from datetime import UTC, datetime
@@ -17,7 +18,20 @@ from fastapi import HTTPException, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings as app_settings
 from app.core.plans import get_limits, is_commercial
+
+
+logger = logging.getLogger(__name__)
+
+_PLAN_LABELS = {
+    "gratuit": "Essai",
+    "invite": "Invité",
+    "vip": "VIP",
+    "solo": "Solo",
+    "equipe": "Équipe",
+    "groupe": "Groupe",
+}
 from app.models.account import Account
 from app.models.account_member import AccountMember
 from app.models.booster_purchase import BoosterPurchase
@@ -243,6 +257,10 @@ class BillingService:
         First consumes from the monthly quota; if exhausted, consumes from
         the oldest available booster pack. If both are exhausted we still
         increment the monthly counter (fair-use: no blocking).
+
+        Also sends the "you've exceeded your quota" upsell email the first
+        time the account crosses the HARD_WARNING threshold for a given
+        period. Best-effort: a Brevo failure must never break the chat.
         """
         usage = await self.get_or_create_usage(account)
 
@@ -260,6 +278,44 @@ class BillingService:
         # Monthly quota and all boosters are gone — still increment (fair-use).
         usage.questions_used += 1
         await self.db.flush()
+
+        # Trigger upsell email once per period when we cross 120 %.
+        if (
+            usage.hard_warning_email_sent_at is None
+            and usage.quota_for_period > 0
+            and usage.questions_used >= int(HARD_WARNING_RATIO * usage.quota_for_period)
+        ):
+            await self._send_hard_warning_email(account, usage)
+
+    async def _send_hard_warning_email(self, account: Account, usage) -> None:
+        """Send the over-quota upsell email once per billing period."""
+        try:
+            from app.models.user import User as UserModel
+            from app.services.email.sender import send_email
+            from app.services.email.templates import render_quota_hard_warning_email
+
+            owner = await self.db.get(UserModel, account.owner_id)
+            if owner is None or not owner.is_active:
+                return
+
+            plan_label = _PLAN_LABELS.get(account.plan, account.plan)
+            upgrade_url = f"{app_settings.frontend_url}/billing"
+            subject, html = render_quota_hard_warning_email(
+                full_name=owner.full_name,
+                plan_label=plan_label,
+                used=usage.questions_used,
+                quota=usage.quota_for_period,
+                upgrade_url=upgrade_url,
+            )
+            sent = await send_email(owner.email, owner.full_name, subject, html)
+            if sent:
+                usage.hard_warning_email_sent_at = datetime.now(UTC)
+                await self.db.flush()
+        except Exception:
+            logger.exception(
+                "Hard-warning email failed for account %s — swallowed so the chat request continues",
+                account.id,
+            )
 
     async def _active_booster_remaining(self, account_id: uuid.UUID) -> int:
         now = datetime.now(UTC)
