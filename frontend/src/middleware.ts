@@ -8,9 +8,10 @@ export default auth((req) => {
     req.nextUrl.pathname.startsWith("/login") ||
     req.nextUrl.pathname.startsWith("/register");
   const isInvitePage = req.nextUrl.pathname.startsWith("/invite");
+  const isPublicPage = req.nextUrl.pathname.startsWith("/pricing");
 
-  // Invite pages are accessible whether logged in or not
-  if (isInvitePage) {
+  // Invite and public marketing pages are accessible whether logged in or not
+  if (isInvitePage || isPublicPage) {
     return NextResponse.next();
   }
 
