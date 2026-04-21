@@ -67,7 +67,7 @@ const STATUS_LABEL: Record<string, string> = {
 };
 
 const STATUS_CLASSES: Record<string, string> = {
-  pending: "rounded-full",
+  pending: "rounded-full border-slate-400 bg-slate-500/10 text-slate-600 dark:text-slate-300",
   indexing: "rounded-full border-orange-400 bg-orange-500/10 text-orange-600 dark:text-orange-400",
   indexed: "rounded-full border-green-500 bg-green-500/10 text-green-600 dark:text-green-400",
   error: "rounded-full border-red-500 bg-red-500/10 text-red-600 dark:text-red-400",
@@ -159,16 +159,31 @@ export default function DocumentsPage() {
   const [isManager, setIsManager] = useState(false);
   const [dragging, setDragging] = useState(false);
   const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
   const [addCcnOpen, setAddCcnOpen] = useState(false);
   const [selectedNewCcn, setSelectedNewCcn] = useState<CcnReference[]>([]);
   const [installingCcn, setInstallingCcn] = useState(false);
   const [removeCcnIdcc, setRemoveCcnIdcc] = useState<string | null>(null);
   const [selection, setSelection] = useState<Selection>({ type: "category", key: "all" });
 
+  // Debounce the search input: filtering happens 200 ms after the last
+  // keystroke, not on every letter. Prevents a re-render burst when the
+  // user types quickly.
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(search), 200);
+    return () => clearTimeout(t);
+  }, [search]);
+
   const initialLoadDone = useRef(false);
+  // Tracks the organisation whose data is currently being fetched. Protects
+  // against race conditions when the user switches orgs mid-fetch: the older
+  // response won't overwrite the state once a newer request has started.
+  const activeOrgIdRef = useRef<string | null>(null);
 
   const fetchDocuments = useCallback(async () => {
     if (!currentOrg || !token) return;
+    const requestOrgId = currentOrg.id;
+    activeOrgIdRef.current = requestOrgId;
     if (!initialLoadDone.current) setLoading(true);
     try {
       const [docs, ccns] = await Promise.all([
@@ -178,13 +193,19 @@ export default function DocumentsPage() {
           { token },
         ).catch(() => [] as OrganisationConvention[]),
       ]);
+      if (activeOrgIdRef.current !== requestOrgId) return; // stale response
       setDocuments(docs);
       setConventions(ccns);
       initialLoadDone.current = true;
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Erreur lors du chargement des documents");
+      if (activeOrgIdRef.current !== requestOrgId) return;
+      toast.error(
+        err instanceof Error
+          ? err.message
+          : "Impossible de charger les documents. Vérifiez votre connexion et réessayez.",
+      );
     } finally {
-      setLoading(false);
+      if (activeOrgIdRef.current === requestOrgId) setLoading(false);
     }
   }, [currentOrg, token]);
 
@@ -230,8 +251,16 @@ export default function DocumentsPage() {
 
   // ---- Document actions ----
 
-  const handleDelete = async (docId: string) => {
+  const handleDelete = async (docId: string, docName?: string) => {
     if (!currentOrg || !token) return;
+    const label = docName ? `« ${docName} »` : "ce document";
+    if (
+      !confirm(
+        `Supprimer ${label} ?\n\nLe fichier et son indexation seront définitivement supprimés. Cette action est irréversible.`,
+      )
+    ) {
+      return;
+    }
     try {
       await apiFetch(`/documents/${currentOrg.id}/${docId}`, {
         method: "DELETE",
@@ -240,7 +269,14 @@ export default function DocumentsPage() {
       toast.success("Document supprimé");
       fetchDocuments();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Erreur lors de la suppression");
+      const msg = err instanceof Error ? err.message : "";
+      toast.error(
+        msg.includes("404")
+          ? "Ce document a déjà été supprimé."
+          : msg.includes("indexation")
+            ? "Impossible de supprimer : le document est en cours d'indexation, réessayez dans quelques secondes."
+            : msg || "Impossible de supprimer le document. Réessayez dans un instant.",
+      );
     }
   };
 
@@ -268,7 +304,11 @@ export default function DocumentsPage() {
       a.click();
       URL.revokeObjectURL(url);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Erreur lors du téléchargement");
+      toast.error(
+        err instanceof Error && err.message
+          ? err.message
+          : "Le téléchargement a échoué. Le fichier original est peut-être indisponible, contactez le support.",
+      );
     }
   };
 
@@ -412,8 +452,8 @@ export default function DocumentsPage() {
       if (!cat) return [];
       docs = internalDocs.filter((d) => cat.sourceTypes.includes(d.source_type));
     }
-    if (search.trim()) {
-      const q = search.toLowerCase();
+    if (debouncedSearch.trim()) {
+      const q = debouncedSearch.toLowerCase();
       docs = docs.filter((d) => {
         const sourceLabel =
           SOURCE_TYPE_OPTIONS.find((s) => s.value === d.source_type)?.label ?? d.source_type;
@@ -421,7 +461,7 @@ export default function DocumentsPage() {
       });
     }
     return docs;
-  }, [selection, internalDocs, search]);
+  }, [selection, internalDocs, debouncedSearch]);
 
   if (!currentOrg) {
     return (
@@ -530,7 +570,7 @@ export default function DocumentsPage() {
                                     : ""}
                         </div>
                       </div>
-                      <ChevronRight className="h-3 w-3 shrink-0" />
+                      <ChevronRight className="h-3.5 w-3.5 shrink-0" />
                     </button>
                   );
                 })
@@ -542,7 +582,7 @@ export default function DocumentsPage() {
                   className="w-full justify-start text-xs h-8"
                   onClick={() => setAddCcnOpen(true)}
                 >
-                  <Plus className="h-3 w-3 mr-1" />
+                  <Plus className="h-3.5 w-3.5 mr-1" />
                   Installer une convention
                 </Button>
               )}
@@ -761,12 +801,12 @@ function CcnDetailPane({
                 )}
                 {ccn.status === "ready" && (
                   <Badge className="bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 border-0">
-                    <CheckCircle2 className="h-3 w-3 mr-1" /> Prête
+                    <CheckCircle2 className="h-3.5 w-3.5 mr-1" /> Prête
                   </Badge>
                 )}
                 {(ccn.status === "fetching" || ccn.status === "indexing" || ccn.status === "pending") && (
                   <Badge className="bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400 border-0">
-                    <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                    <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />
                     {ccn.status === "fetching"
                       ? "Téléchargement"
                       : ccn.status === "indexing"
@@ -787,7 +827,7 @@ function CcnDetailPane({
             {isManager && (
               <div className="flex items-center gap-1 shrink-0">
                 <Button variant="outline" size="sm" onClick={onRemove}>
-                  <Trash2 className="h-3 w-3 mr-1 text-destructive" />
+                  <Trash2 className="h-3.5 w-3.5 mr-1 text-destructive" />
                   Retirer
                 </Button>
               </div>
@@ -916,7 +956,7 @@ function DocsList({
             onClick={() => onDownload(d.id)}
             title="Télécharger"
           >
-            <Download className="h-3 w-3" />
+            <Download className="h-3.5 w-3.5" />
           </Button>
         </div>
       ))}
@@ -947,7 +987,7 @@ function CategoryPane({
   isManager: boolean;
   onUpload: () => void;
   onDownload: (id: string) => void;
-  onDelete: (id: string) => void;
+  onDelete: (id: string, name?: string) => void;
   onReindex: (id: string) => void;
   onReplace: (id: string, file: File) => void;
 }) {
@@ -968,7 +1008,7 @@ function CategoryPane({
           </div>
           {isManager && (
             <Button size="sm" onClick={onUpload}>
-              <Plus className="h-3 w-3 mr-1" />
+              <Plus className="h-3.5 w-3.5 mr-1" />
               Ajouter
             </Button>
           )}
@@ -1040,7 +1080,7 @@ function DocRow({
   doc: Document;
   isManager: boolean;
   onDownload: (id: string) => void;
-  onDelete: (id: string) => void;
+  onDelete: (id: string, name?: string) => void;
   onReindex: (id: string) => void;
   onReplace: (id: string, file: File) => void;
 }) {
@@ -1060,7 +1100,7 @@ function DocRow({
           className={STATUS_CLASSES[doc.indexation_status] ?? "rounded-full"}
         >
           {doc.indexation_status === "indexing" && (
-            <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+            <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
           )}
           <span className="text-[10px]">
             {STATUS_LABEL[doc.indexation_status] ?? doc.indexation_status}
@@ -1076,7 +1116,7 @@ function DocRow({
       <TableCell>
         <div className="flex items-center justify-end gap-1">
           <Button variant="ghost" size="sm" onClick={() => onDownload(doc.id)} title="Télécharger">
-            <Download className="h-3 w-3" />
+            <Download className="h-3.5 w-3.5" />
           </Button>
           {isManager && (
             <>
@@ -1097,7 +1137,7 @@ function DocRow({
                 onClick={() => replaceRef.current?.click()}
                 title="Remplacer le fichier"
               >
-                <Replace className="h-3 w-3 text-blue-500" />
+                <Replace className="h-3.5 w-3.5 text-blue-500" />
               </Button>
             </>
           )}
@@ -1108,17 +1148,17 @@ function DocRow({
               onClick={() => onReindex(doc.id)}
               title="Réindexer"
             >
-              <RefreshCw className="h-3 w-3 text-orange-500" />
+              <RefreshCw className="h-3.5 w-3.5 text-orange-500" />
             </Button>
           )}
           {isManager && (
             <Button
               variant="ghost"
               size="sm"
-              onClick={() => onDelete(doc.id)}
+              onClick={() => onDelete(doc.id, doc.name)}
               title="Supprimer"
             >
-              <Trash2 className="h-3 w-3 text-destructive" />
+              <Trash2 className="h-3.5 w-3.5 text-destructive" />
             </Button>
           )}
         </div>
