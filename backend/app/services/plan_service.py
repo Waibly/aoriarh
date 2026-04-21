@@ -9,6 +9,7 @@ from app.models.account import Account
 from app.models.account_member import AccountMember
 from app.models.ccn import OrganisationConvention
 from app.models.document import Document
+from app.models.monthly_question_usage import MonthlyQuestionUsage
 from app.models.organisation import Organisation
 
 
@@ -147,6 +148,25 @@ async def assign_plan(
         account.plan_expires_at = datetime.now(UTC) + timedelta(days=30 * duration_months)
     else:
         account.plan_expires_at = None
+
+    # If the new plan has a larger question quota than the one snapshot
+    # on the current billing period, upgrade the quota in place so the
+    # client benefits from the extra allowance immediately — not only
+    # from next month. We never downgrade an already-snapshot quota
+    # mid-period (the client "paid" for that quota).
+    new_limits = get_limits(plan)
+    result = await db.execute(
+        select(MonthlyQuestionUsage)
+        .where(MonthlyQuestionUsage.account_id == account_id)
+        .order_by(MonthlyQuestionUsage.period_start.desc())
+        .limit(1)
+    )
+    current_usage = result.scalar_one_or_none()
+    if (
+        current_usage is not None
+        and current_usage.quota_for_period < new_limits.questions_per_month
+    ):
+        current_usage.quota_for_period = new_limits.questions_per_month
 
     await db.commit()
     await db.refresh(account)

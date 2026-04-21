@@ -263,3 +263,119 @@ def render_quota_hard_warning_email(
         year=datetime.now().year,
     )
     return subject, html
+
+
+# ---------------------------------------------------------------------------
+# Subscription confirmation + cancellation
+# ---------------------------------------------------------------------------
+
+
+SUBSCRIPTION_CONFIRMED_CONTENT = """\
+<h2 style="margin-top:0; color:#0f766e; font-size:20px;">Bienvenue sur {plan_label} 🎉</h2>
+<p style="color:#3f3f46; line-height:1.6;">Bonjour {full_name},</p>
+<p style="color:#3f3f46; line-height:1.6;">
+  Votre abonnement à l'offre <strong>{plan_label}</strong> ({cycle_label}) est actif.
+  Vous bénéficiez immédiatement de l'ensemble des fonctionnalités&nbsp;:
+</p>
+<table style="width:100%; border-collapse:collapse; margin:16px 0;">
+  <tr>
+    <td style="padding:6px 0; color:#3f3f46;">Prochaine échéance</td>
+    <td style="padding:6px 0; color:#3f3f46; text-align:right;"><strong>{next_billing_date}</strong></td>
+  </tr>
+</table>
+<p style="text-align:center; margin:32px 0;">
+  <a href="{billing_url}" style="display:inline-block; background-color:#0d9488; color:#ffffff; padding:14px 32px; border-radius:8px; text-decoration:none; font-weight:600; font-size:15px;">
+    Gérer mon abonnement
+  </a>
+</p>
+{invoice_section}
+<p style="color:#94a3b8; font-size:13px; line-height:1.5;">
+  Vous pouvez modifier ou résilier votre abonnement à tout moment depuis votre espace client.
+  Un reçu officiel vous est également envoyé par Stripe à la même adresse.
+</p>"""
+
+
+SUBSCRIPTION_INVOICE_LINK = """\
+<p style="text-align:center; margin:12px 0;">
+  <a href="{invoice_url}" style="color:#0d9488; text-decoration:underline; font-size:13px;">
+    Voir le reçu Stripe
+  </a>
+</p>"""
+
+
+SUBSCRIPTION_CANCELED_CONTENT = """\
+<h2 style="margin-top:0; color:#0f766e; font-size:20px;">Votre abonnement AORIA RH est résilié</h2>
+<p style="color:#3f3f46; line-height:1.6;">Bonjour {full_name},</p>
+<p style="color:#3f3f46; line-height:1.6;">
+  Votre abonnement à l'offre <strong>{plan_label}</strong> a bien été résilié.
+  Vous conservez l'accès jusqu'au <strong>{end_date}</strong> — au-delà, vos données
+  seront conservées <strong>30 jours supplémentaires</strong> pour vous permettre de reprendre
+  si vous changez d'avis.
+</p>
+<p style="text-align:center; margin:32px 0;">
+  <a href="{billing_url}" style="display:inline-block; background-color:#0d9488; color:#ffffff; padding:14px 32px; border-radius:8px; text-decoration:none; font-weight:600; font-size:15px;">
+    Réactiver mon abonnement
+  </a>
+</p>
+<p style="color:#94a3b8; font-size:13px; line-height:1.5;">
+  Après cette période de 30 jours, l'ensemble de vos documents, conversations et
+  configurations seront définitivement supprimés, conformément à notre politique
+  de conservation.
+</p>
+<p style="color:#94a3b8; font-size:13px; line-height:1.5;">
+  Une remarque sur l'outil ? Un mail à hello@aoriarh.fr nous aide à l'améliorer.
+</p>"""
+
+
+def render_subscription_confirmed_email(
+    full_name: str,
+    plan_label: str,
+    cycle: str,
+    next_billing_date: str,
+    billing_url: str,
+    invoice_url: str | None = None,
+) -> tuple[str, str]:
+    """Return (subject, html_body) for the subscription confirmation email."""
+    cycle_label = "mensuel" if cycle == "monthly" else "annuel"
+    subject = f"Bienvenue sur AORIA RH {plan_label} — abonnement confirmé"
+
+    invoice_section = ""
+    if invoice_url:
+        invoice_section = SUBSCRIPTION_INVOICE_LINK.format(invoice_url=invoice_url)
+
+    content = SUBSCRIPTION_CONFIRMED_CONTENT.format(
+        full_name=full_name,
+        plan_label=plan_label,
+        cycle_label=cycle_label,
+        next_billing_date=next_billing_date,
+        billing_url=billing_url,
+        invoice_section=invoice_section,
+    )
+    html = BASE_TEMPLATE.format(
+        subject=subject,
+        content=content,
+        year=datetime.now().year,
+    )
+    return subject, html
+
+
+def render_subscription_canceled_email(
+    full_name: str,
+    plan_label: str,
+    end_date: str,
+    billing_url: str,
+) -> tuple[str, str]:
+    """Return (subject, html_body) for the subscription cancellation email."""
+    subject = "Votre abonnement AORIA RH est résilié"
+    content = SUBSCRIPTION_CANCELED_CONTENT.format(
+        full_name=full_name,
+        plan_label=plan_label,
+        end_date=end_date,
+        billing_url=billing_url,
+    )
+    html = BASE_TEMPLATE.format(
+        subject=subject,
+        content=content,
+        year=datetime.now().year,
+    )
+    return subject, html

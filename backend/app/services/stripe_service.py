@@ -292,11 +292,17 @@ class StripeService:
 
         handlers = {
             "checkout.session.completed": self._on_checkout_completed,
+            # SEPA / bank debits: the checkout returns before the payment
+            # actually clears. This second event fires 3-5 days later when
+            # the money is in. We treat it identically to .completed.
+            "checkout.session.async_payment_succeeded": self._on_checkout_completed,
+            "checkout.session.expired": self._on_checkout_expired,
             "customer.subscription.created": self._on_subscription_updated,
             "customer.subscription.updated": self._on_subscription_updated,
             "customer.subscription.deleted": self._on_subscription_deleted,
             "invoice.paid": self._on_invoice_paid,
             "invoice.payment_failed": self._on_invoice_payment_failed,
+            "charge.refunded": self._on_charge_refunded,
         }
         handler = handlers.get(event_type)
         if handler is None:
@@ -369,6 +375,10 @@ class StripeService:
         account.plan_expires_at = None  # commercial plans don't expire unless canceled
 
         await self.db.flush()
+
+        # Transactional email: welcome / subscription confirmed.
+        # Best-effort (try/except) so a Brevo hiccup never breaks the webhook.
+        await self._send_subscription_confirmed_email(account, sub, sub_obj)
 
     async def _create_booster_from_checkout(
         self, account: Account, session: dict
@@ -466,6 +476,10 @@ class StripeService:
 
         await self.db.flush()
 
+        # Transactional email: confirmation of cancellation.
+        if account is not None:
+            await self._send_subscription_canceled_email(account, sub)
+
     async def _on_invoice_paid(self, invoice: dict) -> None:
         """On a successful renewal, bring the account back to 'active'."""
         stripe_subscription_id = _get(invoice, "subscription")
@@ -508,6 +522,182 @@ class StripeService:
         else:
             account.status = "past_due"
         await self.db.flush()
+
+    async def _on_checkout_expired(self, session: dict) -> None:
+        """Log-only: nothing to clean up on our side when a Stripe Checkout
+        session times out. The Stripe Customer we may have created stays
+        (it'll just sit idle). Useful trace for debugging conversion drops.
+        """
+        meta = _get(session, "metadata") or {}
+        logger.info(
+            "Stripe checkout expired for account=%s plan=%s",
+            _get(meta, "account_id"),
+            _get(meta, "plan"),
+        )
+
+    async def _on_charge_refunded(self, charge: dict) -> None:
+        """A charge was fully or partially refunded.
+
+        We only react to **full** refunds. Partial refunds are left to
+        admin follow-up (they can come from bank disputes that will be
+        reversed, or manual adjustments, etc.).
+        """
+        amount = int(_get(charge, "amount") or 0)
+        amount_refunded = int(_get(charge, "amount_refunded") or 0)
+        if amount == 0 or amount_refunded < amount:
+            logger.info(
+                "Partial refund ignored (charge=%s, %d/%d cents)",
+                _get(charge, "id"), amount_refunded, amount,
+            )
+            return
+
+        # Subscription refund → cancel immediately
+        invoice_id = _get(charge, "invoice")
+        if invoice_id:
+            # Retrieve the invoice to get its subscription id
+            try:
+                inv = stripe.Invoice.retrieve(invoice_id)
+                stripe_subscription_id = _get(inv, "subscription")
+            except Exception:
+                logger.exception("Could not retrieve invoice %s", invoice_id)
+                stripe_subscription_id = None
+            if stripe_subscription_id:
+                result = await self.db.execute(
+                    select(Subscription).where(
+                        Subscription.stripe_subscription_id == stripe_subscription_id
+                    )
+                )
+                sub = result.scalar_one_or_none()
+                if sub is not None:
+                    try:
+                        stripe.Subscription.delete(stripe_subscription_id)
+                    except Exception:
+                        logger.exception(
+                            "Stripe cancel failed for refunded sub %s (already canceled?)",
+                            stripe_subscription_id,
+                        )
+                    sub.status = "canceled"
+                    sub.canceled_at = datetime.now(UTC)
+                    account = await self.db.get(Account, sub.account_id)
+                    if account is not None:
+                        account.status = "canceled"
+                    await self.db.flush()
+                    logger.info(
+                        "Refunded subscription %s → canceled locally and on Stripe",
+                        stripe_subscription_id,
+                    )
+                    return
+
+        # One-shot booster refund → zero out remaining questions
+        payment_intent_id = _get(charge, "payment_intent")
+        if payment_intent_id:
+            result = await self.db.execute(
+                select(BoosterPurchase).where(
+                    BoosterPurchase.stripe_payment_intent_id == payment_intent_id
+                )
+            )
+            booster = result.scalar_one_or_none()
+            if booster is not None:
+                booster.questions_remaining = 0
+                await self.db.flush()
+                logger.info(
+                    "Refunded booster %s → questions_remaining set to 0",
+                    booster.id,
+                )
+
+    async def _send_subscription_confirmed_email(
+        self,
+        account: Account,
+        sub: Subscription,
+        sub_obj: dict,
+    ) -> None:
+        try:
+            from app.models.user import User as UserModel
+            from app.services.email.sender import send_email
+            from app.services.email.templates import (
+                render_subscription_confirmed_email,
+            )
+
+            owner = await self.db.get(UserModel, account.owner_id)
+            if owner is None or not owner.is_active:
+                return
+
+            plan_label = {
+                "solo": "Solo",
+                "equipe": "Équipe",
+                "groupe": "Groupe",
+            }.get(sub.plan, sub.plan)
+
+            next_date = (
+                sub.current_period_end.strftime("%d/%m/%Y")
+                if sub.current_period_end is not None
+                else "—"
+            )
+            billing_url = f"{settings.frontend_url}/billing"
+
+            # Try to attach the hosted invoice URL for the first payment.
+            invoice_url: str | None = None
+            latest_invoice_id = _get(sub_obj, "latest_invoice")
+            if latest_invoice_id:
+                try:
+                    inv = stripe.Invoice.retrieve(latest_invoice_id)
+                    invoice_url = _get(inv, "hosted_invoice_url")
+                except Exception:
+                    invoice_url = None
+
+            subject, html = render_subscription_confirmed_email(
+                full_name=owner.full_name,
+                plan_label=plan_label,
+                cycle=sub.billing_cycle,
+                next_billing_date=next_date,
+                billing_url=billing_url,
+                invoice_url=invoice_url,
+            )
+            await send_email(owner.email, owner.full_name, subject, html)
+        except Exception:
+            logger.exception(
+                "subscription_confirmed email failed for account %s — swallowed",
+                account.id,
+            )
+
+    async def _send_subscription_canceled_email(
+        self, account: Account, sub: Subscription
+    ) -> None:
+        try:
+            from app.models.user import User as UserModel
+            from app.services.email.sender import send_email
+            from app.services.email.templates import (
+                render_subscription_canceled_email,
+            )
+
+            owner = await self.db.get(UserModel, account.owner_id)
+            if owner is None or not owner.is_active:
+                return
+
+            plan_label = {
+                "solo": "Solo",
+                "equipe": "Équipe",
+                "groupe": "Groupe",
+            }.get(sub.plan, sub.plan)
+
+            # The access usually remains until the end of the current
+            # period — fall back on today if we somehow have no end date.
+            end_date_dt = sub.current_period_end or datetime.now(UTC)
+            end_date_label = end_date_dt.strftime("%d/%m/%Y")
+            billing_url = f"{settings.frontend_url}/billing"
+
+            subject, html = render_subscription_canceled_email(
+                full_name=owner.full_name,
+                plan_label=plan_label,
+                end_date=end_date_label,
+                billing_url=billing_url,
+            )
+            await send_email(owner.email, owner.full_name, subject, html)
+        except Exception:
+            logger.exception(
+                "subscription_canceled email failed for account %s — swallowed",
+                account.id,
+            )
 
     async def _latest_subscription(
         self, account_id: uuid.UUID
