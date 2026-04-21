@@ -179,6 +179,11 @@ class StripeService:
             line_items=[{"price": price_id, "quantity": 1}],
             success_url=self._success_url(),
             cancel_url=self._cancel_url(),
+            # Only accept credit/debit cards. Even if the Stripe dashboard
+            # is ever reconfigured to enable wallets or SEPA, our checkout
+            # stays card-only — simpler accounting, zero async payment
+            # flow to monitor.
+            payment_method_types=["card"],
             # Stripe Tax: automatic VAT calculation. Requires a billing
             # address (below) and at least one tax registration (FR).
             automatic_tax={"enabled": True},
@@ -223,6 +228,8 @@ class StripeService:
             line_items=[{"price": settings.stripe_price_booster, "quantity": 1}],
             success_url=self._success_url(),
             cancel_url=self._cancel_url(),
+            # Card-only — consistent with the subscription checkout.
+            payment_method_types=["card"],
             # Same tax settings as the subscription flow so the VAT is
             # calculated consistently for the booster purchase.
             automatic_tax={"enabled": True},
