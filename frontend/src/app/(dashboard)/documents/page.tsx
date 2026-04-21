@@ -3,7 +3,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSession } from "next-auth/react";
 import {
+  ArrowDown,
+  ArrowUp,
+  ArrowUpDown,
   CheckCircle2,
+  ChevronLeft,
   ChevronRight,
   Download,
   FileText,
@@ -992,6 +996,96 @@ function CategoryPane({
   onReplace: (id: string, file: File) => void;
 }) {
   const Icon = category.icon;
+
+  // Sort, filter by status, paginate — all local to the table.
+  type SortKey = "name" | "source_type" | "indexation_status" | "file_size" | "created_at";
+  const [sortKey, setSortKey] = useState<SortKey>("created_at");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
+  const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [page, setPage] = useState(1);
+  const PAGE_SIZE = 25;
+
+  const toggleSort = (key: SortKey) => {
+    if (key === sortKey) {
+      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setSortKey(key);
+      setSortDir("asc");
+    }
+  };
+
+  const sortedFiltered = useMemo(() => {
+    let rows = docs;
+    if (statusFilter !== "all") {
+      rows = rows.filter((d) => {
+        if (statusFilter === "indexed") return d.indexation_status === "indexed";
+        if (statusFilter === "indexing") return d.indexation_status === "indexing" || d.indexation_status === "pending";
+        if (statusFilter === "error") return d.indexation_status === "error";
+        return true;
+      });
+    }
+    const sorted = [...rows].sort((a, b) => {
+      let va: string | number = "";
+      let vb: string | number = "";
+      switch (sortKey) {
+        case "name":
+          va = a.name.toLowerCase();
+          vb = b.name.toLowerCase();
+          break;
+        case "source_type":
+          va = a.source_type;
+          vb = b.source_type;
+          break;
+        case "indexation_status":
+          va = a.indexation_status;
+          vb = b.indexation_status;
+          break;
+        case "file_size":
+          va = a.file_size ?? 0;
+          vb = b.file_size ?? 0;
+          break;
+        case "created_at":
+          va = a.created_at;
+          vb = b.created_at;
+          break;
+      }
+      if (va < vb) return sortDir === "asc" ? -1 : 1;
+      if (va > vb) return sortDir === "asc" ? 1 : -1;
+      return 0;
+    });
+    return sorted;
+  }, [docs, statusFilter, sortKey, sortDir]);
+
+  const totalPages = Math.max(1, Math.ceil(sortedFiltered.length / PAGE_SIZE));
+  const currentPage = Math.min(page, totalPages);
+  const paginated = useMemo(
+    () => sortedFiltered.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE),
+    [sortedFiltered, currentPage],
+  );
+
+  // Reset to page 1 when filter/search changes
+  useEffect(() => {
+    setPage(1);
+  }, [statusFilter, search, category.key]);
+
+  // Counts per status for the filter pills
+  const statusCounts = useMemo(() => {
+    const c = { all: docs.length, indexed: 0, indexing: 0, error: 0 };
+    for (const d of docs) {
+      if (d.indexation_status === "indexed") c.indexed++;
+      else if (d.indexation_status === "indexing" || d.indexation_status === "pending") c.indexing++;
+      else if (d.indexation_status === "error") c.error++;
+    }
+    return c;
+  }, [docs]);
+
+  const filterPills: { key: string; label: string; count: number; color: string }[] = [
+    { key: "all", label: "Tous", count: statusCounts.all, color: "" },
+    { key: "indexed", label: "Indexés", count: statusCounts.indexed, color: "text-green-600" },
+    { key: "indexing", label: "En cours", count: statusCounts.indexing, color: "text-orange-600" },
+    { key: "error", label: "Erreur", count: statusCounts.error, color: "text-destructive" },
+  ];
+
   return (
     <Card>
       <CardHeader>
@@ -1001,9 +1095,15 @@ function CategoryPane({
               <Icon className="h-4 w-4" />
               {category.label}
               <InfoTooltip>{category.help}</InfoTooltip>
+              {loading && docs.length > 0 && (
+                <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" aria-label="Actualisation en cours" />
+              )}
             </CardTitle>
             <p className="text-xs text-muted-foreground mt-1">
               {docs.length} document{docs.length > 1 ? "s" : ""}
+              {statusFilter !== "all" && sortedFiltered.length !== docs.length && (
+                <span> · {sortedFiltered.length} filtré{sortedFiltered.length > 1 ? "s" : ""}</span>
+              )}
             </p>
           </div>
           {isManager && (
@@ -1015,7 +1115,7 @@ function CategoryPane({
         </div>
       </CardHeader>
       <CardContent>
-        <div className="relative mb-4">
+        <div className="relative mb-3">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
             placeholder="Rechercher dans cette catégorie..."
@@ -1025,47 +1125,137 @@ function CategoryPane({
           />
         </div>
 
-        {loading ? (
+        {/* Status filter pills */}
+        <div className="flex flex-wrap gap-2 mb-4">
+          {filterPills.map((p) => (
+            <button
+              key={p.key}
+              type="button"
+              onClick={() => setStatusFilter(p.key)}
+              className={cn(
+                "px-3 py-1 rounded-full text-xs font-medium border transition",
+                statusFilter === p.key
+                  ? "bg-primary/10 border-primary text-primary"
+                  : "bg-background border-border text-muted-foreground hover:bg-muted",
+              )}
+              disabled={p.count === 0 && p.key !== "all"}
+            >
+              <span className={cn("tabular-nums", p.color)}>{p.count}</span>{" "}
+              <span>{p.label}</span>
+            </button>
+          ))}
+        </div>
+
+        {loading && docs.length === 0 ? (
           <div className="space-y-2">
             {[1, 2, 3, 4].map((i) => (
               <Skeleton key={i} className="h-10 w-full" />
             ))}
           </div>
-        ) : docs.length === 0 ? (
+        ) : paginated.length === 0 ? (
           <div className="py-12 text-center text-sm text-muted-foreground">
-            {search.trim()
-              ? "Aucun document ne correspond à votre recherche."
+            {search.trim() || statusFilter !== "all"
+              ? "Aucun document ne correspond à votre recherche ou filtre."
               : "Aucun document dans cette catégorie."}
           </div>
         ) : (
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Nom</TableHead>
-                <TableHead className="w-[160px]">Type</TableHead>
-                <TableHead className="w-[100px]">Statut</TableHead>
-                <TableHead className="w-[80px] text-right">Taille</TableHead>
-                <TableHead className="w-[100px] text-right">Date</TableHead>
-                <TableHead className="w-[140px]"></TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {docs.map((d) => (
-                <DocRow
-                  key={d.id}
-                  doc={d}
-                  isManager={isManager}
-                  onDownload={onDownload}
-                  onDelete={onDelete}
-                  onReindex={onReindex}
-                  onReplace={onReplace}
-                />
-              ))}
-            </TableBody>
-          </Table>
+          <>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <SortableHead label="Nom" sortKey="name" currentKey={sortKey} currentDir={sortDir} onSort={toggleSort} />
+                  <SortableHead label="Type" sortKey="source_type" currentKey={sortKey} currentDir={sortDir} onSort={toggleSort} className="w-[160px]" />
+                  <SortableHead label="Statut" sortKey="indexation_status" currentKey={sortKey} currentDir={sortDir} onSort={toggleSort} className="w-[100px]" />
+                  <SortableHead label="Taille" sortKey="file_size" currentKey={sortKey} currentDir={sortDir} onSort={toggleSort} className="w-[80px] text-right" align="right" />
+                  <SortableHead label="Date" sortKey="created_at" currentKey={sortKey} currentDir={sortDir} onSort={toggleSort} className="w-[100px] text-right" align="right" />
+                  <TableHead className="w-[140px]"></TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {paginated.map((d) => (
+                  <DocRow
+                    key={d.id}
+                    doc={d}
+                    isManager={isManager}
+                    onDownload={onDownload}
+                    onDelete={onDelete}
+                    onReindex={onReindex}
+                    onReplace={onReplace}
+                  />
+                ))}
+              </TableBody>
+            </Table>
+
+            {/* Pagination */}
+            {totalPages > 1 && (
+              <div className="flex items-center justify-between mt-4 text-sm">
+                <span className="text-muted-foreground">
+                  {(currentPage - 1) * PAGE_SIZE + 1}–{Math.min(currentPage * PAGE_SIZE, sortedFiltered.length)} sur {sortedFiltered.length}
+                </span>
+                <div className="flex items-center gap-1">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={currentPage === 1}
+                    onClick={() => setPage(currentPage - 1)}
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                  </Button>
+                  <span className="px-3 tabular-nums text-muted-foreground">
+                    {currentPage} / {totalPages}
+                  </span>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={currentPage === totalPages}
+                    onClick={() => setPage(currentPage + 1)}
+                  >
+                    <ChevronRight className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
+            )}
+          </>
         )}
       </CardContent>
     </Card>
+  );
+}
+
+function SortableHead({
+  label,
+  sortKey,
+  currentKey,
+  currentDir,
+  onSort,
+  className,
+  align,
+}: {
+  label: string;
+  sortKey: "name" | "source_type" | "indexation_status" | "file_size" | "created_at";
+  currentKey: string;
+  currentDir: "asc" | "desc";
+  onSort: (k: "name" | "source_type" | "indexation_status" | "file_size" | "created_at") => void;
+  className?: string;
+  align?: "right";
+}) {
+  const active = currentKey === sortKey;
+  const Icon = !active ? ArrowUpDown : currentDir === "asc" ? ArrowUp : ArrowDown;
+  return (
+    <TableHead className={className}>
+      <button
+        type="button"
+        onClick={() => onSort(sortKey)}
+        className={cn(
+          "inline-flex items-center gap-1 hover:text-foreground transition",
+          active ? "text-foreground font-semibold" : "text-muted-foreground",
+          align === "right" && "justify-end w-full",
+        )}
+      >
+        {label}
+        <Icon className="h-3 w-3 opacity-60" />
+      </button>
+    </TableHead>
   );
 }
 
