@@ -28,8 +28,12 @@ import {
   TrendingUp,
   Gauge,
   CreditCard,
+  Rocket,
+  Users2,
+  Building,
 } from "lucide-react";
 import { apiFetch } from "@/lib/api";
+import { fetchQuota, type QuotaInfo } from "@/lib/billing-api";
 import { Button } from "@/components/ui/button";
 import {
   Collapsible,
@@ -340,6 +344,7 @@ export function Sidebar() {
   const { workspaceName, currentOrg } = useOrg();
 
   const [userPlan, setUserPlan] = useState<{ plan: string; plan_expires_at: string | null } | null>(null);
+  const [quota, setQuota] = useState<QuotaInfo | null>(null);
 
   const fetchPlan = useCallback(() => {
     if (!token) return;
@@ -349,6 +354,7 @@ export function Sidebar() {
         setUserPlan({ plan: data.plan ?? "gratuit", plan_expires_at: data.plan_expires_at });
       })
       .catch(() => {});
+    fetchQuota(token).then(setQuota).catch(() => {});
   }, [token, currentOrg?.id]);
 
   useEffect(() => {
@@ -362,9 +368,12 @@ export function Sidebar() {
   }, [fetchPlan]);
 
   const planDisplay = {
-    gratuit: { label: "Gratuit", icon: UserCheck, textClass: "text-muted-foreground", iconBg: "bg-muted" },
+    gratuit: { label: "Essai", icon: UserCheck, textClass: "text-muted-foreground", iconBg: "bg-muted" },
     invite: { label: "Invité", icon: Gift, textClass: "text-[#652bb0]", iconBg: "bg-[#652bb0]/15" },
     vip: { label: "VIP", icon: Crown, textClass: "text-amber-700 dark:text-amber-300", iconBg: "bg-amber-400/20 dark:bg-amber-500/20" },
+    solo: { label: "Solo", icon: Rocket, textClass: "text-sky-700 dark:text-sky-300", iconBg: "bg-sky-500/15" },
+    equipe: { label: "Équipe", icon: Users2, textClass: "text-primary", iconBg: "bg-primary/15" },
+    groupe: { label: "Groupe", icon: Building, textClass: "text-emerald-700 dark:text-emerald-300", iconBg: "bg-emerald-500/15" },
   } as const;
 
   const currentPlanConfig = planDisplay[(userPlan?.plan ?? "gratuit") as keyof typeof planDisplay] ?? planDisplay.gratuit;
@@ -560,6 +569,11 @@ export function Sidebar() {
                   <p className={cn("text-xs font-semibold", currentPlanConfig.textClass)}>
                     Plan {currentPlanConfig.label}
                   </p>
+                  {userPlan.plan === "gratuit" && userPlan.plan_expires_at && (
+                    <p className="text-[10px] text-muted-foreground truncate">
+                      Essai jusqu&apos;au {new Date(userPlan.plan_expires_at).toLocaleDateString("fr-FR")}
+                    </p>
+                  )}
                   {userPlan.plan === "invite" && userPlan.plan_expires_at && (
                     <p className="text-[10px] text-muted-foreground truncate">
                       Expire le {new Date(userPlan.plan_expires_at).toLocaleDateString("fr-FR")}
@@ -570,6 +584,36 @@ export function Sidebar() {
                   )}
                 </div>
               </div>
+
+              {/* Quota de questions — masqué pour le plan vip (illimité) */}
+              {quota && userPlan.plan !== "vip" && (
+                <div className="space-y-1">
+                  <div className="flex items-center justify-between text-[10px] tabular-nums">
+                    <span className="text-muted-foreground">Questions ce mois</span>
+                    <span className={cn(
+                      "font-medium",
+                      quota.quota_status === "hard_warning" && "text-destructive",
+                      quota.quota_status === "soft_warning" && "text-orange-600 dark:text-orange-400",
+                    )}>
+                      {quota.used} / {quota.quota}
+                      {quota.booster_remaining > 0 && (
+                        <span className="text-muted-foreground"> +{quota.booster_remaining}</span>
+                      )}
+                    </span>
+                  </div>
+                  <div className="h-1 w-full rounded-full bg-muted overflow-hidden">
+                    <div
+                      className={cn(
+                        "h-full transition-all",
+                        quota.quota_status === "hard_warning" ? "bg-destructive"
+                          : quota.quota_status === "soft_warning" ? "bg-orange-500"
+                          : "bg-primary",
+                      )}
+                      style={{ width: `${Math.min(100, quota.quota > 0 ? (quota.used / quota.quota) * 100 : 0)}%` }}
+                    />
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         )}
