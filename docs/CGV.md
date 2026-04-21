@@ -91,7 +91,7 @@ AORIA RH est un outil d'assistance juridique RH par IA destiné à un usage prof
 
 8.4. **Add-ons** : les options payantes (utilisateurs supplémentaires, organisations supplémentaires, +500 documents) suivent le cycle de facturation de l'Abonnement principal. Ajout en cours de période : facturation au prorata des jours restants, puis renouvellement aligné sur l'Abonnement.
 
-8.5. **Pack booster** : option ponctuelle de +500 questions facturée 25 € en une fois, sans renouvellement. Les questions acquises via un pack booster sont valables jusqu'à l'échéance du cycle en cours.
+8.5. **Pack booster** : option ponctuelle de +500 questions facturée 25 € en une fois, sans renouvellement. Les questions du booster sont consommées uniquement après épuisement du quota mensuel standard (qui reste prioritaire). Elles ne sont soumises à aucune date limite d'utilisation tant que le Compte est actif et restent valables jusqu'à leur consommation complète.
 
 8.6. Les tarifs peuvent être modifiés. Toute évolution tarifaire est notifiée au Client par email au moins **30 jours** avant application, et ne s'applique qu'au prochain renouvellement.
 

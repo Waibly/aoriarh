@@ -341,11 +341,13 @@ class StripeService:
         payment_intent_id = session.get("payment_intent")
         amount_total = session.get("amount_total", 0)
 
-        # Align booster expiry with the current billing period end if we have one
+        # No time-based expiry: booster questions stay available until consumed.
+        # The monthly quota is always consumed first (see
+        # BillingService.increment_question_count), so a booster is only
+        # touched in months where the user exceeds the included quota.
+        # The `expires_at` column is kept on the model for future use
+        # (promotional boosters with a shelf life).
         expires_at: datetime | None = None
-        sub = await self._latest_subscription(account.id)
-        if sub is not None and sub.current_period_end is not None:
-            expires_at = sub.current_period_end
 
         # Deduplicate: if a BoosterPurchase already exists for this payment_intent, skip
         if payment_intent_id:
