@@ -25,6 +25,7 @@ from app.core.plans import BOOSTER_QUESTIONS
 from app.models.account import Account
 from app.models.booster_purchase import BoosterPurchase
 from app.models.subscription import Subscription
+from app.models.subscription_addon import SubscriptionAddon
 
 logger = logging.getLogger(__name__)
 
