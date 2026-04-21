@@ -173,6 +173,12 @@ export async function streamMessage(
             break;
           case "chat_done":
             callbacks.onDone(parsed);
+            // Signal the sidebar (and any other listener) that the monthly
+            // question counter just changed, so the quota display refreshes
+            // without a page reload.
+            if (typeof window !== "undefined") {
+              window.dispatchEvent(new Event("quota-updated"));
+            }
             break;
           case "chat_error":
             callbacks.onError(parsed.message);

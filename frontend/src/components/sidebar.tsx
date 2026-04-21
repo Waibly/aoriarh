@@ -28,9 +28,6 @@ import {
   TrendingUp,
   Gauge,
   CreditCard,
-  Rocket,
-  Users2,
-  Building,
 } from "lucide-react";
 import { apiFetch } from "@/lib/api";
 import { fetchQuota, type QuotaInfo } from "@/lib/billing-api";
@@ -367,17 +364,26 @@ export function Sidebar() {
     return () => window.removeEventListener("plan-updated", handler);
   }, [fetchPlan]);
 
+  // Refresh the quota counter after every successful chat answer.
+  useEffect(() => {
+    if (!token) return;
+    const refreshQuota = () => {
+      fetchQuota(token).then(setQuota).catch(() => {});
+    };
+    window.addEventListener("quota-updated", refreshQuota);
+    return () => window.removeEventListener("quota-updated", refreshQuota);
+  }, [token]);
+
   const planDisplay = {
-    gratuit: { label: "Essai", icon: UserCheck, textClass: "text-muted-foreground", iconBg: "bg-muted" },
-    invite: { label: "Invité", icon: Gift, textClass: "text-[#652bb0]", iconBg: "bg-[#652bb0]/15" },
-    vip: { label: "VIP", icon: Crown, textClass: "text-amber-700 dark:text-amber-300", iconBg: "bg-amber-400/20 dark:bg-amber-500/20" },
-    solo: { label: "Solo", icon: Rocket, textClass: "text-sky-700 dark:text-sky-300", iconBg: "bg-sky-500/15" },
-    equipe: { label: "Équipe", icon: Users2, textClass: "text-primary", iconBg: "bg-primary/15" },
-    groupe: { label: "Groupe", icon: Building, textClass: "text-emerald-700 dark:text-emerald-300", iconBg: "bg-emerald-500/15" },
+    gratuit: { label: "Essai", textClass: "text-muted-foreground" },
+    invite: { label: "Invité", textClass: "text-[#652bb0]" },
+    vip: { label: "VIP", textClass: "text-amber-700 dark:text-amber-300" },
+    solo: { label: "Solo", textClass: "text-sky-700 dark:text-sky-300" },
+    equipe: { label: "Équipe", textClass: "text-primary" },
+    groupe: { label: "Groupe", textClass: "text-emerald-700 dark:text-emerald-300" },
   } as const;
 
   const currentPlanConfig = planDisplay[(userPlan?.plan ?? "gratuit") as keyof typeof planDisplay] ?? planDisplay.gratuit;
-  const PlanIcon = currentPlanConfig.icon;
 
   return (
     <>
@@ -558,31 +564,23 @@ export function Sidebar() {
               {workspaceName && (
                 <p className="text-xs font-semibold truncate">{workspaceName}</p>
               )}
-              <div className="flex items-center gap-2">
-                <div className={cn(
-                  "flex h-8 w-8 items-center justify-center rounded-md",
-                  currentPlanConfig.iconBg,
-                )}>
-                  <PlanIcon className={cn("h-4 w-4", currentPlanConfig.textClass)} />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className={cn("text-xs font-semibold", currentPlanConfig.textClass)}>
-                    Plan {currentPlanConfig.label}
+              <div>
+                <p className={cn("text-xs font-semibold", currentPlanConfig.textClass)}>
+                  Plan {currentPlanConfig.label}
+                </p>
+                {userPlan.plan === "gratuit" && userPlan.plan_expires_at && (
+                  <p className="text-[10px] text-muted-foreground truncate">
+                    Essai jusqu&apos;au {new Date(userPlan.plan_expires_at).toLocaleDateString("fr-FR")}
                   </p>
-                  {userPlan.plan === "gratuit" && userPlan.plan_expires_at && (
-                    <p className="text-[10px] text-muted-foreground truncate">
-                      Essai jusqu&apos;au {new Date(userPlan.plan_expires_at).toLocaleDateString("fr-FR")}
-                    </p>
-                  )}
-                  {userPlan.plan === "invite" && userPlan.plan_expires_at && (
-                    <p className="text-[10px] text-muted-foreground truncate">
-                      Expire le {new Date(userPlan.plan_expires_at).toLocaleDateString("fr-FR")}
-                    </p>
-                  )}
-                  {userPlan.plan === "vip" && (
-                    <p className="text-[11px] text-foreground">Accès illimité</p>
-                  )}
-                </div>
+                )}
+                {userPlan.plan === "invite" && userPlan.plan_expires_at && (
+                  <p className="text-[10px] text-muted-foreground truncate">
+                    Expire le {new Date(userPlan.plan_expires_at).toLocaleDateString("fr-FR")}
+                  </p>
+                )}
+                {userPlan.plan === "vip" && (
+                  <p className="text-[11px] text-foreground">Accès illimité</p>
+                )}
               </div>
 
               {/* Quota de questions — masqué pour le plan vip (illimité) */}

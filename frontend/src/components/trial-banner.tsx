@@ -22,11 +22,16 @@ export function TrialBanner() {
   useEffect(() => {
     const token = session?.access_token;
     if (!token) return;
-    fetchQuota(token)
-      .then(setQuota)
-      .catch(() => {
-        // Silent fail — banner simply doesn't render.
-      });
+    const load = () => {
+      fetchQuota(token)
+        .then(setQuota)
+        .catch(() => {
+          // Silent fail — banner simply doesn't render.
+        });
+    };
+    load();
+    window.addEventListener("quota-updated", load);
+    return () => window.removeEventListener("quota-updated", load);
   }, [session?.access_token]);
 
   if (!quota) return null;
