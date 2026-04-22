@@ -106,7 +106,7 @@ interface WorkspacesResponse {
 /* ------------------------------------------------------------------ */
 
 const PLAN_CONFIG: Record<string, { label: string; className: string }> = {
-  gratuit: { label: "Gratuit", className: "" },
+  gratuit: { label: "Essai", className: "" },
   invite: {
     label: "Invité",
     className: "border-[#652bb0] bg-[#652bb0]/10 text-[#652bb0]",
@@ -114,6 +114,18 @@ const PLAN_CONFIG: Record<string, { label: string; className: string }> = {
   vip: {
     label: "VIP",
     className: "border-amber-500 bg-amber-500/10 text-amber-600",
+  },
+  solo: {
+    label: "Solo",
+    className: "border-primary bg-primary/10 text-primary",
+  },
+  equipe: {
+    label: "Équipe",
+    className: "border-primary bg-primary/15 text-primary font-medium",
+  },
+  groupe: {
+    label: "Groupe",
+    className: "border-primary bg-primary/20 text-primary font-semibold",
   },
 };
 
@@ -351,7 +363,7 @@ export default function ClientsPage() {
               {data.workspaces.map((ws) => {
                 const isExpanded = expandedIds.has(ws.account_id);
                 const plan =
-                  PLAN_CONFIG[ws.plan] ?? PLAN_CONFIG.gratuit;
+                  PLAN_CONFIG[ws.plan] ?? { label: ws.plan, className: "" };
 
                 return (
                   <>
