@@ -265,6 +265,120 @@ class StripeService:
         "extra_docs": 1000,
     }
 
+    async def _get_active_subscription(
+        self, account_id: uuid.UUID
+    ) -> Subscription | None:
+        """Return the commercial subscription currently active for an account.
+
+        Mirrors BillingService._get_active_subscription — duplicated here so
+        add_addon/remove_addon can locate the Stripe-linked sub without
+        circular imports between the two services.
+        """
+        result = await self.db.execute(
+            select(Subscription).where(
+                Subscription.account_id == account_id,
+                Subscription.status.in_(["active", "trialing", "past_due"]),
+            )
+        )
+        return result.scalars().first()
+
+    async def change_plan(
+        self, account: Account, new_plan: str, new_cycle: str
+    ) -> dict[str, str]:
+        """Modify the current Stripe subscription to a different plan/cycle.
+
+        Locates the main subscription item (the non-addon one), swaps its
+        price to the new plan, and lets Stripe prorate the charge. The
+        ``customer.subscription.updated`` webhook will mirror the change
+        on our local rows.
+
+        For downgrades, we pre-flight ``_validate_plan_fits_existing_data``
+        and return 409 if the target plan is too small for the current
+        data — we block rather than leave the account in overflow.
+        """
+        self._ensure_configured()
+        sub = await self._get_active_subscription(account.id)
+        if sub is None or not sub.stripe_subscription_id:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "Aucune souscription active à modifier. "
+                    "Souscrivez d'abord un plan via la page tarifs."
+                ),
+            )
+        if sub.plan == new_plan and sub.billing_cycle == new_cycle:
+            raise HTTPException(
+                status_code=400,
+                detail="Ce plan et ce cycle sont déjà actifs.",
+            )
+
+        new_price_id = self.get_price_id(new_plan, new_cycle)
+
+        # Block downgrades that would leave the account in overflow.
+        order = ["solo", "equipe", "groupe"]
+        if (
+            sub.plan in order
+            and new_plan in order
+            and order.index(new_plan) < order.index(sub.plan)
+        ):
+            from app.services.plan_service import (
+                PlanOverflowError,
+                _validate_plan_fits_existing_data,
+            )
+            try:
+                await _validate_plan_fits_existing_data(self.db, account.id, new_plan)
+            except PlanOverflowError as exc:
+                raise HTTPException(
+                    status_code=409,
+                    detail=(
+                        "Downgrade bloqué : le plan visé ne couvre pas les données "
+                        "existantes. " + " • ".join(exc.reasons)
+                    ),
+                ) from exc
+
+        # Identify the plan subscription item: anything that is not a known
+        # add-on item. We store add-on item IDs locally, so the odd one out
+        # is the plan itself.
+        addon_rows = await self.db.execute(
+            select(SubscriptionAddon).where(
+                SubscriptionAddon.subscription_id == sub.id
+            )
+        )
+        addon_item_ids = {
+            a.stripe_subscription_item_id
+            for a in addon_rows.scalars()
+            if a.stripe_subscription_item_id
+        }
+
+        stripe_sub = stripe.Subscription.retrieve(sub.stripe_subscription_id)
+        plan_item_id: str | None = None
+        for item in stripe_sub["items"]["data"]:
+            if item["id"] not in addon_item_ids:
+                plan_item_id = item["id"]
+                break
+        if plan_item_id is None:
+            raise HTTPException(
+                status_code=500,
+                detail="Impossible de localiser la ligne d'abonnement principale.",
+            )
+
+        stripe.Subscription.modify(
+            sub.stripe_subscription_id,
+            items=[{"id": plan_item_id, "price": new_price_id}],
+            proration_behavior="create_prorations",
+        )
+        # Mirror immediately so the UI reflects the change before the webhook
+        # round-trip completes. The webhook will confirm / reconcile.
+        sub.plan = new_plan
+        sub.billing_cycle = new_cycle
+        account.plan = new_plan
+        await self.db.commit()
+        return {
+            "plan": new_plan,
+            "cycle": new_cycle,
+            "stripe_subscription_id": sub.stripe_subscription_id,
+        }
+
     async def add_addon(
         self, account: Account, addon_type: str, delta: int = 1
     ) -> SubscriptionAddon:

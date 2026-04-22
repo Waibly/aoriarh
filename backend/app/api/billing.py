@@ -84,6 +84,36 @@ async def start_booster_checkout(
 
 
 # ---------------------------------------------------------------------------
+# Plan change (upgrade / downgrade from our own UI, bypasses the Portal)
+# ---------------------------------------------------------------------------
+
+
+class ChangePlanRequest(BaseModel):
+    plan: str = Field(..., description="solo, equipe or groupe")
+    cycle: str = Field(..., description="monthly or yearly")
+
+
+@router.post("/change-plan")
+async def change_plan(
+    payload: ChangePlanRequest,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Switch the active subscription to a new plan/cycle in-place.
+
+    Used by the /billing catalog so upgrades (and safe downgrades) happen
+    without creating a duplicate subscription via a fresh Checkout. Stripe
+    handles the proration and the webhook mirrors the change.
+    """
+    billing = BillingService(db)
+    stripe_svc = StripeService(db)
+
+    account = await billing.get_primary_account_for_user(user)
+    billing.ensure_plan_active(account)
+    return await stripe_svc.change_plan(account, payload.plan, payload.cycle)
+
+
+# ---------------------------------------------------------------------------
 # Customer portal (self-service management)
 # ---------------------------------------------------------------------------
 

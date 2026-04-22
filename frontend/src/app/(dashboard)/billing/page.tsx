@@ -24,6 +24,7 @@ import {
   openCustomerPortal,
   startBoosterCheckout,
   startCheckout,
+  changePlan,
   ADDON_LABELS,
   PLANS_CATALOG,
   PLAN_LABELS,
@@ -115,14 +116,35 @@ export default function BillingPage() {
     return () => window.removeEventListener("quota-updated", handler);
   }, [loadData]);
 
+  const hasCommercialSub =
+    !!subscription &&
+    ["solo", "equipe", "groupe"].includes(subscription.plan) &&
+    ["active", "trialing", "past_due"].includes(subscription.status);
+
   const handleCheckout = async (plan: PlanCode) => {
     if (!token) return;
     setBusy(true);
     try {
-      const { checkout_url } = await startCheckout(token, plan, cycle);
-      window.location.href = checkout_url;
+      if (hasCommercialSub) {
+        const cycleChanged = subscription?.billing_cycle !== cycle;
+        const planChanged = subscription?.plan !== plan;
+        const label = planChanged
+          ? `Passer au plan ${PLANS_CATALOG[plan].name}${cycleChanged ? ` (${cycle === "yearly" ? "annuel" : "mensuel"})` : ""} ?\n\nLa différence sera facturée au prorata (ou créditée si downgrade).`
+          : `Changer le cycle en ${cycle === "yearly" ? "annuel" : "mensuel"} ?`;
+        if (!confirm(label)) {
+          setBusy(false);
+          return;
+        }
+        await changePlan(token, plan, cycle);
+        toast.success("Plan mis à jour. Le prorata a été appliqué.");
+        await loadData();
+        setBusy(false);
+      } else {
+        const { checkout_url } = await startCheckout(token, plan, cycle);
+        window.location.href = checkout_url;
+      }
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Erreur lors de la souscription");
+      toast.error(err instanceof Error ? err.message : "Erreur lors du changement de plan");
       setBusy(false);
     }
   };
@@ -450,7 +472,11 @@ export default function BillingPage() {
                       disabled={busy || isCurrent}
                       onClick={() => handleCheckout(code)}
                     >
-                      {isCurrent ? "Plan actuel" : `Souscrire ${plan.name}`}
+                      {isCurrent
+                        ? "Plan actuel"
+                        : hasCommercialSub
+                          ? `Passer à ${plan.name}`
+                          : `Souscrire ${plan.name}`}
                     </Button>
                   </CardContent>
                 </Card>

@@ -30,6 +30,7 @@ from app.models.account import Account
 from app.models.subscription import Subscription
 from app.models.user import User
 from app.services.data_retention_service import DataRetentionService
+from app.services.stripe_service import _get as _stripe_get
 
 logger = logging.getLogger(__name__)
 
@@ -260,8 +261,8 @@ async def cancel_subscription(
         raise HTTPException(status_code=502, detail=f"Erreur Stripe : {exc}") from exc
 
     return {
-        "status": updated["status"],
-        "cancel_at_period_end": updated.get("cancel_at_period_end", False),
+        "status": _stripe_get(updated, "status", "unknown"),
+        "cancel_at_period_end": _stripe_get(updated, "cancel_at_period_end", False),
         "stripe_subscription_id": sub.stripe_subscription_id,
     }
 

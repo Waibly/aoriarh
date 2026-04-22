@@ -130,6 +130,18 @@ export async function openCustomerPortal(token: string): Promise<PortalResponse>
   });
 }
 
+export async function changePlan(
+  token: string,
+  plan: PlanCode,
+  cycle: BillingCycle,
+): Promise<{ plan: string; cycle: string; stripe_subscription_id: string }> {
+  return apiFetch("/billing/change-plan", {
+    token,
+    method: "POST",
+    body: JSON.stringify({ plan, cycle }),
+  });
+}
+
 // Local catalogue — kept in sync with backend/app/core/plans.py.
 // Used to render the pricing page without an extra round-trip.
 export const PLANS_CATALOG = {
