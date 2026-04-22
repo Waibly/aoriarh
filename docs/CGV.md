@@ -73,7 +73,7 @@ AORIA RH est un outil d'assistance juridique RH par IA destiné à un usage prof
 
 ## 7. Essai gratuit
 
-7.1. Un essai gratuit de **14 jours** est proposé sans carte bancaire. Il donne accès aux fonctionnalités de l'offre Solo, avec les limites suivantes : 1 utilisateur, 1 organisation, 20 documents, 1 convention collective, 150 questions maximum sur la période.
+7.1. Un essai gratuit de **14 jours** est proposé sans carte bancaire. Il donne accès aux fonctionnalités de l'offre Solo, avec les limites suivantes : 1 utilisateur, 1 organisation, 100 documents, 1 convention collective, 300 questions maximum sur la période.
 
 7.2. L'essai est **non renouvelable** par le même Client. À son terme, le Client peut souscrire à un Abonnement payant ; à défaut, l'accès est fermé.
 

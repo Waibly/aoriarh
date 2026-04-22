@@ -23,12 +23,15 @@ class PlanLimits:
 # --- Plan limits -----------------------------------------------------------
 
 # Technical plans (not sold, assigned manually by admins)
+# gratuit = trial plan (14 days). Aligné sur les limites Solo pour que
+# l'utilisateur puisse tester le produit dans des conditions réalistes,
+# tout en gardant un périmètre réduit (1 user / 1 org).
 LIMITS_GRATUIT = PlanLimits(
     users_included=1,
     orgs_included=1,
-    docs_per_org=20,
+    docs_per_org=100,
     ccn_per_org=1,
-    questions_per_month=150,  # capped over a 14-day trial window
+    questions_per_month=300,
 )
 
 LIMITS_INVITE = PlanLimits(
