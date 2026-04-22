@@ -407,6 +407,13 @@ export default function DocumentsPage() {
       ? CATEGORIES.find((c) => c.key === selection.key) ?? CATEGORIES[0]
       : null;
 
+  // When the account has exactly one CCN and that CCN is selected, expand the
+  // detail pane to full width and hide the sidebar — the sidebar would just
+  // restate what's already shown in the pane. A single "Mes documents" button
+  // at the top of the pane lets the user jump back to their internal docs.
+  const isSingleCcn = conventions.length === 1;
+  const fullWidthCcn = isSingleCcn && selection.type === "ccn";
+
   return (
     <div
       className="space-y-6"
@@ -437,8 +444,11 @@ export default function DocumentsPage() {
 
       <div className="grid grid-cols-12 gap-6">
         {/* ---- Sidebar ---- */}
+        {!fullWidthCcn && (
         <div className="col-span-12 md:col-span-3 space-y-4">
-          {/* Conventions section */}
+          {/* Conventions section — hidden when there is exactly one CCN,
+              since the main pane already shows that convention in full. */}
+          {!isSingleCcn && (
           <Card className="gap-1 py-2">
             <CardHeader className="pb-1 px-3 pt-1">
               <CardTitle className="text-sm font-semibold flex items-center gap-2">
@@ -528,6 +538,28 @@ export default function DocumentsPage() {
               )}
             </CardContent>
           </Card>
+          )}
+
+          {/* Quick link back to the single CCN when the user is browsing
+              internal categories. Avoids bringing the full sidebar card back
+              just to show one line. */}
+          {isSingleCcn && selection.type === "category" && (
+            <Card className="gap-1 py-2">
+              <CardContent className="p-2">
+                <button
+                  type="button"
+                  onClick={() => setSelection({ type: "ccn", idcc: conventions[0].idcc })}
+                  className="w-full text-left px-2 py-2 rounded text-sm flex items-center gap-2 hover:bg-muted/50 transition-colors"
+                >
+                  <Library className="h-3.5 w-3.5 shrink-0" />
+                  <span className="flex-1 truncate text-xs font-medium">
+                    {conventions[0].titre_court || conventions[0].titre || `IDCC ${conventions[0].idcc}`}
+                  </span>
+                  <ChevronRight className="h-3.5 w-3.5 shrink-0" />
+                </button>
+              </CardContent>
+            </Card>
+          )}
 
           {/* Internal documents section */}
           <Card className="gap-1 py-2">
@@ -566,9 +598,22 @@ export default function DocumentsPage() {
             </CardContent>
           </Card>
         </div>
+        )}
 
         {/* ---- Main pane ---- */}
-        <div className="col-span-12 md:col-span-9">
+        <div className={cn("col-span-12", !fullWidthCcn && "md:col-span-9")}>
+          {selectedCcn && fullWidthCcn && (
+            <div className="mb-4">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setSelection({ type: "category", key: "all" })}
+              >
+                <FolderOpen className="h-3.5 w-3.5 mr-1" />
+                Mes documents
+              </Button>
+            </div>
+          )}
           {selectedCcn ? (
             <CcnDetailPane
               ccn={selectedCcn}
