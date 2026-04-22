@@ -3,9 +3,35 @@ import { getSession, signOut } from "next-auth/react";
 export const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
 
+/** 30 s: long enough for Stripe/OpenAI proxies under load, short enough that
+ * a frozen request surfaces as an error instead of an endless spinner. */
+const DEFAULT_TIMEOUT_MS = 30_000;
+
 type FetchOptions = RequestInit & {
   token?: string;
 };
+
+/** Wraps fetch with an AbortController so requests never hang indefinitely. */
+async function fetchWithTimeout(
+  input: RequestInfo | URL,
+  init: RequestInit = {},
+  timeoutMs: number = DEFAULT_TIMEOUT_MS,
+): Promise<Response> {
+  const controller = new AbortController();
+  const id = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(input, { ...init, signal: controller.signal });
+  } catch (e) {
+    if ((e as Error)?.name === "AbortError") {
+      throw new Error(
+        "La requête a expiré. Votre connexion est peut-être instable, réessayez.",
+      );
+    }
+    throw e;
+  } finally {
+    clearTimeout(id);
+  }
+}
 
 let isRefreshing = false;
 
@@ -29,7 +55,7 @@ async function handleUnauthorized(
     if (newSession?.access_token && !newSession.error) {
       // Retry the original request with the refreshed token
       const { headers: _, token: _t, ...rest } = options;
-      const retryResponse = await fetch(`${API_BASE_URL}${path}`, {
+      const retryResponse = await fetchWithTimeout(`${API_BASE_URL}${path}`, {
         headers: buildHeaders(newSession.access_token),
         ...rest,
       });
@@ -60,7 +86,7 @@ export async function apiFetch<T>(
     ...headers,
   });
 
-  const response = await fetch(`${API_BASE_URL}${path}`, {
+  const response = await fetchWithTimeout(`${API_BASE_URL}${path}`, {
     headers: buildHeaders(token),
     ...rest,
   });
@@ -114,6 +140,8 @@ export async function authFetch(
     ...headers,
   });
 
+  // NB: no timeout here on purpose — authFetch handles SSE chat streams
+  // whose body stays open for much longer than the 30 s REST default.
   const response = await fetch(`${API_BASE_URL}${path}`, {
     headers: buildHeaders(token),
     ...rest,

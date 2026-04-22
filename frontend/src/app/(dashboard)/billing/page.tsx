@@ -144,7 +144,13 @@ export default function BillingPage() {
         setBusy(false);
       } else {
         const { checkout_url } = await startCheckout(token, plan, cycle);
+        if (!checkout_url) {
+          throw new Error(
+            "La page de paiement Stripe n'a pas pu être générée. Réessayez dans quelques instants.",
+          );
+        }
         window.location.href = checkout_url;
+        setTimeout(() => setBusy(false), 5000);
       }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Erreur lors du changement de plan");
@@ -157,7 +163,16 @@ export default function BillingPage() {
     setBusy(true);
     try {
       const { portal_url } = await openCustomerPortal(token);
+      if (!portal_url) {
+        throw new Error(
+          "L'espace de gestion Stripe n'a pas pu être ouvert. Réessayez dans quelques instants.",
+        );
+      }
       window.location.href = portal_url;
+      // Safety net: if the browser blocks the redirect or the URL is
+      // malformed without throwing, restore the button after 5 s so the
+      // user can retry instead of staring at a spinner forever.
+      setTimeout(() => setBusy(false), 5000);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Impossible d'ouvrir l'espace client");
       setBusy(false);
@@ -198,7 +213,13 @@ export default function BillingPage() {
     setBusy(true);
     try {
       const { checkout_url } = await startBoosterCheckout(token);
+      if (!checkout_url) {
+        throw new Error(
+          "La page de paiement Stripe n'a pas pu être générée. Réessayez dans quelques instants.",
+        );
+      }
       window.location.href = checkout_url;
+      setTimeout(() => setBusy(false), 5000);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Impossible d'acheter le pack booster");
       setBusy(false);
