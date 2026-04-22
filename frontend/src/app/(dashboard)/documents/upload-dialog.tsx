@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Check, ChevronsUpDown } from "lucide-react";
+import { Check, ChevronsUpDown, FileText, FileType2, File as FileIcon, X } from "lucide-react";
 import { toast } from "sonner";
 import { authFetch } from "@/lib/api";
 import { SOURCE_TYPE_OPTIONS, NORME_POIDS } from "@/types/api";
@@ -93,6 +93,21 @@ const PUBLICATION_OPTIONS = [
   "Inédit",
   "Mentionné aux tables",
 ] as const;
+
+/** Icône selon l'extension — pas de différenciation visuelle forte,
+ * juste un repère. */
+function fileIconFor(name: string) {
+  const ext = name.toLowerCase().split(".").pop() ?? "";
+  if (ext === "pdf") return FileType2;
+  if (ext === "docx" || ext === "doc") return FileText;
+  return FileIcon;
+}
+
+function formatSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} o`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} Ko`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} Mo`;
+}
 
 interface UploadDialogProps {
   open: boolean;
@@ -325,19 +340,46 @@ export function UploadDialog({
               required={files.length === 0}
             />
             {files.length > 1 && (
-              <div className="max-h-32 overflow-y-auto rounded-md border p-2 space-y-1">
-                {files.map((f, i) => (
-                  <div key={i} className="flex items-center justify-between text-xs">
-                    <span className="truncate mr-2">{f.name}</span>
-                    <button
-                      type="button"
-                      onClick={() => removeFile(i)}
-                      className="text-destructive hover:underline shrink-0"
-                    >
-                      Retirer
-                    </button>
-                  </div>
-                ))}
+              <div className="rounded-md border bg-muted/30">
+                <div className="flex items-center justify-between border-b px-3 py-1.5 text-xs text-muted-foreground">
+                  <span>
+                    <strong className="text-foreground">{files.length}</strong> fichiers
+                  </span>
+                  <span>
+                    {formatSize(files.reduce((sum, f) => sum + f.size, 0))} au total
+                  </span>
+                </div>
+                <ul className="max-h-64 overflow-y-auto divide-y">
+                  {files.map((f, i) => {
+                    const Icon = fileIconFor(f.name);
+                    return (
+                      <li
+                        key={i}
+                        className="group flex items-center gap-2 px-3 py-2 text-sm"
+                      >
+                        <Icon className="h-4 w-4 shrink-0 text-muted-foreground" />
+                        <span
+                          className="min-w-0 flex-1 truncate"
+                          title={f.name}
+                        >
+                          {f.name}
+                        </span>
+                        <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
+                          {formatSize(f.size)}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => removeFile(i)}
+                          className="shrink-0 rounded p-1 text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition-colors"
+                          aria-label={`Retirer ${f.name}`}
+                          title="Retirer"
+                        >
+                          <X className="h-3.5 w-3.5" />
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
               </div>
             )}
           </div>
