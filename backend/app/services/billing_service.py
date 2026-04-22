@@ -171,13 +171,16 @@ class BillingService:
     # Quota period
     # ------------------------------------------------------------------
 
-    @staticmethod
-    def _current_period(account: Account) -> tuple[datetime, datetime]:
+    async def _current_period(self, account: Account) -> tuple[datetime, datetime]:
         """Return (start, end) of the current usage window.
 
         - For the 14-day trial (plan='gratuit'): [plan_assigned_at, plan_expires_at].
-        - For every other plan: calendar month. Simple and predictable until
-          we align periods on Stripe billing cycles.
+        - For a commercial plan with an active Stripe subscription: the
+          subscription's current billing cycle (current_period_start /
+          current_period_end), so the quota resets on the anniversary day
+          rather than on the 1st of each calendar month.
+        - Fallback (technical plans other than 'gratuit', or commercial
+          plan with no sync'd subscription yet): calendar month.
         """
         now = datetime.now(UTC)
         if (
@@ -186,6 +189,15 @@ class BillingService:
             and account.plan_expires_at is not None
         ):
             return account.plan_assigned_at, account.plan_expires_at
+
+        if is_commercial(account.plan):
+            sub = await self._get_active_subscription(account.id)
+            if (
+                sub is not None
+                and sub.current_period_start is not None
+                and sub.current_period_end is not None
+            ):
+                return sub.current_period_start, sub.current_period_end
 
         start = datetime(now.year, now.month, 1, tzinfo=UTC)
         last_day = monthrange(start.year, start.month)[1]
@@ -199,7 +211,7 @@ class BillingService:
     async def get_or_create_usage(
         self, account: Account
     ) -> MonthlyQuestionUsage:
-        start, end = self._current_period(account)
+        start, end = await self._current_period(account)
         limits = await self.get_effective_limits(account)
         quota = int(limits["questions_per_month"] or 0)
 
