@@ -457,12 +457,25 @@ class BillingService:
         current = await self._count_users_on_account(account.id)
         cap = int(limits["users_included"] or 0)
         if current >= cap:
+            plan_label = _PLAN_LABELS.get(account.plan, account.plan)
+            upgrade = {
+                "solo": "Passez au plan Équipe (5 utilisateurs inclus).",
+                "equipe": "Passez au plan Groupe (10 utilisateurs inclus).",
+                "gratuit": "Souscrivez une offre pour inviter plus d'utilisateurs.",
+            }.get(
+                account.plan,
+                "Passez à l'offre supérieure pour plus d'utilisateurs inclus.",
+            )
+            detail = (
+                f"Limite atteinte : {cap} utilisateur"
+                f"{'s' if cap > 1 else ''} maximum sur votre plan {plan_label}. "
+                f"{upgrade}"
+            )
+            if is_commercial(account.plan):
+                detail += " Option : ajouter un utilisateur additionnel (15 €/mois, jusqu'à 3 max)."
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail=(
-                    f"Limite d'utilisateurs atteinte ({cap}). "
-                    "Passez à l'offre supérieure ou ajoutez un utilisateur additionnel."
-                ),
+                detail=detail,
             )
 
     async def check_organisation_limit(self, account: Account) -> None:
@@ -475,12 +488,25 @@ class BillingService:
         current = int(result.scalar() or 0)
         cap = int(limits["orgs_included"] or 0)
         if current >= cap:
+            plan_label = _PLAN_LABELS.get(account.plan, account.plan)
+            upgrade = {
+                "solo": "Passez au plan Équipe (3 organisations incluses).",
+                "equipe": "Passez au plan Groupe (10 organisations incluses).",
+                "gratuit": "Souscrivez une offre pour gérer plusieurs organisations.",
+            }.get(
+                account.plan,
+                "Passez à l'offre supérieure pour plus d'organisations incluses.",
+            )
+            detail = (
+                f"Limite atteinte : {cap} organisation"
+                f"{'s' if cap > 1 else ''} maximum sur votre plan {plan_label}. "
+                f"{upgrade}"
+            )
+            if is_commercial(account.plan):
+                detail += " Option : ajouter une organisation additionnelle (19 €/mois)."
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail=(
-                    f"Limite d'organisations atteinte ({cap}). "
-                    "Passez à l'offre supérieure ou ajoutez une organisation additionnelle."
-                ),
+                detail=detail,
             )
 
     async def check_document_limit(self, organisation: Organisation) -> None:
@@ -494,12 +520,24 @@ class BillingService:
         current = int(result.scalar() or 0)
         cap = int(limits["docs_per_org"] or 0)
         if current >= cap:
+            plan_label = _PLAN_LABELS.get(account.plan, account.plan)
+            upgrade = {
+                "gratuit": "Souscrivez une offre pour augmenter la limite.",
+                "solo": "Passez au plan Équipe (300 documents par organisation).",
+                "equipe": "Passez au plan Groupe (1 000 documents par organisation).",
+            }.get(
+                account.plan,
+                "Passez à l'offre supérieure pour plus de documents.",
+            )
+            detail = (
+                f"Limite atteinte : {cap} documents maximum par organisation "
+                f"sur votre plan {plan_label}. {upgrade}"
+            )
+            if is_commercial(account.plan):
+                detail += " Option : pack +500 documents (10 €/mois)."
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail=(
-                    f"Limite de documents atteinte ({cap} par organisation). "
-                    "Passez à l'offre supérieure ou ajoutez le pack +500 documents."
-                ),
+                detail=detail,
             )
 
     async def check_ccn_limit(self, organisation: Organisation) -> None:
@@ -515,10 +553,21 @@ class BillingService:
         )
         current = int(result.scalar() or 0)
         if current >= int(cap):
+            plan_label = _PLAN_LABELS.get(account.plan, account.plan)
+            upgrade = {
+                "solo": "Passez au plan Équipe (5 conventions par organisation).",
+                "equipe": "Passez au plan Groupe (conventions illimitées).",
+                "gratuit": "Souscrivez une offre pour installer plus de conventions.",
+            }.get(
+                account.plan,
+                "Passez à l'offre supérieure pour plus de conventions.",
+            )
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail=(
-                    f"Limite de conventions collectives atteinte ({cap}). "
-                    "Passez à l'offre Groupe pour un accès illimité."
+                    f"Limite atteinte : {cap} convention"
+                    f"{'s' if int(cap) > 1 else ''} collective"
+                    f"{'s' if int(cap) > 1 else ''} maximum par organisation "
+                    f"sur votre plan {plan_label}. {upgrade}"
                 ),
             )

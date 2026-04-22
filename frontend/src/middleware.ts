@@ -10,7 +10,9 @@ export default auth((req) => {
   const isInvitePage = req.nextUrl.pathname.startsWith("/invite");
   const isPublicPage =
     req.nextUrl.pathname === "/" ||
-    req.nextUrl.pathname.startsWith("/pricing");
+    req.nextUrl.pathname.startsWith("/pricing") ||
+    req.nextUrl.pathname.startsWith("/cgv") ||
+    req.nextUrl.pathname.startsWith("/politique-confidentialite");
 
   // Landing / pricing / invite pages are accessible whether logged in or not.
   // For the landing "/" we still want to redirect logged-in users to /chat

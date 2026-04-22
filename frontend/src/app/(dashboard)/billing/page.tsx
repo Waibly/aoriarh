@@ -240,7 +240,9 @@ export default function BillingPage() {
                   <Badge variant={quota.status === "active" ? "default" : "secondary"}>
                     {PLAN_LABELS[quota.plan] ?? quota.plan}
                   </Badge>
-                  {quota.status !== "active" && (
+                  {subscription?.cancel_at_period_end ? (
+                    <Badge variant="destructive">Résilié</Badge>
+                  ) : quota.status !== "active" && (
                     <Badge variant="outline">{quota.status}</Badge>
                   )}
                 </CardTitle>
@@ -248,11 +250,17 @@ export default function BillingPage() {
                   {quota.trial_ends_at ? (
                     <>Essai se termine le {new Date(quota.trial_ends_at).toLocaleDateString("fr-FR")}</>
                   ) : subscription?.current_period_end ? (
-                    <>
-                      Prochaine échéance le{" "}
-                      {new Date(subscription.current_period_end).toLocaleDateString("fr-FR")}
-                      {subscription.cancel_at_period_end && " (résiliation à l'échéance)"}
-                    </>
+                    subscription.cancel_at_period_end ? (
+                      <>
+                        Accès maintenu jusqu&apos;au{" "}
+                        {new Date(subscription.current_period_end).toLocaleDateString("fr-FR")}
+                      </>
+                    ) : (
+                      <>
+                        Prochaine échéance le{" "}
+                        {new Date(subscription.current_period_end).toLocaleDateString("fr-FR")}
+                      </>
+                    )
                   ) : (
                     <>Plan interne — non facturé</>
                   )}
@@ -265,6 +273,17 @@ export default function BillingPage() {
                 </Button>
               )}
             </div>
+            {subscription?.cancel_at_period_end && subscription.current_period_end && (
+              <div className="mt-3 rounded-lg border border-destructive/40 bg-destructive/5 p-3 text-sm">
+                <p className="font-medium">Votre abonnement AORIA RH est résilié.</p>
+                <p className="text-muted-foreground mt-1">
+                  Vous gardez un accès complet jusqu&apos;au{" "}
+                  <strong>{new Date(subscription.current_period_end).toLocaleDateString("fr-FR")}</strong>.
+                  Au-delà, vos données sont conservées 30 jours avant suppression définitive (RGPD).
+                  Vous pouvez reprendre votre abonnement à tout moment depuis &laquo; Gérer mon abonnement &raquo;.
+                </p>
+              </div>
+            )}
           </CardHeader>
           <CardContent className="space-y-4">
             <div>
@@ -489,9 +508,9 @@ export default function BillingPage() {
       <p className="text-xs text-muted-foreground text-center">
         Tarifs hors taxes. Résiliable à tout moment depuis votre espace de gestion.
         {" "}
-        <a href="/docs/CGV.md" className="underline hover:text-foreground" target="_blank">CGV</a>
+        <a href="/cgv" className="underline hover:text-foreground" target="_blank">CGV</a>
         {" · "}
-        <a href="/docs/POLITIQUE_CONFIDENTIALITE.md" className="underline hover:text-foreground" target="_blank">
+        <a href="/politique-confidentialite" className="underline hover:text-foreground" target="_blank">
           Politique de confidentialité
         </a>
       </p>

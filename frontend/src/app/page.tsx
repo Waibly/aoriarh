@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ArrowRight, Check, Scale, Clock, Users } from "lucide-react";
+import { ArrowRight, Scale, Clock, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 export default function HomePage() {
@@ -123,10 +123,10 @@ export default function HomePage() {
           <p>&copy; {new Date().getFullYear()} AORIA RH. Tous droits réservés.</p>
           <nav className="flex gap-6">
             <Link href="/pricing" className="hover:text-foreground">Tarifs</Link>
-            <a href="/docs/CGV.md" className="hover:text-foreground">CGV</a>
-            <a href="/docs/POLITIQUE_CONFIDENTIALITE.md" className="hover:text-foreground">
+            <Link href="/cgv" className="hover:text-foreground">CGV</Link>
+            <Link href="/politique-confidentialite" className="hover:text-foreground">
               Confidentialité
-            </a>
+            </Link>
             <a href="mailto:hello@aoriarh.fr" className="hover:text-foreground">Contact</a>
           </nav>
         </div>

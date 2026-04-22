@@ -113,6 +113,15 @@ export default function AdminBillingPage() {
 
   const handleExport = async (accountId: string, accountName: string) => {
     if (!token) return;
+    if (
+      !confirm(
+        `Télécharger toutes les données du compte « ${accountName} » au format JSON ?\n\n` +
+          `Contenu : profil, utilisateurs, organisations, documents, abonnement, factures, historique des questions.\n\n` +
+          `Utilisé pour répondre à une demande RGPD (droit d'accès, article 15).`,
+      )
+    ) {
+      return;
+    }
     try {
       const data = await apiFetch(`/admin/accounts/${accountId}/export`, { token });
       const blob = new Blob([JSON.stringify(data, null, 2)], {
@@ -124,9 +133,13 @@ export default function AdminBillingPage() {
       a.download = `aoria-export-${accountName.replace(/\s+/g, "_")}-${accountId.slice(0, 8)}.json`;
       a.click();
       URL.revokeObjectURL(url);
-      toast.success("Export téléchargé");
+      toast.success("Données exportées — fichier téléchargé");
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Échec de l'export");
+      toast.error(
+        err instanceof Error && err.message
+          ? err.message
+          : "Le fichier d'export n'a pas pu être généré. Réessayez dans quelques instants.",
+      );
     }
   };
 
@@ -166,7 +179,11 @@ export default function AdminBillingPage() {
     if (!token) return;
     if (
       !confirm(
-        `Supprimer définitivement le compte ${ownerEmail} ?\n\nCette action est irréversible et supprime toutes les données (documents, conversations, abonnements). Les fichiers MinIO et les vecteurs Qdrant seront aussi effacés.`,
+        `Supprimer définitivement le compte de ${ownerEmail} ?\n\n` +
+          `Toutes les données seront effacées : profil, utilisateurs, organisations, documents, ` +
+          `conversations, abonnement et historique.\n\n` +
+          `Cette action est IRRÉVERSIBLE. Pense à exporter les données avant ` +
+          `si le client a demandé un accès RGPD.`,
       )
     ) {
       return;
@@ -314,7 +331,9 @@ export default function AdminBillingPage() {
                     <TableCell>
                       <Badge variant={STATUS_COLORS[s.status] ?? "outline"}>{s.status}</Badge>
                       {s.cancel_at_period_end && (
-                        <Badge variant="outline" className="ml-2">Résiliation prévue</Badge>
+                        <Badge variant="destructive" className="ml-2">
+                          Résiliation prévue
+                        </Badge>
                       )}
                     </TableCell>
                     <TableCell className="text-muted-foreground">
@@ -353,15 +372,26 @@ export default function AdminBillingPage() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Trash2 className="h-4 w-4" />
-            Comptes à purger
+            Comptes à clôturer
             {pending.length > 0 && (
               <Badge variant="destructive">{pending.length}</Badge>
             )}
           </CardTitle>
           <p className="text-sm text-muted-foreground">
-            Comptes ayant dépassé leur fenêtre de rétention RGPD. Le cron les supprimera à 10h UTC.
-            Vous pouvez aussi agir manuellement (export RGPD ou suppression immédiate).
+            Comptes inactifs depuis trop longtemps (essai non transformé, abonnement résilié, paiement non régularisé).
+            Une suppression automatique est planifiée chaque jour à 12h (heure de Paris).
+            Avant suppression, vous pouvez&nbsp;:
           </p>
+          <ul className="text-sm text-muted-foreground list-disc pl-5 space-y-1 mt-2">
+            <li>
+              <strong>Exporter les données</strong> — télécharge un fichier JSON avec
+              toutes les infos du compte (pour répondre à une demande RGPD d&apos;accès).
+            </li>
+            <li>
+              <strong>Supprimer maintenant</strong> — efface définitivement le compte
+              sans attendre le cron (utile pour une demande RGPD d&apos;effacement).
+            </li>
+          </ul>
         </CardHeader>
         <CardContent>
           {pending.length === 0 ? (
@@ -394,17 +424,19 @@ export default function AdminBillingPage() {
                         size="sm"
                         onClick={() => handleExport(p.account_id, p.account_name)}
                         className="mr-2"
+                        title="Télécharger toutes les données au format JSON"
                       >
                         <Download className="h-3.5 w-3.5 mr-1" />
-                        Export
+                        Exporter les données
                       </Button>
                       <Button
                         variant="destructive"
                         size="sm"
                         onClick={() => handleErase(p.account_id, p.owner_email)}
+                        title="Effacer définitivement ce compte"
                       >
                         <Trash2 className="h-3.5 w-3.5 mr-1" />
-                        Supprimer
+                        Supprimer maintenant
                       </Button>
                     </TableCell>
                   </TableRow>

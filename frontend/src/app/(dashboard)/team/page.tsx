@@ -438,8 +438,12 @@ function InviteTeamDialog({
       }
       onInvited();
       onOpenChange(false);
-    } catch {
-      setError("Déjà membre ou invitation en attente pour cet email.");
+    } catch (err) {
+      setError(
+        err instanceof Error && err.message
+          ? err.message
+          : "L'invitation n'a pas pu être envoyée. Réessayez ou contactez le support.",
+      );
     } finally {
       setSubmitting(false);
     }

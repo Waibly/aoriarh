@@ -139,21 +139,46 @@ export default function PricingPage() {
           )}
         </div>
 
-        <div className="mt-12 rounded-lg border bg-muted/30 p-6 text-sm space-y-2 max-w-3xl mx-auto">
-          <p className="font-semibold">Fair use</p>
-          <p className="text-muted-foreground">
-            Les quotas de questions sont mensuels et partagés entre tous les utilisateurs de votre équipe.
-            Aucun blocage sec : en cas de dépassement, nous vous proposons simplement de passer à l&apos;offre supérieure
-            ou d&apos;acheter un pack booster ponctuel (+500 questions, 25 €).
-          </p>
+        <div className="mt-12 max-w-3xl mx-auto space-y-4">
+          <h2 className="text-lg font-semibold text-center">Quelques précisions</h2>
+
+          <div className="rounded-lg border bg-muted/30 p-5 text-sm space-y-1.5">
+            <p className="font-semibold">Chat in-app</p>
+            <p className="text-muted-foreground">
+              Un chat intégré directement dans l&apos;application pour poser vos questions
+              juridiques RH, consulter les sources citées et retrouver l&apos;historique
+              de vos échanges — pas besoin d&apos;outil tiers ni d&apos;email.
+            </p>
+          </div>
+
+          <div className="rounded-lg border bg-muted/30 p-5 text-sm space-y-1.5">
+            <p className="font-semibold">Add-ons</p>
+            <p className="text-muted-foreground">
+              Options payantes à activer à la carte sur votre abonnement sans changer
+              d&apos;offre : utilisateur supplémentaire (15 €/mois, jusqu&apos;à 3 en plus),
+              organisation supplémentaire (19 €/mois), pack +500 documents par organisation
+              (10 €/mois). Retirables à tout moment.
+            </p>
+          </div>
+
+          <div className="rounded-lg border bg-muted/30 p-5 text-sm space-y-1.5">
+            <p className="font-semibold">Fair use</p>
+            <p className="text-muted-foreground">
+              Les quotas de questions sont mensuels et partagés entre tous les utilisateurs
+              de votre équipe. Aucun blocage sec : en cas de dépassement, vous pouvez simplement
+              passer à l&apos;offre supérieure ou acheter un pack booster ponctuel
+              (+500 questions, 25 €). Les questions des boosters ne périment pas tant que votre
+              compte est actif.
+            </p>
+          </div>
         </div>
 
         <div className="mt-6 text-center text-xs text-muted-foreground">
-          <Link href="/docs/CGV.md" className="underline hover:text-foreground">
+          <Link href="/cgv" className="underline hover:text-foreground">
             Conditions générales de vente
           </Link>
           {" · "}
-          <Link href="/docs/POLITIQUE_CONFIDENTIALITE.md" className="underline hover:text-foreground">
+          <Link href="/politique-confidentialite" className="underline hover:text-foreground">
             Politique de confidentialité
           </Link>
         </div>

@@ -104,12 +104,14 @@ export function OrgFormDialog({
           : {}),
       });
       onOpenChange(false);
-    } catch {
-      setError(
-        isEdit
-          ? "Erreur lors de la modification de l'organisation"
-          : "Erreur lors de la création de l'organisation"
-      );
+    } catch (err) {
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : isEdit
+            ? "Impossible de modifier l'organisation. Réessayez ou contactez le support."
+            : "Impossible de créer l'organisation. Réessayez ou contactez le support.";
+      setError(message);
     } finally {
       setSubmitting(false);
     }
