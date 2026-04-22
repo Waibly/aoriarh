@@ -25,7 +25,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { PLAN_LABELS } from "@/lib/billing-api";
+import { getPlanLabel } from "@/lib/plans";
 
 type BillingMetrics = {
   mrr_eur: number;
@@ -326,7 +326,7 @@ export default function AdminBillingPage() {
                   <TableRow key={s.subscription_id}>
                     <TableCell className="font-medium">{s.account_name ?? "—"}</TableCell>
                     <TableCell className="text-muted-foreground">{s.owner_email ?? "—"}</TableCell>
-                    <TableCell>{PLAN_LABELS[s.plan] ?? s.plan}</TableCell>
+                    <TableCell>{getPlanLabel(s.plan)}</TableCell>
                     <TableCell>{s.billing_cycle === "monthly" ? "Mensuel" : "Annuel"}</TableCell>
                     <TableCell>
                       <Badge variant={STATUS_COLORS[s.status] ?? "outline"}>{s.status}</Badge>

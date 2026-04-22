@@ -26,16 +26,19 @@ import {
   startCheckout,
   changePlan,
   ADDON_LABELS,
-  PLANS_CATALOG,
-  PLAN_LABELS,
-  type BillingCycle,
-  type PlanCode,
   type QuotaInfo,
   type SubscriptionInfo,
   type UsageSummary,
   type ActiveAddon,
   type AddonType,
 } from "@/lib/billing-api";
+import {
+  PLANS,
+  COMMERCIAL_PLANS,
+  getPlanLabel,
+  type BillingCycle,
+  type PlanCode,
+} from "@/lib/plans";
 
 function UsageRow({
   label,
@@ -129,7 +132,7 @@ export default function BillingPage() {
         const cycleChanged = subscription?.billing_cycle !== cycle;
         const planChanged = subscription?.plan !== plan;
         const label = planChanged
-          ? `Passer au plan ${PLANS_CATALOG[plan].name}${cycleChanged ? ` (${cycle === "yearly" ? "annuel" : "mensuel"})` : ""} ?\n\nLa différence sera facturée au prorata (ou créditée si downgrade).`
+          ? `Passer au plan ${PLANS[plan].label}${cycleChanged ? ` (${cycle === "yearly" ? "annuel" : "mensuel"})` : ""} ?\n\nLa différence sera facturée au prorata (ou créditée si downgrade).`
           : `Changer le cycle en ${cycle === "yearly" ? "annuel" : "mensuel"} ?`;
         if (!confirm(label)) {
           setBusy(false);
@@ -238,7 +241,7 @@ export default function BillingPage() {
                 <CardTitle className="flex items-center gap-2">
                   Plan actuel
                   <Badge variant={quota.status === "active" ? "default" : "secondary"}>
-                    {PLAN_LABELS[quota.plan] ?? quota.plan}
+                    {getPlanLabel(quota.plan)}
                   </Badge>
                   {subscription?.cancel_at_period_end ? (
                     <Badge variant="destructive">Résilié</Badge>
@@ -449,59 +452,58 @@ export default function BillingPage() {
         </div>
 
         <div className="grid gap-4 md:grid-cols-3">
-          {(Object.entries(PLANS_CATALOG) as [PlanCode, typeof PLANS_CATALOG[PlanCode]][]).map(
-            ([code, plan]) => {
-              const price = cycle === "monthly" ? plan.priceMonthly : plan.priceYearly;
-              const isCurrent = quota?.plan === code;
-              const featured = "featured" in plan && plan.featured;
-              return (
-                <Card
-                  key={code}
-                  className={`relative ${featured ? "border-primary shadow-md" : ""}`}
-                >
-                  {featured && (
-                    <Badge className="absolute -top-2 left-1/2 -translate-x-1/2">
-                      Le plus choisi
-                    </Badge>
-                  )}
-                  <CardHeader>
-                    <CardTitle>{plan.name}</CardTitle>
-                    <CardDescription className="min-h-[40px]">
-                      {plan.target}
-                    </CardDescription>
-                    <div className="flex items-baseline gap-1 pt-2">
-                      <span className="text-3xl font-bold">{price} €</span>
-                      <span className="text-sm text-muted-foreground">
-                        /{cycle === "monthly" ? "mois" : "an"}
-                      </span>
-                    </div>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
-                    <ul className="space-y-2 text-sm">
-                      {plan.features.map((f) => (
-                        <li key={f} className="flex gap-2">
-                          <Check className="h-4 w-4 text-primary shrink-0 mt-0.5" />
-                          <span>{f}</span>
-                        </li>
-                      ))}
-                    </ul>
-                    <Button
-                      className="w-full"
-                      variant={isCurrent ? "outline" : featured ? "default" : "outline"}
-                      disabled={busy || isCurrent}
-                      onClick={() => handleCheckout(code)}
-                    >
-                      {isCurrent
-                        ? "Plan actuel"
-                        : hasCommercialSub
-                          ? `Passer à ${plan.name}`
-                          : `Souscrire ${plan.name}`}
-                    </Button>
-                  </CardContent>
-                </Card>
-              );
-            },
-          )}
+          {COMMERCIAL_PLANS.map((code) => {
+            const plan = PLANS[code];
+            const price = cycle === "monthly" ? plan.priceMonthly : plan.priceYearly;
+            const isCurrent = quota?.plan === code;
+            const featured = plan.featured === true;
+            return (
+              <Card
+                key={code}
+                className={`relative ${featured ? "border-primary shadow-md" : ""}`}
+              >
+                {featured && (
+                  <Badge className="absolute -top-2 left-1/2 -translate-x-1/2">
+                    Le plus choisi
+                  </Badge>
+                )}
+                <CardHeader>
+                  <CardTitle>{plan.label}</CardTitle>
+                  <CardDescription className="min-h-[40px]">
+                    {plan.target}
+                  </CardDescription>
+                  <div className="flex items-baseline gap-1 pt-2">
+                    <span className="text-3xl font-bold">{price} €</span>
+                    <span className="text-sm text-muted-foreground">
+                      /{cycle === "monthly" ? "mois" : "an"}
+                    </span>
+                  </div>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <ul className="space-y-2 text-sm">
+                    {plan.features.map((f) => (
+                      <li key={f} className="flex gap-2">
+                        <Check className="h-4 w-4 text-primary shrink-0 mt-0.5" />
+                        <span>{f}</span>
+                      </li>
+                    ))}
+                  </ul>
+                  <Button
+                    className="w-full"
+                    variant={isCurrent ? "outline" : featured ? "default" : "outline"}
+                    disabled={busy || isCurrent}
+                    onClick={() => handleCheckout(code)}
+                  >
+                    {isCurrent
+                      ? "Plan actuel"
+                      : hasCommercialSub
+                        ? `Passer à ${plan.label}`
+                        : `Souscrire ${plan.label}`}
+                  </Button>
+                </CardContent>
+              </Card>
+            );
+          })}
         </div>
       </div>
 

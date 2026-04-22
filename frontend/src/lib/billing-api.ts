@@ -1,4 +1,9 @@
 import { apiFetch } from "@/lib/api";
+import type { BillingCycle, PlanCode } from "@/lib/plans";
+
+// Re-export the plan types so consumers can keep importing from billing-api
+// if they want. New code should import directly from `@/lib/plans`.
+export type { BillingCycle, PlanCode } from "@/lib/plans";
 
 export type QuotaStatus = "ok" | "soft_warning" | "hard_warning" | "trial_expired" | "suspended";
 
@@ -25,8 +30,6 @@ export type SubscriptionInfo = {
   cancel_at_period_end: boolean;
 };
 
-export type PlanCode = "solo" | "equipe" | "groupe";
-export type BillingCycle = "monthly" | "yearly";
 
 export type CheckoutResponse = {
   checkout_url: string;
@@ -142,59 +145,8 @@ export async function changePlan(
   });
 }
 
-// Local catalogue — kept in sync with backend/app/core/plans.py.
-// Used to render the pricing page without an extra round-trip.
-export const PLANS_CATALOG = {
-  solo: {
-    name: "Solo",
-    target: "Dirigeant TPE, PME 1 RH, petit CSE",
-    priceMonthly: 79,
-    priceYearly: 790,
-    features: [
-      "1 utilisateur (jusqu'à 3 add-ons)",
-      "1 organisation",
-      "100 documents / organisation",
-      "1 convention collective",
-      "300 questions / mois",
-      "Chat in-app",
-    ],
-  },
-  equipe: {
-    name: "Équipe",
-    target: "PME équipe RH, CSE moyen, DRH",
-    priceMonthly: 149,
-    priceYearly: 1490,
-    featured: true,
-    features: [
-      "5 utilisateurs (jusqu'à 3 add-ons)",
-      "3 organisations",
-      "300 documents / organisation",
-      "5 conventions collectives",
-      "900 questions / mois",
-      "Chat in-app",
-    ],
-  },
-  groupe: {
-    name: "Groupe",
-    target: "DRH multi-entités, CSE central, ETI",
-    priceMonthly: 279,
-    priceYearly: 2790,
-    features: [
-      "10 utilisateurs (jusqu'à 3 add-ons)",
-      "10 organisations",
-      "1 000 documents / organisation",
-      "Conventions collectives illimitées",
-      "2 400 questions / mois",
-      "Chat in-app + onboarding personnalisé",
-    ],
-  },
-} as const;
-
-export const PLAN_LABELS: Record<string, string> = {
-  gratuit: "Essai gratuit",
-  invite: "Invité",
-  vip: "VIP",
-  solo: "Solo",
-  equipe: "Équipe",
-  groupe: "Groupe",
-};
+// NOTE: plan metadata (labels, features, pricing) lives in `@/lib/plans`.
+// Import PLANS / getPlanLabel / COMMERCIAL_PLANS from there directly.
+// Imports added below re-export names for backwards compat while callers
+// migrate — the aliases point to the central source, nothing is duplicated.
+export { PLANS, getPlanLabel, COMMERCIAL_PLANS } from "@/lib/plans";

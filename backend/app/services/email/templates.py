@@ -1,5 +1,7 @@
 from datetime import datetime
 
+from app.core.plans import PLAN_FEATURES
+
 BASE_TEMPLATE = """\
 <!DOCTYPE html>
 <html lang="fr">
@@ -299,34 +301,6 @@ SUBSCRIPTION_CONFIRMED_CONTENT = """\
 <p style="color:#94a3b8; font-size:13px; line-height:1.5;">
   Une question ? Écrivez-nous à <a href="mailto:hello@aoriarh.fr" style="color:#6d28d9;">hello@aoriarh.fr</a>.
 </p>"""
-
-
-PLAN_FEATURES: dict[str, list[str]] = {
-    "solo": [
-        "1 utilisateur (jusqu'à 3 utilisateurs additionnels via add-on)",
-        "1 organisation",
-        "100 documents par organisation",
-        "1 convention collective installable",
-        "300 questions juridiques RH / mois",
-        "Chat in-app avec réponses sourcées",
-    ],
-    "equipe": [
-        "5 utilisateurs inclus (jusqu'à 3 utilisateurs additionnels via add-on)",
-        "3 organisations",
-        "300 documents par organisation",
-        "5 conventions collectives installables",
-        "900 questions juridiques RH / mois",
-        "Chat in-app avec réponses sourcées",
-    ],
-    "groupe": [
-        "10 utilisateurs inclus (jusqu'à 3 utilisateurs additionnels via add-on)",
-        "10 organisations",
-        "1 000 documents par organisation",
-        "Conventions collectives illimitées",
-        "2 400 questions juridiques RH / mois",
-        "Chat in-app + onboarding personnalisé",
-    ],
-}
 
 
 SUBSCRIPTION_INVOICE_LINK = """\

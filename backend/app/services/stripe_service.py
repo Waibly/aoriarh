@@ -21,7 +21,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
-from app.core.plans import BOOSTER_QUESTIONS
+from app.core.plans import BOOSTER_QUESTIONS, get_label as _get_plan_label
 from app.models.account import Account
 from app.models.booster_purchase import BoosterPurchase
 from app.models.subscription import Subscription
@@ -999,11 +999,7 @@ sous les limites. Merci de supprimer les éléments excédentaires sous 14 jours
             if owner is None or not owner.is_active:
                 return
 
-            plan_label = {
-                "solo": "Solo",
-                "equipe": "Équipe",
-                "groupe": "Groupe",
-            }.get(sub.plan, sub.plan)
+            plan_label = _get_plan_label(sub.plan)
 
             next_date = (
                 sub.current_period_end.strftime("%d/%m/%Y")
@@ -1052,11 +1048,7 @@ sous les limites. Merci de supprimer les éléments excédentaires sous 14 jours
             if owner is None or not owner.is_active:
                 return
 
-            plan_label = {
-                "solo": "Solo",
-                "equipe": "Équipe",
-                "groupe": "Groupe",
-            }.get(sub.plan, sub.plan)
+            plan_label = _get_plan_label(sub.plan)
 
             # The access usually remains until the end of the current
             # period — fall back on today if we somehow have no end date.

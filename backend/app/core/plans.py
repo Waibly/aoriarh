@@ -94,6 +94,71 @@ COMMERCIAL_PLANS: frozenset[str] = frozenset({"solo", "equipe", "groupe"})
 ALL_PLANS: frozenset[str] = TECHNICAL_PLANS | COMMERCIAL_PLANS
 
 
+# --- Display metadata (single source of truth) -----------------------------
+# Every human-readable plan label and feature list for the product lives here.
+# Other modules (billing_service, stripe_service, email/templates, admin API)
+# import from this file — do NOT re-define plan labels elsewhere.
+
+PLAN_LABELS: dict[str, str] = {
+    "gratuit": "Essai",
+    "invite": "Invité",
+    "vip": "VIP",
+    "solo": "Solo",
+    "equipe": "Équipe",
+    "groupe": "Groupe",
+}
+
+PLAN_FEATURES: dict[str, list[str]] = {
+    "gratuit": [
+        "Accès complet pendant 14 jours",
+        "1 utilisateur, 1 organisation, 1 convention collective",
+        "100 documents",
+        "300 questions sur la période d'essai",
+    ],
+    "invite": [
+        "5 utilisateurs, 3 organisations",
+        "300 documents par organisation",
+        "5 conventions collectives",
+        "900 questions / mois",
+    ],
+    "vip": [
+        "5 utilisateurs, 3 organisations",
+        "300 documents par organisation",
+        "5 conventions collectives",
+        "900 questions / mois",
+    ],
+    "solo": [
+        "1 utilisateur (jusqu'à 3 utilisateurs additionnels via add-on)",
+        "1 organisation",
+        "100 documents par organisation",
+        "1 convention collective installable",
+        "300 questions juridiques RH / mois",
+        "Chat in-app avec réponses sourcées",
+    ],
+    "equipe": [
+        "5 utilisateurs inclus (jusqu'à 3 utilisateurs additionnels via add-on)",
+        "3 organisations",
+        "300 documents par organisation",
+        "5 conventions collectives installables",
+        "900 questions juridiques RH / mois",
+        "Chat in-app avec réponses sourcées",
+    ],
+    "groupe": [
+        "10 utilisateurs inclus (jusqu'à 3 utilisateurs additionnels via add-on)",
+        "10 organisations",
+        "1 000 documents par organisation",
+        "Conventions collectives illimitées",
+        "2 400 questions juridiques RH / mois",
+        "Chat in-app + onboarding personnalisé",
+    ],
+}
+
+
+def get_label(plan: str) -> str:
+    """Return the human-readable label for a plan code (fallback = raw code)."""
+    return PLAN_LABELS.get(plan, plan)
+
+
 # --- Prices (in cents) -----------------------------------------------------
 
 PRICE_MONTHLY_CENTS: dict[str, int] = {

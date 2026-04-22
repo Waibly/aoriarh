@@ -19,19 +19,10 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings as app_settings
-from app.core.plans import get_limits, is_commercial
+from app.core.plans import PLAN_LABELS as _PLAN_LABELS, get_limits, is_commercial
 
 
 logger = logging.getLogger(__name__)
-
-_PLAN_LABELS = {
-    "gratuit": "Essai",
-    "invite": "Invité",
-    "vip": "VIP",
-    "solo": "Solo",
-    "equipe": "Équipe",
-    "groupe": "Groupe",
-}
 from app.models.account import Account
 from app.models.account_member import AccountMember
 from app.models.booster_purchase import BoosterPurchase

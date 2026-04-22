@@ -47,6 +47,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { PLANS, getPlanLabel, type AnyPlanCode } from "@/lib/plans";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -105,29 +106,8 @@ interface WorkspacesResponse {
 /*  Plan config                                                        */
 /* ------------------------------------------------------------------ */
 
-const PLAN_CONFIG: Record<string, { label: string; className: string }> = {
-  gratuit: { label: "Essai", className: "" },
-  invite: {
-    label: "Invité",
-    className: "border-[#652bb0] bg-[#652bb0]/10 text-[#652bb0]",
-  },
-  vip: {
-    label: "VIP",
-    className: "border-amber-500 bg-amber-500/10 text-amber-600",
-  },
-  solo: {
-    label: "Solo",
-    className: "border-primary bg-primary/10 text-primary",
-  },
-  equipe: {
-    label: "Équipe",
-    className: "border-primary bg-primary/15 text-primary font-medium",
-  },
-  groupe: {
-    label: "Groupe",
-    className: "border-primary bg-primary/20 text-primary font-semibold",
-  },
-};
+// Plan labels + badge styling come from the single source of truth in
+// `@/lib/plans`. Never re-declare plan codes here — extend PLANS instead.
 
 /* ------------------------------------------------------------------ */
 /*  Page                                                               */
@@ -362,8 +342,13 @@ export default function ClientsPage() {
             <TableBody>
               {data.workspaces.map((ws) => {
                 const isExpanded = expandedIds.has(ws.account_id);
-                const plan =
-                  PLAN_CONFIG[ws.plan] ?? { label: ws.plan, className: "" };
+                const planMeta = (ws.plan in PLANS)
+                  ? PLANS[ws.plan as AnyPlanCode]
+                  : null;
+                const plan = {
+                  label: planMeta?.label ?? ws.plan,
+                  className: planMeta?.badgeClassName ?? "",
+                };
 
                 return (
                   <>
@@ -720,7 +705,7 @@ export default function ClientsPage() {
             <DialogDescription>
               Passer ce client en{" "}
               <strong>
-                {planEdit && PLAN_CONFIG[planEdit.plan]?.label}
+                {planEdit && getPlanLabel(planEdit.plan)}
               </strong>{" "}
               ?
             </DialogDescription>

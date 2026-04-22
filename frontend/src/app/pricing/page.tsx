@@ -13,7 +13,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { PLANS_CATALOG, type BillingCycle, type PlanCode } from "@/lib/billing-api";
+import { PLANS, COMMERCIAL_PLANS, type BillingCycle, type PlanCode } from "@/lib/plans";
 
 /**
  * Public pricing page.
@@ -88,55 +88,54 @@ export default function PricingPage() {
         </div>
 
         <div className="grid gap-6 md:grid-cols-3">
-          {(Object.entries(PLANS_CATALOG) as [PlanCode, typeof PLANS_CATALOG[PlanCode]][]).map(
-            ([code, plan]) => {
-              const price = cycle === "monthly" ? plan.priceMonthly : plan.priceYearly;
-              const featured = "featured" in plan && plan.featured;
-              return (
-                <Card
-                  key={code}
-                  className={`relative ${featured ? "border-primary shadow-lg md:scale-105" : ""}`}
-                >
-                  {featured && (
-                    <Badge className="absolute -top-2 left-1/2 -translate-x-1/2">
-                      Le plus choisi
-                    </Badge>
-                  )}
-                  <CardHeader>
-                    <CardTitle className="text-xl">{plan.name}</CardTitle>
-                    <CardDescription className="min-h-[40px]">
-                      {plan.target}
-                    </CardDescription>
-                    <div className="flex items-baseline gap-1 pt-4">
-                      <span className="text-4xl font-bold">{price} €</span>
-                      <span className="text-sm text-muted-foreground">
-                        HT /{cycle === "monthly" ? "mois" : "an"}
-                      </span>
-                    </div>
-                  </CardHeader>
-                  <CardContent className="space-y-5">
-                    <ul className="space-y-2.5 text-sm">
-                      {plan.features.map((f) => (
-                        <li key={f} className="flex gap-2">
-                          <Check className="h-4 w-4 text-primary shrink-0 mt-0.5" />
-                          <span>{f}</span>
-                        </li>
-                      ))}
-                    </ul>
-                    <Button
-                      className="w-full"
-                      variant={featured ? "default" : "outline"}
-                      asChild
-                    >
-                      <Link href={hrefForPlan(code)}>
-                        {isAuthed ? "Souscrire" : "Démarrer l'essai gratuit"}
-                      </Link>
-                    </Button>
-                  </CardContent>
-                </Card>
-              );
-            },
-          )}
+          {COMMERCIAL_PLANS.map((code) => {
+            const plan = PLANS[code];
+            const price = cycle === "monthly" ? plan.priceMonthly : plan.priceYearly;
+            const featured = plan.featured === true;
+            return (
+              <Card
+                key={code}
+                className={`relative ${featured ? "border-primary shadow-lg md:scale-105" : ""}`}
+              >
+                {featured && (
+                  <Badge className="absolute -top-2 left-1/2 -translate-x-1/2">
+                    Le plus choisi
+                  </Badge>
+                )}
+                <CardHeader>
+                  <CardTitle className="text-xl">{plan.label}</CardTitle>
+                  <CardDescription className="min-h-[40px]">
+                    {plan.target}
+                  </CardDescription>
+                  <div className="flex items-baseline gap-1 pt-4">
+                    <span className="text-4xl font-bold">{price} €</span>
+                    <span className="text-sm text-muted-foreground">
+                      HT /{cycle === "monthly" ? "mois" : "an"}
+                    </span>
+                  </div>
+                </CardHeader>
+                <CardContent className="space-y-5">
+                  <ul className="space-y-2.5 text-sm">
+                    {plan.features.map((f) => (
+                      <li key={f} className="flex gap-2">
+                        <Check className="h-4 w-4 text-primary shrink-0 mt-0.5" />
+                        <span>{f}</span>
+                      </li>
+                    ))}
+                  </ul>
+                  <Button
+                    className="w-full"
+                    variant={featured ? "default" : "outline"}
+                    asChild
+                  >
+                    <Link href={hrefForPlan(code)}>
+                      {isAuthed ? "Souscrire" : "Démarrer l'essai gratuit"}
+                    </Link>
+                  </Button>
+                </CardContent>
+              </Card>
+            );
+          })}
         </div>
 
         <div className="mt-12 max-w-3xl mx-auto space-y-4">
