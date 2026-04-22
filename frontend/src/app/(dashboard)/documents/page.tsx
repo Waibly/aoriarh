@@ -7,8 +7,10 @@ import {
   ArrowUp,
   ArrowUpDown,
   CheckCircle2,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
+  ChevronUp,
   Download,
   Edit,
   FileText,
@@ -172,6 +174,14 @@ export default function DocumentsPage() {
   const [removeCcnIdcc, setRemoveCcnIdcc] = useState<string | null>(null);
   const [activeCategoryKey, setActiveCategoryKey] = useState<string>("all");
   const [activeCcnIdcc, setActiveCcnIdcc] = useState<string | null>(null);
+  const [ccnCollapsed, setCcnCollapsed] = useState<boolean>(() => {
+    if (typeof window === "undefined") return false;
+    return window.localStorage.getItem("aoria.docs.ccnCollapsed") === "1";
+  });
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem("aoria.docs.ccnCollapsed", ccnCollapsed ? "1" : "0");
+  }, [ccnCollapsed]);
 
   // Debounce the search input: filtering happens 200 ms after the last
   // keystroke, not on every letter. Prevents a re-render burst when the
@@ -458,30 +468,47 @@ export default function DocumentsPage() {
                 Socle juridique de référence pour AORIA RH.
               </p>
             </div>
-            {isManager && (
-              <div className="flex items-center gap-2 shrink-0">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setAddCcnOpen(true)}
-                >
-                  <Plus className="h-3.5 w-3.5 mr-1" />
-                  Installer une convention
-                </Button>
-                {activeCcn && (
+            <div className="flex items-center gap-2 shrink-0">
+              {isManager && (
+                <>
                   <Button
                     variant="outline"
                     size="sm"
-                    onClick={() => setRemoveCcnIdcc(activeCcn.idcc)}
+                    onClick={() => setAddCcnOpen(true)}
                   >
-                    <Trash2 className="h-3.5 w-3.5 mr-1 text-destructive" />
-                    Retirer
+                    <Plus className="h-3.5 w-3.5 mr-1" />
+                    Installer une convention
                   </Button>
+                  {activeCcn && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setRemoveCcnIdcc(activeCcn.idcc)}
+                    >
+                      <Trash2 className="h-3.5 w-3.5 mr-1 text-destructive" />
+                      Retirer
+                    </Button>
+                  )}
+                </>
+              )}
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8"
+                onClick={() => setCcnCollapsed((v) => !v)}
+                aria-label={ccnCollapsed ? "Déplier" : "Replier"}
+                title={ccnCollapsed ? "Déplier" : "Replier"}
+              >
+                {ccnCollapsed ? (
+                  <ChevronDown className="h-4 w-4" />
+                ) : (
+                  <ChevronUp className="h-4 w-4" />
                 )}
-              </div>
-            )}
+              </Button>
+            </div>
           </div>
         </CardHeader>
+        {!ccnCollapsed && (
         <CardContent>
           {loading && conventions.length === 0 ? (
             <Skeleton className="h-32 w-full" />
@@ -548,6 +575,7 @@ export default function DocumentsPage() {
             </Tabs>
           )}
         </CardContent>
+        )}
       </Card>
 
       {/* ---------------- SECTION 2 : Vos documents internes ---------------- */}
