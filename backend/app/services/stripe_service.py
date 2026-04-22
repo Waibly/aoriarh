@@ -1024,6 +1024,7 @@ sous les limites. Merci de supprimer les éléments excédentaires sous 14 jours
 
             subject, html = render_subscription_confirmed_email(
                 full_name=owner.full_name,
+                plan=sub.plan,
                 plan_label=plan_label,
                 cycle=sub.billing_cycle,
                 next_billing_date=next_date,

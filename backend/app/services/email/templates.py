@@ -8,16 +8,16 @@ BASE_TEMPLATE = """\
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>{subject}</title>
 </head>
-<body style="margin:0; padding:0; background-color:#f0fdfa; font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;">
+<body style="margin:0; padding:0; background-color:#f5f3ff; font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;">
   <div style="padding:24px;">
-    <div style="max-width:600px; margin:0 auto; background:#ffffff; border-radius:12px; overflow:hidden; border:1px solid #ccfbf1;">
-      <div style="background-color:#0d9488; padding:28px 32px; text-align:center;">
+    <div style="max-width:600px; margin:0 auto; background:#ffffff; border-radius:12px; overflow:hidden; border:1px solid #ede9fe;">
+      <div style="background-color:#6d28d9; padding:28px 32px; text-align:center;">
         <h1 style="color:#ffffff; font-size:22px; margin:0; font-weight:700; letter-spacing:0.5px;">AORIA RH</h1>
       </div>
       <div style="padding:32px;">
         {content}
       </div>
-      <div style="background-color:#f0fdfa; padding:16px 32px; text-align:center; font-size:12px; color:#5f6b6a;">
+      <div style="background-color:#f5f3ff; padding:16px 32px; text-align:center; font-size:12px; color:#5f6b6a;">
         <p style="margin:0 0 4px 0;">&copy; {year} AORIA RH. Tous droits réservés.</p>
         <p style="margin:0;">Cet email a été envoyé par AORIA RH. Si vous n'êtes pas concerné(e), ignorez ce message.</p>
       </div>
@@ -27,7 +27,7 @@ BASE_TEMPLATE = """\
 </html>"""
 
 INVITATION_CONTENT = """\
-<h2 style="margin-top:0; color:#0f766e; font-size:20px;">Vous êtes invité(e) !</h2>
+<h2 style="margin-top:0; color:#5b21b6; font-size:20px;">Vous êtes invité(e) !</h2>
 <p style="color:#3f3f46; line-height:1.6;">Bonjour,</p>
 <p style="color:#3f3f46; line-height:1.6;">
   <strong>{inviter_name}</strong> vous invite à rejoindre l'organisation
@@ -35,7 +35,7 @@ INVITATION_CONTENT = """\
 </p>
 <p style="color:#3f3f46; line-height:1.6;">Cliquez sur le bouton ci-dessous pour accepter l'invitation :</p>
 <p style="text-align:center; margin:32px 0;">
-  <a href="{accept_url}" style="display:inline-block; background-color:#0d9488; color:#ffffff; padding:14px 32px; border-radius:8px; text-decoration:none; font-weight:600; font-size:15px;">
+  <a href="{accept_url}" style="display:inline-block; background-color:#6d28d9; color:#ffffff; padding:14px 32px; border-radius:8px; text-decoration:none; font-weight:600; font-size:15px;">
     Accepter l'invitation
   </a>
 </p>
@@ -45,7 +45,7 @@ INVITATION_CONTENT = """\
 
 
 TEAM_INVITATION_CONTENT = """\
-<h2 style="margin-top:0; color:#0f766e; font-size:20px;">Vous êtes invité(e) !</h2>
+<h2 style="margin-top:0; color:#5b21b6; font-size:20px;">Vous êtes invité(e) !</h2>
 <p style="color:#3f3f46; line-height:1.6;">Bonjour,</p>
 <p style="color:#3f3f46; line-height:1.6;">
   <strong>{inviter_name}</strong> vous invite à rejoindre l'équipe
@@ -53,7 +53,7 @@ TEAM_INVITATION_CONTENT = """\
 </p>
 <p style="color:#3f3f46; line-height:1.6;">Cliquez sur le bouton ci-dessous pour accepter l'invitation :</p>
 <p style="text-align:center; margin:32px 0;">
-  <a href="{accept_url}" style="display:inline-block; background-color:#0d9488; color:#ffffff; padding:14px 32px; border-radius:8px; text-decoration:none; font-weight:600; font-size:15px;">
+  <a href="{accept_url}" style="display:inline-block; background-color:#6d28d9; color:#ffffff; padding:14px 32px; border-radius:8px; text-decoration:none; font-weight:600; font-size:15px;">
     Accepter l'invitation
   </a>
 </p>
@@ -116,7 +116,7 @@ def render_team_invitation_email(
 
 
 TRIAL_REMINDER_CONTENT = """\
-<h2 style="margin-top:0; color:#0f766e; font-size:20px;">Votre essai AORIA RH se termine {when_label}</h2>
+<h2 style="margin-top:0; color:#5b21b6; font-size:20px;">Votre essai AORIA RH se termine {when_label}</h2>
 <p style="color:#3f3f46; line-height:1.6;">Bonjour {full_name},</p>
 <p style="color:#3f3f46; line-height:1.6;">
   Votre période d'essai gratuite de 14 jours prend fin <strong>{when_label}</strong>.
@@ -124,7 +124,7 @@ TRIAL_REMINDER_CONTENT = """\
   qui vous convient dès maintenant.
 </p>
 <p style="text-align:center; margin:32px 0;">
-  <a href="{upgrade_url}" style="display:inline-block; background-color:#0d9488; color:#ffffff; padding:14px 32px; border-radius:8px; text-decoration:none; font-weight:600; font-size:15px;">
+  <a href="{upgrade_url}" style="display:inline-block; background-color:#6d28d9; color:#ffffff; padding:14px 32px; border-radius:8px; text-decoration:none; font-weight:600; font-size:15px;">
     Choisir mon offre
   </a>
 </p>
@@ -143,7 +143,7 @@ TRIAL_REMINDER_CONTENT = """\
 
 
 TRIAL_EXPIRED_CONTENT = """\
-<h2 style="margin-top:0; color:#0f766e; font-size:20px;">Votre essai AORIA RH est terminé</h2>
+<h2 style="margin-top:0; color:#5b21b6; font-size:20px;">Votre essai AORIA RH est terminé</h2>
 <p style="color:#3f3f46; line-height:1.6;">Bonjour {full_name},</p>
 <p style="color:#3f3f46; line-height:1.6;">
   Votre période d'essai gratuite est arrivée à son terme. L'accès à AORIA RH est
@@ -154,7 +154,7 @@ TRIAL_EXPIRED_CONTENT = """\
   correspond à votre besoin :
 </p>
 <p style="text-align:center; margin:32px 0;">
-  <a href="{upgrade_url}" style="display:inline-block; background-color:#0d9488; color:#ffffff; padding:14px 32px; border-radius:8px; text-decoration:none; font-weight:600; font-size:15px;">
+  <a href="{upgrade_url}" style="display:inline-block; background-color:#6d28d9; color:#ffffff; padding:14px 32px; border-radius:8px; text-decoration:none; font-weight:600; font-size:15px;">
     Souscrire maintenant
   </a>
 </p>
@@ -217,7 +217,7 @@ def render_trial_expired_email(
 
 
 QUOTA_HARD_WARNING_CONTENT = """\
-<h2 style="margin-top:0; color:#0f766e; font-size:20px;">Vous avez dépassé votre quota mensuel</h2>
+<h2 style="margin-top:0; color:#5b21b6; font-size:20px;">Vous avez dépassé votre quota mensuel</h2>
 <p style="color:#3f3f46; line-height:1.6;">Bonjour {full_name},</p>
 <p style="color:#3f3f46; line-height:1.6;">
   Vous avez utilisé <strong>{used}</strong> questions ce mois-ci sur les
@@ -232,7 +232,7 @@ QUOTA_HARD_WARNING_CONTENT = """\
   <li><strong>Acheter un pack booster</strong> &mdash; +500 questions pour 25&nbsp;€, valables jusqu'à consommation complète.</li>
 </ul>
 <p style="text-align:center; margin:32px 0;">
-  <a href="{upgrade_url}" style="display:inline-block; background-color:#0d9488; color:#ffffff; padding:14px 32px; border-radius:8px; text-decoration:none; font-weight:600; font-size:15px;">
+  <a href="{upgrade_url}" style="display:inline-block; background-color:#6d28d9; color:#ffffff; padding:14px 32px; border-radius:8px; text-decoration:none; font-weight:600; font-size:15px;">
     Gérer mon abonnement
   </a>
 </p>
@@ -271,20 +271,23 @@ def render_quota_hard_warning_email(
 
 
 SUBSCRIPTION_CONFIRMED_CONTENT = """\
-<h2 style="margin-top:0; color:#0f766e; font-size:20px;">Bienvenue sur {plan_label} 🎉</h2>
+<h2 style="margin-top:0; color:#5b21b6; font-size:20px;">Bienvenue sur {plan_label}</h2>
 <p style="color:#3f3f46; line-height:1.6;">Bonjour {full_name},</p>
 <p style="color:#3f3f46; line-height:1.6;">
   Votre abonnement à l'offre <strong>{plan_label}</strong> ({cycle_label}) est actif.
-  Vous bénéficiez immédiatement de l'ensemble des fonctionnalités&nbsp;:
+  Voici ce qui est inclus&nbsp;:
 </p>
-<table style="width:100%; border-collapse:collapse; margin:16px 0;">
+<ul style="color:#3f3f46; line-height:1.8; padding-left:20px; margin:12px 0;">
+{features_list}
+</ul>
+<table style="width:100%; border-collapse:collapse; margin:24px 0; background:#f5f3ff; border-radius:8px;">
   <tr>
-    <td style="padding:6px 0; color:#3f3f46;">Prochaine échéance</td>
-    <td style="padding:6px 0; color:#3f3f46; text-align:right;"><strong>{next_billing_date}</strong></td>
+    <td style="padding:12px 16px; color:#3f3f46;">Prochaine échéance</td>
+    <td style="padding:12px 16px; color:#3f3f46; text-align:right;"><strong>{next_billing_date}</strong></td>
   </tr>
 </table>
 <p style="text-align:center; margin:32px 0;">
-  <a href="{billing_url}" style="display:inline-block; background-color:#0d9488; color:#ffffff; padding:14px 32px; border-radius:8px; text-decoration:none; font-weight:600; font-size:15px;">
+  <a href="{billing_url}" style="display:inline-block; background-color:#6d28d9; color:#ffffff; padding:14px 32px; border-radius:8px; text-decoration:none; font-weight:600; font-size:15px;">
     Gérer mon abonnement
   </a>
 </p>
@@ -292,19 +295,50 @@ SUBSCRIPTION_CONFIRMED_CONTENT = """\
 <p style="color:#94a3b8; font-size:13px; line-height:1.5;">
   Vous pouvez modifier ou résilier votre abonnement à tout moment depuis votre espace client.
   Un reçu officiel vous est également envoyé par Stripe à la même adresse.
+</p>
+<p style="color:#94a3b8; font-size:13px; line-height:1.5;">
+  Une question ? Écrivez-nous à <a href="mailto:hello@aoriarh.fr" style="color:#6d28d9;">hello@aoriarh.fr</a>.
 </p>"""
+
+
+PLAN_FEATURES: dict[str, list[str]] = {
+    "solo": [
+        "1 utilisateur (jusqu'à 3 utilisateurs additionnels via add-on)",
+        "1 organisation",
+        "100 documents par organisation",
+        "1 convention collective installable",
+        "300 questions juridiques RH / mois",
+        "Chat in-app avec réponses sourcées",
+    ],
+    "equipe": [
+        "5 utilisateurs inclus (jusqu'à 3 utilisateurs additionnels via add-on)",
+        "3 organisations",
+        "300 documents par organisation",
+        "5 conventions collectives installables",
+        "900 questions juridiques RH / mois",
+        "Chat in-app avec réponses sourcées",
+    ],
+    "groupe": [
+        "10 utilisateurs inclus (jusqu'à 3 utilisateurs additionnels via add-on)",
+        "10 organisations",
+        "1 000 documents par organisation",
+        "Conventions collectives illimitées",
+        "2 400 questions juridiques RH / mois",
+        "Chat in-app + onboarding personnalisé",
+    ],
+}
 
 
 SUBSCRIPTION_INVOICE_LINK = """\
 <p style="text-align:center; margin:12px 0;">
-  <a href="{invoice_url}" style="color:#0d9488; text-decoration:underline; font-size:13px;">
+  <a href="{invoice_url}" style="color:#6d28d9; text-decoration:underline; font-size:13px;">
     Voir le reçu Stripe
   </a>
 </p>"""
 
 
 SUBSCRIPTION_CANCELED_CONTENT = """\
-<h2 style="margin-top:0; color:#0f766e; font-size:20px;">Votre abonnement AORIA RH est résilié</h2>
+<h2 style="margin-top:0; color:#5b21b6; font-size:20px;">Votre abonnement AORIA RH est résilié</h2>
 <p style="color:#3f3f46; line-height:1.6;">Bonjour {full_name},</p>
 <p style="color:#3f3f46; line-height:1.6;">
   Votre abonnement à l'offre <strong>{plan_label}</strong> a bien été résilié.
@@ -313,7 +347,7 @@ SUBSCRIPTION_CANCELED_CONTENT = """\
   si vous changez d'avis.
 </p>
 <p style="text-align:center; margin:32px 0;">
-  <a href="{billing_url}" style="display:inline-block; background-color:#0d9488; color:#ffffff; padding:14px 32px; border-radius:8px; text-decoration:none; font-weight:600; font-size:15px;">
+  <a href="{billing_url}" style="display:inline-block; background-color:#6d28d9; color:#ffffff; padding:14px 32px; border-radius:8px; text-decoration:none; font-weight:600; font-size:15px;">
     Réactiver mon abonnement
   </a>
 </p>
@@ -329,6 +363,7 @@ SUBSCRIPTION_CANCELED_CONTENT = """\
 
 def render_subscription_confirmed_email(
     full_name: str,
+    plan: str,
     plan_label: str,
     cycle: str,
     next_billing_date: str,
@@ -343,6 +378,11 @@ def render_subscription_confirmed_email(
     if invoice_url:
         invoice_section = SUBSCRIPTION_INVOICE_LINK.format(invoice_url=invoice_url)
 
+    features = PLAN_FEATURES.get(plan, [])
+    features_list = "\n".join(
+        f'<li>{f}</li>' for f in features
+    ) or "<li>Accès complet à la plateforme AORIA RH</li>"
+
     content = SUBSCRIPTION_CONFIRMED_CONTENT.format(
         full_name=full_name,
         plan_label=plan_label,
@@ -350,6 +390,7 @@ def render_subscription_confirmed_email(
         next_billing_date=next_billing_date,
         billing_url=billing_url,
         invoice_section=invoice_section,
+        features_list=features_list,
     )
     html = BASE_TEMPLATE.format(
         subject=subject,
