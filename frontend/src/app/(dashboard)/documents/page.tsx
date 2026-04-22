@@ -455,8 +455,22 @@ export default function DocumentsPage() {
               {loading && conventions.length === 0 ? (
                 <Skeleton className="h-10 w-full" />
               ) : conventions.length === 0 ? (
-                <div className="text-xs text-muted-foreground px-2 py-3 text-center">
-                  Aucune convention installée
+                <div className="px-2 py-4 space-y-2">
+                  <p className="text-xs text-muted-foreground leading-relaxed">
+                    Installez votre convention collective pour que l&apos;IA
+                    s&apos;y réfère automatiquement dans ses réponses.
+                  </p>
+                  {isManager && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="w-full"
+                      onClick={() => setAddCcnOpen(true)}
+                    >
+                      <Plus className="h-3.5 w-3.5 mr-1" />
+                      Installer ma convention
+                    </Button>
+                  )}
                 </div>
               ) : (
                 conventions.map((c) => {
@@ -718,7 +732,7 @@ function CcnDetailPane({
             : ageYears > 1
               ? "border-orange-500 bg-orange-500/10 text-orange-700 dark:text-orange-400"
               : "border-green-500 bg-green-500/10 text-green-700 dark:text-green-400";
-        return { color, label: `Textes au ${new Date(ccn.source_date).toLocaleDateString("fr-FR")}` };
+        return { color, label: `À jour au ${new Date(ccn.source_date).toLocaleDateString("fr-FR")}` };
       })()
     : null;
 
@@ -746,22 +760,22 @@ function CcnDetailPane({
                 )}
                 {ccn.status === "ready" && (
                   <Badge className="bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 border-0">
-                    <CheckCircle2 className="h-3.5 w-3.5 mr-1" /> Prête
+                    <CheckCircle2 className="h-3.5 w-3.5 mr-1" /> Active — utilisée par l&apos;IA
                   </Badge>
                 )}
                 {(ccn.status === "fetching" || ccn.status === "indexing" || ccn.status === "pending") && (
                   <Badge className="bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400 border-0">
                     <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />
                     {ccn.status === "fetching"
-                      ? "Téléchargement"
+                      ? "Récupération du texte officiel (1-2 min)..."
                       : ccn.status === "indexing"
-                        ? "Indexation"
-                        : "En attente"}
+                        ? "Préparation pour le chat (30-60 s)..."
+                        : "Démarrage..."}
                   </Badge>
                 )}
                 {ccn.status === "error" && (
                   <Badge className="bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400 border-0">
-                    Erreur
+                    Erreur — contactez le support
                   </Badge>
                 )}
                 {latestAvenantDate && (
@@ -786,17 +800,17 @@ function CcnDetailPane({
         </CardHeader>
       </Card>
 
-      {/* Tabs : Texte consolidé / Avenants récents */}
+      {/* Tabs : contenu consolidé vs nouveautés BOCC */}
       <Tabs defaultValue="consolidated">
         <TabsList>
           <TabsTrigger value="consolidated">
-            Texte officiel
+            Ce que contient votre base
             <Badge variant="outline" className="ml-2 text-[10px] h-4 px-1.5">
               {consolidatedDocs.length}
             </Badge>
           </TabsTrigger>
           <TabsTrigger value="amendments">
-            Avenants récents
+            Nouveautés
             <Badge variant="outline" className="ml-2 text-[10px] h-4 px-1.5">
               {amendmentDocs.length}
             </Badge>
@@ -807,14 +821,18 @@ function CcnDetailPane({
           <Card>
             <CardHeader>
               <CardTitle className="text-sm font-semibold flex items-center gap-2">
-                Texte officiel consolidé
+                Ce que contient votre base
                 <InfoTooltip>
-                  Texte officiel de votre convention collective, à jour à la
-                  date affichée en haut. Contient les articles structurés
-                  (texte de base, parties législative et réglementaire,
-                  avenants et annexes intégrés).
+                  Le texte officiel consolidé de votre convention : articles
+                  de base, parties législative et réglementaire, annexes
+                  (classifications, régime prévoyance) et grilles de
+                  salaires. Version à la date affichée en haut.
                 </InfoTooltip>
               </CardTitle>
+              <p className="text-xs text-muted-foreground mt-1">
+                Le texte officiel de votre convention, complet et structuré.
+                L&apos;IA y puise pour chaque question que vous posez.
+              </p>
             </CardHeader>
             <CardContent>
               <DocsList
@@ -830,17 +848,21 @@ function CcnDetailPane({
           <Card>
             <CardHeader>
               <CardTitle className="text-sm font-semibold flex items-center gap-2">
-                Avenants récents
+                Nouveautés
                 <InfoTooltip>
                   Avenants publiés au Bulletin officiel des conventions
                   collectives (BOCC), ajoutés automatiquement par AORIA RH
-                  dès leur publication. L&apos;IA les utilise dans ses réponses
-                  au même titre que le texte officiel. Lecture seule — vous
-                  ne pouvez ni les modifier ni les supprimer, ce sont des
-                  documents partagés entre tous les clients qui ont installé
-                  cette convention.
+                  dès leur parution. L&apos;IA les utilise au même titre que
+                  le texte officiel. Lecture seule : ce sont des documents
+                  partagés entre tous les clients qui ont installé cette
+                  convention.
                 </InfoTooltip>
               </CardTitle>
+              <p className="text-xs text-muted-foreground mt-1">
+                Les avenants publiés récemment, avant d&apos;être consolidés
+                dans le texte officiel. Ajoutés automatiquement à chaque
+                parution au BOCC.
+              </p>
             </CardHeader>
             <CardContent>
               <DocsList
