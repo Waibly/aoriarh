@@ -820,8 +820,8 @@ function CcnDetailPane({
                 </InfoTooltip>
               </CardTitle>
               <p className="text-xs text-muted-foreground mt-1">
-                Le texte officiel de votre convention, complet et structuré.
-                AORIA RH y puise pour chaque question que vous posez.
+                Texte complet et à jour de votre convention collective.
+                Utilisé par AORIA RH pour répondre à vos questions.
               </p>
             </CardHeader>
             <CardContent>
