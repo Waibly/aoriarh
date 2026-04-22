@@ -48,6 +48,28 @@ def _get(obj, key, default=None):
         return default
 
 
+def _sub_period(sub_obj) -> tuple[int | None, int | None]:
+    """Return (current_period_start, current_period_end) for a Stripe sub.
+
+    Starting with Stripe API 2024-12+, these fields moved from the root
+    Subscription object to the individual SubscriptionItems. We probe both
+    so the code survives any API version bump.
+    """
+    start = _get(sub_obj, "current_period_start")
+    end = _get(sub_obj, "current_period_end")
+    if start and end:
+        return start, end
+    items = _get(sub_obj, "items")
+    data = _get(items, "data") if items is not None else None
+    if data:
+        first = data[0]
+        return (
+            _get(first, "current_period_start") or start,
+            _get(first, "current_period_end") or end,
+        )
+    return start, end
+
+
 class StripeNotConfiguredError(HTTPException):
     def __init__(self) -> None:
         super().__init__(
@@ -612,8 +634,9 @@ class StripeService:
             self.db.add(sub)
 
         sub.status = sub_obj["status"]
-        sub.current_period_start = _ts_to_dt(_get(sub_obj, "current_period_start"))
-        sub.current_period_end = _ts_to_dt(_get(sub_obj, "current_period_end"))
+        _start, _end = _sub_period(sub_obj)
+        sub.current_period_start = _ts_to_dt(_start)
+        sub.current_period_end = _ts_to_dt(_end)
         sub.cancel_at_period_end = bool(_get(sub_obj, "cancel_at_period_end"))
 
         # Mirror onto the Account
@@ -747,8 +770,9 @@ class StripeService:
             self.db.add(sub)
 
         sub.status = sub_obj["status"]
-        sub.current_period_start = _ts_to_dt(_get(sub_obj, "current_period_start"))
-        sub.current_period_end = _ts_to_dt(_get(sub_obj, "current_period_end"))
+        _start, _end = _sub_period(sub_obj)
+        sub.current_period_start = _ts_to_dt(_start)
+        sub.current_period_end = _ts_to_dt(_end)
         sub.cancel_at_period_end = bool(_get(sub_obj, "cancel_at_period_end"))
         canceled_at = _get(sub_obj, "canceled_at")
         if canceled_at:
