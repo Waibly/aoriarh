@@ -418,7 +418,7 @@ export default function DocumentsPage() {
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Documents</h1>
           <p className="text-sm text-muted-foreground mt-1">
-            Tous les documents propres à votre organisation, interrogeables par l&apos;IA.
+            Tous les documents propres à votre organisation, utilisés par AORIA RH pour répondre à vos questions.
           </p>
         </div>
         {isManager && (
@@ -447,7 +447,7 @@ export default function DocumentsPage() {
                 <InfoTooltip>
                   Convention(s) collective(s) installée(s) pour votre organisation.
                   Elle est récupérée depuis les sources officielles et utilisée
-                  automatiquement par l&apos;IA dans toutes vos questions.
+                  automatiquement par AORIA RH dans toutes vos questions.
                 </InfoTooltip>
               </CardTitle>
             </CardHeader>
@@ -457,7 +457,7 @@ export default function DocumentsPage() {
               ) : conventions.length === 0 ? (
                 <div className="px-2 py-4 space-y-2">
                   <p className="text-xs text-muted-foreground leading-relaxed">
-                    Installez votre convention collective pour que l&apos;IA
+                    Installez votre convention collective pour qu&apos;AORIA RH
                     s&apos;y réfère automatiquement dans ses réponses.
                   </p>
                   {isManager && (
@@ -537,7 +537,7 @@ export default function DocumentsPage() {
                 Vos documents
                 <InfoTooltip>
                   Documents propres à votre organisation, classés par catégorie.
-                  Tous sont indexés et disponibles pour l&apos;IA.
+                  Tous sont indexés et disponibles pour AORIA RH.
                 </InfoTooltip>
               </CardTitle>
             </CardHeader>
@@ -665,7 +665,7 @@ export default function DocumentsPage() {
           <DialogHeader>
             <DialogTitle>Retirer la convention collective</DialogTitle>
             <DialogDescription>
-              Cette convention ne sera plus utilisée par l&apos;IA pour répondre
+              Cette convention ne sera plus utilisée par AORIA RH pour répondre
               à vos questions. Vous pourrez la réinstaller à tout moment.
             </DialogDescription>
           </DialogHeader>
@@ -760,7 +760,7 @@ function CcnDetailPane({
                 )}
                 {ccn.status === "ready" && (
                   <Badge className="bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 border-0">
-                    <CheckCircle2 className="h-3.5 w-3.5 mr-1" /> Active — utilisée par l&apos;IA
+                    <CheckCircle2 className="h-3.5 w-3.5 mr-1" /> Active — utilisée par AORIA RH
                   </Badge>
                 )}
                 {(ccn.status === "fetching" || ccn.status === "indexing" || ccn.status === "pending") && (
@@ -831,7 +831,7 @@ function CcnDetailPane({
               </CardTitle>
               <p className="text-xs text-muted-foreground mt-1">
                 Le texte officiel de votre convention, complet et structuré.
-                L&apos;IA y puise pour chaque question que vous posez.
+                AORIA RH y puise pour chaque question que vous posez.
               </p>
             </CardHeader>
             <CardContent>
@@ -852,7 +852,7 @@ function CcnDetailPane({
                 <InfoTooltip>
                   Avenants publiés au Bulletin officiel des conventions
                   collectives (BOCC), ajoutés automatiquement par AORIA RH
-                  dès leur parution. L&apos;IA les utilise au même titre que
+                  dès leur parution. AORIA RH les utilise au même titre que
                   le texte officiel. Lecture seule : ce sont des documents
                   partagés entre tous les clients qui ont installé cette
                   convention.
