@@ -16,6 +16,15 @@ import {
 import { toast } from "sonner";
 import { apiFetch } from "@/lib/api";
 import type { AccountMember, Invitation, Organisation } from "@/types/api";
+import {
+  fetchUsageSummary,
+  fetchAddons,
+  fetchQuota,
+  type UsageSummary,
+  type ActiveAddon,
+  type QuotaInfo,
+} from "@/lib/billing-api";
+import { LimitReachedDialog } from "@/components/limit-reached-dialog";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -59,6 +68,33 @@ export default function TeamPage() {
   const [inviteOpen, setInviteOpen] = useState(false);
   const [editTarget, setEditTarget] = useState<AccountMember | null>(null);
   const [removeTarget, setRemoveTarget] = useState<AccountMember | null>(null);
+  const [usage, setUsage] = useState<UsageSummary | null>(null);
+  const [addons, setAddons] = useState<ActiveAddon[]>([]);
+  const [quota, setQuota] = useState<QuotaInfo | null>(null);
+  const [limitOpen, setLimitOpen] = useState(false);
+
+  const fetchBillingState = useCallback(async () => {
+    if (!token) return;
+    try {
+      const [u, a, q] = await Promise.all([
+        fetchUsageSummary(token),
+        fetchAddons(token),
+        fetchQuota(token),
+      ]);
+      setUsage(u);
+      setAddons(a);
+      setQuota(q);
+    } catch {
+      // Silencieux — backend garde-fou.
+    }
+  }, [token]);
+
+  useEffect(() => {
+    fetchBillingState();
+    const handler = () => fetchBillingState();
+    window.addEventListener("quota-updated", handler);
+    return () => window.removeEventListener("quota-updated", handler);
+  }, [fetchBillingState]);
 
   const fetchMembers = useCallback(async () => {
     if (!token) return;
@@ -182,10 +218,38 @@ export default function TeamPage() {
           <div className="space-y-1.5">
             <CardTitle>Collaborateurs</CardTitle>
             <CardDescription>
-              {members.length} collaborateur{members.length > 1 ? "s" : ""}
+              {(() => {
+                const used = usage?.users.used ?? members.length + 1;
+                const limit = usage?.users.limit ?? 0;
+                const pct = limit > 0 ? used / limit : 0;
+                return (
+                  <>
+                    <strong>{used}</strong>
+                    {limit > 0 && (
+                      <> / {limit} utilisateur{limit > 1 ? "s" : ""} inclus</>
+                    )}
+                    {pct >= 0.8 && pct < 1 && (
+                      <span className="ml-2 inline-block rounded-full bg-orange-500/10 text-orange-600 dark:text-orange-400 px-2 py-0.5 text-xs font-medium">
+                        Proche de la limite
+                      </span>
+                    )}
+                  </>
+                );
+              })()}
             </CardDescription>
           </div>
-          <Button size="sm" onClick={() => setInviteOpen(true)}>
+          <Button
+            size="sm"
+            onClick={() => {
+              const used = usage?.users.used ?? members.length + 1;
+              const limit = usage?.users.limit ?? 0;
+              if (limit > 0 && used >= limit) {
+                setLimitOpen(true);
+              } else {
+                setInviteOpen(true);
+              }
+            }}
+          >
             <Plus className="mr-2 h-4 w-4" />
             Inviter
           </Button>
@@ -373,6 +437,19 @@ export default function TeamPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <LimitReachedDialog
+        open={limitOpen}
+        onOpenChange={setLimitOpen}
+        resource="user"
+        currentPlan={quota?.plan ?? "gratuit"}
+        includedCount={usage?.users.limit ?? 0}
+        usedCount={usage?.users.used ?? 0}
+        activeAddonCount={addons
+          .filter((a) => a.addon_type === "extra_user")
+          .reduce((sum, a) => sum + a.quantity, 0)}
+        addonCap={3}
+      />
     </div>
   );
 }

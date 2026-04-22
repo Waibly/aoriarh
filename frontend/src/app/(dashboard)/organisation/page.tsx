@@ -5,13 +5,16 @@ import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import {
   Pencil,
+  Plus,
   Trash2,
   Info,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useOrg } from "@/lib/org-context";
 import { apiFetch } from "@/lib/api";
-import type { Membership } from "@/types/api";
+import type { Membership, Organisation } from "@/types/api";
+import { fetchUsageSummary, fetchAddons, fetchQuota, type UsageSummary, type ActiveAddon, type QuotaInfo } from "@/lib/billing-api";
+import { LimitReachedDialog } from "@/components/limit-reached-dialog";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -44,15 +47,63 @@ import { OrgFormDialog } from "@/components/org-form-dialog";
 
 export default function OrganisationPage() {
   const { data: session } = useSession();
-  const { currentOrg, refetchOrgs, workspaceName } = useOrg();
+  const { currentOrg, refetchOrgs, workspaceName, setCurrentOrgId } = useOrg();
   const token = session?.access_token;
   const router = useRouter();
 
   const [members, setMembers] = useState<Membership[]>([]);
   const [loadingMembers, setLoadingMembers] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
+  const [createOpen, setCreateOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [isOrgManager, setIsOrgManager] = useState(false);
+  const [usage, setUsage] = useState<UsageSummary | null>(null);
+  const [addons, setAddons] = useState<ActiveAddon[]>([]);
+  const [quota, setQuota] = useState<QuotaInfo | null>(null);
+  const [limitOpen, setLimitOpen] = useState(false);
+
+  const fetchBillingState = useCallback(async () => {
+    if (!token) return;
+    try {
+      const [u, a, q] = await Promise.all([
+        fetchUsageSummary(token),
+        fetchAddons(token),
+        fetchQuota(token),
+      ]);
+      setUsage(u);
+      setAddons(a);
+      setQuota(q);
+    } catch {
+      // Non-blocking: en cas d'échec on laisse l'utilisateur tenter, le
+      // backend fera office de garde-fou avec son 403.
+    }
+  }, [token]);
+
+  useEffect(() => {
+    fetchBillingState();
+    const handler = () => fetchBillingState();
+    window.addEventListener("quota-updated", handler);
+    return () => window.removeEventListener("quota-updated", handler);
+  }, [fetchBillingState]);
+
+  const orgUsed = usage?.organisations.used ?? 0;
+  const orgIncluded = usage?.organisations.limit ?? 0;
+  const orgAddonCount = addons
+    .filter((a) => a.addon_type === "extra_org")
+    .reduce((sum, a) => sum + a.quantity, 0);
+  const orgLimitReached = orgUsed >= orgIncluded && orgIncluded > 0;
+  const currentPlan = quota?.plan ?? "gratuit";
+  const canCreateOrg =
+    session?.user?.role === "admin" ||
+    session?.user?.role === "manager";
+
+  const handleCreateClick = () => {
+    if (orgLimitReached) {
+      setLimitOpen(true);
+    } else {
+      setCreateOpen(true);
+    }
+  };
 
   const handleOrgDeleted = useCallback(async () => {
     await refetchOrgs();
@@ -86,21 +137,104 @@ export default function OrganisationPage() {
     fetchMembers();
   }, [fetchMembers]);
 
+  const pageHeader = (
+    <div className="flex items-center justify-between gap-4 flex-wrap">
+      <div>
+        <h1 className="text-2xl font-semibold tracking-tight">Organisation</h1>
+        {usage && (
+          <p className="text-sm text-muted-foreground mt-1">
+            <strong>{orgUsed}</strong> / {orgIncluded} organisation{orgIncluded > 1 ? "s" : ""} utilisée{orgUsed > 1 ? "s" : ""} sur votre plan
+            {orgUsed / Math.max(orgIncluded, 1) >= 0.8 && orgUsed < orgIncluded && (
+              <span className="ml-2 inline-block rounded-full bg-orange-500/10 text-orange-600 dark:text-orange-400 px-2 py-0.5 text-xs font-medium">
+                Proche de la limite
+              </span>
+            )}
+          </p>
+        )}
+      </div>
+      {canCreateOrg && (
+        <Button onClick={handleCreateClick}>
+          <Plus className="mr-2 h-4 w-4" />
+          Créer une organisation
+        </Button>
+      )}
+    </div>
+  );
+
   if (!currentOrg) {
     return (
-      <div>
-        <h1 className="mb-6 text-2xl font-semibold tracking-tight">Organisation</h1>
-        <p className="text-muted-foreground">
-          Aucune organisation sélectionnée. Créez ou rejoignez une
-          organisation.
-        </p>
+      <div className="space-y-6">
+        {pageHeader}
+        <Card>
+          <CardContent className="py-12 text-center space-y-3">
+            <p className="text-muted-foreground">
+              Aucune organisation sélectionnée. Créez-en une pour commencer.
+            </p>
+            {canCreateOrg && (
+              <Button onClick={handleCreateClick}>
+                <Plus className="mr-2 h-4 w-4" />
+                Créer ma première organisation
+              </Button>
+            )}
+          </CardContent>
+        </Card>
+        {renderCreateDialog()}
+        <LimitReachedDialog
+          open={limitOpen}
+          onOpenChange={setLimitOpen}
+          resource="organisation"
+          currentPlan={currentPlan}
+          includedCount={orgIncluded}
+          usedCount={orgUsed}
+          activeAddonCount={orgAddonCount}
+        />
       </div>
+    );
+  }
+
+  function renderCreateDialog() {
+    if (!canCreateOrg || !token) return null;
+    return (
+      <OrgFormDialog
+        open={createOpen}
+        onOpenChange={setCreateOpen}
+        onSubmit={async (data) => {
+          const { profil_metier, selectedCcn, ...orgData } = data;
+          const org = await apiFetch<Organisation>("/organisations/", {
+            method: "POST",
+            token,
+            body: JSON.stringify(orgData),
+          });
+          if (profil_metier) {
+            await apiFetch("/users/me", {
+              method: "PATCH",
+              token,
+              body: JSON.stringify({ profil_metier }),
+            });
+          }
+          if (selectedCcn && selectedCcn.length > 0) {
+            for (const ccn of selectedCcn) {
+              apiFetch(`/conventions/organisations/${org.id}`, {
+                method: "POST",
+                token,
+                body: JSON.stringify({ idcc: ccn.idcc }),
+              }).catch(() => {});
+            }
+          }
+          if (typeof window !== "undefined") {
+            window.dispatchEvent(new Event("quota-updated"));
+          }
+          await refetchOrgs();
+          setCurrentOrgId(org.id);
+          toast.success(`Organisation « ${org.name} » créée`);
+        }}
+      />
     );
   }
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-semibold tracking-tight">Organisation</h1>
+      {pageHeader}
 
       {/* Org info card */}
       <Card>
@@ -258,6 +392,17 @@ export default function OrganisationPage() {
           />
         </>
       )}
+
+      {renderCreateDialog()}
+      <LimitReachedDialog
+        open={limitOpen}
+        onOpenChange={setLimitOpen}
+        resource="organisation"
+        currentPlan={currentPlan}
+        includedCount={orgIncluded}
+        usedCount={orgUsed}
+        activeAddonCount={orgAddonCount}
+      />
     </div>
   );
 }
