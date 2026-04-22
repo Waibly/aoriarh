@@ -27,7 +27,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { useOrg } from "@/lib/org-context";
-import { apiFetch, authFetch } from "@/lib/api";
+import { apiFetch } from "@/lib/api";
 import type { Document, OrganisationConvention, CcnReference } from "@/types/api";
 import { SOURCE_TYPE_OPTIONS } from "@/types/api";
 import { CcnSelector } from "@/components/ccn-selector";
@@ -47,7 +47,6 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import {
   Table,
   TableBody,
@@ -148,10 +147,9 @@ function formatDate(iso: string): string {
 }
 
 // ----------------- Types -----------------
-
-type Selection =
-  | { type: "ccn"; idcc: string }
-  | { type: "category"; key: string };
+// The layout is a vertical flow: CCN section on top, internal documents
+// section below. Two independent states drive each section — no union type,
+// no sidebar/main split anymore.
 
 // ----------------- Page -----------------
 
@@ -172,7 +170,8 @@ export default function DocumentsPage() {
   const [selectedNewCcn, setSelectedNewCcn] = useState<CcnReference[]>([]);
   const [installingCcn, setInstallingCcn] = useState(false);
   const [removeCcnIdcc, setRemoveCcnIdcc] = useState<string | null>(null);
-  const [selection, setSelection] = useState<Selection>({ type: "category", key: "all" });
+  const [activeCategoryKey, setActiveCategoryKey] = useState<string>("all");
+  const [activeCcnIdcc, setActiveCcnIdcc] = useState<string | null>(null);
 
   // Debounce the search input: filtering happens 200 ms after the last
   // keystroke, not on every letter. Prevents a re-render burst when the
@@ -245,17 +244,22 @@ export default function DocumentsPage() {
     );
   }, [session]);
 
-  // Default to first installed CCN if any (better UX than empty page)
+  // When conventions arrive for the first time, pick the first ready one as
+  // the currently shown tab in the CCN section. Subsequent refreshes leave
+  // the user's pick alone, unless their pick has been removed — in which
+  // case we fall back to another available CCN.
   useEffect(() => {
     if (!initialLoadDone.current) return;
-    if (selection.type === "category" && selection.key === "all" && conventions.length > 0) {
-      const firstReady = conventions.find((c) => c.status === "ready");
-      if (firstReady) {
-        setSelection({ type: "ccn", idcc: firstReady.idcc });
-      }
+    if (conventions.length === 0) {
+      setActiveCcnIdcc(null);
+      return;
+    }
+    if (activeCcnIdcc === null || !conventions.find((c) => c.idcc === activeCcnIdcc)) {
+      const firstReady = conventions.find((c) => c.status === "ready") ?? conventions[0];
+      setActiveCcnIdcc(firstReady.idcc);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [conventions.length]);
+  }, [conventions]);
 
   // ---- Document actions (single + bulk + metadata) ----
 
@@ -310,9 +314,10 @@ export default function DocumentsPage() {
       });
       toast.success("Convention retirée");
       setRemoveCcnIdcc(null);
-      // If the removed CCN was selected, fall back to "all"
-      if (selection.type === "ccn" && selection.idcc === idcc) {
-        setSelection({ type: "category", key: "all" });
+      // If the removed CCN was the one shown, the post-fetch effect above
+      // will auto-select another ready one (or clear to null).
+      if (activeCcnIdcc === idcc) {
+        setActiveCcnIdcc(null);
       }
       fetchDocuments();
     } catch (err) {
@@ -367,14 +372,13 @@ export default function DocumentsPage() {
     return counts;
   }, [internalDocs]);
 
-  // Documents to show in the main pane
+  // Documents shown in the internal-docs table (filtered by active category + search)
   const filteredDocs = useMemo(() => {
-    if (selection.type !== "category") return [];
     let docs: Document[];
-    if (selection.key === "all") {
+    if (activeCategoryKey === "all") {
       docs = internalDocs;
     } else {
-      const cat = CATEGORIES.find((c) => c.key === selection.key);
+      const cat = CATEGORIES.find((c) => c.key === activeCategoryKey);
       if (!cat) return [];
       docs = internalDocs.filter((d) => cat.sourceTypes.includes(d.source_type));
     }
@@ -387,7 +391,7 @@ export default function DocumentsPage() {
       });
     }
     return docs;
-  }, [selection, internalDocs, debouncedSearch]);
+  }, [activeCategoryKey, internalDocs, debouncedSearch]);
 
   if (!currentOrg) {
     return (
@@ -400,19 +404,12 @@ export default function DocumentsPage() {
     );
   }
 
-  const selectedCcn =
-    selection.type === "ccn" ? conventions.find((c) => c.idcc === selection.idcc) ?? null : null;
-  const selectedCategory =
-    selection.type === "category"
-      ? CATEGORIES.find((c) => c.key === selection.key) ?? CATEGORIES[0]
+  const activeCcn =
+    activeCcnIdcc != null
+      ? conventions.find((c) => c.idcc === activeCcnIdcc) ?? null
       : null;
-
-  // When the account has exactly one CCN and that CCN is selected, expand the
-  // detail pane to full width and hide the sidebar — the sidebar would just
-  // restate what's already shown in the pane. A single "Mes documents" button
-  // at the top of the pane lets the user jump back to their internal docs.
-  const isSingleCcn = conventions.length === 1;
-  const fullWidthCcn = isSingleCcn && selection.type === "ccn";
+  const activeCategory =
+    CATEGORIES.find((c) => c.key === activeCategoryKey) ?? CATEGORIES[0];
 
   return (
     <div
@@ -442,210 +439,175 @@ export default function DocumentsPage() {
         </div>
       )}
 
-      <div className="grid grid-cols-12 gap-6">
-        {/* ---- Sidebar ---- */}
-        {!fullWidthCcn && (
-        <div className="col-span-12 md:col-span-3 space-y-4">
-          {/* Conventions section — hidden when there is exactly one CCN,
-              since the main pane already shows that convention in full. */}
-          {!isSingleCcn && (
-          <Card className="gap-1 py-2">
-            <CardHeader className="pb-1 px-3 pt-1">
-              <CardTitle className="text-sm font-semibold flex items-center gap-2">
-                <Library className="h-4 w-4" />
+      {/* ---------------- SECTION 1 : Convention collective ---------------- */}
+      <Card>
+        <CardHeader>
+          <div className="flex items-start justify-between gap-3 flex-wrap">
+            <div className="min-w-0">
+              <CardTitle className="flex items-center gap-2">
+                <Library className="h-5 w-5" />
                 Convention collective
                 <InfoTooltip>
-                  Convention(s) collective(s) installée(s) pour votre organisation.
-                  Elle est récupérée depuis les sources officielles et utilisée
-                  automatiquement par AORIA RH dans toutes vos questions.
+                  Votre convention collective définit les règles spécifiques à
+                  votre secteur (salaires minimums, préavis, congés, prévoyance).
+                  Une fois installée, AORIA RH s&apos;y réfère automatiquement
+                  dans toutes ses réponses.
                 </InfoTooltip>
               </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-1 p-2 pt-1">
-              {loading && conventions.length === 0 ? (
-                <Skeleton className="h-10 w-full" />
-              ) : conventions.length === 0 ? (
-                <div className="px-2 py-4 space-y-2">
-                  <p className="text-xs text-muted-foreground leading-relaxed">
-                    Installez votre convention collective pour qu&apos;AORIA RH
-                    s&apos;y réfère automatiquement dans ses réponses.
-                  </p>
-                  {isManager && (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="w-full"
-                      onClick={() => setAddCcnOpen(true)}
-                    >
-                      <Plus className="h-3.5 w-3.5 mr-1" />
-                      Installer ma convention
-                    </Button>
-                  )}
-                </div>
-              ) : (
-                conventions.map((c) => {
-                  const active = selection.type === "ccn" && selection.idcc === c.idcc;
-                  return (
-                    <button
-                      key={c.id}
-                      onClick={() => setSelection({ type: "ccn", idcc: c.idcc })}
-                      className={cn(
-                        "w-full text-left px-2 py-2 rounded text-sm flex items-center gap-2 transition-colors",
-                        active ? "bg-accent text-accent-foreground" : "hover:bg-muted/50",
-                      )}
-                    >
-                      {c.status === "ready" ? (
-                        <CheckCircle2 className="h-3.5 w-3.5 text-green-600 shrink-0" />
-                      ) : c.status === "error" ? (
-                        <X className="h-3.5 w-3.5 text-destructive shrink-0" />
-                      ) : (
-                        <Loader2 className="h-3.5 w-3.5 animate-spin text-blue-600 shrink-0" />
-                      )}
-                      <div className="min-w-0 flex-1">
-                        <div className="font-medium break-words whitespace-normal text-xs">
-                          {c.titre_court || c.titre || `IDCC ${c.idcc}`}
-                        </div>
-                        <div className="text-[10px] text-muted-foreground">
-                          IDCC {c.idcc}
-                          {c.status === "ready" && c.articles_count != null
-                            ? ` · ${c.articles_count} articles`
-                            : c.status === "fetching"
-                              ? " · téléchargement..."
-                              : c.status === "indexing"
-                                ? " · indexation..."
-                                : c.status === "pending"
-                                  ? " · en attente"
-                                  : c.status === "error"
-                                    ? " · erreur"
-                                    : ""}
-                        </div>
-                      </div>
-                      <ChevronRight className="h-3.5 w-3.5 shrink-0" />
-                    </button>
-                  );
-                })
-              )}
-              {isManager && (
+              <p className="text-xs text-muted-foreground mt-1">
+                Socle juridique de référence pour AORIA RH.
+              </p>
+            </div>
+            {isManager && (
+              <div className="flex items-center gap-2 shrink-0">
                 <Button
-                  variant="ghost"
+                  variant="outline"
                   size="sm"
-                  className="w-full justify-start text-xs h-8"
                   onClick={() => setAddCcnOpen(true)}
                 >
                   <Plus className="h-3.5 w-3.5 mr-1" />
                   Installer une convention
                 </Button>
-              )}
-            </CardContent>
-          </Card>
-          )}
-
-          {/* Quick link back to the single CCN when the user is browsing
-              internal categories. Avoids bringing the full sidebar card back
-              just to show one line. */}
-          {isSingleCcn && selection.type === "category" && (
-            <Card className="gap-1 py-2">
-              <CardContent className="p-2">
-                <button
-                  type="button"
-                  onClick={() => setSelection({ type: "ccn", idcc: conventions[0].idcc })}
-                  className="w-full text-left px-2 py-2 rounded text-sm flex items-center gap-2 hover:bg-muted/50 transition-colors"
-                >
-                  <Library className="h-3.5 w-3.5 shrink-0" />
-                  <span className="flex-1 truncate text-xs font-medium">
-                    {conventions[0].titre_court || conventions[0].titre || `IDCC ${conventions[0].idcc}`}
-                  </span>
-                  <ChevronRight className="h-3.5 w-3.5 shrink-0" />
-                </button>
-              </CardContent>
-            </Card>
-          )}
-
-          {/* Internal documents section */}
-          <Card className="gap-1 py-2">
-            <CardHeader className="pb-1 px-3 pt-1">
-              <CardTitle className="text-sm font-semibold flex items-center gap-2">
-                <FolderOpen className="h-4 w-4" />
-                Vos documents
-                <InfoTooltip>
-                  Documents propres à votre organisation, classés par catégorie.
-                  Tous sont indexés et disponibles pour AORIA RH.
-                </InfoTooltip>
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-1 p-2 pt-1">
-              {CATEGORIES.map((cat) => {
-                const Icon = cat.icon;
-                const active = selection.type === "category" && selection.key === cat.key;
-                const count = categoryCounts[cat.key] ?? 0;
-                return (
-                  <button
-                    key={cat.key}
-                    onClick={() => setSelection({ type: "category", key: cat.key })}
-                    className={cn(
-                      "w-full text-left px-2 py-2 rounded text-sm flex items-center gap-2 transition-colors",
-                      active ? "bg-accent text-accent-foreground" : "hover:bg-muted/50",
-                    )}
+                {activeCcn && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setRemoveCcnIdcc(activeCcn.idcc)}
                   >
-                    <Icon className="h-3.5 w-3.5 shrink-0" />
-                    <span className="flex-1 truncate text-xs font-medium">{cat.label}</span>
-                    <Badge variant="outline" className="text-[10px] h-4 px-1.5">
-                      {count}
-                    </Badge>
-                  </button>
-                );
-              })}
-            </CardContent>
-          </Card>
-        </div>
-        )}
-
-        {/* ---- Main pane ---- */}
-        <div className={cn("col-span-12", !fullWidthCcn && "md:col-span-9")}>
-          {selectedCcn && fullWidthCcn && (
-            <div className="mb-4">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setSelection({ type: "category", key: "all" })}
-              >
-                <FolderOpen className="h-3.5 w-3.5 mr-1" />
-                Mes documents
-              </Button>
+                    <Trash2 className="h-3.5 w-3.5 mr-1 text-destructive" />
+                    Retirer
+                  </Button>
+                )}
+              </div>
+            )}
+          </div>
+        </CardHeader>
+        <CardContent>
+          {loading && conventions.length === 0 ? (
+            <Skeleton className="h-32 w-full" />
+          ) : conventions.length === 0 ? (
+            <div className="py-8 text-center space-y-3 border-2 border-dashed rounded-lg">
+              <Library className="h-10 w-10 mx-auto text-muted-foreground" />
+              <div>
+                <p className="text-sm font-medium">Aucune convention collective installée</p>
+                <p className="text-xs text-muted-foreground mt-1 max-w-md mx-auto">
+                  Installez votre convention pour qu&apos;AORIA RH puisse l&apos;utiliser
+                  dans ses réponses : texte officiel, avenants, grilles de salaires
+                  et accords de branche sont récupérés automatiquement.
+                </p>
+              </div>
+              {isManager && (
+                <Button onClick={() => setAddCcnOpen(true)}>
+                  <Plus className="h-4 w-4 mr-2" />
+                  Installer ma convention
+                </Button>
+              )}
             </div>
-          )}
-          {selectedCcn ? (
+          ) : conventions.length === 1 ? (
             <CcnDetailPane
-              ccn={selectedCcn}
+              ccn={conventions[0]}
               docs={documents.filter(
                 (d) =>
                   d.source_type === "convention_collective_nationale" &&
-                  d.name.includes(`IDCC ${selectedCcn.idcc}`),
+                  d.name.includes(`IDCC ${conventions[0].idcc}`),
               )}
-              isManager={isManager}
-              onRemove={() => setRemoveCcnIdcc(selectedCcn.idcc)}
               onDownload={handleDownload}
             />
-          ) : selectedCategory ? (
-            <CategoryPane
-              category={selectedCategory}
-              docs={filteredDocs}
-              loading={loading}
-              search={search}
-              onSearchChange={setSearch}
-              isManager={isManager}
-              onUpload={() => setUploadOpen(true)}
-              onDownload={handleDownload}
-              onDelete={handleDelete}
-              onReindex={handleReindex}
-              onReplace={handleReplace}
-              onBulkDelete={handleBulkDelete}
-              onBulkReindex={handleBulkReindex}
-              onUpdateMetadata={handleUpdateMetadata}
-            />
-          ) : null}
-        </div>
-      </div>
+          ) : (
+            <Tabs
+              value={activeCcnIdcc ?? conventions[0].idcc}
+              onValueChange={setActiveCcnIdcc}
+            >
+              <TabsList className="flex-wrap h-auto">
+                {conventions.map((c) => (
+                  <TabsTrigger key={c.id} value={c.idcc} className="gap-1.5">
+                    {c.status === "ready" ? (
+                      <CheckCircle2 className="h-3.5 w-3.5 text-green-600" />
+                    ) : c.status === "error" ? (
+                      <X className="h-3.5 w-3.5 text-destructive" />
+                    ) : (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin text-blue-600" />
+                    )}
+                    {c.titre_court || c.titre || `IDCC ${c.idcc}`}
+                  </TabsTrigger>
+                ))}
+              </TabsList>
+              {conventions.map((c) => (
+                <TabsContent key={c.id} value={c.idcc}>
+                  <CcnDetailPane
+                    ccn={c}
+                    docs={documents.filter(
+                      (d) =>
+                        d.source_type === "convention_collective_nationale" &&
+                        d.name.includes(`IDCC ${c.idcc}`),
+                    )}
+                    onDownload={handleDownload}
+                  />
+                </TabsContent>
+              ))}
+            </Tabs>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* ---------------- SECTION 2 : Vos documents internes ---------------- */}
+      <Card>
+        <CardHeader>
+          <div className="flex items-start justify-between gap-3 flex-wrap">
+            <div className="min-w-0">
+              <CardTitle className="flex items-center gap-2">
+                <FolderOpen className="h-5 w-5" />
+                Vos documents
+                <InfoTooltip>
+                  Documents propres à votre organisation (contrats, accords,
+                  PV CSE, notes, jurisprudence). Tous sont indexés et disponibles
+                  pour AORIA RH.
+                </InfoTooltip>
+              </CardTitle>
+              <p className="text-xs text-muted-foreground mt-1">
+                Vos contrats, accords, PV et autres pièces internes.
+              </p>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <Tabs value={activeCategoryKey} onValueChange={setActiveCategoryKey}>
+            <TabsList className="flex-wrap h-auto">
+              {CATEGORIES.map((cat) => {
+                const Icon = cat.icon;
+                const count = categoryCounts[cat.key] ?? 0;
+                return (
+                  <TabsTrigger key={cat.key} value={cat.key} className="gap-1.5">
+                    <Icon className="h-3.5 w-3.5" />
+                    {cat.label}
+                    <Badge variant="outline" className="ml-1 text-[10px] h-4 px-1.5">
+                      {count}
+                    </Badge>
+                  </TabsTrigger>
+                );
+              })}
+            </TabsList>
+            <TabsContent value={activeCategoryKey}>
+              <CategoryPane
+                category={activeCategory}
+                docs={filteredDocs}
+                loading={loading}
+                search={search}
+                onSearchChange={setSearch}
+                isManager={isManager}
+                onUpload={() => setUploadOpen(true)}
+                onDownload={handleDownload}
+                onDelete={handleDelete}
+                onReindex={handleReindex}
+                onReplace={handleReplace}
+                onBulkDelete={handleBulkDelete}
+                onBulkReindex={handleBulkReindex}
+                onUpdateMetadata={handleUpdateMetadata}
+              />
+            </TabsContent>
+          </Tabs>
+        </CardContent>
+      </Card>
 
       <UploadDialog
         open={uploadOpen}
@@ -654,8 +616,8 @@ export default function DocumentsPage() {
         token={token}
         onUploaded={fetchDocuments}
         initialSourceType={
-          selection.type === "category" && selection.key !== "all"
-            ? CATEGORIES.find((c) => c.key === selection.key)?.sourceTypes[0]
+          activeCategoryKey !== "all"
+            ? CATEGORIES.find((c) => c.key === activeCategoryKey)?.sourceTypes[0]
             : undefined
         }
       />
@@ -736,14 +698,10 @@ export default function DocumentsPage() {
 function CcnDetailPane({
   ccn,
   docs,
-  isManager,
-  onRemove,
   onDownload,
 }: {
   ccn: OrganisationConvention;
   docs: Document[];
-  isManager: boolean;
-  onRemove: () => void;
   onDownload: (id: string) => void;
 }) {
   // Split docs : consolidated official text vs recently published amendments.
@@ -783,67 +741,54 @@ function CcnDetailPane({
 
   return (
     <div className="space-y-4">
-      {/* Header */}
-      <Card>
-        <CardHeader>
-          <div className="flex items-start justify-between gap-4">
-            <div className="min-w-0 flex-1">
-              <CardTitle className="text-base">
-                {ccn.titre || ccn.titre_court || `IDCC ${ccn.idcc}`}
-              </CardTitle>
-              <div className="flex flex-wrap items-center gap-2 mt-2 text-xs">
-                <Badge variant="outline" className="font-mono">
-                  IDCC {ccn.idcc}
-                </Badge>
-                {ccn.articles_count != null && (
-                  <Badge variant="outline">{ccn.articles_count} articles</Badge>
-                )}
-                {sourceDateBadge && (
-                  <Badge variant="outline" className={`rounded-full text-[11px] ${sourceDateBadge.color}`}>
-                    {sourceDateBadge.label}
-                  </Badge>
-                )}
-                {ccn.status === "ready" && (
-                  <Badge className="bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 border-0">
-                    <CheckCircle2 className="h-3.5 w-3.5 mr-1" /> Active — utilisée par AORIA RH
-                  </Badge>
-                )}
-                {(ccn.status === "fetching" || ccn.status === "indexing" || ccn.status === "pending") && (
-                  <Badge className="bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400 border-0">
-                    <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />
-                    {ccn.status === "fetching"
-                      ? "Récupération du texte officiel (1-2 min)..."
-                      : ccn.status === "indexing"
-                        ? "Préparation pour le chat (30-60 s)..."
-                        : "Démarrage..."}
-                  </Badge>
-                )}
-                {ccn.status === "error" && (
-                  <Badge className="bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400 border-0">
-                    Erreur — contactez le support
-                  </Badge>
-                )}
-                {latestAvenantDate && (
-                  <Badge variant="outline" className="rounded-full text-[11px]">
-                    Dernier avenant le {latestAvenantDate.toLocaleDateString("fr-FR")}
-                  </Badge>
-                )}
-              </div>
-              {ccn.status === "error" && ccn.error_message && (
-                <p className="text-xs text-destructive mt-2">{ccn.error_message}</p>
-              )}
-            </div>
-            {isManager && (
-              <div className="flex items-center gap-1 shrink-0">
-                <Button variant="outline" size="sm" onClick={onRemove}>
-                  <Trash2 className="h-3.5 w-3.5 mr-1 text-destructive" />
-                  Retirer
-                </Button>
-              </div>
-            )}
-          </div>
-        </CardHeader>
-      </Card>
+      {/* Summary header — embedded directly (no outer Card), since the
+          parent section already wraps the CCN in a Card. */}
+      <div>
+        <h3 className="text-base font-semibold">
+          {ccn.titre || ccn.titre_court || `IDCC ${ccn.idcc}`}
+        </h3>
+        <div className="flex flex-wrap items-center gap-2 mt-2 text-xs">
+          <Badge variant="outline" className="font-mono">
+            IDCC {ccn.idcc}
+          </Badge>
+          {ccn.articles_count != null && (
+            <Badge variant="outline">{ccn.articles_count} articles</Badge>
+          )}
+          {sourceDateBadge && (
+            <Badge variant="outline" className={`rounded-full text-[11px] ${sourceDateBadge.color}`}>
+              {sourceDateBadge.label}
+            </Badge>
+          )}
+          {ccn.status === "ready" && (
+            <Badge className="bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 border-0">
+              <CheckCircle2 className="h-3.5 w-3.5 mr-1" /> Active — utilisée par AORIA RH
+            </Badge>
+          )}
+          {(ccn.status === "fetching" || ccn.status === "indexing" || ccn.status === "pending") && (
+            <Badge className="bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400 border-0">
+              <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />
+              {ccn.status === "fetching"
+                ? "Récupération du texte officiel (1-2 min)..."
+                : ccn.status === "indexing"
+                  ? "Préparation pour le chat (30-60 s)..."
+                  : "Démarrage..."}
+            </Badge>
+          )}
+          {ccn.status === "error" && (
+            <Badge className="bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400 border-0">
+              Erreur — contactez le support
+            </Badge>
+          )}
+          {latestAvenantDate && (
+            <Badge variant="outline" className="rounded-full text-[11px]">
+              Dernier avenant le {latestAvenantDate.toLocaleDateString("fr-FR")}
+            </Badge>
+          )}
+        </div>
+        {ccn.status === "error" && ccn.error_message && (
+          <p className="text-xs text-destructive mt-2">{ccn.error_message}</p>
+        )}
+      </div>
 
       {/* Tabs : contenu consolidé vs nouveautés BOCC */}
       <Tabs defaultValue="consolidated">
