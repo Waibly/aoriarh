@@ -31,6 +31,7 @@ import {
 } from "lucide-react";
 import { apiFetch } from "@/lib/api";
 import { fetchQuota, type QuotaInfo } from "@/lib/billing-api";
+import { PLANS, getPlanLabel, type AnyPlanCode } from "@/lib/plans";
 import { Button } from "@/components/ui/button";
 import {
   Collapsible,
@@ -374,16 +375,23 @@ export function Sidebar() {
     return () => window.removeEventListener("quota-updated", refreshQuota);
   }, [token]);
 
-  const planDisplay = {
-    gratuit: { label: "Essai", textClass: "text-muted-foreground" },
-    invite: { label: "Invité", textClass: "text-[#652bb0]" },
-    vip: { label: "VIP", textClass: "text-amber-700 dark:text-amber-300" },
-    solo: { label: "Solo", textClass: "text-sky-700 dark:text-sky-300" },
-    equipe: { label: "Équipe", textClass: "text-primary" },
-    groupe: { label: "Groupe", textClass: "text-emerald-700 dark:text-emerald-300" },
-  } as const;
-
-  const currentPlanConfig = planDisplay[(userPlan?.plan ?? "gratuit") as keyof typeof planDisplay] ?? planDisplay.gratuit;
+  // Couleur du texte du plan dans la sidebar — juste un bonus visuel spécifique
+  // à cet emplacement, le label / features viennent de PLANS (@/lib/plans).
+  const PLAN_TEXT_CLASS: Record<string, string> = {
+    gratuit: "text-muted-foreground",
+    invite: "text-[#652bb0]",
+    vip: "text-amber-700 dark:text-amber-300",
+    solo: "text-sky-700 dark:text-sky-300",
+    equipe: "text-primary",
+    groupe: "text-emerald-700 dark:text-emerald-300",
+  };
+  const currentPlanCode = (userPlan?.plan ?? "gratuit") as AnyPlanCode;
+  const currentPlanLabel =
+    currentPlanCode in PLANS
+      ? PLANS[currentPlanCode].label
+      : getPlanLabel(currentPlanCode);
+  const currentPlanTextClass =
+    PLAN_TEXT_CLASS[currentPlanCode] ?? "text-muted-foreground";
 
   return (
     <>
@@ -564,9 +572,13 @@ export function Sidebar() {
               {workspaceName && (
                 <p className="text-xs font-semibold truncate">{workspaceName}</p>
               )}
-              <div>
-                <p className={cn("text-xs font-semibold", currentPlanConfig.textClass)}>
-                  Plan {currentPlanConfig.label}
+              <Link
+                href="/billing"
+                className="block -mx-1 px-1 rounded hover:bg-muted/60 transition-colors"
+                title="Voir mon abonnement"
+              >
+                <p className={cn("text-xs font-semibold", currentPlanTextClass)}>
+                  Plan {currentPlanLabel}
                 </p>
                 {userPlan.plan === "gratuit" && userPlan.plan_expires_at && (
                   <p className="text-[10px] text-muted-foreground truncate">
@@ -581,7 +593,7 @@ export function Sidebar() {
                 {userPlan.plan === "vip" && (
                   <p className="text-[11px] text-foreground">Accès illimité</p>
                 )}
-              </div>
+              </Link>
 
               {/* Quota de questions — masqué pour le plan vip (illimité) */}
               {quota && userPlan.plan !== "vip" && (
