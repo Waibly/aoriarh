@@ -12,7 +12,8 @@ export default auth((req) => {
     req.nextUrl.pathname === "/" ||
     req.nextUrl.pathname.startsWith("/pricing") ||
     req.nextUrl.pathname.startsWith("/cgv") ||
-    req.nextUrl.pathname.startsWith("/politique-confidentialite");
+    req.nextUrl.pathname.startsWith("/politique-confidentialite") ||
+    req.nextUrl.pathname.startsWith("/legal/");
 
   // Landing / pricing / invite pages are accessible whether logged in or not.
   // For the landing "/" we still want to redirect logged-in users to /chat
