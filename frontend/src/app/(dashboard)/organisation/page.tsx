@@ -133,7 +133,7 @@ export default function OrganisationListPage() {
           </CardContent>
         </Card>
       ) : (
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+        <div className="space-y-3">
           {organisations.map((o) => {
             const docEntry = usage?.documents_by_org.find((d) => d.org_id === o.id);
             return (
@@ -219,41 +219,44 @@ function OrgCard({
       .catch(() => setMemberCount(null));
   }, [org.id, token]);
 
+  const metaParts = [
+    org.forme_juridique,
+    org.taille ? `${org.taille} salariés` : null,
+    org.secteur_activite,
+  ].filter(Boolean);
+
   return (
     <Card
-      className="cursor-pointer transition hover:border-primary/60 hover:shadow-md"
+      className="cursor-pointer transition hover:border-primary/60 hover:shadow-sm"
       onClick={onClick}
     >
-      <CardContent className="p-5 space-y-4">
-        <div className="flex items-start justify-between gap-3">
-          <div className="flex items-center gap-2 min-w-0">
-            <Building2 className="h-5 w-5 shrink-0 text-primary" />
-            <h3 className="font-semibold truncate" title={org.name}>
-              {org.name}
-            </h3>
-          </div>
-          <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+      <CardContent className="p-4 flex items-center gap-4">
+        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/10">
+          <Building2 className="h-5 w-5 text-primary" />
         </div>
 
-        <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
-          {org.forme_juridique && <span>{org.forme_juridique}</span>}
-          {org.taille && <span>· {org.taille} salariés</span>}
-          {org.secteur_activite && (
-            <span className="truncate">· {org.secteur_activite}</span>
+        <div className="min-w-0 flex-1">
+          <h3 className="font-semibold truncate" title={org.name}>
+            {org.name}
+          </h3>
+          {metaParts.length > 0 && (
+            <p className="text-xs text-muted-foreground truncate">
+              {metaParts.join(" · ")}
+            </p>
           )}
         </div>
 
-        <div className="flex items-center gap-4 text-xs text-muted-foreground border-t pt-3">
-          <div className="flex items-center gap-1.5">
+        <div className="hidden sm:flex items-center gap-5 text-xs text-muted-foreground shrink-0">
+          <div className="flex items-center gap-1.5" title="Membres">
             <Users className="h-3.5 w-3.5" />
-            <span>
-              {memberCount === null ? "…" : `${memberCount} membre${memberCount > 1 ? "s" : ""}`}
+            <span className="tabular-nums">
+              {memberCount === null ? "…" : memberCount}
             </span>
           </div>
-          <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-1.5" title="Documents">
             <FileText className="h-3.5 w-3.5" />
-            <span>
-              {docCount === null ? "…" : `${docCount} document${docCount > 1 ? "s" : ""}`}
+            <span className="tabular-nums">
+              {docCount === null ? "…" : docCount}
             </span>
           </div>
         </div>
@@ -261,13 +264,14 @@ function OrgCard({
         <Button
           variant="outline"
           size="sm"
-          className="w-full"
+          className="shrink-0"
           onClick={(e) => {
             e.stopPropagation();
             onClick();
           }}
         >
           Gérer
+          <ChevronRight className="h-3.5 w-3.5 ml-1" />
         </Button>
       </CardContent>
     </Card>
