@@ -11,11 +11,13 @@
 import logging
 import uuid
 
+import stripe
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
 from app.core.plans import get_limits
 
 from app.core.database import get_db
@@ -341,6 +343,109 @@ async def get_usage_summary(
     billing = BillingService(db)
     account = await billing.get_primary_account_for_user(user)
     return await billing.get_usage_summary(account)
+
+
+@router.get("/invoices")
+async def list_invoices(
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> list[dict]:
+    """Return the last 24 invoices for the current account.
+
+    Read directly from Stripe — we never snapshot them locally. Clients
+    use this to download their PDF receipts without going through the
+    Stripe customer portal.
+    """
+    billing = BillingService(db)
+    account = await billing.get_primary_account_for_user(user)
+
+    if not account.stripe_customer_id or not settings.stripe_secret_key:
+        return []
+
+    stripe.api_key = settings.stripe_secret_key
+    try:
+        response = stripe.Invoice.list(
+            customer=account.stripe_customer_id,
+            limit=24,
+        )
+    except stripe.error.StripeError:
+        logger.exception(
+            "Stripe invoice list failed for account %s", account.id
+        )
+        raise HTTPException(
+            status_code=502,
+            detail="Impossible de récupérer l'historique de factures.",
+        )
+
+    rows: list[dict] = []
+    for inv in response.auto_paging_iter() if hasattr(response, "auto_paging_iter") else response["data"]:
+        rows.append({
+            "id": inv["id"],
+            "number": inv.get("number"),
+            "status": inv.get("status"),
+            "amount_paid_cents": int(inv.get("amount_paid") or 0),
+            "amount_due_cents": int(inv.get("amount_due") or 0),
+            "currency": inv.get("currency", "eur"),
+            "created": inv.get("created"),
+            "hosted_invoice_url": inv.get("hosted_invoice_url"),
+            "invoice_pdf": inv.get("invoice_pdf"),
+        })
+        if len(rows) >= 24:
+            break
+    return rows
+
+
+@router.post("/payment-method/update")
+async def update_payment_method(
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Return a Stripe Checkout session URL that collects a new card.
+
+    We use ``mode=setup`` so no charge is made — just a SetupIntent that,
+    on success, saves the new payment method as the customer's default
+    and automatically uses it for the next invoice renewal. Simpler than
+    embedding Stripe.js and covers 99% of the card-update flows.
+    """
+    billing = BillingService(db)
+    account = await billing.get_primary_account_for_user(user)
+    if not account.stripe_customer_id or not settings.stripe_secret_key:
+        raise HTTPException(
+            status_code=400,
+            detail="Aucun moyen de paiement à mettre à jour (pas de client Stripe).",
+        )
+
+    stripe.api_key = settings.stripe_secret_key
+    try:
+        session = stripe.checkout.Session.create(
+            mode="setup",
+            customer=account.stripe_customer_id,
+            payment_method_types=["card"],
+            success_url=(
+                settings.stripe_checkout_success_url
+                or f"{settings.frontend_url}/billing?card_updated=1"
+            ),
+            cancel_url=(
+                settings.stripe_checkout_cancel_url
+                or f"{settings.frontend_url}/billing"
+            ),
+            # Tell Stripe to attach the new card to the customer AND set
+            # it as the default payment method on its active subscription
+            # via the SetupIntent metadata — the webhook will pick it up.
+            setup_intent_data={
+                "metadata": {
+                    "account_id": str(account.id),
+                    "purpose": "update_default_payment_method",
+                }
+            },
+        )
+    except stripe.error.StripeError as exc:
+        logger.exception("Stripe setup checkout failed for account %s", account.id)
+        raise HTTPException(
+            status_code=502, detail=f"Erreur Stripe : {exc}"
+        ) from exc
+
+    return {"checkout_url": session["url"], "session_id": session["id"]}
 
 
 @router.get("/subscription", response_model=SubscriptionRead | None)

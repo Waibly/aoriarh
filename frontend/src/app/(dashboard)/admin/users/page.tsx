@@ -423,6 +423,13 @@ export default function ClientsPage() {
                                 Invité
                               </SelectItem>
                               <SelectItem value="vip">VIP</SelectItem>
+                              <SelectItem value="solo">Solo</SelectItem>
+                              <SelectItem value="equipe">
+                                Équipe
+                              </SelectItem>
+                              <SelectItem value="groupe">
+                                Groupe
+                              </SelectItem>
                             </SelectContent>
                           </Select>
                           <Button
@@ -718,20 +725,62 @@ export default function ClientsPage() {
               const hasCommercialSub =
                 currentWs !== undefined &&
                 ["solo", "equipe", "groupe"].includes(currentWs.plan);
-              if (!hasCommercialSub) return null;
-              return (
-                <div className="rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm">
-                  <p className="font-medium text-destructive">
-                    Ce client a un abonnement Stripe actif.
-                  </p>
-                  <p className="text-muted-foreground mt-1">
-                    L&apos;abonnement Stripe sera{" "}
-                    <strong>résilié immédiatement</strong> (sans remboursement)
-                    et les add-ons retirés avant d&apos;appliquer le plan{" "}
-                    <strong>{getPlanLabel(planEdit.plan)}</strong>.
-                  </p>
-                </div>
+              const targetIsTechnical = ["gratuit", "invite", "vip"].includes(
+                planEdit.plan,
               );
+              const targetIsCommercial = ["solo", "equipe", "groupe"].includes(
+                planEdit.plan,
+              );
+
+              if (hasCommercialSub && targetIsTechnical) {
+                return (
+                  <div className="rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm">
+                    <p className="font-medium text-destructive">
+                      Ce client a un abonnement Stripe actif.
+                    </p>
+                    <p className="text-muted-foreground mt-1">
+                      L&apos;abonnement Stripe sera{" "}
+                      <strong>résilié immédiatement</strong> (sans remboursement)
+                      et les add-ons retirés avant d&apos;appliquer le plan{" "}
+                      <strong>{getPlanLabel(planEdit.plan)}</strong>.
+                    </p>
+                  </div>
+                );
+              }
+              if (hasCommercialSub && targetIsCommercial) {
+                return (
+                  <div className="rounded-md border border-amber-500/40 bg-amber-500/5 p-3 text-sm">
+                    <p className="font-medium text-amber-700">
+                      Changement de plan commercial côté Stripe.
+                    </p>
+                    <p className="text-muted-foreground mt-1">
+                      L&apos;abonnement Stripe sera{" "}
+                      <strong>modifié vers {getPlanLabel(planEdit.plan)}</strong>{" "}
+                      avec un prorata appliqué sur la prochaine facture. Un{" "}
+                      <strong>downgrade trop petit</strong> (par ex. {" "}
+                      {getPlanLabel(planEdit.plan)} mais le client a plus
+                      d&apos;orgs/users/docs que le plan n&apos;en autorise) sera
+                      bloqué en 409.
+                    </p>
+                  </div>
+                );
+              }
+              if (!hasCommercialSub && targetIsCommercial) {
+                return (
+                  <div className="rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm">
+                    <p className="font-medium text-destructive">
+                      Impossible d&apos;assigner un plan commercial sans Stripe.
+                    </p>
+                    <p className="text-muted-foreground mt-1">
+                      Ce compte n&apos;a pas d&apos;abonnement Stripe actif :
+                      l&apos;admin ne peut pas souscrire à la place du client
+                      (pas de moyen de paiement). Le client doit souscrire
+                      lui-même depuis sa page /billing.
+                    </p>
+                  </div>
+                );
+              }
+              return null;
             })()}
           {planEdit?.plan === "invite" && (
             <div className="flex items-center gap-3">

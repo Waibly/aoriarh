@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
-import { Loader2, ExternalLink, Zap, Check } from "lucide-react";
+import { Loader2, ExternalLink, Zap, Check, CreditCard, FileText, Download } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
@@ -28,6 +28,8 @@ import {
   previewChangePlan,
   reactivateSubscription,
   cancelSubscription,
+  fetchInvoices,
+  startPaymentMethodUpdate,
   ADDON_LABELS,
   type ChangePlanPreview,
   type QuotaInfo,
@@ -35,6 +37,7 @@ import {
   type UsageSummary,
   type ActiveAddon,
   type AddonType,
+  type InvoiceRow,
 } from "@/lib/billing-api";
 import {
   Dialog,
@@ -95,6 +98,7 @@ export default function BillingPage() {
   const [subscription, setSubscription] = useState<SubscriptionInfo | null>(null);
   const [usage, setUsage] = useState<UsageSummary | null>(null);
   const [addons, setAddons] = useState<ActiveAddon[]>([]);
+  const [invoices, setInvoices] = useState<InvoiceRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [cycle, setCycle] = useState<BillingCycle>("monthly");
   const [busy, setBusy] = useState(false);
@@ -112,16 +116,18 @@ export default function BillingPage() {
     if (!token) return;
     setLoading(true);
     try {
-      const [q, s, u, a] = await Promise.all([
+      const [q, s, u, a, inv] = await Promise.all([
         fetchQuota(token),
         fetchSubscription(token),
         fetchUsageSummary(token),
         fetchAddons(token).catch(() => [] as ActiveAddon[]),
+        fetchInvoices(token).catch(() => [] as InvoiceRow[]),
       ]);
       setQuota(q);
       setSubscription(s);
       setUsage(u);
       setAddons(a);
+      setInvoices(inv);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Impossible de charger l'abonnement");
     } finally {
@@ -239,6 +245,26 @@ export default function BillingPage() {
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Impossible de résilier l'abonnement");
     } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleUpdateCard = async () => {
+    if (!token) return;
+    setBusy(true);
+    try {
+      const { checkout_url } = await startPaymentMethodUpdate(token);
+      if (!checkout_url) {
+        throw new Error(
+          "La page Stripe de mise à jour de la carte n'a pas pu être générée. Réessayez dans quelques instants.",
+        );
+      }
+      window.location.href = checkout_url;
+      setTimeout(() => setBusy(false), 5000);
+    } catch (err) {
+      toast.error(
+        err instanceof Error ? err.message : "Impossible d'ouvrir la mise à jour de la carte",
+      );
       setBusy(false);
     }
   };
@@ -376,14 +402,19 @@ export default function BillingPage() {
                 </CardDescription>
               </div>
               {isCommercial && (
-                <div className="flex flex-wrap gap-2">
-                  <Button variant="outline" onClick={handlePortal} disabled={busy}>
-                    {busy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ExternalLink className="mr-2 h-4 w-4" />}
-                    Gérer mon abonnement
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button variant="outline" size="sm" onClick={handleUpdateCard} disabled={busy}>
+                    <CreditCard className="mr-2 h-4 w-4" />
+                    Modifier ma carte
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={handlePortal} disabled={busy}>
+                    <ExternalLink className="mr-2 h-4 w-4" />
+                    Portail Stripe
                   </Button>
                   {!subscription?.cancel_at_period_end && (
                     <Button
                       variant="ghost"
+                      size="sm"
                       onClick={handleCancel}
                       disabled={busy}
                       className="text-destructive hover:text-destructive"
@@ -629,6 +660,87 @@ export default function BillingPage() {
           })}
         </div>
       </div>
+
+      {/* Invoices history */}
+      {invoices.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <FileText className="h-4 w-4" />
+              Historique des factures
+            </CardTitle>
+            <CardDescription>
+              Les {invoices.length < 24 ? invoices.length : "24"} dernières factures et reçus Stripe. Cliquez sur une ligne pour télécharger le PDF.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="divide-y">
+              {invoices.map((inv) => {
+                const amount = ((inv.status === "paid" ? inv.amount_paid_cents : inv.amount_due_cents) / 100).toLocaleString("fr-FR", {
+                  minimumFractionDigits: 2,
+                  maximumFractionDigits: 2,
+                });
+                const currency = (inv.currency || "eur").toUpperCase();
+                const statusBadge = inv.status === "paid" ? (
+                  <Badge variant="default">Payée</Badge>
+                ) : inv.status === "open" ? (
+                  <Badge variant="outline">En attente</Badge>
+                ) : inv.status === "void" ? (
+                  <Badge variant="secondary">Annulée</Badge>
+                ) : inv.status === "uncollectible" ? (
+                  <Badge variant="destructive">Impayée</Badge>
+                ) : (
+                  <Badge variant="outline">{inv.status ?? "—"}</Badge>
+                );
+                return (
+                  <div
+                    key={inv.id}
+                    className="flex items-center justify-between py-3 gap-4 text-sm"
+                  >
+                    <div className="flex items-center gap-3 min-w-0">
+                      <span className="tabular-nums text-muted-foreground shrink-0">
+                        {inv.created ? new Date(inv.created * 1000).toLocaleDateString("fr-FR") : "—"}
+                      </span>
+                      <span className="font-medium truncate">
+                        {inv.number ?? inv.id}
+                      </span>
+                      {statusBadge}
+                    </div>
+                    <div className="flex items-center gap-3 shrink-0">
+                      <span className="tabular-nums font-medium">
+                        {amount} {currency}
+                      </span>
+                      {inv.invoice_pdf && (
+                        <a
+                          href={inv.invoice_pdf}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-primary hover:underline flex items-center gap-1"
+                          title="Télécharger le PDF"
+                        >
+                          <Download className="h-3.5 w-3.5" />
+                          PDF
+                        </a>
+                      )}
+                      {inv.hosted_invoice_url && (
+                        <a
+                          href={inv.hosted_invoice_url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-muted-foreground hover:text-foreground hover:underline"
+                          title="Voir la facture sur Stripe"
+                        >
+                          Voir
+                        </a>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       <p className="text-xs text-muted-foreground text-center">
         Tarifs hors taxes. Résiliable à tout moment depuis votre espace de gestion.

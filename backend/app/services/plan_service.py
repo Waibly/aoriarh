@@ -137,6 +137,16 @@ async def assign_plan(
     if account is None:
         raise ValueError("Account non trouvé")
 
+    # Fetch any active commercial subscription — its fate depends on the
+    # target plan type.
+    sub_row = await db.execute(
+        select(Subscription).where(
+            Subscription.account_id == account_id,
+            Subscription.status.in_(["active", "trialing", "past_due"]),
+        )
+    )
+    active_sub = sub_row.scalars().first()
+
     # Technical plans (gratuit / invite / vip) are mutually exclusive with
     # a paid commercial subscription: they are admin-assigned overrides
     # (comp accounts, legacy clients, VIP partners…). If the account still
@@ -144,17 +154,31 @@ async def assign_plan(
     # removed and the users/orgs counts reflect the clean post-cancel state
     # before we run the overflow check.
     if plan in TECHNICAL_PLANS:
-        sub_row = await db.execute(
-            select(Subscription).where(
-                Subscription.account_id == account_id,
-                Subscription.status.in_(["active", "trialing", "past_due"]),
-            )
-        )
-        active_sub = sub_row.scalars().first()
         if active_sub is not None and active_sub.stripe_subscription_id:
             from app.services.stripe_service import StripeService
             await StripeService(db).cancel_subscription_now(account)
             account.status = "active"
+
+    # Commercial plans (solo / equipe / groupe) assigned by an admin:
+    # - if the account already has a Stripe sub, modify that sub to the
+    #   new price so Stripe keeps charging correctly at the new tier;
+    # - if no sub exists, block the change — an admin cannot subscribe
+    #   on behalf of a client (no valid payment method to charge).
+    elif plan in {"solo", "equipe", "groupe"}:
+        if active_sub is not None and active_sub.stripe_subscription_id:
+            from app.services.stripe_service import StripeService
+            stripe_svc = StripeService(db)
+            cycle = active_sub.billing_cycle or "monthly"
+            if active_sub.plan != plan:
+                await stripe_svc.change_plan(account, plan, cycle)
+                # change_plan already updated account.plan and committed.
+                await db.refresh(account)
+        else:
+            raise PlanOverflowError([
+                f"Impossible d'assigner le plan commercial {plan} à un compte "
+                f"sans abonnement Stripe actif : le client doit souscrire lui-même "
+                f"depuis la page /billing avec un moyen de paiement valide."
+            ])
 
     # Block the change if the new plan is too small for what already exists.
     # Admins may still deal with an overflow manually (delete the excess

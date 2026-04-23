@@ -822,6 +822,15 @@ class StripeService:
 
     async def _on_checkout_completed(self, session: dict) -> None:
         """Checkout complete: flip the account to the new plan, persist Subscription or Booster."""
+        mode = _get(session, "mode")
+
+        # Setup mode = card update. We use the customer ID instead of the
+        # account_id metadata because card update Checkout sessions don't
+        # carry session-level metadata (metadata is on the SetupIntent).
+        if mode == "setup":
+            await self._apply_payment_method_from_setup(session)
+            return
+
         meta = _get(session, "metadata") or {}
         account_id = _get(meta, "account_id")
         if not account_id:
@@ -832,11 +841,62 @@ class StripeService:
             logger.warning("Account %s not found for checkout session", account_id)
             return
 
-        mode = _get(session, "mode")
         if mode == "subscription":
             await self._create_or_update_subscription_from_checkout(account, session)
         elif mode == "payment":
             await self._create_booster_from_checkout(account, session)
+
+    async def _apply_payment_method_from_setup(self, session: dict) -> None:
+        """Attach the new payment method to the customer and set it as
+        the default on the active subscription. Triggered by the setup
+        checkout session created by /billing/payment-method/update."""
+        setup_intent_id = _get(session, "setup_intent")
+        customer_id = _get(session, "customer")
+        if not setup_intent_id or not customer_id:
+            return
+
+        try:
+            setup_intent = stripe.SetupIntent.retrieve(setup_intent_id)
+        except stripe.error.StripeError:
+            logger.exception("Setup intent retrieve failed for %s", setup_intent_id)
+            return
+
+        pm_id = _get(setup_intent, "payment_method")
+        if not pm_id:
+            return
+
+        try:
+            # Attach to the customer (idempotent; may already be attached)
+            # and mark it as the default invoice payment method.
+            stripe.Customer.modify(
+                customer_id,
+                invoice_settings={"default_payment_method": pm_id},
+            )
+        except stripe.error.StripeError:
+            logger.exception("Customer payment method default update failed")
+            return
+
+        # Also set it as the default on the subscription so the next
+        # renewal immediately uses the new card instead of the old one.
+        account_result = await self.db.execute(
+            select(Account).where(Account.stripe_customer_id == customer_id)
+        )
+        account = account_result.scalar_one_or_none()
+        if account is None:
+            return
+
+        sub = await self._get_active_subscription(account.id)
+        if sub is not None and sub.stripe_subscription_id:
+            try:
+                stripe.Subscription.modify(
+                    sub.stripe_subscription_id,
+                    default_payment_method=pm_id,
+                )
+            except stripe.error.StripeError:
+                logger.exception(
+                    "Subscription default payment method update failed for %s",
+                    sub.stripe_subscription_id,
+                )
 
     async def _create_or_update_subscription_from_checkout(
         self, account: Account, session: dict

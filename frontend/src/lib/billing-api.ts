@@ -184,6 +184,31 @@ export async function cancelSubscription(
   });
 }
 
+export type InvoiceRow = {
+  id: string;
+  number: string | null;
+  status: string | null;
+  amount_paid_cents: number;
+  amount_due_cents: number;
+  currency: string;
+  created: number | null;
+  hosted_invoice_url: string | null;
+  invoice_pdf: string | null;
+};
+
+export async function fetchInvoices(token: string): Promise<InvoiceRow[]> {
+  return apiFetch<InvoiceRow[]>("/billing/invoices", { token });
+}
+
+export async function startPaymentMethodUpdate(
+  token: string,
+): Promise<{ checkout_url: string; session_id: string }> {
+  return apiFetch<{ checkout_url: string; session_id: string }>(
+    "/billing/payment-method/update",
+    { token, method: "POST" },
+  );
+}
+
 // NOTE: plan metadata (labels, features, pricing) lives in `@/lib/plans`.
 // Import PLANS / getPlanLabel / COMMERCIAL_PLANS from there directly.
 // Imports added below re-export names for backwards compat while callers
