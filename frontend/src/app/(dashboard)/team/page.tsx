@@ -25,6 +25,7 @@ import {
   type QuotaInfo,
 } from "@/lib/billing-api";
 import { LimitReachedDialog } from "@/components/limit-reached-dialog";
+import { InfoTooltip } from "@/components/admin/info-tooltip";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -270,7 +271,18 @@ export default function TeamPage() {
                 <TableRow>
                   <TableHead>Nom</TableHead>
                   <TableHead>Email</TableHead>
-                  <TableHead>Rôle</TableHead>
+                  <TableHead>
+                    <div className="flex items-center gap-1">
+                      Rôle par défaut
+                      <InfoTooltip>
+                        Rôle appliqué par défaut aux nouvelles organisations auxquelles
+                        cette personne aura accès. Pour régler son rôle précis sur une
+                        organisation donnée (par exemple manager sur l&apos;org A mais
+                        simple utilisateur sur l&apos;org B), passez par la fiche de
+                        l&apos;organisation concernée.
+                      </InfoTooltip>
+                    </div>
+                  </TableHead>
                   <TableHead>Accès</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
