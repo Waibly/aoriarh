@@ -264,15 +264,22 @@ async def cancel_subscription(
     # the new state on the next refetch without waiting for the
     # ``customer.subscription.updated`` webhook round-trip. The webhook
     # will eventually arrive and reconcile if anything drifts.
+    account_row = await db.get(Account, sub.account_id)
     if body.at_period_end:
         sub.cancel_at_period_end = True
     else:
         sub.status = "canceled"
         sub.canceled_at = datetime.now(UTC)
-        account_row = await db.get(Account, sub.account_id)
         if account_row is not None:
             account_row.status = "canceled"
     await db.commit()
+
+    # Send the cancellation email directly. Mirroring the DB before the
+    # webhook means its transition detector would otherwise see
+    # (true, true) and skip the email.
+    if account_row is not None:
+        from app.services.stripe_service import StripeService as _StripeService
+        await _StripeService(db)._send_subscription_canceled_email(account_row, sub)
 
     return {
         "status": _stripe_get(updated, "status", "unknown"),

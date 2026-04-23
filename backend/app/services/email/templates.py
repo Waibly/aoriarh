@@ -335,6 +335,27 @@ SUBSCRIPTION_CANCELED_CONTENT = """\
 </p>"""
 
 
+SUBSCRIPTION_REACTIVATED_CONTENT = """\
+<h2 style="margin-top:0; color:#5b21b6; font-size:20px;">Votre abonnement AORIA RH est réactivé</h2>
+<p style="color:#3f3f46; line-height:1.6;">Bonjour {full_name},</p>
+<p style="color:#3f3f46; line-height:1.6;">
+  Votre abonnement à l'offre <strong>{plan_label}</strong> est à nouveau actif —
+  la résiliation prévue a bien été annulée. Aucune interruption de service
+  n'aura lieu.
+</p>
+<table style="width:100%; border-collapse:collapse; margin:24px 0; background:#f5f3ff; border-radius:8px;">
+  <tr>
+    <td style="padding:12px 16px; color:#3f3f46;">Prochaine échéance</td>
+    <td style="padding:12px 16px; color:#3f3f46; text-align:right;"><strong>{next_billing_date}</strong></td>
+  </tr>
+</table>
+<p style="text-align:center; margin:32px 0;">
+  <a href="{billing_url}" style="display:inline-block; background-color:#6d28d9; color:#ffffff; padding:14px 32px; border-radius:8px; text-decoration:none; font-weight:600; font-size:15px;">
+    Voir mon abonnement
+  </a>
+</p>"""
+
+
 def render_subscription_confirmed_email(
     full_name: str,
     plan: str,
@@ -386,6 +407,28 @@ def render_subscription_canceled_email(
         full_name=full_name,
         plan_label=plan_label,
         end_date=end_date,
+        billing_url=billing_url,
+    )
+    html = BASE_TEMPLATE.format(
+        subject=subject,
+        content=content,
+        year=datetime.now().year,
+    )
+    return subject, html
+
+
+def render_subscription_reactivated_email(
+    full_name: str,
+    plan_label: str,
+    next_billing_date: str,
+    billing_url: str,
+) -> tuple[str, str]:
+    """Return (subject, html_body) for the subscription reactivation email."""
+    subject = "Votre abonnement AORIA RH est réactivé"
+    content = SUBSCRIPTION_REACTIVATED_CONTENT.format(
+        full_name=full_name,
+        plan_label=plan_label,
+        next_billing_date=next_billing_date,
         billing_url=billing_url,
     )
     html = BASE_TEMPLATE.format(

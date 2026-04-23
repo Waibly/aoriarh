@@ -454,17 +454,20 @@ class StripeService:
             )
 
         try:
-            upcoming = stripe.Invoice.upcoming(
+            # stripe.Invoice.upcoming was removed in SDK 13+. The current
+            # replacement is ``create_preview`` which nests the previously
+            # top-level ``subscription_*`` params under ``subscription_details``.
+            upcoming = stripe.Invoice.create_preview(
                 customer=account.stripe_customer_id,
                 subscription=sub.stripe_subscription_id,
-                subscription_items=[
-                    {"id": plan_item_id, "price": new_price_id}
-                ],
-                subscription_proration_behavior="create_prorations",
+                subscription_details={
+                    "items": [{"id": plan_item_id, "price": new_price_id}],
+                    "proration_behavior": "create_prorations",
+                },
             )
         except stripe.error.StripeError as exc:
             logger.exception(
-                "Stripe upcoming invoice preview failed for sub %s",
+                "Stripe invoice preview failed for sub %s",
                 sub.stripe_subscription_id,
             )
             raise HTTPException(
@@ -527,6 +530,14 @@ class StripeService:
         sub.cancel_at_period_end = False
         sub.canceled_at = None
         await self.db.commit()
+
+        # Send the confirmation email directly. The webhook will fire
+        # shortly after but will see cancel_at_period_end already false
+        # in our DB, so its transition detector won't send a duplicate.
+        account = await self.db.get(Account, sub.account_id)
+        if account is not None:
+            await self._send_subscription_reactivated_email(account, sub)
+
         return {
             "plan": sub.plan,
             "cycle": sub.billing_cycle,
@@ -1002,6 +1013,12 @@ class StripeService:
         # at the end of the billing period would.
         if new_cancel_flag and not previous_cancel_flag:
             await self._send_subscription_canceled_email(account, sub)
+        elif previous_cancel_flag and not new_cancel_flag:
+            # Transition true → false: the user reactivated before the
+            # period end (either via our /billing/reactivate endpoint or
+            # the Stripe portal). Confirm it by email so they have a
+            # record that no interruption will happen.
+            await self._send_subscription_reactivated_email(account, sub)
 
     async def _notify_downgrade_overflow(
         self, account: Account, previous_plan: str, new_plan: str
@@ -1242,6 +1259,41 @@ sous les limites. Merci de supprimer les éléments excédentaires sous 14 jours
         except Exception:
             logger.exception(
                 "subscription_confirmed email failed for account %s — swallowed",
+                account.id,
+            )
+
+    async def _send_subscription_reactivated_email(
+        self, account: Account, sub: Subscription
+    ) -> None:
+        try:
+            from app.models.user import User as UserModel
+            from app.services.email.sender import send_email
+            from app.services.email.templates import (
+                render_subscription_reactivated_email,
+            )
+
+            owner = await self.db.get(UserModel, account.owner_id)
+            if owner is None or not owner.is_active:
+                return
+
+            plan_label = _get_plan_label(sub.plan)
+            next_date = (
+                sub.current_period_end.strftime("%d/%m/%Y")
+                if sub.current_period_end is not None
+                else "—"
+            )
+            billing_url = f"{settings.frontend_url}/billing"
+
+            subject, html = render_subscription_reactivated_email(
+                full_name=owner.full_name,
+                plan_label=plan_label,
+                next_billing_date=next_date,
+                billing_url=billing_url,
+            )
+            await send_email(owner.email, owner.full_name, subject, html)
+        except Exception:
+            logger.exception(
+                "subscription_reactivated email failed for account %s — swallowed",
                 account.id,
             )
 
