@@ -175,6 +175,15 @@ export async function reactivateSubscription(
   });
 }
 
+export async function cancelSubscription(
+  token: string,
+): Promise<{ plan: string; cycle: string; stripe_subscription_id: string }> {
+  return apiFetch("/billing/cancel", {
+    token,
+    method: "POST",
+  });
+}
+
 // NOTE: plan metadata (labels, features, pricing) lives in `@/lib/plans`.
 // Import PLANS / getPlanLabel / COMMERCIAL_PLANS from there directly.
 // Imports added below re-export names for backwards compat while callers

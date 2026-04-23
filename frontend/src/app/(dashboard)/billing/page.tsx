@@ -27,6 +27,7 @@ import {
   changePlan,
   previewChangePlan,
   reactivateSubscription,
+  cancelSubscription,
   ADDON_LABELS,
   type ChangePlanPreview,
   type QuotaInfo,
@@ -217,6 +218,31 @@ export default function BillingPage() {
     }
   };
 
+  const handleCancel = async () => {
+    if (!token) return;
+    if (
+      !confirm(
+        "Résilier votre abonnement AORIA RH ?\n\n" +
+          "Vous conservez un accès complet jusqu'à la fin de la période en cours. " +
+          "Au-delà, vos données sont conservées 30 jours avant suppression définitive. " +
+          "Vous pouvez réactiver votre abonnement à tout moment avant la date de fin.",
+      )
+    ) {
+      return;
+    }
+    setBusy(true);
+    try {
+      await cancelSubscription(token);
+      toast.success("Résiliation programmée. Un email de confirmation vous a été envoyé.");
+      await loadData();
+      window.dispatchEvent(new Event("plan-updated"));
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Impossible de résilier l'abonnement");
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const handlePortal = async () => {
     if (!token) return;
     setBusy(true);
@@ -350,10 +376,22 @@ export default function BillingPage() {
                 </CardDescription>
               </div>
               {isCommercial && (
-                <Button variant="outline" onClick={handlePortal} disabled={busy}>
-                  {busy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ExternalLink className="mr-2 h-4 w-4" />}
-                  Gérer mon abonnement
-                </Button>
+                <div className="flex flex-wrap gap-2">
+                  <Button variant="outline" onClick={handlePortal} disabled={busy}>
+                    {busy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ExternalLink className="mr-2 h-4 w-4" />}
+                    Gérer mon abonnement
+                  </Button>
+                  {!subscription?.cancel_at_period_end && (
+                    <Button
+                      variant="ghost"
+                      onClick={handleCancel}
+                      disabled={busy}
+                      className="text-destructive hover:text-destructive"
+                    >
+                      Résilier
+                    </Button>
+                  )}
+                </div>
               )}
             </div>
             {subscription?.cancel_at_period_end && subscription.current_period_end && (

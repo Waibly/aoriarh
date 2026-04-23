@@ -145,6 +145,23 @@ async def reactivate_subscription(
     return await stripe_svc.reactivate_subscription(account)
 
 
+@router.post("/cancel")
+async def cancel_subscription(
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Cancel the active subscription at the end of the current period.
+
+    The client keeps full access until ``current_period_end``. They can
+    reactivate at any time before that date via /billing/reactivate.
+    """
+    billing = BillingService(db)
+    stripe_svc = StripeService(db)
+
+    account = await billing.get_primary_account_for_user(user)
+    return await stripe_svc.cancel_subscription_at_period_end(account)
+
+
 # ---------------------------------------------------------------------------
 # Customer portal (self-service management)
 # ---------------------------------------------------------------------------

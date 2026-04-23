@@ -493,6 +493,55 @@ class StripeService:
             ),
         }
 
+    async def cancel_subscription_at_period_end(
+        self, account: Account
+    ) -> dict[str, str]:
+        """Schedule the active subscription to end at the current period end.
+
+        Called from the /billing page so the user doesn't have to go through
+        the Stripe customer portal. Mirrors the flag locally and sends the
+        confirmation email directly — the webhook will reconcile but isn't
+        required for the UX to be correct.
+        """
+        self._ensure_configured()
+        sub = await self._get_active_subscription(account.id)
+        if sub is None or not sub.stripe_subscription_id:
+            raise HTTPException(
+                status_code=400,
+                detail="Aucun abonnement actif à résilier.",
+            )
+        if sub.cancel_at_period_end:
+            raise HTTPException(
+                status_code=400,
+                detail="Cet abonnement est déjà en cours de résiliation.",
+            )
+
+        try:
+            stripe.Subscription.modify(
+                sub.stripe_subscription_id,
+                cancel_at_period_end=True,
+            )
+        except stripe.error.StripeError as exc:
+            logger.exception(
+                "Stripe cancel-at-period-end failed for %s",
+                sub.stripe_subscription_id,
+            )
+            raise HTTPException(
+                status_code=502, detail=f"Erreur Stripe : {exc}"
+            ) from exc
+
+        sub.cancel_at_period_end = True
+        sub.canceled_at = datetime.now(UTC)
+        await self.db.commit()
+
+        await self._send_subscription_canceled_email(account, sub)
+
+        return {
+            "plan": sub.plan,
+            "cycle": sub.billing_cycle,
+            "stripe_subscription_id": sub.stripe_subscription_id,
+        }
+
     async def reactivate_subscription(self, account: Account) -> dict[str, str]:
         """Clear the ``cancel_at_period_end`` flag on the active subscription.
 
