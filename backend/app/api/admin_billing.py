@@ -260,10 +260,56 @@ async def cancel_subscription(
         )
         raise HTTPException(status_code=502, detail=f"Erreur Stripe : {exc}") from exc
 
+    # Mirror the cancellation locally right away so the admin UI reflects
+    # the new state on the next refetch without waiting for the
+    # ``customer.subscription.updated`` webhook round-trip. The webhook
+    # will eventually arrive and reconcile if anything drifts.
+    if body.at_period_end:
+        sub.cancel_at_period_end = True
+    else:
+        sub.status = "canceled"
+        sub.canceled_at = datetime.now(UTC)
+        account_row = await db.get(Account, sub.account_id)
+        if account_row is not None:
+            account_row.status = "canceled"
+    await db.commit()
+
     return {
         "status": _stripe_get(updated, "status", "unknown"),
         "cancel_at_period_end": _stripe_get(updated, "cancel_at_period_end", False),
         "stripe_subscription_id": sub.stripe_subscription_id,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Stripe mode (test vs live)
+# ---------------------------------------------------------------------------
+
+
+@router.get("/billing/stripe-status")
+async def get_stripe_status(
+    _: User = Depends(require_role(["admin"])),
+) -> dict[str, Any]:
+    """Report whether the backend is wired to Stripe test or live keys.
+
+    Used by the admin UI to show a TEST/LIVE badge so staff never wonder
+    which environment the payments are going to. Based on the prefix of
+    the configured secret key (Stripe convention: ``sk_test_...`` vs
+    ``sk_live_...``). Never returns the key itself.
+    """
+    key = settings.stripe_secret_key or ""
+    if not key:
+        return {"configured": False, "mode": None, "webhook_configured": False}
+    if key.startswith("sk_live_"):
+        mode = "live"
+    elif key.startswith("sk_test_"):
+        mode = "test"
+    else:
+        mode = "unknown"
+    return {
+        "configured": True,
+        "mode": mode,
+        "webhook_configured": bool(settings.stripe_webhook_secret),
     }
 
 

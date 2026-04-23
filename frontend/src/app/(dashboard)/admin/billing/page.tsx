@@ -63,6 +63,12 @@ type PendingPurgeRow = {
   eligible_since: string;
 };
 
+type StripeStatus = {
+  configured: boolean;
+  mode: "test" | "live" | "unknown" | null;
+  webhook_configured: boolean;
+};
+
 const STATUS_COLORS: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
   active: "default",
   trialing: "secondary",
@@ -84,6 +90,7 @@ export default function AdminBillingPage() {
   const [metrics, setMetrics] = useState<BillingMetrics | null>(null);
   const [subs, setSubs] = useState<SubscriptionRow[]>([]);
   const [pending, setPending] = useState<PendingPurgeRow[]>([]);
+  const [stripeStatus, setStripeStatus] = useState<StripeStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState<string>("all");
 
@@ -92,14 +99,16 @@ export default function AdminBillingPage() {
     setLoading(true);
     try {
       const query = statusFilter === "all" ? "" : `?status=${statusFilter}`;
-      const [m, s, p] = await Promise.all([
+      const [m, s, p, st] = await Promise.all([
         apiFetch<BillingMetrics>("/admin/billing/metrics", { token }),
         apiFetch<SubscriptionRow[]>(`/admin/billing/subscriptions${query}`, { token }),
         apiFetch<PendingPurgeRow[]>("/admin/accounts/pending-purge", { token }),
+        apiFetch<StripeStatus>("/admin/billing/stripe-status", { token }),
       ]);
       setMetrics(m);
       setSubs(s);
       setPending(p);
+      setStripeStatus(st);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Impossible de charger les données");
     } finally {
@@ -211,11 +220,32 @@ export default function AdminBillingPage() {
 
   return (
     <div className="mx-auto w-full max-w-6xl space-y-8">
-      <div>
-        <h1 className="text-2xl font-semibold">Facturation & abonnements</h1>
-        <p className="text-sm text-muted-foreground mt-1">
-          Vue d&apos;ensemble des revenus récurrents, du pipeline d&apos;essais et de la rétention RGPD.
-        </p>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-semibold">Facturation & abonnements</h1>
+          <p className="text-sm text-muted-foreground mt-1">
+            Vue d&apos;ensemble des revenus récurrents, du pipeline d&apos;essais et de la rétention RGPD.
+          </p>
+        </div>
+        {stripeStatus && stripeStatus.configured && (
+          <Badge
+            variant={stripeStatus.mode === "live" ? "default" : "outline"}
+            className={
+              stripeStatus.mode === "live"
+                ? "bg-destructive text-destructive-foreground"
+                : stripeStatus.mode === "test"
+                  ? "border-amber-500 bg-amber-500/10 text-amber-700"
+                  : ""
+            }
+            title={
+              stripeStatus.webhook_configured
+                ? "Webhook Stripe configuré"
+                : "Webhook Stripe non configuré — les événements ne seront pas reçus"
+            }
+          >
+            Stripe {stripeStatus.mode === "live" ? "LIVE" : stripeStatus.mode?.toUpperCase() ?? "?"}
+          </Badge>
+        )}
       </div>
 
       {/* KPI cards */}
@@ -345,19 +375,30 @@ export default function AdminBillingPage() {
                       {(s.mrr_contribution_cents / 100).toFixed(0)} €
                     </TableCell>
                     <TableCell className="text-right">
-                      {s.status === "active" || s.status === "trialing" || s.status === "past_due" ? (
+                      <div className="flex items-center justify-end gap-2">
                         <Button
                           variant="outline"
                           size="sm"
-                          onClick={() => handleCancelSubscription(s.subscription_id, s.owner_email)}
-                          disabled={s.cancel_at_period_end}
+                          onClick={() =>
+                            handleExport(s.account_id, s.account_name ?? "compte")
+                          }
+                          title="Télécharger toutes les données (droit d'accès RGPD)"
                         >
-                          <XCircle className="h-3.5 w-3.5 mr-1" />
-                          Résilier
+                          <Download className="h-3.5 w-3.5 mr-1" />
+                          Exporter
                         </Button>
-                      ) : (
-                        <span className="text-xs text-muted-foreground">—</span>
-                      )}
+                        {(s.status === "active" || s.status === "trialing" || s.status === "past_due") && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleCancelSubscription(s.subscription_id, s.owner_email)}
+                            disabled={s.cancel_at_period_end}
+                          >
+                            <XCircle className="h-3.5 w-3.5 mr-1" />
+                            Résilier
+                          </Button>
+                        )}
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))

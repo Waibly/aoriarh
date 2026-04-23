@@ -25,13 +25,24 @@ import {
   startBoosterCheckout,
   startCheckout,
   changePlan,
+  previewChangePlan,
+  reactivateSubscription,
   ADDON_LABELS,
+  type ChangePlanPreview,
   type QuotaInfo,
   type SubscriptionInfo,
   type UsageSummary,
   type ActiveAddon,
   type AddonType,
 } from "@/lib/billing-api";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import {
   PLANS,
   COMMERCIAL_PLANS,
@@ -87,6 +98,15 @@ export default function BillingPage() {
   const [cycle, setCycle] = useState<BillingCycle>("monthly");
   const [busy, setBusy] = useState(false);
 
+  // Change-plan confirmation dialog (with prorata preview)
+  const [changePlanTarget, setChangePlanTarget] = useState<{
+    plan: PlanCode;
+    cycle: BillingCycle;
+  } | null>(null);
+  const [changePlanPreview, setChangePlanPreview] = useState<ChangePlanPreview | null>(null);
+  const [changePlanLoading, setChangePlanLoading] = useState(false);
+  const [changePlanError, setChangePlanError] = useState<string | null>(null);
+
   const loadData = useCallback(async () => {
     if (!token) return;
     setLoading(true);
@@ -126,34 +146,73 @@ export default function BillingPage() {
 
   const handleCheckout = async (plan: PlanCode) => {
     if (!token) return;
+    if (hasCommercialSub) {
+      // Open the confirmation dialog and fetch the prorata preview so the
+      // user sees the exact amount before confirming the change.
+      setChangePlanTarget({ plan, cycle });
+      setChangePlanPreview(null);
+      setChangePlanError(null);
+      setChangePlanLoading(true);
+      try {
+        const preview = await previewChangePlan(token, plan, cycle);
+        setChangePlanPreview(preview);
+      } catch (err) {
+        setChangePlanError(
+          err instanceof Error
+            ? err.message
+            : "Impossible de calculer l'aperçu du montant.",
+        );
+      } finally {
+        setChangePlanLoading(false);
+      }
+      return;
+    }
     setBusy(true);
     try {
-      if (hasCommercialSub) {
-        const cycleChanged = subscription?.billing_cycle !== cycle;
-        const planChanged = subscription?.plan !== plan;
-        const label = planChanged
-          ? `Passer au plan ${PLANS[plan].label}${cycleChanged ? ` (${cycle === "yearly" ? "annuel" : "mensuel"})` : ""} ?\n\nLa différence sera facturée au prorata (ou créditée si downgrade).`
-          : `Changer le cycle en ${cycle === "yearly" ? "annuel" : "mensuel"} ?`;
-        if (!confirm(label)) {
-          setBusy(false);
-          return;
-        }
-        await changePlan(token, plan, cycle);
-        toast.success("Plan mis à jour. Le prorata a été appliqué.");
-        await loadData();
-        setBusy(false);
-      } else {
-        const { checkout_url } = await startCheckout(token, plan, cycle);
-        if (!checkout_url) {
-          throw new Error(
-            "La page de paiement Stripe n'a pas pu être générée. Réessayez dans quelques instants.",
-          );
-        }
-        window.location.href = checkout_url;
-        setTimeout(() => setBusy(false), 5000);
+      const { checkout_url } = await startCheckout(token, plan, cycle);
+      if (!checkout_url) {
+        throw new Error(
+          "La page de paiement Stripe n'a pas pu être générée. Réessayez dans quelques instants.",
+        );
       }
+      window.location.href = checkout_url;
+      setTimeout(() => setBusy(false), 5000);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Erreur lors du changement de plan");
+      setBusy(false);
+    }
+  };
+
+  const confirmChangePlan = async () => {
+    if (!token || !changePlanTarget) return;
+    setBusy(true);
+    try {
+      await changePlan(token, changePlanTarget.plan, changePlanTarget.cycle);
+      toast.success("Plan mis à jour. Le prorata a été appliqué.");
+      setChangePlanTarget(null);
+      setChangePlanPreview(null);
+      await loadData();
+      // Refresh the plan badge rendered by the sidebar so the UI is
+      // consistent across the shell without a full page reload.
+      window.dispatchEvent(new Event("plan-updated"));
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Erreur lors du changement de plan");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleReactivate = async () => {
+    if (!token) return;
+    setBusy(true);
+    try {
+      await reactivateSubscription(token);
+      toast.success("Abonnement réactivé.");
+      await loadData();
+      window.dispatchEvent(new Event("plan-updated"));
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Impossible de réactiver l'abonnement");
+    } finally {
       setBusy(false);
     }
   };
@@ -304,8 +363,13 @@ export default function BillingPage() {
                   Vous gardez un accès complet jusqu&apos;au{" "}
                   <strong>{new Date(subscription.current_period_end).toLocaleDateString("fr-FR")}</strong>.
                   Au-delà, vos données sont conservées 30 jours avant suppression définitive (RGPD).
-                  Vous pouvez reprendre votre abonnement à tout moment depuis &laquo; Gérer mon abonnement &raquo;.
                 </p>
+                <div className="mt-3">
+                  <Button size="sm" onClick={handleReactivate} disabled={busy}>
+                    {busy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                    Réactiver mon abonnement
+                  </Button>
+                </div>
               </div>
             )}
           </CardHeader>
@@ -537,6 +601,94 @@ export default function BillingPage() {
           Politique de confidentialité
         </a>
       </p>
+
+      <Dialog
+        open={changePlanTarget !== null}
+        onOpenChange={(open) => {
+          if (!open) {
+            setChangePlanTarget(null);
+            setChangePlanPreview(null);
+            setChangePlanError(null);
+          }
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>
+              Passer au plan{" "}
+              {changePlanTarget ? PLANS[changePlanTarget.plan].label : ""}
+              {changePlanTarget?.cycle === "yearly" ? " (annuel)" : " (mensuel)"}
+            </DialogTitle>
+            <DialogDescription>
+              Stripe appliquera un prorata sur la période en cours.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="text-sm space-y-2 py-1">
+            {changePlanLoading && (
+              <div className="flex items-center gap-2 text-muted-foreground">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Calcul du montant en cours…
+              </div>
+            )}
+            {changePlanError && (
+              <p className="text-destructive">{changePlanError}</p>
+            )}
+            {changePlanPreview && (
+              <div className="rounded-lg border bg-muted/30 p-3 space-y-1 tabular-nums">
+                <div className="flex items-center justify-between">
+                  <span className="text-muted-foreground">
+                    Montant dû à la prochaine facture
+                  </span>
+                  <strong>
+                    {changePlanPreview.amount_due_eur.toLocaleString("fr-FR", {
+                      minimumFractionDigits: 2,
+                      maximumFractionDigits: 2,
+                    })}{" "}
+                    € TTC
+                  </strong>
+                </div>
+                {changePlanPreview.amount_tax_cents > 0 && (
+                  <div className="flex items-center justify-between text-xs text-muted-foreground">
+                    <span>dont TVA</span>
+                    <span>
+                      {(changePlanPreview.amount_tax_cents / 100).toLocaleString("fr-FR", {
+                        minimumFractionDigits: 2,
+                        maximumFractionDigits: 2,
+                      })}{" "}
+                      €
+                    </span>
+                  </div>
+                )}
+                {changePlanPreview.amount_due_cents < 0 && (
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Un crédit sera appliqué sur votre prochaine facture (montant négatif).
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setChangePlanTarget(null);
+                setChangePlanPreview(null);
+                setChangePlanError(null);
+              }}
+              disabled={busy}
+            >
+              Annuler
+            </Button>
+            <Button
+              onClick={confirmChangePlan}
+              disabled={busy || changePlanLoading || !!changePlanError}
+            >
+              {busy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+              Confirmer le changement
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

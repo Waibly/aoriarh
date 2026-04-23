@@ -401,6 +401,181 @@ class StripeService:
             "stripe_subscription_id": sub.stripe_subscription_id,
         }
 
+    async def preview_change_plan(
+        self, account: Account, new_plan: str, new_cycle: str
+    ) -> dict:
+        """Compute the prorated amount that would be charged if the user
+        switched to ``new_plan`` / ``new_cycle`` right now.
+
+        Uses Stripe's ``Invoice.upcoming`` endpoint with the candidate
+        subscription items. The subscription is never modified — this is a
+        read-only preview used by the UI to show the exact amount before
+        the user confirms the upgrade/downgrade.
+        """
+        self._ensure_configured()
+        sub = await self._get_active_subscription(account.id)
+        if sub is None or not sub.stripe_subscription_id:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "Aucune souscription active à modifier. "
+                    "Souscrivez d'abord un plan via la page tarifs."
+                ),
+            )
+        if sub.plan == new_plan and sub.billing_cycle == new_cycle:
+            raise HTTPException(
+                status_code=400,
+                detail="Ce plan et ce cycle sont déjà actifs.",
+            )
+
+        new_price_id = self.get_price_id(new_plan, new_cycle)
+
+        addon_rows = await self.db.execute(
+            select(SubscriptionAddon).where(
+                SubscriptionAddon.subscription_id == sub.id
+            )
+        )
+        addon_item_ids = {
+            a.stripe_subscription_item_id
+            for a in addon_rows.scalars()
+            if a.stripe_subscription_item_id
+        }
+
+        stripe_sub = stripe.Subscription.retrieve(sub.stripe_subscription_id)
+        plan_item_id: str | None = None
+        for item in stripe_sub["items"]["data"]:
+            if item["id"] not in addon_item_ids:
+                plan_item_id = item["id"]
+                break
+        if plan_item_id is None:
+            raise HTTPException(
+                status_code=500,
+                detail="Impossible de localiser la ligne d'abonnement principale.",
+            )
+
+        try:
+            upcoming = stripe.Invoice.upcoming(
+                customer=account.stripe_customer_id,
+                subscription=sub.stripe_subscription_id,
+                subscription_items=[
+                    {"id": plan_item_id, "price": new_price_id}
+                ],
+                subscription_proration_behavior="create_prorations",
+            )
+        except stripe.error.StripeError as exc:
+            logger.exception(
+                "Stripe upcoming invoice preview failed for sub %s",
+                sub.stripe_subscription_id,
+            )
+            raise HTTPException(
+                status_code=502,
+                detail=f"Impossible de calculer l'aperçu Stripe : {exc}",
+            ) from exc
+
+        amount_due = int(_get(upcoming, "amount_due") or 0)
+        amount_tax = int(_get(upcoming, "tax") or 0)
+        amount_subtotal = int(_get(upcoming, "subtotal") or 0)
+        currency = _get(upcoming, "currency", "eur") or "eur"
+        next_billing_ts = _get(upcoming, "period_end") or _get(upcoming, "next_payment_attempt")
+
+        return {
+            "amount_due_cents": amount_due,
+            "amount_due_eur": round(amount_due / 100, 2),
+            "amount_tax_cents": amount_tax,
+            "amount_subtotal_cents": amount_subtotal,
+            "currency": currency,
+            "next_billing_at": (
+                datetime.fromtimestamp(int(next_billing_ts), tz=UTC).isoformat()
+                if next_billing_ts else None
+            ),
+        }
+
+    async def reactivate_subscription(self, account: Account) -> dict[str, str]:
+        """Clear the ``cancel_at_period_end`` flag on the active subscription.
+
+        Used by the /billing page to let a client revert a scheduled
+        cancellation (done either from the Stripe portal or from our
+        admin UI) before the period ends.
+        """
+        self._ensure_configured()
+        sub = await self._get_active_subscription(account.id)
+        if sub is None or not sub.stripe_subscription_id:
+            raise HTTPException(
+                status_code=400,
+                detail="Aucun abonnement à réactiver.",
+            )
+        if not sub.cancel_at_period_end:
+            raise HTTPException(
+                status_code=400,
+                detail="Cet abonnement n'est pas en cours de résiliation.",
+            )
+
+        try:
+            stripe.Subscription.modify(
+                sub.stripe_subscription_id,
+                cancel_at_period_end=False,
+            )
+        except stripe.error.StripeError as exc:
+            logger.exception(
+                "Stripe reactivation failed for %s", sub.stripe_subscription_id
+            )
+            raise HTTPException(
+                status_code=502, detail=f"Erreur Stripe : {exc}"
+            ) from exc
+
+        # Mirror immediately; the webhook will confirm.
+        sub.cancel_at_period_end = False
+        sub.canceled_at = None
+        await self.db.commit()
+        return {
+            "plan": sub.plan,
+            "cycle": sub.billing_cycle,
+            "stripe_subscription_id": sub.stripe_subscription_id,
+        }
+
+    async def cancel_subscription_now(self, account: Account) -> None:
+        """Cancel the active Stripe subscription immediately (no grace).
+
+        Removes add-on rows locally and marks the subscription canceled.
+        Used when an admin assigns a technical plan (invite / vip) to an
+        account that still has a paid commercial subscription — the two
+        are mutually exclusive. The webhook will eventually confirm, but
+        we mirror now so the plan_service overflow check runs against the
+        clean post-cancel state.
+        """
+        self._ensure_configured()
+        sub = await self._get_active_subscription(account.id)
+        if sub is None or not sub.stripe_subscription_id:
+            return
+
+        try:
+            stripe.Subscription.delete(sub.stripe_subscription_id)
+        except stripe.error.StripeError:
+            # Already canceled on Stripe's side, or the subscription no
+            # longer exists — don't block the local cleanup.
+            logger.exception(
+                "Stripe cancel-now failed for %s (already canceled?)",
+                sub.stripe_subscription_id,
+            )
+
+        # Drop local add-on rows (their Stripe items are gone with the sub)
+        await self.db.execute(
+            select(SubscriptionAddon).where(
+                SubscriptionAddon.subscription_id == sub.id
+            )
+        )
+        from sqlalchemy import delete as sql_delete
+        await self.db.execute(
+            sql_delete(SubscriptionAddon).where(
+                SubscriptionAddon.subscription_id == sub.id
+            )
+        )
+
+        sub.status = "canceled"
+        sub.canceled_at = datetime.now(UTC)
+        sub.cancel_at_period_end = False
+        await self.db.flush()
+
     async def add_addon(
         self, account: Account, addon_type: str, delta: int = 1
     ) -> SubscriptionAddon:
@@ -735,9 +910,11 @@ class StripeService:
         )
 
     async def _on_subscription_updated(self, sub_obj: dict) -> None:
-        # Remember the plan before we mutate the local row — used to detect
-        # downgrades initiated from the Stripe Customer Portal.
+        # Remember the plan + cancel flag before we mutate the local row —
+        # used to detect downgrades and cancellation/reactivation initiated
+        # from the Stripe Customer Portal.
         previous_plan: str | None = None
+        previous_cancel_flag: bool = False
         result0 = await self.db.execute(
             select(Subscription).where(
                 Subscription.stripe_subscription_id == sub_obj["id"]
@@ -746,6 +923,7 @@ class StripeService:
         existing_for_plan_compare = result0.scalar_one_or_none()
         if existing_for_plan_compare is not None:
             previous_plan = existing_for_plan_compare.plan
+            previous_cancel_flag = bool(existing_for_plan_compare.cancel_at_period_end)
 
         result = await self.db.execute(
             select(Subscription).where(
@@ -773,7 +951,8 @@ class StripeService:
         _start, _end = _sub_period(sub_obj)
         sub.current_period_start = _ts_to_dt(_start)
         sub.current_period_end = _ts_to_dt(_end)
-        sub.cancel_at_period_end = bool(_get(sub_obj, "cancel_at_period_end"))
+        new_cancel_flag = bool(_get(sub_obj, "cancel_at_period_end"))
+        sub.cancel_at_period_end = new_cancel_flag
         canceled_at = _get(sub_obj, "canceled_at")
         if canceled_at:
             sub.canceled_at = _ts_to_dt(canceled_at)
@@ -815,6 +994,14 @@ class StripeService:
                 < _COMMERCIAL_ORDER.index(previous_plan)
         ):
             await self._notify_downgrade_overflow(account, previous_plan, current_plan_after)
+
+        # Send the cancellation confirmation email on the transition
+        # false → true of cancel_at_period_end. Without this, a portal
+        # cancellation (which only fires subscription.updated) would
+        # never trigger a customer-facing email — only subscription.deleted
+        # at the end of the billing period would.
+        if new_cancel_flag and not previous_cancel_flag:
+            await self._send_subscription_canceled_email(account, sub)
 
     async def _notify_downgrade_overflow(
         self, account: Account, previous_plan: str, new_plan: str

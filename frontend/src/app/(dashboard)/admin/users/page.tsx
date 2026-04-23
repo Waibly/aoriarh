@@ -710,6 +710,29 @@ export default function ClientsPage() {
               ?
             </DialogDescription>
           </DialogHeader>
+          {planEdit &&
+            (() => {
+              const currentWs = data?.workspaces.find(
+                (w) => w.account_id === planEdit.accountId,
+              );
+              const hasCommercialSub =
+                currentWs !== undefined &&
+                ["solo", "equipe", "groupe"].includes(currentWs.plan);
+              if (!hasCommercialSub) return null;
+              return (
+                <div className="rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm">
+                  <p className="font-medium text-destructive">
+                    Ce client a un abonnement Stripe actif.
+                  </p>
+                  <p className="text-muted-foreground mt-1">
+                    L&apos;abonnement Stripe sera{" "}
+                    <strong>résilié immédiatement</strong> (sans remboursement)
+                    et les add-ons retirés avant d&apos;appliquer le plan{" "}
+                    <strong>{getPlanLabel(planEdit.plan)}</strong>.
+                  </p>
+                </div>
+              );
+            })()}
           {planEdit?.plan === "invite" && (
             <div className="flex items-center gap-3">
               <span className="text-sm">Durée :</span>

@@ -4,13 +4,14 @@ from datetime import UTC, datetime, timedelta
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.plans import get_limits
+from app.core.plans import TECHNICAL_PLANS, get_limits
 from app.models.account import Account
 from app.models.account_member import AccountMember
 from app.models.ccn import OrganisationConvention
 from app.models.document import Document
 from app.models.monthly_question_usage import MonthlyQuestionUsage
 from app.models.organisation import Organisation
+from app.models.subscription import Subscription
 
 
 class PlanOverflowError(Exception):
@@ -135,6 +136,25 @@ async def assign_plan(
     account = await db.get(Account, account_id)
     if account is None:
         raise ValueError("Account non trouvé")
+
+    # Technical plans (gratuit / invite / vip) are mutually exclusive with
+    # a paid commercial subscription: they are admin-assigned overrides
+    # (comp accounts, legacy clients, VIP partners…). If the account still
+    # has an active Stripe subscription, cancel it now so the add-ons are
+    # removed and the users/orgs counts reflect the clean post-cancel state
+    # before we run the overflow check.
+    if plan in TECHNICAL_PLANS:
+        sub_row = await db.execute(
+            select(Subscription).where(
+                Subscription.account_id == account_id,
+                Subscription.status.in_(["active", "trialing", "past_due"]),
+            )
+        )
+        active_sub = sub_row.scalars().first()
+        if active_sub is not None and active_sub.stripe_subscription_id:
+            from app.services.stripe_service import StripeService
+            await StripeService(db).cancel_subscription_now(account)
+            account.status = "active"
 
     # Block the change if the new plan is too small for what already exists.
     # Admins may still deal with an overflow manually (delete the excess

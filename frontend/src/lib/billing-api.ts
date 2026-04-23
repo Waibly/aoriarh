@@ -145,6 +145,36 @@ export async function changePlan(
   });
 }
 
+export type ChangePlanPreview = {
+  amount_due_cents: number;
+  amount_due_eur: number;
+  amount_tax_cents: number;
+  amount_subtotal_cents: number;
+  currency: string;
+  next_billing_at: string | null;
+};
+
+export async function previewChangePlan(
+  token: string,
+  plan: PlanCode,
+  cycle: BillingCycle,
+): Promise<ChangePlanPreview> {
+  return apiFetch<ChangePlanPreview>("/billing/preview-change-plan", {
+    token,
+    method: "POST",
+    body: JSON.stringify({ plan, cycle }),
+  });
+}
+
+export async function reactivateSubscription(
+  token: string,
+): Promise<{ plan: string; cycle: string; stripe_subscription_id: string }> {
+  return apiFetch("/billing/reactivate", {
+    token,
+    method: "POST",
+  });
+}
+
 // NOTE: plan metadata (labels, features, pricing) lives in `@/lib/plans`.
 // Import PLANS / getPlanLabel / COMMERCIAL_PLANS from there directly.
 // Imports added below re-export names for backwards compat while callers

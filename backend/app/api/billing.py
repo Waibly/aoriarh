@@ -113,6 +113,38 @@ async def change_plan(
     return await stripe_svc.change_plan(account, payload.plan, payload.cycle)
 
 
+@router.post("/preview-change-plan")
+async def preview_change_plan(
+    payload: ChangePlanRequest,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Return the prorated invoice preview for a candidate plan change.
+
+    Called by the /billing UI before showing the confirmation dialog so
+    the user sees the exact amount charged/credited before committing.
+    """
+    billing = BillingService(db)
+    stripe_svc = StripeService(db)
+
+    account = await billing.get_primary_account_for_user(user)
+    billing.ensure_plan_active(account)
+    return await stripe_svc.preview_change_plan(account, payload.plan, payload.cycle)
+
+
+@router.post("/reactivate")
+async def reactivate_subscription(
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Cancel a scheduled cancellation — the user keeps their plan."""
+    billing = BillingService(db)
+    stripe_svc = StripeService(db)
+
+    account = await billing.get_primary_account_for_user(user)
+    return await stripe_svc.reactivate_subscription(account)
+
+
 # ---------------------------------------------------------------------------
 # Customer portal (self-service management)
 # ---------------------------------------------------------------------------
