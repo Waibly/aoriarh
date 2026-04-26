@@ -73,7 +73,7 @@ import {
 import type { Conversation } from "@/types/api";
 
 const navigation = [
-  { name: "Nouveau chat", href: "/chat", icon: MessageSquare },
+  { name: "Nouvelle recherche", href: "/chat", icon: MessageSquare },
   { name: "Documents", href: "/documents", icon: FileText },
   { name: "Organisation", href: "/organisation", icon: Building2 },
   { name: "Équipe", href: "/team", icon: UsersRound, managerOnly: true },
