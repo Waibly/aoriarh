@@ -3,7 +3,7 @@ import urllib.parse
 import uuid
 from datetime import date
 
-from fastapi import APIRouter, Depends, Form, Request, UploadFile, status
+from fastapi import APIRouter, Depends, Form, Query, Request, UploadFile, status
 from fastapi.responses import Response
 from pydantic import BaseModel
 from sqlalchemy import func, select
@@ -19,6 +19,7 @@ from app.schemas.document import (
     BatchUploadFileResult,
     BatchUploadResponse,
     DocumentDownload,
+    DocumentListResponse,
     DocumentRead,
 )
 from app.services.audit_service import log_admin_action
@@ -329,55 +330,91 @@ async def list_common_document_groups(
     return DocumentGroupsResponse(groups=groups, total=total)
 
 
-@router.get("/groups/{source_type}", response_model=list[DocumentRead])
+@router.get("/groups/{source_type}", response_model=DocumentListResponse)
 async def list_common_documents_by_type(
     source_type: str,
-    page: int = 1,
-    page_size: int = 50,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1, le=200),
+    q: str | None = Query(None, description="Recherche libre dans le nom du document"),
+    chambre: str | None = Query(None, description="Filtre exact sur la chambre (juridictions)"),
+    status_filter: str | None = Query(None, alias="status", description="Filtre statut indexation"),
+    date_decision_start: date | None = Query(None),
+    date_decision_end: date | None = Query(None),
+    sort_by: str = Query(
+        "created_at",
+        description="Colonne de tri : created_at | date_decision | name",
+    ),
+    sort_dir: str = Query("desc", description="asc | desc"),
     user: User = Depends(require_role(["admin"])),
     db: AsyncSession = Depends(get_db),
-) -> list[DocumentRead]:
-    """Return common documents for a specific source_type with pagination."""
+) -> DocumentListResponse:
+    """Liste paginée des documents communs avec filtres et total.
+
+    Renvoie ``{items, total, page, page_size}`` pour permettre une vraie
+    pagination côté front. Filtres optionnels :
+    ``q`` (nom), ``chambre``, ``status``, ``date_decision_start/end``.
+    """
+    from sqlalchemy import or_
+
     # Virtual group for BOCC reserve
     if source_type == "bocc_reserve":
-        result = await db.execute(
-            select(Document)
-            .where(
-                Document.organisation_id.is_(None),
-                Document.storage_path.ilike("common/ccn/%/bocc_%"),
-                Document.indexation_status == "pending",
-            )
-            .order_by(Document.created_at.desc())
-            .offset((page - 1) * page_size)
-            .limit(page_size)
+        base = select(Document).where(
+            Document.organisation_id.is_(None),
+            Document.storage_path.ilike("common/ccn/%/bocc_%"),
+            Document.indexation_status == "pending",
         )
-        return list(result.scalars().all())  # type: ignore[return-value]
-
-    # For CCN group, exclude BOCC reserve docs (they have their own group)
-    query = (
-        select(Document)
-        .where(
+    else:
+        base = select(Document).where(
             Document.organisation_id.is_(None),
             Document.source_type == source_type,
         )
-    )
-    if source_type == "convention_collective_nationale":
-        from sqlalchemy import or_
-        # Exclude BOCC reserve: keep docs that are NOT (bocc path + pending)
-        query = query.where(
-            or_(
-                ~Document.storage_path.ilike("common/ccn/%/bocc_%"),
-                Document.indexation_status != "pending",
+        if source_type == "convention_collective_nationale":
+            # Exclude BOCC reserve docs (they have their own group)
+            base = base.where(
+                or_(
+                    ~Document.storage_path.ilike("common/ccn/%/bocc_%"),
+                    Document.indexation_status != "pending",
+                )
             )
-        )
+
+    if q:
+        base = base.where(Document.name.ilike(f"%{q.strip()}%"))
+    if chambre:
+        base = base.where(Document.chambre == chambre)
+    if status_filter and status_filter != "all":
+        base = base.where(Document.indexation_status == status_filter)
+    if date_decision_start:
+        base = base.where(Document.date_decision >= date_decision_start)
+    if date_decision_end:
+        base = base.where(Document.date_decision <= date_decision_end)
+
+    # Total avec les mêmes filtres mais sans pagination
+    total = (await db.execute(
+        select(func.count()).select_from(base.subquery())
+    )).scalar_one()
+
+    # Tri (whitelist pour éviter SQLi via sort_by)
+    sort_columns = {
+        "created_at": Document.created_at,
+        "date_decision": Document.date_decision,
+        "name": Document.name,
+    }
+    sort_col = sort_columns.get(sort_by, Document.created_at)
+    if sort_dir.lower() == "asc":
+        ordered = base.order_by(sort_col.asc().nullslast())
+    else:
+        ordered = base.order_by(sort_col.desc().nullslast())
 
     result = await db.execute(
-        query
-        .order_by(Document.created_at.desc())
-        .offset((page - 1) * page_size)
-        .limit(page_size)
+        ordered.offset((page - 1) * page_size).limit(page_size)
     )
-    return list(result.scalars().all())  # type: ignore[return-value]
+    items = list(result.scalars().all())
+    return DocumentListResponse(
+        items=items,  # type: ignore[arg-type]
+        total=total,
+        page=page,
+        page_size=page_size,
+    )
 
 
 @router.get("/{document_id}/download")

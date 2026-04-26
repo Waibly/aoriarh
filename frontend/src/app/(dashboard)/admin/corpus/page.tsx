@@ -74,7 +74,37 @@ interface DocumentItem {
   indexation_status: string;
   file_size: number | null;
   created_at: string;
+  // Métadonnées jurisprudence (nullables, présentes uniquement pour les arrêts)
+  juridiction?: string | null;
+  chambre?: string | null;
+  numero_pourvoi?: string | null;
+  date_decision?: string | null;
 }
+
+interface DocumentListResponse {
+  items: DocumentItem[];
+  total: number;
+  page: number;
+  page_size: number;
+}
+
+const JURIS_SOURCE_TYPES = new Set([
+  "arret_cour_cassation",
+  "arret_cour_appel",
+  "arret_conseil_etat",
+  "decision_conseil_constitutionnel",
+]);
+
+const CASS_CHAMBRES = [
+  "Chambre sociale",
+  "Chambre criminelle",
+  "Chambre commerciale",
+  "Chambre civile 2",
+  "Chambre civile 1",
+  "Chambre civile 3",
+  "Chambre mixte",
+  "Assemblée plénière",
+];
 
 interface SyncLogItem {
   id: string;
@@ -818,9 +848,41 @@ export default function CorpusPage() {
   const [selectedType, setSelectedType] = useState<string | null>(null);
   const [docs, setDocs] = useState<DocumentItem[]>([]);
   const [docsLoading, setDocsLoading] = useState(false);
+  const [docsTotal, setDocsTotal] = useState(0);
   const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [chambreFilter, setChambreFilter] = useState<string>("all");
+  const [dateDecisionStart, setDateDecisionStart] = useState<string>("");
+  const [dateDecisionEnd, setDateDecisionEnd] = useState<string>("");
+  const [sortBy, setSortBy] = useState<"created_at" | "date_decision" | "name">(
+    "created_at",
+  );
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
+  const [page, setPage] = useState(1);
+  const PAGE_SIZE = 50;
   const [testOpen, setTestOpen] = useState(false);
+
+  // Debounce de la recherche pour ne pas spammer l'API à chaque frappe
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(search.trim()), 300);
+    return () => clearTimeout(t);
+  }, [search]);
+
+  // Reset à la page 1 dès qu'un filtre change (sinon on peut être sur une page
+  // qui n'existe plus dans le résultat filtré)
+  useEffect(() => {
+    setPage(1);
+  }, [
+    selectedType,
+    debouncedSearch,
+    statusFilter,
+    chambreFilter,
+    dateDecisionStart,
+    dateDecisionEnd,
+    sortBy,
+    sortDir,
+  ]);
 
   const fetchGroups = useCallback(async () => {
     if (!token) return;
@@ -842,23 +904,48 @@ export default function CorpusPage() {
   }, [token, selectedType]);
 
   const fetchDocs = useCallback(async () => {
-    if (!token || !selectedType || selectedType === "bocc_reserve") {
+    if (!token || !selectedType) {
       setDocs([]);
+      setDocsTotal(0);
       return;
     }
     setDocsLoading(true);
     try {
-      const data = await apiFetch<DocumentItem[]>(
-        `/admin/documents/groups/${selectedType}?page=1&page_size=200`,
+      const params = new URLSearchParams({
+        page: String(page),
+        page_size: String(PAGE_SIZE),
+        sort_by: sortBy,
+        sort_dir: sortDir,
+      });
+      if (debouncedSearch) params.set("q", debouncedSearch);
+      if (statusFilter !== "all") params.set("status", statusFilter);
+      if (chambreFilter !== "all") params.set("chambre", chambreFilter);
+      if (dateDecisionStart) params.set("date_decision_start", dateDecisionStart);
+      if (dateDecisionEnd) params.set("date_decision_end", dateDecisionEnd);
+
+      const data = await apiFetch<DocumentListResponse>(
+        `/admin/documents/groups/${selectedType}?${params.toString()}`,
         { token },
       );
-      setDocs(data);
+      setDocs(data.items);
+      setDocsTotal(data.total);
     } catch {
       toast.error("Erreur lors du chargement des documents");
     } finally {
       setDocsLoading(false);
     }
-  }, [token, selectedType]);
+  }, [
+    token,
+    selectedType,
+    page,
+    sortBy,
+    sortDir,
+    debouncedSearch,
+    statusFilter,
+    chambreFilter,
+    dateDecisionStart,
+    dateDecisionEnd,
+  ]);
 
   useEffect(() => {
     fetchGroups();
@@ -1072,13 +1159,38 @@ export default function CorpusPage() {
     }
   };
 
-  const filteredDocs = useMemo(() => {
-    return docs.filter((d) => {
-      if (statusFilter !== "all" && d.indexation_status !== statusFilter) return false;
-      if (search.trim() && !d.name.toLowerCase().includes(search.toLowerCase())) return false;
-      return true;
-    });
-  }, [docs, search, statusFilter]);
+  // Tous les filtres sont serveur, on consomme `docs` tel quel.
+  const isJurisGroup = selectedType ? JURIS_SOURCE_TYPES.has(selectedType) : false;
+  const isCassGroup = selectedType === "arret_cour_cassation";
+  const corpusTotal = useMemo(
+    () => groups.reduce((acc, g) => acc + g.count, 0),
+    [groups],
+  );
+  const totalPages = Math.max(1, Math.ceil(docsTotal / PAGE_SIZE));
+
+  const toggleSort = (col: "created_at" | "date_decision" | "name") => {
+    if (sortBy === col) {
+      setSortDir(sortDir === "asc" ? "desc" : "asc");
+    } else {
+      setSortBy(col);
+      setSortDir(col === "name" ? "asc" : "desc");
+    }
+  };
+
+  const sortIndicator = (col: string) =>
+    sortBy === col ? (sortDir === "asc" ? " ↑" : " ↓") : "";
+
+  const resetFilters = () => {
+    setSearch("");
+    setDebouncedSearch("");
+    setStatusFilter("all");
+    setChambreFilter("all");
+    setDateDecisionStart("");
+    setDateDecisionEnd("");
+    setSortBy("created_at");
+    setSortDir("desc");
+    setPage(1);
+  };
 
   if (!token) return null;
 
@@ -1195,28 +1307,91 @@ export default function CorpusPage() {
 
         {/* Documents table */}
         <div className="col-span-12 md:col-span-9 space-y-3">
-          <div className="flex flex-col md:flex-row gap-2">
-            <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input
-                placeholder="Rechercher par nom de document..."
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                className="pl-9"
-              />
+          {/* --- Compteurs --- */}
+          <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1 text-sm">
+            <span className="font-semibold">
+              {docsTotal.toLocaleString("fr-FR")} document
+              {docsTotal > 1 ? "s" : ""}
+            </span>
+            <span className="text-muted-foreground">
+              dans {groups.find((g) => g.source_type === selectedType)?.label ?? "—"}
+            </span>
+            <span className="text-xs text-muted-foreground">
+              · {corpusTotal.toLocaleString("fr-FR")} au total dans le corpus
+            </span>
+          </div>
+
+          {/* --- Barre de filtres --- */}
+          <div className="flex flex-col gap-2">
+            <div className="flex flex-col md:flex-row gap-2">
+              <div className="relative flex-1">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input
+                  placeholder="Rechercher par nom de document..."
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  className="pl-9"
+                />
+              </div>
+              <Select value={statusFilter} onValueChange={setStatusFilter}>
+                <SelectTrigger className="w-[180px]">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Tous les statuts</SelectItem>
+                  <SelectItem value="indexed">Indexés</SelectItem>
+                  <SelectItem value="pending">En attente</SelectItem>
+                  <SelectItem value="indexing">En cours</SelectItem>
+                  <SelectItem value="error">En erreur</SelectItem>
+                </SelectContent>
+              </Select>
+              {isCassGroup && (
+                <Select value={chambreFilter} onValueChange={setChambreFilter}>
+                  <SelectTrigger className="w-[200px]">
+                    <SelectValue placeholder="Chambre" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Toutes chambres</SelectItem>
+                    {CASS_CHAMBRES.map((c) => (
+                      <SelectItem key={c} value={c}>
+                        {c}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
             </div>
-            <Select value={statusFilter} onValueChange={setStatusFilter}>
-              <SelectTrigger className="w-[180px]">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Tous les statuts</SelectItem>
-                <SelectItem value="indexed">Indexés</SelectItem>
-                <SelectItem value="pending">En attente</SelectItem>
-                <SelectItem value="indexing">En cours</SelectItem>
-                <SelectItem value="error">En erreur</SelectItem>
-              </SelectContent>
-            </Select>
+
+            {isJurisGroup && (
+              <div className="flex flex-col md:flex-row gap-2 md:items-center">
+                <span className="text-xs text-muted-foreground md:w-32">
+                  Date arrêt :
+                </span>
+                <Input
+                  type="date"
+                  value={dateDecisionStart}
+                  onChange={(e) => setDateDecisionStart(e.target.value)}
+                  className="w-full md:w-[170px]"
+                  aria-label="Date début"
+                />
+                <span className="text-xs text-muted-foreground">à</span>
+                <Input
+                  type="date"
+                  value={dateDecisionEnd}
+                  onChange={(e) => setDateDecisionEnd(e.target.value)}
+                  className="w-full md:w-[170px]"
+                  aria-label="Date fin"
+                />
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={resetFilters}
+                  className="md:ml-auto"
+                >
+                  Réinitialiser les filtres
+                </Button>
+              </div>
+            )}
           </div>
 
           <Card>
@@ -1227,7 +1402,7 @@ export default function CorpusPage() {
                     <Skeleton key={i} className="h-10 w-full" />
                   ))}
                 </div>
-              ) : filteredDocs.length === 0 ? (
+              ) : docs.length === 0 ? (
                 <div className="py-12 text-center text-sm text-muted-foreground">
                   Aucun document dans cette catégorie pour ces filtres.
                 </div>
@@ -1235,25 +1410,58 @@ export default function CorpusPage() {
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Nom</TableHead>
+                      <TableHead
+                        className="cursor-pointer select-none"
+                        onClick={() => toggleSort("name")}
+                      >
+                        Nom{sortIndicator("name")}
+                      </TableHead>
+                      {isJurisGroup && (
+                        <TableHead className="w-[160px]">Chambre</TableHead>
+                      )}
                       <TableHead className="w-[110px]">Statut</TableHead>
                       <TableHead className="w-[80px] text-right">Taille</TableHead>
-                      <TableHead className="w-[100px] text-right">Date</TableHead>
+                      {isJurisGroup && (
+                        <TableHead
+                          className="w-[110px] text-right cursor-pointer select-none"
+                          onClick={() => toggleSort("date_decision")}
+                        >
+                          Date arrêt{sortIndicator("date_decision")}
+                        </TableHead>
+                      )}
+                      <TableHead
+                        className="w-[100px] text-right cursor-pointer select-none"
+                        onClick={() => toggleSort("created_at")}
+                      >
+                        Ajouté{sortIndicator("created_at")}
+                      </TableHead>
                       <TableHead className="w-[140px]"></TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {filteredDocs.map((d) => (
+                    {docs.map((d) => (
                       <TableRow key={d.id}>
                         <TableCell className="text-sm font-medium max-w-md break-words whitespace-normal align-top">
                           {d.name}
                         </TableCell>
+                        {isJurisGroup && (
+                          <TableCell className="text-xs text-muted-foreground">
+                            {d.chambre ?? "—"}
+                          </TableCell>
+                        )}
                         <TableCell>
                           <StatusBadge status={d.indexation_status} />
                         </TableCell>
                         <TableCell className="text-right text-xs text-muted-foreground">
                           {fmtSize(d.file_size)}
                         </TableCell>
+                        {isJurisGroup && (
+                          <TableCell className="text-right text-xs text-muted-foreground">
+                            {d.date_decision
+                              ? new Date(d.date_decision).toLocaleDateString("fr-FR")
+                              : "—"}
+                          </TableCell>
+                        )}
                         <TableCell className="text-right text-xs text-muted-foreground">
                           {new Date(d.created_at).toLocaleDateString("fr-FR")}
                         </TableCell>
@@ -1295,6 +1503,52 @@ export default function CorpusPage() {
               )}
             </CardContent>
           </Card>
+
+          {/* --- Pagination --- */}
+          {docsTotal > PAGE_SIZE && (
+            <div className="flex items-center justify-between text-sm">
+              <span className="text-muted-foreground">
+                Page {page} sur {totalPages} ·{" "}
+                {(page - 1) * PAGE_SIZE + 1}–
+                {Math.min(page * PAGE_SIZE, docsTotal)} sur{" "}
+                {docsTotal.toLocaleString("fr-FR")}
+              </span>
+              <div className="flex gap-1">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setPage(1)}
+                  disabled={page === 1}
+                >
+                  «
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setPage((p) => Math.max(1, p - 1))}
+                  disabled={page === 1}
+                >
+                  ‹ Précédent
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                  disabled={page >= totalPages}
+                >
+                  Suivant ›
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setPage(totalPages)}
+                  disabled={page >= totalPages}
+                >
+                  »
+                </Button>
+              </div>
+            </div>
+          )}
         </div>
       </div>
 

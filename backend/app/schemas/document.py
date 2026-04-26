@@ -49,6 +49,15 @@ class AdminDocumentRead(DocumentRead):
     organisation_name: str | None = None
 
 
+class DocumentListResponse(BaseModel):
+    """Réponse paginée + total pour la table admin du corpus."""
+
+    items: list[DocumentRead]
+    total: int
+    page: int
+    page_size: int
+
+
 class BatchUploadFileResult(BaseModel):
     filename: str
     success: bool
