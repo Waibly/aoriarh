@@ -1259,55 +1259,53 @@ export default function CorpusPage() {
       {/* Sync banner */}
       <SyncBanner token={token} onRefresh={fetchGroups} />
 
-      {/* --- Catégories en tags pleine largeur --- */}
-      <div className="space-y-2">
-        <div className="flex items-center gap-2 text-sm font-semibold text-muted-foreground">
-          <Library className="h-4 w-4" />
-          Catégories
-        </div>
-        {groupsLoading ? (
-          <div className="flex flex-wrap gap-2">
-            {[1, 2, 3, 4, 5, 6].map((i) => (
-              <Skeleton key={i} className="h-9 w-32" />
-            ))}
+      {/* --- Tout-en-un : catégories + filtres + table + pagination --- */}
+      <Card>
+        <CardContent className="space-y-4 pt-6">
+          {/* Catégories en pilules */}
+          <div className="space-y-2">
+            <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              <Library className="h-3.5 w-3.5" />
+              Catégories
+            </div>
+            {groupsLoading ? (
+              <div className="flex flex-wrap gap-2">
+                {[1, 2, 3, 4, 5, 6].map((i) => (
+                  <Skeleton key={i} className="h-8 w-32" />
+                ))}
+              </div>
+            ) : (
+              <div className="flex flex-wrap gap-2">
+                {groups.map((g) => {
+                  const active = selectedType === g.source_type;
+                  return (
+                    <button
+                      key={g.source_type}
+                      onClick={() => setSelectedType(g.source_type)}
+                      className={`px-3 py-1.5 rounded-full text-xs border transition-colors ${
+                        active
+                          ? "bg-primary text-primary-foreground border-primary"
+                          : "bg-card hover:bg-muted/60 border-border text-foreground"
+                      }`}
+                    >
+                      <span className="font-medium">{g.label}</span>
+                      <span
+                        className={`ml-2 ${
+                          active ? "opacity-90" : "text-muted-foreground"
+                        }`}
+                      >
+                        {g.indexed.toLocaleString("fr-FR")}
+                        {g.pending > 0 && ` · ${g.pending} en attente`}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
           </div>
-        ) : (
-          <div className="flex flex-wrap gap-2">
-            {groups.map((g) => {
-              const active = selectedType === g.source_type;
-              return (
-                <button
-                  key={g.source_type}
-                  onClick={() => setSelectedType(g.source_type)}
-                  className={`px-3 py-1.5 rounded-full text-xs border transition-colors ${
-                    active
-                      ? "bg-primary text-primary-foreground border-primary"
-                      : "bg-card hover:bg-muted/60 border-border text-foreground"
-                  }`}
-                >
-                  <span className="font-medium">{g.label}</span>
-                  <span
-                    className={`ml-2 ${
-                      active ? "opacity-90" : "text-muted-foreground"
-                    }`}
-                  >
-                    {g.indexed.toLocaleString("fr-FR")}
-                    {g.pending > 0 && ` · ${g.pending} en attente`}
-                  </span>
-                </button>
-              );
-            })}
-          </div>
-        )}
-      </div>
 
-      {/* --- Table pleine largeur --- */}
-      <div className="grid grid-cols-12 gap-4">
-
-        {/* Documents table — pleine largeur */}
-        <div className="col-span-12 space-y-3">
-          {/* --- Compteurs --- */}
-          <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1 text-sm">
+          {/* Compteurs */}
+          <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1 text-sm border-t pt-4">
             <span className="font-semibold">
               {docsTotal.toLocaleString("fr-FR")} document
               {docsTotal > 1 ? "s" : ""}
@@ -1393,10 +1391,9 @@ export default function CorpusPage() {
             )}
           </div>
 
-          <Card>
-            <CardContent>
+          <div className="border-t -mx-6 px-6 pt-2">
               {docsLoading ? (
-                <div className="space-y-2">
+                <div className="space-y-2 py-3">
                   {[1, 2, 3, 4, 5].map((i) => (
                     <Skeleton key={i} className="h-10 w-full" />
                   ))}
@@ -1500,12 +1497,11 @@ export default function CorpusPage() {
                   </TableBody>
                 </Table>
               )}
-            </CardContent>
-          </Card>
+          </div>
 
           {/* --- Pagination --- */}
           {docsTotal > PAGE_SIZE && (
-            <div className="flex items-center justify-between text-sm">
+            <div className="flex items-center justify-between text-sm border-t pt-4">
               <span className="text-muted-foreground">
                 Page {page} sur {totalPages} ·{" "}
                 {(page - 1) * PAGE_SIZE + 1}–
@@ -1548,8 +1544,8 @@ export default function CorpusPage() {
               </div>
             </div>
           )}
-        </div>
-      </div>
+        </CardContent>
+      </Card>
 
       <TestRetrievalDialog open={testOpen} onOpenChange={setTestOpen} token={token} />
 
