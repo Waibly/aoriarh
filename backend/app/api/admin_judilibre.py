@@ -3,7 +3,7 @@
 import uuid
 from datetime import date
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -12,9 +12,17 @@ from app.core.database import get_db
 from app.core.dependencies import require_role
 from app.models.document import Document
 from app.models.user import User
-from app.rag.tasks import enqueue_full_jurisprudence_sync, enqueue_judilibre_sync
+from app.rag.tasks import (
+    enqueue_custom_jurisprudence_sync,
+    enqueue_full_jurisprudence_sync,
+    enqueue_judilibre_sync,
+)
 from app.schemas.document import DocumentRead
-from app.services.judilibre_service import JudilibreService, SyncResult
+from app.services.judilibre_service import (
+    SOURCE_DEFINITIONS,
+    JudilibreService,
+    SyncResult,
+)
 
 router = APIRouter()
 
@@ -116,6 +124,122 @@ async def initialize_jurisprudence_corpus(
         message=(
             "Initialisation du corpus jurisprudence lancée. "
             "Cass 1 an + CA chambre sociale 3 mois. "
+            "Suivez l'avancement dans la page Corpus."
+        ),
+    )
+
+
+class CustomSyncRequest(BaseModel):
+    source: str
+    date_start: date
+    date_end: date
+    max_decisions: int | None = None
+
+
+class PreviewResponse(BaseModel):
+    source: str
+    source_label: str
+    date_start: str
+    date_end: str
+    total: int
+    warning: str | None = None
+
+
+@router.get("/preview", response_model=PreviewResponse)
+async def preview_jurisprudence_sync(
+    source: str = Query(...),
+    date_start: date = Query(...),
+    date_end: date = Query(...),
+    user: User = Depends(require_role(["admin"])),
+) -> PreviewResponse:
+    """Renvoie le nombre d'arrêts disponibles pour une plage donnée,
+    sans rien ingérer. Utilisé par le formulaire admin pour afficher
+    un aperçu avant de lancer la synchronisation.
+    """
+    if source not in SOURCE_DEFINITIONS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Source inconnue : '{source}'. Valides : {sorted(SOURCE_DEFINITIONS)}",
+        )
+    if date_start > date_end:
+        raise HTTPException(status_code=400, detail="date_start doit être ≤ date_end")
+
+    spec = SOURCE_DEFINITIONS[source]
+    warning: str | None = None
+
+    try:
+        if spec["service"] in ("judilibre", "judilibre_ca"):
+            total = await JudilibreService().preview_count(
+                jurisdiction=spec["jurisdiction"],
+                chamber=spec["chamber"],
+                publication=spec["publication"],
+                date_start=date_start,
+                date_end=date_end,
+            )
+            if spec["service"] == "judilibre_ca":
+                warning = (
+                    "Judilibre ne filtre pas les CA par chambre — environ 80 % "
+                    "de ces arrêts seront écartés à l'ingestion (chambre non sociale). "
+                    "Compte ~20 % d'arrêts réellement ingérés."
+                )
+                if total >= 10000:
+                    warning += (
+                        " De plus, l'API Judilibre plafonne à 10 000 résultats par "
+                        "fenêtre — réduisez la plage de dates ou utilisez un cap."
+                    )
+        elif spec["service"] == "conseil_constit":
+            from app.services.conseil_constit_service import ConseilConstitService
+
+            total = await ConseilConstitService().preview_count(
+                date_start=date_start,
+                date_end=date_end,
+            )
+        else:
+            raise HTTPException(status_code=500, detail=f"Service inconnu : {spec['service']}")
+    except RuntimeError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    return PreviewResponse(
+        source=source,
+        source_label=spec["label"],
+        date_start=date_start.isoformat(),
+        date_end=date_end.isoformat(),
+        total=total,
+        warning=warning,
+    )
+
+
+@router.post("/sync-custom", response_model=SyncResponse)
+async def sync_custom(
+    body: CustomSyncRequest,
+    user: User = Depends(require_role(["admin"])),
+) -> SyncResponse:
+    """Lance une synchronisation personnalisée sur une plage de dates choisie.
+
+    Source au choix parmi : Cass. soc / cr / com / civ2, CA chambre sociale,
+    Conseil constitutionnel. La sync part en arrière-plan ; consulter les
+    statistiques pour suivre la progression.
+    """
+    if body.source not in SOURCE_DEFINITIONS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Source inconnue : '{body.source}'. Valides : {sorted(SOURCE_DEFINITIONS)}",
+        )
+    if body.date_start > body.date_end:
+        raise HTTPException(status_code=400, detail="date_start doit être ≤ date_end")
+
+    await enqueue_custom_jurisprudence_sync(
+        user_id=str(user.id),
+        source=body.source,
+        date_start=body.date_start.isoformat(),
+        date_end=body.date_end.isoformat(),
+        max_decisions=body.max_decisions,
+    )
+    label = SOURCE_DEFINITIONS[body.source]["label"]
+    return SyncResponse(
+        status="queued",
+        message=(
+            f"Synchronisation lancée : {label} du {body.date_start} au {body.date_end}. "
             "Suivez l'avancement dans la page Corpus."
         ),
     )

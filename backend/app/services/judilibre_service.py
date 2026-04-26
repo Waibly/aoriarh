@@ -54,6 +54,62 @@ _CA_SOCIAL_CHAMBER_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Sources sélectionnables depuis l'UI admin pour la sync personnalisée.
+# Chaque entrée porte tout ce dont l'API et le worker ont besoin pour
+# router vers le bon service (Cass via /export, CA via sync_ca_chambre_sociale,
+# Conseil constit via ConseilConstitService).
+SOURCE_DEFINITIONS: dict[str, dict] = {
+    "cass_soc": {
+        "label": "Cass. soc (chambre sociale)",
+        "service": "judilibre",
+        "jurisdiction": "cc",
+        "chamber": "soc",
+        "publication": "b",
+        "source_type": "arret_cour_cassation",
+    },
+    "cass_cr": {
+        "label": "Cass. crim (chambre criminelle)",
+        "service": "judilibre",
+        "jurisdiction": "cc",
+        "chamber": "cr",
+        "publication": "b",
+        "source_type": "arret_cour_cassation",
+    },
+    "cass_comm": {
+        "label": "Cass. com (chambre commerciale)",
+        "service": "judilibre",
+        "jurisdiction": "cc",
+        "chamber": "comm",
+        "publication": "b",
+        "source_type": "arret_cour_cassation",
+    },
+    "cass_civ2": {
+        "label": "Cass. civ2 (sécurité sociale / AT-MP)",
+        "service": "judilibre",
+        "jurisdiction": "cc",
+        "chamber": "civ2",
+        "publication": "b",
+        "source_type": "arret_cour_cassation",
+    },
+    "ca_soc": {
+        "label": "Cour d'appel — chambre sociale",
+        "service": "judilibre_ca",
+        "jurisdiction": "ca",
+        "chamber": None,
+        "publication": None,
+        "source_type": "arret_cour_appel",
+    },
+    "conseil_constit": {
+        "label": "Conseil constitutionnel",
+        "service": "conseil_constit",
+        "jurisdiction": None,
+        "chamber": None,
+        "publication": None,
+        "source_type": "decision_conseil_constitutionnel",
+    },
+}
+
+
 _CHAMBER_MAP = {
     # Cour de cassation — codes API → libellés humains
     "soc": "Chambre sociale",
@@ -453,6 +509,40 @@ class JudilibreService:
             result.already_exists, result.new_ingested, result.errors,
         )
         return result
+
+    async def preview_count(
+        self,
+        *,
+        jurisdiction: str,
+        chamber: str | None,
+        publication: str | None,
+        date_start: date,
+        date_end: date,
+    ) -> int:
+        """Interroge Judilibre pour le nombre total d'arrêts sur la plage,
+        sans rien ingérer. Utilisé par le formulaire admin pour afficher
+        un preview avant de lancer la sync.
+        """
+        if not self._client_id or not self._client_secret:
+            raise RuntimeError("JUDILIBRE_CLIENT_ID / JUDILIBRE_CLIENT_SECRET non configurés")
+
+        params: dict = {
+            "jurisdiction": jurisdiction,
+            "date_start": date_start.isoformat(),
+            "date_end": date_end.isoformat(),
+            "batch": 0,
+            "batch_size": 1,
+        }
+        if jurisdiction == "cc" and chamber:
+            params["chamber"] = chamber
+        if publication:
+            params["publication"] = publication
+
+        async with httpx.AsyncClient(timeout=_REQUEST_TIMEOUT) as client:
+            data = await self._api_get(client, "/export", params=params)
+        if data is None:
+            raise RuntimeError("Erreur ou aucune donnée retournée par Judilibre /export")
+        return int(data.get("total", 0))
 
     async def get_stats(self, db: AsyncSession) -> dict:
         """Return statistics about ingested jurisprudence."""

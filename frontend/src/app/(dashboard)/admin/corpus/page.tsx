@@ -16,6 +16,8 @@ import {
   Play,
   ChevronRight,
   Database,
+  CalendarRange,
+  Eye,
 } from "lucide-react";
 import { apiFetch } from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -904,6 +906,129 @@ export default function CorpusPage() {
     }
   };
 
+  // ---------- Synchronisation personnalisée (plage de dates choisie) ----------
+  const [customSyncOpen, setCustomSyncOpen] = useState(false);
+  const [customSource, setCustomSource] = useState<string>("cass_soc");
+  const [customDateStart, setCustomDateStart] = useState<string>("2005-01-01");
+  const [customDateEnd, setCustomDateEnd] = useState<string>(
+    new Date().toISOString().slice(0, 10),
+  );
+  const [customMaxDecisions, setCustomMaxDecisions] = useState<string>("");
+  const [customPreview, setCustomPreview] = useState<{
+    total: number;
+    warning: string | null;
+    label: string;
+  } | null>(null);
+  const [customPreviewLoading, setCustomPreviewLoading] = useState(false);
+  const [customSyncRunning, setCustomSyncRunning] = useState(false);
+
+  const customSourceOptions: { value: string; label: string }[] = [
+    { value: "cass_soc", label: "Cass. soc (chambre sociale)" },
+    { value: "cass_cr", label: "Cass. crim (chambre criminelle)" },
+    { value: "cass_comm", label: "Cass. com (chambre commerciale)" },
+    { value: "cass_civ2", label: "Cass. civ2 (sécurité sociale / AT-MP)" },
+    { value: "ca_soc", label: "Cour d'appel — chambre sociale" },
+    { value: "conseil_constit", label: "Conseil constitutionnel" },
+  ];
+
+  // Dès qu'un champ change, on invalide le preview (forcer un nouveau clic)
+  useEffect(() => {
+    setCustomPreview(null);
+  }, [customSource, customDateStart, customDateEnd]);
+
+  const handleCustomPreview = async () => {
+    if (!token) return;
+    if (customDateStart > customDateEnd) {
+      toast.error("La date de début doit être antérieure ou égale à la date de fin.");
+      return;
+    }
+    setCustomPreviewLoading(true);
+    try {
+      const params = new URLSearchParams({
+        source: customSource,
+        date_start: customDateStart,
+        date_end: customDateEnd,
+      });
+      const data = await apiFetch<{
+        total: number;
+        source_label: string;
+        warning: string | null;
+      }>(`/admin/jurisprudence/preview?${params.toString()}`, { token });
+      setCustomPreview({
+        total: data.total,
+        warning: data.warning,
+        label: data.source_label,
+      });
+    } catch (e) {
+      toast.error(
+        e instanceof Error ? e.message : "Échec de l'aperçu Judilibre",
+      );
+    } finally {
+      setCustomPreviewLoading(false);
+    }
+  };
+
+  const handleCustomSync = async () => {
+    if (!token) return;
+    if (customDateStart > customDateEnd) {
+      toast.error("La date de début doit être antérieure ou égale à la date de fin.");
+      return;
+    }
+
+    // Confirmation modale si plage > 3 ans ou volume > 3 000 arrêts
+    const yearsSpan =
+      (new Date(customDateEnd).getTime() - new Date(customDateStart).getTime()) /
+      (1000 * 60 * 60 * 24 * 365.25);
+    const bigVolume = (customPreview?.total ?? 0) > 3000;
+    const wideRange = yearsSpan > 3;
+    if (bigVolume || wideRange) {
+      const reasons: string[] = [];
+      if (customPreview)
+        reasons.push(`Volume Judilibre : ${customPreview.total.toLocaleString("fr-FR")} arrêts`);
+      if (wideRange) reasons.push(`Plage : ${yearsSpan.toFixed(1)} ans`);
+      if (
+        !confirm(
+          `Lancer la synchronisation ?\n\n${reasons.join("\n")}\n\n` +
+            "Cette opération peut prendre plusieurs heures et consomme du budget embeddings " +
+            "(Voyage AI ≈ 0,12 €/M tokens).\n\nContinuer ?",
+        )
+      )
+        return;
+    }
+
+    setCustomSyncRunning(true);
+    try {
+      const max = customMaxDecisions.trim()
+        ? parseInt(customMaxDecisions.trim(), 10)
+        : null;
+      await apiFetch("/admin/jurisprudence/sync-custom", {
+        method: "POST",
+        token,
+        body: JSON.stringify({
+          source: customSource,
+          date_start: customDateStart,
+          date_end: customDateEnd,
+          max_decisions: Number.isFinite(max) && max && max > 0 ? max : null,
+        }),
+      });
+      toast.success(
+        "Synchronisation lancée — suis l'avancement dans le bandeau ci-dessous.",
+      );
+      setCustomSyncOpen(false);
+      // SyncBanner polls itself, so we juste refresh the document groups to
+      // pick up the freshly enqueued items.
+      setTimeout(() => {
+        fetchGroups();
+      }, 1500);
+    } catch (e) {
+      toast.error(
+        e instanceof Error ? e.message : "Échec du déclenchement de la sync",
+      );
+    } finally {
+      setCustomSyncRunning(false);
+    }
+  };
+
   const [initJurisRunning, setInitJurisRunning] = useState(false);
   const handleInitJurisprudence = async () => {
     if (!token) return;
@@ -968,6 +1093,14 @@ export default function CorpusPage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            onClick={() => setCustomSyncOpen(true)}
+            title="Synchroniser la jurisprudence sur une plage de dates choisie"
+          >
+            <CalendarRange className="h-4 w-4 mr-2" />
+            Sync personnalisée
+          </Button>
           <Button
             variant="outline"
             onClick={handleInitJurisprudence}
@@ -1166,6 +1299,139 @@ export default function CorpusPage() {
       </div>
 
       <TestRetrievalDialog open={testOpen} onOpenChange={setTestOpen} token={token} />
+
+      {/* ---------- Synchronisation jurisprudence personnalisée ---------- */}
+      <Dialog open={customSyncOpen} onOpenChange={setCustomSyncOpen}>
+        <DialogContent className="sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <CalendarRange className="h-5 w-5" />
+              Synchronisation jurisprudence personnalisée
+            </DialogTitle>
+            <DialogDescription>
+              Récupère les arrêts d&apos;une source juridique sur la plage de dates de
+              votre choix. Idempotent : les arrêts déjà ingérés (dédup par numéro
+              de pourvoi) ne sont pas dupliqués.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-2">
+            {/* Source */}
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium">Source</label>
+              <Select value={customSource} onValueChange={setCustomSource}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {customSourceOptions.map((opt) => (
+                    <SelectItem key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Dates */}
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium">Du</label>
+                <Input
+                  type="date"
+                  value={customDateStart}
+                  onChange={(e) => setCustomDateStart(e.target.value)}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium">Au</label>
+                <Input
+                  type="date"
+                  value={customDateEnd}
+                  onChange={(e) => setCustomDateEnd(e.target.value)}
+                />
+              </div>
+            </div>
+
+            {/* Plafond (optionnel) */}
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium">
+                Plafond <span className="text-muted-foreground font-normal">(optionnel)</span>
+              </label>
+              <Input
+                type="number"
+                placeholder="Aucun (recommandé pour Cassation)"
+                value={customMaxDecisions}
+                onChange={(e) => setCustomMaxDecisions(e.target.value)}
+                min={1}
+              />
+              <p className="text-xs text-muted-foreground">
+                Limite le nombre d&apos;arrêts ingérés. Utile pour les Cours d&apos;appel
+                (~80 % filtrés sur la chambre, volume très élevé).
+              </p>
+            </div>
+
+            {/* Aperçu */}
+            <div className="rounded-md border bg-muted/30 p-3 space-y-2">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-sm font-medium">Aperçu Judilibre</span>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={handleCustomPreview}
+                  disabled={customPreviewLoading}
+                >
+                  {customPreviewLoading ? (
+                    <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+                  ) : (
+                    <Eye className="h-3.5 w-3.5 mr-1.5" />
+                  )}
+                  Calculer
+                </Button>
+              </div>
+              {customPreview ? (
+                <div className="space-y-1">
+                  <div className="text-sm">
+                    <span className="font-semibold">
+                      {customPreview.total.toLocaleString("fr-FR")}
+                    </span>{" "}
+                    arrêts disponibles pour cette plage.
+                  </div>
+                  {customPreview.warning && (
+                    <div className="flex gap-1.5 text-xs text-amber-700 dark:text-amber-400">
+                      <AlertCircle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+                      <span>{customPreview.warning}</span>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <p className="text-xs text-muted-foreground">
+                  Cliquez sur « Calculer » pour interroger Judilibre avant de
+                  lancer la synchronisation.
+                </p>
+              )}
+            </div>
+          </div>
+
+          <div className="flex justify-end gap-2">
+            <Button
+              variant="outline"
+              onClick={() => setCustomSyncOpen(false)}
+              disabled={customSyncRunning}
+            >
+              Annuler
+            </Button>
+            <Button onClick={handleCustomSync} disabled={customSyncRunning}>
+              {customSyncRunning ? (
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              ) : (
+                <Play className="h-4 w-4 mr-2" />
+              )}
+              Lancer la synchronisation
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

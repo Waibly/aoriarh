@@ -162,6 +162,56 @@ class ConseilConstitService:
 
     # ---- Public sync API ----
 
+    async def preview_count(
+        self,
+        *,
+        date_start: date,
+        date_end: date,
+    ) -> int:
+        """Interroge PISTE Légifrance pour le nombre total de décisions
+        Conseil constitutionnel sur la plage, sans rien ingérer.
+        """
+        if not self._client_id or not self._client_secret:
+            raise RuntimeError("PISTE credentials non configurés")
+
+        payload = {
+            "fond": _FOND,
+            "recherche": {
+                "champs": [
+                    {
+                        "typeChamp": "ALL",
+                        "criteres": [
+                            {
+                                "typeRecherche": "EXACTE",
+                                "valeur": "*",
+                                "operateur": "ET",
+                            }
+                        ],
+                        "operateur": "ET",
+                    }
+                ],
+                "filtres": [
+                    {
+                        "facette": "DATE_DECISION",
+                        "dates": {
+                            "start": date_start.isoformat(),
+                            "end": date_end.isoformat(),
+                        },
+                    }
+                ],
+                "pageNumber": 1,
+                "pageSize": 1,
+                "sort": "DATE_DESC",
+                "typePagination": "DEFAUT",
+            },
+        }
+
+        async with httpx.AsyncClient(timeout=_REQUEST_TIMEOUT) as client:
+            data = await self._api_post(client, "/search", payload)
+        if not data:
+            raise RuntimeError("Erreur ou aucune donnée retournée par /search CONSTIT")
+        return int(data.get("totalResultNumber", 0))
+
     async def sync(
         self,
         db: AsyncSession,

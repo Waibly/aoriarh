@@ -633,6 +633,140 @@ async def run_full_jurisprudence_sync(ctx: dict, user_id: str) -> None:
     logger.info("Worker: full jurisprudence sync completed")
 
 
+async def run_custom_jurisprudence_sync(
+    ctx: dict,
+    user_id: str,
+    *,
+    source: str,
+    date_start: str,
+    date_end: str,
+    max_decisions: int | None = None,
+) -> None:
+    """Synchronisation jurisprudence personnalisée (1 source + 1 plage choisie).
+
+    Lancée depuis le formulaire admin /admin/corpus → "Synchronisation
+    personnalisée". Dispatch vers le bon service selon la source :
+      - cass_*       → JudilibreService.sync (jurisdiction=cc)
+      - ca_soc       → JudilibreService.sync_ca_chambre_sociale
+      - conseil_constit → ConseilConstitService.sync
+
+    Écrit un SyncLog row pour la traçabilité dans /admin/corpus. Idempotent
+    grâce à la dédup par numéro de pourvoi (Cass / CA) ou CID (Conseil constit).
+    """
+    import time as _time
+    import traceback
+    from datetime import UTC, datetime, date as _date
+    from sqlalchemy import select
+    from app.models.sync_log import SyncLog
+    from app.models.user import User
+    from app.services.judilibre_service import SOURCE_DEFINITIONS, JudilibreService
+
+    if source not in SOURCE_DEFINITIONS:
+        logger.error("Custom sync: source inconnue '%s'", source)
+        return
+    spec = SOURCE_DEFINITIONS[source]
+    ds = _date.fromisoformat(date_start)
+    de = _date.fromisoformat(date_end)
+
+    logger.info(
+        "Worker: custom jurisprudence sync started (source=%s, %s → %s, cap=%s)",
+        source, ds, de, max_decisions,
+    )
+    session_factory = ctx["session_factory"]
+
+    async with session_factory() as db:
+        admin = (await db.execute(
+            select(User).where(User.role == "admin", User.is_active.is_(True)).limit(1)
+        )).scalar_one_or_none()
+        admin_id = admin.id if admin else uuid.UUID(user_id)
+
+        sync_log = SyncLog(
+            sync_type="jurisprudence",
+            status="running",
+            started_at=datetime.now(UTC),
+        )
+        db.add(sync_log)
+        await db.commit()
+
+        t0 = _time.perf_counter()
+        try:
+            if spec["service"] == "judilibre":
+                service = JudilibreService()
+                result = await service.sync(
+                    db=db,
+                    user_id=admin_id,
+                    date_start=ds,
+                    date_end=de,
+                    jurisdiction=spec["jurisdiction"],
+                    chamber=spec["chamber"],
+                    publication=spec["publication"],
+                    source_type=spec["source_type"],
+                    max_decisions=max_decisions,
+                )
+                fetched = result.total_fetched
+                created = result.new_ingested
+                skipped = result.already_exists + result.filtered_out
+                errors = result.errors
+                error_msgs = result.error_messages
+            elif spec["service"] == "judilibre_ca":
+                service = JudilibreService()
+                result = await service.sync_ca_chambre_sociale(
+                    db=db,
+                    user_id=admin_id,
+                    date_start=ds,
+                    date_end=de,
+                    max_decisions=max_decisions,
+                )
+                fetched = result.total_fetched
+                created = result.new_ingested
+                skipped = result.already_exists + result.filtered_out
+                errors = result.errors
+                error_msgs = result.error_messages
+            elif spec["service"] == "conseil_constit":
+                from app.services.conseil_constit_service import ConseilConstitService
+                cc_service = ConseilConstitService()
+                result = await cc_service.sync(
+                    db=db,
+                    user_id=admin_id,
+                    date_start=ds,
+                    date_end=de,
+                    max_decisions=max_decisions,
+                )
+                fetched = result.total_fetched
+                created = result.new_ingested
+                skipped = result.already_exists
+                errors = result.errors
+                error_msgs = result.error_messages
+            else:
+                raise ValueError(f"Service inconnu : {spec['service']}")
+
+            duration = int((_time.perf_counter() - t0) * 1000)
+            sync_log.status = "success" if errors == 0 else "error"
+            sync_log.items_fetched = fetched
+            sync_log.items_created = created
+            sync_log.items_skipped = skipped
+            sync_log.errors = errors
+            sync_log.error_message = "; ".join(error_msgs[:3]) if error_msgs else None
+            sync_log.duration_ms = duration
+            sync_log.completed_at = datetime.now(UTC)
+            await db.commit()
+            logger.info(
+                "Custom sync %s done: %d new, %d skipped, %d errors (%.1fs)",
+                source, created, skipped, errors, duration / 1000,
+            )
+        except Exception as exc:
+            sync_log.status = "error"
+            sync_log.errors = 1
+            sync_log.error_message = (
+                f"{type(exc).__name__}: {str(exc)[:300]}\n"
+                f"{traceback.format_exc().splitlines()[-1] if traceback.format_exc() else ''}"
+            )[:500]
+            sync_log.completed_at = datetime.now(UTC)
+            sync_log.duration_ms = int((_time.perf_counter() - t0) * 1000)
+            await db.commit()
+            logger.exception("Custom sync %s failed", source)
+
+
 async def run_jurisprudence_initialization(ctx: dict, user_id: str) -> None:
     """Initialisation one-shot du corpus jurisprudence.
 
@@ -1182,6 +1316,7 @@ class WorkerSettings:
         run_judilibre_sync,
         run_full_jurisprudence_sync,
         run_jurisprudence_initialization,
+        run_custom_jurisprudence_sync,
         run_kali_install,
         run_ccn_blue_green_cleanup,
         run_bocc_sync,

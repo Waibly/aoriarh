@@ -137,6 +137,30 @@ async def enqueue_full_jurisprudence_sync(user_id: str) -> None:
     logger.info("Full jurisprudence sync job enqueued")
 
 
+async def enqueue_custom_jurisprudence_sync(
+    user_id: str,
+    *,
+    source: str,
+    date_start: str,
+    date_end: str,
+    max_decisions: int | None = None,
+) -> None:
+    """Enqueue une sync jurisprudence personnalisée (source + plage de dates choisies)."""
+    pool = await get_arq_pool()
+    await pool.enqueue_job(
+        "run_custom_jurisprudence_sync",
+        user_id,
+        source=source,
+        date_start=date_start,
+        date_end=date_end,
+        max_decisions=max_decisions,
+    )
+    logger.info(
+        "Custom jurisprudence sync enqueued: source=%s, %s → %s, cap=%s",
+        source, date_start, date_end, max_decisions,
+    )
+
+
 async def enqueue_jurisprudence_initialization(user_id: str) -> None:
     """Enqueue ONE-SHOT initialization of jurisprudence corpus.
 
