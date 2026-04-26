@@ -28,6 +28,7 @@ import {
   TrendingUp,
   Gauge,
   CreditCard,
+  Plus,
 } from "lucide-react";
 import { apiFetch } from "@/lib/api";
 import { fetchQuota, type QuotaInfo } from "@/lib/billing-api";
@@ -415,21 +416,35 @@ export function Sidebar() {
               item.href === "/chat"
                 ? pathname === "/chat"
                 : pathname.startsWith(item.href);
+            const isChat = item.href === "/chat";
             return (
-              <Button
-                key={item.name}
-                variant="ghost"
-                className={cn(
-                  "w-full justify-start font-normal",
-                  isActive && "bg-accent text-accent-foreground font-medium",
+              <div key={item.name} className="flex items-center gap-1">
+                <Button
+                  variant="ghost"
+                  className={cn(
+                    "flex-1 justify-start font-normal",
+                    isActive && "bg-accent text-accent-foreground font-medium",
+                  )}
+                  asChild
+                >
+                  <Link href={item.href}>
+                    <item.icon className="mr-2 h-5 w-5" />
+                    {item.name}
+                  </Link>
+                </Button>
+                {isChat && (
+                  <Button
+                    size="icon-sm"
+                    className="bg-primary text-primary-foreground hover:bg-primary/90 shrink-0"
+                    title="Nouvelle conversation"
+                    asChild
+                  >
+                    <Link href="/chat">
+                      <Plus className="h-4 w-4" />
+                    </Link>
+                  </Button>
                 )}
-                asChild
-              >
-                <Link href={item.href}>
-                  <item.icon className="mr-2 h-5 w-5" />
-                  {item.name}
-                </Link>
-              </Button>
+              </div>
             );
           })}
         </nav>
