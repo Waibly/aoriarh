@@ -1306,15 +1306,13 @@ export default function CorpusPage() {
 
           {/* Compteurs */}
           <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1 text-sm border-t pt-4">
-            <span className="font-semibold">
-              {docsTotal.toLocaleString("fr-FR")} document
-              {docsTotal > 1 ? "s" : ""}
-            </span>
-            <span className="text-muted-foreground">
-              dans {groups.find((g) => g.source_type === selectedType)?.label ?? "—"}
+            <span className="font-semibold text-base">
+              {corpusTotal.toLocaleString("fr-FR")} document
+              {corpusTotal > 1 ? "s" : ""} au total dans le corpus
             </span>
             <span className="text-xs text-muted-foreground">
-              · {corpusTotal.toLocaleString("fr-FR")} au total dans le corpus
+              · {docsTotal.toLocaleString("fr-FR")} dans la catégorie sélectionnée
+              ({groups.find((g) => g.source_type === selectedType)?.label ?? "—"})
             </span>
           </div>
 
