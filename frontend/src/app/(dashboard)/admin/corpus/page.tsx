@@ -14,7 +14,6 @@ import {
   Download,
   Trash2,
   Play,
-  ChevronRight,
   Database,
   CalendarRange,
   Eye,
@@ -1260,53 +1259,53 @@ export default function CorpusPage() {
       {/* Sync banner */}
       <SyncBanner token={token} onRefresh={fetchGroups} />
 
-      {/* Main: sidebar + table */}
-      <div className="grid grid-cols-12 gap-4">
-        {/* Sidebar categories */}
-        <div className="col-span-12 md:col-span-3">
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-semibold flex items-center gap-2">
-                <Library className="h-4 w-4" />
-                Catégories
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="p-2">
-              {groupsLoading ? (
-                <div className="space-y-2">
-                  {[1, 2, 3, 4].map((i) => <Skeleton key={i} className="h-10 w-full" />)}
-                </div>
-              ) : (
-                <div className="space-y-1">
-                  {groups.map((g) => {
-                    const active = selectedType === g.source_type;
-                    return (
-                      <button
-                        key={g.source_type}
-                        onClick={() => setSelectedType(g.source_type)}
-                        className={`w-full text-left px-2 py-2 rounded text-sm flex items-center justify-between gap-2 transition-colors ${
-                          active ? "bg-accent text-accent-foreground" : "hover:bg-muted/50"
-                        }`}
-                      >
-                        <div className="min-w-0 flex-1">
-                          <div className="font-medium truncate text-xs">{g.label}</div>
-                          <div className="text-[10px] text-muted-foreground">
-                            {g.indexed} indexés
-                            {g.pending > 0 && ` · ${g.pending} en attente`}
-                          </div>
-                        </div>
-                        <ChevronRight className="h-3 w-3 shrink-0" />
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
-            </CardContent>
-          </Card>
+      {/* --- Catégories en tags pleine largeur --- */}
+      <div className="space-y-2">
+        <div className="flex items-center gap-2 text-sm font-semibold text-muted-foreground">
+          <Library className="h-4 w-4" />
+          Catégories
         </div>
+        {groupsLoading ? (
+          <div className="flex flex-wrap gap-2">
+            {[1, 2, 3, 4, 5, 6].map((i) => (
+              <Skeleton key={i} className="h-9 w-32" />
+            ))}
+          </div>
+        ) : (
+          <div className="flex flex-wrap gap-2">
+            {groups.map((g) => {
+              const active = selectedType === g.source_type;
+              return (
+                <button
+                  key={g.source_type}
+                  onClick={() => setSelectedType(g.source_type)}
+                  className={`px-3 py-1.5 rounded-full text-xs border transition-colors ${
+                    active
+                      ? "bg-primary text-primary-foreground border-primary"
+                      : "bg-background hover:bg-muted/60 border-border text-foreground"
+                  }`}
+                >
+                  <span className="font-medium">{g.label}</span>
+                  <span
+                    className={`ml-2 ${
+                      active ? "opacity-90" : "text-muted-foreground"
+                    }`}
+                  >
+                    {g.indexed.toLocaleString("fr-FR")}
+                    {g.pending > 0 && ` · ${g.pending} en attente`}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </div>
 
-        {/* Documents table */}
-        <div className="col-span-12 md:col-span-9 space-y-3">
+      {/* --- Table pleine largeur --- */}
+      <div className="grid grid-cols-12 gap-4">
+
+        {/* Documents table — pleine largeur */}
+        <div className="col-span-12 space-y-3">
           {/* --- Compteurs --- */}
           <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1 text-sm">
             <span className="font-semibold">
