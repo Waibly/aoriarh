@@ -1282,7 +1282,7 @@ export default function CorpusPage() {
                   className={`px-3 py-1.5 rounded-full text-xs border transition-colors ${
                     active
                       ? "bg-primary text-primary-foreground border-primary"
-                      : "bg-background hover:bg-muted/60 border-border text-foreground"
+                      : "bg-card hover:bg-muted/60 border-border text-foreground"
                   }`}
                 >
                   <span className="font-medium">{g.label}</span>
