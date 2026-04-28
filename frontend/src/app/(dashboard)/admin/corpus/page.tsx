@@ -1165,6 +1165,13 @@ export default function CorpusPage() {
     () => groups.reduce((acc, g) => acc + g.count, 0),
     [groups],
   );
+  const sortedGroups = useMemo(
+    () =>
+      [...groups].sort((a, b) =>
+        a.label.localeCompare(b.label, "fr", { sensitivity: "base" }),
+      ),
+    [groups],
+  );
   const totalPages = Math.max(1, Math.ceil(docsTotal / PAGE_SIZE));
 
   const toggleSort = (col: "created_at" | "date_decision" | "name") => {
@@ -1276,7 +1283,7 @@ export default function CorpusPage() {
               </div>
             ) : (
               <div className="flex flex-wrap gap-2">
-                {groups.map((g) => {
+                {sortedGroups.map((g) => {
                   const active = selectedType === g.source_type;
                   return (
                     <button
