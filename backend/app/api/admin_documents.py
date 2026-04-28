@@ -299,6 +299,12 @@ async def list_common_document_groups(
         "code_action_sociale_reglementaire": "Code de l'action sociale et des familles (réglementaire)",
         "code_sante_publique": "Code de la santé publique (législatif)",
         "code_sante_publique_reglementaire": "Code de la santé publique (réglementaire)",
+        "accord_branche": "Accord de branche",
+        "code_commerce": "Code de commerce (législatif)",
+        "code_commerce_reglementaire": "Code de commerce (réglementaire)",
+        "code_general_impots": "Code général des impôts",
+        "code_monetaire_financier": "Code monétaire et financier (législatif)",
+        "code_monetaire_financier_reglementaire": "Code monétaire et financier (réglementaire)",
     }
 
     groups = []

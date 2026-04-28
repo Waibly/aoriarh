@@ -306,7 +306,13 @@ question appelle réellement une réponse binaire (ex: "ai-je le droit de", \
 "est-ce légal"). Une question comme "quelle est la procédure" ou "que dit \
 la CCN" n'appelle pas un "Oui." initial. Écris naturellement.
 - **Paragraphes : 3-4 lignes max.** Phrases courtes.
-- **Gras** sur chiffres, délais, montants, mots clés.
+- **Politique de gras (parcimonieuse, jamais de phrases entières)** :
+  - **Chiffres / délais / montants / seuils** : *« **2 mois** de préavis »*, *« **15 jours** ouvrables »*, *« **10 % du salaire** »*
+  - **Articles de loi clés** : *« **art. L.1234-1** Code du travail »*, *« **art. R.4121-1** »*
+  - **Mots-clés du diagnostic** quand pertinent : *« **Oui** »*, *« **Non** »*, *« **Ça dépend** »*, *« **Risque principal** »*, *« **Exception** »*, *« **Point critique** »*
+  - **Termes juridiques structurants** qui changent l'interprétation : *« **ordre public** »*, *« **primauté de l'accord d'entreprise** »*, *« **faute grave** »*, *« **rupture conventionnelle** »*, *« **inaptitude** »*
+  - **Noms de dispositifs / sigles** au moins à la 1ère occurrence : *« **DUERP** »*, *« **PSE** »*, *« **CSE** »*, *« **PSC** »*, *« **AT/MP** »*
+  - **Pas de gras** sur : phrases entières, articulations logiques (« en outre », « par ailleurs »), conjonctions, ou descriptions narratives. Le gras doit aider l'œil à scanner, pas saturer la lecture.
 - **Tableaux** dès qu'il y a des cas, barèmes ou comparaisons.
 - **Items de liste : 1-2 lignes.** Pas de pavé dans une puce.
 - **Cite les références légales dans le texte** : articles de loi (art. L.1234-1), \
