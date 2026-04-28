@@ -88,6 +88,68 @@ def render_invitation_email(
     return subject, html
 
 
+ADMIN_NEW_SIGNUP_CONTENT = """\
+<h2 style="margin-top:0; color:#5b21b6; font-size:20px;">🆕 Nouvel inscrit AORIA RH</h2>
+<p style="color:#3f3f46; line-height:1.6;">
+  Un nouveau compte vient d'être créé sur AORIA RH.
+</p>
+<table cellpadding="0" cellspacing="0" border="0" style="width:100%; margin:24px 0; border-collapse:collapse;">
+  <tr>
+    <td style="padding:8px 12px; background:#f5f3ff; border:1px solid #ede9fe; color:#5b21b6; font-weight:600; width:140px;">Nom</td>
+    <td style="padding:8px 12px; background:#ffffff; border:1px solid #ede9fe; color:#3f3f46;">{full_name}</td>
+  </tr>
+  <tr>
+    <td style="padding:8px 12px; background:#f5f3ff; border:1px solid #ede9fe; color:#5b21b6; font-weight:600;">Email</td>
+    <td style="padding:8px 12px; background:#ffffff; border:1px solid #ede9fe; color:#3f3f46;">{email}</td>
+  </tr>
+  <tr>
+    <td style="padding:8px 12px; background:#f5f3ff; border:1px solid #ede9fe; color:#5b21b6; font-weight:600;">Workspace</td>
+    <td style="padding:8px 12px; background:#ffffff; border:1px solid #ede9fe; color:#3f3f46;">{workspace_name}</td>
+  </tr>
+  <tr>
+    <td style="padding:8px 12px; background:#f5f3ff; border:1px solid #ede9fe; color:#5b21b6; font-weight:600;">Plan</td>
+    <td style="padding:8px 12px; background:#ffffff; border:1px solid #ede9fe; color:#3f3f46;">{plan_label}</td>
+  </tr>
+  <tr>
+    <td style="padding:8px 12px; background:#f5f3ff; border:1px solid #ede9fe; color:#5b21b6; font-weight:600;">Méthode</td>
+    <td style="padding:8px 12px; background:#ffffff; border:1px solid #ede9fe; color:#3f3f46;">{auth_method}</td>
+  </tr>
+  <tr>
+    <td style="padding:8px 12px; background:#f5f3ff; border:1px solid #ede9fe; color:#5b21b6; font-weight:600;">Date</td>
+    <td style="padding:8px 12px; background:#ffffff; border:1px solid #ede9fe; color:#3f3f46;">{signup_date}</td>
+  </tr>
+</table>
+<p style="color:#94a3b8; font-size:13px; line-height:1.5;">
+  Notification interne envoyée automatiquement à chaque nouvelle inscription.
+</p>"""
+
+
+def render_admin_new_signup_email(
+    full_name: str,
+    email: str,
+    workspace_name: str,
+    plan_label: str,
+    auth_method: str,
+) -> tuple[str, str]:
+    """Email de notification interne envoyé à l'admin AORIA RH lors
+    d'une nouvelle inscription self-service."""
+    subject = f"🆕 Nouvel inscrit AORIA RH — {full_name} ({plan_label})"
+    content = ADMIN_NEW_SIGNUP_CONTENT.format(
+        full_name=full_name,
+        email=email,
+        workspace_name=workspace_name,
+        plan_label=plan_label,
+        auth_method=auth_method,
+        signup_date=datetime.now().strftime("%d/%m/%Y à %H:%M"),
+    )
+    html = BASE_TEMPLATE.format(
+        subject=subject,
+        content=content,
+        year=datetime.now().year,
+    )
+    return subject, html
+
+
 def render_team_invitation_email(
     inviter_name: str,
     account_name: str,

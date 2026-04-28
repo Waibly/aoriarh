@@ -1,3 +1,4 @@
+import logging
 from datetime import UTC, datetime, timedelta
 
 from fastapi import HTTPException, status
@@ -16,6 +17,40 @@ from app.models.account import Account
 from app.models.invitation import Invitation
 from app.models.user import User
 from app.schemas.auth import GoogleAuthRequest, LoginRequest, RegisterRequest, TokenResponse
+from app.services.email.sender import send_email
+from app.services.email.templates import render_admin_new_signup_email
+
+logger = logging.getLogger(__name__)
+
+
+async def _notify_admin_new_signup(
+    full_name: str,
+    email: str,
+    workspace_name: str,
+    auth_method: str,
+) -> None:
+    """Notification interne envoyée à hello@aoriarh.fr lors d'une inscription
+    self-service. Fire-and-forget : un échec n'interrompt jamais le signup.
+    """
+    if not settings.admin_email:
+        return
+    try:
+        subject, html = render_admin_new_signup_email(
+            full_name=full_name,
+            email=email,
+            workspace_name=workspace_name,
+            plan_label="Trial (14 jours)",
+            auth_method=auth_method,
+        )
+        await send_email(
+            to_email=settings.admin_email,
+            to_name="Admin AORIA RH",
+            subject=subject,
+            html_content=html,
+        )
+    except Exception:
+        # Ne JAMAIS faire échouer un signup à cause d'un souci email.
+        logger.exception("Failed to send admin new-signup notification for %s", email)
 
 
 def _new_trial_account(name: str, owner_id) -> Account:
@@ -82,6 +117,12 @@ class AuthService:
         self.db.add(account)
         await self.db.commit()
         await self.db.refresh(user)
+        await _notify_admin_new_signup(
+            full_name=user.full_name,
+            email=user.email,
+            workspace_name=account.name,
+            auth_method="Email + mot de passe",
+        )
         return _build_token_response(str(user.id))
 
     async def login(self, data: LoginRequest) -> TokenResponse | None:
@@ -157,4 +198,10 @@ class AuthService:
         self.db.add(account)
         await self.db.commit()
         await self.db.refresh(user)
+        await _notify_admin_new_signup(
+            full_name=user.full_name,
+            email=user.email,
+            workspace_name=account.name,
+            auth_method="Google OAuth",
+        )
         return _build_token_response(str(user.id))
