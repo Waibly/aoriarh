@@ -467,7 +467,7 @@ export default function BillingPage() {
               </p>
             </div>
             <div className="flex justify-end">
-              <Button variant="outline" size="sm" onClick={handleBooster} disabled={busy}>
+              <Button onClick={handleBooster} disabled={busy}>
                 {busy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Zap className="mr-2 h-4 w-4" />}
                 Acheter un pack booster (+500 questions, 25 €)
               </Button>
@@ -526,7 +526,7 @@ export default function BillingPage() {
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="grid gap-3 md:grid-cols-3">
+            <div className="grid gap-3 md:grid-cols-2">
               <Button
                 variant="outline"
                 disabled={busy}
@@ -548,7 +548,18 @@ export default function BillingPage() {
               >
                 +500 documents · 10 €/mois
               </Button>
+              <Button
+                disabled={busy}
+                onClick={handleBooster}
+                className="border-2 border-primary"
+              >
+                <Zap className="mr-2 h-4 w-4" />
+                Pack booster · +500 questions · 25 €
+              </Button>
             </div>
+            <p className="text-xs text-muted-foreground">
+              <strong>Pack booster</strong> : achat unique, sans expiration. Consommé après épuisement du quota mensuel.
+            </p>
 
             {addons.length > 0 && (
               <div className="border-t pt-4 space-y-2">

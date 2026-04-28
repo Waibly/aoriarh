@@ -5,6 +5,8 @@ import { Check, ChevronsUpDown, FileText, FileType2, File as FileIcon, X } from 
 import { toast } from "sonner";
 import { authFetch } from "@/lib/api";
 import { SOURCE_TYPE_OPTIONS, NORME_POIDS } from "@/types/api";
+import { fetchSubscription, fetchUsageSummary } from "@/lib/billing-api";
+import { LimitReachedDialog } from "@/components/limit-reached-dialog";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -131,6 +133,12 @@ export function UploadDialog({
   const [sourceType, setSourceType] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [docLimit, setDocLimit] = useState<{
+    open: boolean;
+    plan: string;
+    included: number;
+    used: number;
+  } | null>(null);
 
   // Jurisprudence metadata
   const [juridiction, setJuridiction] = useState("");
@@ -290,7 +298,34 @@ export function UploadDialog({
       onOpenChange(false);
       onUploaded();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Erreur lors de l'upload");
+      const message = err instanceof Error ? err.message : "Erreur lors de l'upload";
+      // Détection limite documents atteinte → ouvrir modale d'achat extra_docs
+      // au lieu d'afficher un simple message d'erreur.
+      const isDocLimit =
+        message.includes("documents maximum") ||
+        (message.includes("Limite atteinte") && message.toLowerCase().includes("document"));
+      if (isDocLimit && token && orgId) {
+        try {
+          const [usage, sub] = await Promise.all([
+            fetchUsageSummary(token),
+            fetchSubscription(token),
+          ]);
+          const orgUsage = usage.documents_by_org.find((d) => d.org_id === orgId);
+          if (orgUsage && sub) {
+            setDocLimit({
+              open: true,
+              plan: sub.plan,
+              included: orgUsage.limit,
+              used: orgUsage.used,
+            });
+            onOpenChange(false);
+            return;
+          }
+        } catch {
+          // si le fetch échoue, on retombe sur l'affichage d'erreur classique
+        }
+      }
+      setError(message);
     } finally {
       setSubmitting(false);
     }
@@ -310,6 +345,19 @@ export function UploadDialog({
   }
 
   return (
+    <>
+    {docLimit && (
+      <LimitReachedDialog
+        open={docLimit.open}
+        onOpenChange={(o) =>
+          setDocLimit((prev) => (prev ? { ...prev, open: o } : null))
+        }
+        resource="document"
+        currentPlan={docLimit.plan}
+        includedCount={docLimit.included}
+        usedCount={docLimit.used}
+      />
+    )}
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
@@ -586,5 +634,6 @@ export function UploadDialog({
         </form>
       </DialogContent>
     </Dialog>
+    </>
   );
 }
