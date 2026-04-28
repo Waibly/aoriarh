@@ -3,9 +3,16 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useSession } from "next-auth/react";
-import { Clock, AlertTriangle } from "lucide-react";
+import { toast } from "sonner";
+import { Clock, AlertTriangle, Zap, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { fetchQuota, type QuotaInfo } from "@/lib/billing-api";
+import {
+  fetchQuota,
+  startBoosterCheckout,
+  type QuotaInfo,
+} from "@/lib/billing-api";
+
+const COMMERCIAL_PLANS = new Set(["solo", "equipe", "groupe"]);
 
 /**
  * Thin banner shown at the top of the dashboard for accounts on a trial
@@ -18,6 +25,7 @@ import { fetchQuota, type QuotaInfo } from "@/lib/billing-api";
 export function TrialBanner() {
   const { data: session } = useSession();
   const [quota, setQuota] = useState<QuotaInfo | null>(null);
+  const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     const token = session?.access_token;
@@ -33,6 +41,21 @@ export function TrialBanner() {
     window.addEventListener("quota-updated", load);
     return () => window.removeEventListener("quota-updated", load);
   }, [session?.access_token]);
+
+  const handleBuyBooster = async () => {
+    const token = session?.access_token;
+    if (!token) return;
+    setBusy(true);
+    try {
+      const { checkout_url } = await startBoosterCheckout(token);
+      window.location.href = checkout_url;
+    } catch (err) {
+      toast.error(
+        err instanceof Error ? err.message : "Impossible d'acheter le pack booster",
+      );
+      setBusy(false);
+    }
+  };
 
   if (!quota) return null;
 
@@ -83,6 +106,10 @@ export function TrialBanner() {
         ? "border-destructive/30 bg-destructive/10 text-destructive"
         : "border-orange-200 dark:border-orange-900 bg-orange-50 dark:bg-orange-950/30 text-orange-700 dark:text-orange-300";
 
+    const isCommercial = COMMERCIAL_PLANS.has(quota.plan);
+    const showBoosterCta =
+      severity === "hard" && isCommercial && quota.booster_remaining === 0;
+
     return (
       <div className={`flex items-center justify-between gap-4 border-b px-6 py-3 text-sm ${classes}`}>
         <div className="flex items-center gap-2">
@@ -96,9 +123,20 @@ export function TrialBanner() {
               : ""}
           </span>
         </div>
-        <Button asChild size="sm" variant={severity === "hard" ? "default" : "outline"}>
-          <Link href="/billing">Gérer mon abonnement</Link>
-        </Button>
+        {showBoosterCta ? (
+          <Button size="sm" onClick={handleBuyBooster} disabled={busy}>
+            {busy ? (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            ) : (
+              <Zap className="mr-2 h-4 w-4" />
+            )}
+            Acheter un pack booster (+500, 25 €)
+          </Button>
+        ) : (
+          <Button asChild size="sm" variant={severity === "hard" ? "default" : "outline"}>
+            <Link href="/billing">Gérer mon abonnement</Link>
+          </Button>
+        )}
       </div>
     );
   }
