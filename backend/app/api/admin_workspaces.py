@@ -13,6 +13,7 @@ from app.core.dependencies import require_role
 from app.models.account import Account
 from app.models.account_member import AccountMember
 from app.models.api_usage import ApiUsageLog
+from app.models.ccn import CcnReference, OrganisationConvention
 from app.models.document import Document
 from app.models.membership import Membership
 from app.models.organisation import Organisation
@@ -32,11 +33,19 @@ class WorkspaceMember(BaseModel):
     is_owner: bool
 
 
+class OrgCcn(BaseModel):
+    idcc: str
+    titre: str | None
+    status: str  # pending | fetching | indexing | ready | error
+    use_custom: bool
+
+
 class WorkspaceOrg(BaseModel):
     id: str
     name: str
     documents_count: int
     members_count: int
+    idccs: list[OrgCcn]
 
 
 class WorkspaceOverview(BaseModel):
@@ -136,11 +145,29 @@ async def list_workspaces(
             )
             member_count = member_count_q.scalar() or 0
 
+            # CCNs installed for this org
+            ccns_q = await db.execute(
+                select(OrganisationConvention, CcnReference.titre_court, CcnReference.titre)
+                .outerjoin(CcnReference, OrganisationConvention.idcc == CcnReference.idcc)
+                .where(OrganisationConvention.organisation_id == org.id)
+                .order_by(OrganisationConvention.idcc)
+            )
+            org_ccns = [
+                OrgCcn(
+                    idcc=oc.idcc,
+                    titre=titre_court or titre,
+                    status=oc.status,
+                    use_custom=oc.use_custom,
+                )
+                for oc, titre_court, titre in ccns_q.all()
+            ]
+
             org_items.append(WorkspaceOrg(
                 id=str(org.id),
                 name=org.name,
                 documents_count=doc_count,
                 members_count=member_count,
+                idccs=org_ccns,
             ))
 
         # Members (account_members + owner)

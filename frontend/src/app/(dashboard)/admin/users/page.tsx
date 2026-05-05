@@ -62,11 +62,19 @@ interface WorkspaceMember {
   is_owner: boolean;
 }
 
+interface OrgCcn {
+  idcc: string;
+  titre: string | null;
+  status: string;
+  use_custom: boolean;
+}
+
 interface WorkspaceOrg {
   id: string;
   name: string;
   documents_count: number;
   members_count: number;
+  idccs: OrgCcn[];
 }
 
 interface WorkspaceOverview {
@@ -462,20 +470,51 @@ export default function ClientsPage() {
                                 <p className="text-xs font-semibold text-muted-foreground mb-2 uppercase tracking-wider">
                                   Organisations
                                 </p>
-                                <div className="space-y-1 ml-2">
+                                <div className="space-y-2 ml-2">
                                   {ws.organisations.map((org) => (
-                                    <div
-                                      key={org.id}
-                                      className="flex items-center gap-3 text-sm"
-                                    >
-                                      <Building2 className="h-3.5 w-3.5 text-muted-foreground" />
-                                      <span className="font-medium">
-                                        {org.name}
-                                      </span>
-                                      <span className="text-xs text-muted-foreground">
-                                        {org.documents_count} docs,{" "}
-                                        {org.members_count} membres
-                                      </span>
+                                    <div key={org.id} className="space-y-1">
+                                      <div className="flex items-center gap-3 text-sm">
+                                        <Building2 className="h-3.5 w-3.5 text-muted-foreground" />
+                                        <span className="font-medium">
+                                          {org.name}
+                                        </span>
+                                        <span className="text-xs text-muted-foreground">
+                                          {org.documents_count} docs,{" "}
+                                          {org.members_count} membres
+                                        </span>
+                                      </div>
+                                      {org.idccs.length > 0 ? (
+                                        <div className="ml-6 flex flex-wrap gap-1">
+                                          {org.idccs.map((c) => (
+                                            <Badge
+                                              key={c.idcc}
+                                              variant="outline"
+                                              className={
+                                                c.status === "ready"
+                                                  ? "font-mono text-[10px] px-1.5 py-0"
+                                                  : "font-mono text-[10px] px-1.5 py-0 opacity-60"
+                                              }
+                                              title={`${c.titre ?? ""} — statut: ${c.status}${c.use_custom ? " (custom)" : ""}`}
+                                            >
+                                              IDCC {c.idcc}
+                                              {c.titre && (
+                                                <span className="ml-1 font-sans font-normal">
+                                                  — {c.titre}
+                                                </span>
+                                              )}
+                                              {c.status !== "ready" && (
+                                                <span className="ml-1 text-muted-foreground">
+                                                  ({c.status})
+                                                </span>
+                                              )}
+                                            </Badge>
+                                          ))}
+                                        </div>
+                                      ) : (
+                                        <div className="ml-6 text-[10px] text-muted-foreground italic">
+                                          Aucune CCN installée
+                                        </div>
+                                      )}
                                     </div>
                                   ))}
                                 </div>

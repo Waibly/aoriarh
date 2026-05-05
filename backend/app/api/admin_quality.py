@@ -21,6 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
 from app.core.dependencies import require_role
 from app.models.api_usage import ApiUsageLog
+from app.models.ccn import CcnReference, OrganisationConvention
 from app.models.conversation import Conversation, Message
 from app.models.organisation import Organisation
 from app.models.user import User
@@ -80,12 +81,26 @@ class ConversationListResponse(BaseModel):
     total: int
 
 
+class OrgCcnInfo(BaseModel):
+    idcc: str
+    titre: str | None
+    status: str  # pending | fetching | indexing | ready | error
+    use_custom: bool
+
+
 class MessageInspect(BaseModel):
     message_id: uuid.UUID
     conversation_id: uuid.UUID
     created_at: datetime
     user_email: str | None
+    user_profil_metier: str | None
     organisation_name: str | None
+    organisation_id: uuid.UUID | None
+    org_forme_juridique: str | None
+    org_taille: str | None
+    org_secteur_activite: str | None
+    org_convention_collective: str | None  # libellé brut saisi par l'utilisateur
+    org_idccs: list[OrgCcnInfo]  # CCNs effectivement installées
     question: str
     answer: str
     sources: list[dict] | None
@@ -385,7 +400,8 @@ async def inspect_message(
             Message,
             Conversation,
             User.email.label("user_email"),
-            Organisation.name.label("org_name"),
+            User.profil_metier.label("user_profil_metier"),
+            Organisation,
         )
         .join(Conversation, Message.conversation_id == Conversation.id)
         .outerjoin(User, Conversation.user_id == User.id)
@@ -397,7 +413,27 @@ async def inspect_message(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Message non trouvé"
         )
-    msg, conv, email, org_name = row
+    msg, conv, email, profil_metier, organisation = row
+    org_name = organisation.name if organisation else None
+
+    # CCNs installed on the organisation (with their reference titre)
+    org_idccs: list[OrgCcnInfo] = []
+    if organisation is not None:
+        ccns_q = await db.execute(
+            select(OrganisationConvention, CcnReference.titre_court, CcnReference.titre)
+            .outerjoin(CcnReference, OrganisationConvention.idcc == CcnReference.idcc)
+            .where(OrganisationConvention.organisation_id == organisation.id)
+            .order_by(OrganisationConvention.idcc)
+        )
+        for oc, titre_court, titre in ccns_q.all():
+            org_idccs.append(
+                OrgCcnInfo(
+                    idcc=oc.idcc,
+                    titre=titre_court or titre,
+                    status=oc.status,
+                    use_custom=oc.use_custom,
+                )
+            )
 
     if msg.role != "assistant":
         raise HTTPException(
@@ -433,7 +469,14 @@ async def inspect_message(
         conversation_id=conv.id,
         created_at=msg.created_at,
         user_email=email,
+        user_profil_metier=profil_metier,
         organisation_name=org_name,
+        organisation_id=organisation.id if organisation else None,
+        org_forme_juridique=organisation.forme_juridique if organisation else None,
+        org_taille=organisation.taille if organisation else None,
+        org_secteur_activite=organisation.secteur_activite if organisation else None,
+        org_convention_collective=organisation.convention_collective if organisation else None,
+        org_idccs=org_idccs,
         question=question_text,
         answer=msg.content or "",
         sources=msg.sources,

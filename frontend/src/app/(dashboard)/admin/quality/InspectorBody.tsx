@@ -65,6 +65,13 @@ export interface CitedSource {
   article_nums?: string[] | null;
 }
 
+export interface OrgCcnInfo {
+  idcc: string;
+  titre: string | null;
+  status: string;
+  use_custom: boolean;
+}
+
 /** Superset shape used by both the message inspector and the sandbox runner. */
 export interface InspectorPayload {
   question: string;
@@ -76,7 +83,14 @@ export interface InspectorPayload {
   // Optional metadata (only present in real conversations)
   created_at?: string;
   user_email?: string | null;
+  user_profil_metier?: string | null;
   organisation_name?: string | null;
+  organisation_id?: string | null;
+  org_forme_juridique?: string | null;
+  org_taille?: string | null;
+  org_secteur_activite?: string | null;
+  org_convention_collective?: string | null;
+  org_idccs?: OrgCcnInfo[];
   feedback?: string | null;
   feedback_comment?: string | null;
 }
@@ -334,6 +348,87 @@ export function InspectorBody({ data }: { data: InspectorPayload }) {
         </Badge>
         {data.rag_trace?.model && <Badge variant="outline">{data.rag_trace.model}</Badge>}
       </div>
+
+      {/* Contexte organisation */}
+      {(data.organisation_name ||
+        data.user_profil_metier ||
+        (data.org_idccs && data.org_idccs.length > 0)) && (
+        <div className="border rounded-md bg-muted/30 p-3 space-y-2 text-xs">
+          <div className="text-xs uppercase font-semibold text-muted-foreground">
+            Contexte org au moment de la question
+          </div>
+          <div className="grid gap-x-4 gap-y-1 sm:grid-cols-2">
+            {data.user_profil_metier && (
+              <div>
+                <span className="text-muted-foreground">Profil utilisateur : </span>
+                <span className="font-medium">{data.user_profil_metier}</span>
+              </div>
+            )}
+            {data.org_forme_juridique && (
+              <div>
+                <span className="text-muted-foreground">Forme : </span>
+                <span className="font-medium">{data.org_forme_juridique}</span>
+              </div>
+            )}
+            {data.org_taille && (
+              <div>
+                <span className="text-muted-foreground">Effectif : </span>
+                <span className="font-medium">{data.org_taille} salariés</span>
+              </div>
+            )}
+            {data.org_secteur_activite && (
+              <div>
+                <span className="text-muted-foreground">Secteur : </span>
+                <span className="font-medium">{data.org_secteur_activite}</span>
+              </div>
+            )}
+            {data.org_convention_collective && (
+              <div className="sm:col-span-2">
+                <span className="text-muted-foreground">CCN saisie : </span>
+                <span className="font-medium">{data.org_convention_collective}</span>
+              </div>
+            )}
+          </div>
+          {data.org_idccs && data.org_idccs.length > 0 ? (
+            <div className="pt-1">
+              <div className="text-muted-foreground mb-1">
+                CCN installées ({data.org_idccs.length}) :
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {data.org_idccs.map((c) => (
+                  <Badge
+                    key={c.idcc}
+                    variant="outline"
+                    className={
+                      c.status === "ready"
+                        ? "font-mono text-[11px]"
+                        : "font-mono text-[11px] opacity-60"
+                    }
+                    title={`${c.titre ?? ""} — statut: ${c.status}${c.use_custom ? " (custom)" : ""}`}
+                  >
+                    IDCC {c.idcc}
+                    {c.titre && (
+                      <span className="ml-1 font-sans font-normal">
+                        — {c.titre}
+                      </span>
+                    )}
+                    {c.status !== "ready" && (
+                      <span className="ml-1 text-muted-foreground">
+                        ({c.status})
+                      </span>
+                    )}
+                  </Badge>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <div className="text-muted-foreground italic">
+              Aucune CCN installée — la recherche ne filtre pas par IDCC, toutes
+              les CCN du corpus commun peuvent remonter.
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Risk banner: identifier in query but no chunk matched */}
       {data.rag_trace?.identifier_no_match && (
