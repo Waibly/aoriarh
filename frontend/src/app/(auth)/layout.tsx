@@ -28,12 +28,10 @@ export default function AuthLayout({
         {/* Pitch */}
         <div className="relative z-20 mt-auto max-w-md">
           <p className="text-3xl font-semibold leading-tight">
-            Votre expert juridique RH,
-            <br />
-            toujours à portée de question.
+            L&apos;humain au cœur des décisions.
           </p>
-          <p className="mt-4 text-base text-primary-foreground/80 leading-relaxed">
-            Des réponses fiables, sourcées et adaptées à votre contexte.
+          <p className="mt-3 text-2xl font-semibold leading-snug text-primary-foreground/85">
+            AORIA RH, l&apos;outil pour les sécuriser.
           </p>
         </div>
       </div>
