@@ -238,7 +238,7 @@ export default function QdrantPage() {
 
             {/* Filters */}
             <div className="flex flex-wrap items-end gap-3 pt-2">
-              <div className="space-y-1">
+              <div className="space-y-1 w-full sm:w-auto">
                 <label className="text-xs text-muted-foreground">
                   Recherche
                 </label>
@@ -247,10 +247,10 @@ export default function QdrantPage() {
                   value={filterSearch}
                   onChange={(e) => setFilterSearch(e.target.value)}
                   onKeyDown={(e) => e.key === "Enter" && handleSearch()}
-                  className="h-8 w-72"
+                  className="h-8 w-full sm:w-72"
                 />
               </div>
-              <div className="space-y-1">
+              <div className="space-y-1 w-full sm:w-auto">
                 <label className="text-xs text-muted-foreground">
                   Organisation ID
                 </label>
@@ -259,10 +259,10 @@ export default function QdrantPage() {
                   value={filterOrgId}
                   onChange={(e) => setFilterOrgId(e.target.value)}
                   onKeyDown={(e) => e.key === "Enter" && handleSearch()}
-                  className="h-8 w-64"
+                  className="h-8 w-full sm:w-64"
                 />
               </div>
-              <div className="space-y-1">
+              <div className="space-y-1 w-full sm:w-auto">
                 <label className="text-xs text-muted-foreground">
                   Document ID
                 </label>
@@ -271,7 +271,7 @@ export default function QdrantPage() {
                   value={filterDocId}
                   onChange={(e) => setFilterDocId(e.target.value)}
                   onKeyDown={(e) => e.key === "Enter" && handleSearch()}
-                  className="h-8 w-64"
+                  className="h-8 w-full sm:w-64"
                 />
               </div>
               <Button size="sm" variant="secondary" onClick={handleSearch}>

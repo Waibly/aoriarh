@@ -255,29 +255,31 @@ function IncidentsBanner({ incidents }: { incidents: Incident[] }) {
           return (
             <div
               key={inc.id}
-              className={`border rounded-md p-3 flex items-start gap-3 ${colors}`}
+              className={`border rounded-md p-3 flex flex-wrap items-start gap-3 ${colors}`}
             >
               <Icon className="h-4 w-4 mt-0.5 shrink-0" />
-              <div className="flex-1 min-w-0">
+              <div className="flex-1 min-w-0 basis-full sm:basis-0">
                 <div className="font-medium text-sm">{inc.title}</div>
                 {inc.detail && (
                   <div className="text-xs opacity-80 mt-0.5">{inc.detail}</div>
                 )}
               </div>
-              <Link href={inc.action_href}>
-                <Button size="sm" variant="outline" className="bg-background shrink-0">
-                  {inc.action_label}
+              <div className="flex items-center gap-2 shrink-0 ml-auto sm:ml-0">
+                <Link href={inc.action_href}>
+                  <Button size="sm" variant="outline" className="bg-background">
+                    {inc.action_label}
+                  </Button>
+                </Link>
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  className="h-7 w-7 hover:bg-background/60"
+                  title="Masquer (réapparaît si la situation change)"
+                  onClick={() => dismiss(inc)}
+                >
+                  <X className="h-3.5 w-3.5" />
                 </Button>
-              </Link>
-              <Button
-                size="icon"
-                variant="ghost"
-                className="h-7 w-7 shrink-0 hover:bg-background/60"
-                title="Masquer (réapparaît si la situation change)"
-                onClick={() => dismiss(inc)}
-              >
-                <X className="h-3.5 w-3.5" />
-              </Button>
+              </div>
             </div>
           );
         })}

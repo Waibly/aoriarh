@@ -106,15 +106,15 @@ export default function AccountPage() {
         </CardHeader>
         <CardContent className="space-y-3">
           <div className="flex items-center gap-2">
-            <span className="w-32 text-sm text-muted-foreground">Nom</span>
+            <span className="w-32 shrink-0 text-sm text-muted-foreground">Nom</span>
             <span className="text-sm font-medium">{user.full_name}</span>
           </div>
           <div className="flex items-center gap-2">
-            <span className="w-32 text-sm text-muted-foreground">Email</span>
-            <span className="text-sm font-medium">{user.email}</span>
+            <span className="w-32 shrink-0 text-sm text-muted-foreground">Email</span>
+            <span className="text-sm font-medium truncate min-w-0">{user.email}</span>
           </div>
           <div className="flex items-center gap-2">
-            <span className="w-32 text-sm text-muted-foreground">Rôle</span>
+            <span className="w-32 shrink-0 text-sm text-muted-foreground">Rôle</span>
             <Badge variant="outline" className={
               user.role === "admin" ? "rounded-full border-amber-400 bg-amber-50 text-amber-700 dark:border-amber-500 dark:bg-amber-950 dark:text-amber-300" :
               user.role === "manager" ? "rounded-full border-[#652bb0] bg-[#652bb0]/10 text-[#652bb0]" :
@@ -122,13 +122,13 @@ export default function AccountPage() {
             }>{ROLE_LABELS[user.role] ?? user.role}</Badge>
           </div>
           <div className="flex items-center gap-2">
-            <span className="w-32 text-sm text-muted-foreground">Profil métier</span>
+            <span className="w-32 shrink-0 text-sm text-muted-foreground">Profil métier</span>
             <span className="text-sm font-medium">
               {PROFIL_METIER_OPTIONS.find((p) => p.value === user.profil_metier)?.label ?? "Non renseigné"}
             </span>
           </div>
           <div className="flex items-center gap-2">
-            <span className="w-32 text-sm text-muted-foreground">Membre depuis</span>
+            <span className="w-32 shrink-0 text-sm text-muted-foreground">Membre depuis</span>
             <span className="text-sm font-medium">
               {new Date(user.created_at).toLocaleDateString("fr-FR", {
                 year: "numeric",
@@ -167,7 +167,7 @@ export default function AccountPage() {
           </CardHeader>
           <CardContent>
             <div className="flex items-center gap-2">
-              <span className="w-32 text-sm text-muted-foreground">Nom</span>
+              <span className="w-32 shrink-0 text-sm text-muted-foreground">Nom</span>
               <span className="text-sm font-medium">{workspaceName}</span>
             </div>
           </CardContent>

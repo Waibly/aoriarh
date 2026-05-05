@@ -1203,14 +1203,14 @@ export default function CorpusPage() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Corpus juridique</h1>
           <p className="text-sm text-muted-foreground">
             Tous les documents communs : codes, conventions collectives, jurisprudence, doctrine.
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <Button
             variant="outline"
             onClick={() => setCustomSyncOpen(true)}

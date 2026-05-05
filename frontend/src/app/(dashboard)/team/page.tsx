@@ -185,30 +185,32 @@ export default function TeamPage() {
           <CardTitle className="text-base">Propriétaire de l&apos;espace de travail</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="flex items-center gap-4">
-            <Avatar className="h-12 w-12">
+          <div className="flex flex-wrap items-center gap-3 sm:gap-4">
+            <Avatar className="h-12 w-12 shrink-0">
               <AvatarFallback className="bg-primary/10 text-primary text-sm font-semibold">
                 {ownerInitials}
               </AvatarFallback>
             </Avatar>
-            <div className="flex-1 min-w-0">
-              <p className="font-medium">{ownerName}</p>
+            <div className="flex-1 min-w-0 basis-[60%] sm:basis-0">
+              <p className="font-medium truncate">{ownerName}</p>
               <p className="text-sm text-muted-foreground truncate">{ownerEmail}</p>
             </div>
-            <Badge
-              variant="outline"
-              className="rounded-full border-amber-500 bg-amber-500/10 text-amber-600"
-            >
-              <Crown className="mr-1 h-3 w-3" />
-              Propriétaire
-            </Badge>
-            <Badge
-              variant="outline"
-              className="rounded-full border-teal-600 bg-teal-600/10 text-teal-600"
-            >
-              <Globe className="mr-1 h-3 w-3" />
-              Toutes les orgs
-            </Badge>
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge
+                variant="outline"
+                className="rounded-full border-amber-500 bg-amber-500/10 text-amber-600"
+              >
+                <Crown className="mr-1 h-3 w-3" />
+                Propriétaire
+              </Badge>
+              <Badge
+                variant="outline"
+                className="rounded-full border-teal-600 bg-teal-600/10 text-teal-600"
+              >
+                <Globe className="mr-1 h-3 w-3" />
+                Toutes les orgs
+              </Badge>
+            </div>
           </div>
         </CardContent>
       </Card>

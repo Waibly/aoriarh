@@ -125,7 +125,7 @@ function ConversationItem({
               e.stopPropagation();
               onDelete(conv);
             }}
-            className="hidden shrink-0 cursor-pointer pr-2 group-hover/conv:block"
+            className="shrink-0 cursor-pointer pr-2 lg:hidden lg:group-hover/conv:block"
             aria-label={`Supprimer ${title}`}
           >
             <Trash2 className="size-4 text-destructive" />
@@ -334,7 +334,7 @@ function ConversationHistory() {
   );
 }
 
-export function Sidebar() {
+export function Sidebar({ variant = "desktop" }: { variant?: "desktop" | "mobile" } = {}) {
   const { data: session } = useSession();
   const pathname = usePathname();
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -397,7 +397,13 @@ export function Sidebar() {
 
   return (
     <>
-      <aside className="flex w-64 flex-col bg-sidebar text-sidebar-foreground">
+      <aside
+        className={cn(
+          "flex flex-col bg-sidebar text-sidebar-foreground",
+          variant === "desktop" && "hidden lg:flex w-64 shrink-0",
+          variant === "mobile" && "h-full w-full overflow-y-auto",
+        )}
+      >
         <div className="p-4">
           <Image src="/logo-aoria.png" alt="AORIA RH" width={140} height={40} priority />
         </div>

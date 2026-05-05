@@ -248,16 +248,16 @@ export default function QualityPage() {
   return (
     <div className="space-y-6">
       {/* ----------------- Header ----------------- */}
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold">Qualité & conversations</h1>
           <p className="text-sm text-muted-foreground">
             Surveille la santé du RAG et inspecte chaque question posée.
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <Select value={String(period)} onValueChange={(v) => setPeriod(Number(v))}>
-            <SelectTrigger className="w-[140px]">
+            <SelectTrigger className="w-full sm:w-[140px]">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>

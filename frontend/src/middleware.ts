@@ -8,17 +8,16 @@ export default auth((req) => {
     req.nextUrl.pathname.startsWith("/login") ||
     req.nextUrl.pathname.startsWith("/register");
   const isInvitePage = req.nextUrl.pathname.startsWith("/invite");
-  const isPublicPage =
-    req.nextUrl.pathname === "/" ||
-    req.nextUrl.pathname.startsWith("/pricing") ||
-    req.nextUrl.pathname.startsWith("/cgv") ||
-    req.nextUrl.pathname.startsWith("/politique-confidentialite") ||
-    req.nextUrl.pathname.startsWith("/legal/");
 
-  // Landing / pricing / invite pages are accessible whether logged in or not.
-  // For the landing "/" we still want to redirect logged-in users to /chat
-  // (handled below, further down).
-  if (isInvitePage || (isPublicPage && !isLoggedIn)) {
+  // Root "/" is not a landing page on app.aoriarh.fr: redirect to /chat if
+  // logged in, otherwise to /login. The marketing site handles the rest.
+  if (req.nextUrl.pathname === "/") {
+    return NextResponse.redirect(
+      new URL(isLoggedIn ? "/chat" : "/login", req.nextUrl.origin),
+    );
+  }
+
+  if (isInvitePage) {
     return NextResponse.next();
   }
 
@@ -31,11 +30,6 @@ export default auth((req) => {
 
   if (!isLoggedIn) {
     return NextResponse.redirect(new URL("/login", req.nextUrl.origin));
-  }
-
-  // Redirect authenticated users from "/" to "/chat"
-  if (req.nextUrl.pathname === "/") {
-    return NextResponse.redirect(new URL("/chat", req.nextUrl.origin));
   }
 
   if (req.nextUrl.pathname.startsWith("/admin")) {

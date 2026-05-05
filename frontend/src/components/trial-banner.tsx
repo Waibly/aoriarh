@@ -69,7 +69,7 @@ export function TrialBanner() {
 
     if (daysLeft < 0) {
       return (
-        <div className="flex items-center justify-between gap-4 border-b border-destructive/30 bg-destructive/10 px-6 py-3 text-sm">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-4 border-b border-destructive/30 bg-destructive/10 px-4 py-3 text-sm sm:px-6">
           <div className="flex items-center gap-2 text-destructive">
             <AlertTriangle className="h-4 w-4" />
             <span>Votre essai est terminé. Souscrivez pour continuer à utiliser AORIA RH.</span>
@@ -85,7 +85,7 @@ export function TrialBanner() {
     const color = daysLeft <= 3 ? "text-orange-700 dark:text-orange-300 bg-orange-50 dark:bg-orange-950/30 border-orange-200 dark:border-orange-900" : "text-muted-foreground bg-muted/40 border-border";
 
     return (
-      <div className={`flex items-center justify-between gap-4 border-b px-6 py-3 text-sm ${color}`}>
+      <div className={`flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-4 border-b px-4 py-3 text-sm sm:px-6 ${color}`}>
         <div className="flex items-center gap-2">
           <Clock className="h-4 w-4" />
           <span>Votre essai {dayLabel}.</span>
@@ -111,7 +111,7 @@ export function TrialBanner() {
       severity === "hard" && isCommercial && quota.booster_remaining === 0;
 
     return (
-      <div className={`flex items-center justify-between gap-4 border-b px-6 py-3 text-sm ${classes}`}>
+      <div className={`flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-4 border-b px-4 py-3 text-sm sm:px-6 ${classes}`}>
         <div className="flex items-center gap-2">
           <AlertTriangle className="h-4 w-4" />
           <span>

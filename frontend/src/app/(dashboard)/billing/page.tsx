@@ -39,6 +39,7 @@ import {
   type AddonType,
   type InvoiceRow,
 } from "@/lib/billing-api";
+import { marketingLinks } from "@/lib/marketing";
 import {
   Dialog,
   DialogContent,
@@ -368,9 +369,9 @@ export default function BillingPage() {
       {quota && (
         <Card>
           <CardHeader>
-            <div className="flex items-center justify-between">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
               <div>
-                <CardTitle className="flex items-center gap-2">
+                <CardTitle className="flex flex-wrap items-center gap-2">
                   Plan actuel
                   <Badge variant={quota.status === "active" ? "default" : "secondary"}>
                     {getPlanLabel(quota.plan)}
@@ -593,9 +594,9 @@ export default function BillingPage() {
 
       {/* Plan catalog (upgrade / change plan) */}
       <div>
-        <div className="flex items-center justify-between mb-4">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-4">
           <h2 className="text-lg font-semibold">Nos offres</h2>
-          <div className="flex items-center gap-1 rounded-lg border p-1 bg-muted/30">
+          <div className="flex items-center gap-1 rounded-lg border p-1 bg-muted/30 self-start sm:self-auto">
             <button
               onClick={() => setCycle("monthly")}
               className={`px-3 py-1 text-sm rounded-md transition ${
@@ -756,10 +757,14 @@ export default function BillingPage() {
       <p className="text-xs text-muted-foreground text-center">
         Tarifs hors taxes. Résiliable à tout moment depuis votre espace de gestion.
         {" "}
-        <a href="/cgv" className="underline hover:text-foreground" target="_blank">CGV</a>
+        <a href={marketingLinks.cgv} className="underline hover:text-foreground" target="_blank" rel="noopener noreferrer">CGV</a>
         {" · "}
-        <a href="/politique-confidentialite" className="underline hover:text-foreground" target="_blank">
+        <a href={marketingLinks.confidentialite} className="underline hover:text-foreground" target="_blank" rel="noopener noreferrer">
           Politique de confidentialité
+        </a>
+        {" · "}
+        <a href={marketingLinks.mentionsLegales} className="underline hover:text-foreground" target="_blank" rel="noopener noreferrer">
+          Mentions légales
         </a>
       </p>
 
