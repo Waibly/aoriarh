@@ -40,7 +40,7 @@ export default function AuthLayout({
       <div className="lg:p-8">
         <div className="mx-auto flex w-full flex-col justify-center space-y-6 sm:w-[350px]">
           <img
-            src="/icon-aoria.png"
+            src="/icon-aoria-dark.svg"
             alt="AORIA RH"
             className="mx-auto h-14 w-14 lg:hidden"
           />

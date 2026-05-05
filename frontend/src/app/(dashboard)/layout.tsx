@@ -51,6 +51,15 @@ export default function DashboardLayout({
               width={120}
               height={26}
               priority
+              className="dark:hidden"
+            />
+            <Image
+              src="/logo-aoria-white.svg"
+              alt="AORIA RH"
+              width={120}
+              height={26}
+              priority
+              className="hidden dark:block"
             />
           </header>
           <TrialBanner />

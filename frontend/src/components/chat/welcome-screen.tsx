@@ -46,7 +46,8 @@ export function WelcomeScreen({ onSend }: WelcomeScreenProps) {
   return (
     <div className="flex flex-1 flex-col items-center justify-center rounded-xl bg-white px-4 dark:bg-card animate-in fade-in duration-500">
       <div className="mb-6 animate-in fade-in zoom-in-95 duration-500">
-        <Image src="/icon-aoria.png" alt="AORIA RH" width={48} height={48} priority />
+        <Image src="/icon-aoria-dark.svg" alt="AORIA RH" width={48} height={48} priority className="dark:hidden" />
+        <Image src="/icon-aoria-white.svg" alt="AORIA RH" width={48} height={48} priority className="hidden dark:block" />
       </div>
       <h1 className="text-2xl font-semibold tracking-tight animate-in fade-in slide-in-from-bottom-2 duration-500 delay-100">AORIA RH</h1>
       <p className="text-muted-foreground mt-1 text-base animate-in fade-in slide-in-from-bottom-2 duration-500 delay-150">

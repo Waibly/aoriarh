@@ -405,7 +405,8 @@ export function Sidebar({ variant = "desktop" }: { variant?: "desktop" | "mobile
         )}
       >
         <div className="p-4">
-          <Image src="/logo-aoria.svg" alt="AORIA RH" width={140} height={30} priority />
+          <Image src="/logo-aoria.svg" alt="AORIA RH" width={140} height={30} priority className="dark:hidden" />
+          <Image src="/logo-aoria-white.svg" alt="AORIA RH" width={140} height={30} priority className="hidden dark:block" />
         </div>
 
         <div className="px-4 pb-4">
