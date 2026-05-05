@@ -26,12 +26,12 @@ export default function AuthLayout({
         </div>
 
         {/* Pitch */}
-        <div className="relative z-20 mt-auto max-w-md">
+        <div className="relative z-20 mt-auto max-w-xl">
           <p className="text-3xl font-semibold leading-tight">
-            L&apos;humain au cœur des décisions.
-          </p>
-          <p className="mt-3 text-2xl font-semibold leading-snug text-primary-foreground/85">
             AORIA RH, l&apos;outil pour les sécuriser.
+          </p>
+          <p className="mt-3 text-2xl font-semibold leading-snug text-primary-foreground/85 whitespace-nowrap">
+            L&apos;humain au cœur des décisions.
           </p>
         </div>
       </div>
