@@ -1,5 +1,7 @@
 from pydantic import BaseModel, EmailStr, field_validator
 
+from app.schemas.stripe_billing import BillingCycle, CommercialPlanCode
+
 
 class LoginRequest(BaseModel):
     email: EmailStr
@@ -12,6 +14,8 @@ class RegisterRequest(BaseModel):
     full_name: str
     workspace_name: str | None = None
     invited: bool = False
+    requested_plan: CommercialPlanCode | None = None
+    requested_cycle: BillingCycle | None = None
 
     @field_validator("password")
     @classmethod
@@ -26,6 +30,7 @@ class TokenResponse(BaseModel):
     refresh_token: str
     token_type: str = "bearer"
     expires_in: int
+    checkout_url: str | None = None
 
 
 class RefreshRequest(BaseModel):
@@ -36,3 +41,5 @@ class GoogleAuthRequest(BaseModel):
     email: EmailStr
     full_name: str
     google_sub: str
+    requested_plan: CommercialPlanCode | None = None
+    requested_cycle: BillingCycle | None = None

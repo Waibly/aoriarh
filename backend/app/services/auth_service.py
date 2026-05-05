@@ -17,8 +17,10 @@ from app.models.account import Account
 from app.models.invitation import Invitation
 from app.models.user import User
 from app.schemas.auth import GoogleAuthRequest, LoginRequest, RegisterRequest, TokenResponse
+from app.schemas.stripe_billing import BillingCycle, CommercialPlanCode
 from app.services.email.sender import send_email
 from app.services.email.templates import render_admin_new_signup_email
+from app.services.stripe_service import StripeService
 
 logger = logging.getLogger(__name__)
 
@@ -66,17 +68,55 @@ def _new_trial_account(name: str, owner_id) -> Account:
     )
 
 
-def _build_token_response(user_id: str) -> TokenResponse:
+def _build_token_response(user_id: str, checkout_url: str | None = None) -> TokenResponse:
     return TokenResponse(
         access_token=create_access_token(subject=user_id),
         refresh_token=create_refresh_token(subject=user_id),
         expires_in=settings.access_token_expire_minutes * 60,
+        checkout_url=checkout_url,
     )
 
 
 class AuthService:
     def __init__(self, db: AsyncSession) -> None:
         self.db = db
+
+    async def _maybe_start_paid_checkout(
+        self,
+        account: Account,
+        owner_email: str,
+        requested_plan: CommercialPlanCode | None,
+        requested_cycle: BillingCycle | None,
+    ) -> str | None:
+        """Start a Stripe Checkout session if the user picked a paid plan at signup.
+
+        Returns the hosted checkout URL on success, or None if no paid plan was
+        requested or Stripe is unavailable. The trial account stays in place as
+        a safety net so an aborted Checkout doesn't leave the user account-less.
+        """
+        if requested_plan is None or requested_cycle is None:
+            return None
+        if not StripeService.is_configured():
+            logger.warning(
+                "Paid plan %s/%s requested at signup but Stripe is not configured — falling back to trial",
+                requested_plan, requested_cycle,
+            )
+            return None
+        try:
+            stripe_svc = StripeService(self.db)
+            result = await stripe_svc.create_subscription_checkout(
+                account=account,
+                owner_email=owner_email,
+                plan=requested_plan.value,
+                cycle=requested_cycle.value,
+            )
+            return result["checkout_url"]
+        except Exception:
+            logger.exception(
+                "Stripe Checkout creation failed at signup for account %s — falling back to trial",
+                account.id,
+            )
+            return None
 
     async def register(self, data: RegisterRequest) -> TokenResponse:
         email = data.email.lower().strip()
@@ -117,13 +157,20 @@ class AuthService:
         self.db.add(account)
         await self.db.commit()
         await self.db.refresh(user)
+        await self.db.refresh(account)
         await _notify_admin_new_signup(
             full_name=user.full_name,
             email=user.email,
             workspace_name=account.name,
             auth_method="Email + mot de passe",
         )
-        return _build_token_response(str(user.id))
+        checkout_url = await self._maybe_start_paid_checkout(
+            account=account,
+            owner_email=user.email,
+            requested_plan=data.requested_plan,
+            requested_cycle=data.requested_cycle,
+        )
+        return _build_token_response(str(user.id), checkout_url=checkout_url)
 
     async def login(self, data: LoginRequest) -> TokenResponse | None:
         email = data.email.lower().strip()
@@ -198,10 +245,17 @@ class AuthService:
         self.db.add(account)
         await self.db.commit()
         await self.db.refresh(user)
+        await self.db.refresh(account)
         await _notify_admin_new_signup(
             full_name=user.full_name,
             email=user.email,
             workspace_name=account.name,
             auth_method="Google OAuth",
         )
-        return _build_token_response(str(user.id))
+        checkout_url = await self._maybe_start_paid_checkout(
+            account=account,
+            owner_email=user.email,
+            requested_plan=data.requested_plan,
+            requested_cycle=data.requested_cycle,
+        )
+        return _build_token_response(str(user.id), checkout_url=checkout_url)

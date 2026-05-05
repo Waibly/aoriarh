@@ -90,9 +90,10 @@ class UserService:
         # 7. Delete account memberships
         await self.db.execute(delete(AccountMember).where(AccountMember.user_id == user_id))
 
-        # 8. Delete owned account (if any)
+        # 8. Delete owned account ONLY if it still belongs to this user
+        # (the admin endpoint may have transferred ownership before calling us)
         user = await self.db.get(User, user_id)
-        if user and user.owned_account:
+        if user and user.owned_account and user.owned_account.owner_id == user_id:
             await self.db.delete(user.owned_account)
 
         # 9. Delete user

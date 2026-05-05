@@ -28,6 +28,21 @@ import { UserCog } from "lucide-react";
 const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
 
+const PAID_PLANS = ["solo", "equipe", "groupe"] as const;
+const BILLING_CYCLES = ["monthly", "yearly"] as const;
+type PaidPlan = (typeof PAID_PLANS)[number];
+type BillingCycle = (typeof BILLING_CYCLES)[number];
+
+const PLAN_LABEL: Record<PaidPlan, string> = {
+  solo: "Solo",
+  equipe: "Équipe",
+  groupe: "Groupe",
+};
+const CYCLE_LABEL: Record<BillingCycle, string> = {
+  monthly: "mensuel",
+  yearly: "annuel",
+};
+
 export default function RegisterPage() {
   return (
     <Suspense>
@@ -44,6 +59,21 @@ function RegisterForm() {
   // Extract invitation token and validate it exists
   const inviteToken = callbackUrl?.match(/\/invite\/accept\/([^/?]+)/)?.[1] ?? null;
   const [isInvitation, setIsInvitation] = useState(false);
+
+  // Paid plan pre-selection from the marketing site (?plan=solo&cycle=monthly).
+  // Validated against the closed list — anything else is ignored so a tampered
+  // URL can never push an unsupported value to the backend.
+  const rawPlan = searchParams.get("plan");
+  const rawCycle = searchParams.get("cycle");
+  const requestedPlan: PaidPlan | null =
+    rawPlan && (PAID_PLANS as readonly string[]).includes(rawPlan)
+      ? (rawPlan as PaidPlan)
+      : null;
+  const requestedCycle: BillingCycle | null =
+    rawCycle && (BILLING_CYCLES as readonly string[]).includes(rawCycle)
+      ? (rawCycle as BillingCycle)
+      : null;
+  const hasPaidPlanRequested = requestedPlan !== null && requestedCycle !== null;
 
   useEffect(() => {
     if (!inviteToken) return;
@@ -105,6 +135,10 @@ function RegisterForm() {
           full_name: fullName,
           workspace_name: isInvitation ? null : (workspaceName.trim() || null),
           invited: isInvitation,
+          // Only send plan/cycle for self-registrations: invited users have no
+          // Account so the backend would ignore them anyway.
+          requested_plan: !isInvitation && hasPaidPlanRequested ? requestedPlan : null,
+          requested_cycle: !isInvitation && hasPaidPlanRequested ? requestedCycle : null,
         }),
       });
 
@@ -175,6 +209,15 @@ function RegisterForm() {
         return;
       }
 
+      // If the backend started a Stripe Checkout session for the requested
+      // paid plan, send the user straight to the hosted payment page. The
+      // trial account stays as a safety net if they abandon — when they
+      // come back to /chat the trial banner will prompt them to upgrade.
+      if (registerData?.checkout_url) {
+        window.location.href = registerData.checkout_url;
+        return;
+      }
+
       router.push(callbackUrl || "/chat");
       router.refresh();
     } catch {
@@ -204,6 +247,17 @@ function RegisterForm() {
                   : "Une dernière étape pour personnaliser vos réponses"}
         </p>
       </div>
+
+      {!isInvitation && hasPaidPlanRequested && requestedPlan && requestedCycle && (
+        <div className="bg-primary/5 border border-primary/20 text-primary rounded-md px-4 py-3 text-sm">
+          <p className="font-medium">
+            Vous souscrivez à l&apos;offre {PLAN_LABEL[requestedPlan]} ({CYCLE_LABEL[requestedCycle]})
+          </p>
+          <p className="text-primary/80 text-xs mt-1">
+            Le paiement par carte sera demandé après la création de votre compte.
+          </p>
+        </div>
+      )}
 
       {/* Stepper */}
       {isInvitation ? (
@@ -553,9 +607,21 @@ function RegisterForm() {
               variant="outline"
               type="button"
               disabled={isLoading}
-              onClick={() =>
-                signIn("google", { callbackUrl: callbackUrl || "/chat" })
-              }
+              onClick={() => {
+                // For paid-plan signups via Google we need to start a Stripe
+                // Checkout session AFTER the OAuth round-trip — params can't be
+                // sent inline like with the email/password POST. We stash them
+                // in short-lived cookies (sameSite=Lax so they survive the
+                // Google round-trip) and route through /post-signup which
+                // reads them and creates the Checkout session.
+                if (!isInvitation && hasPaidPlanRequested && requestedPlan && requestedCycle) {
+                  document.cookie = `aoria_signup_plan=${requestedPlan}; max-age=600; path=/; samesite=lax`;
+                  document.cookie = `aoria_signup_cycle=${requestedCycle}; max-age=600; path=/; samesite=lax`;
+                  signIn("google", { callbackUrl: "/post-signup" });
+                  return;
+                }
+                signIn("google", { callbackUrl: callbackUrl || "/chat" });
+              }}
             >
               <svg className="mr-2 h-4 w-4" viewBox="0 0 24 24">
                 <path
