@@ -1,0 +1,831 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AORIA RH — De la question à la réponse sourcée</title>
+<style>
+  :root {
+    --primary: #6d28d9;
+    --primary-light: #ede9fe;
+    --primary-dark: #5b21b6;
+    --bg: #f8fafc;
+    --card: #ffffff;
+    --text: #1e293b;
+    --muted: #64748b;
+    --border: #e2e8f0;
+    --green: #16a34a;
+    --orange: #ea580c;
+    --red: #dc2626;
+    --amber: #f59e0b;
+  }
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.6;
+  }
+  .container { max-width: 1100px; margin: 0 auto; padding: 48px 24px 80px; }
+
+  header.hero {
+    background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
+    color: #fff;
+    padding: 56px 40px;
+    border-radius: 14px;
+    margin-bottom: 40px;
+    box-shadow: 0 10px 30px rgba(109, 40, 217, 0.2);
+  }
+  header.hero h1 { font-size: 2.2rem; margin: 0 0 10px; font-weight: 700; }
+  header.hero p { font-size: 1.05rem; margin: 0; opacity: 0.95; max-width: 780px; }
+  header.hero .tagline {
+    display: inline-block;
+    background: rgba(255,255,255,0.2);
+    padding: 6px 14px;
+    border-radius: 20px;
+    font-size: 0.85rem;
+    margin-top: 14px;
+    letter-spacing: 0.4px;
+  }
+
+  h2 {
+    font-size: 1.5rem;
+    margin: 56px 0 20px;
+    padding-bottom: 10px;
+    border-bottom: 2px solid var(--primary-light);
+    color: var(--primary-dark);
+  }
+  h3 { font-size: 1.1rem; margin: 24px 0 10px; color: var(--text); }
+
+  .intro {
+    background: var(--primary-light);
+    border-left: 4px solid var(--primary);
+    padding: 18px 22px;
+    border-radius: 8px;
+    margin: 20px 0 32px;
+  }
+  .intro p { margin: 0; color: var(--primary-dark); }
+
+  /* Step card */
+  .step {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 24px 28px;
+    margin: 20px 0;
+    display: grid;
+    grid-template-columns: 80px 1fr;
+    gap: 24px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+    position: relative;
+  }
+  .step-num {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 64px;
+    height: 64px;
+    background: var(--primary);
+    color: #fff;
+    border-radius: 50%;
+    font-size: 1.6rem;
+    font-weight: 700;
+    flex-shrink: 0;
+    box-shadow: 0 4px 12px rgba(109, 40, 217, 0.3);
+  }
+  .step-body { min-width: 0; }
+  .step-title {
+    font-size: 1.2rem;
+    font-weight: 700;
+    color: var(--primary-dark);
+    margin: 4px 0 6px;
+  }
+  .step-summary {
+    font-size: 0.95rem;
+    color: var(--muted);
+    margin-bottom: 14px;
+    font-style: italic;
+  }
+  .step-content p { margin: 10px 0; }
+  .step-content ul { margin: 8px 0 8px 18px; padding: 0; }
+  .step-content li { margin: 4px 0; }
+
+  /* Arrow between steps */
+  .arrow {
+    text-align: center;
+    margin: -10px 0 10px;
+    color: var(--primary);
+    font-size: 1.8rem;
+    line-height: 1;
+  }
+
+  /* Key element pill */
+  .pill {
+    display: inline-block;
+    background: var(--primary-light);
+    color: var(--primary-dark);
+    padding: 2px 10px;
+    border-radius: 12px;
+    font-size: 0.85rem;
+    font-weight: 500;
+    margin: 2px 4px 2px 0;
+  }
+  .pill-strong {
+    background: var(--primary);
+    color: #fff;
+  }
+
+  /* Tech stack at bottom of each step */
+  .meta-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 14px;
+    padding-top: 14px;
+    border-top: 1px dashed var(--border);
+    font-size: 0.85rem;
+  }
+  .meta-row .meta-label {
+    font-weight: 600;
+    color: var(--muted);
+    margin-right: 6px;
+  }
+
+  /* Highlight box */
+  .highlight {
+    background: #fffbeb;
+    border-left: 4px solid var(--amber);
+    padding: 14px 18px;
+    border-radius: 6px;
+    margin: 14px 0;
+    font-size: 0.95rem;
+  }
+  .highlight strong { color: #92400e; }
+
+  .tech-note {
+    background: #f0fdf4;
+    border-left: 4px solid var(--green);
+    padding: 12px 16px;
+    border-radius: 6px;
+    margin: 14px 0;
+    font-size: 0.9rem;
+    color: #166534;
+  }
+
+  /* Guardrails grid */
+  .guards {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 16px;
+    margin: 20px 0;
+  }
+  .guard-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px 18px;
+  }
+  .guard-card .g-title {
+    font-weight: 700;
+    color: var(--primary-dark);
+    font-size: 0.95rem;
+    margin-bottom: 4px;
+  }
+  .guard-card .g-value {
+    font-size: 1.3rem;
+    font-weight: 700;
+    color: var(--text);
+    margin: 6px 0 4px;
+    font-variant-numeric: tabular-nums;
+  }
+  .guard-card .g-desc {
+    font-size: 0.85rem;
+    color: var(--muted);
+  }
+
+  /* Hierarchy table */
+  table.hierarchy {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 16px 0 24px;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    overflow: hidden;
+  }
+  table.hierarchy th,
+  table.hierarchy td {
+    padding: 10px 14px;
+    text-align: left;
+    border-bottom: 1px solid var(--border);
+    font-size: 0.93rem;
+  }
+  table.hierarchy th {
+    background: var(--primary-light);
+    color: var(--primary-dark);
+    font-weight: 600;
+  }
+  table.hierarchy tr:last-child td { border-bottom: none; }
+  table.hierarchy td.level {
+    font-weight: 700;
+    color: var(--primary);
+    width: 60px;
+    text-align: center;
+    font-size: 1.05rem;
+  }
+  table.hierarchy td.weight {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    color: var(--muted);
+    font-size: 0.85rem;
+  }
+
+  /* Example conversation */
+  .example {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 24px 28px;
+    margin: 24px 0;
+  }
+  .example .bubble {
+    padding: 14px 18px;
+    border-radius: 10px;
+    margin: 10px 0;
+    font-size: 0.95rem;
+  }
+  .example .bubble-user {
+    background: var(--primary);
+    color: #fff;
+    margin-left: 60px;
+    border-top-right-radius: 4px;
+  }
+  .example .bubble-bot {
+    background: #f1f5f9;
+    margin-right: 60px;
+    border-top-left-radius: 4px;
+  }
+  .example .bubble-bot .src-tag {
+    display: inline-block;
+    background: var(--primary-light);
+    color: var(--primary-dark);
+    padding: 1px 7px;
+    border-radius: 4px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    margin: 0 2px;
+    font-family: "SF Mono", Monaco, Consolas, monospace;
+  }
+  .example .internal {
+    text-align: center;
+    color: var(--muted);
+    font-style: italic;
+    font-size: 0.85rem;
+    margin: 16px 0;
+    letter-spacing: 0.5px;
+  }
+
+  footer {
+    text-align: center;
+    color: var(--muted);
+    font-size: 0.85rem;
+    margin-top: 64px;
+    padding-top: 24px;
+    border-top: 1px solid var(--border);
+  }
+
+  @media (max-width: 640px) {
+    .step {
+      grid-template-columns: 1fr;
+      padding: 18px 20px;
+    }
+    .step-num {
+      width: 48px; height: 48px;
+      font-size: 1.2rem;
+    }
+    header.hero { padding: 36px 24px; }
+    header.hero h1 { font-size: 1.5rem; }
+  }
+
+  @media print {
+    body { background: #fff; }
+    .step, .guard-card, .example, table.hierarchy { page-break-inside: avoid; box-shadow: none; }
+    header.hero { box-shadow: none; }
+  }
+</style>
+</head>
+<body>
+<div class="container">
+
+<header class="hero">
+  <h1>Comment AORIA RH répond à une question juridique RH</h1>
+  <p>
+    De la saisie de la question à la réponse sourcée, la plateforme enchaîne
+    8 étapes automatiques pour garantir que chaque affirmation s'appuie sur
+    un texte vérifiable (Code du travail, CCN, jurisprudence, accords) et que
+    la hiérarchie des normes est respectée.
+  </p>
+  <span class="tagline">Pipeline de Recherche Augmentée (RAG) — version fonctionnelle</span>
+</header>
+
+<div class="intro">
+  <p>
+    <strong>En résumé :</strong> la question posée n'est jamais envoyée "telle quelle" à l'intelligence artificielle.
+    Elle est d'abord reformulée, enrichie, transformée en 5 variantes, puis confrontée à plus de
+    20 documents candidats trouvés dans la base juridique propre à l'organisation.
+    Ces documents sont ensuite classés par pertinence, enrichis de leur contexte, et seuls
+    les plus précis sont transmis au modèle d'IA qui rédige la réponse finale avec citations.
+  </p>
+</div>
+
+<!-- ============ DÉMARRAGE ============ -->
+<h2>Vue d'ensemble : 8 étapes, 3 secondes environ</h2>
+
+<div class="step">
+  <div class="step-num">0</div>
+  <div class="step-body">
+    <h3 class="step-title">Le point de départ : la question de l'utilisateur</h3>
+    <p class="step-summary">Quand un DRH ou un chargé RH tape sa question dans le chat, AORIA RH collecte automatiquement un contexte enrichi avant même de commencer à chercher.</p>
+    <div class="step-content">
+      <p><strong>Ce qui est capté en même temps que la question :</strong></p>
+      <ul>
+        <li>L'organisation concernée (nom, secteur, taille, convention collective applicable via son IDCC)</li>
+        <li>Le profil du demandeur (DRH, chargé RH, élu CSE, dirigeant…) — pour adapter le ton et le niveau technique</li>
+        <li>Les 6 derniers messages de la conversation en cours — pour comprendre une question de suivi (« et dans ce cas là ? »)</li>
+        <li>Le quota de questions restant ce mois-ci (contrôle de facturation)</li>
+      </ul>
+      <div class="meta-row">
+        <span class="meta-label">Garanties :</span>
+        <span class="pill">Cloisonnement strict par organisation</span>
+        <span class="pill">JWT + contrôle d'accès</span>
+        <span class="pill">Quota respecté</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="arrow">▼</div>
+
+<!-- ============ ÉTAPE 1 ============ -->
+<div class="step">
+  <div class="step-num">1</div>
+  <div class="step-body">
+    <h3 class="step-title">Reformulation de la question</h3>
+    <p class="step-summary">Si la question fait suite à un échange, elle est réécrite pour être complètement autonome.</p>
+    <div class="step-content">
+      <p>
+        Quand l'utilisateur écrit <em>« Et pour un temps partiel, c'est pareil ? »</em>, la question ne
+        veut rien dire prise isolément. AORIA RH la réécrit en s'appuyant sur l'historique de la
+        conversation et le contexte de l'organisation en une question complète du type :
+      </p>
+      <p>
+        <em>« Quel est le préavis applicable à un salarié en temps partiel avec 2 ans d'ancienneté, dans la convention collective Syntec, en cas de démission ? »</em>
+      </p>
+      <p>
+        Les pronoms sont résolus, les références implicites (« ce salarié », « cette situation »)
+        sont remplacées par les éléments nommés précédemment dans le fil.
+      </p>
+      <div class="tech-note">
+        <strong>Détection du hors-scope :</strong> si la question n'a rien à voir avec le droit
+        social (ex. <em>« comment faire un gâteau au chocolat ? »</em>), cette étape le signale
+        et on s'arrête tout de suite — on ne consomme pas de quota inutilement.
+      </div>
+      <div class="meta-row">
+        <span class="meta-label">Moteur :</span>
+        <span class="pill pill-strong">GPT-5-mini</span>
+        <span class="pill">Historique : 6 derniers messages</span>
+        <span class="pill">Température : 0 (déterministe)</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="arrow">▼</div>
+
+<!-- ============ ÉTAPE 2 ============ -->
+<div class="step">
+  <div class="step-num">2</div>
+  <div class="step-body">
+    <h3 class="step-title">Expansion en 5 variantes de la question</h3>
+    <p class="step-summary">La même question, mais formulée de 5 façons différentes pour couvrir plus de manières dont les textes juridiques auraient pu l'exprimer.</p>
+    <div class="step-content">
+      <p>
+        Un texte de loi parle de <em>« durée de préavis du salarié »</em>, une convention
+        collective parle de <em>« délai-congé »</em>, et l'utilisateur a écrit <em>« préavis »</em>.
+        Ces variations sont un vrai piège pour une recherche classique. AORIA RH génère donc
+        automatiquement plusieurs formulations :
+      </p>
+      <ul>
+        <li>La question originale (pour ne rien perdre)</li>
+        <li>Une version orthographiquement corrigée et clarifiée</li>
+        <li>Une version avec le vocabulaire juridique technique (<em>délai-congé</em>, <em>rupture unilatérale</em>…)</li>
+        <li>Une version axée mots-clés métier RH</li>
+        <li>Une version ciblant spécifiquement la CCN de l'organisation si elle est connue</li>
+      </ul>
+      <div class="highlight">
+        <strong>Anti-hallucination :</strong> le moteur a des instructions strictes de ne
+        jamais inventer de concepts juridiques inexistants. Les synonymes utilisés sont
+        limités à une liste validée métier.
+      </div>
+      <div class="meta-row">
+        <span class="meta-label">Moteur :</span>
+        <span class="pill pill-strong">GPT-4o-mini</span>
+        <span class="pill">5 variantes générées</span>
+        <span class="pill">~100 ms</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="arrow">▼</div>
+
+<!-- ============ ÉTAPE 3 ============ -->
+<div class="step">
+  <div class="step-num">3</div>
+  <div class="step-body">
+    <h3 class="step-title">Recherche hybride dans la base juridique</h3>
+    <p class="step-summary">Les 5 variantes sont envoyées en parallèle à deux moteurs de recherche complémentaires, qui explorent les documents de l'organisation et les sources communes.</p>
+    <div class="step-content">
+      <p>
+        AORIA RH utilise deux approches en même temps, parce qu'aucune n'est parfaite seule :
+      </p>
+      <ul>
+        <li>
+          <strong>La recherche sémantique</strong> comprend le <em>sens</em> de la question
+          (« préavis démission » trouve aussi « rupture à l'initiative du salarié »).
+          Elle est rapide mais peut rater un numéro d'article précis.
+        </li>
+        <li>
+          <strong>La recherche par mots-clés</strong> attrape les références exactes
+          (un numéro d'article comme <em>L.1234-1</em>, un numéro de pourvoi comme <em>22-18.875</em>).
+          Elle n'a aucune tolérance au vocabulaire mais retrouve l'identifiant si l'utilisateur
+          le connaît.
+        </li>
+      </ul>
+      <p>
+        Les résultats des deux moteurs sont fusionnés et classés pour garder les 20 passages
+        les plus prometteurs, avec <strong>un boost pour les documents récents</strong>
+        (jusqu'à +10 % pour un texte publié dans les 12 derniers mois).
+      </p>
+      <div class="highlight">
+        <strong>Cloisonnement multi-tenant :</strong> la recherche ne voit QUE les documents
+        de l'organisation de l'utilisateur + les sources communes validées par AORIA RH
+        (Code du travail, Cour de cassation…) + la ou les CCN applicables. Aucune donnée ne
+        traverse la frontière entre organisations clientes.
+      </div>
+      <p>
+        <strong>Cas particulier — détection d'identifiants :</strong> si la question contient
+        un article de loi précis (<em>L.1234-1</em>) ou un numéro de pourvoi
+        (<em>22-18.875</em>), le passage correspondant est <strong>injecté de force</strong>
+        en tête des candidats pour éviter qu'il soit noyé par la recherche sémantique.
+      </p>
+      <div class="meta-row">
+        <span class="meta-label">Moteurs :</span>
+        <span class="pill pill-strong">Voyage Law-2 (sémantique)</span>
+        <span class="pill pill-strong">BM25 (mots-clés)</span>
+        <span class="pill">Base : Qdrant</span>
+        <span class="pill">20 résultats finaux</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="arrow">▼</div>
+
+<!-- ============ ÉTAPE 4 ============ -->
+<div class="step">
+  <div class="step-num">4</div>
+  <div class="step-body">
+    <h3 class="step-title">Reclassement intelligent (reranking)</h3>
+    <p class="step-summary">Les 20 passages sont soumis à un second modèle, plus précis, qui les remet dans le bon ordre de pertinence réelle.</p>
+    <div class="step-content">
+      <p>
+        Les moteurs de l'étape 3 sont rapides mais leur classement est approximatif.
+        AORIA RH passe donc les 20 candidats dans un modèle de reclassement spécialisé
+        (<em>cross-encoder</em>) qui lit chaque passage en relation avec la question
+        et attribue un score de pertinence fin.
+      </p>
+      <p>
+        Concrètement, des passages peu bien classés au début peuvent remonter en tête,
+        et inversement. C'est l'étape qui élimine les faux positifs (passages qui contiennent
+        les bons mots-clés mais ne répondent pas réellement à la question).
+      </p>
+      <p>
+        <strong>Sortie : les 15 meilleurs passages</strong> conservés pour la suite.
+      </p>
+      <div class="meta-row">
+        <span class="meta-label">Moteur :</span>
+        <span class="pill pill-strong">Voyage rerank-2</span>
+        <span class="pill">20 → 15 passages</span>
+        <span class="pill">Timeout 10 s + 3 retries</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="arrow">▼</div>
+
+<!-- ============ ÉTAPE 5 ============ -->
+<div class="step">
+  <div class="step-num">5</div>
+  <div class="step-body">
+    <h3 class="step-title">Enrichissement du contexte autour de chaque passage</h3>
+    <p class="step-summary">Un passage isolé peut être ambigu. AORIA RH récupère le contexte complet du document parent avant de lire.</p>
+    <div class="step-content">
+      <p>
+        Un alinéa du Code du travail hors contexte (« À défaut, la durée est de trois mois »)
+        ne veut rien dire. AORIA RH récupère donc :
+      </p>
+      <ul>
+        <li>
+          <strong>Pour un arrêt de la Cour de cassation</strong> : l'intégralité de
+          l'arrêt (attendus, solution, motifs) en regroupant tous les morceaux du même
+          document.
+        </li>
+        <li>
+          <strong>Pour un article de loi ou de CCN</strong> : l'article complet (toutes
+          ses sous-sections, alinéas, renvois) plutôt qu'un seul alinéa isolé.
+        </li>
+        <li>
+          <strong>Pour les autres documents</strong> : une fenêtre glissante de
+          2 paragraphes avant et après le passage trouvé.
+        </li>
+      </ul>
+      <p>
+        Cette étape est critique pour la qualité des réponses : c'est elle qui garantit
+        que l'IA voit la règle dans son contexte complet, avec les exceptions, les
+        renvois à d'autres articles, les conditions d'application.
+      </p>
+      <div class="highlight">
+        <strong>Si pas assez de résultats exploitables</strong> (moins de 2 passages pertinents),
+        la recherche est relancée automatiquement avec plus de candidats, dans la limite
+        de 2 tentatives.
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="arrow">▼</div>
+
+<!-- ============ ÉTAPE 6 ============ -->
+<div class="step">
+  <div class="step-num">6</div>
+  <div class="step-body">
+    <h3 class="step-title">Hiérarchie des normes et références croisées</h3>
+    <p class="step-summary">AORIA RH signale au modèle d'IA quel niveau juridique occupe chaque source, pour qu'il sache arbitrer entre sources contradictoires.</p>
+    <div class="step-content">
+      <p>
+        C'est un enjeu majeur du droit social : une disposition du contrat de travail
+        ne peut pas contredire la convention collective, qui ne peut pas contredire
+        la loi, qui ne peut pas contredire un principe constitutionnel. En parallèle,
+        le <strong>principe de faveur</strong> (la règle la plus favorable au salarié
+        s'applique) ajoute de la complexité.
+      </p>
+      <p>
+        AORIA RH transmet la hiérarchie suivante au modèle d'IA, et lui demande
+        explicitement de citer la règle d'arbitrage qu'il applique quand les sources
+        divergent (ordre public absolu, récence, principe de faveur, accord d'entreprise
+        postérieur à 2017…) :
+      </p>
+
+      <table class="hierarchy">
+        <thead>
+          <tr>
+            <th>Niveau</th>
+            <th>Nature de la source</th>
+            <th class="weight">Poids</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><td class="level">1</td><td>Constitution, bloc de constitutionnalité</td><td class="weight">1.00</td></tr>
+          <tr><td class="level">2</td><td>Traités internationaux, directives européennes</td><td class="weight">0.95</td></tr>
+          <tr><td class="level">3</td><td>Code du travail, lois, ordonnances</td><td class="weight">0.90</td></tr>
+          <tr><td class="level">4</td><td>Jurisprudence (Cassation, Conseil d'État, Conseil constitutionnel)</td><td class="weight">0.85</td></tr>
+          <tr><td class="level">5</td><td>Réglementaire (décrets, arrêtés)</td><td class="weight">0.80</td></tr>
+          <tr><td class="level">6</td><td>Conventions collectives, accords de branche, accords nationaux</td><td class="weight">0.75</td></tr>
+          <tr><td class="level">7</td><td>Usages d'entreprise, engagements unilatéraux de l'employeur</td><td class="weight">0.65</td></tr>
+          <tr><td class="level">8</td><td>Règlement intérieur</td><td class="weight">0.55</td></tr>
+          <tr><td class="level">9</td><td>Contrat de travail</td><td class="weight">0.50</td></tr>
+        </tbody>
+      </table>
+
+      <p>
+        <strong>Références croisées :</strong> si un même document est cité plusieurs
+        fois dans les passages retenus, c'est un signal fort de pertinence : il reçoit
+        un petit boost supplémentaire.
+      </p>
+    </div>
+  </div>
+</div>
+
+<div class="arrow">▼</div>
+
+<!-- ============ ÉTAPE 7 ============ -->
+<div class="step">
+  <div class="step-num">7</div>
+  <div class="step-body">
+    <h3 class="step-title">Génération de la réponse par le modèle d'IA</h3>
+    <p class="step-summary">Le modèle d'IA reçoit les passages les plus pertinents + le contexte de l'organisation + la question reformulée, et rédige une réponse structurée avec citations.</p>
+    <div class="step-content">
+      <p>
+        L'IA reçoit un « dossier » complet contenant :
+      </p>
+      <ul>
+        <li>Les 10 à 15 passages sélectionnés (avec leur nature, niveau hiérarchique, numéro d'article, date, juridiction…)</li>
+        <li>Le profil de l'organisation (taille, secteur, CCN applicable)</li>
+        <li>Le profil de l'utilisateur (pour adapter le niveau d'explication)</li>
+        <li>L'historique de la conversation en cours</li>
+        <li>Un <strong>prompt système de plus de 150 règles</strong> qui impose notamment :
+          <ul>
+            <li>De ne jamais inventer : chaque affirmation doit s'appuyer sur un passage fourni</li>
+            <li>De citer explicitement les sources sous la forme <em>[Source 1]</em>, <em>[Source 2]</em>…</li>
+            <li>De signaler les désaccords entre sources et la règle d'arbitrage appliquée</li>
+            <li>D'utiliser des tableaux pour les comparaisons (ex. comparatif CDI / CDD)</li>
+            <li>De mettre en gras les chiffres et les délais</li>
+            <li>De proposer 2-3 questions complémentaires à la fin</li>
+            <li>De privilégier toujours la norme la plus récente en cas de doute sur l'abrogation</li>
+          </ul>
+        </li>
+      </ul>
+      <div class="tech-note">
+        <strong>Streaming en temps réel :</strong> la réponse est renvoyée au navigateur
+        au fur et à mesure de sa génération (token par token), pour que l'utilisateur
+        voie la réponse s'écrire sans attendre la fin complète. Les sources sont envoyées
+        en parallèle, dès l'étape 6, pour qu'elles s'affichent pendant que l'IA rédige.
+      </div>
+      <div class="meta-row">
+        <span class="meta-label">Moteur :</span>
+        <span class="pill pill-strong">GPT-5-mini</span>
+        <span class="pill">Max 16 000 tokens de réponse</span>
+        <span class="pill">Streaming SSE</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="arrow">▼</div>
+
+<!-- ============ ÉTAPE 8 ============ -->
+<div class="step">
+  <div class="step-num">8</div>
+  <div class="step-body">
+    <h3 class="step-title">Enregistrement, traçabilité et suivi des coûts</h3>
+    <p class="step-summary">Chaque question et sa réponse sont sauvegardées, avec la trace complète des étapes suivies, pour permettre l'audit, le débogage et le pilotage de la rentabilité.</p>
+    <div class="step-content">
+      <p>
+        Une fois la réponse générée, AORIA RH enregistre en base de données :
+      </p>
+      <ul>
+        <li>Le message de l'utilisateur et la réponse complète de l'assistant</li>
+        <li>La liste des sources citées (avec extraits courts pour l'affichage + texte intégral pour la traçabilité)</li>
+        <li>La <strong>trace détaillée du pipeline</strong> : question originale, question reformulée, 5 variantes générées, identifiants détectés, scores de chaque passage aux étapes 3/4/5, temps passé sur chaque étape</li>
+        <li>Le <strong>coût de chaque appel</strong> aux modèles d'IA (reformulation, expansion, reranking, génération, embeddings), converti en dollars puis agrégé par organisation / utilisateur / question</li>
+        <li>Un identifiant unique de question qui permet ensuite de faire le lien avec le feedback utilisateur (pouce vert / pouce rouge)</li>
+      </ul>
+      <div class="highlight">
+        <strong>Utilité pour les équipes AORIA RH :</strong> cette trace permet de
+        reproduire exactement ce qui s'est passé en cas de problème signalé par un client,
+        d'auditer la pertinence des sources citées, et de mesurer finement le coût
+        d'exploitation par client pour ajuster la tarification.
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ EXEMPLE ============ -->
+<h2>Exemple concret de bout en bout</h2>
+
+<div class="example">
+  <div class="bubble bubble-user">
+    Quel est le préavis pour un CDI de 2 ans qui démissionne ?
+  </div>
+
+  <div class="internal">⋯ Pipeline interne : 8 étapes, ~3 secondes ⋯</div>
+
+  <div class="bubble bubble-bot">
+    <p>
+      La durée du préavis de démission <strong>n'est pas fixée par la loi pour le CDI</strong>.
+      Elle résulte <strong>prioritairement de la convention collective</strong> applicable à votre entreprise,
+      à défaut des usages de la profession ou du contrat de travail (article <strong>L.1237-1</strong>
+      du Code du travail <span class="src-tag">Source 1</span>).
+    </p>
+    <p>
+      Votre organisation étant rattachée à la <strong>CCN Syntec (IDCC 1486)</strong>, le préavis
+      d'un ingénieur ou cadre après 2 ans d'ancienneté est fixé à <strong>3 mois</strong>
+      <span class="src-tag">Source 2</span>. Pour un ETAM (employés, techniciens, agents de maîtrise),
+      il est de <strong>2 mois</strong> <span class="src-tag">Source 3</span>.
+    </p>
+    <p>
+      <strong>Points de vigilance :</strong>
+    </p>
+    <ul>
+      <li>Le contrat de travail individuel peut prévoir un préavis plus court (favorable au salarié) mais pas plus long</li>
+      <li>L'employeur peut dispenser le salarié d'exécuter son préavis (<em>Cass. soc., 24 juin 2015, n°14-12.118</em> <span class="src-tag">Source 4</span>)</li>
+    </ul>
+    <p style="color:var(--muted); font-size:0.9rem; margin-top:16px;">
+      → Votre entreprise a-t-elle un accord interne plus favorable sur le préavis ?<br>
+      → Souhaitez-vous connaître les règles en cas de dispense unilatérale par l'employeur ?
+    </p>
+  </div>
+</div>
+
+<!-- ============ GARDES-FOUS ============ -->
+<h2>Les gardes-fous qui sécurisent le pipeline</h2>
+
+<p>
+  Chaque étape est encadrée par des limites strictes pour éviter les dérives : coût excessif,
+  latence élevée, résultat imprévisible, fuite de données entre organisations clientes.
+</p>
+
+<div class="guards">
+  <div class="guard-card">
+    <div class="g-title">Temps total maximum</div>
+    <div class="g-value">120 s</div>
+    <div class="g-desc">Au-delà, la requête est interrompue et un message d'erreur lisible est renvoyé au lieu d'un timeout technique.</div>
+  </div>
+  <div class="guard-card">
+    <div class="g-title">Temps max par étape</div>
+    <div class="g-value">60 s</div>
+    <div class="g-desc">Si une étape dépasse, elle utilise une valeur par défaut et on passe à la suivante.</div>
+  </div>
+  <div class="guard-card">
+    <div class="g-title">Re-recherches autorisées</div>
+    <div class="g-value">2 max</div>
+    <div class="g-desc">Si la première passe ne trouve pas assez de documents pertinents, on recommence — mais jamais à l'infini.</div>
+  </div>
+  <div class="guard-card">
+    <div class="g-title">Passages candidats</div>
+    <div class="g-value">20 → 15 → 10</div>
+    <div class="g-desc">20 candidats après recherche, 15 après reranking, 10 groupes finaux transmis au modèle.</div>
+  </div>
+  <div class="guard-card">
+    <div class="g-title">Requêtes par minute</div>
+    <div class="g-value">15</div>
+    <div class="g-desc">Par utilisateur. Protège contre un usage abusif ou un script qui tournerait mal.</div>
+  </div>
+  <div class="guard-card">
+    <div class="g-title">Quota mensuel</div>
+    <div class="g-value">300–2 400</div>
+    <div class="g-desc">Questions / mois, selon le plan souscrit. Au-delà, l'utilisateur achète un pack booster ou change de plan.</div>
+  </div>
+  <div class="guard-card">
+    <div class="g-title">Cloisonnement</div>
+    <div class="g-value">Strict</div>
+    <div class="g-desc">Chaque requête est filtrée par l'identifiant de l'organisation. Aucune fuite possible entre deux clients.</div>
+  </div>
+  <div class="guard-card">
+    <div class="g-title">Traçabilité</div>
+    <div class="g-value">100 %</div>
+    <div class="g-desc">Chaque question enregistre l'ensemble des étapes parcourues pour audit et reproduction à l'identique.</div>
+  </div>
+</div>
+
+<!-- ============ POURQUOI ÇA MARCHE ============ -->
+<h2>Pourquoi ce pipeline évite les « hallucinations » de l'IA</h2>
+
+<div class="intro">
+  <p>
+    Les « hallucinations » (l'IA qui invente un article de loi ou une décision de justice)
+    sont le risque numéro un d'un assistant juridique généraliste. Le pipeline AORIA RH
+    les prévient à plusieurs endroits :
+  </p>
+</div>
+
+<ul style="font-size:0.98rem; line-height:1.7;">
+  <li>
+    <strong>L'IA ne répond jamais de mémoire.</strong> À chaque question, les passages
+    pertinents sont réellement recherchés dans la base documentaire, et seuls ces passages
+    lui sont fournis. Ses « connaissances générales » ne sont pas utilisées pour énoncer
+    une règle de droit.
+  </li>
+  <li>
+    <strong>Chaque affirmation doit être rattachée à une source numérotée.</strong>
+    Le prompt système l'exige explicitement, et si l'utilisateur ne voit pas de
+    <em>[Source X]</em>, c'est un signal d'alarme.
+  </li>
+  <li>
+    <strong>Les identifiants précis (articles, pourvois) sont vérifiés.</strong>
+    Si l'utilisateur demande <em>« que dit L.4121-1 »</em> et que l'article n'est pas
+    trouvé dans la base, un drapeau qualité est levé et la réponse peut être contrôlée
+    manuellement.
+  </li>
+  <li>
+    <strong>La hiérarchie des normes est transmise explicitement</strong>, pour que
+    l'IA n'improvise pas l'arbitrage entre sources qui se contredisent.
+  </li>
+  <li>
+    <strong>La trace intégrale est sauvegardée</strong> : si un client signale une
+    réponse erronée, l'équipe AORIA RH peut reproduire l'exact chemin parcouru pour
+    diagnostiquer (question reformulée incorrectement ? mauvais document indexé ?
+    reranking défaillant ? prompt mal suivi ?).
+  </li>
+</ul>
+
+<footer>
+  AORIA RH — Pipeline de recherche juridique RH · Document fonctionnel
+</footer>
+
+</div>
+</body>
+</html>

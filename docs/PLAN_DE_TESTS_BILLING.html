@@ -1,0 +1,1441 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AORIA RH — Plan de tests — Souscription, offres, comptes et paiements</title>
+<style>
+  :root {
+    --bg: #0f172a;
+    --text: #0f172a;
+    --muted: #64748b;
+    --border: #e2e8f0;
+    --primary: #0d9488;
+    --primary-light: #ccfbf1;
+    --accent: #f59e0b;
+    --green: #16a34a;
+    --orange: #ea580c;
+    --red: #dc2626;
+    --card: #ffffff;
+  }
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    margin: 0;
+    background: #f8fafc;
+    color: var(--text);
+    line-height: 1.55;
+  }
+  .container { max-width: 1100px; margin: 0 auto; padding: 40px 24px 80px; }
+
+  header.hero { margin-bottom: 36px; padding-bottom: 24px; border-bottom: 2px solid var(--border); }
+  header.hero h1 { font-size: 2rem; margin: 0 0 6px; }
+  header.hero p { color: var(--muted); margin: 0; font-size: 1rem; }
+
+  h2 { font-size: 1.35rem; margin: 44px 0 14px; padding-bottom: 8px; border-bottom: 1px solid var(--border); color: var(--primary); }
+  h3 { font-size: 1.05rem; margin: 20px 0 8px; }
+
+  .info {
+    background: var(--primary-light);
+    border-left: 4px solid var(--primary);
+    padding: 14px 18px;
+    border-radius: 6px;
+    margin: 16px 0;
+    font-size: 0.95rem;
+  }
+  .info strong { color: #0f5d59; }
+
+  .warn {
+    background: #fff7ed;
+    border-left: 4px solid var(--orange);
+    padding: 14px 18px;
+    border-radius: 6px;
+    margin: 16px 0;
+    font-size: 0.95rem;
+  }
+
+  .prep {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 18px 22px;
+    margin: 16px 0 32px;
+  }
+  .prep h3 { margin-top: 0; }
+  .prep ul { margin: 0; padding-left: 22px; }
+
+  .test {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px 20px;
+    margin: 12px 0;
+  }
+  .test-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 14px;
+    margin-bottom: 10px;
+  }
+  .test-num {
+    background: var(--primary);
+    color: #fff;
+    font-weight: 700;
+    padding: 3px 10px;
+    border-radius: 4px;
+    font-size: 0.85rem;
+    letter-spacing: 0.5px;
+  }
+  .test-title { font-weight: 600; font-size: 1rem; flex: 1; }
+  .test-status {
+    display: flex;
+    gap: 14px;
+    font-size: 0.85rem;
+    color: var(--muted);
+  }
+  .test-status label { cursor: pointer; }
+  .test-status input[type="radio"] { margin-right: 4px; vertical-align: middle; }
+
+  .test-body { font-size: 0.92rem; color: #334155; }
+  .test-body .label {
+    font-weight: 600;
+    color: var(--bg);
+    margin-top: 10px;
+    margin-bottom: 2px;
+    text-transform: uppercase;
+    font-size: 0.75rem;
+    letter-spacing: 0.6px;
+  }
+  .test-body ol, .test-body ul { margin: 2px 0 0; padding-left: 22px; }
+  .test-body li { margin-bottom: 3px; }
+  .test-body code {
+    background: #f1f5f9;
+    padding: 1px 6px;
+    border-radius: 3px;
+    font-family: "SF Mono", Monaco, Consolas, monospace;
+    font-size: 0.85rem;
+  }
+
+  textarea.notes-field {
+    margin-top: 4px;
+    padding: 10px 14px;
+    background: #fafbfc;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font-size: 0.9rem;
+    color: var(--text);
+    font-family: inherit;
+    width: 100%;
+    resize: vertical;
+    min-height: 52px;
+  }
+  textarea.notes-field:focus {
+    outline: none;
+    border-color: var(--primary);
+    background: #fff;
+  }
+
+  /* Action bar sticky */
+  .action-bar {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    background: #f8fafc;
+    padding: 14px 0;
+    margin-bottom: 24px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 16px;
+    flex-wrap: wrap;
+  }
+  .action-bar .stats {
+    display: flex;
+    gap: 16px;
+    font-size: 0.9rem;
+    color: var(--muted);
+  }
+  .action-bar .stats strong { color: var(--bg); font-variant-numeric: tabular-nums; }
+  .action-bar .stats .passed { color: var(--green); }
+  .action-bar .stats .failed { color: var(--red); }
+  .action-bar .actions { display: flex; gap: 10px; }
+  .btn {
+    padding: 8px 16px;
+    border-radius: 6px;
+    font-size: 0.9rem;
+    font-weight: 600;
+    border: 1px solid var(--border);
+    background: var(--card);
+    color: var(--text);
+    cursor: pointer;
+    font-family: inherit;
+  }
+  .btn:hover { border-color: var(--primary); color: var(--primary); }
+  .btn-primary {
+    background: var(--primary);
+    color: #fff;
+    border-color: var(--primary);
+  }
+  .btn-primary:hover { background: #0b7e75; color: #fff; }
+
+  .saved-hint {
+    font-size: 0.75rem;
+    color: var(--muted);
+    font-style: italic;
+  }
+
+  footer {
+    text-align: center;
+    color: var(--muted);
+    font-size: 0.85rem;
+    margin-top: 64px;
+    padding-top: 24px;
+    border-top: 1px solid var(--border);
+  }
+
+  @media print {
+    body { background: #fff; }
+    .test, .prep, .info, .warn { page-break-inside: avoid; }
+  }
+</style>
+</head>
+<body>
+<div class="container">
+
+<header class="hero">
+  <h1>Plan de tests — AORIA RH</h1>
+  <p>Couverture : inscription, essai, souscription, paiements, changement de plan, add-ons, quotas, limites, résiliation, admin. Hors scope : la recherche et le chat RAG.</p>
+</header>
+
+<div class="action-bar">
+  <div class="stats">
+    <span><strong id="stat-total">36</strong> tests au total</span>
+    <span class="passed">✓ <strong id="stat-passed">0</strong> passés</span>
+    <span class="failed">✗ <strong id="stat-failed">0</strong> échoués</span>
+    <span>◯ <strong id="stat-todo">36</strong> à faire</span>
+  </div>
+  <div class="actions">
+    <span class="saved-hint" id="save-hint">Sauvegarde automatique active</span>
+    <button class="btn" id="reset-btn">Tout effacer</button>
+    <button class="btn btn-primary" id="export-btn">Exporter mon rapport</button>
+  </div>
+</div>
+
+<div class="info">
+  <p><strong>Mode de paiement actuel :</strong> Stripe test — aucun paiement réel n'est encaissé. Utilise les cartes de test Stripe fournies ci-dessous.</p>
+  <p><strong>Environnement :</strong> <code>https://app.aoriarh.fr</code> (production, mode test Stripe).</p>
+</div>
+
+<!-- ============ PRÉPARATION ============ -->
+<h2>1. Préparation avant de commencer</h2>
+
+<div class="prep">
+  <h3>Comptes de test à créer</h3>
+  <p>Utilise des alias email différents pour ne pas mélanger, par exemple ton adresse Gmail avec <code>+testN</code> (Gmail ignore ce qui suit le <code>+</code>, tous les emails arrivent dans la même boîte).</p>
+  <ul>
+    <li><strong>Compte A</strong> — à utiliser pour l'essai et la souscription Solo : <code>ton.adresse+aoriatest1@gmail.com</code></li>
+    <li><strong>Compte B</strong> — pour Équipe et tester les limites utilisateurs : <code>ton.adresse+aoriatest2@gmail.com</code></li>
+    <li><strong>Compte C</strong> — pour les invitations (sera invité par B) : <code>ton.adresse+aoriatest3@gmail.com</code></li>
+  </ul>
+  <p>Ouvre une <strong>fenêtre de navigation privée</strong> pour chaque test d'inscription, sinon tu resteras connectée avec le compte précédent.</p>
+</div>
+
+<div class="prep">
+  <h3>Cartes de test Stripe à utiliser</h3>
+  <ul>
+    <li><strong>Carte qui réussit :</strong> <code>4242 4242 4242 4242</code></li>
+    <li><strong>Carte avec validation 3D Secure :</strong> <code>4000 0025 0000 3155</code></li>
+    <li><strong>Carte qui échoue (fonds insuffisants) :</strong> <code>4000 0000 0000 9995</code></li>
+    <li><strong>Carte qui échoue au renouvellement :</strong> <code>4000 0000 0000 0341</code></li>
+  </ul>
+  <p>Pour toutes les cartes : date d'expiration au choix dans le futur (par exemple 12/29), cryptogramme à 3 chiffres au choix (par exemple 123), code postal au choix (par exemple 75001).</p>
+</div>
+
+<div class="warn">
+  <p>Après chaque test, coche "Passé" ou "Échoué" à droite. Si échoué, décris le problème dans la zone notes. Le document peut être rempli directement dans le navigateur ou imprimé en PDF.</p>
+</div>
+
+
+<!-- ============ 2. INSCRIPTION ET ESSAI ============ -->
+<h2>2. Inscription et essai gratuit 14 jours</h2>
+
+<div class="test">
+  <div class="test-head">
+    <span class="test-num">T01</span>
+    <span class="test-title">Inscription d'un nouveau compte</span>
+    <span class="test-status">
+      <label><input type="radio" name="t01" value="passe"> Passé</label>
+      <label><input type="radio" name="t01" value="echec"> Échoué</label>
+    </span>
+  </div>
+  <div class="test-body">
+    <div class="label">Étapes</div>
+    <ol>
+      <li>Ouvrir une fenêtre de navigation privée.</li>
+      <li>Aller sur <code>https://app.aoriarh.fr/register</code>.</li>
+      <li>Renseigner l'email du compte A, un nom, un mot de passe.</li>
+      <li>Valider.</li>
+    </ol>
+    <div class="label">Résultat attendu</div>
+    <ul>
+      <li>Redirection automatique vers le tableau de bord (l'écran de chat ou équivalent).</li>
+      <li>Une bannière en haut indique "Votre essai se termine dans 14 jours".</li>
+      <li>En bas à gauche, la sidebar affiche "Plan Essai".</li>
+      <li>Sous le plan, un petit compteur "Questions ce mois 0 / 300" est visible.</li>
+    </ul>
+    <div class="label">Notes en cas d'échec</div>
+    <textarea class="notes-field" rows="3" placeholder="Décris ici ce qui ne fonctionne pas, capture d'écran si besoin..."></textarea>
+  </div>
+</div>
+
+<div class="test">
+  <div class="test-head">
+    <span class="test-num">T02</span>
+    <span class="test-title">L'espace client affiche correctement l'essai</span>
+    <span class="test-status">
+      <label><input type="radio" name="t02" value="passe"> Passé</label>
+      <label><input type="radio" name="t02" value="echec"> Échoué</label>
+    </span>
+  </div>
+  <div class="test-body">
+    <div class="label">Étapes</div>
+    <ol>
+      <li>Depuis le menu utilisateur en bas à gauche, cliquer sur "Abonnement" (ou aller sur <code>/billing</code>).</li>
+    </ol>
+    <div class="label">Résultat attendu</div>
+    <ul>
+      <li>Un encadré "Plan actuel : Essai gratuit" avec une date de fin dans 14 jours.</li>
+      <li>Une barre de progression du quota de questions (0 / 300).</li>
+      <li>Une section "Utilisation" avec les compteurs Utilisateurs (1/1), Organisations et Documents.</li>
+      <li>Un catalogue des 3 plans payants avec boutons "Souscrire".</li>
+    </ul>
+    <div class="label">Notes en cas d'échec</div>
+    <textarea class="notes-field" rows="3" placeholder="Décris ici ce qui ne fonctionne pas, capture d'écran si besoin..."></textarea>
+  </div>
+</div>
+
+<div class="test">
+  <div class="test-head">
+    <span class="test-num">T03</span>
+    <span class="test-title">Déconnexion puis reconnexion</span>
+    <span class="test-status">
+      <label><input type="radio" name="t03" value="passe"> Passé</label>
+      <label><input type="radio" name="t03" value="echec"> Échoué</label>
+    </span>
+  </div>
+  <div class="test-body">
+    <div class="label">Étapes</div>
+    <ol>
+      <li>Se déconnecter depuis le menu utilisateur.</li>
+      <li>Se reconnecter avec l'email et le mot de passe du compte A.</li>
+    </ol>
+    <div class="label">Résultat attendu</div>
+    <ul>
+      <li>Retrouver le même plan Essai, la même date de fin, le même compteur.</li>
+    </ul>
+    <div class="label">Notes en cas d'échec</div>
+    <textarea class="notes-field" rows="3" placeholder="Décris ici ce qui ne fonctionne pas, capture d'écran si besoin..."></textarea>
+  </div>
+</div>
+
+
+<!-- ============ 3. PAGES PUBLIQUES ============ -->
+<h2>3. Pages publiques (prospects non connectés)</h2>
+
+<div class="test">
+  <div class="test-head">
+    <span class="test-num">T04</span>
+    <span class="test-title">Landing accessible sans connexion</span>
+    <span class="test-status">
+      <label><input type="radio" name="t04" value="passe"> Passé</label>
+      <label><input type="radio" name="t04" value="echec"> Échoué</label>
+    </span>
+  </div>
+  <div class="test-body">
+    <div class="label">Étapes</div>
+    <ol>
+      <li>En navigation privée (sans compte connecté), aller sur <code>https://app.aoriarh.fr/</code>.</li>
+    </ol>
+    <div class="label">Résultat attendu</div>
+    <ul>
+      <li>Affichage de la page d'accueil avec titre, présentation, boutons "Démarrer l'essai gratuit" et "Voir les tarifs".</li>
+      <li>Pas de redirection vers la page de connexion.</li>
+      <li>En bas, lien vers les CGV et la politique de confidentialité.</li>
+    </ul>
+    <div class="label">Notes en cas d'échec</div>
+    <textarea class="notes-field" rows="3" placeholder="Décris ici ce qui ne fonctionne pas, capture d'écran si besoin..."></textarea>
+  </div>
+</div>
+
+<div class="test">
+  <div class="test-head">
+    <span class="test-num">T05</span>
+    <span class="test-title">Page des tarifs accessible sans connexion</span>
+    <span class="test-status">
+      <label><input type="radio" name="t05" value="passe"> Passé</label>
+      <label><input type="radio" name="t05" value="echec"> Échoué</label>
+    </span>
+  </div>
+  <div class="test-body">
+    <div class="label">Étapes</div>
+    <ol>
+      <li>En navigation privée, aller sur <code>https://app.aoriarh.fr/pricing</code> (ou cliquer sur "Voir les tarifs" depuis la landing).</li>
+      <li>Basculer le sélecteur "Mensuel / Annuel".</li>
+    </ol>
+    <div class="label">Résultat attendu</div>
+    <ul>
+      <li>Les 3 plans Solo (79 €), Équipe (149 €), Groupe (279 €) sont affichés avec leur contenu.</li>
+      <li>En mode Annuel, les prix passent à 790 / 1 490 / 2 790 € avec mention "2 mois offerts".</li>
+      <li>Le bouton "Démarrer l'essai gratuit" ramène vers la page d'inscription.</li>
+    </ul>
+    <div class="label">Notes en cas d'échec</div>
+    <textarea class="notes-field" rows="3" placeholder="Décris ici ce qui ne fonctionne pas, capture d'écran si besoin..."></textarea>
+  </div>
+</div>
+
+
+<!-- ============ 4. SOUSCRIPTION ============ -->
+<h2>4. Souscription à un plan payant</h2>
+
+<div class="test">
+  <div class="test-head">
+    <span class="test-num">T06</span>
+    <span class="test-title">Souscrire Solo mensuel avec succès</span>
+    <span class="test-status">
+      <label><input type="radio" name="t06" value="passe"> Passé</label>
+      <label><input type="radio" name="t06" value="echec"> Échoué</label>
+    </span>
+  </div>
+  <div class="test-body">
+    <div class="label">Prérequis</div>
+    <ul>
+      <li>Être connecté avec le compte A (en plan Essai).</li>
+    </ul>
+    <div class="label">Étapes</div>
+    <ol>
+      <li>Aller sur <code>/billing</code>.</li>
+      <li>Vérifier que le toggle est en "Mensuel".</li>
+      <li>Cliquer sur "Souscrire Solo".</li>
+      <li>Sur la page Stripe, renseigner l'adresse de facturation demandée.</li>
+      <li>Vérifier qu'une ligne "TVA (20 %)" apparaît dans le récapitulatif et que le total est de 94,80 €.</li>
+      <li>Renseigner la carte de test <code>4242 4242 4242 4242</code>, date future, cryptogramme 123.</li>
+      <li>Valider le paiement.</li>
+    </ol>
+    <div class="label">Résultat attendu</div>
+    <ul>
+      <li>Retour automatique sur <code>/billing</code> avec un message de succès.</li>
+      <li>Le plan affiché est passé de "Essai" à "Solo".</li>
+      <li>La bannière d'essai a disparu de la sidebar.</li>
+      <li>Le quota mensuel est passé à 300 / 300.</li>
+      <li>Réception d'un email "Bienvenue sur AORIA RH Solo" avec lien vers le reçu Stripe.</li>
+    </ul>
+    <div class="label">Notes en cas d'échec</div>
+    <textarea class="notes-field" rows="3" placeholder="Décris ici ce qui ne fonctionne pas, capture d'écran si besoin..."></textarea>
+  </div>
+</div>
+
+<div class="test">
+  <div class="test-head">
+    <span class="test-num">T07</span>
+    <span class="test-title">Seuls les paiements par carte sont proposés</span>
+    <span class="test-status">
+      <label><input type="radio" name="t07" value="passe"> Passé</label>
+      <label><input type="radio" name="t07" value="echec"> Échoué</label>
+    </span>
+  </div>
+  <div class="test-body">
+    <div class="label">Étapes</div>
+    <ol>
+      <li>Sur la page Stripe Checkout ouverte lors du test précédent (ou en refaisant un checkout), observer les options de paiement.</li>
+    </ol>
+    <div class="label">Résultat attendu</div>
+    <ul>
+      <li>Un seul mode de paiement proposé : la carte bancaire.</li>
+      <li>Aucun bouton Apple Pay, Google Pay, SEPA, Link, Bancontact, iDEAL ou autre wallet.</li>
+    </ul>
+    <div class="label">Notes en cas d'échec</div>
+    <textarea class="notes-field" rows="3" placeholder="Décris ici ce qui ne fonctionne pas, capture d'écran si besoin..."></textarea>
+  </div>
+</div>
+
+<div class="test">
+  <div class="test-head">
+    <span class="test-num">T08</span>
+    <span class="test-title">Souscrire Équipe en annuel</span>
+    <span class="test-status">
+      <label><input type="radio" name="t08" value="passe"> Passé</label>
+      <label><input type="radio" name="t08" value="echec"> Échoué</label>
+    </span>
+  </div>
+  <div class="test-body">
+    <div class="label">Prérequis</div>
+    <ul>
+      <li>Nouveau compte B en plan Essai.</li>
+    </ul>
+    <div class="label">Étapes</div>
+    <ol>
+      <li>Se connecter avec le compte B, aller sur <code>/billing</code>.</li>
+      <li>Basculer le toggle en "Annuel".</li>
+      <li>Vérifier que le prix affiché pour Équipe est 1 490 € par an.</li>
+      <li>Cliquer "Souscrire Équipe", payer avec la carte de test.</li>
+    </ol>
+    <div class="label">Résultat attendu</div>
+    <ul>
+      <li>Le récapitulatif Stripe affiche 1 490 € HT + 298 € TVA = 1 788 € TTC.</li>
+      <li>Après paiement, le plan est Équipe, la prochaine échéance est dans 1 an.</li>
+    </ul>
+    <div class="label">Notes en cas d'échec</div>
+    <textarea class="notes-field" rows="3" placeholder="Décris ici ce qui ne fonctionne pas, capture d'écran si besoin..."></textarea>
+  </div>
+</div>
+
+<div class="test">
+  <div class="test-head">
+    <span class="test-num">T09</span>
+    <span class="test-title">Paiement par carte refusée</span>
+    <span class="test-status">
+      <label><input type="radio" name="t09" value="passe"> Passé</label>
+      <label><input type="radio" name="t09" value="echec"> Échoué</label>
+    </span>
+  </div>
+  <div class="test-body">
+    <div class="label">Étapes</div>
+    <ol>
+      <li>Utiliser un compte en essai, lancer un checkout Solo.</li>
+      <li>Renseigner la carte <code>4000 0000 0000 9995</code> (échec fonds insuffisants).</li>
+    </ol>
+    <div class="label">Résultat attendu</div>
+    <ul>
+      <li>Message d'erreur de Stripe "Votre carte a été refusée".</li>
+      <li>Possibilité de réessayer avec une autre carte dans la même session.</li>
+      <li>Si on annule le checkout, retour sur <code>/billing</code> et le plan reste "Essai" (aucun changement).</li>
+    </ul>
+    <div class="label">Notes en cas d'échec</div>
+    <textarea class="notes-field" rows="3" placeholder="Décris ici ce qui ne fonctionne pas, capture d'écran si besoin..."></textarea>
+  </div>
+</div>
+
+
+<!-- ============ 5. CHANGEMENT DE PLAN ============ -->
+<h2>5. Changement de plan (upgrade et downgrade)</h2>
+
+<div class="test">
+  <div class="test-head">
+    <span class="test-num">T10</span>
+    <span class="test-title">Upgrade de Solo vers Équipe</span>
+    <span class="test-status">
+      <label><input type="radio" name="t10" value="passe"> Passé</label>
+      <label><input type="radio" name="t10" value="echec"> Échoué</label>
+    </span>
+  </div>
+  <div class="test-body">
+    <div class="label">Prérequis</div>
+    <ul>
+      <li>Compte A actuellement en plan Solo (suite du test T06).</li>
+    </ul>
+    <div class="label">Étapes</div>
+    <ol>
+      <li>Aller sur <code>/billing</code>.</li>
+      <li>Cliquer sur "Souscrire Équipe" depuis le catalogue des plans.</li>
+      <li>Compléter le paiement Stripe.</li>
+    </ol>
+    <div class="label">Résultat attendu</div>
+    <ul>
+      <li>Le plan bascule immédiatement à Équipe.</li>
+      <li>Le quota mensuel passe à 900 questions (augmentation visible immédiatement, pas au mois suivant).</li>
+      <li>La section "Utilisation" montre maintenant les limites Équipe (5 utilisateurs, 3 organisations, 300 documents par organisation).</li>
+      <li>Réception de l'email "Bienvenue sur AORIA RH Équipe".</li>
+    </ul>
+    <div class="label">Notes en cas d'échec</div>
+    <textarea class="notes-field" rows="3" placeholder="Décris ici ce qui ne fonctionne pas, capture d'écran si besoin..."></textarea>
+  </div>
+</div>
+
+<div class="test">
+  <div class="test-head">
+    <span class="test-num">T11</span>
+    <span class="test-title">Tentative de downgrade avec trop d'éléments</span>
+    <span class="test-status">
+      <label><input type="radio" name="t11" value="passe"> Passé</label>
+      <label><input type="radio" name="t11" value="echec"> Échoué</label>
+    </span>
+  </div>
+  <div class="test-body">
+    <div class="label">Prérequis</div>
+    <ul>
+      <li>Compte B actuellement en plan Équipe avec au moins 2 organisations créées.</li>
+    </ul>
+    <div class="label">Étapes</div>
+    <ol>
+      <li>Sur <code>/billing</code>, cliquer "Gérer mon abonnement" pour ouvrir le portail Stripe.</li>
+      <li>Dans le portail, choisir de changer de plan et sélectionner Solo.</li>
+      <li>Valider.</li>
+    </ol>
+    <div class="label">Résultat attendu</div>
+    <ul>
+      <li>Le downgrade est effectué côté Stripe (le plan passe à Solo dans le portail).</li>
+      <li>Quelques secondes plus tard, réception d'un email "Downgrade AORIA RH — action requise" qui liste les éléments à supprimer (par exemple : "organisations : 2 (plan solo en autorise 1)").</li>
+      <li>Sur <code>/billing</code>, le plan affiche bien "Solo".</li>
+      <li>Toute tentative de créer une nouvelle organisation ou d'ajouter un utilisateur est bloquée avec un message clair tant que l'excédent n'est pas supprimé.</li>
+    </ul>
+    <div class="label">Notes en cas d'échec</div>
+    <textarea class="notes-field" rows="3" placeholder="Décris ici ce qui ne fonctionne pas, capture d'écran si besoin..."></textarea>
+  </div>
+</div>
+
+
+<!-- ============ 6. ADD-ONS ============ -->
+<h2>6. Ajout d'options (add-ons) en self-service</h2>
+
+<div class="test">
+  <div class="test-head">
+    <span class="test-num">T12</span>
+    <span class="test-title">Ajouter un utilisateur supplémentaire</span>
+    <span class="test-status">
+      <label><input type="radio" name="t12" value="passe"> Passé</label>
+      <label><input type="radio" name="t12" value="echec"> Échoué</label>
+    </span>
+  </div>
+  <div class="test-body">
+    <div class="label">Prérequis</div>
+    <ul>
+      <li>Compte payant actif (Solo, Équipe ou Groupe).</li>
+    </ul>
+    <div class="label">Étapes</div>
+    <ol>
+      <li>Sur <code>/billing</code>, dans la section "Add-ons", cliquer sur "+1 utilisateur (15 €/mois)".</li>
+    </ol>
+    <div class="label">Résultat attendu</div>
+    <ul>
+      <li>Message de succès "Utilisateur additionnel ajouté".</li>
+      <li>Une ligne "1× Utilisateur additionnel (15 €/mois)" apparaît sous les boutons, avec un bouton "Retirer".</li>
+      <li>La limite d'utilisateurs dans la section "Utilisation" a augmenté de 1.</li>
+      <li>Dans le dashboard Stripe test (panneau admin Stripe), la subscription a désormais un item supplémentaire.</li>
+    </ul>
+    <div class="label">Notes en cas d'échec</div>
+    <textarea class="notes-field" rows="3" placeholder="Décris ici ce qui ne fonctionne pas, capture d'écran si besoin..."></textarea>
+  </div>
+</div>
+
+<div class="test">
+  <div class="test-head">
+    <span class="test-num">T13</span>
+    <span class="test-title">Limite des 3 utilisateurs additionnels maximum</span>
+    <span class="test-status">
+      <label><input type="radio" name="t13" value="passe"> Passé</label>
+      <label><input type="radio" name="t13" value="echec"> Échoué</label>
+    </span>
+  </div>
+  <div class="test-body">
+    <div class="label">Étapes</div>
+    <ol>
+      <li>Cliquer 3 fois sur "+1 utilisateur" (pour atteindre 3 add-ons).</li>
+      <li>Cliquer une 4e fois.</li>
+    </ol>
+    <div class="label">Résultat attendu</div>
+    <ul>
+      <li>Les 3 premiers ajouts réussissent (la ligne devient "3× Utilisateur additionnel").</li>
+      <li>Le 4e ajout est refusé avec un message clair du type "Limite d'add-on utilisateurs atteinte (3 max). Passez à l'offre supérieure pour plus d'utilisateurs inclus".</li>
+    </ul>
+    <div class="label">Notes en cas d'échec</div>
+    <textarea class="notes-field" rows="3" placeholder="Décris ici ce qui ne fonctionne pas, capture d'écran si besoin..."></textarea>
+  </div>
+</div>
+
+<div class="test">
+  <div class="test-head">
+    <span class="test-num">T14</span>
+    <span class="test-title">Retirer un add-on</span>
+    <span class="test-status">
+      <label><input type="radio" name="t14" value="passe"> Passé</label>
+      <label><input type="radio" name="t14" value="echec"> Échoué</label>
+    </span>
+  </div>
+  <div class="test-body">
+    <div class="label">Étapes</div>
+    <ol>
+      <li>Sur la ligne "× Utilisateur additionnel", cliquer "Retirer".</li>
+      <li>Confirmer.</li>
+    </ol>
+    <div class="label">Résultat attendu</div>
+    <ul>
+      <li>L'add-on disparaît de la liste des actifs.</li>
+      <li>La limite d'utilisateurs revient au niveau de base.</li>
+      <li>Côté Stripe, l'item est supprimé de la subscription.</li>
+    </ul>
+    <div class="label">Notes en cas d'échec</div>
+    <textarea class="notes-field" rows="3" placeholder="Décris ici ce qui ne fonctionne pas, capture d'écran si besoin..."></textarea>
+  </div>
+</div>
+
+<div class="test">
+  <div class="test-head">
+    <span class="test-num">T15</span>
+    <span class="test-title">Ajouter une organisation supplémentaire</span>
+    <span class="test-status">
+      <label><input type="radio" name="t15" value="passe"> Passé</label>
+      <label><input type="radio" name="t15" value="echec"> Échoué</label>
+    </span>
+  </div>
+  <div class="test-body">
+    <div class="label">Étapes</div>
+    <ol>
+      <li>Sur <code>/billing</code>, cliquer "+1 organisation (19 €/mois)".</li>
+      <li>Retourner sur la page des organisations et créer une organisation au-delà de la limite de base.</li>
+    </ol>
+    <div class="label">Résultat attendu</div>
+    <ul>
+      <li>L'add-on est ajouté et la nouvelle organisation est créée avec succès.</li>
+    </ul>
+    <div class="label">Notes en cas d'échec</div>
+    <textarea class="notes-field" rows="3" placeholder="Décris ici ce qui ne fonctionne pas, capture d'écran si besoin..."></textarea>
+  </div>
+</div>
+
+<div class="test">
+  <div class="test-head">
+    <span class="test-num">T16</span>
+    <span class="test-title">Ajouter un pack +500 documents</span>
+    <span class="test-status">
+      <label><input type="radio" name="t16" value="passe"> Passé</label>
+      <label><input type="radio" name="t16" value="echec"> Échoué</label>
+    </span>
+  </div>
+  <div class="test-body">
+    <div class="label">Étapes</div>
+    <ol>
+      <li>Sur <code>/billing</code>, cliquer "+500 documents (10 €/mois)".</li>
+    </ol>
+    <div class="label">Résultat attendu</div>
+    <ul>
+      <li>L'add-on est ajouté, la limite de documents par organisation est augmentée de 500.</li>
+    </ul>
+    <div class="label">Notes en cas d'échec</div>
+    <textarea class="notes-field" rows="3" placeholder="Décris ici ce qui ne fonctionne pas, capture d'écran si besoin..."></textarea>
+  </div>
+</div>
+
+
+<!-- ============ 7. PACK BOOSTER ============ -->
+<h2>7. Pack booster (+500 questions ponctuel)</h2>
+
+<div class="test">
+  <div class="test-head">
+    <span class="test-num">T17</span>
+    <span class="test-title">Achat d'un pack booster</span>
+    <span class="test-status">
+      <label><input type="radio" name="t17" value="passe"> Passé</label>
+      <label><input type="radio" name="t17" value="echec"> Échoué</label>
+    </span>
+  </div>
+  <div class="test-body">
+    <div class="label">Étapes</div>
+    <ol>
+      <li>Sur <code>/billing</code>, cliquer "Acheter un pack booster (+500 questions, 25 €)".</li>
+      <li>Compléter le paiement Stripe avec la carte de test.</li>
+    </ol>
+    <div class="label">Résultat attendu</div>
+    <ul>
+      <li>Le paiement est validé (25 € HT + 5 € TVA = 30 € TTC).</li>
+      <li>Retour sur <code>/billing</code>.</li>
+      <li>Le compteur de questions affiche maintenant "0 / 300 + 500 booster".</li>
+      <li>Pas de date d'expiration sur le booster (il reste valable jusqu'à épuisement).</li>
+    </ul>
+    <div class="label">Notes en cas d'échec</div>
+    <textarea class="notes-field" rows="3" placeholder="Décris ici ce qui ne fonctionne pas, capture d'écran si besoin..."></textarea>
+  </div>
+</div>
+
+
+<!-- ============ 8. GESTION DES UTILISATEURS ============ -->
+<h2>8. Invitation et gestion des utilisateurs de l'équipe</h2>
+
+<div class="test">
+  <div class="test-head">
+    <span class="test-num">T18</span>
+    <span class="test-title">Inviter un utilisateur dans l'équipe</span>
+    <span class="test-status">
+      <label><input type="radio" name="t18" value="passe"> Passé</label>
+      <label><input type="radio" name="t18" value="echec"> Échoué</label>
+    </span>
+  </div>
+  <div class="test-body">
+    <div class="label">Prérequis</div>
+    <ul>
+      <li>Compte B en plan Équipe (au moins 2 utilisateurs inclus).</li>
+    </ul>
+    <div class="label">Étapes</div>
+    <ol>
+      <li>Aller sur la page "Équipe" depuis le menu.</li>
+      <li>Cliquer "Inviter un utilisateur".</li>
+      <li>Renseigner l'email du compte C et valider.</li>
+    </ol>
+    <div class="label">Résultat attendu</div>
+    <ul>
+      <li>Message "Invitation envoyée".</li>
+      <li>L'invitation apparaît dans la liste des invitations en attente.</li>
+      <li>Le compte C reçoit un email d'invitation avec un lien d'acceptation.</li>
+      <li>Le compteur "Utilisateurs" dans <code>/billing</code> augmente (ou l'indicateur s'actualise).</li>
+    </ul>
+    <div class="label">Notes en cas d'échec</div>
+    <textarea class="notes-field" rows="3" placeholder="Décris ici ce qui ne fonctionne pas, capture d'écran si besoin..."></textarea>
+  </div>
+</div>
+
+<div class="test">
+  <div class="test-head">
+    <span class="test-num">T19</span>
+    <span class="test-title">Accepter une invitation (compte C)</span>
+    <span class="test-status">
+      <label><input type="radio" name="t19" value="passe"> Passé</label>
+      <label><input type="radio" name="t19" value="echec"> Échoué</label>
+    </span>
+  </div>
+  <div class="test-body">
+    <div class="label">Étapes</div>
+    <ol>
+      <li>Ouvrir l'email reçu par le compte C.</li>
+      <li>Cliquer sur le lien "Accepter l'invitation".</li>
+      <li>Créer le compte ou se connecter avec l'email du compte C.</li>
+    </ol>
+    <div class="label">Résultat attendu</div>
+    <ul>
+      <li>Le compte C arrive directement dans l'espace de l'équipe B.</li>
+      <li>Côté B, le compte C apparaît maintenant dans la liste des membres, plus dans les invitations en attente.</li>
+    </ul>
+    <div class="label">Notes en cas d'échec</div>
+    <textarea class="notes-field" rows="3" placeholder="Décris ici ce qui ne fonctionne pas, capture d'écran si besoin..."></textarea>
+  </div>
+</div>
+
+<div class="test">
+  <div class="test-head">
+    <span class="test-num">T20</span>
+    <span class="test-title">Tenter d'inviter au-delà de la limite du plan</span>
+    <span class="test-status">
+      <label><input type="radio" name="t20" value="passe"> Passé</label>
+      <label><input type="radio" name="t20" value="echec"> Échoué</label>
+    </span>
+  </div>
+  <div class="test-body">
+    <div class="label">Prérequis</div>
+    <ul>
+      <li>Compte en plan Solo (limite 1 utilisateur).</li>
+    </ul>
+    <div class="label">Étapes</div>
+    <ol>
+      <li>Tenter d'inviter un autre utilisateur dans l'équipe.</li>
+    </ol>
+    <div class="label">Résultat attendu</div>
+    <ul>
+      <li>Message d'erreur clair "Limite d'utilisateurs atteinte (1). Passez à l'offre supérieure ou ajoutez un utilisateur additionnel".</li>
+      <li>L'invitation n'est pas envoyée, aucun email n'est envoyé au destinataire.</li>
+    </ul>
+    <div class="label">Notes en cas d'échec</div>
+    <textarea class="notes-field" rows="3" placeholder="Décris ici ce qui ne fonctionne pas, capture d'écran si besoin..."></textarea>
+  </div>
+</div>
+
+
+<!-- ============ 9. QUOTAS ET LIMITES ============ -->
+<h2>9. Limites et quotas</h2>
+
+<div class="test">
+  <div class="test-head">
+    <span class="test-num">T21</span>
+    <span class="test-title">Création d'organisation bloquée à la limite</span>
+    <span class="test-status">
+      <label><input type="radio" name="t21" value="passe"> Passé</label>
+      <label><input type="radio" name="t21" value="echec"> Échoué</label>
+    </span>
+  </div>
+  <div class="test-body">
+    <div class="label">Prérequis</div>
+    <ul>
+      <li>Compte en plan Solo avec déjà 1 organisation créée.</li>
+    </ul>
+    <div class="label">Étapes</div>
+    <ol>
+      <li>Tenter de créer une 2e organisation.</li>
+    </ol>
+    <div class="label">Résultat attendu</div>
+    <ul>
+      <li>Erreur visible "Limite d'organisations atteinte (1). Passez à l'offre supérieure".</li>
+    </ul>
+    <div class="label">Notes en cas d'échec</div>
+    <textarea class="notes-field" rows="3" placeholder="Décris ici ce qui ne fonctionne pas, capture d'écran si besoin..."></textarea>
+  </div>
+</div>
+
+<div class="test">
+  <div class="test-head">
+    <span class="test-num">T22</span>
+    <span class="test-title">Upload de document bloqué à la limite</span>
+    <span class="test-status">
+      <label><input type="radio" name="t22" value="passe"> Passé</label>
+      <label><input type="radio" name="t22" value="echec"> Échoué</label>
+    </span>
+  </div>
+  <div class="test-body">
+    <div class="label">Étapes</div>
+    <ol>
+      <li>Sur un compte en plan Solo, uploader jusqu'à atteindre 100 documents dans une organisation.</li>
+      <li>Tenter d'uploader le 101e.</li>
+    </ol>
+    <div class="label">Résultat attendu</div>
+    <ul>
+      <li>Erreur "Limite de documents atteinte (100 par organisation). Passez à l'offre supérieure ou ajoutez le pack +500 documents".</li>
+    </ul>
+    <div class="label">Notes en cas d'échec</div>
+    <textarea class="notes-field" rows="3" placeholder="Décris ici ce qui ne fonctionne pas, capture d'écran si besoin..."></textarea>
+  </div>
+</div>
+
+<div class="test">
+  <div class="test-head">
+    <span class="test-num">T23</span>
+    <span class="test-title">Alerte quota à 80 %</span>
+    <span class="test-status">
+      <label><input type="radio" name="t23" value="passe"> Passé</label>
+      <label><input type="radio" name="t23" value="echec"> Échoué</label>
+    </span>
+  </div>
+  <div class="test-body">
+    <div class="label">Étapes</div>
+    <ol>
+      <li>Poser des questions jusqu'à dépasser 80 % du quota mensuel (240 questions sur Solo, 720 sur Équipe).</li>
+      <li>Observer la bannière en haut du tableau de bord.</li>
+    </ol>
+    <div class="label">Résultat attendu</div>
+    <ul>
+      <li>Une bannière orange apparaît : "Vous approchez de votre quota mensuel (XX %)".</li>
+      <li>Le compteur de la sidebar passe en orange.</li>
+    </ul>
+    <div class="label">Notes en cas d'échec</div>
+    <textarea class="notes-field" rows="3" placeholder="Décris ici ce qui ne fonctionne pas, capture d'écran si besoin..."></textarea>
+  </div>
+</div>
+
+<div class="test">
+  <div class="test-head">
+    <span class="test-num">T24</span>
+    <span class="test-title">Dépassement quota et email d'alerte</span>
+    <span class="test-status">
+      <label><input type="radio" name="t24" value="passe"> Passé</label>
+      <label><input type="radio" name="t24" value="echec"> Échoué</label>
+    </span>
+  </div>
+  <div class="test-body">
+    <div class="label">Étapes</div>
+    <ol>
+      <li>Continuer à poser des questions au-delà de 120 % du quota (360 sur Solo, 1 080 sur Équipe).</li>
+    </ol>
+    <div class="label">Résultat attendu</div>
+    <ul>
+      <li>Les questions continuent d'aboutir normalement (pas de blocage).</li>
+      <li>La bannière passe au rouge : "Vous avez dépassé votre quota mensuel (XX %)".</li>
+      <li>Un email "Vous avez dépassé votre quota mensuel AORIA RH (XXX/XXX)" est reçu (envoyé une seule fois par mois).</li>
+    </ul>
+    <div class="label">Notes en cas d'échec</div>
+    <textarea class="notes-field" rows="3" placeholder="Décris ici ce qui ne fonctionne pas, capture d'écran si besoin..."></textarea>
+  </div>
+</div>
+
+
+<!-- ============ 10. MISE À JOUR TEMPS RÉEL ============ -->
+<h2>10. Mise à jour en temps réel des compteurs</h2>
+
+<div class="test">
+  <div class="test-head">
+    <span class="test-num">T25</span>
+    <span class="test-title">Compteur questions actualisé après une réponse</span>
+    <span class="test-status">
+      <label><input type="radio" name="t25" value="passe"> Passé</label>
+      <label><input type="radio" name="t25" value="echec"> Échoué</label>
+    </span>
+  </div>
+  <div class="test-body">
+    <div class="label">Étapes</div>
+    <ol>
+      <li>Noter la valeur du compteur "Questions ce mois" en bas à gauche de la sidebar.</li>
+      <li>Poser une question dans le chat.</li>
+      <li>Attendre la réponse complète.</li>
+    </ol>
+    <div class="label">Résultat attendu</div>
+    <ul>
+      <li>Le compteur se met à jour automatiquement et affiche 1 de plus, sans recharger la page.</li>
+    </ul>
+    <div class="label">Notes en cas d'échec</div>
+    <textarea class="notes-field" rows="3" placeholder="Décris ici ce qui ne fonctionne pas, capture d'écran si besoin..."></textarea>
+  </div>
+</div>
+
+<div class="test">
+  <div class="test-head">
+    <span class="test-num">T26</span>
+    <span class="test-title">Compteur documents actualisé après upload</span>
+    <span class="test-status">
+      <label><input type="radio" name="t26" value="passe"> Passé</label>
+      <label><input type="radio" name="t26" value="echec"> Échoué</label>
+    </span>
+  </div>
+  <div class="test-body">
+    <div class="label">Étapes</div>
+    <ol>
+      <li>Aller sur <code>/billing</code> dans un onglet, noter la valeur dans "Documents par organisation".</li>
+      <li>Dans un autre onglet, uploader un document.</li>
+      <li>Revenir sur l'onglet <code>/billing</code>.</li>
+    </ol>
+    <div class="label">Résultat attendu</div>
+    <ul>
+      <li>La jauge de documents a augmenté automatiquement, sans recharger la page.</li>
+    </ul>
+    <div class="label">Notes en cas d'échec</div>
+    <textarea class="notes-field" rows="3" placeholder="Décris ici ce qui ne fonctionne pas, capture d'écran si besoin..."></textarea>
+  </div>
+</div>
+
+
+<!-- ============ 11. RÉSILIATION ============ -->
+<h2>11. Résiliation et rétention des données</h2>
+
+<div class="test">
+  <div class="test-head">
+    <span class="test-num">T27</span>
+    <span class="test-title">Résiliation via le portail Stripe</span>
+    <span class="test-status">
+      <label><input type="radio" name="t27" value="passe"> Passé</label>
+      <label><input type="radio" name="t27" value="echec"> Échoué</label>
+    </span>
+  </div>
+  <div class="test-body">
+    <div class="label">Prérequis</div>
+    <ul>
+      <li>Compte avec un abonnement payant actif.</li>
+    </ul>
+    <div class="label">Étapes</div>
+    <ol>
+      <li>Sur <code>/billing</code>, cliquer "Gérer mon abonnement".</li>
+      <li>Dans le portail Stripe, cliquer "Annuler l'abonnement" (ou équivalent).</li>
+      <li>Confirmer la résiliation.</li>
+      <li>Revenir sur AORIA RH.</li>
+    </ol>
+    <div class="label">Résultat attendu</div>
+    <ul>
+      <li>Sur <code>/billing</code>, un badge "Résiliation prévue" apparaît à côté du plan.</li>
+      <li>La date de fin d'accès correspond à la prochaine échéance.</li>
+      <li>Réception d'un email "Votre abonnement AORIA RH est résilié" avec mention de la rétention 30 jours.</li>
+      <li>L'accès continue normalement jusqu'à la date de fin.</li>
+    </ul>
+    <div class="label">Notes en cas d'échec</div>
+    <textarea class="notes-field" rows="3" placeholder="Décris ici ce qui ne fonctionne pas, capture d'écran si besoin..."></textarea>
+  </div>
+</div>
+
+<div class="test">
+  <div class="test-head">
+    <span class="test-num">T28</span>
+    <span class="test-title">Reprise d'abonnement après résiliation</span>
+    <span class="test-status">
+      <label><input type="radio" name="t28" value="passe"> Passé</label>
+      <label><input type="radio" name="t28" value="echec"> Échoué</label>
+    </span>
+  </div>
+  <div class="test-body">
+    <div class="label">Étapes</div>
+    <ol>
+      <li>Sur un compte résilié (avant la fin d'accès), aller sur <code>/billing</code>.</li>
+      <li>Cliquer sur "Souscrire" à nouveau sur un plan.</li>
+    </ol>
+    <div class="label">Résultat attendu</div>
+    <ul>
+      <li>Le nouveau paiement est possible.</li>
+      <li>L'ancienne résiliation est annulée et le plan est réactivé.</li>
+      <li>Le badge "Résiliation prévue" disparaît.</li>
+    </ul>
+    <div class="label">Notes en cas d'échec</div>
+    <textarea class="notes-field" rows="3" placeholder="Décris ici ce qui ne fonctionne pas, capture d'écran si besoin..."></textarea>
+  </div>
+</div>
+
+
+<!-- ============ 12. ADMINISTRATION ============ -->
+<h2>12. Back-office administrateur</h2>
+
+<div class="test">
+  <div class="test-head">
+    <span class="test-num">T29</span>
+    <span class="test-title">Tableau de bord administrateur de la facturation</span>
+    <span class="test-status">
+      <label><input type="radio" name="t29" value="passe"> Passé</label>
+      <label><input type="radio" name="t29" value="echec"> Échoué</label>
+    </span>
+  </div>
+  <div class="test-body">
+    <div class="label">Prérequis</div>
+    <ul>
+      <li>Être connectée avec le compte admin AORIA RH (Waibly).</li>
+    </ul>
+    <div class="label">Étapes</div>
+    <ol>
+      <li>Dans la sidebar admin, cliquer sur "Facturation" (ou aller directement sur <code>/admin/billing</code>).</li>
+    </ol>
+    <div class="label">Résultat attendu</div>
+    <ul>
+      <li>Affichage des 4 indicateurs : MRR, Abonnements actifs, Essais actifs, Churn 30 jours.</li>
+      <li>Tableau des abonnements avec les comptes de test créés précédemment.</li>
+      <li>Filtre par statut (Tous / Actifs / En essai / Retard de paiement / Résiliés).</li>
+    </ul>
+    <div class="label">Notes en cas d'échec</div>
+    <textarea class="notes-field" rows="3" placeholder="Décris ici ce qui ne fonctionne pas, capture d'écran si besoin..."></textarea>
+  </div>
+</div>
+
+<div class="test">
+  <div class="test-head">
+    <span class="test-num">T30</span>
+    <span class="test-title">Résiliation manuelle d'un abonnement depuis l'admin</span>
+    <span class="test-status">
+      <label><input type="radio" name="t30" value="passe"> Passé</label>
+      <label><input type="radio" name="t30" value="echec"> Échoué</label>
+    </span>
+  </div>
+  <div class="test-body">
+    <div class="label">Étapes</div>
+    <ol>
+      <li>Dans la liste des abonnements, cliquer sur "Résilier" pour un des comptes de test actifs.</li>
+      <li>Confirmer.</li>
+    </ol>
+    <div class="label">Résultat attendu</div>
+    <ul>
+      <li>Message "Résiliation programmée à la fin de la période".</li>
+      <li>Le bouton "Résilier" devient indisponible pour cet abonnement.</li>
+      <li>Côté utilisateur concerné, le badge "Résiliation prévue" apparaît sur <code>/billing</code>.</li>
+    </ul>
+    <div class="label">Notes en cas d'échec</div>
+    <textarea class="notes-field" rows="3" placeholder="Décris ici ce qui ne fonctionne pas, capture d'écran si besoin..."></textarea>
+  </div>
+</div>
+
+<div class="test">
+  <div class="test-head">
+    <span class="test-num">T31</span>
+    <span class="test-title">Export RGPD d'un compte</span>
+    <span class="test-status">
+      <label><input type="radio" name="t31" value="passe"> Passé</label>
+      <label><input type="radio" name="t31" value="echec"> Échoué</label>
+    </span>
+  </div>
+  <div class="test-body">
+    <div class="label">Étapes</div>
+    <ol>
+      <li>Sur <code>/admin/billing</code>, dans la section "Comptes à purger" (si elle est vide, utiliser un compte depuis la liste admin des utilisateurs).</li>
+      <li>Cliquer "Export" ou utiliser l'endpoint correspondant.</li>
+    </ol>
+    <div class="label">Résultat attendu</div>
+    <ul>
+      <li>Téléchargement d'un fichier JSON contenant toutes les données du compte (infos, utilisateurs, organisations, conversations, documents).</li>
+    </ul>
+    <div class="label">Notes en cas d'échec</div>
+    <textarea class="notes-field" rows="3" placeholder="Décris ici ce qui ne fonctionne pas, capture d'écran si besoin..."></textarea>
+  </div>
+</div>
+
+<div class="test">
+  <div class="test-head">
+    <span class="test-num">T32</span>
+    <span class="test-title">Assignation manuelle d'un plan technique (invité / VIP)</span>
+    <span class="test-status">
+      <label><input type="radio" name="t32" value="passe"> Passé</label>
+      <label><input type="radio" name="t32" value="echec"> Échoué</label>
+    </span>
+  </div>
+  <div class="test-body">
+    <div class="label">Étapes</div>
+    <ol>
+      <li>Sur <code>/admin/users</code>, sélectionner un utilisateur de test.</li>
+      <li>Changer son plan à "invite" avec une durée (par exemple 1 mois).</li>
+    </ol>
+    <div class="label">Résultat attendu</div>
+    <ul>
+      <li>Le plan de l'utilisateur est mis à jour immédiatement.</li>
+      <li>L'utilisateur concerné voit son plan passer à "Invité" dans sa sidebar, avec la date d'expiration affichée.</li>
+      <li>Aucun paiement Stripe n'est déclenché.</li>
+    </ul>
+    <div class="label">Notes en cas d'échec</div>
+    <textarea class="notes-field" rows="3" placeholder="Décris ici ce qui ne fonctionne pas, capture d'écran si besoin..."></textarea>
+  </div>
+</div>
+
+<div class="test">
+  <div class="test-head">
+    <span class="test-num">T33</span>
+    <span class="test-title">Bloquer un downgrade manuel trop petit</span>
+    <span class="test-status">
+      <label><input type="radio" name="t33" value="passe"> Passé</label>
+      <label><input type="radio" name="t33" value="echec"> Échoué</label>
+    </span>
+  </div>
+  <div class="test-body">
+    <div class="label">Prérequis</div>
+    <ul>
+      <li>Un compte avec plusieurs organisations créées.</li>
+    </ul>
+    <div class="label">Étapes</div>
+    <ol>
+      <li>Sur <code>/admin/users</code>, tenter de changer son plan à "Solo" (qui autorise 1 seule organisation).</li>
+    </ol>
+    <div class="label">Résultat attendu</div>
+    <ul>
+      <li>Erreur de l'API (409) avec un message listant les éléments qui dépassent : par exemple "organisations : 3 (plan solo en autorise 1)".</li>
+      <li>Le plan n'est pas changé.</li>
+    </ul>
+    <div class="label">Notes en cas d'échec</div>
+    <textarea class="notes-field" rows="3" placeholder="Décris ici ce qui ne fonctionne pas, capture d'écran si besoin..."></textarea>
+  </div>
+</div>
+
+
+<!-- ============ 13. SÉCURITÉ ============ -->
+<h2>13. Contrôles d'accès</h2>
+
+<div class="test">
+  <div class="test-head">
+    <span class="test-num">T34</span>
+    <span class="test-title">Pages protégées inaccessibles sans connexion</span>
+    <span class="test-status">
+      <label><input type="radio" name="t34" value="passe"> Passé</label>
+      <label><input type="radio" name="t34" value="echec"> Échoué</label>
+    </span>
+  </div>
+  <div class="test-body">
+    <div class="label">Étapes</div>
+    <ol>
+      <li>En navigation privée, tenter d'accéder à <code>/billing</code>, <code>/chat</code>, <code>/team</code>.</li>
+    </ol>
+    <div class="label">Résultat attendu</div>
+    <ul>
+      <li>Redirection automatique vers la page de connexion.</li>
+    </ul>
+    <div class="label">Notes en cas d'échec</div>
+    <textarea class="notes-field" rows="3" placeholder="Décris ici ce qui ne fonctionne pas, capture d'écran si besoin..."></textarea>
+  </div>
+</div>
+
+<div class="test">
+  <div class="test-head">
+    <span class="test-num">T35</span>
+    <span class="test-title">Back-office admin inaccessible aux non-admins</span>
+    <span class="test-status">
+      <label><input type="radio" name="t35" value="passe"> Passé</label>
+      <label><input type="radio" name="t35" value="echec"> Échoué</label>
+    </span>
+  </div>
+  <div class="test-body">
+    <div class="label">Étapes</div>
+    <ol>
+      <li>Connecté avec un compte standard (non admin), tenter d'accéder à <code>/admin/billing</code>.</li>
+    </ol>
+    <div class="label">Résultat attendu</div>
+    <ul>
+      <li>Redirection automatique vers le tableau de bord normal.</li>
+      <li>Aucune donnée admin n'est exposée.</li>
+    </ul>
+    <div class="label">Notes en cas d'échec</div>
+    <textarea class="notes-field" rows="3" placeholder="Décris ici ce qui ne fonctionne pas, capture d'écran si besoin..."></textarea>
+  </div>
+</div>
+
+<div class="test">
+  <div class="test-head">
+    <span class="test-num">T36</span>
+    <span class="test-title">Carte de test ne passe pas les paiements réels</span>
+    <span class="test-status">
+      <label><input type="radio" name="t36" value="passe"> Passé</label>
+      <label><input type="radio" name="t36" value="echec"> Échoué</label>
+    </span>
+  </div>
+  <div class="test-body">
+    <div class="label">Étapes</div>
+    <ol>
+      <li>Vérifier dans le dashboard Stripe que le mode actif est bien "Test".</li>
+      <li>Vérifier qu'aucun paiement réel n'apparaît dans la section "Paiements" du mode Live.</li>
+    </ol>
+    <div class="label">Résultat attendu</div>
+    <ul>
+      <li>Tous les paiements effectués pendant les tests apparaissent dans "Mode test" uniquement.</li>
+    </ul>
+    <div class="label">Notes en cas d'échec</div>
+    <textarea class="notes-field" rows="3" placeholder="Décris ici ce qui ne fonctionne pas, capture d'écran si besoin..."></textarea>
+  </div>
+</div>
+
+
+<!-- ============ CLÔTURE ============ -->
+<h2>14. Après les tests</h2>
+
+<div class="prep">
+  <h3>Nettoyage recommandé</h3>
+  <ul>
+    <li>Dans le dashboard Stripe (mode test), annuler toutes les subscriptions de test actives pour éviter les renouvellements dans les logs.</li>
+    <li>Supprimer les comptes de test créés via le bouton "Supprimer" dans <code>/admin/billing</code> ou <code>/admin/users</code>.</li>
+    <li>Noter tous les tests en échec pour les corriger avant l'ouverture aux vrais clients.</li>
+  </ul>
+</div>
+
+<div class="info">
+  <p><strong>Rapport à transmettre :</strong> une fois la série de tests terminée, envoyer la liste des tests en échec (numéro + notes) pour qu'ils soient corrigés avant le passage en mode paiement réel.</p>
+</div>
+
+
+<footer>
+  AORIA RH — Plan de tests billing — Document interne
+</footer>
+
+</div>
+
+<script>
+(function () {
+  const STORAGE_PREFIX = 'aoria-billing-tests.';
+
+  function testId(testDiv) {
+    const el = testDiv.querySelector('.test-num');
+    return el ? el.textContent.trim() : null;
+  }
+
+  function testTitle(testDiv) {
+    const el = testDiv.querySelector('.test-title');
+    return el ? el.textContent.trim() : '';
+  }
+
+  function save(key, value) {
+    if (value === null || value === undefined || value === '') {
+      localStorage.removeItem(STORAGE_PREFIX + key);
+    } else {
+      localStorage.setItem(STORAGE_PREFIX + key, value);
+    }
+  }
+
+  function load(key) {
+    return localStorage.getItem(STORAGE_PREFIX + key);
+  }
+
+  // Restore + listen
+  function wire() {
+    document.querySelectorAll('.test').forEach(function (testDiv) {
+      const id = testId(testDiv);
+      if (!id) return;
+
+      // Radio
+      const radios = testDiv.querySelectorAll('input[type="radio"]');
+      const savedStatus = load(id + '.status');
+      radios.forEach(function (r) {
+        if (savedStatus && r.value === savedStatus) r.checked = true;
+        r.addEventListener('change', function () {
+          save(id + '.status', r.value);
+          updateStats();
+        });
+      });
+
+      // Notes
+      const notes = testDiv.querySelector('textarea.notes-field');
+      if (notes) {
+        const savedNotes = load(id + '.notes');
+        if (savedNotes) notes.value = savedNotes;
+        notes.addEventListener('input', function () {
+          save(id + '.notes', notes.value);
+        });
+      }
+    });
+  }
+
+  function updateStats() {
+    let total = 0, passed = 0, failed = 0;
+    document.querySelectorAll('.test').forEach(function (testDiv) {
+      total++;
+      const id = testId(testDiv);
+      const s = load(id + '.status');
+      if (s === 'passe') passed++;
+      else if (s === 'echec') failed++;
+    });
+    document.getElementById('stat-total').textContent = total;
+    document.getElementById('stat-passed').textContent = passed;
+    document.getElementById('stat-failed').textContent = failed;
+    document.getElementById('stat-todo').textContent = total - passed - failed;
+  }
+
+  function exportReport() {
+    const lines = [];
+    lines.push('AORIA RH — Rapport de tests billing');
+    lines.push('Date : ' + new Date().toLocaleString('fr-FR'));
+    lines.push(''.padEnd(60, '='));
+    lines.push('');
+
+    let total = 0, passed = 0, failed = 0, todo = 0;
+    const testsByStatus = { passe: [], echec: [], vide: [] };
+
+    document.querySelectorAll('.test').forEach(function (testDiv) {
+      total++;
+      const id = testId(testDiv);
+      const title = testTitle(testDiv);
+      const status = load(id + '.status');
+      const notes = (load(id + '.notes') || '').trim();
+
+      let label;
+      if (status === 'passe') { passed++; label = 'PASSÉ'; testsByStatus.passe.push(id); }
+      else if (status === 'echec') { failed++; label = 'ÉCHOUÉ'; testsByStatus.echec.push(id); }
+      else { todo++; label = 'NON TESTÉ'; testsByStatus.vide.push(id); }
+
+      lines.push(id + ' — ' + title);
+      lines.push('  Statut : ' + label);
+      if (notes) {
+        lines.push('  Notes :');
+        notes.split('\n').forEach(function (n) { lines.push('    ' + n); });
+      }
+      lines.push('');
+    });
+
+    // Summary at top
+    const summary = [
+      'Synthèse',
+      '  Total    : ' + total,
+      '  Passés   : ' + passed,
+      '  Échoués  : ' + failed + (failed > 0 ? ' (' + testsByStatus.echec.join(', ') + ')' : ''),
+      '  À faire  : ' + todo,
+      ''.padEnd(60, '='),
+      '',
+    ];
+    lines.splice(3, 0, ...summary);
+
+    const content = lines.join('\n');
+    const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'aoria-tests-' + new Date().toISOString().slice(0, 10) + '.txt';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+
+  function resetAll() {
+    if (!confirm('Effacer toutes les cases cochées et toutes les notes ? Cette action est irréversible.')) return;
+    Object.keys(localStorage)
+      .filter(function (k) { return k.startsWith(STORAGE_PREFIX); })
+      .forEach(function (k) { localStorage.removeItem(k); });
+    location.reload();
+  }
+
+  document.getElementById('export-btn').addEventListener('click', exportReport);
+  document.getElementById('reset-btn').addEventListener('click', resetAll);
+
+  wire();
+  updateStats();
+})();
+</script>
+
+</body>
+</html>

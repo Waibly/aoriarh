@@ -1,0 +1,1070 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AORIA RH — Processus d'ingestion des documents juridiques</title>
+<style>
+  :root {
+    --primary: #6d28d9;
+    --primary-light: #ede9fe;
+    --primary-dark: #5b21b6;
+    --bg: #f8fafc;
+    --card: #ffffff;
+    --text: #1e293b;
+    --muted: #64748b;
+    --border: #e2e8f0;
+    --green: #16a34a;
+    --green-light: #dcfce7;
+    --orange: #ea580c;
+    --orange-light: #ffedd5;
+    --red: #dc2626;
+    --amber: #f59e0b;
+    --blue: #2563eb;
+    --blue-light: #dbeafe;
+  }
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.6;
+  }
+  .container { max-width: 1180px; margin: 0 auto; padding: 48px 24px 80px; }
+
+  header.hero {
+    background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
+    color: #fff;
+    padding: 56px 40px;
+    border-radius: 14px;
+    margin-bottom: 40px;
+    box-shadow: 0 10px 30px rgba(109, 40, 217, 0.2);
+  }
+  header.hero h1 { font-size: 2.1rem; margin: 0 0 10px; font-weight: 700; }
+  header.hero p { font-size: 1.05rem; margin: 0; opacity: 0.95; max-width: 820px; }
+  header.hero .tagline {
+    display: inline-block;
+    background: rgba(255,255,255,0.2);
+    padding: 6px 14px;
+    border-radius: 20px;
+    font-size: 0.85rem;
+    margin-top: 14px;
+    letter-spacing: 0.4px;
+  }
+
+  h2 {
+    font-size: 1.5rem;
+    margin: 56px 0 20px;
+    padding-bottom: 10px;
+    border-bottom: 2px solid var(--primary-light);
+    color: var(--primary-dark);
+  }
+  h3 { font-size: 1.1rem; margin: 24px 0 10px; color: var(--text); }
+
+  .intro {
+    background: var(--primary-light);
+    border-left: 4px solid var(--primary);
+    padding: 18px 22px;
+    border-radius: 8px;
+    margin: 20px 0 32px;
+  }
+  .intro p { margin: 0; color: var(--primary-dark); }
+
+  /* Overview table */
+  table.overview {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 20px 0;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    overflow: hidden;
+    font-size: 0.9rem;
+  }
+  table.overview th,
+  table.overview td {
+    padding: 12px 14px;
+    text-align: left;
+    border-bottom: 1px solid var(--border);
+    vertical-align: top;
+  }
+  table.overview th {
+    background: var(--primary-light);
+    color: var(--primary-dark);
+    font-weight: 600;
+    font-size: 0.85rem;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+  }
+  table.overview tr:last-child td { border-bottom: none; }
+  table.overview .proc-name {
+    font-weight: 700;
+    color: var(--primary-dark);
+  }
+  table.overview .badge-auto {
+    background: var(--green-light);
+    color: var(--green);
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+  table.overview .badge-manual {
+    background: var(--orange-light);
+    color: var(--orange);
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+  table.overview .badge-mix {
+    background: var(--blue-light);
+    color: var(--blue);
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+
+  /* Process card */
+  .process {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 28px 32px;
+    margin: 20px 0;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+    border-left: 6px solid var(--primary);
+  }
+  .process.p-upload-user { border-left-color: var(--blue); }
+  .process.p-ccn { border-left-color: #10b981; }
+  .process.p-juri { border-left-color: #8b5cf6; }
+  .process.p-code { border-left-color: #0891b2; }
+  .process.p-bocc { border-left-color: var(--orange); }
+  .process.p-cc { border-left-color: #ec4899; }
+  .process.p-admin { border-left-color: #64748b; }
+
+  .process-header {
+    display: flex;
+    align-items: flex-start;
+    gap: 16px;
+    margin-bottom: 20px;
+  }
+  .process-icon {
+    width: 56px;
+    height: 56px;
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.8rem;
+    flex-shrink: 0;
+    background: var(--primary-light);
+  }
+  .p-upload-user .process-icon { background: var(--blue-light); }
+  .p-ccn .process-icon { background: #d1fae5; }
+  .p-juri .process-icon { background: #ede9fe; }
+  .p-code .process-icon { background: #cffafe; }
+  .p-bocc .process-icon { background: var(--orange-light); }
+  .p-cc .process-icon { background: #fce7f3; }
+  .p-admin .process-icon { background: #e2e8f0; }
+
+  .process-title-block { flex: 1; min-width: 0; }
+  .process-num {
+    font-size: 0.75rem;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    font-weight: 600;
+    margin-bottom: 2px;
+  }
+  .process-title {
+    font-size: 1.3rem;
+    font-weight: 700;
+    color: var(--primary-dark);
+    margin: 0 0 6px;
+  }
+  .process-tagline {
+    color: var(--muted);
+    font-style: italic;
+    margin: 0;
+  }
+
+  .process-grid {
+    display: grid;
+    grid-template-columns: 200px 1fr;
+    gap: 16px;
+    margin-top: 16px;
+  }
+  .process-grid dt {
+    font-weight: 600;
+    color: var(--muted);
+    font-size: 0.85rem;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    padding-top: 4px;
+  }
+  .process-grid dd { margin: 0; padding: 4px 0 8px; border-bottom: 1px dashed var(--border); }
+  .process-grid dd:last-child { border-bottom: none; }
+  .process-grid ul { margin: 4px 0 4px 18px; padding: 0; }
+  .process-grid li { margin: 2px 0; }
+
+  /* Pill */
+  .pill {
+    display: inline-block;
+    background: var(--primary-light);
+    color: var(--primary-dark);
+    padding: 2px 10px;
+    border-radius: 12px;
+    font-size: 0.82rem;
+    font-weight: 500;
+    margin: 2px 4px 2px 0;
+  }
+  .pill-strong { background: var(--primary); color: #fff; }
+  .pill-muted {
+    background: #f1f5f9;
+    color: var(--muted);
+  }
+
+  /* Note callouts */
+  .highlight {
+    background: #fffbeb;
+    border-left: 4px solid var(--amber);
+    padding: 12px 16px;
+    border-radius: 6px;
+    margin: 12px 0;
+    font-size: 0.92rem;
+  }
+  .highlight strong { color: #92400e; }
+  .tech-note {
+    background: #f0fdf4;
+    border-left: 4px solid var(--green);
+    padding: 12px 16px;
+    border-radius: 6px;
+    margin: 12px 0;
+    font-size: 0.9rem;
+    color: #166534;
+  }
+
+  /* Shared pipeline */
+  .shared-pipeline {
+    background: var(--card);
+    border: 2px dashed var(--primary);
+    border-radius: 12px;
+    padding: 28px 32px;
+    margin: 24px 0;
+  }
+  .shared-pipeline h3 {
+    margin-top: 0;
+    color: var(--primary-dark);
+  }
+  .pipeline-steps {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 12px;
+    margin: 20px 0 12px;
+  }
+  .pipeline-step {
+    background: var(--primary-light);
+    border-radius: 10px;
+    padding: 12px 14px;
+    position: relative;
+    min-height: 90px;
+  }
+  .pipeline-step .step-num {
+    display: inline-block;
+    background: var(--primary);
+    color: #fff;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    text-align: center;
+    line-height: 22px;
+    font-weight: 700;
+    font-size: 0.85rem;
+    margin-bottom: 6px;
+  }
+  .pipeline-step .step-name {
+    font-weight: 700;
+    color: var(--primary-dark);
+    font-size: 0.9rem;
+    margin-bottom: 4px;
+  }
+  .pipeline-step .step-desc {
+    font-size: 0.82rem;
+    color: var(--text);
+    line-height: 1.4;
+  }
+
+  /* Guard cards */
+  .guards {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 16px;
+    margin: 20px 0;
+  }
+  .guard-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px 18px;
+  }
+  .guard-card .g-title {
+    font-weight: 700;
+    color: var(--primary-dark);
+    font-size: 0.95rem;
+    margin-bottom: 4px;
+  }
+  .guard-card .g-value {
+    font-size: 1.3rem;
+    font-weight: 700;
+    color: var(--text);
+    margin: 6px 0 4px;
+    font-variant-numeric: tabular-nums;
+  }
+  .guard-card .g-desc {
+    font-size: 0.85rem;
+    color: var(--muted);
+  }
+
+  /* Calendar */
+  .calendar-grid {
+    display: grid;
+    grid-template-columns: 150px 1fr;
+    gap: 12px 20px;
+    margin: 20px 0;
+  }
+  .cal-when {
+    font-weight: 700;
+    color: var(--primary-dark);
+    padding: 10px 14px;
+    background: var(--primary-light);
+    border-radius: 8px;
+    text-align: center;
+    align-self: start;
+    font-size: 0.9rem;
+  }
+  .cal-what {
+    padding: 10px 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .cal-what strong { color: var(--primary-dark); }
+  .cal-what .cal-desc { color: var(--muted); font-size: 0.9rem; margin-top: 2px; }
+
+  footer {
+    text-align: center;
+    color: var(--muted);
+    font-size: 0.85rem;
+    margin-top: 64px;
+    padding-top: 24px;
+    border-top: 1px solid var(--border);
+  }
+
+  @media (max-width: 720px) {
+    .process-grid { grid-template-columns: 1fr; }
+    .process-grid dt { padding-top: 0; padding-bottom: 0; }
+    .calendar-grid { grid-template-columns: 1fr; }
+    header.hero { padding: 36px 24px; }
+    header.hero h1 { font-size: 1.5rem; }
+    table.overview { font-size: 0.8rem; }
+  }
+
+  @media print {
+    body { background: #fff; }
+    .process, .guard-card, table.overview, .shared-pipeline { page-break-inside: avoid; box-shadow: none; }
+    header.hero { box-shadow: none; }
+  }
+</style>
+</head>
+<body>
+<div class="container">
+
+<header class="hero">
+  <h1>Comment AORIA RH alimente sa base documentaire</h1>
+  <p>
+    La qualité des réponses dépend entièrement de la qualité des documents indexés.
+    AORIA RH dispose de <strong>7 processus d'ingestion distincts</strong> pour alimenter sa
+    base, depuis l'upload manuel d'un document interne jusqu'à la synchronisation
+    automatique des mises à jour du Code du travail deux fois par mois.
+  </p>
+  <span class="tagline">Document fonctionnel · 7 processus · Vue d'ensemble</span>
+</header>
+
+<div class="intro">
+  <p>
+    <strong>En bref :</strong> tous les processus partagent la même chaîne technique finale
+    (extraction du texte → découpage intelligent → encodage sémantique → stockage vectoriel).
+    Leurs différences portent sur l'origine des documents, la façon de les parser, la
+    cadence d'ingestion, la visibilité (propre à une organisation ou commune à toutes)
+    et les métadonnées enrichies (numéro d'article, IDCC, numéro de pourvoi…).
+  </p>
+</div>
+
+<!-- ============ VUE D'ENSEMBLE ============ -->
+<h2>Vue d'ensemble des 7 processus</h2>
+
+<table class="overview">
+  <thead>
+    <tr>
+      <th>Processus</th>
+      <th>Source</th>
+      <th>Déclenchement</th>
+      <th>Visibilité</th>
+      <th>Volume typique</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td class="proc-name">1. Upload client</td>
+      <td>Fichier local PDF / DOCX / TXT</td>
+      <td><span class="badge-manual">Manuel</span> — utilisateur</td>
+      <td>Propre à l'organisation</td>
+      <td>&lt; 10 Mo par fichier</td>
+    </tr>
+    <tr>
+      <td class="proc-name">2. Conventions collectives (KALI)</td>
+      <td>API Légifrance PISTE</td>
+      <td><span class="badge-mix">Mixte</span> — install + cron 1er &amp; 15</td>
+      <td>Commune, filtrée par IDCC</td>
+      <td>50+ CCN, ~300 articles/CCN</td>
+    </tr>
+    <tr>
+      <td class="proc-name">3. Jurisprudence (Judilibre)</td>
+      <td>API Judilibre PISTE</td>
+      <td><span class="badge-auto">Auto</span> — cron Cour de cassation + CA</td>
+      <td>Commune à toutes les orgs</td>
+      <td>~3 000 arrêts/mois max</td>
+    </tr>
+    <tr>
+      <td class="proc-name">4. Codes (Code du travail, etc.)</td>
+      <td>API Légifrance LEGI</td>
+      <td><span class="badge-auto">Auto</span> — cron mensuel</td>
+      <td>Commune</td>
+      <td>Code du travail seul = 2 docs (L. et R.)</td>
+    </tr>
+    <tr>
+      <td class="proc-name">5. BOCC (Bulletin officiel CCN)</td>
+      <td>DILA open data (archives .taz)</td>
+      <td><span class="badge-mix">Mixte</span> — backfill + cron embarqué</td>
+      <td>Commune, rattachée à l'IDCC</td>
+      <td>~6 issues / synchronisation</td>
+    </tr>
+    <tr>
+      <td class="proc-name">6. Conseil constitutionnel</td>
+      <td>API PISTE (fond CONSTIT)</td>
+      <td><span class="badge-auto">Auto</span> — fenêtre glissante 30 j</td>
+      <td>Commune</td>
+      <td>250 décisions / sync max</td>
+    </tr>
+    <tr>
+      <td class="proc-name">7. Upload admin (communs)</td>
+      <td>Fichier local PDF / DOCX / TXT</td>
+      <td><span class="badge-manual">Manuel</span> — équipe AORIA RH</td>
+      <td>Commune à toutes les orgs</td>
+      <td>Jusqu'à 20 Mo, batch 20 fichiers</td>
+    </tr>
+  </tbody>
+</table>
+
+<!-- ============ PIPELINE PARTAGÉ ============ -->
+<h2>Le tronc commun : ce que tous les processus font</h2>
+
+<p>
+  Peu importe d'où vient le document (fichier uploadé par un client ou article du Code du
+  travail récupéré automatiquement), il passe toujours par la même chaîne finale avant
+  d'être disponible à la recherche. C'est cette standardisation qui garantit l'homogénéité
+  de la qualité des réponses.
+</p>
+
+<div class="shared-pipeline">
+  <h3>Les 7 briques du tronc commun</h3>
+
+  <div class="pipeline-steps">
+    <div class="pipeline-step">
+      <div class="step-num">1</div>
+      <div class="step-name">Réception</div>
+      <div class="step-desc">Fichier binaire ou réponse d'API externe. Validation du format et de la taille.</div>
+    </div>
+    <div class="pipeline-step">
+      <div class="step-num">2</div>
+      <div class="step-name">Extraction du texte</div>
+      <div class="step-desc">PDF texte, DOCX, TXT, HTML converti en Markdown. Les PDF scannés sont refusés.</div>
+    </div>
+    <div class="pipeline-step">
+      <div class="step-num">3</div>
+      <div class="step-name">Enrichissement</div>
+      <div class="step-desc">Détection du type (CCN, Code, arrêt…), de l'IDCC, des articles, des dates.</div>
+    </div>
+    <div class="pipeline-step">
+      <div class="step-num">4</div>
+      <div class="step-name">Découpage (chunking)</div>
+      <div class="step-desc">Texte coupé en morceaux de ~450 à 1 024 tokens. La stratégie dépend du type de document.</div>
+    </div>
+    <div class="pipeline-step">
+      <div class="step-num">5</div>
+      <div class="step-name">Encodage sémantique</div>
+      <div class="step-desc">Chaque morceau est transformé en vecteur numérique par Voyage Law-2 (spécialisé juridique).</div>
+    </div>
+    <div class="pipeline-step">
+      <div class="step-num">6</div>
+      <div class="step-name">Stockage vectoriel</div>
+      <div class="step-desc">Les vecteurs + mots-clés BM25 + métadonnées sont écrits dans Qdrant, la base de recherche.</div>
+    </div>
+    <div class="pipeline-step">
+      <div class="step-num">7</div>
+      <div class="step-name">Archivage + DB</div>
+      <div class="step-desc">Le fichier original part sur MinIO, une ligne Document est créée en PostgreSQL.</div>
+    </div>
+  </div>
+
+  <div class="tech-note">
+    <strong>Le découpage (chunking) est la vraie intelligence métier :</strong>
+    un article de loi n'est pas coupé de la même façon qu'un arrêt de la Cour de cassation
+    ou qu'une note interne d'un client. AORIA RH dispose de 3 stratégies spécialisées
+    (article-aware, section-aware, générique) et les applique automatiquement selon le
+    type du document source.
+  </div>
+</div>
+
+<!-- ============ PROCESSUS DÉTAILLÉS ============ -->
+<h2>Les 7 processus en détail</h2>
+
+<!-- ======= 1. UPLOAD CLIENT ======= -->
+<div class="process p-upload-user">
+  <div class="process-header">
+    <div class="process-icon">📄</div>
+    <div class="process-title-block">
+      <div class="process-num">Processus 1</div>
+      <div class="process-title">Upload manuel par un utilisateur client</div>
+      <p class="process-tagline">Le client importe ses propres documents internes (contrats, notes, accords d'entreprise) pour pouvoir les interroger.</p>
+    </div>
+  </div>
+
+  <dl class="process-grid">
+    <dt>Qui déclenche</dt>
+    <dd>L'utilisateur depuis sa page "Documents" d'une organisation (bouton d'upload).</dd>
+
+    <dt>Formats acceptés</dt>
+    <dd>
+      <span class="pill">PDF avec texte</span>
+      <span class="pill">DOCX</span>
+      <span class="pill">TXT</span>
+      <span class="pill pill-muted">PDF scanné refusé</span>
+    </dd>
+
+    <dt>Limites</dt>
+    <dd>
+      <span class="pill">10 Mo max par fichier</span>
+      <span class="pill">Quota selon le plan</span>
+      <span class="pill">Anti-doublon par empreinte SHA256</span>
+    </dd>
+
+    <dt>Spécificités du traitement</dt>
+    <dd>
+      <ul>
+        <li>Le document est <strong>cloisonné à l'organisation</strong> : invisible pour les autres clients.</li>
+        <li>Chunking générique (paragraphe/phrase), sans détection d'article juridique particulière.</li>
+        <li>Si le client a défini un type (accord d'entreprise, règlement intérieur, contrat…), le niveau hiérarchique est fixé en conséquence.</li>
+        <li>Le fichier original est stocké chiffré sur MinIO, chemin <code>{org_id}/…</code>.</li>
+      </ul>
+    </dd>
+
+    <dt>Temps typique</dt>
+    <dd>Quelques secondes pour un PDF texte court à 1-2 minutes pour un gros document. Le traitement est asynchrone (l'utilisateur voit "indexation en cours" puis "prêt").</dd>
+
+    <dt>Garde-fous clés</dt>
+    <dd>
+      Vérification du quota du plan avant traitement, cloisonnement strict, refus des PDF scannés, déduplication par empreinte du contenu.
+    </dd>
+  </dl>
+</div>
+
+<!-- ======= 2. CCN KALI ======= -->
+<div class="process p-ccn">
+  <div class="process-header">
+    <div class="process-icon">📜</div>
+    <div class="process-title-block">
+      <div class="process-num">Processus 2</div>
+      <div class="process-title">Conventions collectives — API KALI (Légifrance)</div>
+      <p class="process-tagline">Récupération automatique des CCN françaises officielles depuis la base KALI, avec installation à la demande par IDCC.</p>
+    </div>
+  </div>
+
+  <dl class="process-grid">
+    <dt>Source officielle</dt>
+    <dd>
+      Base KALI de Légifrance via l'API PISTE (authentification OAuth2 — client credentials).
+    </dd>
+
+    <dt>Déclenchement</dt>
+    <dd>
+      <ul>
+        <li><strong>À la demande :</strong> quand un client installe une CCN dans une organisation depuis l'app (sélection par IDCC ou recherche par nom).</li>
+        <li><strong>Automatique :</strong> tâche planifiée le 1er et le 15 de chaque mois à 3 h du matin, qui détecte les mises à jour KALI et met à jour les CCN déjà installées.</li>
+      </ul>
+    </dd>
+
+    <dt>Ce qui est récupéré</dt>
+    <dd>
+      Pour une CCN donnée, le système récupère et crée <strong>jusqu'à 4 documents distincts</strong>&nbsp;:
+      <ul>
+        <li>Le texte de base de la convention</li>
+        <li>Les avenants en vigueur</li>
+        <li>Les annexes (grilles de classification, accords sectoriels…)</li>
+        <li>Les minima salariaux (si publiés distinctement)</li>
+      </ul>
+      Les articles abrogés sont filtrés automatiquement — seuls les articles en vigueur (<em>VIGUEUR</em>) sont ingérés.
+    </dd>
+
+    <dt>Traitement particulier</dt>
+    <dd>
+      <ul>
+        <li>Conversion HTML → Markdown <strong>en préservant les tableaux</strong> (barèmes, grilles de classification). Critique pour la qualité des réponses sur les salaires minima.</li>
+        <li>Chunking <strong>par article</strong> (jamais coupé au milieu), groupé par section, taille maximum 450 tokens.</li>
+        <li>Extraction de la date de contenu pour activer le <em>boost récence</em> lors de la recherche.</li>
+        <li>Mécanisme "bleu-vert" (blue-green) : en cas de mise à jour, le nouveau document est ingéré puis l'ancien est supprimé après 120 s — pas d'indisponibilité pendant la bascule.</li>
+      </ul>
+    </dd>
+
+    <dt>Visibilité</dt>
+    <dd>
+      Les CCN sont des documents <strong>communs à toute la plateforme</strong>, mais filtrées à la recherche : une organisation ne voit que les CCN rattachées à son IDCC. Une entreprise du secteur Syntec n'interroge jamais la CCN HCR.
+    </dd>
+
+    <dt>Garde-fous clés</dt>
+    <dd>
+      Throttling à 0,2-0,3 s par requête API (limite PISTE ~20 req/s), refresh du token OAuth2 avec marge de 5 min avant expiration, fallback sur une liste de 50+ CCN statiques si l'API est hors ligne.
+    </dd>
+  </dl>
+</div>
+
+<!-- ======= 3. JURISPRUDENCE ======= -->
+<div class="process p-juri">
+  <div class="process-header">
+    <div class="process-icon">⚖️</div>
+    <div class="process-title-block">
+      <div class="process-num">Processus 3</div>
+      <div class="process-title">Jurisprudence — API Judilibre</div>
+      <p class="process-tagline">Ingestion automatique des arrêts de la Cour de cassation et des Cours d'appel, avec priorité sur la chambre sociale.</p>
+    </div>
+  </div>
+
+  <dl class="process-grid">
+    <dt>Source officielle</dt>
+    <dd>
+      API Judilibre via PISTE (mêmes credentials OAuth2 que Légifrance).
+    </dd>
+
+    <dt>Déclenchement</dt>
+    <dd>
+      <ul>
+        <li><strong>Cron Cass. soc. publié :</strong> tous les arrêts publiés de la chambre sociale sur les 12 derniers mois.</li>
+        <li><strong>Cron Cours d'appel chambre sociale :</strong> les 3 derniers mois, plafonné à 3 000 arrêts.</li>
+        <li><strong>Initialisation (one-shot) :</strong> rattrapage sur 3 ans de Cour de cassation lors de la mise en service d'AORIA RH.</li>
+        <li><strong>Manuel :</strong> un admin peut lancer une sync ponctuelle depuis le back-office (par plage de dates, juridiction, chambre).</li>
+      </ul>
+    </dd>
+
+    <dt>Juridictions couvertes</dt>
+    <dd>
+      <span class="pill">Cour de cassation (cc)</span>
+      <span class="pill">Cour d'appel (ca)</span>
+      <span class="pill">Tribunaux judiciaires</span>
+      <span class="pill">Tribunaux de commerce</span>
+      <br>
+      Filtrage possible par chambre : sociale (<em>soc</em>), civile (<em>civ1/2</em>), commerciale (<em>comm</em>), criminelle, etc.
+    </dd>
+
+    <dt>Traitement particulier</dt>
+    <dd>
+      <ul>
+        <li>Chunking <strong>section-aware</strong> : l'arrêt est découpé par sections juridiques reconnues (faits, moyens, motifs, dispositif). Le chunker donne priorité à la section <em>motifs</em>, qui contient le raisonnement utile à la recherche.</li>
+        <li>Chaque chunk porte en en-tête une <strong>référence canonique normalisée</strong>, par exemple&nbsp;: <em>Cass. soc., 15 mars 2023, n° 21-14.490</em>. Le système s'en sert pour retrouver un arrêt cité par numéro de pourvoi.</li>
+        <li>Déduplication automatique par numéro de pourvoi (même arrêt, même juridiction = ingéré une seule fois).</li>
+        <li>Métadonnées extraites : juridiction, chambre, formation, numéro de pourvoi, date de décision, solution, publication.</li>
+      </ul>
+    </dd>
+
+    <dt>Visibilité</dt>
+    <dd>
+      Documents <strong>communs à toutes les organisations</strong>. La jurisprudence n'est jamais cloisonnée — tout client accède à l'intégralité du fonds.
+    </dd>
+
+    <dt>Garde-fous clés</dt>
+    <dd>
+      Pagination par lots de 50 résultats, plafond absolu de 10 000 résultats par synchronisation (protection contre une explosion de requêtes). Pour les Cours d'appel, filtrage par chambre fait côté Python après récupération (limitation de l'API Judilibre).
+    </dd>
+  </dl>
+</div>
+
+<!-- ======= 4. CODE DU TRAVAIL ======= -->
+<div class="process p-code">
+  <div class="process-header">
+    <div class="process-icon">📘</div>
+    <div class="process-title-block">
+      <div class="process-num">Processus 4</div>
+      <div class="process-title">Code du travail et autres codes — API LEGI</div>
+      <p class="process-tagline">Synchronisation mensuelle du Code du travail et des autres codes pertinents pour le droit social.</p>
+    </div>
+  </div>
+
+  <dl class="process-grid">
+    <dt>Source officielle</dt>
+    <dd>
+      API LEGI de Légifrance via PISTE. Identifiant LEGITEXT utilisé pour le Code du travail : <code>LEGITEXT000006072050</code>.
+    </dd>
+
+    <dt>Codes couverts</dt>
+    <dd>
+      <span class="pill">Code du travail</span>
+      <span class="pill">Code civil</span>
+      <span class="pill">Code pénal</span>
+      <span class="pill">Code de la sécurité sociale</span>
+      <span class="pill">Code de l'action sociale et des familles</span>
+    </dd>
+
+    <dt>Déclenchement</dt>
+    <dd>
+      Tâche planifiée mensuelle (1er jour du mois) + déclenchement manuel possible depuis le back-office admin.
+    </dd>
+
+    <dt>Traitement particulier</dt>
+    <dd>
+      <ul>
+        <li>Le Code du travail est divisé en <strong>2 documents distincts</strong> : la partie législative (articles <em>L.</em>) et la partie réglementaire (articles <em>R./D.</em>). Les deux parties n'ont pas la même valeur juridique, elles sont donc traitées séparément.</li>
+        <li>Chunking <strong>par article</strong> avec reconnaissance des préfixes <em>L.</em>, <em>R.</em>, <em>D.</em> et des sous-numérotations (<em>L.1234-1</em>, <em>L.1234-1-1</em>…).</li>
+        <li>Pas de boost récence : les codes sont <em>intemporels</em> par nature (c'est la version à jour qui compte, pas la date de chaque article).</li>
+        <li>Seuls les articles en vigueur sont ingérés (filtre <em>VIGUEUR</em>).</li>
+        <li>Même mécanisme bleu-vert que les CCN pour les mises à jour sans coupure.</li>
+      </ul>
+    </dd>
+
+    <dt>Visibilité</dt>
+    <dd>
+      Documents communs à toute la plateforme.
+    </dd>
+
+    <dt>Garde-fous clés</dt>
+    <dd>
+      Timeout étendu à 180 s par requête (les codes sont des payloads volumineux), throttling PISTE, fallback si l'API répond partiellement.
+    </dd>
+  </dl>
+</div>
+
+<!-- ======= 5. BOCC ======= -->
+<div class="process p-bocc">
+  <div class="process-header">
+    <div class="process-icon">📰</div>
+    <div class="process-title-block">
+      <div class="process-num">Processus 5</div>
+      <div class="process-title">BOCC — Bulletin officiel des conventions collectives</div>
+      <p class="process-tagline">Récupération des numéros hebdomadaires du BOCC (DILA open data) pour alimenter les CCN avec leurs avenants les plus récents.</p>
+    </div>
+  </div>
+
+  <dl class="process-grid">
+    <dt>Source officielle</dt>
+    <dd>
+      Open data DILA — archives compressées sur <code>echanges.dila.gouv.fr</code> (format .taz : tar gzippé).
+    </dd>
+
+    <dt>Déclenchement</dt>
+    <dd>
+      <ul>
+        <li><strong>Rattrapage à la demande</strong> (backfill par année) depuis le back-office admin.</li>
+        <li><strong>Automatique</strong> : embarqué dans la tâche planifiée bimensuelle du 1er et 15 (6 numéros par exécution).</li>
+        <li><strong>À chaque installation de CCN</strong> : les BOCC stockés en attente pour l'IDCC sont activés.</li>
+      </ul>
+    </dd>
+
+    <dt>Traitement particulier</dt>
+    <dd>
+      <ul>
+        <li>Téléchargement d'une archive .taz → décompression gzip → extraction des PDF individuels du BOCC.</li>
+        <li>Conversion PDF → Markdown <strong>avec préservation des tableaux</strong> (utilise <em>pymupdf4llm</em>).</li>
+        <li>Extraction automatique de l'IDCC, du titre, du numéro NOR et du numéro de brochure par expressions régulières sur l'en-tête du document.</li>
+        <li>Suppression des numéros de page et correction des césures de fin de ligne.</li>
+        <li>Les articles détectés sont rebalisés en Markdown pour préserver la structure.</li>
+      </ul>
+    </dd>
+
+    <dt>Mécanisme "réservé"</dt>
+    <dd>
+      <div class="highlight">
+        <strong>Particularité :</strong> si un BOCC concerne une CCN qui <em>n'est pas encore installée</em>
+        sur la plateforme, le document est <strong>stocké en statut "réservé"</strong>.
+        Il n'est pas ingéré dans Qdrant, mais dès qu'un client installe cette CCN, les BOCC
+        réservés correspondants basculent en statut "à traiter" et sont ingérés
+        automatiquement. Ça évite d'alimenter inutilement Qdrant avec des documents qui
+        ne servent à personne, tout en gardant l'historique prêt à la demande.
+      </div>
+    </dd>
+
+    <dt>Garde-fous clés</dt>
+    <dd>
+      Throttling de 1 s entre chaque numéro (éviter de marteler les serveurs DILA), déduplication par NOR, fusion logique avec la CCN de base de même IDCC.
+    </dd>
+  </dl>
+</div>
+
+<!-- ======= 6. CONSEIL CONSTITUTIONNEL ======= -->
+<div class="process p-cc">
+  <div class="process-header">
+    <div class="process-icon">🏛️</div>
+    <div class="process-title-block">
+      <div class="process-num">Processus 6</div>
+      <div class="process-title">Décisions du Conseil constitutionnel</div>
+      <p class="process-tagline">Ingestion des décisions constitutionnelles les plus récentes (QPC notamment) via l'API PISTE.</p>
+    </div>
+  </div>
+
+  <dl class="process-grid">
+    <dt>Source officielle</dt>
+    <dd>
+      API PISTE, fond <em>CONSTIT</em> (base des décisions du Conseil constitutionnel).
+    </dd>
+
+    <dt>Déclenchement</dt>
+    <dd>
+      Lancement depuis le back-office admin, avec fenêtre glissante de 30 jours par défaut. Intégré à la synchronisation automatique globale.
+    </dd>
+
+    <dt>Natures couvertes</dt>
+    <dd>
+      <span class="pill">QPC — Question prioritaire de constitutionnalité</span>
+      <span class="pill">DC — Décision de contrôle a priori</span>
+      <span class="pill">LP — Loi de pays</span>
+      <span class="pill">Autres fonds</span>
+    </dd>
+
+    <dt>Traitement particulier</dt>
+    <dd>
+      <ul>
+        <li>Recherche paginée (5 pages × 50 résultats max) pour éviter les synchronisations géantes.</li>
+        <li>Pour chaque décision trouvée : récupération du texte intégral via l'endpoint dédié.</li>
+        <li>Déduplication par identifiant de décision (cid Conseil constitutionnel).</li>
+        <li>Chunking générique (les décisions constitutionnelles n'ont pas de structure aussi codifiée que les arrêts de cassation).</li>
+      </ul>
+    </dd>
+
+    <dt>Visibilité</dt>
+    <dd>
+      Documents communs à toute la plateforme.
+    </dd>
+
+    <dt>Garde-fous clés</dt>
+    <dd>
+      Plafond à 250 décisions par synchronisation (sécurité anti-boucle), même filtrage OAuth2 PISTE que les autres processus externes.
+    </dd>
+  </dl>
+</div>
+
+<!-- ======= 7. UPLOAD ADMIN ======= -->
+<div class="process p-admin">
+  <div class="process-header">
+    <div class="process-icon">🛠️</div>
+    <div class="process-title-block">
+      <div class="process-num">Processus 7</div>
+      <div class="process-title">Upload manuel côté admin (documents communs)</div>
+      <p class="process-tagline">L'équipe AORIA RH peut injecter à la main des documents de référence qui seront vus par tous les clients.</p>
+    </div>
+  </div>
+
+  <dl class="process-grid">
+    <dt>Qui déclenche</dt>
+    <dd>Un administrateur AORIA RH depuis le back-office.</dd>
+
+    <dt>Usage typique</dt>
+    <dd>
+      <ul>
+        <li>Ajout d'un arrêt marquant non encore ingéré par l'auto-sync</li>
+        <li>Import d'un guide ministériel ou d'une circulaire</li>
+        <li>Import d'un accord de branche récent avant qu'il apparaisse dans KALI</li>
+        <li>Documents de référence AORIA RH (FAQ juridique, notes de synthèse internes)</li>
+      </ul>
+    </dd>
+
+    <dt>Différences vs upload client</dt>
+    <dd>
+      <ul>
+        <li>Taille maximum portée à <strong>20 Mo par fichier</strong> (vs 10 Mo client)</li>
+        <li>Upload <strong>par lots</strong> (jusqu'à 20 fichiers par requête)</li>
+        <li>Le document est créé en <strong>commun</strong> (<em>organisation_id = NULL</em>) — visible par tous les clients</li>
+        <li>Métadonnées de jurisprudence saisissables à la main (juridiction, numéro de pourvoi, date…) quand on importe un arrêt</li>
+      </ul>
+    </dd>
+
+    <dt>Visibilité</dt>
+    <dd>
+      Documents communs — accessibles en recherche à toutes les organisations, sans cloisonnement.
+    </dd>
+
+    <dt>Garde-fous clés</dt>
+    <dd>
+      Accès réservé au rôle <em>admin</em> strict (personnel AORIA RH), audit log automatique de chaque upload, refus des PDF scannés comme partout ailleurs.
+    </dd>
+  </dl>
+</div>
+
+<!-- ============ PLANNING / CRON ============ -->
+<h2>Planning des synchronisations automatiques</h2>
+
+<p>
+  Les processus 2, 3, 4, 5 et 6 tournent sans intervention humaine à cadence fixe.
+  Voici le calendrier.
+</p>
+
+<div class="calendar-grid">
+  <div class="cal-when">1er &amp; 15 du mois<br>3 h 00</div>
+  <div class="cal-what">
+    <strong>Synchronisation bimensuelle globale</strong>
+    <div class="cal-desc">Met à jour toutes les CCN installées (processus 2), ingère 6 nouveaux numéros du BOCC (processus 5) et déclenche la sync jurisprudence récente (processus 3 — fenêtre récente).</div>
+  </div>
+
+  <div class="cal-when">1er du mois<br>3 h 30</div>
+  <div class="cal-what">
+    <strong>Synchronisation mensuelle des codes</strong>
+    <div class="cal-desc">Récupère les mises à jour du Code du travail, Code civil, Code pénal, CSS et CASF (processus 4).</div>
+  </div>
+
+  <div class="cal-when">Hebdomadaire</div>
+  <div class="cal-what">
+    <strong>Jurisprudence chambre sociale étendue</strong>
+    <div class="cal-desc">Rafraîchit l'ensemble des arrêts publiés de la Cour de cassation — chambre sociale — sur les 12 derniers mois (processus 3).</div>
+  </div>
+
+  <div class="cal-when">À l'installation d'une CCN</div>
+  <div class="cal-what">
+    <strong>Chaîne d'installation</strong>
+    <div class="cal-desc">Quand un client installe une CCN (processus 2), les BOCC déjà téléchargés pour cet IDCC (processus 5) mais en statut "réservé" sont activés automatiquement.</div>
+  </div>
+
+  <div class="cal-when">One-shot<br>(mise en service)</div>
+  <div class="cal-what">
+    <strong>Amorçage initial</strong>
+    <div class="cal-desc">Rattrapage sur 3 ans de Cour de cassation (processus 3), import complet des codes (processus 4), import des 50 CCN les plus demandées (processus 2).</div>
+  </div>
+</div>
+
+<!-- ============ GARDES-FOUS ============ -->
+<h2>Les gardes-fous communs à tous les processus</h2>
+
+<div class="guards">
+  <div class="guard-card">
+    <div class="g-title">Taille de chunk</div>
+    <div class="g-value">450–1 024</div>
+    <div class="g-desc">Tokens par morceau. Les documents juridiques structurés sont coupés plus fin (~450) pour ne jamais casser un article. Les textes libres tolèrent des morceaux plus larges (1 024).</div>
+  </div>
+  <div class="guard-card">
+    <div class="g-title">Chevauchement</div>
+    <div class="g-value">128 tokens</div>
+    <div class="g-desc">Chaque chunk répète les 128 derniers tokens du précédent. Évite de perdre du contexte à la jonction entre deux morceaux.</div>
+  </div>
+  <div class="guard-card">
+    <div class="g-title">Encodage sémantique</div>
+    <div class="g-value">32 par lot</div>
+    <div class="g-desc">Les morceaux sont envoyés par lots de 32 à Voyage AI, avec reprise automatique en cas d'erreur 429 (trop de requêtes) et backoff exponentiel.</div>
+  </div>
+  <div class="guard-card">
+    <div class="g-title">Concurrence</div>
+    <div class="g-value">4 workers</div>
+    <div class="g-desc">Jusqu'à 4 documents ingérés en parallèle par le worker ARQ. Équilibre entre vitesse et stabilité des API externes.</div>
+  </div>
+  <div class="guard-card">
+    <div class="g-title">Throttling API</div>
+    <div class="g-value">0,2–0,3 s</div>
+    <div class="g-desc">Délai minimum entre deux requêtes PISTE (Légifrance/Judilibre). Respecte le plafond ~20 req/s de l'API officielle.</div>
+  </div>
+  <div class="guard-card">
+    <div class="g-title">Mise à jour bleu-vert</div>
+    <div class="g-value">120 s de délai</div>
+    <div class="g-desc">Lors d'une mise à jour CCN ou Code, la nouvelle version est d'abord indexée complètement, puis l'ancienne est supprimée après 120 s. Aucune indisponibilité des réponses.</div>
+  </div>
+  <div class="guard-card">
+    <div class="g-title">Déduplication</div>
+    <div class="g-value">Systématique</div>
+    <div class="g-desc">Par empreinte SHA256 pour les uploads, par numéro de pourvoi pour la jurisprudence, par numéro NOR pour le BOCC, par cid pour le Conseil constitutionnel.</div>
+  </div>
+  <div class="guard-card">
+    <div class="g-title">Refus des PDF scannés</div>
+    <div class="g-value">Strict</div>
+    <div class="g-desc">Un PDF sans couche de texte est rejeté à l'upload. AORIA RH ne fait pas d'OCR pour l'instant — la qualité de recherche ne serait pas au niveau attendu pour du droit.</div>
+  </div>
+  <div class="guard-card">
+    <div class="g-title">Cloisonnement</div>
+    <div class="g-value">Strict</div>
+    <div class="g-desc">Les documents propres à une organisation sont marqués en base ET dans Qdrant par <em>organisation_id</em>. La recherche filtre toujours sur cet identifiant. Aucune fuite possible.</div>
+  </div>
+  <div class="guard-card">
+    <div class="g-title">Quota plan</div>
+    <div class="g-value">Vérifié</div>
+    <div class="g-desc">Avant chaque upload client, le nombre de documents de l'organisation est comparé à la limite du plan. Si dépassé, l'upload est refusé avec un message clair.</div>
+  </div>
+  <div class="guard-card">
+    <div class="g-title">Statut d'indexation</div>
+    <div class="g-value">4 états</div>
+    <div class="g-desc">En attente → en cours → prêt → échec. L'utilisateur voit en temps réel l'état de ses documents. En cas d'échec, une relance manuelle est possible.</div>
+  </div>
+  <div class="guard-card">
+    <div class="g-title">Traçabilité</div>
+    <div class="g-value">Complète</div>
+    <div class="g-desc">Chaque document persiste son origine (processus source, IDCC, date API), son empreinte et ses métadonnées. Permet audit et reconstitution en cas de besoin.</div>
+  </div>
+</div>
+
+<!-- ============ SYNTHÈSE ============ -->
+<h2>Synthèse : ce qui différencie fondamentalement les processus</h2>
+
+<div class="intro">
+  <p>
+    Les 7 processus partagent 80 % de leur chaîne technique. Les 20 % de différences sont
+    concentrés sur 5 dimensions qu'il est important d'avoir en tête pour piloter la
+    plateforme :
+  </p>
+</div>
+
+<ul style="font-size:0.98rem; line-height:1.7;">
+  <li>
+    <strong>La stratégie de découpage.</strong> Un article de loi (Code, CCN) est coupé
+    par article — on ne coupe jamais au milieu d'un article. Un arrêt de justice est
+    coupé par section juridique (faits, motifs, dispositif). Un document client est
+    coupé génériquement par paragraphe. Chaque stratégie reflète la façon dont les
+    juristes lisent réellement ce type de texte.
+  </li>
+  <li>
+    <strong>Les métadonnées enrichies.</strong> Une CCN est balisée avec son IDCC et ses
+    numéros d'article. Un arrêt est balisé avec son numéro de pourvoi, sa juridiction,
+    sa date. Un document client est balisé avec son type déclaré et son organisation.
+    Ces métadonnées sont ensuite réutilisées par le moteur de recherche pour filtrer
+    ou pour fournir au modèle d'IA le contexte juridique complet de chaque source.
+  </li>
+  <li>
+    <strong>La visibilité.</strong> Propre à une organisation (processus 1) ou commun à
+    toutes (processus 2 à 7). Pour les CCN, c'est mixte : document commun mais filtré
+    par IDCC à la recherche.
+  </li>
+  <li>
+    <strong>La cadence.</strong> Manuel à la demande (processus 1 et 7), à l'installation
+    d'une CCN (processus 2 et 5), synchronisation périodique (processus 2, 3, 4, 5, 6).
+    Aucun processus ne tourne en continu — tout passe par un worker asynchrone pour
+    ne pas saturer ni les API externes ni l'infrastructure AORIA RH.
+  </li>
+  <li>
+    <strong>La mise à jour sans coupure.</strong> Pour les sources officielles (CCN,
+    codes), on utilise un mécanisme bleu-vert : la nouvelle version est ingérée
+    complètement avant que l'ancienne ne soit supprimée. Les clients ne voient jamais
+    une base incohérente ou partiellement indisponible.
+  </li>
+</ul>
+
+<footer>
+  AORIA RH — Processus d'ingestion documentaire · Document fonctionnel
+</footer>
+
+</div>
+</body>
+</html>

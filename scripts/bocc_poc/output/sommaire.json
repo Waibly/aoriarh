@@ -1,0 +1,144 @@
+{
+  "bocc_numero": "2025-51",
+  "bocc_date": "20 décembre 2025",
+  "pages": 123,
+  "avenants_count": 17,
+  "avenants": [
+    {
+      "idcc": "0016",
+      "ccn_name": "TRANSPORTS ROUTIERS ET ACTIVITÉS AUXILIAIRES",
+      "brochure": "3085",
+      "titre": "Accord de méthode du 4 novembre 2025 relatif aux classifications des emplois dans les entreprises de transport sanitaire",
+      "nor": "ASET2550945M",
+      "content_length": 7596
+    },
+    {
+      "idcc": "0112",
+      "ccn_name": "INDUSTRIE LAITIÈRE",
+      "brochure": "3124",
+      "titre": "Accord-cadre du 16 avril 2025 relatif à la prévoyance",
+      "nor": "ASET2550993M",
+      "content_length": 22806
+    },
+    {
+      "idcc": "0112",
+      "ccn_name": "INDUSTRIE LAITIÈRE",
+      "brochure": "3124",
+      "titre": "Avenant n° 39 du 16 avril 2025 relatif à la modification du titre IX « Prévoyance »",
+      "nor": "ASET2550992M",
+      "content_length": 21394
+    },
+    {
+      "idcc": "0538",
+      "ccn_name": "MANUTENTION FERROVIAIRE ET TRAVAUX CONNEXES",
+      "brochure": "3170",
+      "titre": "Accord du 13 novembre 2025 relatif à la contribution conventionnelle au titre du plan de développement des compétences",
+      "nor": "ASET2550987M",
+      "content_length": 7659
+    },
+    {
+      "idcc": "0538",
+      "ccn_name": "MANUTENTION FERROVIAIRE ET TRAVAUX CONNEXES",
+      "brochure": "3170",
+      "titre": "Accord du 27 novembre 2025 relatif à l’indemnité de départ à la retraite",
+      "nor": "ASET2550999M",
+      "content_length": 6919
+    },
+    {
+      "idcc": "0538",
+      "ccn_name": "MANUTENTION FERROVIAIRE ET TRAVAUX CONNEXES",
+      "brochure": "3170",
+      "titre": "Accord du 27 novembre 2025 relatif aux salaires garantis et aux autres éléments de rémunération pour l’année 2026",
+      "nor": "ASET2551003M",
+      "content_length": 13949
+    },
+    {
+      "idcc": "0993",
+      "ccn_name": "PROTHÉSISTES DENTAIRES ET PERSONNELS",
+      "brochure": "3254",
+      "titre": "Avenant du 14 novembre 2025 relatif à l'actualisation de l’article 37 « Détermination de la durée du travail effectif pour le calcul de la durée du congé » de la convention collective nationale",
+      "nor": "ASET2550966M",
+      "content_length": 2189
+    },
+    {
+      "idcc": "1534",
+      "ccn_name": "ENTREPRISES DE L ’INDUSTRIE ET DES COMMERCES",
+      "brochure": "3179",
+      "titre": "Accord du 13 novembre 2025 relatif à la liste des métiers exposés à des risques ergonomiques (FIPU) (art. L. 4163-2-1 du code du travail)",
+      "nor": "ASET2550990M",
+      "content_length": 33649
+    },
+    {
+      "idcc": "1686",
+      "ccn_name": "COMMERCES ET SERVICES DE L’AUDIOVISUEL,",
+      "brochure": "3076",
+      "titre": "Avenant n° 55 du 15 novembre 2022 relatif à l’aménagement du titre V « Prévoyance »",
+      "nor": "ASET2550994M",
+      "content_length": 2580
+    },
+    {
+      "idcc": "1909",
+      "ccn_name": "ORGANISMES DE TOURISME",
+      "brochure": "3175",
+      "titre": "Accord n° 46 du 16 septembre 2025 relatif au haut degré de solidarité",
+      "nor": "ASET2550982M",
+      "content_length": 10309
+    },
+    {
+      "idcc": "2511",
+      "ccn_name": "SPORT",
+      "brochure": "3328",
+      "titre": "Avenant n° 216 du 20 novembre 2025 relatif au dialogue social",
+      "nor": "ASET2550989M",
+      "content_length": 12384
+    },
+    {
+      "idcc": "2691",
+      "ccn_name": "ENSEIGNEMENT PRIVÉ INDÉPENDANT",
+      "brochure": "3351",
+      "titre": "Avenant n° 67 du 8 juillet 2025 relatif à la modification du titre II de la convention collective",
+      "nor": "ASET2550943M",
+      "content_length": 32684
+    },
+    {
+      "idcc": "2691",
+      "ccn_name": "ENSEIGNEMENT PRIVÉ INDÉPENDANT",
+      "brochure": "3351",
+      "titre": "Avenant n° 68 du 8 juillet 2025 relatif à la modification du titre III de la convention collective",
+      "nor": "ASET2550944M",
+      "content_length": 40020
+    },
+    {
+      "idcc": "3248",
+      "ccn_name": "MÉTALLURGIE",
+      "brochure": "",
+      "titre": "Accord du 22 septembre 2025 relatif à la valeur de point pour le calcul de la prime d’ancienneté à compter du 1er janvier 2026 (Périgord)",
+      "nor": "ASET2551007M",
+      "content_length": 3708
+    },
+    {
+      "idcc": "3248",
+      "ccn_name": "MÉTALLURGIE",
+      "brochure": "",
+      "titre": "Accord du 29 septembre 2025 relatif à la valeur de point pour le calcul de la prime d’ancienneté à compter du 1er janvier 2026 (Mayenne)",
+      "nor": "ASET2550986M",
+      "content_length": 3523
+    },
+    {
+      "idcc": "3248",
+      "ccn_name": "MÉTALLURGIE",
+      "brochure": "",
+      "titre": "Accord du 21 octobre 2025 relatif à des mesures urgentes en faveur de l’emploi et de la formation professionnelle (Mayenne)",
+      "nor": "ASET2550991M",
+      "content_length": 20279
+    },
+    {
+      "idcc": "3248",
+      "ccn_name": "MÉTALLURGIE",
+      "brochure": "",
+      "titre": "Accord du 31 octobre 2025 relatif à la valeur du point pour le calcul de la prime d’ancienneté à compter du 1er janvier 2026 (Haute-Savoie)",
+      "nor": "ASET2550988M",
+      "content_length": 9809
+    }
+  ]
+}

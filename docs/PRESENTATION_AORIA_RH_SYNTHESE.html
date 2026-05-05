@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AORIA RH — Synthèse</title>
+<style>
+    :root {
+        --bg: #fafaf9;
+        --surface: #ffffff;
+        --border: #e7e5e4;
+        --text: #1c1917;
+        --muted: #57534e;
+        --accent: #0f766e;
+        --accent-soft: #ccfbf1;
+        --warning: #b45309;
+        --shadow: 0 1px 3px rgba(0,0,0,0.04), 0 1px 2px rgba(0,0,0,0.06);
+    }
+    * { box-sizing: border-box; }
+    html, body {
+        margin: 0;
+        padding: 0;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+        background: var(--bg);
+        color: var(--text);
+        line-height: 1.6;
+        -webkit-font-smoothing: antialiased;
+    }
+    .container {
+        max-width: 920px;
+        margin: 0 auto;
+        padding: 60px 32px 80px;
+    }
+    header {
+        text-align: center;
+        margin-bottom: 64px;
+        padding-bottom: 40px;
+        border-bottom: 1px solid var(--border);
+    }
+    .brand {
+        display: inline-block;
+        font-size: 14px;
+        font-weight: 600;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        color: var(--accent);
+        margin-bottom: 16px;
+    }
+    h1 {
+        font-size: 42px;
+        font-weight: 700;
+        line-height: 1.15;
+        margin: 0 0 16px;
+        letter-spacing: -0.02em;
+    }
+    .tagline {
+        font-size: 19px;
+        color: var(--muted);
+        max-width: 680px;
+        margin: 0 auto;
+    }
+    section {
+        margin-bottom: 56px;
+    }
+    h2 {
+        font-size: 26px;
+        font-weight: 700;
+        margin: 0 0 20px;
+        letter-spacing: -0.01em;
+        position: relative;
+        padding-left: 16px;
+    }
+    h2::before {
+        content: "";
+        position: absolute;
+        left: 0;
+        top: 8px;
+        bottom: 8px;
+        width: 4px;
+        background: var(--accent);
+        border-radius: 2px;
+    }
+    h3 {
+        font-size: 17px;
+        font-weight: 600;
+        margin: 24px 0 8px;
+        color: var(--text);
+    }
+    p {
+        margin: 0 0 14px;
+        color: var(--muted);
+    }
+    ul {
+        padding-left: 20px;
+        margin: 0 0 16px;
+    }
+    li {
+        color: var(--muted);
+        margin-bottom: 6px;
+    }
+    li strong { color: var(--text); }
+    .grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 24px;
+    }
+    @media (max-width: 720px) {
+        .grid { grid-template-columns: 1fr; }
+        h1 { font-size: 32px; }
+        .container { padding: 40px 20px 60px; }
+    }
+    .card {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 24px;
+        box-shadow: var(--shadow);
+    }
+    .card h3 {
+        margin-top: 0;
+        font-size: 16px;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: var(--accent);
+    }
+    .card .subtitle {
+        font-size: 13px;
+        color: var(--muted);
+        margin-bottom: 16px;
+        font-style: italic;
+    }
+    .card ul {
+        padding-left: 18px;
+    }
+    .card li {
+        font-size: 14px;
+        margin-bottom: 8px;
+    }
+    .footnote {
+        font-size: 13px;
+        color: var(--muted);
+        font-style: italic;
+        margin-top: 12px;
+        padding-top: 12px;
+        border-top: 1px solid var(--border);
+    }
+    .audience-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+        gap: 12px;
+        margin-top: 16px;
+    }
+    .badge {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 12px 16px;
+        font-size: 14px;
+        font-weight: 500;
+    }
+    .badge strong {
+        display: block;
+        color: var(--text);
+        font-weight: 600;
+        margin-bottom: 2px;
+    }
+    .badge span {
+        color: var(--muted);
+        font-size: 13px;
+        font-weight: 400;
+    }
+    .pillars {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 16px;
+    }
+    .pillar {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-left: 3px solid var(--accent);
+        border-radius: 8px;
+        padding: 18px 20px;
+    }
+    .pillar h4 {
+        margin: 0 0 6px;
+        font-size: 15px;
+        font-weight: 600;
+    }
+    .pillar p {
+        margin: 0;
+        font-size: 13px;
+    }
+    .steps {
+        counter-reset: step;
+        list-style: none;
+        padding: 0;
+    }
+    .steps li {
+        counter-increment: step;
+        position: relative;
+        padding: 12px 0 12px 48px;
+        border-bottom: 1px solid var(--border);
+        color: var(--text);
+    }
+    .steps li:last-child { border-bottom: none; }
+    .steps li::before {
+        content: counter(step);
+        position: absolute;
+        left: 0;
+        top: 12px;
+        width: 32px;
+        height: 32px;
+        border-radius: 50%;
+        background: var(--accent-soft);
+        color: var(--accent);
+        font-weight: 700;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 14px;
+    }
+    .steps li strong {
+        display: block;
+        font-weight: 600;
+        margin-bottom: 2px;
+    }
+    .steps li span {
+        color: var(--muted);
+        font-size: 14px;
+    }
+    .closing {
+        text-align: center;
+        background: linear-gradient(135deg, var(--accent) 0%, #134e4a 100%);
+        color: #fff;
+        padding: 40px 32px;
+        border-radius: 16px;
+        margin-top: 64px;
+    }
+    .closing p {
+        color: rgba(255,255,255,0.92);
+        font-size: 20px;
+        font-weight: 500;
+        margin: 0;
+        line-height: 1.4;
+    }
+</style>
+</head>
+<body>
+<div class="container">
+
+    <header>
+        <div class="brand">AORIA RH</div>
+        <h1>L'assistant juridique RH par IA, fiable et sourcé.</h1>
+        <p class="tagline">
+            Une réponse argumentée, sourcée et adaptée à votre convention collective et vos accords internes — en 10 secondes au lieu d'une heure de recherche.
+        </p>
+    </header>
+
+    <section>
+        <h2>À qui ça s'adresse</h2>
+        <div class="audience-grid">
+            <div class="badge"><strong>DRH & Chargés RH</strong><span>Sécuriser les décisions au quotidien</span></div>
+            <div class="badge"><strong>Dirigeants TPE/PME</strong><span>Sans service juridique interne</span></div>
+            <div class="badge"><strong>Cabinets de conseil RH</strong><span>Multi-clients avec cloisonnement strict</span></div>
+            <div class="badge"><strong>Élus CSE & représentants</strong><span>Comprendre droits et prérogatives</span></div>
+            <div class="badge"><strong>Avocats & juristes social</strong><span>Accélérer les recherches</span></div>
+            <div class="badge"><strong>Experts-comptables</strong><span>Sécuriser le volet social</span></div>
+        </div>
+    </section>
+
+    <section>
+        <h2>Ce que ça fait</h2>
+        <ul>
+            <li><strong>Répond en langage naturel</strong> à des questions RH complexes : licenciement, congés, contrats, IRP/CSE, durée du travail, négociation, santé au travail.</li>
+            <li><strong>Source chaque affirmation</strong> : citations cliquables vers le texte de loi, l'arrêt ou l'accord d'entreprise utilisé.</li>
+            <li><strong>Applique automatiquement la hiérarchie des normes</strong> : droit européen → loi → convention collective → accord d'entreprise → contrat → usage.</li>
+            <li><strong>Intègre vos documents internes</strong> : règlement intérieur, accords, contrats types, PV de CSE.</li>
+            <li><strong>Multi-organisations</strong> : un cabinet, un groupe ou un CSE central peut gérer plusieurs entités de façon parfaitement étanche.</li>
+            <li><strong>Adapte le ton au profil métier</strong> : un élu CSE n'obtient pas la même formulation qu'un DRH ou qu'un juriste.</li>
+        </ul>
+    </section>
+
+    <section>
+        <h2>Le droit officiel + votre contexte d'entreprise</h2>
+        <p>AORIA RH combine deux corpus strictement distincts : la base juridique commune mise à jour en continu, et les documents propres à votre organisation, cloisonnés et privés.</p>
+
+        <div class="grid">
+            <div class="card">
+                <h3>Base juridique officielle</h3>
+                <div class="subtitle">Mise à jour en continu</div>
+                <p>Tout le socle du droit social français pour sécuriser vos décisions :</p>
+                <ul>
+                    <li><strong>Code du travail</strong> et textes réglementaires</li>
+                    <li><strong>Jurisprudence sociale</strong> de la Cour de cassation</li>
+                    <li><strong>Conventions collectives et accords de branche</strong> (387 CCN couvertes)</li>
+                    <li><strong>Doctrine administrative</strong> : circulaires, instructions, guides officiels</li>
+                    <li><strong>Droit européen</strong> applicable au droit social</li>
+                </ul>
+                <div class="footnote">Sources synchronisées quotidiennement avec les bases officielles.</div>
+            </div>
+
+            <div class="card">
+                <h3>Vos documents internes</h3>
+                <div class="subtitle">Cloisonnés et privés à votre organisation</div>
+                <p>Tout ce qui fait votre cadre RH spécifique, intégré à l'analyse pour des réponses adaptées à votre réalité :</p>
+                <ul>
+                    <li><strong>Accords collectifs</strong> : accords d'entreprise, d'établissement, avenants</li>
+                    <li><strong>Engagements unilatéraux et règles internes</strong> : règlement intérieur, DUE, notes de service, usages</li>
+                    <li><strong>Instances représentatives</strong> : PV de CSE, accords avec les représentants du personnel</li>
+                    <li><strong>Contrats et documents individuels</strong> : modèles, avenants types, lettres types</li>
+                    <li><strong>Politiques RH</strong> : grille de classification, intéressement, télétravail, plan de formation</li>
+                </ul>
+                <div class="footnote">Vos documents restent strictement privés à votre organisation et ne sont jamais utilisés pour l'IA générale.</div>
+            </div>
+        </div>
+    </section>
+
+    <section>
+        <h2>Pourquoi c'est sérieux</h2>
+        <div class="pillars">
+            <div class="pillar"><h4>Sourcé</h4><p>Chaque réponse est rattachée à un texte vérifiable.</p></div>
+            <div class="pillar"><h4>À jour</h4><p>Base juridique synchronisée quotidiennement.</p></div>
+            <div class="pillar"><h4>Cloisonné</h4><p>Données strictement isolées par organisation.</p></div>
+            <div class="pillar"><h4>Spécialisé</h4><p>IA dédiée au droit, pas un chatbot généraliste.</p></div>
+            <div class="pillar"><h4>Hiérarchisé</h4><p>Résolution automatique des contradictions entre normes.</p></div>
+            <div class="pillar"><h4>Auditable</h4><p>Historique complet des conversations et sources.</p></div>
+        </div>
+    </section>
+
+    <section>
+        <h2>Comment ça fonctionne</h2>
+        <ol class="steps">
+            <li><strong>Question en langage courant</strong><span>L'utilisateur pose sa question dans le chat.</span></li>
+            <li><strong>Reformulation juridique</strong><span>L'IA traduit la question en termes précis du droit social.</span></li>
+            <li><strong>Recherche dans la base</strong><span>Code du travail, jurisprudence, CCN de l'organisation, documents internes.</span></li>
+            <li><strong>Tri par hiérarchie des normes</strong><span>Les sources sont pondérées selon leur force juridique.</span></li>
+            <li><strong>Vérification croisée</strong><span>Les références entre textes sont contrôlées.</span></li>
+            <li><strong>Réponse sourcée</strong><span>Génération avec citations cliquables vers les sources.</span></li>
+            <li><strong>Affichage en streaming</strong><span>Réponse claire, structurée, accompagnée des extraits utilisés.</span></li>
+        </ol>
+    </section>
+
+    <section>
+        <h2>Ce qui distingue AORIA RH</h2>
+        <ul>
+            <li><strong>Pas un ChatGPT déguisé</strong> : pipeline RAG spécialisé, base juridique maîtrisée, pas d'hallucination libre.</li>
+            <li><strong>Pensé pour le droit français</strong> : hiérarchie des normes, conventions collectives, jurisprudence Cour de cassation.</li>
+            <li><strong>Multi-tenant strict</strong> : aucun risque de fuite entre clients.</li>
+            <li><strong>Évolutif</strong> : nouvelles sources et fonctionnalités en continu (modèles de courriers, alertes réglementaires…).</li>
+        </ul>
+    </section>
+
+    <div class="closing">
+        <p>AORIA RH transforme une recherche juridique d'une heure en une réponse fiable de 10 secondes.</p>
+    </div>
+
+</div>
+</body>
+</html>

@@ -1,0 +1,1108 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AORIA RH — Valeur produit et positionnement</title>
+<style>
+  :root {
+    --primary: #6d28d9;
+    --primary-light: #ede9fe;
+    --primary-dark: #5b21b6;
+    --bg: #f8fafc;
+    --card: #ffffff;
+    --text: #1e293b;
+    --muted: #64748b;
+    --border: #e2e8f0;
+    --green: #16a34a;
+    --green-light: #dcfce7;
+    --orange: #ea580c;
+    --orange-light: #ffedd5;
+    --red: #dc2626;
+    --red-light: #fee2e2;
+    --amber: #f59e0b;
+    --blue: #2563eb;
+    --blue-light: #dbeafe;
+  }
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.6;
+  }
+  .container { max-width: 1180px; margin: 0 auto; padding: 48px 24px 80px; }
+
+  header.hero {
+    background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
+    color: #fff;
+    padding: 56px 40px;
+    border-radius: 14px;
+    margin-bottom: 40px;
+    box-shadow: 0 10px 30px rgba(109, 40, 217, 0.2);
+  }
+  header.hero h1 { font-size: 2.1rem; margin: 0 0 10px; font-weight: 700; }
+  header.hero p { font-size: 1.05rem; margin: 0; opacity: 0.95; max-width: 820px; }
+  header.hero .tagline {
+    display: inline-block;
+    background: rgba(255,255,255,0.2);
+    padding: 6px 14px;
+    border-radius: 20px;
+    font-size: 0.85rem;
+    margin-top: 14px;
+    letter-spacing: 0.4px;
+  }
+
+  h2 {
+    font-size: 1.5rem;
+    margin: 56px 0 20px;
+    padding-bottom: 10px;
+    border-bottom: 2px solid var(--primary-light);
+    color: var(--primary-dark);
+  }
+  h3 { font-size: 1.1rem; margin: 24px 0 10px; color: var(--text); }
+
+  .intro {
+    background: var(--primary-light);
+    border-left: 4px solid var(--primary);
+    padding: 18px 22px;
+    border-radius: 8px;
+    margin: 20px 0 32px;
+  }
+  .intro p { margin: 0; color: var(--primary-dark); }
+
+  /* Problem list — styled as red-tinted cards */
+  .problems {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: 16px;
+    margin: 20px 0 32px;
+  }
+  .problem-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-left: 4px solid var(--red);
+    border-radius: 10px;
+    padding: 18px 22px;
+  }
+  .problem-card .p-title {
+    font-weight: 700;
+    color: var(--red);
+    margin: 0 0 6px;
+    font-size: 0.9rem;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+  }
+  .problem-card p { margin: 0; font-size: 0.93rem; }
+
+  /* Feature card — same structure as step/process cards in previous docs */
+  .feature {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 24px 28px;
+    margin: 16px 0;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+    display: grid;
+    grid-template-columns: 64px 1fr;
+    gap: 20px;
+  }
+  .feature-icon {
+    width: 52px;
+    height: 52px;
+    background: var(--primary-light);
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.6rem;
+    flex-shrink: 0;
+  }
+  .feature-body { min-width: 0; }
+  .feature-title {
+    font-size: 1.15rem;
+    font-weight: 700;
+    color: var(--primary-dark);
+    margin: 4px 0 6px;
+  }
+  .feature-tagline {
+    font-size: 0.95rem;
+    color: var(--muted);
+    margin: 0 0 14px;
+    font-style: italic;
+  }
+  .feature-desc { margin: 10px 0; }
+
+  .why-box {
+    background: #f0fdf4;
+    border-left: 4px solid var(--green);
+    padding: 12px 16px;
+    border-radius: 6px;
+    margin-top: 14px;
+    font-size: 0.9rem;
+    color: #166534;
+  }
+  .why-box strong { color: #14532d; }
+
+  /* Diff rows */
+  .diff {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 24px 28px;
+    margin: 16px 0;
+    display: grid;
+    grid-template-columns: 80px 1fr;
+    gap: 24px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+  }
+  .diff-num {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 64px;
+    height: 64px;
+    background: var(--primary);
+    color: #fff;
+    border-radius: 50%;
+    font-size: 1.6rem;
+    font-weight: 700;
+    flex-shrink: 0;
+    box-shadow: 0 4px 12px rgba(109, 40, 217, 0.3);
+  }
+  .diff-body h3 { font-size: 1.15rem; color: var(--primary-dark); margin: 4px 0 6px; }
+  .diff-body p { margin: 6px 0; }
+  .diff-compare {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 14px;
+    margin-top: 12px;
+  }
+  .diff-us, .diff-them {
+    padding: 12px 16px;
+    border-radius: 8px;
+    font-size: 0.9rem;
+    line-height: 1.55;
+  }
+  .diff-us {
+    background: #f0fdf4;
+    border-left: 4px solid var(--green);
+    color: #166534;
+  }
+  .diff-us strong { color: #14532d; }
+  .diff-them {
+    background: #fff1f2;
+    border-left: 4px solid var(--red);
+    color: #991b1b;
+  }
+  .diff-them strong { color: #7f1d1d; }
+
+  /* Pill */
+  .pill {
+    display: inline-block;
+    background: var(--primary-light);
+    color: var(--primary-dark);
+    padding: 2px 10px;
+    border-radius: 12px;
+    font-size: 0.85rem;
+    font-weight: 500;
+    margin: 2px 4px 2px 0;
+  }
+  .pill-strong { background: var(--primary); color: #fff; }
+
+  .meta-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 14px;
+    padding-top: 14px;
+    border-top: 1px dashed var(--border);
+    font-size: 0.85rem;
+  }
+  .meta-row .meta-label {
+    font-weight: 600;
+    color: var(--muted);
+    margin-right: 6px;
+  }
+
+  .highlight {
+    background: #fffbeb;
+    border-left: 4px solid var(--amber);
+    padding: 14px 18px;
+    border-radius: 6px;
+    margin: 14px 0;
+    font-size: 0.95rem;
+  }
+  .highlight strong { color: #92400e; }
+
+  /* Guard cards */
+  .guards {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 16px;
+    margin: 20px 0;
+  }
+  .guard-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px 18px;
+  }
+  .guard-card .g-title {
+    font-weight: 700;
+    color: var(--primary-dark);
+    font-size: 0.95rem;
+    margin-bottom: 4px;
+  }
+  .guard-card .g-value {
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: var(--text);
+    margin: 6px 0 4px;
+    font-variant-numeric: tabular-nums;
+  }
+  .guard-card .g-desc {
+    font-size: 0.85rem;
+    color: var(--muted);
+  }
+
+  /* Plans table */
+  table.plans {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 16px 0 24px;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    overflow: hidden;
+    font-size: 0.92rem;
+  }
+  table.plans th,
+  table.plans td {
+    padding: 12px 14px;
+    text-align: left;
+    border-bottom: 1px solid var(--border);
+    vertical-align: top;
+  }
+  table.plans th {
+    background: var(--primary-light);
+    color: var(--primary-dark);
+    font-weight: 600;
+    font-size: 0.85rem;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+  }
+  table.plans tr:last-child td { border-bottom: none; }
+  table.plans .plan-name {
+    font-weight: 700;
+    color: var(--primary-dark);
+  }
+  table.plans .plan-price {
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    color: var(--text);
+    white-space: nowrap;
+  }
+  table.plans .featured-row {
+    background: #faf5ff;
+  }
+  table.plans .featured-badge {
+    display: inline-block;
+    background: var(--primary);
+    color: #fff;
+    padding: 1px 8px;
+    border-radius: 10px;
+    font-size: 0.7rem;
+    font-weight: 700;
+    margin-left: 8px;
+    letter-spacing: 0.3px;
+  }
+
+  /* Use case card */
+  .usecase {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px 24px;
+    margin: 14px 0;
+    border-left: 4px solid var(--primary);
+  }
+  .usecase .uc-persona {
+    display: inline-block;
+    background: var(--primary-light);
+    color: var(--primary-dark);
+    padding: 2px 10px;
+    border-radius: 12px;
+    font-size: 0.78rem;
+    font-weight: 600;
+    margin-bottom: 8px;
+  }
+  .usecase .uc-question {
+    font-weight: 700;
+    color: var(--text);
+    margin: 4px 0 8px;
+    font-size: 1rem;
+  }
+  .usecase p { margin: 8px 0; color: var(--muted); font-size: 0.93rem; }
+  .usecase .uc-gain {
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px dashed var(--border);
+    font-size: 0.88rem;
+    color: var(--green);
+    font-weight: 600;
+  }
+
+  /* Audience grid */
+  .audience {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 16px;
+    margin: 20px 0;
+  }
+  .audience-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 18px 20px;
+  }
+  .audience-card .a-title {
+    font-weight: 700;
+    color: var(--primary-dark);
+    margin-bottom: 4px;
+    font-size: 0.98rem;
+  }
+  .audience-card p { margin: 0; font-size: 0.88rem; color: var(--muted); }
+
+  footer {
+    text-align: center;
+    color: var(--muted);
+    font-size: 0.85rem;
+    margin-top: 64px;
+    padding-top: 24px;
+    border-top: 1px solid var(--border);
+  }
+
+  @media (max-width: 720px) {
+    .feature, .diff { grid-template-columns: 1fr; padding: 18px 20px; }
+    .feature-icon, .diff-num { width: 48px; height: 48px; font-size: 1.2rem; }
+    .diff-compare { grid-template-columns: 1fr; }
+    header.hero { padding: 36px 24px; }
+    header.hero h1 { font-size: 1.5rem; }
+  }
+
+  @media print {
+    body { background: #fff; }
+    .feature, .diff, .guard-card, .usecase, .audience-card, .problem-card, table.plans { page-break-inside: avoid; box-shadow: none; }
+    header.hero { box-shadow: none; }
+  }
+</style>
+</head>
+<body>
+<div class="container">
+
+<header class="hero">
+  <h1>AORIA RH : l'assistante juridique RH française, sourcée et spécialisée droit social</h1>
+  <p>
+    Une plateforme conversationnelle qui répond aux questions de droit social en
+    quelques secondes, en s'appuyant sur les bases juridiques officielles françaises
+    (Code du travail, conventions collectives, jurisprudence, décisions
+    constitutionnelles) et en citant chaque texte de façon vérifiable. Pensée pour
+    les équipes RH françaises, pas pour impressionner un comité d'innovation.
+  </p>
+  <span class="tagline">Document fonctionnel · Valeur produit et positionnement</span>
+</header>
+
+<div class="intro">
+  <p>
+    <strong>En bref :</strong> AORIA RH remplace les allers-retours entre plusieurs
+    outils de recherche juridique, la CCN imprimée sur le coin du bureau, les fiches
+    pratiques et l'appel au juriste externe par une seule interface qui répond, cite
+    ses sources et applique la hiérarchie des normes automatiquement. Sans hallucination,
+    sans données qui fuitent, sans mises à jour manuelles à maintenir.
+  </p>
+</div>
+
+<!-- ============ LE CONSTAT ============ -->
+<h2>Le constat : le droit social français est un casse-tête quotidien</h2>
+
+<p>
+  Un DRH, un chargé RH ou un élu CSE passe en moyenne plusieurs heures par semaine
+  à chercher des réponses dans des textes éparpillés et mouvants. Ce n'est pas un
+  problème de volonté ou de compétence — c'est un problème structurel.
+</p>
+
+<div class="problems">
+  <div class="problem-card">
+    <p class="p-title">Dispersion</p>
+    <p>Code du travail + convention collective + accord de branche + accord d'entreprise + règlement intérieur + contrat individuel. La bonne règle se cache toujours à la jonction de 2 ou 3 textes.</p>
+  </div>
+  <div class="problem-card">
+    <p class="p-title">Obsolescence</p>
+    <p>Les accords de branche sont mis à jour sans préavis. Une jurisprudence de 2024 peut rendre obsolète une pratique de 2019. Sans veille active, on applique des règles périmées.</p>
+  </div>
+  <div class="problem-card">
+    <p class="p-title">Hiérarchie</p>
+    <p>Quand deux sources se contredisent, laquelle prime&nbsp;? Ordre public absolu, principe de faveur, accords post-2017 — l'arbitrage est complexe.</p>
+  </div>
+  <div class="problem-card">
+    <p class="p-title">Hallucinations IA</p>
+    <p>Les IA généralistes (ChatGPT, Claude, Gemini) <strong>inventent des articles de loi</strong> et des arrêts qui n'existent pas. Rédhibitoire pour un usage juridique sérieux.</p>
+  </div>
+</div>
+
+<!-- ============ FONCTIONNALITÉS ============ -->
+<h2>Ce que AORIA RH permet de faire</h2>
+
+<p>
+  Toutes les fonctionnalités sont pensées pour un usage RH opérationnel. Chaque
+  brique résout un irritant quotidien précis, avec le détail du <em>pourquoi</em>
+  elle est construite comme elle l'est.
+</p>
+
+<div class="feature">
+  <div class="feature-icon">💬</div>
+  <div class="feature-body">
+    <div class="feature-title">Un chat juridique RH qui répond avec des sources vérifiables</div>
+    <p class="feature-tagline">Vous posez une question en langage naturel, la plateforme recherche dans sa base, cite chaque affirmation et permet de consulter la source en un clic.</p>
+    <p class="feature-desc">
+      Exemples de questions tapées en vrai : <em>« Quel préavis pour un CDI de 2 ans
+      en Syntec ? »</em>, <em>« Un salarié peut-il refuser un changement de lieu de
+      travail ? »</em>, <em>« Quelles mentions obligatoires sur un bulletin de paie
+      2026 ? »</em>. La réponse est structurée, tableaux comparatifs si pertinent,
+      chiffres en gras, délais signalés, et toujours avec des marqueurs [Source 1],
+      [Source 2]… reliés aux textes précis.
+    </p>
+    <div class="why-box">
+      <strong>Pourquoi c'est bien fait :</strong> la réponse n'est jamais générée "de mémoire"
+      par l'IA. Les sources pertinentes sont d'abord recherchées dans la base documentaire
+      vérifiée, puis seules ces sources sont fournies au modèle pour rédiger. Conséquence :
+      si la bonne information n'existe pas, l'assistant répond <em>« Je n'ai pas trouvé
+      de source fiable sur ce point »</em> au lieu d'inventer.
+    </div>
+    <div class="meta-row">
+      <span class="meta-label">Pour :</span>
+      <span class="pill">Questions ponctuelles</span>
+      <span class="pill">Veille juridique</span>
+      <span class="pill">Préparation de dossier</span>
+    </div>
+  </div>
+</div>
+
+<div class="feature">
+  <div class="feature-icon">📜</div>
+  <div class="feature-body">
+    <div class="feature-title">Installation des conventions collectives en un clic</div>
+    <p class="feature-tagline">Vous cherchez votre CCN par nom ou par code IDCC, vous l'installez, tout est indexé automatiquement.</p>
+    <p class="feature-desc">
+      La CCN est récupérée depuis la base officielle française des conventions
+      collectives. Sont indexés : le texte de base, les avenants en vigueur, les
+      annexes, les grilles salariales. Les articles abrogés sont filtrés
+      automatiquement. Une fois installée, votre CCN est connue de l'assistant
+      et sert de référence par défaut pour toutes vos questions.
+    </p>
+    <div class="why-box">
+      <strong>Pourquoi c'est bien fait :</strong> la CCN provient directement d'une
+      source officielle publique, pas d'un site tiers ni d'un agrégateur. Les mises
+      à jour (nouveaux avenants) sont synchronisées deux fois par mois, sans
+      intervention. Vous n'avez pas à maintenir votre propre copie.
+    </div>
+  </div>
+</div>
+
+<div class="feature">
+  <div class="feature-icon">⚖️</div>
+  <div class="feature-body">
+    <div class="feature-title">Jurisprudence récente toujours disponible</div>
+    <p class="feature-tagline">Les arrêts publiés de la chambre sociale de la Cour de cassation des 12 derniers mois, plus un échantillon des Cours d'appel.</p>
+    <p class="feature-desc">
+      La jurisprudence est récupérée dans la base officielle de la Cour de cassation.
+      Chaque arrêt est citable par son numéro de pourvoi (<em>Cass. soc., 15 mars
+      2023, n° 21-14.490</em>) et consultable dans son intégralité. L'initialisation
+      embarque 3 ans d'historique de Cour de cassation.
+    </p>
+    <div class="why-box">
+      <strong>Pourquoi c'est bien fait :</strong> un arrêt récent peut bouleverser
+      une pratique établie. L'assistant mobilise systématiquement la jurisprudence
+      la plus fraîche pour arbitrer, avec un boost explicite sur les contenus récents.
+    </div>
+  </div>
+</div>
+
+<div class="feature">
+  <div class="feature-icon">📂</div>
+  <div class="feature-body">
+    <div class="feature-title">Vos documents internes intégrés à la recherche</div>
+    <p class="feature-tagline">Chargez vos accords d'entreprise, règlement intérieur, contrats types, notes internes. L'assistant les utilise aussi dans ses réponses.</p>
+    <p class="feature-desc">
+      Formats acceptés : PDF avec texte, DOCX, TXT. Jusqu'à 10 Mo par fichier
+      (20 Mo côté admin). Vos documents restent <strong>cloisonnés à votre
+      organisation</strong> : invisibles pour les autres clients, invisibles même
+      pour l'équipe AORIA RH.
+    </p>
+    <div class="why-box">
+      <strong>Pourquoi c'est bien fait :</strong> les accords d'entreprise sont
+      souvent <em>plus favorables</em> que la CCN. Sans eux, la réponse peut
+      être juridiquement exacte mais pratiquement fausse dans votre contexte.
+      L'assistant applique automatiquement le principe de faveur.
+    </div>
+  </div>
+</div>
+
+<div class="feature">
+  <div class="feature-icon">🏢</div>
+  <div class="feature-body">
+    <div class="feature-title">Plusieurs organisations dans un seul compte</div>
+    <p class="feature-tagline">Pour les groupes, les cabinets, les ESN, les structures multi-établissements.</p>
+    <p class="feature-desc">
+      Chaque organisation a sa propre CCN, ses propres documents, ses propres
+      membres. Un consultant peut basculer d'un client à l'autre en 2 clics,
+      sans mélange des périmètres.
+    </p>
+    <div class="why-box">
+      <strong>Pourquoi c'est bien fait :</strong> le cloisonnement est appliqué
+      automatiquement à chaque requête, sans configuration. Zéro risque qu'un
+      dossier d'un client se retrouve dans la recherche d'un autre.
+    </div>
+  </div>
+</div>
+
+<div class="feature">
+  <div class="feature-icon">👥</div>
+  <div class="feature-body">
+    <div class="feature-title">Invitation et gestion d'équipe</div>
+    <p class="feature-tagline">Invitez vos collègues RH par email. Attribuez des rôles (manager, utilisateur). Révocable à tout moment.</p>
+    <p class="feature-desc">
+      Chaque utilisateur invité a son identité propre, son historique de
+      conversations, ses accès aux organisations. Le plan Équipe inclut 5
+      utilisateurs, le plan Groupe 10, avec possibilité d'ajouter des add-ons
+      utilisateurs à la carte.
+    </p>
+    <div class="why-box">
+      <strong>Pourquoi c'est bien fait :</strong> pas de compte générique partagé
+      qui traîne. Si un collaborateur quitte l'équipe, vous le désactivez, les
+      autres continuent sans interruption.
+    </div>
+  </div>
+</div>
+
+<div class="feature">
+  <div class="feature-icon">⚖️</div>
+  <div class="feature-body">
+    <div class="feature-title">Hiérarchie des normes appliquée automatiquement</div>
+    <p class="feature-tagline">9 niveaux juridiques (Constitution → traités → lois → jurisprudence → CCN → contrat) utilisés pour arbitrer entre sources contradictoires.</p>
+    <p class="feature-desc">
+      Quand deux sources divergent, l'assistant applique la règle de hiérarchie
+      pertinente (ordre public absolu, récence, principe de faveur, accord
+      d'entreprise post-2017) et <strong>l'indique explicitement dans la réponse</strong>.
+    </p>
+    <div class="why-box">
+      <strong>Pourquoi c'est bien fait :</strong> pas besoin d'être juriste pour
+      comprendre pourquoi telle règle l'emporte. L'assistant nomme la règle
+      appliquée et fournit les textes qui la fondent.
+    </div>
+  </div>
+</div>
+
+<div class="feature">
+  <div class="feature-icon">🗂️</div>
+  <div class="feature-body">
+    <div class="feature-title">Historique complet et suivi des conversations</div>
+    <p class="feature-tagline">Toutes vos questions et réponses sont conservées, organisées par conversation.</p>
+    <p class="feature-desc">
+      Vous pouvez reprendre un sujet plusieurs jours après, l'assistant garde le
+      contexte. Une recherche dans l'historique vous ramène à la bonne conversation
+      pour retrouver une ancienne réponse.
+    </p>
+    <div class="why-box">
+      <strong>Pourquoi c'est bien fait :</strong> le droit social est rarement
+      une question isolée. On revient régulièrement sur le même dossier avec
+      de nouveaux angles. AORIA RH le gère nativement.
+    </div>
+  </div>
+</div>
+
+<div class="feature">
+  <div class="feature-icon">📊</div>
+  <div class="feature-body">
+    <div class="feature-title">Quota mensuel transparent et booster à la demande</div>
+    <p class="feature-tagline">300 à 2 400 questions par mois selon le plan. Alerte à 80 % du quota. Booster +500 questions à 25 € si besoin.</p>
+    <p class="feature-desc">
+      Le compteur de questions est visible en permanence dans l'interface. Pas de
+      facture surprise : vous savez en temps réel où vous en êtes. Si un mois est
+      particulièrement chargé, le pack booster comble le besoin sans changement
+      de plan, et reste utilisable sans date limite.
+    </p>
+    <div class="why-box">
+      <strong>Pourquoi c'est bien fait :</strong> pas de blocage brutal, pas de
+      facturation à l'usage qui dérape. Vous dimensionnez votre plan en fonction
+      de votre consommation réelle, observée mois après mois.
+    </div>
+  </div>
+</div>
+
+<div class="feature">
+  <div class="feature-icon">🛠️</div>
+  <div class="feature-body">
+    <div class="feature-title">Gestion d'abonnement autonome, sans passer par le support</div>
+    <p class="feature-tagline">Résiliation, réactivation, changement de plan, mise à jour de la carte bancaire, téléchargement des factures PDF — tout se fait dans l'app.</p>
+    <p class="feature-desc">
+      Chaque abonné peut gérer l'intégralité de son cycle de vie depuis l'interface.
+      La résiliation prend effet à la fin de la période en cours (vous gardez l'accès
+      jusqu'au bout). La réactivation avant la date de fin annule la résiliation
+      d'un clic.
+    </p>
+    <div class="why-box">
+      <strong>Pourquoi c'est bien fait :</strong> aucune friction. Vous gardez la
+      main sur votre abonnement. Pas d'email à envoyer pour résilier, pas de
+      relance commerciale insistante.
+    </div>
+  </div>
+</div>
+
+<!-- ============ DIFFÉRENCIATEURS ============ -->
+<h2>Ce qui nous distingue des IA généralistes</h2>
+
+<p>
+  Beaucoup d'équipes RH ont essayé ChatGPT, Claude ou Gemini pour des questions
+  juridiques. Le verdict est toujours le même : bluffant sur la forme, inutilisable
+  sur le fond dès qu'on demande des sources vérifiables. Voici les 6 différences
+  structurelles.
+</p>
+
+<div class="diff">
+  <div class="diff-num">1</div>
+  <div class="diff-body">
+    <h3>Spécialisée droit social français, pas généraliste</h3>
+    <p>Nos modèles et notre base documentaire sont dédiés au droit social français. Pas de dispersion sur d'autres domaines.</p>
+    <div class="diff-compare">
+      <div class="diff-us">
+        <strong>AORIA RH :</strong> moteur de recherche sémantique spécialisé
+        juridique, entraîné sur le vocabulaire du droit. Comprend que
+        <em>« préavis de démission »</em> = <em>« délai-congé »</em> =
+        <em>« rupture à l'initiative du salarié »</em>.
+      </div>
+      <div class="diff-them">
+        <strong>ChatGPT / Claude / Gemini :</strong> modèles généralistes.
+        Ils connaissent un peu de tout, rien en profondeur. Ils font l'impasse
+        sur le vocabulaire juridique spécialisé français.
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="diff">
+  <div class="diff-num">2</div>
+  <div class="diff-body">
+    <h3>Base documentaire officielle et à jour</h3>
+    <p>Les sources ne viennent pas d'un entraînement figé. Elles sont récupérées auprès des producteurs officiels, en continu.</p>
+    <div class="diff-compare">
+      <div class="diff-us">
+        <strong>AORIA RH :</strong> toutes les bases officielles françaises du
+        droit social — textes légaux et réglementaires, conventions collectives,
+        jurisprudence, décisions constitutionnelles. Synchronisation automatique
+        2 fois par mois minimum, directement auprès des producteurs publics.
+      </div>
+      <div class="diff-them">
+        <strong>ChatGPT / Claude :</strong> connaissance figée à la date de
+        l'entraînement (souvent 6 à 24 mois en arrière). Arrêts et accords
+        récents : inconnus.
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="diff">
+  <div class="diff-num">3</div>
+  <div class="diff-body">
+    <h3>Sources citées et vérifiables à chaque réponse</h3>
+    <p>Chaque affirmation est liée à une source précise. Vous cliquez, vous lisez la source.</p>
+    <div class="diff-compare">
+      <div class="diff-us">
+        <strong>AORIA RH :</strong> citations obligatoires (<em>[Source 1]</em>,
+        <em>[Source 2]</em>…). Chaque source est consultable en un clic, avec
+        son texte intégral et ses métadonnées (article, date, juridiction,
+        numéro de pourvoi).
+      </div>
+      <div class="diff-them">
+        <strong>ChatGPT / Claude :</strong> fournit parfois des références, mais
+        elles sont souvent <strong>inventées</strong> (articles inexistants,
+        arrêts fictifs). C'est le problème bien documenté de l'hallucination.
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="diff">
+  <div class="diff-num">4</div>
+  <div class="diff-body">
+    <h3>Contexte d'entreprise appliqué automatiquement</h3>
+    <p>La plateforme sait pour quelle entreprise vous travaillez, quelle CCN vous s'applique, à quel profil métier vous correspondez.</p>
+    <div class="diff-compare">
+      <div class="diff-us">
+        <strong>AORIA RH :</strong> la CCN de votre organisation, la taille,
+        le secteur, le profil utilisateur sont transmis à chaque requête. La
+        réponse est directement contextualisée.
+      </div>
+      <div class="diff-them">
+        <strong>ChatGPT / Claude :</strong> il faut répéter le contexte dans
+        chaque conversation. On oublie un détail (l'effectif, la CCN), la
+        réponse est générique voire fausse.
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="diff">
+  <div class="diff-num">5</div>
+  <div class="diff-body">
+    <h3>Multi-tenant cloisonné, pas un compte personnel</h3>
+    <p>Les données de votre organisation sont isolées techniquement des autres clients. Vos documents ne servent pas à entraîner un modèle.</p>
+    <div class="diff-compare">
+      <div class="diff-us">
+        <strong>AORIA RH :</strong> cloisonnement appliqué par identifiant
+        d'organisation dans toutes les requêtes. Aucun chemin de fuite possible
+        entre deux clients.
+      </div>
+      <div class="diff-them">
+        <strong>ChatGPT / Claude :</strong> compte personnel ou abonnement
+        équipe. Les conversations peuvent être utilisées pour l'entraînement
+        (opt-out à activer à la main). Risque de fuite sensible via un
+        collègue curieux.
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="diff">
+  <div class="diff-num">6</div>
+  <div class="diff-body">
+    <h3>Hiérarchie des normes et principe de faveur intégrés</h3>
+    <p>L'assistant sait que le contrat ne peut pas contredire la CCN, qui ne peut pas contredire la loi, et que la règle la plus favorable au salarié s'applique en cas de doute.</p>
+    <div class="diff-compare">
+      <div class="diff-us">
+        <strong>AORIA RH :</strong> 9 niveaux hiérarchiques intégrés. L'assistant
+        nomme explicitement la règle d'arbitrage appliquée (ordre public, récence,
+        accord post-2017…).
+      </div>
+      <div class="diff-them">
+        <strong>ChatGPT / Claude :</strong> connaît les principes en théorie,
+        mais ne les applique pas systématiquement. Choisit souvent la source
+        la plus récente, pas forcément la bonne.
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ GARANTIES ============ -->
+<h2>Les garanties techniques et juridiques</h2>
+
+<p>
+  Au-delà des fonctionnalités, voici les engagements structurels d'AORIA RH —
+  ceux qui comptent pour une DSI, un DPO, ou un acheteur qui valide un outil RH.
+</p>
+
+<div class="guards">
+  <div class="guard-card">
+    <div class="g-title">Cloisonnement multi-tenant</div>
+    <div class="g-value">Strict</div>
+    <div class="g-desc">Vos données sont filtrées par organisation à chaque requête. Aucune fuite possible entre clients.</div>
+  </div>
+  <div class="guard-card">
+    <div class="g-title">Hébergement</div>
+    <div class="g-value">France / Europe</div>
+    <div class="g-desc">Serveurs VPS en France (OVHcloud). Pas de transit par les États-Unis pour les données applicatives.</div>
+  </div>
+  <div class="guard-card">
+    <div class="g-title">Sources officielles uniquement</div>
+    <div class="g-value">100 %</div>
+    <div class="g-desc">Bases juridiques publiques françaises exclusivement. Pas de sites tiers, pas d'agrégateurs non vérifiés, pas de forums.</div>
+  </div>
+  <div class="guard-card">
+    <div class="g-title">Mises à jour automatiques</div>
+    <div class="g-value">2 × par mois</div>
+    <div class="g-desc">CCN, codes et jurisprudence synchronisés en continu. Pas de source obsolète dans vos réponses.</div>
+  </div>
+  <div class="guard-card">
+    <div class="g-title">Anti-hallucination</div>
+    <div class="g-value">Par construction</div>
+    <div class="g-desc">Le modèle ne répond jamais de mémoire. Chaque affirmation s'appuie sur une source réellement présente en base.</div>
+  </div>
+  <div class="guard-card">
+    <div class="g-title">Traçabilité complète</div>
+    <div class="g-value">100 %</div>
+    <div class="g-desc">Chaque question enregistre le chemin complet suivi (sources, arbitrages). Audit possible à tout moment.</div>
+  </div>
+  <div class="guard-card">
+    <div class="g-title">Export RGPD</div>
+    <div class="g-value">À la demande</div>
+    <div class="g-desc">Export JSON intégral de vos données (article 15 et 20 RGPD). Aucun verrouillage.</div>
+  </div>
+  <div class="guard-card">
+    <div class="g-title">Paiement sécurisé</div>
+    <div class="g-value">Stripe</div>
+    <div class="g-desc">Cartes bancaires uniquement, aucune donnée de carte ne transite par nos serveurs. TVA intracom gérée.</div>
+  </div>
+  <div class="guard-card">
+    <div class="g-title">Rétention post-résiliation</div>
+    <div class="g-value">30 jours</div>
+    <div class="g-desc">Après résiliation, vos données sont conservées 30 jours. Vous pouvez reprendre votre abonnement sans rien perdre.</div>
+  </div>
+  <div class="guard-card">
+    <div class="g-title">Pas d'entraînement IA</div>
+    <div class="g-value">Jamais</div>
+    <div class="g-desc">Vos documents et conversations ne sont jamais utilisés pour entraîner un modèle. Usage strictement confiné à vos réponses.</div>
+  </div>
+  <div class="guard-card">
+    <div class="g-title">Langue native</div>
+    <div class="g-value">Français</div>
+    <div class="g-desc">Vocabulaire juridique français respecté, pas de traduction approximative depuis l'anglais.</div>
+  </div>
+  <div class="guard-card">
+    <div class="g-title">Alerte quota</div>
+    <div class="g-value">80 %</div>
+    <div class="g-desc">Vous êtes prévenu avant d'atteindre la limite mensuelle. Jamais de facture surprise.</div>
+  </div>
+</div>
+
+<!-- ============ PLANS ============ -->
+<h2>Les offres</h2>
+
+<p>
+  Essai gratuit de 14 jours sans carte bancaire. Engagement mensuel ou annuel
+  (2 mois offerts en annuel). Résiliation autonome depuis l'app.
+</p>
+
+<table class="plans">
+  <thead>
+    <tr>
+      <th>Offre</th>
+      <th>Pour qui</th>
+      <th>Utilisateurs</th>
+      <th>Organisations</th>
+      <th>Documents / org</th>
+      <th>Questions / mois</th>
+      <th>Prix mensuel</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td class="plan-name">Essai</td>
+      <td>Découverte, 14 jours</td>
+      <td>1</td>
+      <td>1</td>
+      <td>100</td>
+      <td>300</td>
+      <td class="plan-price">Gratuit</td>
+    </tr>
+    <tr>
+      <td class="plan-name">Solo</td>
+      <td>RH indépendant, dirigeant-RRH de PME</td>
+      <td>1</td>
+      <td>1</td>
+      <td>100</td>
+      <td>300</td>
+      <td class="plan-price">79 € HT</td>
+    </tr>
+    <tr class="featured-row">
+      <td class="plan-name">Équipe <span class="featured-badge">Le plus choisi</span></td>
+      <td>Service RH d'une PME-ETI, cabinet conseil RH</td>
+      <td>5 inclus</td>
+      <td>3</td>
+      <td>300</td>
+      <td>900</td>
+      <td class="plan-price">149 € HT</td>
+    </tr>
+    <tr>
+      <td class="plan-name">Groupe</td>
+      <td>Groupe multi-filiales, ESN, accompagnement multi-clients</td>
+      <td>10 inclus</td>
+      <td>10</td>
+      <td>1 000</td>
+      <td>2 400</td>
+      <td class="plan-price">279 € HT</td>
+    </tr>
+  </tbody>
+</table>
+
+<div class="highlight">
+  <strong>En annuel :</strong> les mêmes offres reviennent à 790 € / 1 490 € /
+  2 790 € HT — soit <strong>2 mois offerts</strong> (~17 % d'économie).
+</div>
+
+<h3>Add-ons à la carte</h3>
+<div class="guards">
+  <div class="guard-card">
+    <div class="g-title">+1 utilisateur</div>
+    <div class="g-value">15 € HT / mois</div>
+    <div class="g-desc">Jusqu'à 3 add-ons utilisateurs par plan commercial.</div>
+  </div>
+  <div class="guard-card">
+    <div class="g-title">+1 organisation</div>
+    <div class="g-value">19 € HT / mois</div>
+    <div class="g-desc">Pour les structures qui grossissent sans changer d'offre.</div>
+  </div>
+  <div class="guard-card">
+    <div class="g-title">+500 documents</div>
+    <div class="g-value">10 € HT / mois</div>
+    <div class="g-desc">Augmente la limite de documents par organisation, si votre base interne est volumineuse.</div>
+  </div>
+  <div class="guard-card">
+    <div class="g-title">Pack booster</div>
+    <div class="g-value">25 € HT</div>
+    <div class="g-desc">+500 questions sans date limite, utilisable quand la consommation dépasse le quota mensuel.</div>
+  </div>
+</div>
+
+<!-- ============ CAS D'USAGE ============ -->
+<h2>Cas d'usage concrets</h2>
+
+<p>
+  Quelques situations vécues au quotidien par nos utilisateurs et ce qu'AORIA RH
+  apporte par rapport à une recherche Google ou à un appel au juriste externe.
+</p>
+
+<div class="usecase">
+  <div class="uc-persona">DRH de PME</div>
+  <div class="uc-question">« Un salarié en arrêt maladie depuis 6 mois, puis-je le licencier ? »</div>
+  <p>
+    La réponse dépend de la CCN (durée de garantie d'emploi), de la possibilité
+    de remplacement définitif, et d'une procédure stricte à respecter. AORIA RH
+    croise les 3 niveaux (loi, CCN, jurisprudence) en une seule réponse.
+  </p>
+  <div class="uc-gain">⏱ 3 secondes au lieu de 45 minutes de recherche dispersée</div>
+</div>
+
+<div class="usecase">
+  <div class="uc-persona">Chargée de paie</div>
+  <div class="uc-question">« Quelles sont les mentions obligatoires sur un bulletin de paie simplifié en 2026 ? »</div>
+  <p>
+    La réglementation évolue chaque année. Une mention omise peut entraîner
+    un redressement URSSAF. AORIA RH donne la liste à jour avec l'article du
+    Code du travail correspondant.
+  </p>
+  <div class="uc-gain">✅ Conformité garantie avec source citée</div>
+</div>
+
+<div class="usecase">
+  <div class="uc-persona">Élu CSE</div>
+  <div class="uc-question">« L'employeur peut-il refuser la consultation du CSE sur ce projet ? »</div>
+  <p>
+    L'élu n'est pas juriste, mais il doit parfois contrer des positions patronales
+    qui empiètent sur les prérogatives du CSE. AORIA RH fournit les articles
+    applicables et la jurisprudence récente pour étayer la position.
+  </p>
+  <div class="uc-gain">🎯 Argumentaire juridique prêt à l'emploi</div>
+</div>
+
+<div class="usecase">
+  <div class="uc-persona">Cabinet de conseil RH</div>
+  <div class="uc-question">« Pour ce client en Syntec, un accord d'intéressement est-il opposable au nouveau salarié ? »</div>
+  <p>
+    La réponse dépend du Code du travail, de la CCN Syntec, et de l'accord
+    d'entreprise lui-même. Le cabinet peut charger l'accord du client, interroger
+    AORIA RH, et obtenir une analyse croisée des trois niveaux.
+  </p>
+  <div class="uc-gain">💼 Valeur ajoutée consultant démultipliée</div>
+</div>
+
+<div class="usecase">
+  <div class="uc-persona">Dirigeant d'ETI</div>
+  <div class="uc-question">« Quel est l'impact de l'arrêt Cour de cassation du 15 mars 2023 sur notre politique de temps de trajet ? »</div>
+  <p>
+    Un arrêt récent peut bouleverser une pratique établie. AORIA RH lit l'arrêt
+    dans son contexte, croise avec le Code du travail, et indique les actions
+    à mener.
+  </p>
+  <div class="uc-gain">🔄 Veille juridique qui ne rate rien</div>
+</div>
+
+<div class="usecase">
+  <div class="uc-persona">Manager d'équipe</div>
+  <div class="uc-question">« Un collaborateur demande un congé spécial pour hospitalisation d'un parent. Dois-je l'accorder ? »</div>
+  <p>
+    Question micro, enjeu réel pour le manager. AORIA RH indique en 3 secondes
+    le cadre légal, les jours accordés, et les conditions d'ouverture du droit.
+  </p>
+  <div class="uc-gain">⚡ Réponse immédiate sans solliciter la DRH</div>
+</div>
+
+<!-- ============ AUDIENCE ============ -->
+<h2>Pour qui est faite AORIA RH</h2>
+
+<p>
+  La plateforme est conçue pour tous les profils qui manipulent du droit social
+  au quotidien, sans être nécessairement juristes de formation.
+</p>
+
+<div class="audience">
+  <div class="audience-card">
+    <div class="a-title">DRH / RRH</div>
+    <p>Professionnels RH qui veulent une veille continue et des réponses rapides sans ouvrir 6 onglets Légifrance.</p>
+  </div>
+  <div class="audience-card">
+    <div class="a-title">Chargés RH</div>
+    <p>Gestion de la paie, des contrats, des congés, des procédures disciplinaires. Besoin de réponses fiables au quotidien.</p>
+  </div>
+  <div class="audience-card">
+    <div class="a-title">Élus CSE</div>
+    <p>Pour maîtriser les prérogatives du comité et préparer les réunions avec les bons arguments juridiques.</p>
+  </div>
+  <div class="audience-card">
+    <div class="a-title">Dirigeants PME</div>
+    <p>Sans DRH interne, ils gèrent eux-mêmes les questions sociales courantes. AORIA RH leur évite un abonnement juridique coûteux.</p>
+  </div>
+  <div class="audience-card">
+    <div class="a-title">Consultants RH</div>
+    <p>Cabinets de conseil qui multiplient les dossiers clients variés, avec des CCN et des accords différents pour chaque mission.</p>
+  </div>
+  <div class="audience-card">
+    <div class="a-title">Formateurs RH</div>
+    <p>Besoin de sources à jour pour alimenter cours et supports. AORIA RH fournit la source exacte à citer dans les supports.</p>
+  </div>
+</div>
+
+<!-- ============ SYNTHÈSE ============ -->
+<h2>En synthèse : pourquoi choisir AORIA RH</h2>
+
+<div class="intro">
+  <p>
+    AORIA RH n'est pas un ChatGPT saupoudré de marketing RH. C'est une plateforme
+    construite spécifiquement pour le droit social français, avec des choix
+    d'architecture qui garantissent trois choses essentielles&nbsp;:
+  </p>
+</div>
+
+<ul style="font-size:0.98rem; line-height:1.7;">
+  <li>
+    <strong>La confiance dans les réponses.</strong> Le pipeline de recherche
+    augmentée (RAG) empêche structurellement l'IA d'inventer. Chaque affirmation
+    a une source vérifiable en 1 clic.
+  </li>
+  <li>
+    <strong>La fraîcheur des sources.</strong> Les CCN, codes et jurisprudence
+    sont synchronisés automatiquement en permanence. Vous ne travaillez jamais
+    sur une version obsolète.
+  </li>
+  <li>
+    <strong>La sécurité des données.</strong> Hébergement en France, cloisonnement
+    multi-tenant strict, pas d'entraînement IA sur vos documents, export RGPD
+    à la demande. Compatible avec les exigences DSI / DPO des grandes structures.
+  </li>
+</ul>
+
+<p style="margin-top: 20px;">
+  Commencez par 14 jours d'essai gratuit, sans carte bancaire, avec 300 questions
+  incluses et une convention collective installable. Si la plateforme vous
+  convient, vous passez en offre payante en un clic. Sinon, votre compte s'arrête
+  — sans engagement, sans relance commerciale insistante.
+</p>
+
+<footer>
+  AORIA RH — Valeur produit et positionnement · Document fonctionnel
+</footer>
+
+</div>
+</body>
+</html>
