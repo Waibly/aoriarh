@@ -338,7 +338,7 @@ function RegisterForm() {
             icon={<User className="h-3.5 w-3.5" />}
             label="Compte"
           />
-          <div className="h-px w-6 bg-border" />
+          <div className="h-px w-3 sm:w-6 bg-border shrink-0" />
           <StepBadge
             step={2}
             current={step}
@@ -354,21 +354,21 @@ function RegisterForm() {
             icon={<User className="h-3.5 w-3.5" />}
             label="Compte"
           />
-          <div className="h-px w-6 bg-border" />
+          <div className="h-px w-3 sm:w-6 bg-border shrink-0" />
           <StepBadge
             step={2}
             current={step}
             icon={<Briefcase className="h-3.5 w-3.5" />}
             label="Espace"
           />
-          <div className="h-px w-6 bg-border" />
+          <div className="h-px w-3 sm:w-6 bg-border shrink-0" />
           <StepBadge
             step={3}
             current={step}
             icon={<Building2 className="h-3.5 w-3.5" />}
             label="Organisation"
           />
-          <div className="h-px w-6 bg-border" />
+          <div className="h-px w-3 sm:w-6 bg-border shrink-0" />
           <StepBadge
             step={4}
             current={step}
@@ -804,14 +804,15 @@ function StepBadge({
 
   return (
     <div
-      className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold transition-all ${
+      className={`flex items-center gap-1.5 rounded-full px-2 sm:px-3 py-1.5 text-xs font-semibold transition-all ${
         isActive || isDone
           ? "bg-primary/10 text-primary"
           : "bg-muted text-muted-foreground"
       }`}
+      aria-label={label}
     >
       {isDone ? <Check className="h-3.5 w-3.5" /> : icon}
-      <span>{label}</span>
+      <span className="hidden sm:inline">{label}</span>
     </div>
   );
 }
