@@ -364,9 +364,18 @@ export default function DocumentsPage() {
 
   // ---- Derived data ----
 
-  // Internal docs (excluding CCN documents)
+  // Internal docs: only the org's own uploads. Common-corpus documents
+  // (organisation_id=null, e.g. KALI accord_branche / CCN) are managed by
+  // AORIA RH and shown separately in the Convention collective section —
+  // they must not appear here, as the user can't update or delete them
+  // (the backend rejects with 404 since they don't belong to the org).
   const internalDocs = useMemo(
-    () => documents.filter((d) => d.source_type !== "convention_collective_nationale"),
+    () =>
+      documents.filter(
+        (d) =>
+          d.organisation_id !== null &&
+          d.source_type !== "convention_collective_nationale",
+      ),
     [documents],
   );
 
