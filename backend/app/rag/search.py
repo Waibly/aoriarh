@@ -191,12 +191,22 @@ class HybridSearch:
                     )
                 )
         else:
-            # No IDCC list — include all common docs (backward compatible)
+            # No IDCC list installed → exclude ALL CCN/accord_branche docs to
+            # avoid leaking content from sectors that don't apply to this org.
+            # Universal common docs (Code du travail, jurisprudence, doctrine,
+            # etc.) remain accessible.
             should_conditions.append(
-                FieldCondition(
-                    key="organisation_id",
-                    match=MatchValue(value="common"),
-                ),
+                Filter(
+                    must=[
+                        FieldCondition(key="organisation_id", match=MatchValue(value="common")),
+                    ],
+                    must_not=[
+                        FieldCondition(
+                            key="source_type",
+                            match=MatchAny(any=_ccn_source_types),
+                        ),
+                    ],
+                )
             )
 
         org_filter = Filter(should=should_conditions)

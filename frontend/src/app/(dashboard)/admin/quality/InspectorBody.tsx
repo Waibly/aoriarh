@@ -422,9 +422,11 @@ export function InspectorBody({ data }: { data: InspectorPayload }) {
               </div>
             </div>
           ) : (
-            <div className="text-muted-foreground italic">
-              Aucune CCN installée — la recherche ne filtre pas par IDCC, toutes
-              les CCN du corpus commun peuvent remonter.
+            <div className="text-orange-700 dark:text-orange-300 bg-orange-50 dark:bg-orange-950/30 border border-orange-200 dark:border-orange-900 rounded px-2 py-1.5">
+              <span className="font-semibold">Aucune CCN installée.</span> La
+              recherche exclut désormais toutes les CCN/accords de branche pour
+              éviter de remonter des sources hors-secteur. L&apos;utilisateur
+              doit installer sa CCN dans son profil organisation.
             </div>
           )}
         </div>

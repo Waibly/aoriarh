@@ -156,10 +156,22 @@ def _build_org_access_filter(
                 )
             )
     else:
+        # No IDCC installed → exclude ALL CCN/accord_branche docs to avoid
+        # leaking content from sectors that don't apply to this org.
         should.append(
-            FieldCondition(
-                key="organisation_id",
-                match=MatchValue(value="common"),
+            Filter(
+                must=[
+                    FieldCondition(
+                        key="organisation_id",
+                        match=MatchValue(value="common"),
+                    ),
+                ],
+                must_not=[
+                    FieldCondition(
+                        key="source_type",
+                        match=MatchAny(any=ccn_types),
+                    ),
+                ],
             )
         )
     return Filter(should=should)
