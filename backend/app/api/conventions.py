@@ -27,10 +27,13 @@ router = APIRouter()
 async def search_ccn(
     q: str = Query("", description="Recherche par nom ou IDCC"),
     limit: int = Query(20, ge=1, le=500),
-    user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> CcnSearchResult:
-    """Search available conventions collectives by name or IDCC."""
+    """Search available conventions collectives by name or IDCC.
+
+    Public endpoint: the KALI CCN reference list is public knowledge,
+    and the signup flow needs to query it before the user is authenticated.
+    """
     service = CcnService(db)
     results = await service.search_ccn(q, limit)
     return CcnSearchResult(

@@ -23,6 +23,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { PROFIL_METIER_OPTIONS } from "@/types/api";
+import type { CcnReference } from "@/types/api";
+import { CcnSelector } from "@/components/ccn-selector";
 import { UserCog } from "lucide-react";
 
 const API_BASE_URL =
@@ -98,8 +100,9 @@ function RegisterForm() {
   // Step 2 — Espace de travail
   const [workspaceName, setWorkspaceName] = useState("");
 
-  // Step 3 — Organisation
+  // Step 3 — Organisation (nom + CCN(s) installées)
   const [orgName, setOrgName] = useState("");
+  const [selectedCcns, setSelectedCcns] = useState<CcnReference[]>([]);
 
   // Step 4 — Profil métier (also used in invitation step 2)
   const [profilMetier, setProfilMetier] = useState("");
@@ -177,17 +180,49 @@ function RegisterForm() {
         }
       }
 
-      // 3. Create first org if name provided (use token from register response)
+      // 3. Create first org with CCN label, then install CCNs
       if (orgName.trim() && registerData?.access_token) {
         try {
-          await fetch(`${API_BASE_URL}/organisations/`, {
+          const ccnLabel =
+            selectedCcns.length > 0
+              ? selectedCcns
+                  .map((c) => `${c.titre_court || c.titre} (IDCC ${c.idcc})`)
+                  .join(", ")
+              : null;
+
+          const orgRes = await fetch(`${API_BASE_URL}/organisations/`, {
             method: "POST",
             headers: {
               "Content-Type": "application/json",
               Authorization: `Bearer ${registerData.access_token}`,
             },
-            body: JSON.stringify({ name: orgName.trim() }),
+            body: JSON.stringify({
+              name: orgName.trim(),
+              convention_collective: ccnLabel,
+            }),
           });
+
+          if (orgRes.ok && selectedCcns.length > 0) {
+            const orgData = await orgRes.json();
+            // Install each selected CCN. Fire-and-forget per IDCC: if one
+            // fails (e.g. quota or already installed), the others still go
+            // through. The actual KALI sync runs async via the worker.
+            await Promise.all(
+              selectedCcns.map((c) =>
+                fetch(
+                  `${API_BASE_URL}/conventions/organisations/${orgData.id}`,
+                  {
+                    method: "POST",
+                    headers: {
+                      "Content-Type": "application/json",
+                      Authorization: `Bearer ${registerData.access_token}`,
+                    },
+                    body: JSON.stringify({ idcc: c.idcc }),
+                  },
+                ).catch(() => null),
+              ),
+            );
+          }
         } catch {
           // Non-blocking — org can be created later
         }
@@ -489,7 +524,7 @@ function RegisterForm() {
           </form>
         )}
 
-        {/* Step 3 — Organisation */}
+        {/* Step 3 — Organisation + CCN */}
         {step === 3 && !isInvitation && (
           <form
             onSubmit={(e) => {
@@ -516,6 +551,23 @@ function RegisterForm() {
                   conversations. Vous pourrez en créer d&apos;autres plus tard.
                 </p>
               </div>
+
+              <div className="grid gap-2">
+                <Label>
+                  Convention(s) collective(s){" "}
+                  <span className="text-destructive">*</span>
+                </Label>
+                <CcnSelector
+                  selected={selectedCcns}
+                  onChange={setSelectedCcns}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Sans CCN, l&apos;assistant ne pourra pas appuyer ses réponses
+                  sur votre convention collective. Vous pouvez en
+                  ajouter/retirer plus tard depuis le profil de l&apos;organisation.
+                </p>
+              </div>
+
               <div className="flex gap-3">
                 <Button
                   type="button"
@@ -529,6 +581,7 @@ function RegisterForm() {
                 <Button
                   type="submit"
                   className="flex-1"
+                  disabled={selectedCcns.length === 0}
                 >
                   Suivant
                   <ArrowRight className="ml-2 h-4 w-4" />

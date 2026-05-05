@@ -21,14 +21,16 @@ import { apiFetch } from "@/lib/api";
 import type { CcnReference } from "@/types/api";
 
 interface CcnSelectorProps {
-  token: string;
+  /** Optional bearer token. The /conventions/search endpoint is public,
+   * so the selector also works during the signup wizard before auth. */
+  token?: string;
   selected: CcnReference[];
   onChange: (selected: CcnReference[]) => void;
   disabled?: boolean;
 }
 
 export function CcnSelector({
-  token,
+  token = "",
   selected,
   onChange,
   disabled,
