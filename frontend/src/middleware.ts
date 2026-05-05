@@ -43,5 +43,9 @@ export default auth((req) => {
 });
 
 export const config = {
-  matcher: ["/((?!api|_next/static|_next/image|favicon\\.ico|icon\\.png|apple-icon\\.png|logo-aoria\\.png|icon-aoria\\.png|robots\\.txt).*)"],
+  // Skip API, Next internals, and any file with a static-asset extension
+  // (svg, png, jpg, jpeg, gif, webp, ico, woff, woff2, ttf, eot, txt).
+  matcher: [
+    "/((?!api|_next/static|_next/image|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico|woff|woff2|ttf|eot|txt)$).*)",
+  ],
 };
