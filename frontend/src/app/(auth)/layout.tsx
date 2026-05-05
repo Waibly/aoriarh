@@ -11,7 +11,7 @@ export default function AuthLayout({
           src="/icon-aoria-white.svg"
           alt=""
           aria-hidden
-          className="pointer-events-none select-none absolute -right-[15%] top-1/2 -translate-y-1/2 h-[120%] w-auto opacity-[0.15] mix-blend-screen"
+          className="pointer-events-none select-none absolute -right-[8%] top-1/2 -translate-y-1/2 h-[55%] w-auto opacity-[0.15] mix-blend-screen"
         />
 
         {/* Logo */}
