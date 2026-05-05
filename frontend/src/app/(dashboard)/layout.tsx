@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
 import Image from "next/image";
 import { Menu } from "lucide-react";
+import { toast } from "sonner";
 import { Sidebar } from "@/components/sidebar";
 import { TrialBanner } from "@/components/trial-banner";
 import { CcnInstallBanner } from "@/components/ccn-install-banner";
@@ -26,6 +27,27 @@ export default function DashboardLayout({
   useEffect(() => {
     setOpen(false);
   }, [pathname]);
+
+  // Surface CCN install errors propagated from the signup wizard via the
+  // ?ccn_install_error=... query param. Fires once on mount of the dashboard,
+  // wherever the user lands (typically /chat). Strips the param afterwards
+  // so the toast does not re-fire on subsequent client-side navigations.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    const err = params.get("ccn_install_error");
+    if (!err) return;
+    toast.error(`Installation de la convention impossible — ${err}`, {
+      duration: 8000,
+    });
+    params.delete("ccn_install_error");
+    const qs = params.toString();
+    window.history.replaceState(
+      {},
+      "",
+      `${window.location.pathname}${qs ? `?${qs}` : ""}`,
+    );
+  }, []);
 
   return (
     <Sheet open={open} onOpenChange={setOpen}>

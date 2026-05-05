@@ -273,15 +273,14 @@ function RegisterForm() {
         return;
       }
 
-      // After a fresh signup, land on /documents so the user sees the CCN
-      // sync progressing and can immediately add their internal documents
-      // (accord d'entreprise, règlement intérieur, etc.) — landing on /chat
-      // would let them ask questions before the CCN is ready.
-      const landing = callbackUrl || (isInvitation ? "/chat" : "/documents");
+      // Land on /chat — the product's core value. The CcnInstallBanner
+      // (mounted in the dashboard layout) keeps the user informed of the
+      // CCN install status wherever they go, so we don't need to force
+      // them through the documents page.
+      const landing = callbackUrl || "/chat";
 
-      // Surface CCN install errors as a query param so /documents can render
-      // a clear toast/banner with what went wrong. Account is already created
-      // at this point — don't block the redirect.
+      // Surface CCN install errors as a query param. A global toast handler
+      // in the dashboard layout fires the message wherever the user lands.
       if (ccnInstallErrors.length > 0) {
         const params = new URLSearchParams({
           ccn_install_error: ccnInstallErrors.join(" • "),

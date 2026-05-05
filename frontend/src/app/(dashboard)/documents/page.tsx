@@ -158,27 +158,6 @@ export default function DocumentsPage() {
   const { currentOrg } = useOrg();
   const token = session?.access_token;
 
-  // Surface CCN install errors propagated from the signup wizard, then drop
-  // the query param so the toast does not re-fire on every navigation.
-  // Reading window.location avoids a Suspense boundary on this page; the
-  // effect runs only on the client where window is defined.
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    const params = new URLSearchParams(window.location.search);
-    const err = params.get("ccn_install_error");
-    if (!err) return;
-    toast.error(`Installation de la convention impossible — ${err}`, {
-      duration: 8000,
-    });
-    params.delete("ccn_install_error");
-    const qs = params.toString();
-    window.history.replaceState(
-      {},
-      "",
-      qs ? `/documents?${qs}` : "/documents",
-    );
-  }, []);
-
   const [documents, setDocuments] = useState<Document[]>([]);
   const [conventions, setConventions] = useState<OrganisationConvention[]>([]);
   const [loading, setLoading] = useState(false);
