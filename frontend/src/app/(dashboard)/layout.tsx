@@ -46,10 +46,10 @@ export default function DashboardLayout({
               </Button>
             </SheetTrigger>
             <Image
-              src="/logo-aoria.png"
+              src="/logo-aoria.svg"
               alt="AORIA RH"
               width={120}
-              height={32}
+              height={26}
               priority
             />
           </header>

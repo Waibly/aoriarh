@@ -7,9 +7,18 @@ export default function AuthLayout({
 }) {
   return (
     <div className="container relative grid min-h-svh flex-col items-center justify-center bg-white dark:bg-background lg:max-w-none lg:grid-cols-2 lg:px-0">
-      <div className="bg-primary text-primary-foreground relative hidden h-full flex-col p-10 lg:flex">
+      <div className="bg-primary text-primary-foreground relative hidden h-full flex-col overflow-hidden p-10 lg:flex">
+        <Image
+          src="/icon-aoria.png"
+          alt=""
+          aria-hidden
+          width={900}
+          height={900}
+          priority
+          className="pointer-events-none select-none absolute -right-[20%] top-1/2 -translate-y-1/2 w-[85%] max-w-[700px] opacity-[0.08] mix-blend-screen"
+        />
         <div className="relative z-20 flex items-center text-lg font-medium">
-          <Image src="/logo-aoria.png" alt="AORIA RH" width={140} height={40} priority />
+          <Image src="/logo-aoria-white.svg" alt="AORIA RH" width={160} height={34} priority />
         </div>
         <div className="relative z-20 mt-auto">
           <p className="text-2xl font-semibold leading-snug">
