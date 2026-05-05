@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSession } from "next-auth/react";
-import { useRouter, useSearchParams } from "next/navigation";
 import {
   ArrowDown,
   ArrowUp,
@@ -159,23 +158,28 @@ function formatDate(iso: string): string {
 export default function DocumentsPage() {
   const { data: session } = useSession();
   const { currentOrg } = useOrg();
-  const router = useRouter();
-  const searchParams = useSearchParams();
   const token = session?.access_token;
 
   // Surface CCN install errors propagated from the signup wizard, then drop
   // the query param so the toast does not re-fire on every navigation.
+  // Reading window.location avoids a Suspense boundary on this page; the
+  // effect runs only on the client where window is defined.
   useEffect(() => {
-    const err = searchParams.get("ccn_install_error");
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    const err = params.get("ccn_install_error");
     if (!err) return;
     toast.error(`Installation de la convention impossible — ${err}`, {
       duration: 8000,
     });
-    const params = new URLSearchParams(searchParams.toString());
     params.delete("ccn_install_error");
     const qs = params.toString();
-    router.replace(qs ? `/documents?${qs}` : "/documents");
-  }, [searchParams, router]);
+    window.history.replaceState(
+      {},
+      "",
+      qs ? `/documents?${qs}` : "/documents",
+    );
+  }, []);
 
   const [documents, setDocuments] = useState<Document[]>([]);
   const [conventions, setConventions] = useState<OrganisationConvention[]>([]);
