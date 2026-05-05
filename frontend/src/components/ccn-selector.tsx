@@ -27,6 +27,10 @@ interface CcnSelectorProps {
   selected: CcnReference[];
   onChange: (selected: CcnReference[]) => void;
   disabled?: boolean;
+  /** Maximum number of CCN that can be selected. When provided and reached,
+   * picking a new one replaces the previous selection (single-select behaviour
+   * when maxSelected=1). */
+  maxSelected?: number;
 }
 
 export function CcnSelector({
@@ -34,6 +38,7 @@ export function CcnSelector({
   selected,
   onChange,
   disabled,
+  maxSelected,
 }: CcnSelectorProps) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -74,6 +79,12 @@ export function CcnSelector({
     const exists = selected.find((s) => s.idcc === ccn.idcc);
     if (exists) {
       onChange(selected.filter((s) => s.idcc !== ccn.idcc));
+    } else if (maxSelected === 1) {
+      // Single-select: replace any existing selection.
+      onChange([ccn]);
+    } else if (maxSelected !== undefined && selected.length >= maxSelected) {
+      // Limit reached: ignore additional picks (the consumer can render a hint).
+      return;
     } else {
       onChange([...selected, ccn]);
     }

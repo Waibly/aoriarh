@@ -103,6 +103,10 @@ function RegisterForm() {
   // Step 3 — Organisation (nom + CCN(s) installées)
   const [orgName, setOrgName] = useState("");
   const [selectedCcns, setSelectedCcns] = useState<CcnReference[]>([]);
+  // "Ma CCN n'est pas dans la liste" : permet de saisir un libellé manuel
+  // sans déclencher l'installation KALI.
+  const [ccnNotListed, setCcnNotListed] = useState(false);
+  const [manualCcnLabel, setManualCcnLabel] = useState("");
 
   // Step 4 — Profil métier (also used in invitation step 2)
   const [profilMetier, setProfilMetier] = useState("");
@@ -181,10 +185,14 @@ function RegisterForm() {
       }
 
       // 3. Create first org with CCN label, then install CCNs
+      // Errors here are non-fatal (the user account is created), but we
+      // surface them via the page error so the user can react.
+      const ccnInstallErrors: string[] = [];
       if (orgName.trim() && registerData?.access_token) {
         try {
-          const ccnLabel =
-            selectedCcns.length > 0
+          const ccnLabel = ccnNotListed
+            ? manualCcnLabel.trim() || null
+            : selectedCcns.length > 0
               ? selectedCcns
                   .map((c) => `${c.titre_court || c.titre} (IDCC ${c.idcc})`)
                   .join(", ")
@@ -202,14 +210,14 @@ function RegisterForm() {
             }),
           });
 
-          if (orgRes.ok && selectedCcns.length > 0) {
+          if (orgRes.ok && !ccnNotListed && selectedCcns.length > 0) {
             const orgData = await orgRes.json();
-            // Install each selected CCN. Fire-and-forget per IDCC: if one
-            // fails (e.g. quota or already installed), the others still go
-            // through. The actual KALI sync runs async via the worker.
-            await Promise.all(
-              selectedCcns.map((c) =>
-                fetch(
+            // Install each selected CCN sequentially so we keep error
+            // visibility per IDCC. The KALI sync itself runs async via the
+            // worker — we just enqueue here.
+            for (const c of selectedCcns) {
+              try {
+                const r = await fetch(
                   `${API_BASE_URL}/conventions/organisations/${orgData.id}`,
                   {
                     method: "POST",
@@ -219,12 +227,24 @@ function RegisterForm() {
                     },
                     body: JSON.stringify({ idcc: c.idcc }),
                   },
-                ).catch(() => null),
-              ),
-            );
+                );
+                if (!r.ok) {
+                  const data = await r.json().catch(() => null);
+                  const detail =
+                    typeof data?.detail === "string"
+                      ? data.detail
+                      : `Erreur ${r.status}`;
+                  ccnInstallErrors.push(`IDCC ${c.idcc} : ${detail}`);
+                }
+              } catch (err) {
+                ccnInstallErrors.push(
+                  `IDCC ${c.idcc} : ${err instanceof Error ? err.message : "erreur réseau"}`,
+                );
+              }
+            }
           }
         } catch {
-          // Non-blocking — org can be created later
+          // Non-blocking — org can be re-created later
         }
       }
 
@@ -253,7 +273,23 @@ function RegisterForm() {
         return;
       }
 
-      router.push(callbackUrl || "/chat");
+      // After a fresh signup, land on /documents so the user sees the CCN
+      // sync progressing and can immediately add their internal documents
+      // (accord d'entreprise, règlement intérieur, etc.) — landing on /chat
+      // would let them ask questions before the CCN is ready.
+      const landing = callbackUrl || (isInvitation ? "/chat" : "/documents");
+
+      // Surface CCN install errors as a query param so /documents can render
+      // a clear toast/banner with what went wrong. Account is already created
+      // at this point — don't block the redirect.
+      if (ccnInstallErrors.length > 0) {
+        const params = new URLSearchParams({
+          ccn_install_error: ccnInstallErrors.join(" • "),
+        });
+        router.push(`${landing}?${params.toString()}`);
+      } else {
+        router.push(landing);
+      }
       router.refresh();
     } catch {
       setError("Une erreur est survenue. Veuillez réessayer.");
@@ -554,17 +590,47 @@ function RegisterForm() {
 
               <div className="grid gap-2">
                 <Label>
-                  Convention(s) collective(s){" "}
+                  Convention collective{" "}
                   <span className="text-destructive">*</span>
                 </Label>
-                <CcnSelector
-                  selected={selectedCcns}
-                  onChange={setSelectedCcns}
-                />
+                {!ccnNotListed && (
+                  <CcnSelector
+                    selected={selectedCcns}
+                    onChange={setSelectedCcns}
+                    maxSelected={1}
+                  />
+                )}
+                {ccnNotListed && (
+                  <Input
+                    type="text"
+                    placeholder="Ex : Convention de la coiffure (à défaut)"
+                    value={manualCcnLabel}
+                    onChange={(e) => setManualCcnLabel(e.target.value)}
+                  />
+                )}
+                <label className="flex items-start gap-2 text-xs text-muted-foreground select-none cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={ccnNotListed}
+                    onChange={(e) => {
+                      setCcnNotListed(e.target.checked);
+                      if (e.target.checked) {
+                        setSelectedCcns([]);
+                      } else {
+                        setManualCcnLabel("");
+                      }
+                    }}
+                    className="mt-0.5"
+                  />
+                  <span>
+                    Ma convention n&apos;est pas dans la liste (saisie libre,
+                    sans installation automatique).
+                  </span>
+                </label>
                 <p className="text-xs text-muted-foreground">
-                  Sans CCN, l&apos;assistant ne pourra pas appuyer ses réponses
-                  sur votre convention collective. Vous pouvez en
-                  ajouter/retirer plus tard depuis le profil de l&apos;organisation.
+                  {ccnNotListed
+                    ? "Votre convention sera enregistrée comme libellé. AORIA RH ne pourra pas la consulter dans ses réponses tant qu'elle n'est pas ajoutée à notre référentiel."
+                    : "Plan d'essai : 1 convention. AORIA RH la récupère automatiquement depuis le service public KALI (1-2 minutes)."}
                 </p>
               </div>
 
@@ -581,7 +647,12 @@ function RegisterForm() {
                 <Button
                   type="submit"
                   className="flex-1"
-                  disabled={selectedCcns.length === 0}
+                  disabled={
+                    !orgName.trim() ||
+                    (ccnNotListed
+                      ? !manualCcnLabel.trim()
+                      : selectedCcns.length === 0)
+                  }
                 >
                   Suivant
                   <ArrowRight className="ml-2 h-4 w-4" />

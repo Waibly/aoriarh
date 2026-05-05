@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSession } from "next-auth/react";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   ArrowDown,
   ArrowUp,
@@ -158,7 +159,23 @@ function formatDate(iso: string): string {
 export default function DocumentsPage() {
   const { data: session } = useSession();
   const { currentOrg } = useOrg();
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const token = session?.access_token;
+
+  // Surface CCN install errors propagated from the signup wizard, then drop
+  // the query param so the toast does not re-fire on every navigation.
+  useEffect(() => {
+    const err = searchParams.get("ccn_install_error");
+    if (!err) return;
+    toast.error(`Installation de la convention impossible — ${err}`, {
+      duration: 8000,
+    });
+    const params = new URLSearchParams(searchParams.toString());
+    params.delete("ccn_install_error");
+    const qs = params.toString();
+    router.replace(qs ? `/documents?${qs}` : "/documents");
+  }, [searchParams, router]);
 
   const [documents, setDocuments] = useState<Document[]>([]);
   const [conventions, setConventions] = useState<OrganisationConvention[]>([]);

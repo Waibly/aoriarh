@@ -6,6 +6,7 @@ import Image from "next/image";
 import { Menu } from "lucide-react";
 import { Sidebar } from "@/components/sidebar";
 import { TrialBanner } from "@/components/trial-banner";
+import { CcnInstallBanner } from "@/components/ccn-install-banner";
 import { Button } from "@/components/ui/button";
 import {
   Sheet,
@@ -63,6 +64,7 @@ export default function DashboardLayout({
             />
           </header>
           <TrialBanner />
+          <CcnInstallBanner />
           <main className="flex min-h-0 flex-1 flex-col p-4 sm:p-6 md:p-8 lg:px-10 lg:py-8">
             {children}
           </main>
