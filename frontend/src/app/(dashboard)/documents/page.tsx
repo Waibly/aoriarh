@@ -7,10 +7,8 @@ import {
   ArrowUp,
   ArrowUpDown,
   CheckCircle2,
-  ChevronDown,
   ChevronLeft,
   ChevronRight,
-  ChevronUp,
   Download,
   Edit,
   FileText,
@@ -195,14 +193,14 @@ export default function DocumentsPage() {
   const [removeCcnIdcc, setRemoveCcnIdcc] = useState<string | null>(null);
   const [activeCategoryKey, setActiveCategoryKey] = useState<string>("all");
   const [activeCcnIdcc, setActiveCcnIdcc] = useState<string | null>(null);
-  const [ccnCollapsed, setCcnCollapsed] = useState<boolean>(() => {
-    if (typeof window === "undefined") return false;
-    return window.localStorage.getItem("aoria.docs.ccnCollapsed") === "1";
-  });
+  // Drop any leftover collapse pref from older versions: the section is now
+  // always expanded — the previous toggle was confusing (when collapsed,
+  // users thought no CCN was installed and clicked "Installer une convention"
+  // to add a duplicate).
   useEffect(() => {
     if (typeof window === "undefined") return;
-    window.localStorage.setItem("aoria.docs.ccnCollapsed", ccnCollapsed ? "1" : "0");
-  }, [ccnCollapsed]);
+    window.localStorage.removeItem("aoria.docs.ccnCollapsed");
+  }, []);
 
   // Debounce the search input: filtering happens 200 ms after the last
   // keystroke, not on every letter. Prevents a re-render burst when the
@@ -512,24 +510,9 @@ export default function DocumentsPage() {
                   )}
                 </>
               )}
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-8 w-8"
-                onClick={() => setCcnCollapsed((v) => !v)}
-                aria-label={ccnCollapsed ? "Déplier" : "Replier"}
-                title={ccnCollapsed ? "Déplier" : "Replier"}
-              >
-                {ccnCollapsed ? (
-                  <ChevronDown className="h-4 w-4" />
-                ) : (
-                  <ChevronUp className="h-4 w-4" />
-                )}
-              </Button>
             </div>
           </div>
         </CardHeader>
-        {!ccnCollapsed && (
         <CardContent>
           {loading && conventions.length === 0 ? (
             <Skeleton className="h-32 w-full" />
@@ -596,7 +579,6 @@ export default function DocumentsPage() {
             </Tabs>
           )}
         </CardContent>
-        )}
       </Card>
 
       {/* ---------------- SECTION 2 : Vos documents internes ---------------- */}
