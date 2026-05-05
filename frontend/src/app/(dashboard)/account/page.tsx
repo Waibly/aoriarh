@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useSession } from "next-auth/react";
-import { Pencil, KeyRound, Briefcase } from "lucide-react";
+import { useSession, signOut } from "next-auth/react";
+import { Pencil, KeyRound, Briefcase, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { apiFetch } from "@/lib/api";
 import { useOrg } from "@/lib/org-context";
@@ -52,6 +52,7 @@ export default function AccountPage() {
   const [editOpen, setEditOpen] = useState(false);
   const [passwordOpen, setPasswordOpen] = useState(false);
   const [workspaceEditOpen, setWorkspaceEditOpen] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
 
   useEffect(() => {
     if (!token) return;
@@ -199,6 +200,36 @@ export default function AccountPage() {
           </CardHeader>
         </Card>
       )}
+
+      {user.role !== "admin" && (
+        <Card className="border-destructive/40">
+          <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="space-y-1.5">
+              <CardTitle className="text-destructive">Zone dangereuse</CardTitle>
+              <CardDescription>
+                La suppression de votre compte est définitive. Toutes vos
+                organisations, documents et conversations seront effacés.
+              </CardDescription>
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              className="text-destructive hover:bg-destructive/10 hover:text-destructive border-destructive/40 self-start sm:self-auto"
+              onClick={() => setDeleteOpen(true)}
+            >
+              <Trash2 className="mr-2 h-4 w-4" />
+              Supprimer mon compte
+            </Button>
+          </CardHeader>
+        </Card>
+      )}
+
+      <DeleteAccountDialog
+        open={deleteOpen}
+        onOpenChange={setDeleteOpen}
+        token={token}
+        isOwner={Boolean(workspaceName)}
+      />
 
       <EditProfileDialog
         open={editOpen}
@@ -536,6 +567,141 @@ function RenameWorkspaceDialog({
           <DialogFooter>
             <Button type="submit" disabled={submitting || !name.trim()}>
               {submitting ? "Enregistrement..." : "Enregistrer"}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/* ---- Delete Account Dialog ---- */
+
+const DELETE_PHRASE = "SUPPRIMER MON COMPTE";
+
+interface DeleteAccountDialogProps {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  token?: string;
+  /** True if the user owns a workspace (manager). Used to warn that all
+   * organisations, documents and conversations of the workspace will be
+   * irreversibly deleted along with the user. */
+  isOwner: boolean;
+}
+
+function DeleteAccountDialog({
+  open,
+  onOpenChange,
+  token,
+  isOwner,
+}: DeleteAccountDialogProps) {
+  const [confirmation, setConfirmation] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!open) {
+      setConfirmation("");
+      setError(null);
+      setSubmitting(false);
+    }
+  }, [open]);
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!token) return;
+    if (confirmation !== DELETE_PHRASE) return;
+    setError(null);
+    setSubmitting(true);
+    try {
+      await apiFetch("/users/me", {
+        method: "DELETE",
+        token,
+        body: JSON.stringify({ confirmation }),
+      });
+      // Don't toast — the redirect will signal success.
+      await signOut({ callbackUrl: "/login" });
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Impossible de supprimer le compte. Réessayez ou contactez le support.",
+      );
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle className="text-destructive">
+            Supprimer définitivement votre compte
+          </DialogTitle>
+          <DialogDescription>
+            Cette action est irréversible.
+          </DialogDescription>
+        </DialogHeader>
+        <form onSubmit={handleSubmit} className="space-y-4 pt-2">
+          <div className="rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm space-y-2">
+            <p className="font-medium">Ce qui sera supprimé :</p>
+            <ul className="list-disc pl-5 space-y-1 text-muted-foreground">
+              <li>Votre compte utilisateur et vos données personnelles</li>
+              {isOwner && (
+                <>
+                  <li>
+                    Toutes les organisations de votre espace de travail
+                  </li>
+                  <li>Tous les documents importés et leurs vecteurs</li>
+                  <li>L&apos;historique de toutes les conversations</li>
+                  <li>Les membres invités sur votre espace de travail</li>
+                </>
+              )}
+            </ul>
+            {isOwner && (
+              <p className="text-xs text-muted-foreground pt-1">
+                Si vous avez un abonnement payant actif, pensez à le résilier
+                au préalable depuis{" "}
+                <a
+                  href="/billing"
+                  className="underline hover:text-foreground"
+                >
+                  Abonnement
+                </a>{" "}
+                pour éviter une facturation parallèle.
+              </p>
+            )}
+          </div>
+          <div className="space-y-1">
+            <Label htmlFor="delete-confirmation">
+              Tapez{" "}
+              <span className="font-mono font-semibold">{DELETE_PHRASE}</span>{" "}
+              pour confirmer
+            </Label>
+            <Input
+              id="delete-confirmation"
+              value={confirmation}
+              onChange={(e) => setConfirmation(e.target.value)}
+              autoComplete="off"
+              autoFocus
+            />
+          </div>
+          {error && <p className="text-sm text-destructive">{error}</p>}
+          <DialogFooter className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => onOpenChange(false)}
+              disabled={submitting}
+            >
+              Annuler
+            </Button>
+            <Button
+              type="submit"
+              variant="destructive"
+              disabled={submitting || confirmation !== DELETE_PHRASE}
+            >
+              {submitting ? "Suppression..." : "Supprimer définitivement"}
             </Button>
           </DialogFooter>
         </form>
