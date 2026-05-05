@@ -6,12 +6,12 @@ export default function AuthLayout({
   return (
     <div className="container relative grid min-h-svh flex-col items-center justify-center bg-white dark:bg-background lg:max-w-none lg:grid-cols-2 lg:px-0">
       <div className="bg-primary text-primary-foreground relative hidden h-full flex-col overflow-hidden p-10 lg:flex">
-        {/* Filigrane icône */}
+        {/* Filigrane icône blanche, sans fond */}
         <img
-          src="/icon-aoria.png"
+          src="/icon-aoria-white.svg"
           alt=""
           aria-hidden
-          className="pointer-events-none select-none absolute -right-[20%] top-1/2 -translate-y-1/2 w-[85%] max-w-[720px] opacity-[0.08] mix-blend-screen"
+          className="pointer-events-none select-none absolute -right-[18%] top-1/2 -translate-y-1/2 h-[110%] w-auto opacity-[0.07]"
         />
 
         {/* Logo */}
@@ -19,31 +19,22 @@ export default function AuthLayout({
           <img
             src="/logo-aoria-white.svg"
             alt="AORIA RH"
-            className="h-9 w-auto"
+            width={160}
+            height={34}
+            className="block"
           />
         </div>
 
         {/* Pitch */}
-        <div className="relative z-20 mt-auto max-w-md space-y-6">
+        <div className="relative z-20 mt-auto max-w-md">
           <p className="text-3xl font-semibold leading-tight">
-            Le Code du travail, votre CCN
+            Votre expert juridique RH,
             <br />
-            et vos accords — au même endroit.
+            toujours à portée de question.
           </p>
-          <ul className="space-y-2 text-base text-primary-foreground/85">
-            <li className="flex items-start gap-2">
-              <span aria-hidden className="mt-1 inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-primary-foreground/70" />
-              <span>Posez vos questions RH en langage naturel</span>
-            </li>
-            <li className="flex items-start gap-2">
-              <span aria-hidden className="mt-1 inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-primary-foreground/70" />
-              <span>Recevez des réponses sourcées, articles à l&apos;appui</span>
-            </li>
-            <li className="flex items-start gap-2">
-              <span aria-hidden className="mt-1 inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-primary-foreground/70" />
-              <span>Convention collective &amp; jurisprudence à jour</span>
-            </li>
-          </ul>
+          <p className="mt-4 text-base text-primary-foreground/80 leading-relaxed">
+            Des réponses fiables, sourcées et adaptées à votre contexte.
+          </p>
         </div>
       </div>
       <div className="lg:p-8">
