@@ -590,7 +590,7 @@ function RegisterForm() {
               <div className="grid gap-2">
                 <Label>
                   Convention collective{" "}
-                  <span className="text-destructive">*</span>
+                  <span className="text-xs text-muted-foreground font-normal">(facultatif)</span>
                 </Label>
                 {!ccnNotListed && (
                   <CcnSelector
@@ -629,7 +629,7 @@ function RegisterForm() {
                 <p className="text-xs text-muted-foreground">
                   {ccnNotListed
                     ? "Votre convention sera enregistrée comme libellé. AORIA RH ne pourra pas la consulter dans ses réponses tant qu'elle n'est pas ajoutée à notre référentiel."
-                    : "Plan d'essai : 1 convention. AORIA RH la récupère automatiquement depuis le service public KALI (1-2 minutes)."}
+                    : "Si votre entreprise applique une CCN, AORIA RH la récupère automatiquement depuis KALI (1-2 minutes). Vous pouvez aussi laisser vide et l'ajouter plus tard."}
                 </p>
               </div>
 
@@ -646,12 +646,7 @@ function RegisterForm() {
                 <Button
                   type="submit"
                   className="flex-1"
-                  disabled={
-                    !orgName.trim() ||
-                    (ccnNotListed
-                      ? !manualCcnLabel.trim()
-                      : selectedCcns.length === 0)
-                  }
+                  disabled={!orgName.trim()}
                 >
                   Suivant
                   <ArrowRight className="ml-2 h-4 w-4" />
