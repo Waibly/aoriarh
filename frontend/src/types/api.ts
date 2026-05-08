@@ -65,7 +65,7 @@ export interface Document {
   chunk_count: number | null;
   indexation_progress: number | null;
   indexation_error: string | null;
-  uploaded_by: string;
+  uploaded_by: string | null;
   file_size: number | null;
   file_format: string | null;
   created_at: string;

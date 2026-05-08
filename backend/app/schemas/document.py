@@ -28,7 +28,7 @@ class DocumentRead(BaseModel):
                 "Veuillez le réindexer ou contacter le support."
             )
         return self
-    uploaded_by: uuid.UUID
+    uploaded_by: uuid.UUID | None
     file_size: int | None
     file_format: str | None
     created_at: datetime
