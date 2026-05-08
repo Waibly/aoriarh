@@ -70,10 +70,14 @@ class IntentResult:
 
 _PATTERNS_INTERNALS = [
     r"\b(quel|quelle|quels|quelles)\s+(modèle|llm|ia|moteur|outil|techno|stack|prompt|framework|librairie|reranker|embedding|vector|base de données)\b",
+    # 'c'est quoi les techno', 'tu utilises quoi', 'ça tourne avec quoi'
+    r"\b(c'est quoi|qu'est[- ]ce que c'est|qu'est[- ]ce que)\s+(les|le|la|ton|ta|tes|votre|vos)?\s*(techno|technologie|stack|modèle|llm|ia|outil|moteur|infrastructure|prompt|framework|librairie)\b",
+    r"\b(t['eu]|tu|vous)\s+(utilis\w*|tournes?\s+(avec|sur)|emploies?|fonctionne(s|z)?\s+avec)\s+(quoi|quel|quelle|quels|quelles|un|une|du|de la|des|le|la|les|comme)",
     r"\b(comment|de quelle (façon|manière))\s+(tu|vous)\s+(es codé|fonctionne|fonctionnez|marche|marches|es construit|es entraîné|es développ)",
     r"\b(reveal|montre|affiche|donne|donne-moi|liste)\s+(ton|tes|votre|vos)\s+(prompt|system|instruction|outil|sources internes|architecture|secret)",
     r"\b(ignore|oublie|forget)\s+(les|tes|toutes les)\s+(consigne|instruction|précédent|précédente)",
-    r"\b(open\s*ai|gpt|claude|anthropic|gemini|mistral|llama|qdrant|pinecone|weaviate|voyage|cohere)\b",
+    # Mots-clés de fournisseurs / techno (catch-all même sans contexte)
+    r"\b(open\s*ai|chatgpt|gpt[- ]?\d|claude|anthropic|gemini|mistral|llama|qdrant|pinecone|weaviate|voyage|cohere|elasticsearch|llamaindex|langchain)\b",
     r"\bsystem\s*prompt\b",
     r"\bton\s+(prompt|système|architecture|infrastructure|hébergeur)\b",
 ]
@@ -90,13 +94,24 @@ _PATTERNS_SOURCES = [
 ]
 
 _PATTERNS_SCOPE = [
-    r"\b(tu|vous)\s+(connais|connaissez|sait|savez|maîtris|gèr|couvr)",
-    r"\b(es-tu|êtes-vous|es tu)\s+(spécialisé|expert|capable)",
-    r"\b(peux-tu|peut-on|peut on|pouvez-vous)\s+(répondre|me parler|m'aider)",
-    r"\b(quelles?\s+convention(s)?\s+collectives?)\b",
-    r"\b(quelles?\s+(idcc|ccn))\b",
-    r"\b(droit\s+(polynésien|monégasque|suisse|belge|allemand|américain|anglais|chinois|américain|étranger|international))\b",
+    # ⚠️ Patterns volontairement spécifiques. Ne PAS ajouter un déclencheur
+    # large type "(tu|vous)\s+connais" — il attrape des questions juridiques
+    # légitimes ("tu connais les ordonnances Macron ?", "tu connais l'arrêt
+    # du 25/03/2024 ?"). En cas d'ambiguïté on laisse le LLM classifier
+    # trancher (cf. _CLASSIFIER_PROMPT) ou on tombe en RAG par défaut.
+    r"\b(es-tu|êtes-vous|es tu)\s+(spécialisé|expert|capable)\b",
+    r"\b(peux-tu|peut-on|peut on|pouvez-vous)\s+(répondre|me parler|m'aider)\s+(sur|à propos de|en (matière|droit))",
+    r"\b(quelles?\s+convention(s)?\s+collectives?)\s+(tu|vous|que tu|que vous)\s+(connais|connaissez|maîtris|couvr|gèr)",
+    r"\b(quelles?\s+(idcc|ccn))\s+(tu|vous)\b",
+    # Droits étrangers / autres branches du droit (catch direct, hors RH FR)
+    r"\b(droit\s+(polynésien|monégasque|suisse|belge|allemand|américain|anglais|chinois|québécois|étranger|international))\b",
     r"\b(droit\s+(pénal|fiscal|commercial|civil|de la famille|administratif|immobilier|notarial))\b",
+    r"\b(code\s+(pénal|civil|de commerce|fiscal|général des impôts|de la route|de la santé|de la consommation))\b",
+    # 'code du travail suisse/belge/...' — texte FR mais juridiction étrangère
+    r"\b(code\s+\w+(\s+\w+){0,3})\s+(suisse|belge|allemand|américain|anglais|chinois|québécois|monégasque|polynésien|étranger)\b",
+    r"\b(loi|législation|réglementation)\s+(suisse|belge|allemande|américaine|anglaise|chinoise|québécoise|monégasque|polynésienne|étrangère)\b",
+    # "tu connais X" UNIQUEMENT si X est un signal hors-scope évident
+    r"\b(tu|vous)\s+(connais|connaissez|sait|savez|maîtris)\b[^.?!]{0,40}\b(droit\s+(polynésien|monégasque|suisse|belge|allemand|américain|anglais|chinois|étranger|international|pénal|fiscal|commercial|civil|administratif|immobilier|notarial)|code\s+(pénal|civil|de commerce|fiscal))\b",
 ]
 
 _PATTERNS_CAPABILITIES = [
@@ -248,24 +263,36 @@ Tu es un classifieur d'intention pour un assistant juridique RH français.
 Catégorise la question utilisateur en exactement UNE des 7 catégories :
 
 - legal_question : vraie question juridique RH (contrat, paie, congés, \
-licenciement, CSE, CCN, durée du travail, etc.)
+licenciement, CSE, CCN, durée du travail, ordonnances, lois, arrêts, \
+décrets, jurisprudence, etc.)
 - meta_capabilities : "que sais-tu faire", "à quoi tu sers", "présente-toi"
-- meta_scope : "tu connais le X", "es-tu spécialisé en Y" (la personne \
-demande si tu COUVRES un sujet, sans poser une vraie question dessus)
+- meta_scope : la personne demande si tu COUVRES un sujet HORS droit social \
+français (autre branche, droit étranger). PAS pour les textes/notions de \
+droit social FR (ordonnances Macron, loi Travail, loi El Khomri, Code du \
+travail, CCN, accords de branche, arrêts de la Cour de cassation…) → ces \
+sujets sont legal_question.
 - meta_sources : "tes sources datent de quand", "à quelle date"
 - meta_internals : "quel modèle / IA / pipeline / framework / system prompt \
-/ comment tu es codé" (TOUTE question sur le fonctionnement technique \
-interne — ⚠️ catégorie sensible)
+/ comment tu es codé / tu utilises quoi / c'est quoi les techno" (TOUTE \
+question sur le fonctionnement technique interne — ⚠️ catégorie sensible)
 - out_of_scope : sujet hors droit social français (recette, droit étranger, \
 droit fiscal/pénal/etc.)
 - greeting : "bonjour", "merci", salutation pure sans question
 
 Réponds par un JSON exact, sans texte autour : {"intent": "<catégorie>"}
 
+Exemples :
+- "tu connais les ordonnances Macron ?" → legal_question (texte de droit \
+social FR de 2017)
+- "tu connais le droit polynésien ?" → meta_scope (droit étranger)
+- "tu utilises quoi comme IA ?" → meta_internals
+- "calcul indemnité licenciement économique" → legal_question
+
 Si tu hésites entre legal_question et autre chose, choisis legal_question \
 (le RAG sera lancé, c'est sécuritaire).
 Si la question contient des mots-clés techniques (modèle, prompt, qdrant, \
-openai, gpt, claude, anthropic), choisis meta_internals SANS HÉSITATION.
+openai, gpt, claude, anthropic, stack, framework), choisis meta_internals \
+SANS HÉSITATION.
 """
 
 
