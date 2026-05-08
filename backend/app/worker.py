@@ -1324,15 +1324,31 @@ async def run_ccn_blue_green_cleanup(ctx: dict, old_doc_ids: list[str]) -> None:
 
 
 async def run_daily_bocc_check(ctx: dict) -> None:
-    """Cron quotidien : vérifie si DILA a publié un nouveau BOCC.
+    """Cron quotidien : vérifie une FENÊTRE GLISSANTE de semaines récentes.
 
-    Sans args : run_bocc_sync calcule automatiquement (semaine ISO actuelle - 2,
-    car DILA publie avec ~2 semaines de retard). Si pas encore publié, on
-    sort proprement (sync_log success / 0 items, pas d'erreur).
+    DILA publie les BOCC avec un délai variable (typiquement 2-4 semaines).
+    Si on ne checkait qu'UNE semaine (current ISO - 2), on raterait toute
+    publication tardive : exemple, on check le mardi, DILA publie le jeudi,
+    le lundi suivant on est passé à la semaine ISO suivante et on ne revient
+    plus jamais sur la précédente.
+
+    Solution : on rebalaye les 6 dernières semaines (du W-7 au W-2). Pour
+    chaque semaine :
+    - déjà en BoccIssue → skip silencieux (idempotent)
+    - 404 chez DILA → toujours pas publiée, skip silencieux
+    - 200 → on traite et on enregistre
+    Sortie : sync_log unique avec total_processed / total_skipped /
+    total_errors (vrais erreurs uniquement, pas les 404).
     """
+    import datetime as dt
+    import time as _time
+
     session_factory = ctx["session_factory"]
-    # Récupère un admin pour attribuer la sync (n'importe lequel — c'est
-    # uniquement utilisé pour tracer qui a déclenché côté audit).
+    sync_log_id = await _create_sync_log(session_factory, "bocc")
+    t0 = _time.perf_counter()
+
+    # Récupère un admin pour attribuer la sync (n'importe lequel — utilisé
+    # uniquement pour le champ user_id côté audit).
     async with session_factory() as db:
         from app.models.user import User
         admin_q = await db.execute(
@@ -1341,8 +1357,91 @@ async def run_daily_bocc_check(ctx: dict) -> None:
         admin = admin_q.scalar_one_or_none()
     if admin is None:
         logger.warning("Daily BOCC check: aucun admin trouvé, skip")
+        await _finish_sync_log(
+            session_factory, sync_log_id,
+            success=False, errors=1, error_message="Aucun admin pour attribuer la sync",
+            duration_ms=int((_time.perf_counter() - t0) * 1000),
+        )
         return
-    await run_bocc_sync(ctx, str(admin.id))
+    admin_id = admin.id
+
+    from app.models.bocc_issue import BoccIssue
+    from app.services.bocc_service import BoccService
+    from datetime import UTC, datetime
+    bocc_service = BoccService()
+
+    today = dt.date.today()
+    # Fenêtre [W-7, W-2] — 6 semaines, couvre les publications tardives DILA
+    # tout en restant léger (6 HTTP HEAD/GET maxi par jour).
+    candidates: list[tuple[int, int]] = []
+    d = today - dt.timedelta(weeks=2)
+    while d >= today - dt.timedelta(weeks=7):
+        yw = d.isocalendar()
+        candidates.append((yw[0], yw[1]))
+        d -= dt.timedelta(weeks=1)
+
+    total_found = 0
+    total_ingested = 0
+    total_processed = 0
+    total_skipped = 0
+    total_errors = 0
+    error_messages: list[str] = []
+
+    async with session_factory() as db:
+        for year, week in candidates:
+            numero = f"{year}-{week:02d}"
+            existing = await db.execute(
+                select(BoccIssue).where(BoccIssue.numero == numero)
+            )
+            if existing.scalar_one_or_none():
+                total_skipped += 1
+                continue
+            try:
+                res = await bocc_service.process_issue(db, year, week, admin_id)
+                if res.not_yet_available:
+                    logger.info("Daily BOCC: %s pas encore publié, skip", numero)
+                    continue
+                issue = BoccIssue(
+                    numero=numero, year=year, week=week,
+                    avenants_count=res.avenants_found,
+                    avenants_ingested=res.avenants_ingested,
+                    status=("error" if res.errors > 0 and res.avenants_found == 0
+                            else "processed"),
+                    error_message=("; ".join(res.error_messages[:3])
+                                   if res.error_messages else None),
+                    processed_at=datetime.now(UTC),
+                )
+                db.add(issue)
+                await db.commit()
+                total_found += res.avenants_found
+                total_ingested += res.avenants_ingested
+                total_errors += res.errors
+                total_processed += 1
+                if res.error_messages:
+                    error_messages.extend(res.error_messages[:2])
+                logger.info(
+                    "Daily BOCC: %s traité — %d trouvés, %d ingérés",
+                    numero, res.avenants_found, res.avenants_ingested,
+                )
+            except Exception as exc:
+                logger.exception("Daily BOCC: %s a échoué", numero)
+                total_errors += 1
+                error_messages.append(f"{numero}: {str(exc)[:120]}")
+
+    await _finish_sync_log(
+        session_factory, sync_log_id,
+        success=total_errors == 0,
+        items_fetched=total_found,
+        items_created=total_ingested,
+        items_skipped=total_skipped,
+        errors=total_errors,
+        error_message="; ".join(error_messages[:3]) if error_messages else None,
+        duration_ms=int((_time.perf_counter() - t0) * 1000),
+    )
+    logger.info(
+        "Daily BOCC check done — %d traité, %d skip (déjà fait ou pas publié), %d erreurs",
+        total_processed, total_skipped, total_errors,
+    )
 
 
 def _parse_redis_settings() -> RedisSettings:
