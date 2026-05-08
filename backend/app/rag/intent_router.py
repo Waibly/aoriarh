@@ -80,9 +80,12 @@ _PATTERNS_INTERNALS = [
 
 _PATTERNS_SOURCES = [
     r"\b(quelle|quels|quelles)\s+(sont|seraient)?\s*(tes|vos|les)\s+sources\b",
-    r"\b(date|datent|datant|à jour|jour de la maj|dernière (synchro|maj|mise à jour))\b.*\b(source|donn|corpus|index|base)",
+    # 'tes sources datent de quand', 'corpus à jour', 'dernière maj des données'
+    r"\b(source|donn|corpus|index|base)\w*\s+\w*\s*(date|datent|datant|à jour|jour|mis à jour|maj|mise à jour|actualisé|récent|publi|update)",
+    r"\b(date|datent|datant|à jour|jour de la maj|dernière (synchro|maj|mise à jour))\b[^.?!]{0,40}\b(source|donn|corpus|index|base)",
     r"\b(d'où|d ou|où|ou)\s+(viennent|proviennent)\s+(tes|vos|les)\s+(sources|données|informations)",
-    r"\b(à\s+quand|de\s+quand)\s+(date|datent)\s+(tes|vos|les)\s+(sources|données|infos)",
+    r"\b(à\s+quand|de\s+quand)\s+(date|datent)\s+(tes|vos|les)?\s*(sources|données|infos)?",
+    r"\b(de\s+quand|à\s+quelle\s+date|quand)\s+(date|datent)",
     r"\bcorpus\s+(à jour|mis à jour|actualisé|récent)",
 ]
 
@@ -297,7 +300,8 @@ async def _classify_via_llm(query: str, llm: AsyncOpenAI) -> Intent:
                 {"role": "user", "content": query[:1000]},
             ],
             temperature=0.0,
-            max_tokens=30,
+            # gpt-5 family rejects max_tokens, exige max_completion_tokens.
+            max_completion_tokens=30,
             response_format={"type": "json_object"},
         )
         content = response.choices[0].message.content or "{}"

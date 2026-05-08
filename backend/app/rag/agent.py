@@ -978,7 +978,7 @@ class RAGAgent:
                 {"role": "user", "content": user_content},
             ],
             temperature=0.0,
-            max_tokens=400,
+            max_completion_tokens=400,
         )
         if response.usage:
             await cost_tracker.log(
