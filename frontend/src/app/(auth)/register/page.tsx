@@ -15,6 +15,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { PasswordInput } from "@/components/password-input";
 import {
   Select,
   SelectContent,
@@ -423,9 +424,8 @@ function RegisterForm() {
               </div>
               <div className="grid gap-2">
                 <Label htmlFor="password">Mot de passe</Label>
-                <Input
+                <PasswordInput
                   id="password"
-                  type="password"
                   placeholder="8 caractères minimum"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
@@ -437,9 +437,8 @@ function RegisterForm() {
                 <Label htmlFor="confirmPassword">
                   Confirmer le mot de passe
                 </Label>
-                <Input
+                <PasswordInput
                   id="confirmPassword"
-                  type="password"
                   placeholder="Retapez votre mot de passe"
                   value={confirmPassword}
                   onChange={(e) => setConfirmPassword(e.target.value)}
