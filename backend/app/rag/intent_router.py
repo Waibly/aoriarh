@@ -163,52 +163,31 @@ _ANSWER_OUT_OF_SCOPE = (
 
 
 async def _answer_sources_status(db: AsyncSession) -> str:
-    """Réponse 'tes sources datent de quand' avec données réelles depuis sync_logs.
+    """Réponse 'tes sources datent de quand' — date la plus récente, sans détail.
 
-    On ne donne pas de noms de services tiers — juste la date de la dernière
-    synchro réussie par grand type de corpus.
+    On ne donne PAS la liste des types de corpus internes (ça leak la structure
+    de notre indexation). Juste la dernière date de mise à jour globale.
     """
     from app.models.sync_log import SyncLog
 
-    # Dernière sync réussie par type
     res = await db.execute(
-        select(
-            SyncLog.sync_type,
-            func.max(SyncLog.completed_at).label("last_ok"),
-        )
-        .where(SyncLog.status == "success")
-        .group_by(SyncLog.sync_type)
+        select(func.max(SyncLog.completed_at)).where(SyncLog.status == "success")
     )
-    rows = res.all()
-    by_type: dict[str, datetime] = {r[0]: r[1] for r in rows if r[1] is not None}
+    last_sync = res.scalar_one_or_none()
 
-    type_label = {
-        "legi": "Code du travail et codes connexes",
-        "code_travail": "Code du travail",
-        "kali": "Conventions collectives",
-        "judilibre": "Jurisprudence",
-        "bocc": "Bulletins officiels (avenants CCN)",
-    }
-
-    lines: list[str] = []
-    for key, label in type_label.items():
-        ts = by_type.get(key)
-        if ts is not None:
-            lines.append(f"- **{label}** : à jour au {ts.strftime('%d/%m/%Y')}")
-
-    if not lines:
+    if last_sync is None:
         return (
-            "Mes sources sont mises à jour en continu sur le Code du travail, "
+            "Mes sources sont actualisées régulièrement sur le Code du travail, "
             "la jurisprudence et les conventions collectives. Posez-moi votre "
             "question juridique RH — la réponse s'appuiera sur les textes "
             "applicables au moment de votre question."
         )
 
     return (
-        "Voici l'état actuel de mon corpus juridique :\n\n"
-        + "\n".join(lines)
-        + "\n\nMes sources sont actualisées régulièrement. Chaque réponse cite "
-        "la date de la version utilisée si pertinent."
+        f"Mes sources juridiques sont à jour au **{last_sync.strftime('%d/%m/%Y')}**. "
+        "Le Code du travail, la jurisprudence et les conventions collectives "
+        "sont actualisés régulièrement. Chaque réponse cite la date de la "
+        "version utilisée si pertinent."
     )
 
 

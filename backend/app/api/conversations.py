@@ -440,11 +440,10 @@ async def chat_stream(
                     "[INTENT] %s via %s — court-circuit RAG",
                     intent_result.intent.value, intent_result.via,
                 )
-                yield _sse_event("chat_delta", {"content": intent_result.static_answer})
-                yield _sse_event("chat_done", {})
-                # Persist comme un échange normal pour que la conversation reste
-                # cohérente côté UI / historique.
-                await service.add_message(
+                # Persist d'abord pour récupérer les ids — le frontend attend
+                # {message_id, answer_id} dans chat_done pour reconstituer la
+                # conversation côté UI. Émettre vide casse l'écran de chat.
+                meta_user = await service.add_message(
                     conversation_id=conversation_id,
                     role="user",
                     content=data.message,
@@ -456,8 +455,8 @@ async def chat_stream(
                 )
                 try:
                     meta_assistant.latency_ms = int((time.perf_counter() - t_total) * 1000)
-                    # Pas d'incrément de quota pour les meta-questions : elles
-                    # ne consomment pas le RAG, c'est cohérent côté facturation.
+                    # Pas d'incrément de quota pour les meta : elles ne
+                    # consomment pas le RAG, cohérent côté facturation.
                     await db.commit()
                 except Exception:
                     logger.exception("Failed to persist meta-answer message %s", meta_assistant.id)
@@ -466,6 +465,11 @@ async def chat_stream(
                     if len(data.message) > 100:
                         title = title.rsplit(" ", 1)[0] + "…"
                     await service.update_title(conversation_id, title)
+                yield _sse_event("chat_delta", {"content": intent_result.static_answer})
+                yield _sse_event("chat_done", {
+                    "message_id": str(meta_user.id),
+                    "answer_id": str(meta_assistant.id),
+                })
                 return
 
             # 2b. Load org's CCN IDCC list for search filtering
@@ -501,9 +505,9 @@ async def chat_stream(
             # --- Hors-scope: send refusal as a normal answer, save to history ---
             if reformulated == _OUT_OF_SCOPE_MARKER:
                 logger.info("[SCOPE] Hors-scope — returning refusal for: %s", data.message[:100])
-                yield _sse_event("chat_delta", {"content": _OUT_OF_SCOPE_ANSWER})
-                yield _sse_event("chat_done", {})
-                await service.add_message(
+                # Persist d'abord pour récupérer les ids (le frontend les
+                # attend dans chat_done — émettre vide casse l'écran).
+                oos_user = await service.add_message(
                     conversation_id=conversation_id,
                     role="user",
                     content=data.message,
@@ -513,6 +517,11 @@ async def chat_stream(
                     role="assistant",
                     content=_OUT_OF_SCOPE_ANSWER,
                 )
+                yield _sse_event("chat_delta", {"content": _OUT_OF_SCOPE_ANSWER})
+                yield _sse_event("chat_done", {
+                    "message_id": str(oos_user.id),
+                    "answer_id": str(oos_assistant.id),
+                })
                 # Persist minimal trace for the Quality page
                 try:
                     oos_assistant.rag_trace = rag_trace.to_dict()
