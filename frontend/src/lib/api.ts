@@ -27,6 +27,13 @@ async function fetchWithTimeout(
         "La requête a expiré. Votre connexion est peut-être instable, réessayez.",
       );
     }
+    // TypeError("Failed to fetch") = échec réseau pur (offline, CORS, DNS, refus
+    // de connexion). On masque la stacktrace browser native par un message clair.
+    if (e instanceof TypeError) {
+      throw new Error(
+        "Connexion impossible. Vérifiez votre réseau et réessayez.",
+      );
+    }
     throw e;
   } finally {
     clearTimeout(id);
@@ -97,6 +104,13 @@ export async function apiFetch<T>(
       if (!retryResponse.ok) {
         const errorData = await retryResponse.json().catch(() => null);
         const detail = errorData?.detail;
+        if (retryResponse.status >= 500) {
+          // eslint-disable-next-line no-console
+          console.error("[api] server error after retry", retryResponse.status, detail);
+          throw new Error(
+            "Une erreur est survenue de notre côté. Réessayez dans un instant ou contactez-nous si le problème persiste.",
+          );
+        }
         throw new Error(
           typeof detail === "string" ? detail : `Erreur ${retryResponse.status}`,
         );
@@ -109,6 +123,16 @@ export async function apiFetch<T>(
   if (!response.ok) {
     const errorData = await response.json().catch(() => null);
     const detail = errorData?.detail;
+    // Erreurs serveur (5xx) : le détail est souvent une stacktrace ou un
+    // message Stripe/SQLAlchemy non destiné à l'utilisateur final.
+    // On log côté console pour le debug et on affiche un message générique.
+    if (response.status >= 500) {
+      // eslint-disable-next-line no-console
+      console.error("[api] server error", response.status, detail);
+      throw new Error(
+        "Une erreur est survenue de notre côté. Réessayez dans un instant ou contactez-nous si le problème persiste.",
+      );
+    }
     throw new Error(
       typeof detail === "string"
         ? detail
