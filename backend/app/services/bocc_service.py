@@ -60,6 +60,10 @@ class BoccSyncResult:
     avenants_stored: int = 0  # stored but not ingested (CCN not installed)
     errors: int = 0
     error_messages: list[str] = field(default_factory=list)
+    # True quand le BOCC demandé n'existe pas encore côté DILA (404 sur l'archive).
+    # C'est l'état normal quand on cron quotidiennement et que DILA n'a pas
+    # encore publié — il faut le distinguer d'une vraie erreur.
+    not_yet_available: bool = False
 
 
 @dataclass
@@ -222,8 +226,9 @@ class BoccService:
             async with httpx.AsyncClient(timeout=_REQUEST_TIMEOUT) as client:
                 resp = await client.get(url)
                 if resp.status_code == 404:
-                    result.errors = 1
-                    result.error_messages.append(f"Archive {archive_name} introuvable")
+                    # DILA n'a pas encore publié ce BOCC : état normal, pas une erreur.
+                    # Le caller logge cela en 'success / 0 items' (cf. run_bocc_sync).
+                    result.not_yet_available = True
                     return result
                 resp.raise_for_status()
                 archive_bytes = resp.content

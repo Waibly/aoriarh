@@ -265,6 +265,23 @@ async def run_bocc_sync(
 
             result = await service.process_issue(db, year, week, uuid.UUID(user_id))
 
+            # Cas normal d'un cron quotidien : DILA n'a pas encore publié le
+            # BOCC pour la semaine demandée. On ne logge pas en BoccIssue
+            # (rien à enregistrer) et on marque le sync_log en succès vide.
+            if result.not_yet_available:
+                logger.info(
+                    "Worker: BOCC %d-%02d pas encore disponible côté DILA — skip sans erreur",
+                    year, week,
+                )
+                await _finish_sync_log(
+                    session_factory, sync_log_id,
+                    success=True,
+                    items_fetched=0,
+                    error_message=None,
+                    duration_ms=int((_time.perf_counter() - t0) * 1000),
+                )
+                return
+
             # Record in bocc_issues
             issue = BoccIssue(
                 numero=f"{year}-{week:02d}",
@@ -1002,6 +1019,15 @@ async def run_scheduled_sync(ctx: dict) -> None:
                     continue
                 try:
                     res = await bocc_service.process_issue(db, year, week, admin_id)
+                    # DILA n'a pas (encore) publié ce numéro : ne crée pas de
+                    # BoccIssue (rien à enregistrer), ne compte pas d'erreur.
+                    # On log et on passe au suivant — comportement attendu pour
+                    # les semaines récentes pas encore publiées.
+                    if res.not_yet_available:
+                        logger.info(
+                            "Scheduled sync: BOCC %s pas encore publié, skip", numero
+                        )
+                        continue
                     issue = BoccIssue(
                         numero=numero,
                         year=year,
@@ -1297,6 +1323,28 @@ async def run_ccn_blue_green_cleanup(ctx: dict, old_doc_ids: list[str]) -> None:
         logger.exception("Worker: blue-green cleanup failed for docs %s", old_doc_ids)
 
 
+async def run_daily_bocc_check(ctx: dict) -> None:
+    """Cron quotidien : vérifie si DILA a publié un nouveau BOCC.
+
+    Sans args : run_bocc_sync calcule automatiquement (semaine ISO actuelle - 2,
+    car DILA publie avec ~2 semaines de retard). Si pas encore publié, on
+    sort proprement (sync_log success / 0 items, pas d'erreur).
+    """
+    session_factory = ctx["session_factory"]
+    # Récupère un admin pour attribuer la sync (n'importe lequel — c'est
+    # uniquement utilisé pour tracer qui a déclenché côté audit).
+    async with session_factory() as db:
+        from app.models.user import User
+        admin_q = await db.execute(
+            select(User).where(User.role == "admin").limit(1)
+        )
+        admin = admin_q.scalar_one_or_none()
+    if admin is None:
+        logger.warning("Daily BOCC check: aucun admin trouvé, skip")
+        return
+    await run_bocc_sync(ctx, str(admin.id))
+
+
 def _parse_redis_settings() -> RedisSettings:
     """Parse REDIS_URL into ARQ RedisSettings."""
     from urllib.parse import urlparse
@@ -1327,10 +1375,14 @@ class WorkerSettings:
         run_scheduled_sync,
         run_billing_lifecycle,
         run_data_retention_purge,
+        run_daily_bocc_check,
     ]
     cron_jobs = [
         # Legal corpus refresh: 1st and 15th of each month at 3:00 AM UTC
         cron(run_scheduled_sync, month=None, day={1, 15}, hour=3, minute=0),
+        # BOCC : vérification quotidienne (DILA peut publier n'importe quand).
+        # Si rien de nouveau, sync_log = success / 0 items (pas une erreur).
+        cron(run_daily_bocc_check, hour=2, minute=30),
         # Billing lifecycle: every day at 9:00 AM UTC (trial reminders + expirations)
         cron(run_billing_lifecycle, hour=9, minute=0),
         # GDPR data retention purge: every day at 10:00 AM UTC (after the
