@@ -18,6 +18,7 @@ from app.models.document import Document
 from app.models.organisation import Organisation
 from app.models.user import User
 from app.rag.agent import RAGAgent, _OUT_OF_SCOPE_MARKER, _OUT_OF_SCOPE_ANSWER
+from app.rag.intent_router import classify_intent, Intent
 from app.schemas.conversation import (
     ChatRequest,
     ChatResponse,
@@ -251,6 +252,37 @@ async def chat(
         for m in conversation.messages[-6:]
     ]
     agent = RAGAgent()
+
+    # 3a. Intent router : court-circuit RAG pour les meta-questions
+    intent_result = await classify_intent(
+        query=data.message,
+        db=db,
+        llm=agent.llm,
+        organisation_id=conversation.organisation_id,
+    )
+    if intent_result.static_answer is not None:
+        logger.info("[INTENT] %s via %s — court-circuit RAG", intent_result.intent.value, intent_result.via)
+        meta_user = await service.add_message(
+            conversation_id=conversation_id,
+            role="user",
+            content=data.message,
+        )
+        meta_assistant = await service.add_message(
+            conversation_id=conversation_id,
+            role="assistant",
+            content=intent_result.static_answer,
+        )
+        if conversation.title is None:
+            title = data.message[:100].strip()
+            if len(data.message) > 100:
+                title = title.rsplit(" ", 1)[0] + "…"
+            await service.update_title(conversation_id, title)
+        await db.commit()
+        return ChatResponse(
+            message=meta_user,  # type: ignore[arg-type]
+            answer=meta_assistant,  # type: ignore[arg-type]
+        )
+
     rag_response = await agent.run(
         query=data.message,
         organisation_id=str(conversation.organisation_id),
@@ -392,6 +424,50 @@ async def chat_stream(
                     if name and name not in cited_sources:
                         cited_sources.append(name)
         try:
+            # 2a. INTENT ROUTER (Step -1 du pipeline) — court-circuite le RAG
+            # pour les meta-questions (capabilities, sources, scope, internals,
+            # greeting). Évite : (a) hallucination sur questions méta,
+            # (b) leakage de l'architecture vers l'utilisateur, (c) coût RAG
+            # inutile pour les salutations / questions hors-scope.
+            intent_result = await classify_intent(
+                query=data.message,
+                db=db,
+                llm=agent.llm,
+                organisation_id=conversation.organisation_id,
+            )
+            if intent_result.static_answer is not None:
+                logger.info(
+                    "[INTENT] %s via %s — court-circuit RAG",
+                    intent_result.intent.value, intent_result.via,
+                )
+                yield _sse_event("chat_delta", {"content": intent_result.static_answer})
+                yield _sse_event("chat_done", {})
+                # Persist comme un échange normal pour que la conversation reste
+                # cohérente côté UI / historique.
+                await service.add_message(
+                    conversation_id=conversation_id,
+                    role="user",
+                    content=data.message,
+                )
+                meta_assistant = await service.add_message(
+                    conversation_id=conversation_id,
+                    role="assistant",
+                    content=intent_result.static_answer,
+                )
+                try:
+                    meta_assistant.latency_ms = int((time.perf_counter() - t_total) * 1000)
+                    # Pas d'incrément de quota pour les meta-questions : elles
+                    # ne consomment pas le RAG, c'est cohérent côté facturation.
+                    await db.commit()
+                except Exception:
+                    logger.exception("Failed to persist meta-answer message %s", meta_assistant.id)
+                if conversation.title is None:
+                    title = data.message[:100].strip()
+                    if len(data.message) > 100:
+                        title = title.rsplit(" ", 1)[0] + "…"
+                    await service.update_title(conversation_id, title)
+                return
+
             # 2b. Load org's CCN IDCC list for search filtering
             from app.models.ccn import OrganisationConvention
             idcc_result = await db.execute(
