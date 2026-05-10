@@ -70,8 +70,8 @@ export function MessageList({
   const showStreaming = isStreaming && !!streamingContent;
 
   return (
-    <ScrollArea className="min-h-0 flex-1" viewportRef={viewportRef}>
-      <div className="mx-auto max-w-4xl space-y-6 px-2 py-4 sm:px-6">
+    <ScrollArea className="min-h-0 min-w-0 flex-1" viewportRef={viewportRef}>
+      <div className="mx-auto w-full min-w-0 max-w-4xl space-y-6 px-2 py-4 sm:px-6">
         {messages.map((message) => (
           <MessageBubble key={message.id} message={message} onFeedback={onFeedback} />
         ))}
