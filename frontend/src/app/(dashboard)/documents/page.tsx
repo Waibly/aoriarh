@@ -537,12 +537,12 @@ export default function DocumentsPage() {
               value={activeCcnIdcc ?? conventions[0].idcc}
               onValueChange={setActiveCcnIdcc}
             >
-              <TabsList className="flex h-auto w-full flex-col items-stretch sm:inline-flex sm:w-fit sm:flex-row sm:items-center">
+              <TabsList className="flex w-full flex-col items-stretch !h-auto p-1 gap-1 sm:inline-flex sm:w-fit sm:flex-row sm:items-center sm:!h-9 sm:p-[3px] sm:gap-0">
                 {conventions.map((c) => (
                   <TabsTrigger
                     key={c.id}
                     value={c.idcc}
-                    className="w-full justify-start gap-1.5 sm:w-auto sm:justify-center"
+                    className="w-full justify-start gap-1.5 !h-auto !flex-none px-3 py-2 sm:w-auto sm:justify-center sm:!h-[calc(100%-1px)] sm:!flex-1 sm:px-2 sm:py-1"
                   >
                     {c.status === "ready" ? (
                       <CheckCircle2 className="h-3.5 w-3.5 text-green-600" />
@@ -595,7 +595,7 @@ export default function DocumentsPage() {
         </CardHeader>
         <CardContent>
           <Tabs value={activeCategoryKey} onValueChange={setActiveCategoryKey}>
-            <TabsList className="flex h-auto w-full flex-col items-stretch sm:inline-flex sm:w-fit sm:flex-row sm:items-center">
+            <TabsList className="flex w-full flex-col items-stretch !h-auto p-1 gap-1 sm:inline-flex sm:w-fit sm:flex-row sm:items-center sm:!h-9 sm:p-[3px] sm:gap-0">
               {CATEGORIES.map((cat) => {
                 const Icon = cat.icon;
                 const count = categoryCounts[cat.key] ?? 0;
@@ -603,7 +603,7 @@ export default function DocumentsPage() {
                   <TabsTrigger
                     key={cat.key}
                     value={cat.key}
-                    className="w-full justify-start gap-1.5 sm:w-auto sm:justify-center"
+                    className="w-full justify-start gap-1.5 !h-auto !flex-none px-3 py-2 sm:w-auto sm:justify-center sm:!h-[calc(100%-1px)] sm:!flex-1 sm:px-2 sm:py-1"
                   >
                     <Icon className="h-3.5 w-3.5" />
                     {cat.label}
@@ -819,10 +819,10 @@ function CcnDetailPane({
 
       {/* Tabs : contenu consolidé vs nouveautés BOCC */}
       <Tabs defaultValue="consolidated">
-        <TabsList className="flex h-auto w-full flex-col items-stretch sm:inline-flex sm:w-fit sm:flex-row sm:items-center">
+        <TabsList className="flex w-full flex-col items-stretch !h-auto p-1 gap-1 sm:inline-flex sm:w-fit sm:flex-row sm:items-center sm:!h-9 sm:p-[3px] sm:gap-0">
           <TabsTrigger
             value="consolidated"
-            className="w-full justify-start sm:w-auto sm:justify-center"
+            className="w-full justify-start !h-auto !flex-none px-3 py-2 sm:w-auto sm:justify-center sm:!h-[calc(100%-1px)] sm:!flex-1 sm:px-2 sm:py-1"
           >
             Ce que contient votre base
             <Badge variant="outline" className="ml-auto text-[10px] h-4 px-1.5 sm:ml-2">
@@ -831,7 +831,7 @@ function CcnDetailPane({
           </TabsTrigger>
           <TabsTrigger
             value="amendments"
-            className="w-full justify-start sm:w-auto sm:justify-center"
+            className="w-full justify-start !h-auto !flex-none px-3 py-2 sm:w-auto sm:justify-center sm:!h-[calc(100%-1px)] sm:!flex-1 sm:px-2 sm:py-1"
           >
             Nouveautés
             <Badge variant="outline" className="ml-auto text-[10px] h-4 px-1.5 sm:ml-2">
