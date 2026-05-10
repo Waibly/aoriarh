@@ -537,22 +537,24 @@ export default function DocumentsPage() {
               value={activeCcnIdcc ?? conventions[0].idcc}
               onValueChange={setActiveCcnIdcc}
             >
-              <div className="-mx-2 overflow-x-auto px-2 sm:mx-0 sm:px-0">
-                <TabsList className="h-auto w-fit">
-                  {conventions.map((c) => (
-                    <TabsTrigger key={c.id} value={c.idcc} className="gap-1.5">
-                      {c.status === "ready" ? (
-                        <CheckCircle2 className="h-3.5 w-3.5 text-green-600" />
-                      ) : c.status === "error" ? (
-                        <X className="h-3.5 w-3.5 text-destructive" />
-                      ) : (
-                        <Loader2 className="h-3.5 w-3.5 animate-spin text-blue-600" />
-                      )}
-                      {c.titre_court || c.titre || `IDCC ${c.idcc}`}
-                    </TabsTrigger>
-                  ))}
-                </TabsList>
-              </div>
+              <TabsList className="flex h-auto w-full flex-col items-stretch sm:inline-flex sm:w-fit sm:flex-row sm:items-center">
+                {conventions.map((c) => (
+                  <TabsTrigger
+                    key={c.id}
+                    value={c.idcc}
+                    className="w-full justify-start gap-1.5 sm:w-auto sm:justify-center"
+                  >
+                    {c.status === "ready" ? (
+                      <CheckCircle2 className="h-3.5 w-3.5 text-green-600" />
+                    ) : c.status === "error" ? (
+                      <X className="h-3.5 w-3.5 text-destructive" />
+                    ) : (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin text-blue-600" />
+                    )}
+                    {c.titre_court || c.titre || `IDCC ${c.idcc}`}
+                  </TabsTrigger>
+                ))}
+              </TabsList>
               {conventions.map((c) => (
                 <TabsContent key={c.id} value={c.idcc}>
                   <CcnDetailPane
@@ -593,23 +595,25 @@ export default function DocumentsPage() {
         </CardHeader>
         <CardContent>
           <Tabs value={activeCategoryKey} onValueChange={setActiveCategoryKey}>
-            <div className="-mx-2 overflow-x-auto px-2 sm:mx-0 sm:px-0">
-              <TabsList className="h-auto w-fit">
-                {CATEGORIES.map((cat) => {
-                  const Icon = cat.icon;
-                  const count = categoryCounts[cat.key] ?? 0;
-                  return (
-                    <TabsTrigger key={cat.key} value={cat.key} className="gap-1.5">
-                      <Icon className="h-3.5 w-3.5" />
-                      {cat.label}
-                      <Badge variant="outline" className="ml-1 text-[10px] h-4 px-1.5">
-                        {count}
-                      </Badge>
-                    </TabsTrigger>
-                  );
-                })}
-              </TabsList>
-            </div>
+            <TabsList className="flex h-auto w-full flex-col items-stretch sm:inline-flex sm:w-fit sm:flex-row sm:items-center">
+              {CATEGORIES.map((cat) => {
+                const Icon = cat.icon;
+                const count = categoryCounts[cat.key] ?? 0;
+                return (
+                  <TabsTrigger
+                    key={cat.key}
+                    value={cat.key}
+                    className="w-full justify-start gap-1.5 sm:w-auto sm:justify-center"
+                  >
+                    <Icon className="h-3.5 w-3.5" />
+                    {cat.label}
+                    <Badge variant="outline" className="ml-auto text-[10px] h-4 px-1.5 sm:ml-1">
+                      {count}
+                    </Badge>
+                  </TabsTrigger>
+                );
+              })}
+            </TabsList>
             <TabsContent value={activeCategoryKey}>
               <CategoryPane
                 category={activeCategory}
@@ -815,22 +819,26 @@ function CcnDetailPane({
 
       {/* Tabs : contenu consolidé vs nouveautés BOCC */}
       <Tabs defaultValue="consolidated">
-        <div className="-mx-2 overflow-x-auto px-2 sm:mx-0 sm:px-0">
-          <TabsList className="w-fit">
-            <TabsTrigger value="consolidated">
-              Ce que contient votre base
-              <Badge variant="outline" className="ml-2 text-[10px] h-4 px-1.5">
-                {consolidatedDocs.length}
-              </Badge>
-            </TabsTrigger>
-            <TabsTrigger value="amendments">
-              Nouveautés
-              <Badge variant="outline" className="ml-2 text-[10px] h-4 px-1.5">
-                {amendmentDocs.length}
-              </Badge>
-            </TabsTrigger>
-          </TabsList>
-        </div>
+        <TabsList className="flex h-auto w-full flex-col items-stretch sm:inline-flex sm:w-fit sm:flex-row sm:items-center">
+          <TabsTrigger
+            value="consolidated"
+            className="w-full justify-start sm:w-auto sm:justify-center"
+          >
+            Ce que contient votre base
+            <Badge variant="outline" className="ml-auto text-[10px] h-4 px-1.5 sm:ml-2">
+              {consolidatedDocs.length}
+            </Badge>
+          </TabsTrigger>
+          <TabsTrigger
+            value="amendments"
+            className="w-full justify-start sm:w-auto sm:justify-center"
+          >
+            Nouveautés
+            <Badge variant="outline" className="ml-auto text-[10px] h-4 px-1.5 sm:ml-2">
+              {amendmentDocs.length}
+            </Badge>
+          </TabsTrigger>
+        </TabsList>
 
         <TabsContent value="consolidated">
           <Card>
