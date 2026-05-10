@@ -215,14 +215,14 @@ export default function OrganisationDetailPage() {
 
       {/* Org info */}
       <Card>
-        <CardHeader className="flex flex-row items-center justify-between">
-          <div className="space-y-1.5">
-            <CardTitle className="text-2xl">{org.name}</CardTitle>
+        <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="space-y-1.5 min-w-0">
+            <CardTitle className="text-2xl break-words">{org.name}</CardTitle>
             <CardDescription>
               Créée le {new Date(org.created_at).toLocaleDateString("fr-FR")}
             </CardDescription>
           </div>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2 shrink-0">
             <Button variant="outline" size="sm" onClick={handleOpenInChat}>
               Ouvrir dans le chat
             </Button>
@@ -234,7 +234,7 @@ export default function OrganisationDetailPage() {
             )}
           </div>
         </CardHeader>
-        <CardContent className="grid grid-cols-2 gap-4">
+        <CardContent className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div>
             <p className="text-sm text-muted-foreground">Forme juridique</p>
             <p className="font-medium">{org.forme_juridique ?? "Non renseignée"}</p>
@@ -245,7 +245,7 @@ export default function OrganisationDetailPage() {
               {org.taille ? `${org.taille} salariés` : "Non renseigné"}
             </p>
           </div>
-          <div className="col-span-2">
+          <div className="sm:col-span-2">
             <p className="text-sm text-muted-foreground">Secteur d&apos;activité</p>
             <p className="font-medium">{org.secteur_activite ?? "Non renseigné"}</p>
           </div>
@@ -254,10 +254,10 @@ export default function OrganisationDetailPage() {
 
       {/* Members */}
       <Card>
-        <CardHeader className="flex flex-row items-center justify-between">
-          <div className="space-y-1.5">
-            <CardTitle>Membres de cette organisation</CardTitle>
-            <CardDescription>
+        <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="space-y-1.5 min-w-0">
+            <CardTitle className="break-words">Membres de cette organisation</CardTitle>
+            <CardDescription className="break-words">
               {members.length} membre{members.length > 1 ? "s" : ""} avec accès à {org.name}
             </CardDescription>
           </div>
@@ -266,6 +266,7 @@ export default function OrganisationDetailPage() {
               size="sm"
               onClick={() => setAddMemberOpen(true)}
               disabled={availableToAdd.length === 0}
+              className="shrink-0 self-start sm:self-auto"
               title={
                 availableToAdd.length === 0
                   ? "Tous les membres du compte sont déjà dans cette organisation. Invitez d'abord un nouveau collaborateur depuis l'onglet Équipe."

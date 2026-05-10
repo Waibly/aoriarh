@@ -435,15 +435,15 @@ export default function DocumentsPage() {
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
     >
-      <div className="flex items-center justify-between">
-        <div>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="min-w-0">
           <h1 className="text-2xl font-semibold tracking-tight">Documents</h1>
           <p className="text-sm text-muted-foreground mt-1">
             Tous les documents propres à votre organisation, utilisés par AORIA RH pour répondre à vos questions.
           </p>
         </div>
         {isManager && (
-          <Button onClick={() => setUploadOpen(true)}>
+          <Button onClick={() => setUploadOpen(true)} className="shrink-0 self-start sm:self-auto">
             <FileUp className="mr-2 h-4 w-4" />
             Ajouter un document
           </Button>
@@ -1161,11 +1161,11 @@ function CategoryPane({
   return (
     <Card>
       <CardHeader>
-        <div className="flex items-center justify-between gap-3">
+        <div className="flex items-start justify-between gap-3 flex-wrap">
           <div className="min-w-0">
-            <CardTitle className="text-base flex items-center gap-2">
-              <Icon className="h-4 w-4" />
-              {category.label}
+            <CardTitle className="text-base flex items-center gap-2 flex-wrap">
+              <Icon className="h-4 w-4 shrink-0" />
+              <span className="break-words">{category.label}</span>
               <InfoTooltip>{category.help}</InfoTooltip>
               {loading && docs.length > 0 && (
                 <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" aria-label="Actualisation en cours" />
@@ -1179,7 +1179,7 @@ function CategoryPane({
             </p>
           </div>
           {isManager && (
-            <Button size="sm" onClick={onUpload}>
+            <Button size="sm" onClick={onUpload} className="shrink-0">
               <Plus className="h-3.5 w-3.5 mr-1" />
               Ajouter
             </Button>
@@ -1234,12 +1234,12 @@ function CategoryPane({
           <>
             {/* Bulk action bar — only shown when at least one row is selected */}
             {isManager && selectedIds.size > 0 && (
-              <div className="mb-3 flex items-center justify-between gap-3 rounded-lg border border-primary/30 bg-primary/5 px-4 py-2">
+              <div className="mb-3 flex flex-col gap-2 rounded-lg border border-primary/30 bg-primary/5 px-3 py-2 sm:flex-row sm:items-center sm:justify-between sm:gap-3 sm:px-4">
                 <span className="text-sm">
                   <strong>{selectedIds.size}</strong> document
                   {selectedIds.size > 1 ? "s" : ""} sélectionné{selectedIds.size > 1 ? "s" : ""}
                 </span>
-                <div className="flex gap-2">
+                <div className="flex flex-wrap gap-2">
                   <Button
                     variant="outline"
                     size="sm"
@@ -1255,7 +1255,8 @@ function CategoryPane({
                     disabled={bulkBusy}
                     onClick={() => setSelectedIds(new Set())}
                   >
-                    Tout désélectionner
+                    <span className="sm:hidden">Désélectionner</span>
+                    <span className="hidden sm:inline">Tout désélectionner</span>
                   </Button>
                   <Button
                     variant="destructive"

@@ -113,7 +113,7 @@ export function MessageSources({ sources }: MessageSourcesProps) {
                       key={`${group.key}-${index}`}
                       type="button"
                       onClick={() => setSelectedSource(source)}
-                      className="flex w-full items-center gap-3 rounded-lg border border-border bg-card px-4 py-3 text-left transition-colors hover:border-[#652bb0]/30 hover:bg-[#652bb0]/5 dark:hover:border-[#652bb0]/40 dark:hover:bg-[#652bb0]/10"
+                      className="flex w-full items-center gap-2 rounded-lg border border-border bg-card px-3 py-2.5 text-left transition-colors hover:border-[#652bb0]/30 hover:bg-[#652bb0]/5 sm:gap-3 sm:px-4 sm:py-3 dark:hover:border-[#652bb0]/40 dark:hover:bg-[#652bb0]/10"
                     >
                       <div className="flex size-8 shrink-0 items-center justify-center rounded-md bg-[#652bb0]/10 dark:bg-[#652bb0]/20">
                         <FileText className="size-4 text-[#652bb0] dark:text-[#652bb0]" />
@@ -122,7 +122,7 @@ export function MessageSources({ sources }: MessageSourcesProps) {
                         <p className="truncate text-sm font-medium text-foreground">
                           {formatJurisprudenceRef(source) || source.document_name}
                         </p>
-                        <p className="text-xs text-muted-foreground">
+                        <p className="truncate text-xs text-muted-foreground">
                           {source.source_type_label}
                           {source.solution ? ` · ${source.solution}` : ""}
                           {source.publication ? ` · ${source.publication}` : ""}
