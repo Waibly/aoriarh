@@ -43,11 +43,11 @@ LIMITS_INVITE = PlanLimits(
 )
 
 LIMITS_VIP = PlanLimits(
-    users_included=5,
-    orgs_included=3,
-    docs_per_org=300,
-    ccn_per_org=5,
-    questions_per_month=900,
+    users_included=10,
+    orgs_included=10,
+    docs_per_org=1000,
+    ccn_per_org=None,
+    questions_per_month=2400,
 )
 
 # Commercial plans (Stripe)
@@ -122,10 +122,10 @@ PLAN_FEATURES: dict[str, list[str]] = {
         "900 questions / mois",
     ],
     "vip": [
-        "5 utilisateurs, 3 organisations",
-        "300 documents par organisation",
-        "5 conventions collectives",
-        "900 questions / mois",
+        "10 utilisateurs, 10 organisations",
+        "1 000 documents par organisation",
+        "Conventions collectives illimitées",
+        "2 400 questions / mois",
     ],
     "solo": [
         "1 utilisateur (jusqu'à 3 utilisateurs additionnels via add-on)",

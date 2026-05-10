@@ -9,7 +9,6 @@ import {
   Pencil,
   Trash2,
   UserMinus,
-  UserPlus,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useOrg } from "@/lib/org-context";
@@ -52,15 +51,6 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { OrgFormDialog } from "@/components/org-form-dialog";
 
-type AccountMember = {
-  id: string;
-  user_id: string;
-  user_email: string;
-  user_full_name: string | null;
-  role_in_org: "manager" | "user";
-  access_all: boolean;
-};
-
 export default function OrganisationDetailPage() {
   const params = useParams<{ id: string }>();
   const orgId = params.id;
@@ -73,11 +63,9 @@ export default function OrganisationDetailPage() {
   const [loadingOrg, setLoadingOrg] = useState(true);
   const [members, setMembers] = useState<Membership[]>([]);
   const [loadingMembers, setLoadingMembers] = useState(false);
-  const [accountMembers, setAccountMembers] = useState<AccountMember[]>([]);
   const [isOrgManager, setIsOrgManager] = useState(false);
 
   const [editOpen, setEditOpen] = useState(false);
-  const [addMemberOpen, setAddMemberOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [removeTarget, setRemoveTarget] = useState<Membership | null>(null);
 
@@ -116,21 +104,10 @@ export default function OrganisationDetailPage() {
     }
   }, [orgId, token, session?.user?.id, session?.user?.role]);
 
-  const fetchAccountMembers = useCallback(async () => {
-    if (!token) return;
-    try {
-      const data = await apiFetch<AccountMember[]>("/team/members", { token });
-      setAccountMembers(data);
-    } catch {
-      setAccountMembers([]);
-    }
-  }, [token]);
-
   useEffect(() => {
     fetchOrg();
     fetchMembers();
-    fetchAccountMembers();
-  }, [fetchOrg, fetchMembers, fetchAccountMembers]);
+  }, [fetchOrg, fetchMembers]);
 
   const handleMemberRoleChange = async (
     membershipId: string,
@@ -197,11 +174,6 @@ export default function OrganisationDetailPage() {
 
   if (!org) return null;
 
-  const existingUserIds = new Set(members.map((m) => m.user_id));
-  const availableToAdd = accountMembers.filter(
-    (am) => !existingUserIds.has(am.user_id),
-  );
-
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-3">
@@ -254,29 +226,11 @@ export default function OrganisationDetailPage() {
 
       {/* Members */}
       <Card>
-        <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="space-y-1.5 min-w-0">
-            <CardTitle className="break-words">Membres de cette organisation</CardTitle>
-            <CardDescription className="break-words">
-              {members.length} membre{members.length > 1 ? "s" : ""} avec accès à {org.name}
-            </CardDescription>
-          </div>
-          {isOrgManager && (
-            <Button
-              size="sm"
-              onClick={() => setAddMemberOpen(true)}
-              disabled={availableToAdd.length === 0}
-              className="shrink-0 self-start sm:self-auto"
-              title={
-                availableToAdd.length === 0
-                  ? "Tous les membres du compte sont déjà dans cette organisation. Invitez d'abord un nouveau collaborateur depuis l'onglet Équipe."
-                  : ""
-              }
-            >
-              <UserPlus className="mr-2 h-4 w-4" />
-              Ajouter un membre
-            </Button>
-          )}
+        <CardHeader>
+          <CardTitle className="break-words">Membres de cette organisation</CardTitle>
+          <CardDescription className="break-words">
+            {members.length} membre{members.length > 1 ? "s" : ""} avec accès à {org.name}
+          </CardDescription>
         </CardHeader>
         <CardContent>
           {loadingMembers ? (
@@ -362,12 +316,13 @@ export default function OrganisationDetailPage() {
           )}
           {isOrgManager && (
             <p className="text-xs text-muted-foreground mt-3">
-              Retirer un membre lui fait perdre l&apos;accès à cette organisation uniquement.
-              Son compte reste actif — utilisez l&apos;onglet{" "}
+              Pour ajouter un membre à cette organisation ou supprimer son compte,
+              passez par l&apos;onglet{" "}
               <Link href="/team" className="underline hover:text-foreground">
                 Équipe
-              </Link>{" "}
-              pour le supprimer complètement.
+              </Link>
+              . Retirer un membre ici lui fait uniquement perdre l&apos;accès à
+              cette organisation, son compte reste actif.
             </p>
           )}
         </CardContent>
@@ -408,15 +363,6 @@ export default function OrganisationDetailPage() {
               await Promise.all([fetchOrg(), refetchOrgs()]);
             }}
           />
-          <AddMemberDialog
-            open={addMemberOpen}
-            onOpenChange={setAddMemberOpen}
-            orgId={org.id}
-            orgName={org.name}
-            token={token}
-            candidates={availableToAdd}
-            onAdded={fetchMembers}
-          />
           <DeleteOrgDialog
             open={deleteOpen}
             onOpenChange={setDeleteOpen}
@@ -456,125 +402,6 @@ export default function OrganisationDetailPage() {
         </DialogContent>
       </Dialog>
     </div>
-  );
-}
-
-function AddMemberDialog({
-  open,
-  onOpenChange,
-  orgId,
-  orgName,
-  token,
-  candidates,
-  onAdded,
-}: {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  orgId: string;
-  orgName: string;
-  token: string;
-  candidates: AccountMember[];
-  onAdded: () => Promise<void>;
-}) {
-  const [selectedEmail, setSelectedEmail] = useState("");
-  const [role, setRole] = useState<"manager" | "user">("user");
-  const [submitting, setSubmitting] = useState(false);
-
-  useEffect(() => {
-    if (open) {
-      setSelectedEmail("");
-      setRole("user");
-    }
-  }, [open]);
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!selectedEmail) return;
-    setSubmitting(true);
-    try {
-      await apiFetch(`/organisations/${orgId}/members`, {
-        method: "POST",
-        token,
-        body: JSON.stringify({ email: selectedEmail, role_in_org: role }),
-      });
-      toast.success("Membre ajouté à cette organisation");
-      onOpenChange(false);
-      await onAdded();
-    } catch (err) {
-      toast.error(
-        err instanceof Error && err.message
-          ? err.message
-          : "Impossible d'ajouter ce membre",
-      );
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle>Ajouter un membre à « {orgName} »</DialogTitle>
-          <DialogDescription>
-            Choisissez un collaborateur déjà présent dans votre équipe.
-            Pour inviter une nouvelle personne, passez d&apos;abord par l&apos;onglet{" "}
-            <Link href="/team" className="underline hover:text-foreground">
-              Équipe
-            </Link>
-            .
-          </DialogDescription>
-        </DialogHeader>
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor="member-email">Collaborateur</Label>
-            <Select value={selectedEmail} onValueChange={setSelectedEmail}>
-              <SelectTrigger id="member-email">
-                <SelectValue placeholder="Choisir dans votre équipe..." />
-              </SelectTrigger>
-              <SelectContent>
-                {candidates.length === 0 ? (
-                  <div className="px-2 py-1.5 text-sm text-muted-foreground">
-                    Tous les membres du compte sont déjà dans cette organisation.
-                  </div>
-                ) : (
-                  candidates.map((c) => (
-                    <SelectItem key={c.user_id} value={c.user_email}>
-                      {c.user_full_name ?? c.user_email}
-                      <span className="text-xs text-muted-foreground ml-2">
-                        {c.user_email}
-                      </span>
-                    </SelectItem>
-                  ))
-                )}
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="member-role">Rôle dans cette organisation</Label>
-            <Select value={role} onValueChange={(v) => setRole(v as "manager" | "user")}>
-              <SelectTrigger id="member-role">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="user">Utilisateur (consulter, poser des questions)</SelectItem>
-                <SelectItem value="manager">Manager (gérer docs, membres, paramètres)</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
-              Annuler
-            </Button>
-            <Button type="submit" disabled={!selectedEmail || submitting}>
-              {submitting ? "Ajout..." : "Ajouter"}
-            </Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
   );
 }
 

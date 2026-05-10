@@ -75,10 +75,10 @@ export const PLANS: Record<AnyPlanCode, PlanMeta> = {
     commercial: false,
     badgeClassName: "border-amber-500 bg-amber-500/10 text-amber-600",
     features: [
-      "5 utilisateurs, 3 organisations",
-      "300 documents par organisation",
-      "5 conventions collectives",
-      "900 questions / mois",
+      "10 utilisateurs, 10 organisations",
+      "1 000 documents par organisation",
+      "Conventions collectives illimitées",
+      "2 400 questions / mois",
     ],
   },
   solo: {
