@@ -59,7 +59,7 @@ export default function DashboardLayout({
           className="w-72 max-w-[85vw] border-r-0 p-0 sm:max-w-xs lg:hidden"
         >
           <SheetTitle className="sr-only">Navigation</SheetTitle>
-          <Sidebar variant="mobile" />
+          <Sidebar variant="mobile" onNavigate={() => setOpen(false)} />
         </SheetContent>
         <div className="flex min-w-0 min-h-0 flex-1 flex-col overflow-y-auto">
           <header className="lg:hidden flex items-center gap-3 border-b bg-background px-4 py-3 shrink-0">

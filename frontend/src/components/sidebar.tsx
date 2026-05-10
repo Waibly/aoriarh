@@ -334,7 +334,13 @@ function ConversationHistory() {
   );
 }
 
-export function Sidebar({ variant = "desktop" }: { variant?: "desktop" | "mobile" } = {}) {
+export function Sidebar({
+  variant = "desktop",
+  onNavigate,
+}: {
+  variant?: "desktop" | "mobile";
+  onNavigate?: () => void;
+} = {}) {
   const { data: session } = useSession();
   const pathname = usePathname();
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -403,6 +409,11 @@ export function Sidebar({ variant = "desktop" }: { variant?: "desktop" | "mobile
           variant === "desktop" && "hidden lg:flex w-64 shrink-0",
           variant === "mobile" && "h-full w-full overflow-y-auto",
         )}
+        onClick={(e) => {
+          if (variant !== "mobile" || !onNavigate) return;
+          const target = e.target as HTMLElement | null;
+          if (target?.closest("a[href]")) onNavigate();
+        }}
       >
         <div className="p-4">
           <Image src="/logo-aoria.svg" alt="AORIA RH" width={140} height={30} priority className="dark:hidden" />
