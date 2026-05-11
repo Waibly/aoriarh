@@ -4,7 +4,7 @@ export default function AuthLayout({
   children: React.ReactNode;
 }) {
   return (
-    <div className="container relative grid min-h-svh flex-col items-center justify-center bg-white dark:bg-background lg:max-w-none lg:grid-cols-2 lg:px-0">
+    <div className="relative grid min-h-svh w-full grid-cols-1 overflow-x-hidden bg-white dark:bg-background lg:grid-cols-2">
       <div className="bg-primary text-primary-foreground relative hidden h-full flex-col overflow-hidden p-10 lg:flex">
         {/* Filigrane icône blanche, sans fond */}
         <img
@@ -35,8 +35,8 @@ export default function AuthLayout({
           </p>
         </div>
       </div>
-      <div className="lg:p-8">
-        <div className="mx-auto flex w-full flex-col justify-center space-y-6 sm:w-[350px]">
+      <div className="flex w-full min-w-0 items-center justify-center px-4 py-8 sm:px-6 lg:p-8">
+        <div className="flex w-full min-w-0 max-w-[400px] flex-col justify-center space-y-6 sm:max-w-[380px]">
           <img
             src="/icon-aoria-dark.svg"
             alt="AORIA RH"

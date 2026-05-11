@@ -168,14 +168,17 @@ export function CcnSelector({
             <Badge
               key={ccn.idcc}
               variant="secondary"
-              className="gap-1 pr-1"
+              className="gap-1 pr-1 max-w-full"
             >
-              {ccn.titre_court || ccn.titre} ({ccn.idcc})
+              <span className="truncate">
+                {ccn.titre_court || ccn.titre} ({ccn.idcc})
+              </span>
               {!disabled && (
                 <button
                   type="button"
                   onClick={() => removeItem(ccn.idcc)}
-                  className="ml-0.5 rounded-full p-0.5 hover:bg-muted"
+                  className="shrink-0 ml-0.5 rounded-full p-0.5 hover:bg-muted"
+                  aria-label={`Retirer ${ccn.titre_court || ccn.titre}`}
                 >
                   <X className="h-3 w-3" />
                 </button>
