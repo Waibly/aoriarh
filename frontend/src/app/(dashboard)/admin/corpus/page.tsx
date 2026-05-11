@@ -1013,6 +1013,8 @@ export default function CorpusPage() {
     { value: "cass_cr", label: "Cass. crim (chambre criminelle)" },
     { value: "cass_comm", label: "Cass. com (chambre commerciale)" },
     { value: "cass_civ2", label: "Cass. civ2 (sécurité sociale / AT-MP)" },
+    { value: "cass_pl", label: "Cass. AP (Assemblée plénière)" },
+    { value: "cass_mi", label: "Cass. mi (Chambre mixte)" },
     { value: "ca_soc", label: "Cour d'appel — chambre sociale" },
     { value: "conseil_constit", label: "Conseil constitutionnel" },
   ];

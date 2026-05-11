@@ -458,13 +458,18 @@ async def _run_jurisprudence_passes(
     juris_service = JudilibreService()
 
     # Valid Judilibre chamber codes : soc, cr (criminelle), comm (commerciale),
-    # civ2 (sécurité sociale et AT/MP). Volumes attendus sur 30j publiés :
-    # soc ~50, cr ~25, comm ~20, civ2 ~30. Source : sondage live API 2026-04-09.
+    # civ2 (sécurité sociale et AT/MP), pl (Assemblée plénière), mi (chambre
+    # mixte). Volumes attendus sur 30j publiés : soc ~50, cr ~25, comm ~20,
+    # civ2 ~30, pl 0-2, mi 0-1. Source : sondage live API 2026-04-09 +
+    # estimation AP/MI 2026-05-11. AP et MI sont rares mais leurs arrêts
+    # font jurisprudence pour TOUTES les chambres — à inclure systématiquement.
     cc_passes = [
         ("Cass. soc", "soc"),
         ("Cass. cr (criminelle)", "cr"),
         ("Cass. comm (commerciale)", "comm"),
         ("Cass. civ2 (sécu / AT-MP)", "civ2"),
+        ("Cass. AP (Assemblée plénière)", "pl"),
+        ("Cass. mi (Chambre mixte)", "mi"),
     ]
 
     for pass_label, chamber_code in cc_passes:

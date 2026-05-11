@@ -91,6 +91,26 @@ SOURCE_DEFINITIONS: dict[str, dict] = {
         "publication": "b",
         "source_type": "arret_cour_cassation",
     },
+    # Formations « supérieures » de la Cour de cassation : arrêts d'AP et
+    # de chambre mixte. Volumes faibles (~10-15/an chacune toutes matières)
+    # mais valeur jurisprudentielle maximale — leurs décisions s'imposent
+    # à toutes les chambres simples, y compris en droit social.
+    "cass_pl": {
+        "label": "Cass. AP (Assemblée plénière)",
+        "service": "judilibre",
+        "jurisdiction": "cc",
+        "chamber": "pl",
+        "publication": "b",
+        "source_type": "arret_cour_cassation",
+    },
+    "cass_mi": {
+        "label": "Cass. mi (Chambre mixte)",
+        "service": "judilibre",
+        "jurisdiction": "cc",
+        "chamber": "mi",
+        "publication": "b",
+        "source_type": "arret_cour_cassation",
+    },
     "ca_soc": {
         "label": "Cour d'appel — chambre sociale",
         "service": "judilibre_ca",
