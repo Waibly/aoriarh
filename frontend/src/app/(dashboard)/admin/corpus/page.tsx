@@ -145,20 +145,21 @@ function fmtRelative(iso: string | null): string {
 
 /**
  * Compute the next scheduled auto-sync date.
- * Cron: 1st and 15th of each month at 03:00 UTC.
+ * Cron: every Saturday at 03:00 UTC (backend worker.py).
  */
 function nextAutoSync(): string {
   const now = new Date();
-  // Try this month's 1st and 15th, then next month's 1st
-  const candidates = [
-    new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1, 3, 0, 0)),
-    new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 15, 3, 0, 0)),
-    new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1, 3, 0, 0)),
-    new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 15, 3, 0, 0)),
-  ];
-  const next = candidates.find((d) => d.getTime() > now.getTime());
-  if (!next) return "—";
-  return next.toLocaleString("fr-FR", {
+  const candidate = new Date(Date.UTC(
+    now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 3, 0, 0,
+  ));
+  // Move to next Saturday at 3h UTC (Saturday = day 6)
+  const daysUntilSat = (6 - candidate.getUTCDay() + 7) % 7;
+  candidate.setUTCDate(candidate.getUTCDate() + daysUntilSat);
+  // If today is Saturday but past 3h UTC, jump to next Saturday
+  if (candidate.getTime() <= now.getTime()) {
+    candidate.setUTCDate(candidate.getUTCDate() + 7);
+  }
+  return candidate.toLocaleString("fr-FR", {
     weekday: "long",
     day: "2-digit",
     month: "long",
@@ -546,29 +547,75 @@ function SyncBanner({ token, onRefresh }: { token: string; onRefresh: () => void
       key: "kali",
       label: "KALI (CCN)",
       auto: true,
-      autoDetail: "Rotation des 15 CCN installées les plus anciennement synchronisées",
-      help: "Synchronise les conventions collectives nationales depuis la base KALI de Légifrance. Met à jour le contenu des CCN installées dans les organisations.",
+      autoDetail: "Rotation : les 15 CCN installées les plus anciennement synchronisées",
+      help: (
+        <>
+          <strong>Au clic :</strong> appelle <code>POST /admin/ccn/sync-all</code>,
+          qui lance un job ARQ <code>run_kali_install</code> pour chaque CCN installée
+          dans une organisation. Met à jour les articles, avenants et grilles depuis
+          la base KALI de Légifrance.<br /><br />
+          <strong>Cron auto :</strong> tous les samedis à 3h UTC, traite uniquement
+          les 15 CCN les plus anciennement syncées (rotation).
+        </>
+      ),
     },
     {
       key: "judilibre",
       label: "Jurisprudence",
       auto: true,
-      autoDetail: "Cass. soc / cr / comm / civ2 + CA chambre sociale (cap 300) + Conseil constit",
-      help: "Récupère les arrêts récents de la jurisprudence sociale française : Cour de cassation (chambres sociale, criminelle, commerciale, 2e civile pour AT/MP), Cour d'appel chambre sociale (filtrée à ~300 arrêts les plus récents) et Conseil constitutionnel. Fenêtre de 30 jours, exécuté à chaque sync.",
+      autoDetail: "6 passes Cass (soc + cr + comm + civ2 + AP + chambre mixte) + CA ch. soc + Conseil constit",
+      help: (
+        <>
+          <strong>Au clic :</strong> appelle <code>POST /admin/jurisprudence/sync-all</code>,
+          qui lance le job <code>run_full_jurisprudence_sync</code>. Fenêtre 30 jours
+          glissants, 8 passes successives :
+          <ul className="list-disc pl-4 mt-1">
+            <li>Cass. chambre sociale (au Bulletin)</li>
+            <li>Cass. chambre criminelle (au Bulletin)</li>
+            <li>Cass. chambre commerciale (au Bulletin)</li>
+            <li>Cass. 2ᵉ chambre civile, sécu / AT-MP (au Bulletin)</li>
+            <li>Cass. Assemblée plénière (au Bulletin)</li>
+            <li>Cass. chambre mixte (au Bulletin)</li>
+            <li>Cour d'appel chambre sociale, cap 300 arrêts</li>
+            <li>Conseil constitutionnel</li>
+          </ul>
+          Dédup par numéro de pourvoi (Cass/CA) ou CID (Conseil constit), les
+          arrêts déjà en base sont ignorés.<br /><br />
+          <strong>Cron auto :</strong> tous les samedis à 3h UTC.
+        </>
+      ),
     },
     {
       key: "code_travail",
       label: "Codes",
       auto: true,
-      autoDetail: "9 codes (travail, civil, pénal, CSS, action sociale, santé publique, commerce, monétaire et financier, CGI). Hash SHA-256 — réingéré uniquement si différent.",
-      help: "Récupère et met à jour les 9 codes juridiques pertinents : Code du travail, Code civil, Code pénal, Code de la sécurité sociale, Code de l'action sociale et des familles, Code de la santé publique, Code de commerce, Code monétaire et financier, Code général des impôts. Seuls les codes dont le contenu Légifrance a changé sont réingérés.",
+      autoDetail: "9 codes (travail, civil, pénal, CSS, action sociale, santé publique, commerce, monétaire et financier, CGI)",
+      help: (
+        <>
+          <strong>Au clic :</strong> appelle <code>POST /admin/syncs/codes</code>,
+          qui lance le job <code>run_all_codes_sync</code>. Pour chacun des 9 codes,
+          télécharge le texte complet depuis Légifrance, calcule un hash SHA-256
+          et compare avec la version stockée. Si identique → aucune action
+          (zéro coût d'embeddings). Si différent → réingestion complète.<br /><br />
+          <strong>Cron auto :</strong> tous les samedis à 3h UTC.
+        </>
+      ),
     },
     {
       key: "bocc",
       label: "BOCC",
       auto: true,
-      autoDetail: "1 numéro à chaque exécution (semaine en cours - 2)",
-      help: "Bulletin Officiel des Conventions Collectives — récupère les nouveaux avenants publiés. Ils sont mis en réserve et ingérés automatiquement à l'installation de la CCN concernée.",
+      autoDetail: "Quotidien : balaye une fenêtre de 6 semaines, ingère les nouveaux numéros (cap 6/run)",
+      help: (
+        <>
+          <strong>Au clic :</strong> appelle <code>POST /admin/syncs/bocc</code>,
+          qui lance le job <code>run_bocc_sync</code> pour le dernier numéro publié.
+          Les avenants téléchargés sont mis en réserve ; ils sont ingérés
+          automatiquement lors de l'installation d'une CCN concernée.<br /><br />
+          <strong>Cron auto :</strong> quotidien à 2h30 UTC (différent du cron
+          général car DILA peut publier n'importe quel jour de la semaine).
+        </>
+      ),
     },
   ];
 
@@ -578,15 +625,19 @@ function SyncBanner({ token, onRefresh }: { token: string; onRefresh: () => void
         <div className="flex items-center gap-2 text-xs font-semibold">
           Synchronisations
           <InfoTooltip>
-            <strong>Synchronisation automatique</strong> bimensuelle :
-            les <strong>1er et 15</strong> de chaque mois à <strong>03:00 UTC</strong>.
-            <br />
-            Inclus : KALI (rotation 15 CCN), Jurisprudence 30j (Cass soc/cr/comm/civ2 + CA ch. soc + Conseil constit),
-            BOCC (1 numéro), 9 codes (hash SHA-256).
-            <br />
-            Pour les codes, un hash SHA-256 du contenu est comparé à la
-            version stockée : si identique, rien n&apos;est réingéré (zéro
-            coût d&apos;embeddings).
+            <strong>Synchronisation automatique :</strong> tous les
+            <strong> samedis à 03:00 UTC</strong> (~4-5h heure de Paris).
+            Lance la fonction <code>run_scheduled_sync</code> du worker, qui
+            enchaîne :
+            <ol className="list-decimal pl-4 mt-1">
+              <li>Jurisprudence (8 passes Cass + CA + Conseil constit, 30j)</li>
+              <li>KALI : rotation des 15 CCN les plus anciennement syncées</li>
+              <li>BOCC : catch-up des numéros non traités (12 semaines, cap 6)</li>
+            </ol>
+            BOCC tourne aussi en quotidien (cron séparé à 2h30 UTC) pour ne
+            jamais rater un numéro publié hors samedi.<br /><br />
+            Les boutons ci-dessous lancent manuellement <strong>la même
+            opération</strong> que le cron, sans attendre le samedi.
           </InfoTooltip>
         </div>
         <div className="text-[10px] text-muted-foreground">
