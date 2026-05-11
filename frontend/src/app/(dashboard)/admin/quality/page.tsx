@@ -113,8 +113,8 @@ function fmtMs(ms: number | null): string {
 
 function fmtUsd(usd: number | null): string {
   if (usd === null || usd === undefined) return "—";
-  if (usd < 0.01) return `${(usd * 1000).toFixed(2)} m$`;
-  return `$${usd.toFixed(4)}`;
+  if (Math.abs(usd) < 0.01) return `$${usd.toFixed(4)}`;
+  return `$${usd.toFixed(2)}`;
 }
 
 function fmtDate(iso: string): string {
@@ -129,7 +129,12 @@ function fmtDate(iso: string): string {
 
 function TrendArrow({ delta, invertColor = false }: { delta: number | null; invertColor?: boolean }) {
   if (delta === null) {
-    return <Minus className="h-3 w-3 text-muted-foreground" />;
+    return (
+      <span className="flex items-center gap-1 text-xs text-muted-foreground">
+        <Minus className="h-3 w-3" />
+        vs période préc.
+      </span>
+    );
   }
   const isUp = delta > 0;
   // For some metrics (like negative rate or latency), going up is bad
@@ -138,7 +143,7 @@ function TrendArrow({ delta, invertColor = false }: { delta: number | null; inve
   return (
     <span className={`flex items-center gap-1 text-xs ${colorClass}`}>
       {isUp ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
-      {Math.abs(delta).toFixed(1)}%
+      {Math.abs(delta).toFixed(1).replace(".", ",")}% vs période préc.
     </span>
   );
 }
@@ -383,7 +388,8 @@ export default function QualityPage() {
           help={
             <>
               Coût moyen d&apos;une question (embeddings + LLM + rerank).
-              <strong> m$</strong> = millième de dollar (1 m$ = 0.001$).
+              Pour les montants inférieurs à 1 cent, affichage en
+              dollars avec 4 décimales (ex: $0.0096 ≈ 1 centime).
               Exclut le bac à sable.
             </>
           }

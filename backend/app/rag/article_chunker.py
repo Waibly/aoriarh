@@ -18,6 +18,7 @@ from dataclasses import dataclass, field
 import tiktoken
 
 from app.rag.chunker import contains_markdown_table
+from app.rag.config import CHUNK_OVERLAP
 
 
 # Detect article boundaries in markdown: ### Article L1234-5
@@ -31,6 +32,7 @@ _SECTION_HEADING = re.compile(
 )
 
 _ARTICLE_CHUNK_SIZE = 450  # Smaller than generic (1024) for more precise embeddings
+_ARTICLE_CHUNK_OVERLAP = CHUNK_OVERLAP  # Reused when falling back to LegalChunker
 _MIN_CHUNK_TOKENS = 15  # Discard chunks below this threshold (title-only ghosts)
 
 
@@ -56,8 +58,10 @@ class ArticleChunker:
     def __init__(
         self,
         chunk_size: int = _ARTICLE_CHUNK_SIZE,
+        chunk_overlap: int = _ARTICLE_CHUNK_OVERLAP,
     ) -> None:
         self.chunk_size = chunk_size
+        self.chunk_overlap = chunk_overlap
         self._enc = tiktoken.get_encoding("cl100k_base")
 
     def chunk(self, text: str) -> list[str]:
