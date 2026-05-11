@@ -576,7 +576,7 @@ function SyncBanner({ token, onRefresh }: { token: string; onRefresh: () => void
             <li>Cass. 2ᵉ chambre civile, sécu / AT-MP (au Bulletin)</li>
             <li>Cass. Assemblée plénière (au Bulletin)</li>
             <li>Cass. chambre mixte (au Bulletin)</li>
-            <li>Cour d'appel chambre sociale, cap 300 arrêts</li>
+            <li>Cour d&apos;appel chambre sociale, cap 300 arrêts</li>
             <li>Conseil constitutionnel</li>
           </ul>
           Dédup par numéro de pourvoi (Cass/CA) ou CID (Conseil constit), les
@@ -596,7 +596,7 @@ function SyncBanner({ token, onRefresh }: { token: string; onRefresh: () => void
           qui lance le job <code>run_all_codes_sync</code>. Pour chacun des 9 codes,
           télécharge le texte complet depuis Légifrance, calcule un hash SHA-256
           et compare avec la version stockée. Si identique → aucune action
-          (zéro coût d'embeddings). Si différent → réingestion complète.<br /><br />
+          (zéro coût d&apos;embeddings). Si différent → réingestion complète.<br /><br />
           <strong>Cron auto :</strong> tous les samedis à 3h UTC.
         </>
       ),
@@ -611,9 +611,9 @@ function SyncBanner({ token, onRefresh }: { token: string; onRefresh: () => void
           <strong>Au clic :</strong> appelle <code>POST /admin/syncs/bocc</code>,
           qui lance le job <code>run_bocc_sync</code> pour le dernier numéro publié.
           Les avenants téléchargés sont mis en réserve ; ils sont ingérés
-          automatiquement lors de l'installation d'une CCN concernée.<br /><br />
+          automatiquement lors de l&apos;installation d&apos;une CCN concernée.<br /><br />
           <strong>Cron auto :</strong> quotidien à 2h30 UTC (différent du cron
-          général car DILA peut publier n'importe quel jour de la semaine).
+          général car DILA peut publier n&apos;importe quel jour de la semaine).
         </>
       ),
     },
