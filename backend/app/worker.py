@@ -1482,8 +1482,14 @@ class WorkerSettings:
         run_daily_bocc_check,
     ]
     cron_jobs = [
-        # Legal corpus refresh: 1st and 15th of each month at 3:00 AM UTC
-        cron(run_scheduled_sync, month=None, day={1, 15}, hour=3, minute=0),
+        # Legal corpus refresh: every Saturday at 3:00 AM UTC (~4-5 AM Paris).
+        # Hebdomadaire pour lisser la charge et réduire la latence de
+        # fraîcheur — un arrêt publié le lundi est intégré au plus tard le
+        # samedi suivant (5j vs 14j avec l'ancien rythme bimensuel).
+        # La fenêtre de 30j dans run_scheduled_sync gère naturellement le
+        # chevauchement entre runs : les doublons sont éliminés par la
+        # dédup numero_pourvoi/CID, ce sont juste des appels API "à vide".
+        cron(run_scheduled_sync, weekday="sat", hour=3, minute=0),
         # BOCC : vérification quotidienne (DILA peut publier n'importe quand).
         # Si rien de nouveau, sync_log = success / 0 items (pas une erreur).
         cron(run_daily_bocc_check, hour=2, minute=30),
