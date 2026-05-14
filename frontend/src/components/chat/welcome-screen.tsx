@@ -96,7 +96,7 @@ export function WelcomeScreen({ onSend }: WelcomeScreenProps) {
         {suggestions.map((suggestion) => (
           <button
             key={suggestion}
-            className="flex items-start gap-2 rounded-xl bg-muted/50 px-4 py-3 text-left text-sm text-muted-foreground transition-colors hover:bg-[#652bb0]/10 hover:text-foreground"
+            className="flex items-start gap-2 rounded-xl bg-[#652bb0]/10 px-4 py-3 text-left text-sm text-foreground transition-colors hover:bg-[#652bb0]/20"
             onClick={() => onSend(suggestion)}
           >
             <Scale className="mt-0.5 size-4 shrink-0" />
