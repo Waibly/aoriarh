@@ -206,6 +206,11 @@ class StripeService:
             # stays card-only — simpler accounting, zero async payment
             # flow to monitor.
             payment_method_types=["card"],
+            # Promo codes only on monthly subscriptions. Coupons in Stripe
+            # are configured with duration=once → on yearly that would mean
+            # "first 12 months", on monthly it means "1 month". Restricting
+            # to monthly keeps the discount scoped as intended.
+            allow_promotion_codes=(cycle == "monthly"),
             # Stripe Tax: automatic VAT calculation. Requires a billing
             # address (below) and at least one tax registration (FR).
             automatic_tax={"enabled": True},
