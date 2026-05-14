@@ -309,6 +309,7 @@ async def _classify_via_llm(query: str, llm: AsyncOpenAI) -> Intent:
             # gpt-5 family rejects max_tokens, exige max_completion_tokens.
             max_completion_tokens=30,
             response_format={"type": "json_object"},
+            reasoning_effort="minimal",
         )
         content = response.choices[0].message.content or "{}"
         data = json.loads(content)

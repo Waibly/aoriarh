@@ -983,6 +983,7 @@ class RAGAgent:
             ],
             temperature=0.0,
             max_completion_tokens=400,
+            reasoning_effort="minimal",
         )
         if response.usage:
             await cost_tracker.log(
