@@ -269,7 +269,7 @@ class KaliService:
                 kali_docs = [
                     d for d in existing_common
                     if d.name.startswith("CCN ")
-                    and d.indexation_status == "success"
+                    and d.indexation_status == "indexed"
                     and d.chunk_count
                 ]
                 if kali_docs:

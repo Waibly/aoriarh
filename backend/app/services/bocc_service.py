@@ -256,11 +256,13 @@ class BoccService:
 
                     storage_path = f"common/ccn/{avenant['idcc']}/bocc_{numero}_{avenant['nor']}.md"
 
-                    # Check if already exists (dedup by NOR)
+                    # Check if already exists (dedup by storage_path, which
+                    # contains the NOR — `name` does not, so the previous
+                    # ilike(%NOR%) check never matched and let duplicates in).
                     existing = await db.execute(
                         select(Document).where(
                             Document.organisation_id.is_(None),
-                            Document.name.ilike(f"%{avenant['nor']}%"),
+                            Document.storage_path == storage_path,
                         ).limit(1)
                     )
                     if existing.scalar_one_or_none():
