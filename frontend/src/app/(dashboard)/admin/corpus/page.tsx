@@ -18,7 +18,7 @@ import {
   CalendarRange,
   Eye,
 } from "lucide-react";
-import { apiFetch } from "@/lib/api";
+import { apiFetch, authFetch } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -1016,6 +1016,34 @@ export default function CorpusPage() {
     }
   };
 
+  const handleDownload = async (id: string) => {
+    if (!token) return;
+    try {
+      const res = await authFetch(`/admin/documents/${id}/download`, { token });
+      if (!res.ok) throw new Error("Erreur");
+      const blob = await res.blob();
+      const disposition = res.headers.get("Content-Disposition");
+      let filename = "document";
+      if (disposition) {
+        const utf8Match = disposition.match(/filename\*=UTF-8''(.+)/i);
+        if (utf8Match) {
+          filename = decodeURIComponent(utf8Match[1].replace(/;.*$/, "").trim());
+        } else {
+          const asciiMatch = disposition.match(/filename="(.+?)"/);
+          if (asciiMatch) filename = asciiMatch[1];
+        }
+      }
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      toast.error("Le téléchargement a échoué.");
+    }
+  };
+
   const [reindexAllRunning, setReindexAllRunning] = useState(false);
   const handleReindexAll = async () => {
     if (!token) return;
@@ -1532,12 +1560,10 @@ export default function CorpusPage() {
                             <Button
                               variant="ghost"
                               size="sm"
-                              asChild
+                              onClick={() => handleDownload(d.id)}
                               title="Télécharger"
                             >
-                              <a href={`/api/v1/admin/documents/${d.id}/download`}>
-                                <Download className="h-3 w-3" />
-                              </a>
+                              <Download className="h-3 w-3" />
                             </Button>
                             <Button
                               variant="ghost"
