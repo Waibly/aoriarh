@@ -513,7 +513,7 @@ INVITE_PLAN_ASSIGNED_CONTENT = """\
   Nous vous offrons le plan <strong>Invité</strong> sur votre compte AORIA RH.
   Il est gratuit et accessible jusqu'au <strong>{end_date}</strong>.
 </p>
-<p style="color:#3f3f46; line-height:1.6;">Ce que vous avez&nbsp;:</p>
+<p style="color:#3f3f46; line-height:1.6;">Ce que comprend votre plan Invité&nbsp;:</p>
 <ul style="color:#3f3f46; line-height:1.8; padding-left:20px; margin:12px 0;">
 {features_list}
 </ul>
