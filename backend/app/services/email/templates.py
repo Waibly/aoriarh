@@ -528,11 +528,11 @@ INVITE_PLAN_ASSIGNED_CONTENT = """\
 <p style="color:#3f3f46; line-height:1.6;">
   À l'expiration, votre compte reviendra automatiquement sur l'offre Essai.
   Pour continuer à utiliser AORIA RH au-delà, vous pourrez souscrire depuis
-  votre espace Facturation.
+  votre espace Abonnement.
 </p>
 <p style="color:#3f3f46; line-height:1.6;">
-  N'hésitez pas à nous faire des retours en passant par l'app, depuis le bouton
-  en bas à droite de l'interface.
+  <strong>N'hésitez pas à nous faire des retours en passant par l'app, depuis le bouton
+  en bas à droite de l'interface.</strong>
 </p>
 <p style="color:#3f3f46; line-height:1.6;">Merci de votre confiance.</p>
 <p style="color:#3f3f46; line-height:1.6;">L'équipe AORIA RH</p>"""
