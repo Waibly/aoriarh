@@ -1,10 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Building2, Plus, ChevronsUpDown, Check } from "lucide-react";
 import { useSession } from "next-auth/react";
 import { useOrg } from "@/lib/org-context";
-import { apiFetch } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import {
   Command,
@@ -20,12 +19,17 @@ import {
 } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
 import { OrgFormDialog } from "@/components/org-form-dialog";
-import type { Organisation } from "@/types/api";
 
 export function OrgSelector() {
   const { data: session } = useSession();
-  const { organisations, currentOrg, setCurrentOrgId, loading, refetchOrgs, workspaceName } =
-    useOrg();
+  const {
+    organisations,
+    currentOrg,
+    setCurrentOrgId,
+    loading,
+    workspaceName,
+    createOrganisation,
+  } = useOrg();
   const [open, setOpen] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
 
@@ -35,19 +39,33 @@ export function OrgSelector() {
   const hasWorkspace = !!workspaceName;
   const canCreate = isAdmin || isManager || hasWorkspace;
 
-  // Auto-open create dialog ONLY for workspace owners (not invited users)
-  const isWorkspaceOwner = session?.user?.role === "manager" && !!workspaceName;
-  useEffect(() => {
-    if (!loading && organisations.length === 0 && (isAdmin || isWorkspaceOwner)) {
-      setCreateOpen(true);
-    }
-  }, [loading, organisations.length, isAdmin, isWorkspaceOwner]);
-
   if (loading) {
     return (
       <Button variant="outline" className="w-full justify-between" disabled>
         <span className="text-muted-foreground">Chargement...</span>
       </Button>
+    );
+  }
+
+  // Empty state: bouton violet à la place de la dropdown quand pas d'org
+  if (organisations.length === 0 && canCreate) {
+    return (
+      <>
+        <Button
+          className="w-full bg-[#652bb0] text-white hover:bg-[#5a2599] focus-visible:ring-[#652bb0]/40"
+          onClick={() => setCreateOpen(true)}
+        >
+          <Plus className="mr-2 h-4 w-4" />
+          Créer une organisation
+        </Button>
+        <OrgFormDialog
+          open={createOpen}
+          onOpenChange={setCreateOpen}
+          onSubmit={async (data) => {
+            await createOrganisation(data);
+          }}
+        />
+      </>
     );
   }
 
@@ -122,36 +140,7 @@ export function OrgSelector() {
           open={createOpen}
           onOpenChange={setCreateOpen}
           onSubmit={async (data) => {
-            const { profil_metier, selectedCcn, ...orgData } = data;
-            const org = await apiFetch<Organisation>("/organisations/", {
-              method: "POST",
-              token: session?.access_token,
-              body: JSON.stringify(orgData),
-            });
-            // Save profil_metier on user if provided
-            if (profil_metier) {
-              await apiFetch("/users/me", {
-                method: "PATCH",
-                token: session?.access_token,
-                body: JSON.stringify({ profil_metier }),
-              });
-            }
-            // Install selected conventions collectives (fire & forget)
-            if (selectedCcn && selectedCcn.length > 0) {
-              for (const ccn of selectedCcn) {
-                apiFetch(`/conventions/organisations/${org.id}`, {
-                  method: "POST",
-                  token: session?.access_token,
-                  body: JSON.stringify({ idcc: ccn.idcc }),
-                }).catch(() => {});
-              }
-            }
-            // Notify the usage dashboard to refresh.
-            if (typeof window !== "undefined") {
-              window.dispatchEvent(new Event("quota-updated"));
-            }
-            await refetchOrgs();
-            setCurrentOrgId(org.id);
+            await createOrganisation(data);
           }}
         />
       )}

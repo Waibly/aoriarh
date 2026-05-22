@@ -4,13 +4,14 @@ import { useRouter } from "next/navigation";
 import { useCallback } from "react";
 import { useSession } from "next-auth/react";
 import { WelcomeScreen } from "@/components/chat/welcome-screen";
+import { NoOrgWelcome } from "@/components/chat/no-org-welcome";
 import { useOrg } from "@/lib/org-context";
 import { createConversation } from "@/lib/chat-api";
 
 export default function ChatPage() {
   const router = useRouter();
   const { data: session } = useSession();
-  const { currentOrg } = useOrg();
+  const { currentOrg, organisations, loading } = useOrg();
 
   const handleSend = useCallback(
     async (content: string) => {
@@ -32,6 +33,10 @@ export default function ChatPage() {
     },
     [session, currentOrg, router],
   );
+
+  if (!loading && organisations.length === 0) {
+    return <NoOrgWelcome />;
+  }
 
   return <WelcomeScreen onSend={handleSend} />;
 }
