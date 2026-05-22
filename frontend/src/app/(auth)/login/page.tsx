@@ -113,7 +113,19 @@ function LoginForm() {
           variant="outline"
           type="button"
           disabled={isLoading}
-          onClick={() => signIn("google", { callbackUrl: callbackUrl || "/chat" })}
+          onClick={() => {
+            // /post-signup vérifie si l'utilisateur a une organisation et
+            // affiche un onboarding inline si non. C'est obligatoire car le
+            // login Google sert aussi de re-inscription quand le compte a
+            // été supprimé : le user n'a alors plus d'org et doit en créer
+            // une. Si l'user avait un callbackUrl spécifique (invite link),
+            // on le stash dans un cookie pour que /post-signup le respecte
+            // après création d'org.
+            if (callbackUrl) {
+              document.cookie = `aoria_post_signup_callback=${encodeURIComponent(callbackUrl)}; max-age=600; path=/; samesite=lax`;
+            }
+            signIn("google", { callbackUrl: "/post-signup" });
+          }}
         >
           <svg className="mr-2 h-4 w-4" viewBox="0 0 24 24">
             <path

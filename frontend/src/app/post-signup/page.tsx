@@ -90,15 +90,20 @@ export default function PostSignupPage() {
   function continueAfterOrg(token: string) {
     const plan = readCookie("aoria_signup_plan");
     const cycle = readCookie("aoria_signup_cycle");
+    const callback = readCookie("aoria_post_signup_callback");
     clearCookie("aoria_signup_plan");
     clearCookie("aoria_signup_cycle");
+    clearCookie("aoria_post_signup_callback");
 
     const planValid = plan && (PAID_PLANS as readonly string[]).includes(plan);
     const cycleValid =
       cycle && (BILLING_CYCLES as readonly string[]).includes(cycle);
+    // callback must be a relative URL to avoid open-redirect
+    const safeCallback =
+      callback && callback.startsWith("/") ? callback : null;
 
     if (!planValid || !cycleValid) {
-      router.replace("/chat");
+      router.replace(safeCallback ?? "/chat");
       return;
     }
 
@@ -111,7 +116,7 @@ export default function PostSignupPage() {
         if (data?.checkout_url) {
           window.location.href = data.checkout_url;
         } else {
-          router.replace("/chat");
+          router.replace(safeCallback ?? "/chat");
         }
       })
       .catch(() => {
