@@ -1,6 +1,6 @@
 import uuid
 
-from sqlalchemy import ForeignKey, String
+from sqlalchemy import Boolean, ForeignKey, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, TimestampMixin, generate_uuid
@@ -15,6 +15,9 @@ class Organisation(TimestampMixin, Base):
     taille: Mapped[str | None] = mapped_column(String(50))
     convention_collective: Mapped[str | None] = mapped_column(String(255), nullable=True)
     secteur_activite: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    not_subject_to_ccn: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
     account_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("accounts.id"), nullable=True, index=True
     )

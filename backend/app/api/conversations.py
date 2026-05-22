@@ -336,7 +336,7 @@ async def chat(
 
 async def _load_org_context(
     db: AsyncSession, organisation_id: uuid.UUID
-) -> dict[str, str | None] | None:
+) -> dict[str, str | bool | None] | None:
     """Load organisation profile for RAG context injection."""
     from app.models.ccn import CcnReference, OrganisationConvention
 
@@ -365,12 +365,13 @@ async def _load_org_context(
             f"{row.titre} (IDCC {row.idcc})" for row in installed_ccns
         )
 
-    ctx = {
+    ctx: dict[str, str | bool | None] = {
         "nom": org.name,
         "forme_juridique": org.forme_juridique,
         "taille": org.taille,
         "convention_collective": convention_str,
         "secteur_activite": org.secteur_activite,
+        "not_subject_to_ccn": bool(org.not_subject_to_ccn),
     }
     return ctx
 
@@ -473,14 +474,18 @@ async def chat_stream(
                 return
 
             # 2b. Load org's CCN IDCC list for search filtering
-            from app.models.ccn import OrganisationConvention
-            idcc_result = await db.execute(
-                select(OrganisationConvention.idcc).where(
-                    OrganisationConvention.organisation_id == conversation.organisation_id,
-                    OrganisationConvention.use_custom.is_(False),
+            # Si l'organisation n'est pas soumise à une CCN, on n'en cherche pas.
+            if org_context and org_context.get("not_subject_to_ccn"):
+                org_idcc_list = None
+            else:
+                from app.models.ccn import OrganisationConvention
+                idcc_result = await db.execute(
+                    select(OrganisationConvention.idcc).where(
+                        OrganisationConvention.organisation_id == conversation.organisation_id,
+                        OrganisationConvention.use_custom.is_(False),
+                    )
                 )
-            )
-            org_idcc_list = [r[0] for r in idcc_result.all()] or None
+                org_idcc_list = [r[0] for r in idcc_result.all()] or None
 
             # 2b. Send status: analyzing
             yield _sse_event("chat_status", {"step": "Analyse de votre question..."})

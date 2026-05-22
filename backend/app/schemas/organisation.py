@@ -60,6 +60,7 @@ class OrganisationCreate(BaseModel):
     taille: Taille | None = None
     convention_collective: str | None = None
     secteur_activite: str | None = None
+    not_subject_to_ccn: bool = False
 
 
 class OrganisationRead(BaseModel):
@@ -71,6 +72,7 @@ class OrganisationRead(BaseModel):
     taille: str | None
     convention_collective: str | None = None
     secteur_activite: str | None = None
+    not_subject_to_ccn: bool = False
     account_id: uuid.UUID | None = None
     created_at: datetime
 
@@ -81,6 +83,7 @@ class OrganisationUpdate(BaseModel):
     taille: Taille | None = None
     convention_collective: str | None = None
     secteur_activite: str | None = None
+    not_subject_to_ccn: bool | None = None
 
 
 class MembershipRead(BaseModel):

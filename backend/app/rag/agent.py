@@ -961,7 +961,9 @@ class RAGAgent:
             org_info = []
             if org_context.get("nom"):
                 org_info.append(f"Organisation : {org_context['nom']}")
-            if org_context.get("convention_collective"):
+            if org_context.get("not_subject_to_ccn"):
+                org_info.append("Convention collective : aucune (organisation non soumise à CCN)")
+            elif org_context.get("convention_collective"):
                 org_info.append(f"Convention collective : {org_context['convention_collective']}")
             if org_context.get("secteur_activite"):
                 org_info.append(f"Secteur : {org_context['secteur_activite']}")
@@ -1009,9 +1011,12 @@ class RAGAgent:
         if not org_context:
             return f"Question : {query}"
         lines = ["[ORGANISATION]"]
-        ccn = org_context.get("convention_collective")
-        if ccn:
-            lines.append(f"- CCN rattachée : {ccn}")
+        if org_context.get("not_subject_to_ccn"):
+            lines.append("- CCN rattachée : aucune (organisation non soumise à CCN)")
+        else:
+            ccn = org_context.get("convention_collective")
+            if ccn:
+                lines.append(f"- CCN rattachée : {ccn}")
         secteur = org_context.get("secteur_activite")
         if secteur:
             lines.append(f"- Secteur : {secteur}")
@@ -1332,6 +1337,7 @@ class RAGAgent:
         """Build an organisation context block for the LLM prompt."""
         nom = org_context.get("nom") or "l'entreprise"
         profil = org_context.get("profil_metier")
+        not_subject_to_ccn = bool(org_context.get("not_subject_to_ccn"))
 
         lines = [f"## Entreprise de l'utilisateur : {nom}\n"]
 
@@ -1353,12 +1359,25 @@ class RAGAgent:
             "secteur_activite": "Secteur d'activité / code APE",
         }
         for key, label in field_labels.items():
+            # Si l'org n'est pas soumise à une CCN, on n'affiche pas le champ CCN
+            # (qui peut être vide ou rempli historiquement) — il sera remplacé
+            # par l'instruction explicite ci-dessous.
+            if key == "convention_collective" and not_subject_to_ccn:
+                continue
             value = org_context.get(key)
             if value:
                 if key == "taille":
                     lines.append(f"- {label} : {value} salariés")
                 else:
                     lines.append(f"- {label} : {value}")
+        if not_subject_to_ccn:
+            lines.append(
+                "- Convention collective : **aucune** — cette organisation "
+                "n'est pas soumise à une CCN. Réponds en t'appuyant uniquement "
+                "sur le Code du travail, les accords interprofessionnels et la "
+                "jurisprudence applicable. N'invoque aucune CCN ; si la question "
+                "porte explicitement sur une CCN, indique qu'elle ne s'applique pas."
+            )
         lines.append(
             "\n**Ces dimensions sont indépendantes.** Ne les combine pas en une "
             "catégorie mixte (ex: \"TPE associative\" ou \"PME associative\" n'existent "
