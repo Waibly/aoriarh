@@ -25,6 +25,7 @@ import type { Organisation, CcnReference } from "@/types/api";
 import {
   OrgFormFields,
   emptyOrgFormFields,
+  isOrgFormFieldsValid,
   type OrgFormFieldsValues,
 } from "@/components/org/org-form-fields";
 
@@ -197,6 +198,7 @@ export function OrgFormDialog({
                   values={orgValues}
                   onChange={setOrgValues}
                   token={token}
+                  requireTaille
                 />
                 <DialogFooter className="pt-2">
                   <Button
@@ -208,7 +210,7 @@ export function OrgFormDialog({
                   </Button>
                   <Button
                     type="button"
-                    disabled={!orgValues.name.trim()}
+                    disabled={!isOrgFormFieldsValid(orgValues, { requireTaille: true })}
                     onClick={() => setStep(2)}
                   >
                     Suivant

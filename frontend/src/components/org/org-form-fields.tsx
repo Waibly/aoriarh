@@ -30,6 +30,18 @@ interface OrgFormFieldsProps {
   token: string;
   /** When true, hides the CCN selector and the "not subject" checkbox (edit mode). */
   hideCcn?: boolean;
+  /** When true, effectif is required (*) instead of optional (facultatif). */
+  requireTaille?: boolean;
+}
+
+/** Returns true if all required fields are filled. Use to gate the submit button. */
+export function isOrgFormFieldsValid(
+  values: OrgFormFieldsValues,
+  options: { requireTaille?: boolean } = {},
+): boolean {
+  if (!values.name.trim()) return false;
+  if (options.requireTaille && !values.taille) return false;
+  return true;
 }
 
 export function OrgFormFields({
@@ -37,6 +49,7 @@ export function OrgFormFields({
   onChange,
   token,
   hideCcn = false,
+  requireTaille = false,
 }: OrgFormFieldsProps) {
   const set = <K extends keyof OrgFormFieldsValues>(
     key: K,
@@ -84,7 +97,11 @@ export function OrgFormFields({
       <div className="space-y-1.5">
         <Label htmlFor="taille">
           Effectif{" "}
-          <span className="text-muted-foreground text-xs font-normal">(facultatif)</span>
+          {requireTaille ? (
+            <span className="text-destructive">*</span>
+          ) : (
+            <span className="text-muted-foreground text-xs font-normal">(facultatif)</span>
+          )}
         </Label>
         <Select value={values.taille} onValueChange={(v) => set("taille", v)}>
           <SelectTrigger id="taille">

@@ -20,6 +20,7 @@ import { PROFIL_METIER_OPTIONS } from "@/types/api";
 import {
   OrgFormFields,
   emptyOrgFormFields,
+  isOrgFormFieldsValid,
   type OrgFormFieldsValues,
 } from "@/components/org/org-form-fields";
 
@@ -493,11 +494,16 @@ function RegisterForm() {
             values={orgValues}
             onChange={setOrgValues}
             token={session.data?.access_token ?? ""}
+            requireTaille
           />
 
           <Button
             type="submit"
-            disabled={!orgValues.name.trim() || !profilMetier || isLoading}
+            disabled={
+              !isOrgFormFieldsValid(orgValues, { requireTaille: true }) ||
+              !profilMetier ||
+              isLoading
+            }
           >
             {isLoading ? "Création en cours..." : "Continuer"}
           </Button>
@@ -675,6 +681,7 @@ function RegisterForm() {
                 values={orgValues}
                 onChange={setOrgValues}
                 token=""
+                requireTaille
               />
               <div className="flex gap-3">
                 <Button
@@ -689,7 +696,10 @@ function RegisterForm() {
                 <Button
                   type="submit"
                   className="flex-1"
-                  disabled={!orgValues.name.trim() || isLoading}
+                  disabled={
+                    !isOrgFormFieldsValid(orgValues, { requireTaille: true }) ||
+                    isLoading
+                  }
                 >
                   {isLoading ? "Création en cours..." : "Créer mon compte"}
                 </Button>
