@@ -50,9 +50,18 @@ export default function PostSignupPage() {
     apiFetch<Organisation[]>("/organisations/", { token })
       .then((orgs) => {
         if (!orgs || orgs.length === 0) {
-          // No org yet → onboarding flow lives in /register so the user
-          // sees a single, consistent screen. Plan/cycle/profil/callback
-          // cookies stay in place; /register reads them when it submits.
+          // No org yet. Special case: if the callback points at an invitation
+          // acceptance page, respect it directly — the accept flow creates the
+          // membership/org, so an onboarding here would make the user create a
+          // dangling empty org instead of joining the inviter's workspace.
+          const callback = readCookie("aoria_post_signup_callback");
+          if (callback && callback.startsWith("/invite/accept/")) {
+            clearCookie("aoria_post_signup_callback");
+            router.replace(callback);
+            return;
+          }
+          // Otherwise show the onboarding screen. Plan/cycle/profil cookies
+          // stay in place; /register reads them when it submits.
           router.replace("/register?onboard=1");
           return;
         }
