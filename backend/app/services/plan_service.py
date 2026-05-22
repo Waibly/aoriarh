@@ -214,4 +214,29 @@ async def assign_plan(
 
     await db.commit()
     await db.refresh(account)
+
+    # Notify the account owner when an admin offers the Invité plan.
+    # Email failure is non-blocking — the plan assignment must persist
+    # even if Brevo is down.
+    if plan == "invite" and account.plan_expires_at is not None:
+        from app.core.config import settings
+        from app.models.user import User
+        from app.services.email.sender import send_email
+        from app.services.email.templates import render_invite_plan_assigned_email
+
+        owner = await db.get(User, account.owner_id)
+        if owner is not None:
+            billing_url = f"{settings.frontend_url}/billing"
+            subject, html = render_invite_plan_assigned_email(
+                full_name=owner.full_name,
+                plan_expires_at=account.plan_expires_at,
+                billing_url=billing_url,
+            )
+            await send_email(
+                to_email=owner.email,
+                to_name=owner.full_name,
+                subject=subject,
+                html_content=html,
+            )
+
     return account

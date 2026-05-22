@@ -499,3 +499,76 @@ def render_subscription_reactivated_email(
         year=datetime.now().year,
     )
     return subject, html
+
+
+# ---------------------------------------------------------------------------
+# Invite plan (admin-assigned free plan)
+# ---------------------------------------------------------------------------
+
+
+INVITE_PLAN_ASSIGNED_CONTENT = """\
+<h2 style="margin-top:0; color:#5b21b6; font-size:20px;">Votre plan Invité est actif</h2>
+<p style="color:#3f3f46; line-height:1.6;">Bonjour {full_name},</p>
+<p style="color:#3f3f46; line-height:1.6;">
+  Nous vous offrons le plan <strong>Invité</strong> sur votre compte AORIA RH.
+  Il est gratuit et accessible jusqu'au <strong>{end_date}</strong>.
+</p>
+<p style="color:#3f3f46; line-height:1.6;">Ce que vous avez&nbsp;:</p>
+<ul style="color:#3f3f46; line-height:1.8; padding-left:20px; margin:12px 0;">
+{features_list}
+</ul>
+<p style="color:#3f3f46; line-height:1.6;">
+  Aucune action de votre part, c'est déjà actif sur votre compte.
+</p>
+<p style="text-align:center; margin:32px 0;">
+  <a href="{billing_url}" style="display:inline-block; background-color:#6d28d9; color:#ffffff; padding:14px 32px; border-radius:8px; text-decoration:none; font-weight:600; font-size:15px;">
+    Ouvrir AORIA RH
+  </a>
+</p>
+<p style="color:#3f3f46; line-height:1.6;">
+  À l'expiration, votre compte reviendra automatiquement sur l'offre Essai.
+  Pour continuer à utiliser AORIA RH au-delà, vous pourrez souscrire depuis
+  votre espace Facturation.
+</p>
+<p style="color:#3f3f46; line-height:1.6;">
+  N'hésitez pas à nous faire des retours en passant par l'app, depuis le bouton
+  en bas à droite de l'interface.
+</p>
+<p style="color:#3f3f46; line-height:1.6;">Merci de votre confiance.</p>
+<p style="color:#3f3f46; line-height:1.6;">L'équipe AORIA RH</p>"""
+
+
+_FRENCH_MONTHS = (
+    "janvier", "février", "mars", "avril", "mai", "juin",
+    "juillet", "août", "septembre", "octobre", "novembre", "décembre",
+)
+
+
+def _format_french_date(value: datetime) -> str:
+    """Format a datetime as '22 novembre 2026' without depending on a system locale."""
+    return f"{value.day} {_FRENCH_MONTHS[value.month - 1]} {value.year}"
+
+
+def render_invite_plan_assigned_email(
+    full_name: str,
+    plan_expires_at: datetime,
+    billing_url: str,
+) -> tuple[str, str]:
+    """Return (subject, html_body) for the "your account moved to the Invité plan" email."""
+    subject = "Votre compte AORIA RH passe sur le plan Invité"
+
+    features = PLAN_FEATURES.get("invite", [])
+    features_list = "\n".join(f"<li>{f}</li>" for f in features)
+
+    content = INVITE_PLAN_ASSIGNED_CONTENT.format(
+        full_name=full_name or "",
+        end_date=_format_french_date(plan_expires_at),
+        features_list=features_list,
+        billing_url=billing_url,
+    )
+    html = BASE_TEMPLATE.format(
+        subject=subject,
+        content=content,
+        year=datetime.now().year,
+    )
+    return subject, html
