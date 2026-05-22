@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, Suspense } from "react";
-import { signIn } from "next-auth/react";
+import { signIn, useSession } from "next-auth/react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { User, Building2, ArrowRight, ArrowLeft, Check } from "lucide-react";
@@ -41,6 +41,19 @@ const CYCLE_LABEL: Record<BillingCycle, string> = {
   yearly: "annuel",
 };
 
+function readCookie(name: string): string | null {
+  if (typeof document === "undefined") return null;
+  const match = document.cookie.match(
+    new RegExp("(?:^|; )" + name.replace(/[.$?*|{}()[\]\\/+^]/g, "\\$&") + "=([^;]*)"),
+  );
+  return match ? decodeURIComponent(match[1]) : null;
+}
+
+function clearCookie(name: string) {
+  if (typeof document === "undefined") return;
+  document.cookie = `${name}=; max-age=0; path=/; samesite=lax`;
+}
+
 export default function RegisterPage() {
   return (
     <Suspense>
@@ -52,11 +65,19 @@ export default function RegisterPage() {
 function RegisterForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const session = useSession();
   const rawCallback = searchParams.get("callbackUrl");
   const callbackUrl = rawCallback?.startsWith("/") ? rawCallback : null;
   const inviteToken =
     callbackUrl?.match(/\/invite\/accept\/([^/?]+)/)?.[1] ?? null;
   const [isInvitation, setIsInvitation] = useState(false);
+
+  // Onboarding mode: user already authenticated (typically via Google) but has
+  // no organisation yet. We only show the org step — no account creation, no
+  // Google button. Triggered by /post-signup after the OAuth round-trip.
+  const isOnboardingOnly =
+    searchParams.get("onboard") === "1" &&
+    session.status === "authenticated";
 
   const rawPlan = searchParams.get("plan");
   const rawCycle = searchParams.get("cycle");
@@ -81,8 +102,18 @@ function RegisterForm() {
       .catch(() => {});
   }, [inviteToken]);
 
-  // 2 steps for normal signup : (1) Compte + profil, (2) Organisation
-  // 1 step for invitation : Compte + profil (pas d'org à créer)
+  // Guard the onboarding mode: if /register?onboard=1 is hit by someone who
+  // is NOT authenticated, send them to login. Avoids the form being shown to
+  // anonymous users (they would never be able to submit it).
+  useEffect(() => {
+    if (
+      searchParams.get("onboard") === "1" &&
+      session.status === "unauthenticated"
+    ) {
+      router.replace("/login");
+    }
+  }, [searchParams, session.status, router]);
+
   const [step, setStep] = useState(1);
 
   // --- Step 1 : Compte + profil métier ---
@@ -99,6 +130,17 @@ function RegisterForm() {
 
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+
+  // Onboarding mode: pre-fill the profil from the cookie set by /register
+  // before the Google round-trip, so the user doesn't have to re-pick it.
+  useEffect(() => {
+    if (!isOnboardingOnly) return;
+    const profilFromCookie = readCookie("aoria_signup_profil");
+    if (profilFromCookie) {
+      setProfilMetier(profilFromCookie);
+      clearCookie("aoria_signup_profil");
+    }
+  }, [isOnboardingOnly]);
 
   function validateStep1(): boolean {
     setError(null);
@@ -117,12 +159,130 @@ function RegisterForm() {
     return true;
   }
 
+  // --- Submit handlers ---
+
+  // Onboarding (Google, already authenticated): patch profil, create org,
+  // install CCN, then run Stripe checkout if a paid plan was requested.
+  async function handleOnboardingSubmit() {
+    setIsLoading(true);
+    setError(null);
+    const token = session.data?.access_token;
+    if (!token) {
+      setIsLoading(false);
+      router.replace("/login");
+      return;
+    }
+
+    try {
+      if (profilMetier) {
+        await fetch(`${API_BASE_URL}/users/me`, {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({ profil_metier: profilMetier }),
+        }).catch(() => {});
+      }
+
+      const ccnLabel = orgValues.notSubjectToCcn
+        ? null
+        : orgValues.selectedCcn.length > 0
+          ? orgValues.selectedCcn
+              .map((c) => `${c.titre_court || c.titre} (IDCC ${c.idcc})`)
+              .join(", ")
+          : null;
+
+      const orgRes = await fetch(`${API_BASE_URL}/organisations/`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          name: orgValues.name.trim(),
+          forme_juridique: orgValues.formeJuridique || null,
+          taille: orgValues.taille || null,
+          secteur_activite: orgValues.secteurActivite.trim() || null,
+          convention_collective: ccnLabel,
+          not_subject_to_ccn: orgValues.notSubjectToCcn,
+        }),
+      });
+
+      if (!orgRes.ok) {
+        setError(
+          "Impossible de créer votre organisation. Vérifiez vos informations puis réessayez.",
+        );
+        return;
+      }
+
+      const org = await orgRes.json();
+      if (!orgValues.notSubjectToCcn && orgValues.selectedCcn.length > 0) {
+        for (const c of orgValues.selectedCcn) {
+          fetch(`${API_BASE_URL}/conventions/organisations/${org.id}`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify({ idcc: c.idcc }),
+          }).catch(() => {});
+        }
+      }
+
+      // Stripe checkout if a paid plan was stashed in cookies before the OAuth
+      const plan = readCookie("aoria_signup_plan");
+      const cycle = readCookie("aoria_signup_cycle");
+      const callback = readCookie("aoria_post_signup_callback");
+      clearCookie("aoria_signup_plan");
+      clearCookie("aoria_signup_cycle");
+      clearCookie("aoria_post_signup_callback");
+
+      const planValid =
+        plan && (PAID_PLANS as readonly string[]).includes(plan);
+      const cycleValid =
+        cycle && (BILLING_CYCLES as readonly string[]).includes(cycle);
+      const safeCallback =
+        callback && callback.startsWith("/") ? callback : null;
+
+      if (planValid && cycleValid) {
+        try {
+          const checkout = await fetch(`${API_BASE_URL}/billing/checkout`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify({ plan, cycle }),
+          });
+          if (checkout.ok) {
+            const data = await checkout.json();
+            if (data?.checkout_url) {
+              window.location.href = data.checkout_url;
+              return;
+            }
+          }
+        } catch {
+          router.replace("/billing");
+          return;
+        }
+      }
+
+      router.replace(safeCallback ?? "/chat");
+      router.refresh();
+    } catch {
+      setError("Une erreur est survenue. Veuillez réessayer.");
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
+  // Standard registration (email/password) + optional first org.
   async function handleSubmit() {
     setIsLoading(true);
     setError(null);
 
     try {
-      // 1. Register account
       const res = await fetch(`${API_BASE_URL}/auth/register`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -130,7 +290,7 @@ function RegisterForm() {
           email,
           password,
           full_name: fullName,
-          workspace_name: isInvitation ? null : null, // auto-named server-side
+          workspace_name: null,
           invited: isInvitation,
           requested_plan:
             !isInvitation && hasPaidPlanRequested ? requestedPlan : null,
@@ -159,7 +319,6 @@ function RegisterForm() {
       const registerData = await res.json().catch(() => null);
       const accessToken = registerData?.access_token as string | undefined;
 
-      // 2. Save profil_metier on the user
       if (profilMetier && accessToken) {
         try {
           await fetch(`${API_BASE_URL}/users/me`, {
@@ -175,7 +334,6 @@ function RegisterForm() {
         }
       }
 
-      // 3. Create org + install CCNs (skip for invitations)
       const ccnInstallErrors: string[] = [];
       if (!isInvitation && orgValues.name.trim() && accessToken) {
         try {
@@ -242,7 +400,6 @@ function RegisterForm() {
         }
       }
 
-      // 4. Sign in via NextAuth
       const result = await signIn("credentials", {
         email,
         password,
@@ -258,7 +415,6 @@ function RegisterForm() {
         return;
       }
 
-      // 5. Redirect : Stripe checkout if needed, else chat
       if (registerData?.checkout_url) {
         window.location.href = registerData.checkout_url;
         return;
@@ -281,7 +437,75 @@ function RegisterForm() {
     }
   }
 
-  // Steps shown : invitation → 1 step ; normal → 2 steps
+  // --- Render ---
+
+  // Onboarding mode (Google user without org yet) : single org-only screen
+  if (isOnboardingOnly) {
+    return (
+      <>
+        <div className="flex flex-col items-center gap-2 text-center">
+          <div className="rounded-full bg-primary/10 p-2.5">
+            <Building2 className="h-5 w-5 text-primary" />
+          </div>
+          <h1 className="text-2xl font-semibold tracking-tight">
+            Votre organisation
+          </h1>
+          <p className="text-muted-foreground text-sm">
+            Pour personnaliser vos réponses juridiques, dites-nous quelques
+            mots sur votre organisation.
+          </p>
+        </div>
+
+        {error && (
+          <div className="bg-destructive/10 text-destructive rounded-md p-3 text-sm">
+            {error}
+          </div>
+        )}
+
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            handleOnboardingSubmit();
+          }}
+          className="grid gap-5"
+        >
+          {!profilMetier && (
+            <div className="grid gap-2">
+              <Label htmlFor="profilMetierOnboarding">
+                Votre rôle <span className="text-destructive">*</span>
+              </Label>
+              <Select value={profilMetier} onValueChange={setProfilMetier}>
+                <SelectTrigger id="profilMetierOnboarding">
+                  <SelectValue placeholder="Sélectionner votre profil..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {PROFIL_METIER_OPTIONS.map((p) => (
+                    <SelectItem key={p.value} value={p.value}>
+                      {p.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+
+          <OrgFormFields
+            values={orgValues}
+            onChange={setOrgValues}
+            token={session.data?.access_token ?? ""}
+          />
+
+          <Button
+            type="submit"
+            disabled={!orgValues.name.trim() || !profilMetier || isLoading}
+          >
+            {isLoading ? "Création en cours..." : "Continuer"}
+          </Button>
+        </form>
+      </>
+    );
+  }
+
   const totalSteps = isInvitation ? 1 : 2;
 
   return (
@@ -310,7 +534,6 @@ function RegisterForm() {
         </div>
       )}
 
-      {/* Stepper */}
       {totalSteps > 1 && (
         <div className="flex items-center justify-center gap-2 py-2">
           <StepBadge
@@ -336,7 +559,6 @@ function RegisterForm() {
           </div>
         )}
 
-        {/* Step 1 — Compte + profil */}
         {step === 1 && (
           <form
             onSubmit={(e) => {
@@ -441,7 +663,6 @@ function RegisterForm() {
           </form>
         )}
 
-        {/* Step 2 — Organisation */}
         {step === 2 && !isInvitation && (
           <form
             onSubmit={(e) => {
@@ -477,7 +698,6 @@ function RegisterForm() {
           </form>
         )}
 
-        {/* Google sign-in only on step 1 of normal signup */}
         {step === 1 && !isInvitation && (
           <>
             <div className="relative">
@@ -495,8 +715,6 @@ function RegisterForm() {
               type="button"
               disabled={isLoading}
               onClick={() => {
-                // Stash paid plan + profil metier across the OAuth round-trip
-                // (cookies are read by /post-signup after Google returns).
                 if (hasPaidPlanRequested && requestedPlan && requestedCycle) {
                   document.cookie = `aoria_signup_plan=${requestedPlan}; max-age=600; path=/; samesite=lax`;
                   document.cookie = `aoria_signup_cycle=${requestedCycle}; max-age=600; path=/; samesite=lax`;
@@ -530,7 +748,7 @@ function RegisterForm() {
           </>
         )}
       </div>
-      {step === 1 && (
+      {step === 1 && !isInvitation && (
         <p className="text-muted-foreground px-8 text-center text-sm">
           Déjà un compte ?{" "}
           <Link
