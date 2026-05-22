@@ -27,6 +27,7 @@ export interface Organisation {
   taille: string | null;
   convention_collective: string | null;
   secteur_activite: string | null;
+  not_subject_to_ccn: boolean;
   created_at: string;
 }
 

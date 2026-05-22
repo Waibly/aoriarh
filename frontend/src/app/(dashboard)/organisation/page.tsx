@@ -35,7 +35,7 @@ export default function OrganisationListPage() {
   const { data: session } = useSession();
   const token = session?.access_token;
   const router = useRouter();
-  const { organisations, loading, refetchOrgs, setCurrentOrgId } = useOrg();
+  const { organisations, loading, createOrganisation } = useOrg();
 
   const [usage, setUsage] = useState<UsageSummary | null>(null);
   const [addons, setAddons] = useState<ActiveAddon[]>([]);
@@ -153,33 +153,7 @@ export default function OrganisationListPage() {
           open={createOpen}
           onOpenChange={setCreateOpen}
           onSubmit={async (data) => {
-            const { profil_metier, selectedCcn, ...orgData } = data;
-            const org = await apiFetch<Organisation>("/organisations/", {
-              method: "POST",
-              token,
-              body: JSON.stringify(orgData),
-            });
-            if (profil_metier) {
-              await apiFetch("/users/me", {
-                method: "PATCH",
-                token,
-                body: JSON.stringify({ profil_metier }),
-              });
-            }
-            if (selectedCcn && selectedCcn.length > 0) {
-              for (const ccn of selectedCcn) {
-                apiFetch(`/conventions/organisations/${org.id}`, {
-                  method: "POST",
-                  token,
-                  body: JSON.stringify({ idcc: ccn.idcc }),
-                }).catch(() => {});
-              }
-            }
-            if (typeof window !== "undefined") {
-              window.dispatchEvent(new Event("quota-updated"));
-            }
-            await refetchOrgs();
-            setCurrentOrgId(org.id);
+            const org = await createOrganisation(data);
             toast.success(`Organisation « ${org.name} » créée`);
             router.push(`/organisation/${org.id}`);
           }}

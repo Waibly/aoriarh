@@ -114,12 +114,13 @@ export function OrgProvider({ children }: { children: React.ReactNode }) {
   const createOrganisation = useCallback(
     async (data: CreateOrgData): Promise<Organisation> => {
       const { profil_metier, selectedCcn, not_subject_to_ccn, ...orgData } = data;
-      // not_subject_to_ccn n'est pas encore persisté côté backend (commit 2)
-      // mais on l'utilise déjà côté front pour décider d'installer ou pas une CCN
       const org = await apiFetch<Organisation>("/organisations/", {
         method: "POST",
         token,
-        body: JSON.stringify(orgData),
+        body: JSON.stringify({
+          ...orgData,
+          not_subject_to_ccn: !!not_subject_to_ccn,
+        }),
       });
       if (profil_metier) {
         await apiFetch("/users/me", {

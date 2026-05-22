@@ -12,7 +12,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -21,13 +20,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  FORME_JURIDIQUE_OPTIONS,
-  TAILLE_OPTIONS,
-  PROFIL_METIER_OPTIONS,
-} from "@/types/api";
+import { PROFIL_METIER_OPTIONS } from "@/types/api";
 import type { Organisation, CcnReference } from "@/types/api";
-import { CcnSelector } from "@/components/ccn-selector";
+import {
+  OrgFormFields,
+  emptyOrgFormFields,
+  type OrgFormFieldsValues,
+} from "@/components/org/org-form-fields";
 
 interface OrgFormDialogProps {
   open: boolean;
@@ -41,6 +40,7 @@ interface OrgFormDialogProps {
     taille: string | null;
     convention_collective: string | null;
     secteur_activite: string | null;
+    not_subject_to_ccn?: boolean;
     profil_metier?: string | null;
     selectedCcn?: CcnReference[];
   }) => Promise<void>;
@@ -60,11 +60,9 @@ export function OrgFormDialog({
   const [step, setStep] = useState(1);
 
   // Org fields
-  const [name, setName] = useState("");
-  const [formeJuridique, setFormeJuridique] = useState("");
-  const [taille, setTaille] = useState("");
-  const [secteurActivite, setSecteurActivite] = useState("");
-  const [selectedCcn, setSelectedCcn] = useState<CcnReference[]>([]);
+  const [orgValues, setOrgValues] = useState<OrgFormFieldsValues>(
+    emptyOrgFormFields(),
+  );
 
   // User field (step 2)
   const [profilMetier, setProfilMetier] = useState("");
@@ -75,32 +73,43 @@ export function OrgFormDialog({
   useEffect(() => {
     if (open) {
       setStep(1);
-      setName(org?.name ?? "");
-      setFormeJuridique(org?.forme_juridique ?? "");
-      setTaille(org?.taille ?? "");
-      setSecteurActivite(org?.secteur_activite ?? "");
-      setSelectedCcn([]);
+      setOrgValues({
+        name: org?.name ?? "",
+        formeJuridique: org?.forme_juridique ?? "",
+        taille: org?.taille ?? "",
+        secteurActivite: org?.secteur_activite ?? "",
+        selectedCcn: [],
+        notSubjectToCcn: org?.not_subject_to_ccn ?? false,
+      });
       setProfilMetier("");
       setError(null);
     }
   }, [open, org]);
 
   async function handleFinalSubmit() {
-    if (!name.trim()) return;
+    if (!orgValues.name.trim()) return;
     setSubmitting(true);
     setError(null);
     try {
-      const ccnLabel = selectedCcn.length > 0
-        ? selectedCcn.map((c) => `${c.titre_court || c.titre} (IDCC ${c.idcc})`).join(", ")
-        : null;
+      const ccnLabel = orgValues.notSubjectToCcn
+        ? null
+        : orgValues.selectedCcn.length > 0
+          ? orgValues.selectedCcn
+              .map((c) => `${c.titre_court || c.titre} (IDCC ${c.idcc})`)
+              .join(", ")
+          : null;
       await onSubmit({
-        name: name.trim(),
-        forme_juridique: formeJuridique || null,
-        taille: taille || null,
+        name: orgValues.name.trim(),
+        forme_juridique: orgValues.formeJuridique || null,
+        taille: orgValues.taille || null,
         convention_collective: ccnLabel,
-        secteur_activite: secteurActivite.trim() || null,
+        secteur_activite: orgValues.secteurActivite.trim() || null,
+        not_subject_to_ccn: orgValues.notSubjectToCcn,
         ...(!isEdit
-          ? { profil_metier: profilMetier || null, selectedCcn }
+          ? {
+              profil_metier: profilMetier || null,
+              selectedCcn: orgValues.notSubjectToCcn ? [] : orgValues.selectedCcn,
+            }
           : {}),
       });
       onOpenChange(false);
@@ -136,15 +145,11 @@ export function OrgFormDialog({
             }}
             className="space-y-5"
           >
-            <OrgFields
-              name={name}
-              setName={setName}
-              formeJuridique={formeJuridique}
-              setFormeJuridique={setFormeJuridique}
-              taille={taille}
-              setTaille={setTaille}
-              secteurActivite={secteurActivite}
-              setSecteurActivite={setSecteurActivite}
+            <OrgFormFields
+              values={orgValues}
+              onChange={setOrgValues}
+              token={token}
+              hideCcn
             />
             {error && <p className="text-sm text-destructive">{error}</p>}
             <DialogFooter>
@@ -155,7 +160,7 @@ export function OrgFormDialog({
               >
                 Annuler
               </Button>
-              <Button type="submit" disabled={submitting || !name.trim()}>
+              <Button type="submit" disabled={submitting || !orgValues.name.trim()}>
                 {submitting ? "Enregistrement..." : "Enregistrer"}
               </Button>
             </DialogFooter>
@@ -188,24 +193,11 @@ export function OrgFormDialog({
                 </DialogDescription>
               </DialogHeader>
               <div className="space-y-5">
-                <OrgFields
-                  name={name}
-                  setName={setName}
-                  formeJuridique={formeJuridique}
-                  setFormeJuridique={setFormeJuridique}
-                  taille={taille}
-                  setTaille={setTaille}
-                  secteurActivite={secteurActivite}
-                  setSecteurActivite={setSecteurActivite}
+                <OrgFormFields
+                  values={orgValues}
+                  onChange={setOrgValues}
+                  token={token}
                 />
-                <div className="space-y-1.5">
-                  <Label>Convention(s) collective(s)</Label>
-                  <CcnSelector
-                    token={token}
-                    selected={selectedCcn}
-                    onChange={setSelectedCcn}
-                  />
-                </div>
                 <DialogFooter className="pt-2">
                   <Button
                     variant="outline"
@@ -216,7 +208,7 @@ export function OrgFormDialog({
                   </Button>
                   <Button
                     type="button"
-                    disabled={!name.trim()}
+                    disabled={!orgValues.name.trim()}
                     onClick={() => setStep(2)}
                   >
                     Suivant
@@ -313,87 +305,5 @@ function StepBadge({
       {isDone ? <Check className="h-3.5 w-3.5" /> : icon}
       <span>{label}</span>
     </div>
-  );
-}
-
-// --- Shared org fields ---
-
-function OrgFields({
-  name,
-  setName,
-  formeJuridique,
-  setFormeJuridique,
-  taille,
-  setTaille,
-  secteurActivite,
-  setSecteurActivite,
-}: {
-  name: string;
-  setName: (v: string) => void;
-  formeJuridique: string;
-  setFormeJuridique: (v: string) => void;
-  taille: string;
-  setTaille: (v: string) => void;
-  secteurActivite: string;
-  setSecteurActivite: (v: string) => void;
-}) {
-  return (
-    <>
-      <div className="space-y-1.5">
-        <Label htmlFor="org-name">
-          Nom de l&apos;entreprise{" "}
-          <span className="text-destructive">*</span>
-        </Label>
-        <Input
-          id="org-name"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          placeholder="Ex : Waibly SAS"
-          required
-        />
-      </div>
-
-      <div className="space-y-1.5">
-        <Label htmlFor="forme-juridique">Forme juridique</Label>
-        <Select value={formeJuridique} onValueChange={setFormeJuridique}>
-          <SelectTrigger id="forme-juridique">
-            <SelectValue placeholder="Sélectionner..." />
-          </SelectTrigger>
-          <SelectContent>
-            {FORME_JURIDIQUE_OPTIONS.map((fj) => (
-              <SelectItem key={fj} value={fj}>
-                {fj}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
-
-      <div className="space-y-1.5">
-        <Label htmlFor="taille">Effectif</Label>
-        <Select value={taille} onValueChange={setTaille}>
-          <SelectTrigger id="taille">
-            <SelectValue placeholder="Nombre de salariés..." />
-          </SelectTrigger>
-          <SelectContent>
-            {TAILLE_OPTIONS.map((t) => (
-              <SelectItem key={t} value={t}>
-                {t} salariés
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
-
-      <div className="space-y-1.5">
-        <Label htmlFor="secteur">Secteur d&apos;activité / code APE</Label>
-        <Input
-          id="secteur"
-          value={secteurActivite}
-          onChange={(e) => setSecteurActivite(e.target.value)}
-          placeholder="Ex : 62.01Z — Programmation informatique"
-        />
-      </div>
-    </>
   );
 }
