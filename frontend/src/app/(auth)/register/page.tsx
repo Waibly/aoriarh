@@ -4,14 +4,7 @@ import { useState, useEffect, Suspense } from "react";
 import { signIn } from "next-auth/react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import {
-  User,
-  Briefcase,
-  Building2,
-  ArrowRight,
-  ArrowLeft,
-  Check,
-} from "lucide-react";
+import { User, Building2, ArrowRight, ArrowLeft, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -24,9 +17,11 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { PROFIL_METIER_OPTIONS } from "@/types/api";
-import type { CcnReference } from "@/types/api";
-import { CcnSelector } from "@/components/ccn-selector";
-import { UserCog } from "lucide-react";
+import {
+  OrgFormFields,
+  emptyOrgFormFields,
+  type OrgFormFieldsValues,
+} from "@/components/org/org-form-fields";
 
 const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
@@ -59,13 +54,10 @@ function RegisterForm() {
   const searchParams = useSearchParams();
   const rawCallback = searchParams.get("callbackUrl");
   const callbackUrl = rawCallback?.startsWith("/") ? rawCallback : null;
-  // Extract invitation token and validate it exists
-  const inviteToken = callbackUrl?.match(/\/invite\/accept\/([^/?]+)/)?.[1] ?? null;
+  const inviteToken =
+    callbackUrl?.match(/\/invite\/accept\/([^/?]+)/)?.[1] ?? null;
   const [isInvitation, setIsInvitation] = useState(false);
 
-  // Paid plan pre-selection from the marketing site (?plan=solo&cycle=monthly).
-  // Validated against the closed list — anything else is ignored so a tampered
-  // URL can never push an unsupported value to the backend.
   const rawPlan = searchParams.get("plan");
   const rawCycle = searchParams.get("cycle");
   const requestedPlan: PaidPlan | null =
@@ -76,41 +68,34 @@ function RegisterForm() {
     rawCycle && (BILLING_CYCLES as readonly string[]).includes(rawCycle)
       ? (rawCycle as BillingCycle)
       : null;
-  const hasPaidPlanRequested = requestedPlan !== null && requestedCycle !== null;
+  const hasPaidPlanRequested =
+    requestedPlan !== null && requestedCycle !== null;
 
   useEffect(() => {
     if (!inviteToken) return;
-    // Validate token is real and pending before enabling invitation mode
     fetch(`${API_BASE_URL}/invitations/${inviteToken}/validate`)
-      .then((res) => res.ok ? res.json() : null)
+      .then((res) => (res.ok ? res.json() : null))
       .then((data) => {
         if (data?.valid) setIsInvitation(true);
       })
       .catch(() => {});
   }, [inviteToken]);
 
-  // Step management — skip workspace/org steps for invitations
+  // 2 steps for normal signup : (1) Compte + profil, (2) Organisation
+  // 1 step for invitation : Compte + profil (pas d'org à créer)
   const [step, setStep] = useState(1);
 
-  // Step 1 — Compte
+  // --- Step 1 : Compte + profil métier ---
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
-
-  // Step 2 — Espace de travail
-  const [workspaceName, setWorkspaceName] = useState("");
-
-  // Step 3 — Organisation (nom + CCN(s) installées)
-  const [orgName, setOrgName] = useState("");
-  const [selectedCcns, setSelectedCcns] = useState<CcnReference[]>([]);
-  // "Ma CCN n'est pas dans la liste" : permet de saisir un libellé manuel
-  // sans déclencher l'installation KALI.
-  const [ccnNotListed, setCcnNotListed] = useState(false);
-  const [manualCcnLabel, setManualCcnLabel] = useState("");
-
-  // Step 4 — Profil métier (also used in invitation step 2)
   const [profilMetier, setProfilMetier] = useState("");
+
+  // --- Step 2 : Organisation ---
+  const [orgValues, setOrgValues] = useState<OrgFormFieldsValues>(
+    emptyOrgFormFields(),
+  );
 
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -125,6 +110,10 @@ function RegisterForm() {
       setError("Les mots de passe ne correspondent pas");
       return false;
     }
+    if (!profilMetier) {
+      setError("Sélectionnez votre rôle pour continuer");
+      return false;
+    }
     return true;
   }
 
@@ -133,7 +122,7 @@ function RegisterForm() {
     setError(null);
 
     try {
-      // 1. Register
+      // 1. Register account
       const res = await fetch(`${API_BASE_URL}/auth/register`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -141,12 +130,12 @@ function RegisterForm() {
           email,
           password,
           full_name: fullName,
-          workspace_name: isInvitation ? null : (workspaceName.trim() || null),
+          workspace_name: isInvitation ? null : null, // auto-named server-side
           invited: isInvitation,
-          // Only send plan/cycle for self-registrations: invited users have no
-          // Account so the backend would ignore them anyway.
-          requested_plan: !isInvitation && hasPaidPlanRequested ? requestedPlan : null,
-          requested_cycle: !isInvitation && hasPaidPlanRequested ? requestedCycle : null,
+          requested_plan:
+            !isInvitation && hasPaidPlanRequested ? requestedPlan : null,
+          requested_cycle:
+            !isInvitation && hasPaidPlanRequested ? requestedCycle : null,
         }),
       });
 
@@ -168,15 +157,16 @@ function RegisterForm() {
       }
 
       const registerData = await res.json().catch(() => null);
+      const accessToken = registerData?.access_token as string | undefined;
 
-      // 2. Save profil_metier if provided (invitation flow)
-      if (profilMetier && registerData?.access_token) {
+      // 2. Save profil_metier on the user
+      if (profilMetier && accessToken) {
         try {
           await fetch(`${API_BASE_URL}/users/me`, {
             method: "PATCH",
             headers: {
               "Content-Type": "application/json",
-              Authorization: `Bearer ${registerData.access_token}`,
+              Authorization: `Bearer ${accessToken}`,
             },
             body: JSON.stringify({ profil_metier: profilMetier }),
           });
@@ -185,16 +175,14 @@ function RegisterForm() {
         }
       }
 
-      // 3. Create first org with CCN label, then install CCNs
-      // Errors here are non-fatal (the user account is created), but we
-      // surface them via the page error so the user can react.
+      // 3. Create org + install CCNs (skip for invitations)
       const ccnInstallErrors: string[] = [];
-      if (orgName.trim() && registerData?.access_token) {
+      if (!isInvitation && orgValues.name.trim() && accessToken) {
         try {
-          const ccnLabel = ccnNotListed
-            ? manualCcnLabel.trim() || null
-            : selectedCcns.length > 0
-              ? selectedCcns
+          const ccnLabel = orgValues.notSubjectToCcn
+            ? null
+            : orgValues.selectedCcn.length > 0
+              ? orgValues.selectedCcn
                   .map((c) => `${c.titre_court || c.titre} (IDCC ${c.idcc})`)
                   .join(", ")
               : null;
@@ -203,20 +191,25 @@ function RegisterForm() {
             method: "POST",
             headers: {
               "Content-Type": "application/json",
-              Authorization: `Bearer ${registerData.access_token}`,
+              Authorization: `Bearer ${accessToken}`,
             },
             body: JSON.stringify({
-              name: orgName.trim(),
+              name: orgValues.name.trim(),
+              forme_juridique: orgValues.formeJuridique || null,
+              taille: orgValues.taille || null,
+              secteur_activite: orgValues.secteurActivite.trim() || null,
               convention_collective: ccnLabel,
+              not_subject_to_ccn: orgValues.notSubjectToCcn,
             }),
           });
 
-          if (orgRes.ok && !ccnNotListed && selectedCcns.length > 0) {
+          if (
+            orgRes.ok &&
+            !orgValues.notSubjectToCcn &&
+            orgValues.selectedCcn.length > 0
+          ) {
             const orgData = await orgRes.json();
-            // Install each selected CCN sequentially so we keep error
-            // visibility per IDCC. The KALI sync itself runs async via the
-            // worker — we just enqueue here.
-            for (const c of selectedCcns) {
+            for (const c of orgValues.selectedCcn) {
               try {
                 const r = await fetch(
                   `${API_BASE_URL}/conventions/organisations/${orgData.id}`,
@@ -224,7 +217,7 @@ function RegisterForm() {
                     method: "POST",
                     headers: {
                       "Content-Type": "application/json",
-                      Authorization: `Bearer ${registerData.access_token}`,
+                      Authorization: `Bearer ${accessToken}`,
                     },
                     body: JSON.stringify({ idcc: c.idcc }),
                   },
@@ -249,7 +242,7 @@ function RegisterForm() {
         }
       }
 
-      // 3. Sign in via NextAuth
+      // 4. Sign in via NextAuth
       const result = await signIn("credentials", {
         email,
         password,
@@ -260,28 +253,18 @@ function RegisterForm() {
         router.push(
           callbackUrl
             ? `/login?callbackUrl=${encodeURIComponent(callbackUrl)}`
-            : "/login"
+            : "/login",
         );
         return;
       }
 
-      // If the backend started a Stripe Checkout session for the requested
-      // paid plan, send the user straight to the hosted payment page. The
-      // trial account stays as a safety net if they abandon — when they
-      // come back to /chat the trial banner will prompt them to upgrade.
+      // 5. Redirect : Stripe checkout if needed, else chat
       if (registerData?.checkout_url) {
         window.location.href = registerData.checkout_url;
         return;
       }
 
-      // Land on /chat — the product's core value. The CcnInstallBanner
-      // (mounted in the dashboard layout) keeps the user informed of the
-      // CCN install status wherever they go, so we don't need to force
-      // them through the documents page.
       const landing = callbackUrl || "/chat";
-
-      // Surface CCN install errors as a query param. A global toast handler
-      // in the dashboard layout fires the message wherever the user lands.
       if (ccnInstallErrors.length > 0) {
         const params = new URLSearchParams({
           ccn_install_error: ccnInstallErrors.join(" • "),
@@ -298,6 +281,9 @@ function RegisterForm() {
     }
   }
 
+  // Steps shown : invitation → 1 step ; normal → 2 steps
+  const totalSteps = isInvitation ? 1 : 2;
+
   return (
     <>
       <div className="flex flex-col space-y-2 text-center">
@@ -306,16 +292,10 @@ function RegisterForm() {
         </h1>
         <p className="text-muted-foreground text-sm">
           {isInvitation
-            ? step === 1
-              ? "Créez votre compte pour accepter l'invitation"
-              : "Une dernière étape pour personnaliser vos réponses"
+            ? "Créez votre compte pour accepter l'invitation"
             : step === 1
-              ? "Entrez vos informations pour commencer"
-              : step === 2
-                ? "Nommez votre espace de travail"
-                : step === 3
-                  ? "Créez votre première organisation"
-                  : "Une dernière étape pour personnaliser vos réponses"}
+              ? "Quelques informations pour démarrer"
+              : "Une dernière étape : votre organisation"}
         </p>
       </div>
 
@@ -331,50 +311,20 @@ function RegisterForm() {
       )}
 
       {/* Stepper */}
-      {isInvitation ? (
+      {totalSteps > 1 && (
         <div className="flex items-center justify-center gap-2 py-2">
           <StepBadge
             step={1}
             current={step}
             icon={<User className="h-3.5 w-3.5" />}
-            label="Compte"
+            label="Vous"
           />
-          <div className="h-px w-3 sm:w-6 bg-border shrink-0" />
+          <div className="h-px w-6 bg-border shrink-0" />
           <StepBadge
             step={2}
-            current={step}
-            icon={<UserCog className="h-3.5 w-3.5" />}
-            label="Profil"
-          />
-        </div>
-      ) : (
-        <div className="flex items-center justify-center gap-2 py-2">
-          <StepBadge
-            step={1}
-            current={step}
-            icon={<User className="h-3.5 w-3.5" />}
-            label="Compte"
-          />
-          <div className="h-px w-3 sm:w-6 bg-border shrink-0" />
-          <StepBadge
-            step={2}
-            current={step}
-            icon={<Briefcase className="h-3.5 w-3.5" />}
-            label="Espace"
-          />
-          <div className="h-px w-3 sm:w-6 bg-border shrink-0" />
-          <StepBadge
-            step={3}
             current={step}
             icon={<Building2 className="h-3.5 w-3.5" />}
             label="Organisation"
-          />
-          <div className="h-px w-3 sm:w-6 bg-border shrink-0" />
-          <StepBadge
-            step={4}
-            current={step}
-            icon={<UserCog className="h-3.5 w-3.5" />}
-            label="Profil"
           />
         </div>
       )}
@@ -386,18 +336,24 @@ function RegisterForm() {
           </div>
         )}
 
-        {/* Step 1 — Compte */}
+        {/* Step 1 — Compte + profil */}
         {step === 1 && (
           <form
             onSubmit={(e) => {
               e.preventDefault();
               if (!validateStep1()) return;
-              setStep(2);
+              if (isInvitation) {
+                handleSubmit();
+              } else {
+                setStep(2);
+              }
             }}
           >
             <div className="grid gap-4">
               <div className="grid gap-2">
-                <Label htmlFor="fullName">Nom complet</Label>
+                <Label htmlFor="fullName">
+                  Nom complet <span className="text-destructive">*</span>
+                </Label>
                 <Input
                   id="fullName"
                   type="text"
@@ -409,7 +365,9 @@ function RegisterForm() {
                 />
               </div>
               <div className="grid gap-2">
-                <Label htmlFor="email">Email</Label>
+                <Label htmlFor="email">
+                  Email <span className="text-destructive">*</span>
+                </Label>
                 <Input
                   id="email"
                   type="email"
@@ -423,7 +381,9 @@ function RegisterForm() {
                 />
               </div>
               <div className="grid gap-2">
-                <Label htmlFor="password">Mot de passe</Label>
+                <Label htmlFor="password">
+                  Mot de passe <span className="text-destructive">*</span>
+                </Label>
                 <PasswordInput
                   id="password"
                   placeholder="8 caractères minimum"
@@ -435,7 +395,8 @@ function RegisterForm() {
               </div>
               <div className="grid gap-2">
                 <Label htmlFor="confirmPassword">
-                  Confirmer le mot de passe
+                  Confirmer le mot de passe{" "}
+                  <span className="text-destructive">*</span>
                 </Label>
                 <PasswordInput
                   id="confirmPassword"
@@ -446,27 +407,9 @@ function RegisterForm() {
                   minLength={8}
                 />
               </div>
-              <Button type="submit">
-                Suivant
-                <ArrowRight className="ml-2 h-4 w-4" />
-              </Button>
-            </div>
-          </form>
-        )}
-
-        {/* Step 2 — Profil métier (invitation) or Espace de travail (normal) */}
-        {step === 2 && isInvitation && (
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              handleSubmit();
-            }}
-          >
-            <div className="grid gap-4">
               <div className="grid gap-2">
                 <Label htmlFor="profilMetier">
-                  Quel est votre rôle ?{" "}
-                  <span className="text-destructive">*</span>
+                  Votre rôle <span className="text-destructive">*</span>
                 </Label>
                 <Select value={profilMetier} onValueChange={setProfilMetier}>
                   <SelectTrigger id="profilMetier">
@@ -481,217 +424,43 @@ function RegisterForm() {
                   </SelectContent>
                 </Select>
                 <p className="text-xs text-muted-foreground">
-                  Votre fonction permet d&apos;adapter les réponses juridiques à
-                  votre perspective métier.
+                  Permet d&apos;adapter les réponses à votre perspective métier.
                 </p>
               </div>
-              <div className="flex gap-3">
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="flex-1"
-                  onClick={() => setStep(1)}
-                >
-                  <ArrowLeft className="mr-2 h-4 w-4" />
-                  Retour
-                </Button>
-                <Button
-                  type="submit"
-                  className="flex-1"
-                  disabled={!profilMetier || isLoading}
-                >
+              {isInvitation ? (
+                <Button type="submit" disabled={isLoading}>
                   {isLoading ? "Création en cours..." : "Créer mon compte"}
                 </Button>
-              </div>
+              ) : (
+                <Button type="submit">
+                  Suivant
+                  <ArrowRight className="ml-2 h-4 w-4" />
+                </Button>
+              )}
             </div>
           </form>
         )}
 
+        {/* Step 2 — Organisation */}
         {step === 2 && !isInvitation && (
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              setStep(3);
-            }}
-          >
-            <div className="grid gap-4">
-              <div className="grid gap-2">
-                <Label htmlFor="workspaceName">
-                  Nom de l&apos;espace de travail{" "}
-                  <span className="text-destructive">*</span>
-                </Label>
-                <Input
-                  id="workspaceName"
-                  type="text"
-                  placeholder="Ex : Waibly, Mon cabinet RH"
-                  value={workspaceName}
-                  onChange={(e) => setWorkspaceName(e.target.value)}
-                  required
-                  autoFocus
-                />
-                <p className="text-xs text-muted-foreground">
-                  Votre espace de travail regroupe toutes vos organisations et
-                  votre équipe. C&apos;est le nom de votre entreprise, cabinet
-                  ou structure.
-                </p>
-              </div>
-              <div className="flex gap-3">
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="flex-1"
-                  onClick={() => setStep(1)}
-                >
-                  <ArrowLeft className="mr-2 h-4 w-4" />
-                  Retour
-                </Button>
-                <Button
-                  type="submit"
-                  className="flex-1"
-                  disabled={!workspaceName.trim()}
-                >
-                  Suivant
-                  <ArrowRight className="ml-2 h-4 w-4" />
-                </Button>
-              </div>
-            </div>
-          </form>
-        )}
-
-        {/* Step 3 — Organisation + CCN */}
-        {step === 3 && !isInvitation && (
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              setStep(4);
-            }}
-          >
-            <div className="grid gap-4">
-              <div className="grid gap-2">
-                <Label htmlFor="orgName">
-                  Nom de l&apos;organisation
-                </Label>
-                <Input
-                  id="orgName"
-                  type="text"
-                  placeholder="Ex : Waibly Paris"
-                  value={orgName}
-                  onChange={(e) => setOrgName(e.target.value)}
-                  autoFocus
-                />
-                <p className="text-xs text-muted-foreground">
-                  Une organisation correspond à une entité juridique, un client
-                  ou un dossier distinct. Chacune a ses propres documents et
-                  conversations. Vous pourrez en créer d&apos;autres plus tard.
-                </p>
-              </div>
-
-              <div className="grid gap-2">
-                <Label>
-                  Convention collective{" "}
-                  <span className="text-xs text-muted-foreground font-normal">(facultatif)</span>
-                </Label>
-                {!ccnNotListed && (
-                  <CcnSelector
-                    selected={selectedCcns}
-                    onChange={setSelectedCcns}
-                    maxSelected={1}
-                  />
-                )}
-                {ccnNotListed && (
-                  <Input
-                    type="text"
-                    placeholder="Ex : Convention de la coiffure (à défaut)"
-                    value={manualCcnLabel}
-                    onChange={(e) => setManualCcnLabel(e.target.value)}
-                  />
-                )}
-                <label className="flex items-start gap-2 text-xs text-muted-foreground select-none cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={ccnNotListed}
-                    onChange={(e) => {
-                      setCcnNotListed(e.target.checked);
-                      if (e.target.checked) {
-                        setSelectedCcns([]);
-                      } else {
-                        setManualCcnLabel("");
-                      }
-                    }}
-                    className="mt-0.5"
-                  />
-                  <span>
-                    Ma convention n&apos;est pas dans la liste (saisie libre,
-                    sans installation automatique).
-                  </span>
-                </label>
-                <p className="text-xs text-muted-foreground">
-                  {ccnNotListed
-                    ? "Votre convention sera enregistrée comme libellé. AORIA RH ne pourra pas la consulter dans ses réponses tant qu'elle n'est pas ajoutée à notre référentiel."
-                    : "Si votre entreprise applique une CCN, AORIA RH la récupère automatiquement depuis KALI (1-2 minutes). Vous pouvez aussi laisser vide et l'ajouter plus tard."}
-                </p>
-              </div>
-
-              <div className="flex gap-3">
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="flex-1"
-                  onClick={() => setStep(2)}
-                >
-                  <ArrowLeft className="mr-2 h-4 w-4" />
-                  Retour
-                </Button>
-                <Button
-                  type="submit"
-                  className="flex-1"
-                  disabled={!orgName.trim()}
-                >
-                  Suivant
-                  <ArrowRight className="ml-2 h-4 w-4" />
-                </Button>
-              </div>
-            </div>
-          </form>
-        )}
-
-        {/* Step 4 — Profil métier (normal flow) */}
-        {step === 4 && !isInvitation && (
           <form
             onSubmit={(e) => {
               e.preventDefault();
               handleSubmit();
             }}
           >
-            <div className="grid gap-4">
-              <div className="grid gap-2">
-                <Label htmlFor="profilMetierNormal">
-                  Quel est votre rôle ?{" "}
-                  <span className="text-destructive">*</span>
-                </Label>
-                <Select value={profilMetier} onValueChange={setProfilMetier}>
-                  <SelectTrigger id="profilMetierNormal">
-                    <SelectValue placeholder="Sélectionner votre profil..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {PROFIL_METIER_OPTIONS.map((p) => (
-                      <SelectItem key={p.value} value={p.value}>
-                        {p.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <p className="text-xs text-muted-foreground">
-                  Votre fonction permet d&apos;adapter les réponses juridiques à
-                  votre perspective métier.
-                </p>
-              </div>
+            <div className="grid gap-5">
+              <OrgFormFields
+                values={orgValues}
+                onChange={setOrgValues}
+                token=""
+              />
               <div className="flex gap-3">
                 <Button
                   type="button"
                   variant="outline"
                   className="flex-1"
-                  onClick={() => setStep(3)}
+                  onClick={() => setStep(1)}
                 >
                   <ArrowLeft className="mr-2 h-4 w-4" />
                   Retour
@@ -699,7 +468,7 @@ function RegisterForm() {
                 <Button
                   type="submit"
                   className="flex-1"
-                  disabled={!profilMetier || isLoading}
+                  disabled={!orgValues.name.trim() || isLoading}
                 >
                   {isLoading ? "Création en cours..." : "Créer mon compte"}
                 </Button>
@@ -708,7 +477,8 @@ function RegisterForm() {
           </form>
         )}
 
-        {step === 1 && (
+        {/* Google sign-in only on step 1 of normal signup */}
+        {step === 1 && !isInvitation && (
           <>
             <div className="relative">
               <div className="absolute inset-0 flex items-center">
@@ -725,19 +495,16 @@ function RegisterForm() {
               type="button"
               disabled={isLoading}
               onClick={() => {
-                // For paid-plan signups via Google we need to start a Stripe
-                // Checkout session AFTER the OAuth round-trip — params can't be
-                // sent inline like with the email/password POST. We stash them
-                // in short-lived cookies (sameSite=Lax so they survive the
-                // Google round-trip) and route through /post-signup which
-                // reads them and creates the Checkout session.
-                if (!isInvitation && hasPaidPlanRequested && requestedPlan && requestedCycle) {
+                // Stash paid plan + profil metier across the OAuth round-trip
+                // (cookies are read by /post-signup after Google returns).
+                if (hasPaidPlanRequested && requestedPlan && requestedCycle) {
                   document.cookie = `aoria_signup_plan=${requestedPlan}; max-age=600; path=/; samesite=lax`;
                   document.cookie = `aoria_signup_cycle=${requestedCycle}; max-age=600; path=/; samesite=lax`;
-                  signIn("google", { callbackUrl: "/post-signup" });
-                  return;
                 }
-                signIn("google", { callbackUrl: callbackUrl || "/chat" });
+                if (profilMetier) {
+                  document.cookie = `aoria_signup_profil=${profilMetier}; max-age=600; path=/; samesite=lax`;
+                }
+                signIn("google", { callbackUrl: "/post-signup" });
               }}
             >
               <svg className="mr-2 h-4 w-4" viewBox="0 0 24 24">
