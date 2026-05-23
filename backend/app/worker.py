@@ -217,6 +217,20 @@ async def run_kali_install(
                         )
     except Exception:
         logger.exception("Worker: KALI install failed for %s", org_convention_id)
+        try:
+            from app.models.ccn import OrganisationConvention as OC
+            async with session_factory() as db_err:
+                row = await db_err.get(OC, uuid.UUID(org_convention_id))
+                if row and row.status not in ("ready", "error"):
+                    row.status = "error"
+                    row.error_message = (
+                        "L'installation de cette convention collective a échoué. "
+                        "Veuillez réessayer. Si le problème persiste, contactez le support."
+                    )
+                    await db_err.commit()
+                    logger.info("Worker: marked org_convention %s as error", org_convention_id)
+        except Exception:
+            logger.exception("Worker: failed to mark org_convention %s as error", org_convention_id)
 
 
 async def run_bocc_sync(

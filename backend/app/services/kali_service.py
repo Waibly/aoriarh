@@ -473,9 +473,9 @@ class KaliService:
             org_conv.articles_count = len(all_articles)
             org_conv.source_date = source_date
             org_conv.last_synced_at = datetime.now(UTC)
+            org_conv.status = "ready"
             if not existing_docs:
                 org_conv.installed_at = datetime.now(UTC)
-                org_conv.status = "ready"
             await db.commit()
 
             logger.info(
@@ -588,9 +588,9 @@ class KaliService:
                         org_conv.articles_count = len(all_articles)
                         org_conv.source_date = source_date
                         org_conv.last_synced_at = datetime.now(UTC)
+                        org_conv.status = "ready"
                         if not existing_docs:
                             org_conv.installed_at = datetime.now(UTC)
-                            org_conv.status = "ready"
                         await db.commit()
 
                     except Exception as exc:
