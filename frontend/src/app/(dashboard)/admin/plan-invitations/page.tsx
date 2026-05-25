@@ -455,7 +455,7 @@ export default function AdminPlanInvitationsPage() {
 
       {/* Dialog : Détail d'un lien */}
       <Dialog open={detailOpen} onOpenChange={setDetailOpen}>
-        <DialogContent className="max-w-fit">
+        <DialogContent className="sm:max-w-2xl">
           <DialogHeader>
             <DialogTitle>{detail?.label ?? "Détail"}</DialogTitle>
             {detail?.shareable_url && (
