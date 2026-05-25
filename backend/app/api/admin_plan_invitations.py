@@ -17,6 +17,12 @@ from app.services.plan_invitation_service import PlanInvitationService
 router = APIRouter()
 
 
+def _to_read(inv, service: PlanInvitationService) -> PlanInvitationRead:
+    data = PlanInvitationRead.model_validate(inv)
+    data.shareable_url = service.build_shareable_url(inv)
+    return data
+
+
 @router.post("", response_model=PlanInvitationRead, status_code=status.HTTP_201_CREATED)
 async def create_plan_invitation(
     data: PlanInvitationCreate,
@@ -33,10 +39,7 @@ async def create_plan_invitation(
         max_uses=data.max_uses,
         expires_in_days=data.expires_in_days,
     )
-    return PlanInvitationRead.model_validate(
-        invitation,
-        update={"shareable_url": service.build_shareable_url(invitation)},
-    )
+    return _to_read(invitation, service)
 
 
 @router.get("", response_model=dict)
@@ -50,13 +53,7 @@ async def list_plan_invitations(
     service = PlanInvitationService(db)
     items, total = await service.list_all(page, page_size, status_filter)
     return {
-        "items": [
-            PlanInvitationRead.model_validate(
-                inv,
-                update={"shareable_url": service.build_shareable_url(inv)},
-            )
-            for inv in items
-        ],
+        "items": [_to_read(inv, service) for inv in items],
         "total": total,
         "page": page,
         "page_size": page_size,
@@ -72,13 +69,10 @@ async def get_plan_invitation(
     service = PlanInvitationService(db)
     detail = await service.get_detail(invitation_id)
     inv = detail["invitation"]
-    return PlanInvitationDetail.model_validate(
-        inv,
-        update={
-            "shareable_url": service.build_shareable_url(inv),
-            "redemptions": [RedemptionItem(**r) for r in detail["redemptions"]],
-        },
-    )
+    data = PlanInvitationDetail.model_validate(inv)
+    data.shareable_url = service.build_shareable_url(inv)
+    data.redemptions = [RedemptionItem(**r) for r in detail["redemptions"]]
+    return data
 
 
 @router.delete("/{invitation_id}", status_code=status.HTTP_204_NO_CONTENT)
