@@ -40,8 +40,9 @@ class Settings(BaseSettings):
     refresh_token_expire_days: int = 3
     algorithm: str = "HS256"
 
-    # Brevo (email)
+    # Brevo (email + contacts)
     brevo_api_key: str  # OBLIGATOIRE — pas de défaut
+    brevo_list_id: int = 0  # ID de la liste "Clients AORIA RH" dans Brevo (0 = désactivé)
     support_email: str = "hello@aoriarh.fr"
     frontend_url: str = "http://localhost:3000"
 

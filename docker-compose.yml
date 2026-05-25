@@ -94,6 +94,7 @@ services:
       BACKEND_CORS_ORIGINS: '["http://localhost:3000"]'
       FRONTEND_URL: http://localhost:3000
       BREVO_API_KEY: ${BREVO_API_KEY:-}
+      BREVO_LIST_ID: ${BREVO_LIST_ID:-0}
       WORKERS: ${WORKERS:-4}
       # Stripe (commercial plans). Leave empty to disable /billing endpoints.
       STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}

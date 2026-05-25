@@ -18,7 +18,7 @@ from app.models.invitation import Invitation
 from app.models.user import User
 from app.schemas.auth import GoogleAuthRequest, LoginRequest, RegisterRequest, TokenResponse
 from app.schemas.stripe_billing import BillingCycle, CommercialPlanCode
-from app.services.email.sender import send_email
+from app.services.email.sender import send_email, sync_contact_to_brevo
 from app.services.email.templates import render_admin_new_signup_email
 from app.services.stripe_service import StripeService
 
@@ -164,6 +164,12 @@ class AuthService:
             workspace_name=account.name,
             auth_method="Email + mot de passe",
         )
+        await sync_contact_to_brevo(
+            email=user.email,
+            full_name=user.full_name,
+            auth_method="Email + mot de passe",
+            role=user.role,
+        )
         checkout_url = await self._maybe_start_paid_checkout(
             account=account,
             owner_email=user.email,
@@ -251,6 +257,12 @@ class AuthService:
             email=user.email,
             workspace_name=account.name,
             auth_method="Google OAuth",
+        )
+        await sync_contact_to_brevo(
+            email=user.email,
+            full_name=user.full_name,
+            auth_method="Google OAuth",
+            role=user.role,
         )
         checkout_url = await self._maybe_start_paid_checkout(
             account=account,
