@@ -455,16 +455,16 @@ export default function AdminPlanInvitationsPage() {
 
       {/* Dialog : Détail d'un lien */}
       <Dialog open={detailOpen} onOpenChange={setDetailOpen}>
-        <DialogContent className="max-w-lg">
+        <DialogContent className="max-w-2xl">
           <DialogHeader>
             <DialogTitle>{detail?.label ?? "Détail"}</DialogTitle>
             {detail?.shareable_url && (
               <div
-                className="flex items-center gap-2 mt-1 cursor-pointer overflow-hidden"
+                className="flex items-center gap-2 mt-1 cursor-pointer"
                 onClick={() => copyUrl(detail.shareable_url!)}
                 title="Cliquer pour copier"
               >
-                <code className="text-xs bg-muted px-2 py-1 rounded overflow-hidden text-ellipsis whitespace-nowrap">
+                <code className="text-xs bg-muted px-2 py-1 rounded break-all">
                   {detail.shareable_url}
                 </code>
                 <Copy className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
