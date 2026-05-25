@@ -75,6 +75,20 @@ export default function PostSignupPage() {
   }, [router, session]);
 
   function continueAfterOrg(token: string) {
+    const planInviteToken = readCookie("aoria_plan_invite_token");
+    if (planInviteToken) {
+      clearCookie("aoria_plan_invite_token");
+      apiFetch(`/plan-invitations/${planInviteToken}/redeem`, {
+        method: "POST",
+        token,
+      })
+        .catch(() => {})
+        .finally(() => {
+          window.location.href = "/chat";
+        });
+      return;
+    }
+
     const plan = readCookie("aoria_signup_plan");
     const cycle = readCookie("aoria_signup_cycle");
     const callback = readCookie("aoria_post_signup_callback");

@@ -587,6 +587,21 @@ export function Sidebar({
                     Facturation
                   </Link>
                 </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className={cn(
+                    "w-full justify-start font-normal",
+                    pathname.startsWith("/admin/plan-invitations") &&
+                      "bg-accent text-accent-foreground font-medium",
+                  )}
+                  asChild
+                >
+                  <Link href="/admin/plan-invitations">
+                    <Gift className="mr-2 h-5 w-5" />
+                    Liens promo
+                  </Link>
+                </Button>
               </CollapsibleContent>
             </Collapsible>
           </div>

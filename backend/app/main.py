@@ -22,6 +22,7 @@ from app.api import (
     admin_dashboard,
     admin_documents,
     admin_judilibre,
+    admin_plan_invitations,
     admin_qdrant,
     admin_quality,
     admin_ccn,
@@ -35,6 +36,7 @@ from app.api import (
     documents,
     invitations,
     organisations,
+    plan_invitations,
     support,
     team,
     users,
@@ -242,6 +244,16 @@ app.include_router(
     admin_billing.router,
     prefix="/api/v1/admin",
     tags=["admin-billing"],
+)
+app.include_router(
+    admin_plan_invitations.router,
+    prefix="/api/v1/admin/plan-invitations",
+    tags=["admin-plan-invitations"],
+)
+app.include_router(
+    plan_invitations.router,
+    prefix="/api/v1",
+    tags=["plan-invitations"],
 )
 
 

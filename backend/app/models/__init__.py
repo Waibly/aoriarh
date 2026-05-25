@@ -8,6 +8,7 @@ from app.models.conversation import Conversation, Message
 from app.models.document import Document
 from app.models.invitation import Invitation
 from app.models.membership import Membership
+from app.models.plan_invitation import PlanInvitation, PlanInvitationRedemption
 from app.models.monthly_question_usage import MonthlyQuestionUsage
 from app.models.bocc_issue import BoccIssue
 from app.models.organisation import Organisation
@@ -33,6 +34,8 @@ __all__ = [
     "MonthlyQuestionUsage",
     "Organisation",
     "OrganisationConvention",
+    "PlanInvitation",
+    "PlanInvitationRedemption",
     "Subscription",
     "SubscriptionAddon",
     "SyncLog",
