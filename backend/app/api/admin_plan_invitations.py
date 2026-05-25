@@ -17,10 +17,26 @@ from app.services.plan_invitation_service import PlanInvitationService
 router = APIRouter()
 
 
+def _inv_to_dict(inv) -> dict:
+    return {
+        "id": inv.id,
+        "token": inv.token,
+        "label": inv.label,
+        "plan": inv.plan,
+        "duration_months": inv.duration_months,
+        "email": inv.email,
+        "max_uses": inv.max_uses,
+        "use_count": inv.use_count,
+        "status": inv.status,
+        "expires_at": inv.expires_at,
+        "created_at": inv.created_at,
+    }
+
+
 def _to_read(inv, service: PlanInvitationService) -> PlanInvitationRead:
-    data = PlanInvitationRead.model_validate(inv)
-    data.shareable_url = service.build_shareable_url(inv)
-    return data
+    data = _inv_to_dict(inv)
+    data["shareable_url"] = service.build_shareable_url(inv)
+    return PlanInvitationRead(**data)
 
 
 @router.post("", response_model=PlanInvitationRead, status_code=status.HTTP_201_CREATED)
@@ -69,10 +85,10 @@ async def get_plan_invitation(
     service = PlanInvitationService(db)
     detail = await service.get_detail(invitation_id)
     inv = detail["invitation"]
-    data = PlanInvitationDetail.model_validate(inv)
-    data.shareable_url = service.build_shareable_url(inv)
-    data.redemptions = [RedemptionItem(**r) for r in detail["redemptions"]]
-    return data
+    data = _inv_to_dict(inv)
+    data["shareable_url"] = service.build_shareable_url(inv)
+    data["redemptions"] = [RedemptionItem(**r) for r in detail["redemptions"]]
+    return PlanInvitationDetail(**data)
 
 
 @router.delete("/{invitation_id}", status_code=status.HTTP_204_NO_CONTENT)
