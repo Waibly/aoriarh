@@ -103,13 +103,17 @@ export default function AdminPlanInvitationsPage() {
   const [loadingDetail, setLoadingDetail] = useState(false);
 
   const [revokeTarget, setRevokeTarget] = useState<PlanInvitation | null>(null);
+  const [statusFilter, setStatusFilter] = useState<string>("active");
 
   const fetchList = useCallback(async () => {
     if (!token) return;
     setLoading(true);
     try {
+      const params = statusFilter && statusFilter !== "all"
+        ? `?status=${statusFilter}`
+        : "";
       const data = await apiFetch<{ items: PlanInvitation[]; total: number }>(
-        "/admin/plan-invitations",
+        `/admin/plan-invitations${params}`,
         { token },
       );
       setInvitations(data.items);
@@ -123,7 +127,7 @@ export default function AdminPlanInvitationsPage() {
 
   useEffect(() => {
     fetchList();
-  }, [fetchList]);
+  }, [fetchList, statusFilter]);
 
   async function handleCreate() {
     if (!token || !formLabel.trim()) return;
@@ -235,12 +239,28 @@ export default function AdminPlanInvitationsPage() {
         </Button>
       </div>
 
+      <div className="flex items-center gap-2">
+        <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v)}>
+          <SelectTrigger className="w-[160px]">
+            <SelectValue placeholder="Filtrer par statut" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="active">Actifs</SelectItem>
+            <SelectItem value="exhausted">Épuisés</SelectItem>
+            <SelectItem value="expired">Expirés</SelectItem>
+            <SelectItem value="revoked">Révoqués</SelectItem>
+            <SelectItem value="all">Tous</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+
       <Card>
-        <CardContent className="p-0">
+        <CardContent className="p-4">
           <Table>
             <TableHeader>
               <TableRow>
                 <TableHead>Label</TableHead>
+                <TableHead>Lien</TableHead>
                 <TableHead>Durée</TableHead>
                 <TableHead>Email</TableHead>
                 <TableHead>Utilisations</TableHead>
@@ -253,13 +273,13 @@ export default function AdminPlanInvitationsPage() {
             <TableBody>
               {loading ? (
                 <TableRow>
-                  <TableCell colSpan={8} className="text-center py-8">
+                  <TableCell colSpan={9} className="text-center py-8">
                     <Loader2 className="mx-auto h-6 w-6 animate-spin text-muted-foreground" />
                   </TableCell>
                 </TableRow>
               ) : invitations.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
+                  <TableCell colSpan={9} className="text-center py-8 text-muted-foreground">
                     Aucun lien promo créé
                   </TableCell>
                 </TableRow>
@@ -272,6 +292,20 @@ export default function AdminPlanInvitationsPage() {
                   return (
                     <TableRow key={inv.id}>
                       <TableCell className="font-medium">{inv.label}</TableCell>
+                      <TableCell>
+                        {inv.shareable_url ? (
+                          <button
+                            onClick={() => copyUrl(inv.shareable_url!)}
+                            className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors max-w-[200px]"
+                            title={inv.shareable_url}
+                          >
+                            <code className="truncate">{inv.shareable_url.replace("https://app.aoriarh.fr", "")}</code>
+                            <Copy className="h-3 w-3 shrink-0" />
+                          </button>
+                        ) : (
+                          "-"
+                        )}
+                      </TableCell>
                       <TableCell>{inv.duration_months} mois</TableCell>
                       <TableCell className="text-muted-foreground">
                         {inv.email ?? "Ouvert"}
@@ -287,16 +321,6 @@ export default function AdminPlanInvitationsPage() {
                       <TableCell>{fmt(inv.created_at)}</TableCell>
                       <TableCell className="text-right">
                         <div className="flex items-center justify-end gap-1">
-                          {inv.shareable_url && inv.status === "active" && (
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              onClick={() => copyUrl(inv.shareable_url!)}
-                              title="Copier le lien"
-                            >
-                              <Copy className="h-4 w-4" />
-                            </Button>
-                          )}
                           <Button
                             variant="ghost"
                             size="icon"
@@ -436,8 +460,8 @@ export default function AdminPlanInvitationsPage() {
             <DialogTitle>{detail?.label ?? "Détail"}</DialogTitle>
             <DialogDescription>
               {detail?.shareable_url && (
-                <span className="flex items-center gap-2 mt-1">
-                  <code className="text-xs bg-muted px-2 py-1 rounded truncate flex-1">
+                <span className="flex items-center gap-2 mt-1 min-w-0">
+                  <code className="text-xs bg-muted px-2 py-1 rounded truncate min-w-0 block flex-1">
                     {detail.shareable_url}
                   </code>
                   <Button
