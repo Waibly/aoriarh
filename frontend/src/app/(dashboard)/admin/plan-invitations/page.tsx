@@ -458,23 +458,18 @@ export default function AdminPlanInvitationsPage() {
         <DialogContent className="max-w-lg">
           <DialogHeader>
             <DialogTitle>{detail?.label ?? "Détail"}</DialogTitle>
-            <DialogDescription>
-              {detail?.shareable_url && (
-                <span className="flex items-center gap-2 mt-1 min-w-0">
-                  <code className="text-xs bg-muted px-2 py-1 rounded truncate min-w-0 block flex-1">
-                    {detail.shareable_url}
-                  </code>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="shrink-0"
-                    onClick={() => copyUrl(detail.shareable_url!)}
-                  >
-                    <Copy className="h-3.5 w-3.5" />
-                  </Button>
-                </span>
-              )}
-            </DialogDescription>
+            {detail?.shareable_url && (
+              <div
+                className="flex items-center gap-2 mt-1 cursor-pointer overflow-hidden"
+                onClick={() => copyUrl(detail.shareable_url!)}
+                title="Cliquer pour copier"
+              >
+                <code className="text-xs bg-muted px-2 py-1 rounded overflow-hidden text-ellipsis whitespace-nowrap">
+                  {detail.shareable_url}
+                </code>
+                <Copy className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+              </div>
+            )}
           </DialogHeader>
           {loadingDetail ? (
             <div className="flex justify-center py-8">
