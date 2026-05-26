@@ -31,21 +31,38 @@ class EmailTemplateRead(BaseModel):
 
 # --- Sequences ---
 
-class SequenceStepCreate(BaseModel):
+class StepBranchCreate(BaseModel):
+    condition: str  # "opened_and_clicked", "opened_not_clicked", "not_opened"
     template_id: uuid.UUID
+
+
+class StepBranchRead(BaseModel):
+    model_config = {"from_attributes": True}
+
+    id: uuid.UUID
+    condition: str
+    template_id: uuid.UUID
+    template_name: str | None = None
+    template_subject: str | None = None
+
+
+class SequenceStepCreate(BaseModel):
+    template_id: uuid.UUID | None = None
     position: int
     delay_days: int = 0
+    branches: list[StepBranchCreate] = []
 
 
 class SequenceStepRead(BaseModel):
     model_config = {"from_attributes": True}
 
     id: uuid.UUID
-    template_id: uuid.UUID
+    template_id: uuid.UUID | None = None
     position: int
     delay_days: int
     template_name: str | None = None
     template_subject: str | None = None
+    branches: list[StepBranchRead] = []
 
 
 class EmailSequenceCreate(BaseModel):
@@ -96,6 +113,16 @@ class EmailCampaignRead(BaseModel):
 
 # --- Stats ---
 
+class CampaignBranchStats(BaseModel):
+    condition: str
+    template_name: str | None = None
+    sent: int = 0
+    opened: int = 0
+    clicked: int = 0
+    bounced: int = 0
+    unsubscribed: int = 0
+
+
 class CampaignStepStats(BaseModel):
     step_position: int
     template_name: str | None = None
@@ -105,6 +132,7 @@ class CampaignStepStats(BaseModel):
     clicked: int = 0
     bounced: int = 0
     unsubscribed: int = 0
+    branches: list[CampaignBranchStats] = []
 
 
 class CampaignStats(BaseModel):

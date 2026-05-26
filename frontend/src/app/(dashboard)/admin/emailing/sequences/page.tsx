@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
-import { Loader2, Plus, Pencil, Trash2, ArrowDown, ArrowUp } from "lucide-react";
+import { Loader2, Plus, Pencil, Trash2, ArrowDown, ArrowUp, GitBranch } from "lucide-react";
 import { toast } from "sonner";
 import { apiFetch } from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -36,13 +36,22 @@ import {
   TableRow,
 } from "@/components/ui/table";
 
+interface StepBranch {
+  id: string;
+  condition: string;
+  template_id: string;
+  template_name: string | null;
+  template_subject: string | null;
+}
+
 interface SequenceStep {
   id: string;
-  template_id: string;
+  template_id: string | null;
   position: number;
   delay_days: number;
   template_name: string | null;
   template_subject: string | null;
+  branches: StepBranch[];
 }
 
 interface EmailSequence {
@@ -60,10 +69,24 @@ interface EmailTemplate {
   subject: string;
 }
 
-interface StepForm {
+interface BranchForm {
+  condition: string;
   template_id: string;
-  delay_days: number;
 }
+
+interface StepForm {
+  template_id: string | null;
+  delay_days: number;
+  branches: BranchForm[];
+}
+
+const CONDITION_LABELS: Record<string, string> = {
+  opened_and_clicked: "Ouvert + cliqué",
+  opened_not_clicked: "Ouvert, pas cliqué",
+  not_opened: "Pas ouvert",
+};
+
+const ALL_CONDITIONS = ["opened_and_clicked", "opened_not_clicked", "not_opened"];
 
 const STATUS_BADGE: Record<string, { label: string; variant: "default" | "secondary" | "outline" }> = {
   draft: { label: "Brouillon", variant: "outline" },
@@ -122,6 +145,10 @@ export default function AdminEmailSequencesPage() {
     setFormSteps(seq.steps.map((s) => ({
       template_id: s.template_id,
       delay_days: s.delay_days,
+      branches: s.branches.map((b) => ({
+        condition: b.condition,
+        template_id: b.template_id,
+      })),
     })));
     setEditOpen(true);
   }
@@ -131,7 +158,15 @@ export default function AdminEmailSequencesPage() {
       toast.error("Créez d'abord un template");
       return;
     }
-    setFormSteps([...formSteps, { template_id: templates[0].id, delay_days: formSteps.length === 0 ? 0 : 3 }]);
+    const isFirst = formSteps.length === 0;
+    setFormSteps([...formSteps, {
+      template_id: isFirst ? templates[0].id : null,
+      delay_days: isFirst ? 0 : 5,
+      branches: isFirst ? [] : ALL_CONDITIONS.map((c) => ({
+        condition: c,
+        template_id: templates[0].id,
+      })),
+    }]);
   }
 
   function removeStep(index: number) {
@@ -146,9 +181,17 @@ export default function AdminEmailSequencesPage() {
     setFormSteps(newSteps);
   }
 
-  function updateStep(index: number, field: keyof StepForm, value: string | number) {
+  function updateStep(index: number, field: string, value: string | number | null) {
     const newSteps = [...formSteps];
     newSteps[index] = { ...newSteps[index], [field]: value };
+    setFormSteps(newSteps);
+  }
+
+  function updateBranch(stepIndex: number, branchIndex: number, field: string, value: string) {
+    const newSteps = [...formSteps];
+    const newBranches = [...newSteps[stepIndex].branches];
+    newBranches[branchIndex] = { ...newBranches[branchIndex], [field]: value };
+    newSteps[stepIndex] = { ...newSteps[stepIndex], branches: newBranches };
     setFormSteps(newSteps);
   }
 
@@ -156,14 +199,17 @@ export default function AdminEmailSequencesPage() {
     if (!token || !formName.trim()) return;
     setSaving(true);
     try {
-      const body = JSON.stringify({
-        name: formName.trim(),
-        steps: formSteps.map((s, i) => ({
-          template_id: s.template_id,
-          position: i + 1,
-          delay_days: s.delay_days,
+      const steps = formSteps.map((s, i) => ({
+        template_id: s.template_id,
+        position: i + 1,
+        delay_days: s.delay_days,
+        branches: s.branches.map((b) => ({
+          condition: b.condition,
+          template_id: b.template_id,
         })),
-      });
+      }));
+
+      const body = JSON.stringify({ name: formName.trim(), steps });
 
       if (editId) {
         await apiFetch(`/admin/emailing/sequences/${editId}`, { method: "PUT", token, body });
@@ -194,7 +240,10 @@ export default function AdminEmailSequencesPage() {
     }
   }
 
-  const getTemplateName = (id: string) => templates.find((t) => t.id === id)?.name ?? "—";
+  const tplName = (id: string | null) => {
+    if (!id) return "—";
+    return templates.find((t) => t.id === id)?.name ?? "—";
+  };
 
   return (
     <div className="space-y-6 p-6">
@@ -202,7 +251,7 @@ export default function AdminEmailSequencesPage() {
         <div>
           <h1 className="text-2xl font-bold">Séquences</h1>
           <p className="text-sm text-muted-foreground">
-            Suites d&apos;emails envoyés automatiquement dans le temps
+            Suites d&apos;emails avec branchement selon le comportement
           </p>
         </div>
         <Button onClick={openCreate}>
@@ -242,10 +291,22 @@ export default function AdminEmailSequencesPage() {
                     <TableRow key={seq.id}>
                       <TableCell className="font-medium">{seq.name}</TableCell>
                       <TableCell>
-                        <div className="space-y-0.5">
+                        <div className="space-y-1">
                           {seq.steps.map((step) => (
-                            <div key={step.id} className="text-xs text-muted-foreground">
-                              Jour {step.delay_days} — {step.template_name ?? "—"}
+                            <div key={step.id}>
+                              <div className="text-xs text-muted-foreground">
+                                Jour {step.delay_days} — {step.template_name ?? "Branchement"}
+                              </div>
+                              {step.branches.length > 0 && (
+                                <div className="pl-4 space-y-0.5">
+                                  {step.branches.map((b) => (
+                                    <div key={b.id} className="text-xs text-muted-foreground flex items-center gap-1">
+                                      <GitBranch className="h-3 w-3" />
+                                      {CONDITION_LABELS[b.condition] ?? b.condition} → {b.template_name}
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
                             </div>
                           ))}
                           {seq.steps.length === 0 && <span className="text-xs text-muted-foreground">Aucune étape</span>}
@@ -277,7 +338,7 @@ export default function AdminEmailSequencesPage() {
 
       {/* Dialog : Créer / Modifier */}
       <Dialog open={editOpen} onOpenChange={setEditOpen}>
-        <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="sm:max-w-3xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{editId ? "Modifier la séquence" : "Nouvelle séquence"}</DialogTitle>
           </DialogHeader>
@@ -285,7 +346,7 @@ export default function AdminEmailSequencesPage() {
             <div className="space-y-2">
               <Label>Nom</Label>
               <Input
-                placeholder="Ex : Prospection RH"
+                placeholder="Ex : Prospection CSE"
                 value={formName}
                 onChange={(e) => setFormName(e.target.value)}
               />
@@ -303,56 +364,114 @@ export default function AdminEmailSequencesPage() {
                   Aucune étape. Cliquez sur &quot;Ajouter&quot; pour commencer.
                 </p>
               )}
-              {formSteps.map((step, index) => (
-                <Card key={index}>
-                  <CardContent className="p-3">
-                    <div className="flex items-center gap-3">
-                      <span className="text-sm font-medium text-muted-foreground w-6">
-                        {index + 1}.
-                      </span>
-                      <div className="flex-1 grid grid-cols-2 gap-3">
-                        <div className="space-y-1">
-                          <Label className="text-xs">Template</Label>
-                          <Select
-                            value={step.template_id}
-                            onValueChange={(v) => updateStep(index, "template_id", v)}
-                          >
-                            <SelectTrigger className="h-8 text-xs">
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {templates.map((t) => (
-                                <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
+              {formSteps.map((step, index) => {
+                const isFirst = index === 0;
+                const hasBranches = step.branches.length > 0;
+
+                return (
+                  <Card key={index} className={hasBranches ? "border-primary/30" : ""}>
+                    <CardContent className="p-3 space-y-3">
+                      <div className="flex items-center gap-3">
+                        <span className="text-sm font-medium text-muted-foreground w-6">
+                          {index + 1}.
+                        </span>
+                        <div className="flex-1">
+                          <div className="flex items-center gap-3">
+                            <div className="flex-1 space-y-1">
+                              <Label className="text-xs">Délai (jours)</Label>
+                              <Input
+                                type="number"
+                                min="0"
+                                className="h-8 text-xs"
+                                value={step.delay_days}
+                                onChange={(e) => updateStep(index, "delay_days", parseInt(e.target.value) || 0)}
+                              />
+                            </div>
+                            {isFirst && (
+                              <div className="flex-[2] space-y-1">
+                                <Label className="text-xs">Template</Label>
+                                <Select
+                                  value={step.template_id ?? ""}
+                                  onValueChange={(v) => updateStep(index, "template_id", v)}
+                                >
+                                  <SelectTrigger className="h-8 text-xs">
+                                    <SelectValue />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    {templates.map((t) => (
+                                      <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                              </div>
+                            )}
+                            {!isFirst && !hasBranches && (
+                              <div className="flex-[2] space-y-1">
+                                <Label className="text-xs">Template (même pour tous)</Label>
+                                <Select
+                                  value={step.template_id ?? ""}
+                                  onValueChange={(v) => updateStep(index, "template_id", v)}
+                                >
+                                  <SelectTrigger className="h-8 text-xs">
+                                    <SelectValue />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    {templates.map((t) => (
+                                      <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                              </div>
+                            )}
+                          </div>
                         </div>
-                        <div className="space-y-1">
-                          <Label className="text-xs">Délai (jours après lancement)</Label>
-                          <Input
-                            type="number"
-                            min="0"
-                            className="h-8 text-xs"
-                            value={step.delay_days}
-                            onChange={(e) => updateStep(index, "delay_days", parseInt(e.target.value) || 0)}
-                          />
+                        <div className="flex flex-col gap-0.5">
+                          <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => moveStep(index, "up")} disabled={index === 0}>
+                            <ArrowUp className="h-3 w-3" />
+                          </Button>
+                          <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => moveStep(index, "down")} disabled={index === formSteps.length - 1}>
+                            <ArrowDown className="h-3 w-3" />
+                          </Button>
                         </div>
-                      </div>
-                      <div className="flex flex-col gap-0.5">
-                        <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => moveStep(index, "up")} disabled={index === 0}>
-                          <ArrowUp className="h-3 w-3" />
-                        </Button>
-                        <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => moveStep(index, "down")} disabled={index === formSteps.length - 1}>
-                          <ArrowDown className="h-3 w-3" />
+                        <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => removeStep(index)}>
+                          <Trash2 className="h-3 w-3 text-destructive" />
                         </Button>
                       </div>
-                      <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => removeStep(index)}>
-                        <Trash2 className="h-3 w-3 text-destructive" />
-                      </Button>
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
+
+                      {/* Branches */}
+                      {hasBranches && (
+                        <div className="pl-8 space-y-2">
+                          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                            <GitBranch className="h-3.5 w-3.5" />
+                            Selon le résultat de l&apos;étape précédente :
+                          </div>
+                          {step.branches.map((branch, bi) => (
+                            <div key={bi} className="flex items-center gap-2 pl-2 border-l-2 border-primary/20">
+                              <Badge variant="outline" className="text-xs shrink-0">
+                                {CONDITION_LABELS[branch.condition]}
+                              </Badge>
+                              <span className="text-xs text-muted-foreground">→</span>
+                              <Select
+                                value={branch.template_id}
+                                onValueChange={(v) => updateBranch(index, bi, "template_id", v)}
+                              >
+                                <SelectTrigger className="h-7 text-xs flex-1">
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {templates.map((t) => (
+                                    <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+                );
+              })}
             </div>
           </div>
           <DialogFooter>

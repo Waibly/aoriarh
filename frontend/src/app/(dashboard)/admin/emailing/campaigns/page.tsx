@@ -62,6 +62,16 @@ interface EmailCampaign {
   created_at: string;
 }
 
+interface BranchStats {
+  condition: string;
+  template_name: string | null;
+  sent: number;
+  opened: number;
+  clicked: number;
+  bounced: number;
+  unsubscribed: number;
+}
+
 interface StepStats {
   step_position: number;
   template_name: string | null;
@@ -71,7 +81,14 @@ interface StepStats {
   clicked: number;
   bounced: number;
   unsubscribed: number;
+  branches: BranchStats[];
 }
+
+const CONDITION_LABELS: Record<string, string> = {
+  opened_and_clicked: "Ouvert + cliqué",
+  opened_not_clicked: "Ouvert, pas cliqué",
+  not_opened: "Pas ouvert",
+};
 
 interface CampaignStats {
   campaign_id: string;
@@ -460,27 +477,58 @@ export default function AdminEmailCampaignsPage() {
                 </TableHeader>
                 <TableBody>
                   {stats.steps.map((step) => (
-                    <TableRow key={step.step_position}>
-                      <TableCell>
-                        <div>
-                          <span className="font-medium">Jour {step.delay_days}</span>
-                          {step.template_name && (
-                            <span className="text-xs text-muted-foreground ml-2">
-                              {step.template_name}
-                            </span>
-                          )}
-                        </div>
-                      </TableCell>
-                      <TableCell className="text-right">{step.sent}</TableCell>
-                      <TableCell className="text-right">
-                        {step.opened} <span className="text-xs text-muted-foreground">({pct(step.opened, step.sent)})</span>
-                      </TableCell>
-                      <TableCell className="text-right">
-                        {step.clicked} <span className="text-xs text-muted-foreground">({pct(step.clicked, step.sent)})</span>
-                      </TableCell>
-                      <TableCell className="text-right">{step.bounced}</TableCell>
-                      <TableCell className="text-right">{step.unsubscribed}</TableCell>
-                    </TableRow>
+                    <>
+                      <TableRow key={step.step_position}>
+                        <TableCell>
+                          <div>
+                            <span className="font-medium">Jour {step.delay_days}</span>
+                            {step.template_name && (
+                              <span className="text-xs text-muted-foreground ml-2">
+                                {step.template_name}
+                              </span>
+                            )}
+                            {step.branches.length > 0 && !step.template_name && (
+                              <span className="text-xs text-muted-foreground ml-2">
+                                (branchement)
+                              </span>
+                            )}
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-right">{step.sent}</TableCell>
+                        <TableCell className="text-right">
+                          {step.opened} <span className="text-xs text-muted-foreground">({pct(step.opened, step.sent)})</span>
+                        </TableCell>
+                        <TableCell className="text-right">
+                          {step.clicked} <span className="text-xs text-muted-foreground">({pct(step.clicked, step.sent)})</span>
+                        </TableCell>
+                        <TableCell className="text-right">{step.bounced}</TableCell>
+                        <TableCell className="text-right">{step.unsubscribed}</TableCell>
+                      </TableRow>
+                      {step.branches.map((branch) => (
+                        <TableRow key={`${step.step_position}-${branch.condition}`} className="bg-muted/30">
+                          <TableCell className="pl-8">
+                            <div className="flex items-center gap-1.5 text-xs">
+                              <span className="text-muted-foreground">↳</span>
+                              <Badge variant="outline" className="text-xs">
+                                {CONDITION_LABELS[branch.condition] ?? branch.condition}
+                              </Badge>
+                              {branch.template_name && (
+                                <span className="text-muted-foreground">{branch.template_name}</span>
+                              )}
+                            </div>
+                          </TableCell>
+                          <TableCell className="text-right text-xs">{branch.sent}</TableCell>
+                          <TableCell className="text-right text-xs">
+                            {branch.opened} <span className="text-muted-foreground">({pct(branch.opened, branch.sent)})</span>
+                          </TableCell>
+                          <TableCell className="text-right text-xs">
+                            {branch.clicked} <span className="text-muted-foreground">({pct(branch.clicked, branch.sent)})</span>
+                          </TableCell>
+                          <TableCell className="text-right text-xs">{branch.bounced}</TableCell>
+                          <TableCell className="text-right text-xs">{branch.unsubscribed}</TableCell>
+                        </TableRow>
+                      ))}
+                    </>
                   ))}
                 </TableBody>
               </Table>

@@ -12,6 +12,7 @@ from app.models.emailing import (
     EmailCampaignRecipient,
     EmailSequence,
     EmailSequenceStep,
+    EmailSequenceStepBranch,
     EmailTemplate,
 )
 from app.models.invitation import Invitation
@@ -41,6 +42,7 @@ __all__ = [
     "EmailCampaignRecipient",
     "EmailSequence",
     "EmailSequenceStep",
+    "EmailSequenceStepBranch",
     "EmailTemplate",
     "Invitation",
     "Membership",

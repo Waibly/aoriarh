@@ -15,6 +15,7 @@ from app.models.emailing import (
     EmailCampaignRecipient,
     EmailSequence,
     EmailSequenceStep,
+    EmailSequenceStepBranch,
     EmailTemplate,
 )
 
@@ -100,6 +101,16 @@ class EmailTemplateService:
 # ──────────────────────────────────────────────
 
 
+def _sequence_load_options():
+    return (
+        selectinload(EmailSequence.steps)
+        .selectinload(EmailSequenceStep.template),
+        selectinload(EmailSequence.steps)
+        .selectinload(EmailSequenceStep.branches)
+        .selectinload(EmailSequenceStepBranch.template),
+    )
+
+
 class EmailSequenceService:
     def __init__(self, db: AsyncSession) -> None:
         self.db = db
@@ -107,7 +118,7 @@ class EmailSequenceService:
     async def list_all(self) -> list[EmailSequence]:
         result = await self.db.execute(
             select(EmailSequence)
-            .options(selectinload(EmailSequence.steps).selectinload(EmailSequenceStep.template))
+            .options(*_sequence_load_options())
             .order_by(EmailSequence.updated_at.desc())
         )
         return list(result.scalars().unique().all())
@@ -115,7 +126,7 @@ class EmailSequenceService:
     async def get(self, sequence_id: uuid.UUID) -> EmailSequence:
         result = await self.db.execute(
             select(EmailSequence)
-            .options(selectinload(EmailSequence.steps).selectinload(EmailSequenceStep.template))
+            .options(*_sequence_load_options())
             .where(EmailSequence.id == sequence_id)
         )
         seq = result.scalar_one_or_none()
@@ -131,11 +142,20 @@ class EmailSequenceService:
         for step_data in steps:
             step = EmailSequenceStep(
                 sequence_id=seq.id,
-                template_id=step_data["template_id"],
+                template_id=step_data.get("template_id"),
                 position=step_data["position"],
                 delay_days=step_data.get("delay_days", 0),
             )
             self.db.add(step)
+            await self.db.flush()
+
+            for branch_data in step_data.get("branches", []):
+                branch = EmailSequenceStepBranch(
+                    step_id=step.id,
+                    condition=branch_data["condition"],
+                    template_id=branch_data["template_id"],
+                )
+                self.db.add(branch)
 
         await self.db.commit()
         return await self.get(seq.id)
@@ -164,11 +184,20 @@ class EmailSequenceService:
             for step_data in steps:
                 step = EmailSequenceStep(
                     sequence_id=sequence_id,
-                    template_id=step_data["template_id"],
+                    template_id=step_data.get("template_id"),
                     position=step_data["position"],
                     delay_days=step_data.get("delay_days", 0),
                 )
                 self.db.add(step)
+                await self.db.flush()
+
+                for branch_data in step_data.get("branches", []):
+                    branch = EmailSequenceStepBranch(
+                        step_id=step.id,
+                        condition=branch_data["condition"],
+                        template_id=branch_data["template_id"],
+                    )
+                    self.db.add(branch)
 
         await self.db.commit()
         return await self.get(sequence_id)
@@ -361,6 +390,30 @@ class EmailCampaignService:
             )
             counts = dict(events_result.all())
 
+            branch_stats = []
+            if step.branches:
+                for branch in step.branches:
+                    br_events = await self.db.execute(
+                        select(
+                            EmailCampaignEvent.event_type,
+                            func.count(),
+                        ).where(
+                            EmailCampaignEvent.campaign_id == campaign_id,
+                            EmailCampaignEvent.step_position == step.position,
+                            EmailCampaignEvent.branch_condition == branch.condition,
+                        ).group_by(EmailCampaignEvent.event_type)
+                    )
+                    br_counts = dict(br_events.all())
+                    branch_stats.append({
+                        "condition": branch.condition,
+                        "template_name": branch.template.name if branch.template else None,
+                        "sent": br_counts.get("sent", 0),
+                        "opened": br_counts.get("opened", 0),
+                        "clicked": br_counts.get("clicked", 0),
+                        "bounced": br_counts.get("bounced", 0),
+                        "unsubscribed": br_counts.get("unsubscribed", 0),
+                    })
+
             steps_stats.append({
                 "step_position": step.position,
                 "template_name": step.template.name if step.template else None,
@@ -370,6 +423,7 @@ class EmailCampaignService:
                 "clicked": counts.get("clicked", 0),
                 "bounced": counts.get("bounced", 0),
                 "unsubscribed": counts.get("unsubscribed", 0),
+                "branches": branch_stats,
             })
 
         return {
@@ -510,6 +564,31 @@ async def _send_via_brevo(
 # ──────────────────────────────────────────────
 
 
+CONDITION_LABELS = {
+    "opened_and_clicked": "Ouvert + cliqué",
+    "opened_not_clicked": "Ouvert, pas cliqué",
+    "not_opened": "Pas ouvert",
+}
+
+
+def _determine_recipient_condition(
+    events: list[EmailCampaignEvent],
+    prev_step_position: int,
+) -> str:
+    prev_events = [e for e in events if e.step_position == prev_step_position]
+    event_types = {e.event_type for e in prev_events}
+
+    has_opened = "opened" in event_types
+    has_clicked = "clicked" in event_types
+
+    if has_opened and has_clicked:
+        return "opened_and_clicked"
+    elif has_opened:
+        return "opened_not_clicked"
+    else:
+        return "not_opened"
+
+
 async def process_campaign_emails(db: AsyncSession) -> int:
     now = datetime.now(UTC)
     total_sent = 0
@@ -519,7 +598,11 @@ async def process_campaign_emails(db: AsyncSession) -> int:
         .options(
             selectinload(EmailCampaign.sequence)
             .selectinload(EmailSequence.steps)
-            .selectinload(EmailSequenceStep.template)
+            .selectinload(EmailSequenceStep.template),
+            selectinload(EmailCampaign.sequence)
+            .selectinload(EmailSequence.steps)
+            .selectinload(EmailSequenceStep.branches)
+            .selectinload(EmailSequenceStepBranch.template),
         )
         .where(EmailCampaign.status == "running")
     )
@@ -534,12 +617,14 @@ async def process_campaign_emails(db: AsyncSession) -> int:
             continue
 
         recipients_result = await db.execute(
-            select(EmailCampaignRecipient).where(
+            select(EmailCampaignRecipient)
+            .options(selectinload(EmailCampaignRecipient.events))
+            .where(
                 EmailCampaignRecipient.campaign_id == campaign.id,
                 EmailCampaignRecipient.status == "active",
             )
         )
-        recipients = list(recipients_result.scalars().all())
+        recipients = list(recipients_result.scalars().unique().all())
 
         all_done = True
 
@@ -555,14 +640,37 @@ async def process_campaign_emails(db: AsyncSession) -> int:
             if now < send_after:
                 continue
 
+            template = None
+            branch_condition = None
+
+            if step.branches and next_step_index > 0:
+                prev_step = steps[next_step_index - 1]
+                condition = _determine_recipient_condition(
+                    recipient.events, prev_step.position
+                )
+                branch_condition = condition
+
+                for branch in step.branches:
+                    if branch.condition == condition:
+                        template = branch.template
+                        break
+
+                if not template:
+                    template = step.template
+            else:
+                template = step.template
+
+            if not template:
+                continue
+
             variables = {
                 "prenom": recipient.first_name or "",
                 "nom": recipient.last_name or "",
                 "entreprise": recipient.company or "",
                 "poste": "",
             }
-            html = _render_variables(step.template.html_body, variables)
-            subject = _render_variables(step.template.subject, variables)
+            html = _render_variables(template.html_body, variables)
+            subject = _render_variables(template.subject, variables)
 
             success = await _send_via_brevo(
                 to_email=recipient.email,
@@ -580,6 +688,7 @@ async def process_campaign_emails(db: AsyncSession) -> int:
                     recipient_id=recipient.id,
                     step_position=step.position,
                     event_type="sent",
+                    branch_condition=branch_condition,
                     occurred_at=now,
                 )
                 db.add(event)

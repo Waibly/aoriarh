@@ -42,14 +42,35 @@ class EmailSequenceStep(TimestampMixin, Base):
     sequence_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("email_sequences.id", ondelete="CASCADE"), nullable=False
     )
-    template_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("email_templates.id"), nullable=False
+    template_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("email_templates.id"), nullable=True
     )
     position: Mapped[int] = mapped_column(Integer, nullable=False)
     delay_days: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
     sequence = relationship("EmailSequence", back_populates="steps")
     template = relationship("EmailTemplate", back_populates="sequence_steps")
+    branches = relationship(
+        "EmailSequenceStepBranch",
+        back_populates="step",
+        cascade="all, delete-orphan",
+    )
+
+
+class EmailSequenceStepBranch(TimestampMixin, Base):
+    __tablename__ = "email_sequence_step_branches"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=generate_uuid)
+    step_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("email_sequence_steps.id", ondelete="CASCADE"), nullable=False
+    )
+    condition: Mapped[str] = mapped_column(String(30), nullable=False)
+    template_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("email_templates.id"), nullable=False
+    )
+
+    step = relationship("EmailSequenceStep", back_populates="branches")
+    template = relationship("EmailTemplate")
 
 
 class EmailCampaign(TimestampMixin, Base):
@@ -115,6 +136,7 @@ class EmailCampaignEvent(Base):
     )
     step_position: Mapped[int] = mapped_column(Integer, nullable=False)
     event_type: Mapped[str] = mapped_column(String(20), nullable=False)
+    branch_condition: Mapped[str | None] = mapped_column(String(30), nullable=True)
     occurred_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False
     )

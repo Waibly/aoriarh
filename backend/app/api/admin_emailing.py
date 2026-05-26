@@ -19,6 +19,7 @@ from app.schemas.emailing import (
     EmailTemplateRead,
     EmailTemplateUpdate,
     SequenceStepRead,
+    StepBranchRead,
 )
 from app.services.emailing_service import (
     EmailCampaignService,
@@ -111,6 +112,15 @@ async def send_test_email(
 def _seq_to_read(seq) -> EmailSequenceRead:
     steps = []
     for s in sorted(seq.steps, key=lambda x: x.position):
+        branches = []
+        for b in (s.branches or []):
+            branches.append(StepBranchRead(
+                id=b.id,
+                condition=b.condition,
+                template_id=b.template_id,
+                template_name=b.template.name if b.template else None,
+                template_subject=b.template.subject if b.template else None,
+            ))
         steps.append(SequenceStepRead(
             id=s.id,
             template_id=s.template_id,
@@ -118,6 +128,7 @@ def _seq_to_read(seq) -> EmailSequenceRead:
             delay_days=s.delay_days,
             template_name=s.template.name if s.template else None,
             template_subject=s.template.subject if s.template else None,
+            branches=branches,
         ))
     return EmailSequenceRead(
         id=seq.id,
