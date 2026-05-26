@@ -231,6 +231,22 @@ function RegisterForm() {
         }
       }
 
+      // Redeem plan invitation if a promo token cookie exists
+      const planInviteToken = readCookie("aoria_plan_invite_token");
+      if (planInviteToken) {
+        clearCookie("aoria_plan_invite_token");
+        try {
+          await fetch(`${API_BASE_URL}/plan-invitations/${planInviteToken}/redeem`, {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+          });
+        } catch {
+          // Non-blocking
+        }
+      }
+
       // Stripe checkout if a paid plan was stashed in cookies before the OAuth
       const plan = readCookie("aoria_signup_plan");
       const cycle = readCookie("aoria_signup_cycle");
@@ -419,6 +435,20 @@ function RegisterForm() {
       if (registerData?.checkout_url) {
         window.location.href = registerData.checkout_url;
         return;
+      }
+
+      // Redeem plan invitation if a promo token cookie exists
+      const planInviteToken = readCookie("aoria_plan_invite_token");
+      if (planInviteToken && accessToken) {
+        clearCookie("aoria_plan_invite_token");
+        try {
+          await fetch(`${API_BASE_URL}/plan-invitations/${planInviteToken}/redeem`, {
+            method: "POST",
+            headers: { Authorization: `Bearer ${accessToken}` },
+          });
+        } catch {
+          // Non-blocking — user can redeem later via the link
+        }
       }
 
       const landing = callbackUrl || "/chat";
