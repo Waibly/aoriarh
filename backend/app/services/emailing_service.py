@@ -55,8 +55,8 @@ class EmailTemplateService:
             raise HTTPException(status.HTTP_404_NOT_FOUND, "Template introuvable")
         return tpl
 
-    async def create(self, name: str, subject: str, html_body: str) -> EmailTemplate:
-        tpl = EmailTemplate(name=name, subject=subject, html_body=html_body)
+    async def create(self, name: str, subject: str, html_body: str, preview_text: str | None = None) -> EmailTemplate:
+        tpl = EmailTemplate(name=name, subject=subject, preview_text=preview_text, html_body=html_body)
         self.db.add(tpl)
         await self.db.commit()
         await self.db.refresh(tpl)
@@ -67,6 +67,7 @@ class EmailTemplateService:
         template_id: uuid.UUID,
         name: str | None = None,
         subject: str | None = None,
+        preview_text: str | None = None,
         html_body: str | None = None,
     ) -> EmailTemplate:
         tpl = await self.get(template_id)
@@ -74,6 +75,8 @@ class EmailTemplateService:
             tpl.name = name
         if subject is not None:
             tpl.subject = subject
+        if preview_text is not None:
+            tpl.preview_text = preview_text
         if html_body is not None:
             tpl.html_body = html_body
         await self.db.commit()
@@ -531,17 +534,20 @@ async def _send_via_brevo(
     to_name: str | None,
     subject: str,
     html_content: str,
+    preview_text: str | None = None,
 ) -> bool:
     if not settings.brevo_api_key:
         logger.warning("Brevo API key not configured, skipping email to %s", to_email)
         return False
 
-    payload = {
+    payload: dict = {
         "sender": {"name": "AORIA RH", "email": "noreply@aoriarh.fr"},
         "to": [{"email": to_email, "name": to_name or to_email}],
         "subject": subject,
         "htmlContent": html_content,
     }
+    if preview_text:
+        payload["previewText"] = preview_text
 
     async with httpx.AsyncClient() as client:
         response = await client.post(
@@ -671,12 +677,14 @@ async def process_campaign_emails(db: AsyncSession) -> int:
             }
             html = _render_variables(template.html_body, variables)
             subject = _render_variables(template.subject, variables)
+            preview = _render_variables(template.preview_text, variables) if template.preview_text else None
 
             success = await _send_via_brevo(
                 to_email=recipient.email,
                 to_name=recipient.first_name,
                 subject=subject,
                 html_content=html,
+                preview_text=preview,
             )
 
             if success:

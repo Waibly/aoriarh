@@ -9,12 +9,14 @@ from pydantic import BaseModel
 class EmailTemplateCreate(BaseModel):
     name: str
     subject: str
+    preview_text: str | None = None
     html_body: str
 
 
 class EmailTemplateUpdate(BaseModel):
     name: str | None = None
     subject: str | None = None
+    preview_text: str | None = None
     html_body: str | None = None
 
 
@@ -24,6 +26,7 @@ class EmailTemplateRead(BaseModel):
     id: uuid.UUID
     name: str
     subject: str
+    preview_text: str | None = None
     html_body: str
     created_at: datetime
     updated_at: datetime

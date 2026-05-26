@@ -14,6 +14,7 @@ class EmailTemplate(TimestampMixin, Base):
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=generate_uuid)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     subject: Mapped[str] = mapped_column(String(500), nullable=False)
+    preview_text: Mapped[str | None] = mapped_column(String(500), nullable=True)
     html_body: Mapped[str] = mapped_column(Text, nullable=False)
 
     sequence_steps = relationship("EmailSequenceStep", back_populates="template")

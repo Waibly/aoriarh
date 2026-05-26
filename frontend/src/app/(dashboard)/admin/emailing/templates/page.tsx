@@ -36,6 +36,7 @@ interface EmailTemplate {
   id: string;
   name: string;
   subject: string;
+  preview_text: string | null;
   html_body: string;
   created_at: string;
   updated_at: string;
@@ -52,6 +53,7 @@ export default function AdminEmailTemplatesPage() {
   const [editId, setEditId] = useState<string | null>(null);
   const [formName, setFormName] = useState("");
   const [formSubject, setFormSubject] = useState("");
+  const [formPreview, setFormPreview] = useState("");
   const [formHtml, setFormHtml] = useState("");
   const [saving, setSaving] = useState(false);
 
@@ -81,6 +83,7 @@ export default function AdminEmailTemplatesPage() {
     setEditId(null);
     setFormName("");
     setFormSubject("");
+    setFormPreview("");
     setFormHtml("");
     setEditOpen(true);
   }
@@ -89,6 +92,7 @@ export default function AdminEmailTemplatesPage() {
     setEditId(tpl.id);
     setFormName(tpl.name);
     setFormSubject(tpl.subject);
+    setFormPreview(tpl.preview_text ?? "");
     setFormHtml(tpl.html_body);
     setEditOpen(true);
   }
@@ -100,6 +104,7 @@ export default function AdminEmailTemplatesPage() {
       const body = JSON.stringify({
         name: formName.trim(),
         subject: formSubject.trim(),
+        preview_text: formPreview.trim() || null,
         html_body: formHtml,
       });
 
@@ -244,7 +249,7 @@ export default function AdminEmailTemplatesPage() {
               <div className="space-y-2">
                 <Label>Nom</Label>
                 <Input
-                  placeholder="Ex : Prospection RH - Email 1"
+                  placeholder="Ex : CSE — Mail 1 — Accès découverte"
                   value={formName}
                   onChange={(e) => setFormName(e.target.value)}
                 />
@@ -252,11 +257,24 @@ export default function AdminEmailTemplatesPage() {
               <div className="space-y-2">
                 <Label>Objet de l&apos;email</Label>
                 <Input
-                  placeholder="Ex : {{prenom}}, vos recherches en droit social ?"
+                  placeholder="Ex : {{prenom}}, vous connaissez vos droits ?"
                   value={formSubject}
                   onChange={(e) => setFormSubject(e.target.value)}
                 />
               </div>
+            </div>
+            <div className="space-y-2">
+              <Label>
+                Texte de preview
+                <span className="text-muted-foreground text-xs ml-2">
+                  Texte affiché après l&apos;objet dans la boîte mail, avant d&apos;ouvrir
+                </span>
+              </Label>
+              <Input
+                placeholder="Ex : Vérifiez n'importe quel article du Code du travail en quelques secondes."
+                value={formPreview}
+                onChange={(e) => setFormPreview(e.target.value)}
+              />
             </div>
             <div className="space-y-2">
               <Label>

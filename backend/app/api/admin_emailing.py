@@ -54,7 +54,7 @@ async def create_template(
     db: AsyncSession = Depends(get_db),
 ) -> EmailTemplateRead:
     service = EmailTemplateService(db)
-    tpl = await service.create(name=data.name, subject=data.subject, html_body=data.html_body)
+    tpl = await service.create(name=data.name, subject=data.subject, preview_text=data.preview_text, html_body=data.html_body)
     return EmailTemplateRead.model_validate(tpl)
 
 
@@ -78,7 +78,7 @@ async def update_template(
 ) -> EmailTemplateRead:
     service = EmailTemplateService(db)
     tpl = await service.update(
-        template_id, name=data.name, subject=data.subject, html_body=data.html_body,
+        template_id, name=data.name, subject=data.subject, preview_text=data.preview_text, html_body=data.html_body,
     )
     return EmailTemplateRead.model_validate(tpl)
 
