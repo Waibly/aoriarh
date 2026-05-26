@@ -407,7 +407,7 @@ async def fetch_brevo_lists() -> list[dict]:
         {
             "id": lst["id"],
             "name": lst["name"],
-            "total_subscribers": lst.get("totalSubscribers", 0),
+            "total_subscribers": lst.get("uniqueSubscribers", 0),
             "total_blacklisted": lst.get("totalBlacklisted", 0),
         }
         for lst in data.get("lists", [])
