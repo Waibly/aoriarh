@@ -6,6 +6,14 @@ from app.models.booster_purchase import BoosterPurchase
 from app.models.ccn import CcnReference, OrganisationConvention
 from app.models.conversation import Conversation, Message
 from app.models.document import Document
+from app.models.emailing import (
+    EmailCampaign,
+    EmailCampaignEvent,
+    EmailCampaignRecipient,
+    EmailSequence,
+    EmailSequenceStep,
+    EmailTemplate,
+)
 from app.models.invitation import Invitation
 from app.models.membership import Membership
 from app.models.plan_invitation import PlanInvitation, PlanInvitationRedemption
@@ -28,6 +36,12 @@ __all__ = [
     "CcnReference",
     "Conversation",
     "Document",
+    "EmailCampaign",
+    "EmailCampaignEvent",
+    "EmailCampaignRecipient",
+    "EmailSequence",
+    "EmailSequenceStep",
+    "EmailTemplate",
     "Invitation",
     "Membership",
     "Message",

@@ -1476,6 +1476,16 @@ def _parse_redis_settings() -> RedisSettings:
     )
 
 
+async def run_emailing_campaigns(ctx: dict) -> None:
+    """Hourly job: process active email campaigns and send pending emails."""
+    from app.core.database import async_session_factory
+    from app.services.emailing_service import process_campaign_emails
+
+    async with async_session_factory() as session:
+        total = await process_campaign_emails(session)
+        logger.info("Emailing campaigns cron completed: %d emails sent", total)
+
+
 class WorkerSettings:
     functions = [
         run_ingestion,
@@ -1494,6 +1504,7 @@ class WorkerSettings:
         run_billing_lifecycle,
         run_data_retention_purge,
         run_daily_bocc_check,
+        run_emailing_campaigns,
     ]
     cron_jobs = [
         # Legal corpus refresh: every Saturday at 3:00 AM UTC (~4-5 AM Paris).
@@ -1513,6 +1524,8 @@ class WorkerSettings:
         # billing lifecycle, so newly suspended accounts don't get purged
         # in the same tick they were suspended in).
         cron(run_data_retention_purge, hour=10, minute=0),
+        # Emailing campaigns: every hour, process pending campaign emails
+        cron(run_emailing_campaigns, hour={h for h in range(6, 22)}, minute=0),
     ]
     redis_settings = _parse_redis_settings()
     # 8 parallel jobs : doc ingestion is mostly Voyage AI / Qdrant I/O bound,

@@ -21,6 +21,7 @@ from app.api import (
     admin_costs,
     admin_dashboard,
     admin_documents,
+    admin_emailing,
     admin_judilibre,
     admin_plan_invitations,
     admin_qdrant,
@@ -40,6 +41,7 @@ from app.api import (
     support,
     team,
     users,
+    webhooks,
 )
 from app.core.config import settings
 from app.core.database import async_session_factory, get_db
@@ -254,6 +256,16 @@ app.include_router(
     plan_invitations.router,
     prefix="/api/v1",
     tags=["plan-invitations"],
+)
+app.include_router(
+    admin_emailing.router,
+    prefix="/api/v1/admin/emailing",
+    tags=["admin-emailing"],
+)
+app.include_router(
+    webhooks.router,
+    prefix="/api/v1/webhooks",
+    tags=["webhooks"],
 )
 
 

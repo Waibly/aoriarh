@@ -30,6 +30,7 @@ import {
   CreditCard,
   Plus,
   Scale,
+  Mail,
 } from "lucide-react";
 import { apiFetch } from "@/lib/api";
 import { fetchQuota, type QuotaInfo } from "@/lib/billing-api";
@@ -602,6 +603,65 @@ export function Sidebar({
                     Liens promo
                   </Link>
                 </Button>
+                <Collapsible defaultOpen={pathname.startsWith("/admin/emailing")}>
+                  <CollapsibleTrigger asChild>
+                    <Button variant="ghost" size="sm" className="w-full justify-start font-normal">
+                      <Mail className="mr-2 h-5 w-5" />
+                      <span className="flex-1 text-left">Emailing</span>
+                      <ChevronRight className="h-4 w-4 transition-transform duration-200 [[data-state=open]>&]:rotate-90" />
+                    </Button>
+                  </CollapsibleTrigger>
+                  <CollapsibleContent className="space-y-0.5 pl-4">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className={cn(
+                        "w-full justify-start font-normal text-xs",
+                        pathname.startsWith("/admin/emailing/templates") &&
+                          "bg-accent text-accent-foreground font-medium",
+                      )}
+                      asChild
+                    >
+                      <Link href="/admin/emailing/templates">Templates</Link>
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className={cn(
+                        "w-full justify-start font-normal text-xs",
+                        pathname.startsWith("/admin/emailing/sequences") &&
+                          "bg-accent text-accent-foreground font-medium",
+                      )}
+                      asChild
+                    >
+                      <Link href="/admin/emailing/sequences">Séquences</Link>
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className={cn(
+                        "w-full justify-start font-normal text-xs",
+                        pathname.startsWith("/admin/emailing/campaigns") &&
+                          "bg-accent text-accent-foreground font-medium",
+                      )}
+                      asChild
+                    >
+                      <Link href="/admin/emailing/campaigns">Campagnes</Link>
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className={cn(
+                        "w-full justify-start font-normal text-xs",
+                        pathname.startsWith("/admin/emailing/lists") &&
+                          "bg-accent text-accent-foreground font-medium",
+                      )}
+                      asChild
+                    >
+                      <Link href="/admin/emailing/lists">Listes Brevo</Link>
+                    </Button>
+                  </CollapsibleContent>
+                </Collapsible>
               </CollapsibleContent>
             </Collapsible>
           </div>
