@@ -88,7 +88,7 @@ class EmailTemplateService:
         await self.db.delete(tpl)
         await self.db.commit()
 
-    async def send_test(self, template_id: uuid.UUID, to_email: str) -> bool:
+    async def send_test(self, template_id: uuid.UUID, to_emails: list[str]) -> list[dict]:
         tpl = await self.get(template_id)
         html = _render_variables(tpl.html_body, {
             "prenom": "Jean",
@@ -96,7 +96,17 @@ class EmailTemplateService:
             "entreprise": "Entreprise Test",
             "poste": "DRH",
         })
-        return await _send_via_brevo(to_email, None, tpl.subject, html)
+        preview = _render_variables(tpl.preview_text, {
+            "prenom": "Jean",
+            "nom": "Dupont",
+            "entreprise": "Entreprise Test",
+            "poste": "DRH",
+        }) if tpl.preview_text else None
+        results = []
+        for email in to_emails:
+            success = await _send_via_brevo(email, None, tpl.subject, html, preview_text=preview)
+            results.append({"email": email, "sent": success})
+        return results
 
 
 # ──────────────────────────────────────────────
@@ -541,7 +551,7 @@ async def _send_via_brevo(
         return False
 
     payload: dict = {
-        "sender": {"name": "AORIA RH", "email": "noreply@aoriarh.fr"},
+        "sender": {"name": "Aoria RH", "email": "noreply@aoriarh.fr"},
         "to": [{"email": to_email, "name": to_name or to_email}],
         "subject": subject,
         "htmlContent": html_content,

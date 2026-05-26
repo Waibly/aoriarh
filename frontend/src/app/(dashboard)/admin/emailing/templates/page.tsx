@@ -146,12 +146,13 @@ export default function AdminEmailTemplatesPage() {
   async function handleSendTest(tplId: string) {
     if (!token) return;
     try {
-      const result = await apiFetch<{ sent: boolean; to: string }>(
+      const result = await apiFetch<{ results: { email: string; sent: boolean }[] }>(
         `/admin/emailing/templates/${tplId}/test`,
         { method: "POST", token },
       );
-      if (result.sent) {
-        toast.success(`Email test envoyé à ${result.to}`);
+      const sent = result.results.filter((r) => r.sent);
+      if (sent.length > 0) {
+        toast.success(`Email test envoyé à ${sent.map((r) => r.email).join(", ")}`);
       } else {
         toast.error("Échec de l'envoi test");
       }

@@ -100,8 +100,9 @@ async def send_test_email(
     db: AsyncSession = Depends(get_db),
 ) -> dict:
     service = EmailTemplateService(db)
-    success = await service.send_test(template_id, user.email)
-    return {"sent": success, "to": user.email}
+    to_emails = ["vanessa@aoriarh.fr", "hello@waibly.com"]
+    results = await service.send_test(template_id, to_emails)
+    return {"results": results}
 
 
 # ──────────────────────────────────────────────
