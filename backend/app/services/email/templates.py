@@ -13,7 +13,7 @@ BASE_TEMPLATE = """\
 <body style="margin:0; padding:0; background-color:#f5f3ff; font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;">
   <div style="padding:24px;">
     <div style="max-width:600px; margin:0 auto; background:#ffffff; border-radius:12px; overflow:hidden; border:1px solid #ede9fe;">
-      <div style="background-color:#6d28d9; padding:28px 32px; text-align:center;">
+      <div style="background-color:#652BB0; padding:28px 32px; text-align:center;">
         <h1 style="color:#ffffff; font-size:22px; margin:0; font-weight:700; letter-spacing:0.5px;">AORIA RH</h1>
       </div>
       <div style="padding:32px;">
@@ -29,7 +29,7 @@ BASE_TEMPLATE = """\
 </html>"""
 
 INVITATION_CONTENT = """\
-<h2 style="margin-top:0; color:#5b21b6; font-size:20px;">Vous êtes invité(e) !</h2>
+<h2 style="margin-top:0; color:#4E2094; font-size:20px;">Vous êtes invité(e) !</h2>
 <p style="color:#3f3f46; line-height:1.6;">Bonjour,</p>
 <p style="color:#3f3f46; line-height:1.6;">
   <strong>{inviter_name}</strong> vous invite à rejoindre l'organisation
@@ -37,7 +37,7 @@ INVITATION_CONTENT = """\
 </p>
 <p style="color:#3f3f46; line-height:1.6;">Cliquez sur le bouton ci-dessous pour accepter l'invitation :</p>
 <p style="text-align:center; margin:32px 0;">
-  <a href="{accept_url}" style="display:inline-block; background-color:#6d28d9; color:#ffffff; padding:14px 32px; border-radius:8px; text-decoration:none; font-weight:600; font-size:15px;">
+  <a href="{accept_url}" style="display:inline-block; background-color:#652BB0; color:#ffffff; padding:14px 32px; border-radius:8px; text-decoration:none; font-weight:600; font-size:15px;">
     Accepter l'invitation
   </a>
 </p>
@@ -47,7 +47,7 @@ INVITATION_CONTENT = """\
 
 
 TEAM_INVITATION_CONTENT = """\
-<h2 style="margin-top:0; color:#5b21b6; font-size:20px;">Vous êtes invité(e) !</h2>
+<h2 style="margin-top:0; color:#4E2094; font-size:20px;">Vous êtes invité(e) !</h2>
 <p style="color:#3f3f46; line-height:1.6;">Bonjour,</p>
 <p style="color:#3f3f46; line-height:1.6;">
   <strong>{inviter_name}</strong> vous invite à rejoindre l'équipe
@@ -55,7 +55,7 @@ TEAM_INVITATION_CONTENT = """\
 </p>
 <p style="color:#3f3f46; line-height:1.6;">Cliquez sur le bouton ci-dessous pour accepter l'invitation :</p>
 <p style="text-align:center; margin:32px 0;">
-  <a href="{accept_url}" style="display:inline-block; background-color:#6d28d9; color:#ffffff; padding:14px 32px; border-radius:8px; text-decoration:none; font-weight:600; font-size:15px;">
+  <a href="{accept_url}" style="display:inline-block; background-color:#652BB0; color:#ffffff; padding:14px 32px; border-radius:8px; text-decoration:none; font-weight:600; font-size:15px;">
     Accepter l'invitation
   </a>
 </p>
@@ -89,33 +89,33 @@ def render_invitation_email(
 
 
 ADMIN_NEW_SIGNUP_CONTENT = """\
-<h2 style="margin-top:0; color:#5b21b6; font-size:20px;">🆕 Nouvel inscrit AORIA RH</h2>
+<h2 style="margin-top:0; color:#4E2094; font-size:20px;">🆕 Nouvel inscrit AORIA RH</h2>
 <p style="color:#3f3f46; line-height:1.6;">
   Un nouveau compte vient d'être créé sur AORIA RH.
 </p>
 <table cellpadding="0" cellspacing="0" border="0" style="width:100%; margin:24px 0; border-collapse:collapse;">
   <tr>
-    <td style="padding:8px 12px; background:#f5f3ff; border:1px solid #ede9fe; color:#5b21b6; font-weight:600; width:140px;">Nom</td>
+    <td style="padding:8px 12px; background:#f5f3ff; border:1px solid #ede9fe; color:#4E2094; font-weight:600; width:140px;">Nom</td>
     <td style="padding:8px 12px; background:#ffffff; border:1px solid #ede9fe; color:#3f3f46;">{full_name}</td>
   </tr>
   <tr>
-    <td style="padding:8px 12px; background:#f5f3ff; border:1px solid #ede9fe; color:#5b21b6; font-weight:600;">Email</td>
+    <td style="padding:8px 12px; background:#f5f3ff; border:1px solid #ede9fe; color:#4E2094; font-weight:600;">Email</td>
     <td style="padding:8px 12px; background:#ffffff; border:1px solid #ede9fe; color:#3f3f46;">{email}</td>
   </tr>
   <tr>
-    <td style="padding:8px 12px; background:#f5f3ff; border:1px solid #ede9fe; color:#5b21b6; font-weight:600;">Workspace</td>
+    <td style="padding:8px 12px; background:#f5f3ff; border:1px solid #ede9fe; color:#4E2094; font-weight:600;">Workspace</td>
     <td style="padding:8px 12px; background:#ffffff; border:1px solid #ede9fe; color:#3f3f46;">{workspace_name}</td>
   </tr>
   <tr>
-    <td style="padding:8px 12px; background:#f5f3ff; border:1px solid #ede9fe; color:#5b21b6; font-weight:600;">Plan</td>
+    <td style="padding:8px 12px; background:#f5f3ff; border:1px solid #ede9fe; color:#4E2094; font-weight:600;">Plan</td>
     <td style="padding:8px 12px; background:#ffffff; border:1px solid #ede9fe; color:#3f3f46;">{plan_label}</td>
   </tr>
   <tr>
-    <td style="padding:8px 12px; background:#f5f3ff; border:1px solid #ede9fe; color:#5b21b6; font-weight:600;">Méthode</td>
+    <td style="padding:8px 12px; background:#f5f3ff; border:1px solid #ede9fe; color:#4E2094; font-weight:600;">Méthode</td>
     <td style="padding:8px 12px; background:#ffffff; border:1px solid #ede9fe; color:#3f3f46;">{auth_method}</td>
   </tr>
   <tr>
-    <td style="padding:8px 12px; background:#f5f3ff; border:1px solid #ede9fe; color:#5b21b6; font-weight:600;">Date</td>
+    <td style="padding:8px 12px; background:#f5f3ff; border:1px solid #ede9fe; color:#4E2094; font-weight:600;">Date</td>
     <td style="padding:8px 12px; background:#ffffff; border:1px solid #ede9fe; color:#3f3f46;">{signup_date}</td>
   </tr>
 </table>
@@ -180,7 +180,7 @@ def render_team_invitation_email(
 
 
 TRIAL_REMINDER_CONTENT = """\
-<h2 style="margin-top:0; color:#5b21b6; font-size:20px;">Votre essai AORIA RH se termine {when_label}</h2>
+<h2 style="margin-top:0; color:#4E2094; font-size:20px;">Votre essai AORIA RH se termine {when_label}</h2>
 <p style="color:#3f3f46; line-height:1.6;">Bonjour {full_name},</p>
 <p style="color:#3f3f46; line-height:1.6;">
   Votre période d'essai gratuite de 14 jours prend fin <strong>{when_label}</strong>.
@@ -188,7 +188,7 @@ TRIAL_REMINDER_CONTENT = """\
   qui vous convient dès maintenant.
 </p>
 <p style="text-align:center; margin:32px 0;">
-  <a href="{upgrade_url}" style="display:inline-block; background-color:#6d28d9; color:#ffffff; padding:14px 32px; border-radius:8px; text-decoration:none; font-weight:600; font-size:15px;">
+  <a href="{upgrade_url}" style="display:inline-block; background-color:#652BB0; color:#ffffff; padding:14px 32px; border-radius:8px; text-decoration:none; font-weight:600; font-size:15px;">
     Choisir mon offre
   </a>
 </p>
@@ -207,7 +207,7 @@ TRIAL_REMINDER_CONTENT = """\
 
 
 TRIAL_EXPIRED_CONTENT = """\
-<h2 style="margin-top:0; color:#5b21b6; font-size:20px;">Votre essai AORIA RH est terminé</h2>
+<h2 style="margin-top:0; color:#4E2094; font-size:20px;">Votre essai AORIA RH est terminé</h2>
 <p style="color:#3f3f46; line-height:1.6;">Bonjour {full_name},</p>
 <p style="color:#3f3f46; line-height:1.6;">
   Votre période d'essai gratuite est arrivée à son terme. L'accès à AORIA RH est
@@ -218,7 +218,7 @@ TRIAL_EXPIRED_CONTENT = """\
   correspond à votre besoin :
 </p>
 <p style="text-align:center; margin:32px 0;">
-  <a href="{upgrade_url}" style="display:inline-block; background-color:#6d28d9; color:#ffffff; padding:14px 32px; border-radius:8px; text-decoration:none; font-weight:600; font-size:15px;">
+  <a href="{upgrade_url}" style="display:inline-block; background-color:#652BB0; color:#ffffff; padding:14px 32px; border-radius:8px; text-decoration:none; font-weight:600; font-size:15px;">
     Souscrire maintenant
   </a>
 </p>
@@ -281,7 +281,7 @@ def render_trial_expired_email(
 
 
 QUOTA_HARD_WARNING_CONTENT = """\
-<h2 style="margin-top:0; color:#5b21b6; font-size:20px;">Vous avez dépassé votre quota mensuel</h2>
+<h2 style="margin-top:0; color:#4E2094; font-size:20px;">Vous avez dépassé votre quota mensuel</h2>
 <p style="color:#3f3f46; line-height:1.6;">Bonjour {full_name},</p>
 <p style="color:#3f3f46; line-height:1.6;">
   Vous avez utilisé <strong>{used}</strong> questions ce mois-ci sur les
@@ -296,7 +296,7 @@ QUOTA_HARD_WARNING_CONTENT = """\
   <li><strong>Acheter un pack booster</strong> &mdash; +500 questions pour 25&nbsp;€, valables jusqu'à consommation complète.</li>
 </ul>
 <p style="text-align:center; margin:32px 0;">
-  <a href="{upgrade_url}" style="display:inline-block; background-color:#6d28d9; color:#ffffff; padding:14px 32px; border-radius:8px; text-decoration:none; font-weight:600; font-size:15px;">
+  <a href="{upgrade_url}" style="display:inline-block; background-color:#652BB0; color:#ffffff; padding:14px 32px; border-radius:8px; text-decoration:none; font-weight:600; font-size:15px;">
     Gérer mon abonnement
   </a>
 </p>
@@ -335,7 +335,7 @@ def render_quota_hard_warning_email(
 
 
 SUBSCRIPTION_CONFIRMED_CONTENT = """\
-<h2 style="margin-top:0; color:#5b21b6; font-size:20px;">Bienvenue sur {plan_label}</h2>
+<h2 style="margin-top:0; color:#4E2094; font-size:20px;">Bienvenue sur {plan_label}</h2>
 <p style="color:#3f3f46; line-height:1.6;">Bonjour {full_name},</p>
 <p style="color:#3f3f46; line-height:1.6;">
   Votre abonnement à l'offre <strong>{plan_label}</strong> ({cycle_label}) est actif.
@@ -351,7 +351,7 @@ SUBSCRIPTION_CONFIRMED_CONTENT = """\
   </tr>
 </table>
 <p style="text-align:center; margin:32px 0;">
-  <a href="{billing_url}" style="display:inline-block; background-color:#6d28d9; color:#ffffff; padding:14px 32px; border-radius:8px; text-decoration:none; font-weight:600; font-size:15px;">
+  <a href="{billing_url}" style="display:inline-block; background-color:#652BB0; color:#ffffff; padding:14px 32px; border-radius:8px; text-decoration:none; font-weight:600; font-size:15px;">
     Gérer mon abonnement
   </a>
 </p>
@@ -361,20 +361,20 @@ SUBSCRIPTION_CONFIRMED_CONTENT = """\
   Un reçu officiel vous est également envoyé par Stripe à la même adresse.
 </p>
 <p style="color:#94a3b8; font-size:13px; line-height:1.5;">
-  Une question ? Écrivez-nous à <a href="mailto:hello@aoriarh.fr" style="color:#6d28d9;">hello@aoriarh.fr</a>.
+  Une question ? Écrivez-nous à <a href="mailto:hello@aoriarh.fr" style="color:#652BB0;">hello@aoriarh.fr</a>.
 </p>"""
 
 
 SUBSCRIPTION_INVOICE_LINK = """\
 <p style="text-align:center; margin:12px 0;">
-  <a href="{invoice_url}" style="color:#6d28d9; text-decoration:underline; font-size:13px;">
+  <a href="{invoice_url}" style="color:#652BB0; text-decoration:underline; font-size:13px;">
     Voir le reçu Stripe
   </a>
 </p>"""
 
 
 SUBSCRIPTION_CANCELED_CONTENT = """\
-<h2 style="margin-top:0; color:#5b21b6; font-size:20px;">Votre abonnement AORIA RH est résilié</h2>
+<h2 style="margin-top:0; color:#4E2094; font-size:20px;">Votre abonnement AORIA RH est résilié</h2>
 <p style="color:#3f3f46; line-height:1.6;">Bonjour {full_name},</p>
 <p style="color:#3f3f46; line-height:1.6;">
   Votre abonnement à l'offre <strong>{plan_label}</strong> a bien été résilié.
@@ -383,7 +383,7 @@ SUBSCRIPTION_CANCELED_CONTENT = """\
   si vous changez d'avis.
 </p>
 <p style="text-align:center; margin:32px 0;">
-  <a href="{billing_url}" style="display:inline-block; background-color:#6d28d9; color:#ffffff; padding:14px 32px; border-radius:8px; text-decoration:none; font-weight:600; font-size:15px;">
+  <a href="{billing_url}" style="display:inline-block; background-color:#652BB0; color:#ffffff; padding:14px 32px; border-radius:8px; text-decoration:none; font-weight:600; font-size:15px;">
     Réactiver mon abonnement
   </a>
 </p>
@@ -398,7 +398,7 @@ SUBSCRIPTION_CANCELED_CONTENT = """\
 
 
 SUBSCRIPTION_REACTIVATED_CONTENT = """\
-<h2 style="margin-top:0; color:#5b21b6; font-size:20px;">Votre abonnement AORIA RH est réactivé</h2>
+<h2 style="margin-top:0; color:#4E2094; font-size:20px;">Votre abonnement AORIA RH est réactivé</h2>
 <p style="color:#3f3f46; line-height:1.6;">Bonjour {full_name},</p>
 <p style="color:#3f3f46; line-height:1.6;">
   Votre abonnement à l'offre <strong>{plan_label}</strong> est à nouveau actif —
@@ -412,7 +412,7 @@ SUBSCRIPTION_REACTIVATED_CONTENT = """\
   </tr>
 </table>
 <p style="text-align:center; margin:32px 0;">
-  <a href="{billing_url}" style="display:inline-block; background-color:#6d28d9; color:#ffffff; padding:14px 32px; border-radius:8px; text-decoration:none; font-weight:600; font-size:15px;">
+  <a href="{billing_url}" style="display:inline-block; background-color:#652BB0; color:#ffffff; padding:14px 32px; border-radius:8px; text-decoration:none; font-weight:600; font-size:15px;">
     Voir mon abonnement
   </a>
 </p>"""
@@ -507,7 +507,7 @@ def render_subscription_reactivated_email(
 
 
 INVITE_PLAN_ASSIGNED_CONTENT = """\
-<h2 style="margin-top:0; color:#5b21b6; font-size:20px;">Votre plan Invité est actif</h2>
+<h2 style="margin-top:0; color:#4E2094; font-size:20px;">Votre plan Invité est actif</h2>
 <p style="color:#3f3f46; line-height:1.6;">Bonjour {full_name},</p>
 <p style="color:#3f3f46; line-height:1.6;">
   Nous vous offrons le plan <strong>Invité</strong> sur votre compte AORIA RH.
@@ -521,7 +521,7 @@ INVITE_PLAN_ASSIGNED_CONTENT = """\
   Aucune action de votre part, c'est déjà actif sur votre compte.
 </p>
 <p style="text-align:center; margin:32px 0;">
-  <a href="{billing_url}" style="display:inline-block; background-color:#6d28d9; color:#ffffff; padding:14px 32px; border-radius:8px; text-decoration:none; font-weight:600; font-size:15px;">
+  <a href="{billing_url}" style="display:inline-block; background-color:#652BB0; color:#ffffff; padding:14px 32px; border-radius:8px; text-decoration:none; font-weight:600; font-size:15px;">
     Ouvrir AORIA RH
   </a>
 </p>
