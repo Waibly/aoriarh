@@ -29,7 +29,7 @@ BASE_TEMPLATE = """\
 </html>"""
 
 INVITATION_CONTENT = """\
-<h2 style="margin-top:0; color:#4E2094; font-size:20px;">Vous êtes invité(e) !</h2>
+<h2 style="margin-top:0; color:#652BB0; font-size:20px;">Vous êtes invité(e) !</h2>
 <p style="color:#3f3f46; line-height:1.6;">Bonjour,</p>
 <p style="color:#3f3f46; line-height:1.6;">
   <strong>{inviter_name}</strong> vous invite à rejoindre l'organisation
@@ -47,7 +47,7 @@ INVITATION_CONTENT = """\
 
 
 TEAM_INVITATION_CONTENT = """\
-<h2 style="margin-top:0; color:#4E2094; font-size:20px;">Vous êtes invité(e) !</h2>
+<h2 style="margin-top:0; color:#652BB0; font-size:20px;">Vous êtes invité(e) !</h2>
 <p style="color:#3f3f46; line-height:1.6;">Bonjour,</p>
 <p style="color:#3f3f46; line-height:1.6;">
   <strong>{inviter_name}</strong> vous invite à rejoindre l'équipe
@@ -89,33 +89,33 @@ def render_invitation_email(
 
 
 ADMIN_NEW_SIGNUP_CONTENT = """\
-<h2 style="margin-top:0; color:#4E2094; font-size:20px;">🆕 Nouvel inscrit AORIA RH</h2>
+<h2 style="margin-top:0; color:#652BB0; font-size:20px;">🆕 Nouvel inscrit AORIA RH</h2>
 <p style="color:#3f3f46; line-height:1.6;">
   Un nouveau compte vient d'être créé sur AORIA RH.
 </p>
 <table cellpadding="0" cellspacing="0" border="0" style="width:100%; margin:24px 0; border-collapse:collapse;">
   <tr>
-    <td style="padding:8px 12px; background:#f5f3ff; border:1px solid #ede9fe; color:#4E2094; font-weight:600; width:140px;">Nom</td>
+    <td style="padding:8px 12px; background:#f5f3ff; border:1px solid #ede9fe; color:#652BB0; font-weight:600; width:140px;">Nom</td>
     <td style="padding:8px 12px; background:#ffffff; border:1px solid #ede9fe; color:#3f3f46;">{full_name}</td>
   </tr>
   <tr>
-    <td style="padding:8px 12px; background:#f5f3ff; border:1px solid #ede9fe; color:#4E2094; font-weight:600;">Email</td>
+    <td style="padding:8px 12px; background:#f5f3ff; border:1px solid #ede9fe; color:#652BB0; font-weight:600;">Email</td>
     <td style="padding:8px 12px; background:#ffffff; border:1px solid #ede9fe; color:#3f3f46;">{email}</td>
   </tr>
   <tr>
-    <td style="padding:8px 12px; background:#f5f3ff; border:1px solid #ede9fe; color:#4E2094; font-weight:600;">Workspace</td>
+    <td style="padding:8px 12px; background:#f5f3ff; border:1px solid #ede9fe; color:#652BB0; font-weight:600;">Workspace</td>
     <td style="padding:8px 12px; background:#ffffff; border:1px solid #ede9fe; color:#3f3f46;">{workspace_name}</td>
   </tr>
   <tr>
-    <td style="padding:8px 12px; background:#f5f3ff; border:1px solid #ede9fe; color:#4E2094; font-weight:600;">Plan</td>
+    <td style="padding:8px 12px; background:#f5f3ff; border:1px solid #ede9fe; color:#652BB0; font-weight:600;">Plan</td>
     <td style="padding:8px 12px; background:#ffffff; border:1px solid #ede9fe; color:#3f3f46;">{plan_label}</td>
   </tr>
   <tr>
-    <td style="padding:8px 12px; background:#f5f3ff; border:1px solid #ede9fe; color:#4E2094; font-weight:600;">Méthode</td>
+    <td style="padding:8px 12px; background:#f5f3ff; border:1px solid #ede9fe; color:#652BB0; font-weight:600;">Méthode</td>
     <td style="padding:8px 12px; background:#ffffff; border:1px solid #ede9fe; color:#3f3f46;">{auth_method}</td>
   </tr>
   <tr>
-    <td style="padding:8px 12px; background:#f5f3ff; border:1px solid #ede9fe; color:#4E2094; font-weight:600;">Date</td>
+    <td style="padding:8px 12px; background:#f5f3ff; border:1px solid #ede9fe; color:#652BB0; font-weight:600;">Date</td>
     <td style="padding:8px 12px; background:#ffffff; border:1px solid #ede9fe; color:#3f3f46;">{signup_date}</td>
   </tr>
 </table>
@@ -180,7 +180,7 @@ def render_team_invitation_email(
 
 
 TRIAL_REMINDER_CONTENT = """\
-<h2 style="margin-top:0; color:#4E2094; font-size:20px;">Votre essai AORIA RH se termine {when_label}</h2>
+<h2 style="margin-top:0; color:#652BB0; font-size:20px;">Votre essai AORIA RH se termine {when_label}</h2>
 <p style="color:#3f3f46; line-height:1.6;">Bonjour {full_name},</p>
 <p style="color:#3f3f46; line-height:1.6;">
   Votre période d'essai gratuite de 14 jours prend fin <strong>{when_label}</strong>.
@@ -207,7 +207,7 @@ TRIAL_REMINDER_CONTENT = """\
 
 
 TRIAL_EXPIRED_CONTENT = """\
-<h2 style="margin-top:0; color:#4E2094; font-size:20px;">Votre essai AORIA RH est terminé</h2>
+<h2 style="margin-top:0; color:#652BB0; font-size:20px;">Votre essai AORIA RH est terminé</h2>
 <p style="color:#3f3f46; line-height:1.6;">Bonjour {full_name},</p>
 <p style="color:#3f3f46; line-height:1.6;">
   Votre période d'essai gratuite est arrivée à son terme. L'accès à AORIA RH est
@@ -281,7 +281,7 @@ def render_trial_expired_email(
 
 
 QUOTA_HARD_WARNING_CONTENT = """\
-<h2 style="margin-top:0; color:#4E2094; font-size:20px;">Vous avez dépassé votre quota mensuel</h2>
+<h2 style="margin-top:0; color:#652BB0; font-size:20px;">Vous avez dépassé votre quota mensuel</h2>
 <p style="color:#3f3f46; line-height:1.6;">Bonjour {full_name},</p>
 <p style="color:#3f3f46; line-height:1.6;">
   Vous avez utilisé <strong>{used}</strong> questions ce mois-ci sur les
@@ -335,7 +335,7 @@ def render_quota_hard_warning_email(
 
 
 SUBSCRIPTION_CONFIRMED_CONTENT = """\
-<h2 style="margin-top:0; color:#4E2094; font-size:20px;">Bienvenue sur {plan_label}</h2>
+<h2 style="margin-top:0; color:#652BB0; font-size:20px;">Bienvenue sur {plan_label}</h2>
 <p style="color:#3f3f46; line-height:1.6;">Bonjour {full_name},</p>
 <p style="color:#3f3f46; line-height:1.6;">
   Votre abonnement à l'offre <strong>{plan_label}</strong> ({cycle_label}) est actif.
@@ -374,7 +374,7 @@ SUBSCRIPTION_INVOICE_LINK = """\
 
 
 SUBSCRIPTION_CANCELED_CONTENT = """\
-<h2 style="margin-top:0; color:#4E2094; font-size:20px;">Votre abonnement AORIA RH est résilié</h2>
+<h2 style="margin-top:0; color:#652BB0; font-size:20px;">Votre abonnement AORIA RH est résilié</h2>
 <p style="color:#3f3f46; line-height:1.6;">Bonjour {full_name},</p>
 <p style="color:#3f3f46; line-height:1.6;">
   Votre abonnement à l'offre <strong>{plan_label}</strong> a bien été résilié.
@@ -398,7 +398,7 @@ SUBSCRIPTION_CANCELED_CONTENT = """\
 
 
 SUBSCRIPTION_REACTIVATED_CONTENT = """\
-<h2 style="margin-top:0; color:#4E2094; font-size:20px;">Votre abonnement AORIA RH est réactivé</h2>
+<h2 style="margin-top:0; color:#652BB0; font-size:20px;">Votre abonnement AORIA RH est réactivé</h2>
 <p style="color:#3f3f46; line-height:1.6;">Bonjour {full_name},</p>
 <p style="color:#3f3f46; line-height:1.6;">
   Votre abonnement à l'offre <strong>{plan_label}</strong> est à nouveau actif —
@@ -507,7 +507,7 @@ def render_subscription_reactivated_email(
 
 
 INVITE_PLAN_ASSIGNED_CONTENT = """\
-<h2 style="margin-top:0; color:#4E2094; font-size:20px;">Votre plan Invité est actif</h2>
+<h2 style="margin-top:0; color:#652BB0; font-size:20px;">Votre plan Invité est actif</h2>
 <p style="color:#3f3f46; line-height:1.6;">Bonjour {full_name},</p>
 <p style="color:#3f3f46; line-height:1.6;">
   Nous vous offrons le plan <strong>Invité</strong> sur votre compte AORIA RH.
