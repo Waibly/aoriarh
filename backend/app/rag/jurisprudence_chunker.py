@@ -2,6 +2,7 @@ import re
 
 import tiktoken
 
+from app.rag.chunker import force_split_on_boundary
 from app.rag.config import CHUNK_OVERLAP, CHUNK_SIZE
 
 # Patterns to detect structural sections of a French court decision.
@@ -195,15 +196,9 @@ class JurisprudenceChunker:
         return raw_chunks
 
     def _force_split(self, text: str, max_tokens: int) -> list[str]:
-        tokens = self._enc.encode(text)
-        step = max_tokens - self.chunk_overlap
-        if step < 1:
-            step = max_tokens
-        chunks: list[str] = []
-        for i in range(0, len(tokens), step):
-            chunk_tokens = tokens[i : i + max_tokens]
-            chunks.append(self._enc.decode(chunk_tokens))
-        return chunks
+        return force_split_on_boundary(
+            text, self._enc, max_tokens, self.chunk_overlap
+        )
 
     def _token_count(self, text: str) -> int:
         return len(self._enc.encode(text))

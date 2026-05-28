@@ -28,6 +28,92 @@ def contains_markdown_table(text: str) -> bool:
     return bool(_TABLE_HEAD.search(text))
 
 
+# A real sentence end: . ! ? preceded by at least two lowercase letters. The
+# lowercase guard avoids cutting on legal abbreviations like "art.", "R.",
+# "n°", "L. 4121" or "24-13.599" where the period is not a sentence boundary.
+_SENTENCE_END = re.compile(r"[a-zàâäéèêëîïôöùûüçœ]{2}[.!?][\s)»\"]")
+# Only look for a boundary in the tail of the window, so chunks stay reasonably
+# full instead of being cut very early on the first boundary found.
+_BOUNDARY_ZONE = 0.6
+
+
+def force_split_on_boundary(
+    text: str,
+    enc,
+    max_tokens: int,
+    overlap: int,
+) -> list[str]:
+    """Split oversized text into <= max_tokens chunks without cutting mid-word.
+
+    Each cut is moved back to the nearest sentence end, else a line break, else
+    a word boundary (space), searched in the last 40% of the token window.
+    Consecutive chunks overlap by roughly ``overlap`` tokens so context is kept
+    at the seam. No text is lost.
+    """
+    if not text.strip():
+        return []
+    if len(enc.encode(text)) <= max_tokens:
+        return [text]
+
+    overlap_chars = max(0, overlap) * 4
+    chunks: list[str] = []
+    remaining = text
+    guard = 0
+    while True:
+        guard += 1
+        if guard > 10000:  # pathological safety valve, should never trigger
+            chunks.append(remaining.strip())
+            break
+        toks = enc.encode(remaining)
+        if len(toks) <= max_tokens:
+            tail = remaining.strip()
+            if tail:
+                chunks.append(tail)
+            break
+        window = enc.decode(toks[:max_tokens])
+        cut = _boundary_cut(window)
+        piece = window[:cut].strip()
+        if piece:
+            chunks.append(piece)
+        # Re-include ~overlap chars (snapped to a word boundary) before the cut,
+        # then everything after the decoded window. This never drops text.
+        next_start = max(0, cut - overlap_chars)
+        sp = window.find(" ", next_start)
+        if sp != -1 and sp + 1 < cut:
+            next_start = sp + 1
+        new_remaining = window[next_start:] + remaining[len(window):]
+        # Guarantee forward progress.
+        if len(new_remaining) >= len(remaining):
+            next_start = cut
+            new_remaining = window[next_start:] + remaining[len(window):]
+        remaining = new_remaining
+    return chunks
+
+
+def _boundary_cut(window: str) -> int:
+    """Index in ``window`` to cut at: prefer a sentence end, then newline, then
+    space, all in the tail zone; fall back to the last space anywhere."""
+    zone_start = int(len(window) * _BOUNDARY_ZONE)
+    best = -1
+    for m in _SENTENCE_END.finditer(window):
+        # Cut right after the punctuation (before the trailing whitespace).
+        end = m.end() - 1
+        if end >= zone_start:
+            best = end
+    if best != -1:
+        return best
+    nl = window.rfind("\n", zone_start)
+    if nl != -1:
+        return nl + 1
+    sp = window.rfind(" ", zone_start)
+    if sp != -1:
+        return sp + 1
+    sp = window.rfind(" ")
+    if sp != -1:
+        return sp + 1
+    return len(window)
+
+
 class LegalChunker:
     """Chunks legal text with article-aware splitting."""
 
@@ -196,9 +282,6 @@ class LegalChunker:
         return chunks
 
     def _force_split(self, text: str) -> list[str]:
-        tokens = self._enc.encode(text)
-        chunks: list[str] = []
-        for i in range(0, len(tokens), self.chunk_size - self.chunk_overlap):
-            chunk_tokens = tokens[i : i + self.chunk_size]
-            chunks.append(self._enc.decode(chunk_tokens))
-        return chunks
+        return force_split_on_boundary(
+            text, self._enc, self.chunk_size, self.chunk_overlap
+        )
