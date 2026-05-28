@@ -6,6 +6,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from app.rag.parent_expansion import (
+    MAX_CHARS_PER_GROUP,
     MAX_PARENT_GROUPS,
     detect_identifiers,
     expand_to_parents,
@@ -216,6 +217,122 @@ class TestExpandToParents:
         out = expand_to_parents(seeds, qdrant)
         scores = [r.score for r in out]
         assert scores == sorted(scores, reverse=True)
+
+
+# --- jurisprudence-aware merging ----------------------------------------------
+
+
+_META = "Cass. soc., 06/05/2026, n° 24-13.599"
+
+
+def _juris_payload(doc_id: str, idx: int, label: str, body: str) -> dict:
+    return {
+        "text": f"{_META}\n{label}\n\n{body}",
+        "doc_name": "Cass. soc. 24-13.599",
+        "document_id": doc_id,
+        "source_type": "arret_cour_cassation",
+        "norme_niveau": 4,
+        "norme_poids": 0.7,
+        "chunk_index": idx,
+    }
+
+
+class TestJurisprudenceMerge:
+    def test_keeps_holding_over_boilerplate(self):
+        # A long arrêt: en-tête + faits (x2) + motifs + dispositif, > 9000 chars.
+        # The holding (motifs/dispositif) sits at the END, the budget is finite,
+        # so the merge must drop the boilerplate, not the ruling.
+        entete = "EN-TETE blabla. " * 300 + " ENTETE_END"
+        faits1 = "Faits partie un. " * 220 + " FAITS1_MARK"
+        faits2 = "Faits partie deux. " * 220 + " FAITS2_MARK"
+        motifs = "Réponse de la Cour. " + "motif blah. " * 130 + " MOTIFS_HOLDING"
+        dispo = "PAR CES MOTIFS REJETTE. " + "dispositif blah. " * 30 + " DISPOSITIF_END"
+
+        doc_id = "arret-1"
+        payloads = [
+            _juris_payload(doc_id, 0, "[En-tête]", entete),
+            _juris_payload(doc_id, 1, "[Faits et procédure]", faits1),
+            _juris_payload(doc_id, 2, "[Faits et procédure]", faits2),
+            _juris_payload(doc_id, 3, "[Motifs de la décision]", motifs),
+            _juris_payload(doc_id, 4, "[Dispositif]", dispo),
+        ]
+        # Seed = the chunk the reranker matched (the motifs).
+        seed = _make_chunk(
+            doc_id=doc_id,
+            chunk_index=3,
+            text=payloads[3]["text"],
+            source_type="arret_cour_cassation",
+            score=0.85,
+        )
+        qdrant = _make_qdrant_mock({(("document_id", doc_id),): payloads})
+
+        out = expand_to_parents([seed], qdrant)
+        assert len(out) == 1
+        merged = out[0].text
+
+        # The ruling survives even though it is at the end of the document.
+        assert "Réponse de la Cour" in merged
+        assert "MOTIFS_HOLDING" in merged
+        assert "DISPOSITIF_END" in merged
+        assert "[Motifs de la décision]" in merged
+        assert "[Dispositif]" in merged
+        # The boilerplate header is dropped (lowest priority, largest).
+        assert "ENTETE_END" not in merged
+        # A gap marker appears where chunks were dropped.
+        assert "[…]" in merged
+        # The per-chunk meta header is kept exactly once, not repeated per chunk.
+        assert merged.count(_META) == 1
+        # Budget respected.
+        assert len(merged) <= MAX_CHARS_PER_GROUP
+
+    def test_sets_seed_text_to_matched_passage(self):
+        motifs = "Réponse de la Cour. " + "motif blah. " * 50 + " MOTIFS_HOLDING"
+        doc_id = "arret-2"
+        payloads = [
+            _juris_payload(doc_id, 0, "[En-tête]", "EN-TETE court."),
+            _juris_payload(doc_id, 1, "[Motifs de la décision]", motifs),
+        ]
+        seed = _make_chunk(
+            doc_id=doc_id,
+            chunk_index=1,
+            text=payloads[1]["text"],
+            source_type="arret_cour_cassation",
+            score=0.9,
+        )
+        qdrant = _make_qdrant_mock({(("document_id", doc_id),): payloads})
+
+        out = expand_to_parents([seed], qdrant)
+        seed_text = out[0].seed_text
+        # Excerpt source = the matched passage, stripped of header and label.
+        assert seed_text is not None
+        assert "MOTIFS_HOLDING" in seed_text
+        assert _META not in seed_text
+        assert "[Motifs de la décision]" not in seed_text
+
+    def test_dedupes_overlap_and_repeated_header(self):
+        # Two consecutive chunks of the same section share an overlap region
+        # (as force-split chunks do). The merge must stitch it, not repeat it.
+        overlap = "ZONE_DE_CHEVAUCHEMENT_UNIQUE_0123456789 "  # > 20 chars
+        body1 = "Debut des faits. " * 5 + overlap
+        body2 = overlap + "Suite des faits. " * 5
+        doc_id = "arret-3"
+        payloads = [
+            _juris_payload(doc_id, 0, "[Faits et procédure]", body1),
+            _juris_payload(doc_id, 1, "[Faits et procédure]", body2),
+        ]
+        seed = _make_chunk(
+            doc_id=doc_id,
+            chunk_index=0,
+            text=payloads[0]["text"],
+            source_type="arret_cour_cassation",
+            score=0.7,
+        )
+        qdrant = _make_qdrant_mock({(("document_id", doc_id),): payloads})
+
+        merged = expand_to_parents([seed], qdrant)[0].text
+        assert merged.count("ZONE_DE_CHEVAUCHEMENT_UNIQUE_0123456789") == 1
+        assert merged.count(_META) == 1
+        assert merged.count("[Faits et procédure]") == 1
 
 
 # --- fetch_by_identifiers -----------------------------------------------------

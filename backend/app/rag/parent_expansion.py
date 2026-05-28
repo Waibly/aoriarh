@@ -329,11 +329,174 @@ def _fetch_siblings(qdrant, key: tuple) -> list[SearchResult]:
     return []
 
 
-def _merge_group(chunks: list[SearchResult], best_score: float) -> SearchResult:
+# --- Jurisprudence-aware merging ---------------------------------------------
+
+# A line that is exactly a section label, e.g. "[Motifs de la décision]".
+_SECTION_LINE = re.compile(r"^\[[^\]\n]+\]$")
+# Min/max overlap (chars) considered when stitching consecutive chunks.
+_MIN_OVERLAP = 20
+_MAX_OVERLAP = 600
+
+
+def _decompose(text: str) -> tuple[str, str | None, str]:
+    """Split a stored chunk into (meta_header, section_label, body).
+
+    Jurisprudence chunks are stored as ``"<meta header>\\n[Section]\\n\\n<body>"``.
+    The meta header (court + date + pourvoi) is identical on every chunk of the
+    same arrêt, so callers strip it to avoid repeating it N times. Returns empty
+    meta / None section when that structure is absent (paragraph-fallback
+    chunks), in which case the whole text is the body.
+    """
+    lines = text.split("\n")
+    meta = ""
+    section: str | None = None
+    start = 0
+    if len(lines) >= 2 and _SECTION_LINE.match(lines[1].strip()):
+        meta = lines[0]
+        section = lines[1].strip()
+        start = 2
+    elif lines and _SECTION_LINE.match(lines[0].strip()):
+        section = lines[0].strip()
+        start = 1
+    while start < len(lines) and lines[start].strip() == "":
+        start += 1
+    body = "\n".join(lines[start:]).strip()
+    return meta, section, body
+
+
+def _section_kind(section: str | None, body: str) -> str:
+    """Classify a chunk: motifs, dispositif, faits, moyens, en-tete or autre."""
+    s = (section or "").lower()
+    if "motifs" in s:
+        return "motifs"
+    if "dispositif" in s:
+        return "dispositif"
+    if "faits" in s:
+        return "faits"
+    if "moyens" in s:
+        return "moyens"
+    if "en-tête" in s or "en-tete" in s:
+        return "en-tete"
+    # No usable label (paragraph fallback): sniff the body for ruling markers.
+    if "Réponse de la Cour" in body:
+        return "motifs"
+    if re.search(r"PAR CES MOTIFS|REJETTE|CASSE ET ANNULE", body):
+        return "dispositif"
+    return "autre"
+
+
+def _overlap_len(tail: str, nxt: str) -> int:
+    """Length of the longest suffix of ``tail`` that is also a prefix of ``nxt``."""
+    window = tail[-_MAX_OVERLAP:]
+    hi = min(len(window), len(nxt))
+    for k in range(hi, _MIN_OVERLAP - 1, -1):
+        if window[-k:] == nxt[:k]:
+            return k
+    return 0
+
+
+def _merge_jurisprudence(
+    ordered: list[SearchResult],
+    seed_indices: frozenset[int],
+) -> str:
+    """Merge an arrêt's chunks, keeping the ruling rather than the boilerplate.
+
+    Court decisions put the holding (motifs / dispositif) at the END, but the
+    char budget is finite. Keeping "the first N chars" drops exactly the part
+    that answers the question. So we always keep the motifs/dispositif and the
+    chunks that matched the query (seeds), fill the rest with faits/moyens then
+    en-tête, strip the repeated per-chunk header, and stitch the token overlap
+    between consecutive chunks. Dropped ranges are marked with […].
+    """
+    dec = {c.chunk_index: _decompose(c.text) for c in ordered}
+    meta_header = ""
+    for c in ordered:
+        if dec[c.chunk_index][0]:
+            meta_header = dec[c.chunk_index][0]
+            break
+
+    def kind(ci: int) -> str:
+        _, section, body = dec[ci]
+        return _section_kind(section, body)
+
+    def tier(ci: int) -> int:
+        if ci in seed_indices or kind(ci) in ("motifs", "dispositif"):
+            return 0
+        if kind(ci) in ("faits", "moyens"):
+            return 1
+        return 2
+
+    # Reserve room for the header and a little label/separator overhead.
+    budget = MAX_CHARS_PER_GROUP - (len(meta_header) + 2 if meta_header else 0) - 400
+    if budget < 500:
+        budget = MAX_CHARS_PER_GROUP
+
+    chosen: set[int] = set()
+    remaining = budget
+    for t in (0, 1, 2):
+        for c in ordered:
+            ci = c.chunk_index
+            if ci in chosen or tier(ci) != t:
+                continue
+            need = len(dec[ci][2]) + 2
+            if need <= remaining:
+                chosen.add(ci)
+                remaining -= need
+            elif t == 0 and not chosen:
+                # Always keep at least the top-priority chunk, even if large.
+                chosen.add(ci)
+                remaining = 0
+    if not chosen and ordered:
+        chosen.add(ordered[0].chunk_index)
+
+    text = ""
+    prev_idx: int | None = None
+    prev_section: str | None = None
+    tail = ""
+    for c in ordered:
+        ci = c.chunk_index
+        if ci not in chosen:
+            continue
+        _, section, body = dec[ci]
+        if not body:
+            prev_idx = ci
+            continue
+        if prev_idx is not None and ci != prev_idx + 1:
+            text += "\n\n[…]"
+            tail = ""
+            prev_section = None
+        if section and section != prev_section:
+            text += ("\n\n" if text else "") + section + "\n\n" + body
+            prev_section = section
+        else:
+            k = _overlap_len(tail, body) if tail else 0
+            if k:
+                text += body[k:]
+            elif text:
+                text += "\n\n" + body
+            else:
+                text += body
+        tail = body
+        prev_idx = ci
+
+    merged = (meta_header + "\n\n" + text) if meta_header else text
+    merged = merged.strip()
+    if len(merged) > MAX_CHARS_PER_GROUP:
+        merged = merged[:MAX_CHARS_PER_GROUP].rsplit(" ", 1)[0] + " […]"
+    return merged
+
+
+def _merge_group(
+    chunks: list[SearchResult],
+    best_score: float,
+    seed_indices: frozenset[int] = frozenset(),
+    is_jurisprudence: bool = False,
+) -> SearchResult:
     """Merge chunks of a parent group into one SearchResult.
 
-    Concatenates texts in chunk_index order, deduplicates, truncates at
-    MAX_CHARS_PER_GROUP characters, and aggregates article_nums.
+    For jurisprudence, the holding is prioritised over position (see
+    ``_merge_jurisprudence``). For other groups, chunks are concatenated in
+    chunk_index order and truncated at MAX_CHARS_PER_GROUP characters.
     """
     seen: set[tuple[str, int]] = set()
     ordered: list[SearchResult] = []
@@ -345,9 +508,12 @@ def _merge_group(chunks: list[SearchResult], best_score: float) -> SearchResult:
         ordered.append(c)
 
     template = ordered[0]
-    merged_text = "\n\n".join(c.text for c in ordered).strip()
-    if len(merged_text) > MAX_CHARS_PER_GROUP:
-        merged_text = merged_text[:MAX_CHARS_PER_GROUP].rsplit(" ", 1)[0] + " […]"
+    if is_jurisprudence:
+        merged_text = _merge_jurisprudence(ordered, seed_indices)
+    else:
+        merged_text = "\n\n".join(c.text for c in ordered).strip()
+        if len(merged_text) > MAX_CHARS_PER_GROUP:
+            merged_text = merged_text[:MAX_CHARS_PER_GROUP].rsplit(" ", 1)[0] + " […]"
 
     aggregated_articles: list[str] = []
     for c in ordered:
@@ -394,8 +560,19 @@ def expand_to_parents(
     expanded: list[SearchResult] = []
     for key in group_order:
         siblings = _fetch_siblings(qdrant, key)
-        chunks = siblings if siblings else group_seeds[key]
-        merged = _merge_group(chunks, best_score=group_best_score[key])
+        seeds = group_seeds[key]
+        chunks = siblings if siblings else seeds
+        is_juris = key[0] == "doc"
+        seed_indices = frozenset(r.chunk_index for r in seeds)
+        merged = _merge_group(
+            chunks,
+            best_score=group_best_score[key],
+            seed_indices=seed_indices,
+            is_jurisprudence=is_juris,
+        )
+        if is_juris and seeds:
+            best_seed = max(seeds, key=lambda r: r.score)
+            merged = replace(merged, seed_text=_decompose(best_seed.text)[2] or best_seed.text)
         expanded.append(merged)
 
     expanded.sort(key=lambda r: r.score, reverse=True)

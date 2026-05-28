@@ -92,6 +92,9 @@ class SearchResult:
     # Structural metadata (optional, from ArticleChunker)
     article_nums: list[str] | None = None
     section_path: str | None = None
+    # Best-matched chunk body, carried through parent expansion so the source
+    # card excerpt shows the relevant passage instead of the document header.
+    seed_text: str | None = None
 
 
 class HybridSearch:

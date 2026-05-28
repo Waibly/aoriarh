@@ -1475,8 +1475,12 @@ class RAGAgent:
             chunks = doc_chunks[doc_id]
             full_text = "\n\n".join(chunks)
 
-            excerpt = chunks[0][:300].strip()
-            if len(chunks[0]) > 300:
+            # Prefer the passage that actually matched the query (carried through
+            # parent expansion) over chunk 0, which for an arrêt is the boilerplate
+            # header ("Cour de cassation… RÉPUBLIQUE FRANÇAISE…").
+            excerpt_src = (meta.seed_text or chunks[0]).strip()
+            excerpt = excerpt_src[:300].strip()
+            if len(excerpt_src) > 300:
                 excerpt = excerpt.rsplit(" ", 1)[0] + "…"
 
             # Deduplicate article nums preserving order
