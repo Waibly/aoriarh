@@ -74,6 +74,7 @@ _RH_KEYWORDS = (
     "travail",
     "travailleur",
     "salarie",
+    "salaire minimum",
     "licenciement",
     "duree du travail",
     "temps de travail",

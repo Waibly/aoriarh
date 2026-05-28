@@ -49,6 +49,13 @@ def test_title_keywords_keep_pse_and_france_travail():
     assert _title_matches_keywords("Arrêté relatif à France Travail") is True
 
 
+def test_title_keywords_keep_smic_decree():
+    # Le décret SMIC s'intitule "salaire minimum de croissance", sans le mot "smic".
+    assert _title_matches_keywords(
+        "Décret n° 2025-1228 du 17 décembre 2025 portant relèvement du salaire minimum de croissance"
+    ) is True
+
+
 # --- _is_rh_relevant (filtre mixte) ------------------------------------------
 
 def test_relevant_when_modifies_code_travail_even_without_keyword():
