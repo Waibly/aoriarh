@@ -38,6 +38,17 @@ def test_title_keywords_reject_nomination():
     assert _title_matches_keywords(title) is False
 
 
+def test_title_keywords_reject_recruitment_exam_noise():
+    # Faux positif historique : "emploi" attrapait les concours administratifs.
+    title = "Arrêté du 20 mai 2026 fixant le nombre d'emplois offerts à l'examen professionnel"
+    assert _title_matches_keywords(title) is False
+
+
+def test_title_keywords_keep_pse_and_france_travail():
+    assert _title_matches_keywords("Décret relatif au plan de sauvegarde de l'emploi") is True
+    assert _title_matches_keywords("Arrêté relatif à France Travail") is True
+
+
 # --- _is_rh_relevant (filtre mixte) ------------------------------------------
 
 def test_relevant_when_modifies_code_travail_even_without_keyword():

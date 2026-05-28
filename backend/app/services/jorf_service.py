@@ -64,16 +64,19 @@ _NATURE_TO_SOURCE_TYPE = {
 }
 
 # Mots-clés RH (normalisés sans accents, en minuscules) cherchés dans le titre.
+# Volontairement précis : on évite les mots trop larges ("emploi" attrapait les
+# concours administratifs, "rémunération" les honoraires médicaux, "congé" la
+# congélation). "travail" isolé est conservé car en titre de JO il désigne
+# quasi-toujours le droit du travail (et capte "travailleur", "télétravail"…).
 _RH_KEYWORDS = (
     "code du travail",
     "securite sociale",
     "travail",
+    "travailleur",
     "salarie",
-    "emploi",
     "licenciement",
     "duree du travail",
     "temps de travail",
-    "conge",
     "risques professionnels",
     "document unique",
     "duerp",
@@ -81,19 +84,28 @@ _RH_KEYWORDS = (
     "accident du travail",
     "maladie professionnelle",
     "rupture conventionnelle",
+    "plan de sauvegarde de l'emploi",
+    "demandeur d'emploi",
+    "france travail",
+    "pole emploi",
     "comite social",
     "cse",
     "teletravail",
-    "remuneration",
+    "conges payes",
+    "conge parental",
+    "conge maternite",
+    "conge de paternite",
     "smic",
     "harcelement",
     "inaptitude",
     "formation professionnelle",
     "apprentissage",
     "negociation collective",
+    "convention collective",
     "egalite professionnelle",
     "prevention des risques",
     "medecine du travail",
+    "penibilite",
 )
 
 
