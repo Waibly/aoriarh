@@ -216,7 +216,14 @@ async def get_dashboard(
             SyncLog.started_at >= twenty_four_hours_ago,
         )
     )
-    soft_error_patterns = ("introuvable", "not yet available", "not yet published", "404")
+    # Soft errors also include transient upstream 5xx (Légifrance/PISTE returning
+    # a 500/502/503/504): they resolve on the next cron run and shouldn't raise
+    # an incident. httpx phrases these as "Server error '5xx ...'".
+    soft_error_patterns = (
+        "introuvable", "not yet available", "not yet published", "404",
+        "server error", "internal server error", "bad gateway",
+        "service unavailable", "gateway timeout",
+    )
     hard_failures = [
         log for log in failed_syncs.scalars().all()
         if not log.error_message
