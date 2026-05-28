@@ -299,7 +299,7 @@ class JorfService:
                         continue
 
                     consult = await self._api_post(
-                        client, "/consult/lawDecree", {"textId": cid}
+                        client, "/consult/jorf", {"textCid": cid}
                     )
                     if not consult:
                         result.errors += 1
@@ -428,56 +428,58 @@ class JorfService:
 
     @staticmethod
     def _parse_consult(consult: dict) -> tuple[str, set[str], date | None]:
-        """From /consult/lawDecree, return (full_text, modified_code_ids, pub_date)."""
-        text_obj = consult.get("textetitre") or consult.get("text") or consult
-        modified_code_ids: set[str] = set()
+        """From /consult/jorf, return (full_text, modified_code_ids, pub_date).
 
-        # Liens vers les textes/codes modifiés
-        for lien in consult.get("liens", []) or []:
-            cible = lien.get("cidTexte") or lien.get("textCid") or ""
-            if cible in _RELEVANT_CODE_IDS:
-                modified_code_ids.add(cible)
-
-        # Texte intégral : concaténer les articles si présents, sinon champ direct
-        articles = consult.get("articles") or text_obj.get("articles") or []
-        parts: list[str] = []
-        for art in articles:
-            content = art.get("content") or art.get("texte") or ""
-            if content:
-                num = art.get("num", "")
-                if num:
-                    parts.append(f"Article {num}\n{content}")
-                else:
-                    parts.append(content)
-            for cid_code in _RELEVANT_CODE_IDS:
-                if cid_code in str(art.get("content", "")):
-                    modified_code_ids.add(cid_code)
-        full_text = "\n\n".join(parts) if parts else (
-            text_obj.get("texte") or text_obj.get("texteHtml") or ""
-        )
+        Le texte vit dans articles[].content (HTML). Les codes modifiés/cités
+        apparaissent sous forme de liens cidTexte=LEGITEXT... dans le HTML : on
+        les détecte par simple présence de l'identifiant dans la réponse brute.
+        """
+        import json as _json
 
         from app.services.html_to_markdown import html_to_markdown
-        if "<" in full_text and ">" in full_text:
-            full_text = html_to_markdown(full_text)
 
-        pub_date = None
-        raw_date = (
-            consult.get("datePublication")
-            or text_obj.get("datePublication")
-            or consult.get("dateTexte")
-        )
-        if isinstance(raw_date, str) and raw_date:
-            for fmt in ("%Y-%m-%d", "%Y%m%d"):
+        articles = consult.get("articles") or []
+        parts: list[str] = []
+        for art in articles:
+            etat = (art.get("etat") or "").upper()
+            if etat not in ("VIGUEUR", "VIGUEUR_DIFF", ""):
+                continue
+            content = art.get("content") or ""
+            if not content:
+                continue
+            md = html_to_markdown(content) if "<" in content else content
+            num = art.get("num", "")
+            parts.append(f"Article {num}\n{md}" if num else md)
+        full_text = "\n\n".join(parts)
+
+        if not full_text:
+            for key in ("notice", "nota", "visa"):
+                raw = consult.get(key) or ""
+                if raw:
+                    full_text = html_to_markdown(raw) if "<" in raw else raw
+                    break
+
+        # Codes modifiés/cités : présence de l'identifiant LEGITEXT dans la réponse
+        raw_json = _json.dumps(consult, ensure_ascii=False)
+        modified_code_ids = {cid for cid in _RELEVANT_CODE_IDS if cid in raw_json}
+
+        pub_date: date | None = None
+        for key in ("dateTexte", "dateParution", "datePublication"):
+            value = consult.get(key)
+            if isinstance(value, bool):
+                continue
+            if isinstance(value, (int, float)) and value:
                 try:
-                    pub_date = datetime.strptime(raw_date[:10], fmt).date()
+                    pub_date = datetime.fromtimestamp(value / 1000, UTC).date()
+                    break
+                except (ValueError, OSError):
+                    continue
+            elif isinstance(value, str) and value:
+                try:
+                    pub_date = datetime.strptime(value[:10], "%Y-%m-%d").date()
                     break
                 except ValueError:
                     continue
-        elif isinstance(raw_date, (int, float)):
-            try:
-                pub_date = datetime.fromtimestamp(raw_date / 1000, UTC).date()
-            except (ValueError, OSError):
-                pub_date = None
 
         return full_text, modified_code_ids, pub_date
 
