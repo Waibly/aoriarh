@@ -420,11 +420,17 @@ def _merge_jurisprudence(
         return _section_kind(section, body)
 
     def tier(ci: int) -> int:
-        if ci in seed_indices or kind(ci) in ("motifs", "dispositif"):
+        # The holding (motifs/dispositif) wins over everything: it is the answer.
+        # Matched chunks (seeds) come next — they are often the faits/moyens that
+        # the query hit, large and less decisive, so they must not crowd out the
+        # ruling. Then the remaining faits/moyens, then the en-tête boilerplate.
+        if kind(ci) in ("motifs", "dispositif"):
             return 0
-        if kind(ci) in ("faits", "moyens"):
+        if ci in seed_indices:
             return 1
-        return 2
+        if kind(ci) in ("faits", "moyens"):
+            return 2
+        return 3
 
     # Reserve room for the header and a little label/separator overhead.
     budget = MAX_CHARS_PER_GROUP - (len(meta_header) + 2 if meta_header else 0) - 400
@@ -433,7 +439,7 @@ def _merge_jurisprudence(
 
     chosen: set[int] = set()
     remaining = budget
-    for t in (0, 1, 2):
+    for t in (0, 1, 2, 3):
         for c in ordered:
             ci = c.chunk_index
             if ci in chosen or tier(ci) != t:
@@ -442,8 +448,9 @@ def _merge_jurisprudence(
             if need <= remaining:
                 chosen.add(ci)
                 remaining -= need
-            elif t == 0 and not chosen:
-                # Always keep at least the top-priority chunk, even if large.
+            elif t <= 1 and not chosen:
+                # Always keep at least the top-priority chunk (the ruling, or the
+                # best match if no ruling was detected), even if it is large.
                 chosen.add(ci)
                 remaining = 0
     if not chosen and ordered:
