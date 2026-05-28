@@ -144,18 +144,18 @@ function fmtRelative(iso: string | null): string {
 }
 
 /**
- * Compute the next scheduled auto-sync date.
- * Cron: every Saturday at 03:00 UTC (backend worker.py).
+ * Compute the next occurrence of a weekly cron (weekday + hour UTC).
+ * Crons (backend worker.py) : samedi 02:00 UTC (Lois & codes),
+ * dimanche 02:00 UTC (Jurisprudence & conventions).
+ * weekday : dimanche = 0 … samedi = 6.
  */
-function nextAutoSync(): string {
+function nextCron(weekday: number, hourUtc: number): string {
   const now = new Date();
   const candidate = new Date(Date.UTC(
-    now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 3, 0, 0,
+    now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), hourUtc, 0, 0,
   ));
-  // Move to next Saturday at 3h UTC (Saturday = day 6)
-  const daysUntilSat = (6 - candidate.getUTCDay() + 7) % 7;
-  candidate.setUTCDate(candidate.getUTCDate() + daysUntilSat);
-  // If today is Saturday but past 3h UTC, jump to next Saturday
+  const daysUntil = (weekday - candidate.getUTCDay() + 7) % 7;
+  candidate.setUTCDate(candidate.getUTCDate() + daysUntil);
   if (candidate.getTime() <= now.getTime()) {
     candidate.setUTCDate(candidate.getUTCDate() + 7);
   }
@@ -412,6 +412,7 @@ function SyncBanner({ token, onRefresh }: { token: string; onRefresh: () => void
         if (tt === "kali" || tt === "ccn") return "kali";
         if (tt === "jurisprudence" || tt === "judilibre") return "judilibre";
         if (tt === "codes" || tt === "code_travail") return "code_travail";
+        if (tt === "jorf") return "jorf";
         if (tt === "bocc") return "bocc";
         return null;
       };
@@ -424,6 +425,7 @@ function SyncBanner({ token, onRefresh }: { token: string; onRefresh: () => void
         kali: [],
         judilibre: [],
         code_travail: [],
+        jorf: [],
         bocc: [],
       };
       for (const log of data.logs) {
@@ -435,6 +437,7 @@ function SyncBanner({ token, onRefresh }: { token: string; onRefresh: () => void
         kali: null,
         judilibre: null,
         code_travail: null,
+        jorf: null,
         bocc: null,
       };
       for (const key of Object.keys(grouped)) {
@@ -503,6 +506,7 @@ function SyncBanner({ token, onRefresh }: { token: string; onRefresh: () => void
       let path = "";
       if (key === "kali") path = "/admin/ccn/sync-all";
       else if (key === "code_travail") path = "/admin/syncs/codes";
+      else if (key === "jorf") path = "/admin/syncs/jorf";
       else if (key === "bocc") path = "/admin/syncs/bocc";
       else if (key === "judilibre") path = "/admin/jurisprudence/sync-all";
 
@@ -524,6 +528,7 @@ function SyncBanner({ token, onRefresh }: { token: string; onRefresh: () => void
         if (key === "kali") return tt === "kali" || tt === "ccn";
         if (key === "judilibre") return tt === "jurisprudence" || tt === "judilibre";
         if (key === "code_travail") return tt === "codes" || tt === "code_travail";
+        if (key === "jorf") return tt === "jorf";
         if (key === "bocc") return tt === "bocc";
         return false;
       };
@@ -544,23 +549,50 @@ function SyncBanner({ token, onRefresh }: { token: string; onRefresh: () => void
 
   const sources = [
     {
-      key: "kali",
-      label: "KALI (CCN)",
+      key: "code_travail",
+      group: "legislation",
+      label: "Codes",
       auto: true,
-      autoDetail: "Rotation : les 15 CCN installées les plus anciennement synchronisées",
+      autoDetail: "9 codes (travail, civil, pénal, CSS, action sociale, santé publique, commerce, monétaire et financier, CGI)",
       help: (
         <>
-          <strong>Au clic :</strong> appelle <code>POST /admin/ccn/sync-all</code>,
-          qui lance un job ARQ <code>run_kali_install</code> pour chaque CCN installée
-          dans une organisation. Met à jour les articles, avenants et grilles depuis
-          la base KALI de Légifrance.<br /><br />
-          <strong>Cron auto :</strong> tous les samedis à 3h UTC, traite uniquement
-          les 15 CCN les plus anciennement syncées (rotation).
+          <strong>Au clic :</strong> appelle <code>POST /admin/syncs/codes</code>,
+          qui lance le job <code>run_all_codes_sync</code>. Pour chacun des 9 codes,
+          télécharge le texte complet depuis Légifrance, calcule un hash SHA-256
+          et compare avec la version stockée. Si identique → aucune action
+          (zéro coût d&apos;embeddings). Si différent → réingestion complète.<br /><br />
+          <strong>Cron auto :</strong> tous les samedis à 2h UTC (groupe « Lois &
+          codes »).
+        </>
+      ),
+    },
+    {
+      key: "jorf",
+      group: "legislation",
+      label: "JORF",
+      auto: true,
+      autoDetail: "Lois / ordonnances / décrets / arrêtés RH publiés au Journal officiel (30 derniers jours)",
+      help: (
+        <>
+          <strong>Au clic :</strong> appelle <code>POST /admin/syncs/jorf</code>,
+          qui lance le job <code>run_jorf_sync</code>. Interroge le fond LODA de
+          Légifrance sur les 30 derniers jours (lois, ordonnances, décrets,
+          arrêtés).<br /><br />
+          <strong>Filtre RH :</strong> on ne garde un texte que si son titre
+          contient des mots-clés RH (travail, salarié, licenciement, risques
+          professionnels, DUERP…) <em>ou</em> s&apos;il modifie le Code du travail
+          ou le Code de la sécurité sociale. Dédup par identifiant de texte
+          (CID).<br /><br />
+          Permet de capter une nouvelle loi <em>dès sa publication au JO</em>,
+          sans attendre sa consolidation dans le Code du travail.<br /><br />
+          <strong>Cron auto :</strong> tous les samedis à 2h UTC (groupe « Lois &
+          codes »).
         </>
       ),
     },
     {
       key: "judilibre",
+      group: "jurisprudence",
       label: "Jurisprudence",
       auto: true,
       autoDetail: "6 passes Cass (soc + cr + comm + civ2 + AP + chambre mixte) + CA ch. soc + Conseil constit",
@@ -581,28 +613,31 @@ function SyncBanner({ token, onRefresh }: { token: string; onRefresh: () => void
           </ul>
           Dédup par numéro de pourvoi (Cass/CA) ou CID (Conseil constit), les
           arrêts déjà en base sont ignorés.<br /><br />
-          <strong>Cron auto :</strong> tous les samedis à 3h UTC.
+          <strong>Cron auto :</strong> tous les dimanches à 2h UTC (groupe
+          « Jurisprudence & conventions »).
         </>
       ),
     },
     {
-      key: "code_travail",
-      label: "Codes",
+      key: "kali",
+      group: "jurisprudence",
+      label: "KALI (CCN)",
       auto: true,
-      autoDetail: "9 codes (travail, civil, pénal, CSS, action sociale, santé publique, commerce, monétaire et financier, CGI)",
+      autoDetail: "Rotation : les 15 CCN installées les plus anciennement synchronisées",
       help: (
         <>
-          <strong>Au clic :</strong> appelle <code>POST /admin/syncs/codes</code>,
-          qui lance le job <code>run_all_codes_sync</code>. Pour chacun des 9 codes,
-          télécharge le texte complet depuis Légifrance, calcule un hash SHA-256
-          et compare avec la version stockée. Si identique → aucune action
-          (zéro coût d&apos;embeddings). Si différent → réingestion complète.<br /><br />
-          <strong>Cron auto :</strong> tous les samedis à 3h UTC.
+          <strong>Au clic :</strong> appelle <code>POST /admin/ccn/sync-all</code>,
+          qui lance un job ARQ <code>run_kali_install</code> pour chaque CCN installée
+          dans une organisation. Met à jour les articles, avenants et grilles depuis
+          la base KALI de Légifrance.<br /><br />
+          <strong>Cron auto :</strong> tous les dimanches à 2h UTC, traite uniquement
+          les 15 CCN les plus anciennement syncées (rotation).
         </>
       ),
     },
     {
       key: "bocc",
+      group: "jurisprudence",
       label: "BOCC",
       auto: true,
       autoDetail: "Quotidien : balaye une fenêtre de 6 semaines, ingère les nouveaux numéros (cap 6/run)",
@@ -612,40 +647,15 @@ function SyncBanner({ token, onRefresh }: { token: string; onRefresh: () => void
           qui lance le job <code>run_bocc_sync</code> pour le dernier numéro publié.
           Les avenants téléchargés sont mis en réserve ; ils sont ingérés
           automatiquement lors de l&apos;installation d&apos;une CCN concernée.<br /><br />
-          <strong>Cron auto :</strong> quotidien à 2h30 UTC (différent du cron
-          général car DILA peut publier n&apos;importe quel jour de la semaine).
+          <strong>Cron auto :</strong> quotidien à 2h30 UTC (filet indépendant des
+          deux crons hebdo, car DILA peut publier n&apos;importe quel jour) ; le
+          rattrapage hebdo a lieu le dimanche.
         </>
       ),
     },
   ];
 
-  return (
-    <Card>
-      <div className="flex items-center justify-between px-4 pt-3 pb-2 border-b">
-        <div className="flex items-center gap-2 text-xs font-semibold">
-          Synchronisations
-          <InfoTooltip>
-            <strong>Synchronisation automatique :</strong> tous les
-            <strong> samedis à 03:00 UTC</strong> (~4-5h heure de Paris).
-            Lance la fonction <code>run_scheduled_sync</code> du worker, qui
-            enchaîne :
-            <ol className="list-decimal pl-4 mt-1">
-              <li>Jurisprudence (8 passes Cass + CA + Conseil constit, 30j)</li>
-              <li>KALI : rotation des 15 CCN les plus anciennement syncées</li>
-              <li>BOCC : catch-up des numéros non traités (12 semaines, cap 6)</li>
-            </ol>
-            BOCC tourne aussi en quotidien (cron séparé à 2h30 UTC) pour ne
-            jamais rater un numéro publié hors samedi.<br /><br />
-            Les boutons ci-dessous lancent manuellement <strong>la même
-            opération</strong> que le cron, sans attendre le samedi.
-          </InfoTooltip>
-        </div>
-        <div className="text-[10px] text-muted-foreground">
-          Prochaine sync auto : <span className="font-medium text-foreground">{nextAutoSync()}</span>
-        </div>
-      </div>
-      <CardContent className="p-3 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-2">
-        {sources.map((s) => {
+  const renderCard = (s: (typeof sources)[number]) => {
           const log = lastSyncs[s.key];
           const isPolling = pollingIds[s.key] !== null && pollingIds[s.key] !== undefined;
           const isTriggering = running[s.key] === true;
@@ -799,8 +809,71 @@ function SyncBanner({ token, onRefresh }: { token: string; onRefresh: () => void
               )}
             </div>
           );
-        })}
-      </CardContent>
+  };
+
+  const cronGroups = [
+    {
+      id: "legislation",
+      title: "Samedi 02:00 UTC — Lois & codes",
+      subtitle: "Les 9 codes + le Journal officiel (JORF).",
+      next: nextCron(6, 2),
+    },
+    {
+      id: "jurisprudence",
+      title: "Dimanche 02:00 UTC — Jurisprudence & conventions",
+      subtitle:
+        "Jurisprudence (Cass + CA + Conseil constit) + rotation CCN + rattrapage BOCC.",
+      next: nextCron(0, 2),
+    },
+  ];
+
+  return (
+    <Card>
+      <div className="px-4 pt-3 pb-2 border-b flex items-center gap-2 text-xs font-semibold">
+        Synchronisations du corpus commun
+        <InfoTooltip>
+          <strong>Deux crons hebdomadaires</strong>, répartis sur deux jours pour
+          lisser la charge de l&apos;API PISTE (codes, jurisprudence et CCN
+          partagent le même quota) :
+          <ol className="list-decimal pl-4 mt-1">
+            <li>
+              <strong>Samedi 2h UTC</strong> — Lois &amp; codes : les 9 codes (dont
+              le Code du travail) + le JORF (lois / décrets / arrêtés RH).
+            </li>
+            <li>
+              <strong>Dimanche 2h UTC</strong> — Jurisprudence &amp; conventions :
+              jurisprudence (8 passes), rotation des 15 CCN, rattrapage BOCC.
+            </li>
+          </ol>
+          Le BOCC tourne aussi en filet quotidien (2h30 UTC) car la DILA peut
+          publier n&apos;importe quel jour.<br /><br />
+          Les boutons lancent manuellement <strong>la même opération</strong> que
+          le cron, sans attendre.
+        </InfoTooltip>
+      </div>
+      {cronGroups.map((g) => (
+        <div key={g.id} className="px-3 pt-3">
+          <div className="flex items-center justify-between gap-2 mb-2">
+            <div className="min-w-0">
+              <div className="text-xs font-semibold truncate">{g.title}</div>
+              <div className="text-[10px] text-muted-foreground truncate">
+                {g.subtitle}
+              </div>
+            </div>
+            <div className="text-[10px] text-muted-foreground shrink-0">
+              Prochaine :{" "}
+              <span className="font-medium text-foreground">{g.next}</span>
+            </div>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
+            {sources.filter((s) => s.group === g.id).map(renderCard)}
+          </div>
+        </div>
+      ))}
+      <div className="px-4 py-2 mt-1 text-[10px] text-muted-foreground border-t">
+        + filet <strong>BOCC quotidien</strong> à 2h30 UTC (indépendant des deux
+        crons hebdo).
+      </div>
     </Card>
   );
 }

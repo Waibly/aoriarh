@@ -166,3 +166,24 @@ async def trigger_all_codes_sync(
     from app.rag.tasks import enqueue_all_codes_sync
     await enqueue_all_codes_sync(str(user.id))
     return {"detail": "Synchronisation de tous les codes lancée"}
+
+
+@router.post("/jorf")
+async def trigger_jorf_sync(
+    user: User = Depends(require_role(["admin"])),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Manually trigger JORF sync (lois/décrets/arrêtés RH des 30 derniers jours)."""
+    running = await db.execute(
+        select(SyncLog).where(
+            SyncLog.sync_type == "jorf",
+            SyncLog.status == "running",
+        )
+    )
+    if running.scalar_one_or_none():
+        from fastapi import HTTPException
+        raise HTTPException(status_code=409, detail="Une synchronisation JORF est déjà en cours")
+
+    from app.rag.tasks import enqueue_jorf_sync
+    await enqueue_jorf_sync(str(user.id))
+    return {"detail": "Synchronisation JORF lancée"}

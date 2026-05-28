@@ -95,6 +95,16 @@ async def enqueue_all_codes_sync(user_id: str) -> None:
     logger.info("All codes sync job enqueued")
 
 
+async def enqueue_jorf_sync(user_id: str) -> None:
+    """Enqueue a JORF sync job (lois/décrets/arrêtés RH des 30 derniers jours)."""
+    pool = await get_arq_pool()
+    await pool.enqueue_job(
+        "run_jorf_sync",
+        user_id,
+    )
+    logger.info("JORF sync job enqueued")
+
+
 async def enqueue_scheduled_sync() -> None:
     """Enqueue the bi-monthly scheduled sync (jurisprudence + CCN rotation)."""
     pool = await get_arq_pool()

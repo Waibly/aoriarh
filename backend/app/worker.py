@@ -442,6 +442,71 @@ async def run_all_codes_sync(ctx: dict, user_id: str) -> None:
         )
 
 
+async def run_jorf_sync(ctx: dict, user_id: str) -> None:
+    """Tâche de synchronisation des textes JORF (lois/décrets/arrêtés RH)."""
+    import time as _time
+    logger.info("Worker: JORF sync started")
+    session_factory = ctx["session_factory"]
+    sync_log_id = await _create_sync_log(session_factory, "jorf")
+    t0 = _time.perf_counter()
+    try:
+        from app.services.jorf_service import JorfService
+
+        service = JorfService()
+        async with session_factory() as db:
+            result = await service.sync(db, uuid.UUID(user_id))
+        logger.info(
+            "Worker: JORF sync completed — %d listés, %d ingérés, %d filtrés, %d erreurs",
+            result.total_fetched, result.new_ingested,
+            result.filtered_out, result.errors,
+        )
+        await _finish_sync_log(
+            session_factory, sync_log_id,
+            success=result.errors == 0,
+            items_fetched=result.total_fetched,
+            items_created=result.new_ingested,
+            items_skipped=result.filtered_out + result.already_exists,
+            errors=result.errors,
+            error_message="; ".join(result.error_messages) or None,
+            duration_ms=int((_time.perf_counter() - t0) * 1000),
+        )
+    except Exception as exc:
+        logger.exception("Worker: JORF sync failed")
+        await _finish_sync_log(
+            session_factory, sync_log_id,
+            success=False, errors=1, error_message=str(exc),
+            duration_ms=int((_time.perf_counter() - t0) * 1000),
+        )
+
+
+async def run_legislation_sync(ctx: dict) -> None:
+    """Cron du samedi — groupe « Lois & codes » : 9 codes + JORF.
+
+    Les deux sous-tâches gèrent chacune leur propre SyncLog (codes / jorf).
+    """
+    from app.models.user import User
+
+    session_factory = ctx["session_factory"]
+    logger.info("Worker: legislation sync (codes + JORF) started")
+
+    async with session_factory() as db:
+        admin_result = await db.execute(
+            select(User).where(User.role == "admin", User.is_active.is_(True)).limit(1)
+        )
+        admin = admin_result.scalar_one_or_none()
+        if not admin:
+            logger.error("No active admin user found — cannot run legislation sync")
+            return
+        admin_id = str(admin.id)
+
+    # 1. Les 9 codes (hash-gated : zéro coût si rien n'a changé)
+    await run_all_codes_sync(ctx, admin_id)
+    # 2. Le JORF (lois/décrets/arrêtés RH publiés sur les 30 derniers jours)
+    await run_jorf_sync(ctx, admin_id)
+
+    logger.info("Worker: legislation sync completed")
+
+
 async def _run_jurisprudence_passes(
     db,
     session_factory,
@@ -1500,6 +1565,8 @@ class WorkerSettings:
         run_code_travail_sync,
         run_code_sync,
         run_all_codes_sync,
+        run_jorf_sync,
+        run_legislation_sync,
         run_scheduled_sync,
         run_billing_lifecycle,
         run_data_retention_purge,
@@ -1507,14 +1574,16 @@ class WorkerSettings:
         run_emailing_campaigns,
     ]
     cron_jobs = [
-        # Legal corpus refresh: every Saturday at 3:00 AM UTC (~4-5 AM Paris).
-        # Hebdomadaire pour lisser la charge et réduire la latence de
-        # fraîcheur — un arrêt publié le lundi est intégré au plus tard le
-        # samedi suivant (5j vs 14j avec l'ancien rythme bimensuel).
-        # La fenêtre de 30j dans run_scheduled_sync gère naturellement le
-        # chevauchement entre runs : les doublons sont éliminés par la
-        # dédup numero_pourvoi/CID, ce sont juste des appels API "à vide".
-        cron(run_scheduled_sync, weekday="sat", hour=3, minute=0),
+        # Corpus juridique réparti sur 2 jours pour lisser la charge API PISTE
+        # (codes + jurisprudence + CCN tapent tous le quota PISTE partagé).
+        # La fenêtre de 30j gère le chevauchement entre runs : les doublons
+        # sont éliminés par la dédup numero_pourvoi/CID/hash.
+        #
+        # Samedi 2h UTC (~3-4h Paris) — groupe « Lois & codes » : 9 codes + JORF.
+        cron(run_legislation_sync, weekday="sat", hour=2, minute=0),
+        # Dimanche 2h UTC — groupe « Jurisprudence & conventions » :
+        # jurisprudence (Cass + CA + Conseil constit) + rotation CCN + BOCC.
+        cron(run_scheduled_sync, weekday="sun", hour=2, minute=0),
         # BOCC : vérification quotidienne (DILA peut publier n'importe quand).
         # Si rien de nouveau, sync_log = success / 0 items (pas une erreur).
         cron(run_daily_bocc_check, hour=2, minute=30),
