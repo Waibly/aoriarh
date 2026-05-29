@@ -12,7 +12,7 @@ Stratégie :
    sécurité sociale (détecté via les liens du texte consulté).
    Le filtre titre s'applique AVANT toute consultation pour borner le quota
    PISTE : le JO publie des milliers d'arrêtés/nominations sans rapport RH.
-3. Pour chaque texte retenu : POST /consult/lawDecree → texte intégral.
+3. Pour chaque texte retenu : POST /consult/jorf (textCid) → texte intégral.
 4. Création d'un Document (source_type loi/ordonnance/decret/arrete) + ingestion.
 5. Dédup par CID (stocké dans Document.numero_pourvoi, comme le Conseil constit).
 """
