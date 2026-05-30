@@ -538,20 +538,20 @@ async def _run_jurisprudence_passes(
 
     # Valid Judilibre chamber codes : soc, cr (criminelle), comm (commerciale),
     # civ2 (sécurité sociale et AT/MP), pl (Assemblée plénière), mi (chambre
-    # mixte). Volumes attendus sur 30j publiés : soc ~50, cr ~25, comm ~20,
-    # civ2 ~30, pl 0-2, mi 0-1. Source : sondage live API 2026-04-09 +
-    # estimation AP/MI 2026-05-11. AP et MI sont rares mais leurs arrêts
-    # font jurisprudence pour TOUTES les chambres — à inclure systématiquement.
+    # mixte). 3e élément = publication : None pour la chambre sociale (TOUTES
+    # les décisions, inédits inclus, ~170/mois — cœur du droit du travail),
+    # "b" (Bulletin) pour les autres chambres (volume + pertinence). AP et MI
+    # sont rares mais font jurisprudence pour toutes les chambres.
     cc_passes = [
-        ("Cass. soc", "soc"),
-        ("Cass. cr (criminelle)", "cr"),
-        ("Cass. comm (commerciale)", "comm"),
-        ("Cass. civ2 (sécu / AT-MP)", "civ2"),
-        ("Cass. AP (Assemblée plénière)", "pl"),
-        ("Cass. mi (Chambre mixte)", "mi"),
+        ("Cass. soc", "soc", None),
+        ("Cass. cr (criminelle)", "cr", "b"),
+        ("Cass. comm (commerciale)", "comm", "b"),
+        ("Cass. civ2 (sécu / AT-MP)", "civ2", "b"),
+        ("Cass. AP (Assemblée plénière)", "pl", "b"),
+        ("Cass. mi (Chambre mixte)", "mi", "b"),
     ]
 
-    for pass_label, chamber_code in cc_passes:
+    for pass_label, chamber_code, pub in cc_passes:
         t_start = _time.perf_counter()
         sync_log = SyncLog(
             sync_type="jurisprudence",
@@ -568,7 +568,7 @@ async def _run_jurisprudence_passes(
                 date_end=date_end,
                 jurisdiction="cc",
                 chamber=chamber_code,
-                publication="b",
+                publication=pub,
                 source_type="arret_cour_cassation",
                 max_decisions=cc_max_decisions,
             )
