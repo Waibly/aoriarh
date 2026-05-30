@@ -439,9 +439,33 @@ class JorfService:
 
         from app.services.html_to_markdown import html_to_markdown
 
-        articles = consult.get("articles") or []
+        # Les articles peuvent être à plat (consult["articles"]) OU imbriqués
+        # dans la hiérarchie sections[].articles / sections[].sections. Pour de
+        # nombreux textes LODA (lois de transposition, etc.), la liste à plat est
+        # vide et tout le corps du texte vit dans les sections : il faut donc
+        # parcourir récursivement les deux, sinon on ne récupère que le visa.
+        collected: list[dict] = []
+
+        def _collect(articles: list | None, sections: list | None) -> None:
+            for art in articles or []:
+                collected.append(art)
+            for sec in sections or []:
+                _collect(sec.get("articles"), sec.get("sections"))
+
+        _collect(consult.get("articles"), consult.get("sections"))
+
+        # Ordre de lecture stable : par numéro d'article quand c'est un entier.
+        def _art_sort_key(art: dict) -> tuple[int, object]:
+            num = (art.get("num") or "").strip()
+            try:
+                return (0, int(num))
+            except (TypeError, ValueError):
+                return (1, num)
+
+        collected.sort(key=_art_sort_key)
+
         parts: list[str] = []
-        for art in articles:
+        for art in collected:
             etat = (art.get("etat") or "").upper()
             if etat not in ("VIGUEUR", "VIGUEUR_DIFF", ""):
                 continue
