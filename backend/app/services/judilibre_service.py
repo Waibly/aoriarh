@@ -324,12 +324,16 @@ class JudilibreService:
             while True:
                 api_params: dict = {
                     "jurisdiction": jurisdiction,
-                    "publication": publication,
                     "date_start": date_start.isoformat(),
                     "date_end": date_end.isoformat(),
                     "batch": batch_num,
                     "batch_size": _BATCH_SIZE,
                 }
+                # Filtre de publication (ex. "b" = Bulletin). On l'OMET quand
+                # il vaut None : passer publication=None/vide à l'API la fait
+                # renvoyer 0 résultat. Absent = toutes publications (inédits inclus).
+                if publication:
+                    api_params["publication"] = publication
                 # Chamber filter only applies to Cour de cassation in Judilibre.
                 # For other jurisdictions we omit it (Judilibre returns all
                 # chambers of that jurisdiction).
