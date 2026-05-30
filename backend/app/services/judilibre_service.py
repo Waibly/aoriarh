@@ -64,7 +64,12 @@ SOURCE_DEFINITIONS: dict[str, dict] = {
         "service": "judilibre",
         "jurisdiction": "cc",
         "chamber": "soc",
-        "publication": "b",
+        # Chambre sociale = cœur du droit du travail : on ingère TOUTES les
+        # décisions (publiées au Bulletin ET inédites), pas seulement le Bulletin.
+        # Les inédits représentent ~90% du volume et font jurisprudence
+        # (ex. Cass. soc. 09/04/2026 n° 24-22.122, un inédit). Les autres
+        # chambres restent limitées au Bulletin (publication="b").
+        "publication": None,
         "source_type": "arret_cour_cassation",
     },
     "cass_cr": {
