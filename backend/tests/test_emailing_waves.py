@@ -157,6 +157,27 @@ async def test_daily_limit_guard():
         assert str(BREVO_DAILY_LIMIT) in exc.value.detail
 
 
+async def test_preview_matches_locked_contacts():
+    """L'aperçu montre exactement les contacts qui seront verrouillés."""
+    async with test_session_factory() as session:
+        campaign = await _make_campaign(session, 250)
+        service = EmailCampaignService(session)
+
+        preview = await service.preview_next_contacts(campaign.id, 100)
+        assert len(preview) == 100
+
+        wave = await service.schedule_wave(
+            campaign.id, count=100, scheduled_at=datetime.now(UTC) + timedelta(days=1)
+        )
+        locked = await service.list_wave_contacts(campaign.id, wave.id)
+
+        assert {c["email"] for c in locked} == {c["email"] for c in preview}
+
+        # L'aperçu suivant ne remontre pas les contacts déjà verrouillés.
+        preview2 = await service.preview_next_contacts(campaign.id, 100)
+        assert {c["email"] for c in preview2}.isdisjoint({c["email"] for c in preview})
+
+
 async def test_cron_respects_wave_schedule(monkeypatch):
     """Le cron n'envoie que les vagues échues ; le stock et le futur attendent."""
     sent_to: list[str] = []

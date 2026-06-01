@@ -534,6 +534,55 @@ class EmailCampaignService:
             "waves": wave_items,
         }
 
+    @staticmethod
+    def _contact_dict(r: EmailCampaignRecipient) -> dict:
+        return {
+            "email": r.email,
+            "first_name": r.first_name,
+            "last_name": r.last_name,
+            "company": r.company,
+        }
+
+    async def preview_next_contacts(
+        self, campaign_id: uuid.UUID, count: int
+    ) -> list[dict]:
+        """Les N prochains contacts du stock — ceux qui partiront dans la
+        prochaine vague. Même ordre que schedule_wave, pour montrer « qui »
+        avant de valider."""
+        await self.get(campaign_id)
+        count = min(max(count, 1), WAVE_MAX_SIZE)
+        result = await self.db.execute(
+            select(EmailCampaignRecipient)
+            .where(
+                EmailCampaignRecipient.campaign_id == campaign_id,
+                EmailCampaignRecipient.wave_id.is_(None),
+                EmailCampaignRecipient.status == "active",
+            )
+            .order_by(EmailCampaignRecipient.created_at, EmailCampaignRecipient.id)
+            .limit(count)
+        )
+        return [self._contact_dict(r) for r in result.scalars().all()]
+
+    async def list_wave_contacts(
+        self, campaign_id: uuid.UUID, wave_id: uuid.UUID
+    ) -> list[dict]:
+        wave = (
+            await self.db.execute(
+                select(EmailCampaignWave).where(
+                    EmailCampaignWave.id == wave_id,
+                    EmailCampaignWave.campaign_id == campaign_id,
+                )
+            )
+        ).scalar_one_or_none()
+        if not wave:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "Vague introuvable")
+        result = await self.db.execute(
+            select(EmailCampaignRecipient)
+            .where(EmailCampaignRecipient.wave_id == wave_id)
+            .order_by(EmailCampaignRecipient.created_at, EmailCampaignRecipient.id)
+        )
+        return [self._contact_dict(r) for r in result.scalars().all()]
+
     async def schedule_wave(
         self,
         campaign_id: uuid.UUID,

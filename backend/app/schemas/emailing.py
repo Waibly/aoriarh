@@ -143,6 +143,13 @@ class CampaignWavesOverview(BaseModel):
     waves: list[CampaignWaveRead] = []
 
 
+class WaveContact(BaseModel):
+    email: str
+    first_name: str | None = None
+    last_name: str | None = None
+    company: str | None = None
+
+
 # --- Stats ---
 
 class CampaignBranchStats(BaseModel):

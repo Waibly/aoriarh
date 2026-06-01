@@ -118,6 +118,13 @@ interface WavesOverview {
   waves: CampaignWave[];
 }
 
+interface WaveContact {
+  email: string;
+  first_name: string | null;
+  last_name: string | null;
+  company: string | null;
+}
+
 const WAVE_STATUS: Record<string, { label: string; variant: "default" | "secondary" | "outline" }> = {
   scheduled: { label: "Programmée", variant: "outline" },
   sending: { label: "En cours", variant: "default" },
@@ -159,6 +166,11 @@ export default function AdminEmailCampaignsPage() {
   const [waveCount, setWaveCount] = useState(100);
   const [waveDate, setWaveDate] = useState("");
   const [schedulingWave, setSchedulingWave] = useState(false);
+  const [previewContacts, setPreviewContacts] = useState<WaveContact[]>([]);
+  const [showPreview, setShowPreview] = useState(false);
+  const [expandedWaveId, setExpandedWaveId] = useState<string | null>(null);
+  const [waveContacts, setWaveContacts] = useState<WaveContact[]>([]);
+  const [loadingWaveContacts, setLoadingWaveContacts] = useState(false);
 
   const fetchData = useCallback(async () => {
     if (!token) return;
@@ -221,7 +233,7 @@ export default function AdminEmailCampaignsPage() {
       await apiFetch(`/admin/emailing/campaigns/${launchTarget.id}/launch`, {
         method: "POST", token,
       });
-      toast.success("Campagne lancée");
+      toast.success("Contacts chargés — programmez vos envois via « Vagues »");
       setLaunchTarget(null);
       fetchData();
     } catch (err) {
@@ -297,10 +309,26 @@ export default function AdminEmailCampaignsPage() {
     }
   }, [token]);
 
+  const loadPreview = useCallback(async (campaignId: string) => {
+    if (!token) return;
+    try {
+      const data = await apiFetch<WaveContact[]>(
+        `/admin/emailing/campaigns/${campaignId}/waves/preview?count=100`,
+        { token },
+      );
+      setPreviewContacts(data);
+    } catch {
+      // l'aperçu n'est pas critique, on reste silencieux
+    }
+  }, [token]);
+
   function openWaves(campaign: EmailCampaign) {
     setWavesTarget(campaign);
     setWaveDate("");
+    setShowPreview(false);
+    setExpandedWaveId(null);
     loadWaves(campaign.id);
+    loadPreview(campaign.id);
   }
 
   async function handleScheduleWave() {
@@ -319,6 +347,7 @@ export default function AdminEmailCampaignsPage() {
       toast.success("Envoi programmé");
       setWaveDate("");
       await loadWaves(wavesTarget.id);
+      await loadPreview(wavesTarget.id);
       fetchData();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Erreur");
@@ -335,12 +364,41 @@ export default function AdminEmailCampaignsPage() {
         token,
       });
       toast.success("Vague annulée");
+      if (expandedWaveId === waveId) setExpandedWaveId(null);
       await loadWaves(wavesTarget.id);
+      await loadPreview(wavesTarget.id);
       fetchData();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Erreur");
     }
   }
+
+  async function toggleWaveContacts(waveId: string) {
+    if (expandedWaveId === waveId) {
+      setExpandedWaveId(null);
+      return;
+    }
+    if (!token || !wavesTarget) return;
+    setExpandedWaveId(waveId);
+    setWaveContacts([]);
+    setLoadingWaveContacts(true);
+    try {
+      const data = await apiFetch<WaveContact[]>(
+        `/admin/emailing/campaigns/${wavesTarget.id}/waves/${waveId}/contacts`,
+        { token },
+      );
+      setWaveContacts(data);
+    } catch {
+      toast.error("Erreur lors du chargement des contacts");
+    } finally {
+      setLoadingWaveContacts(false);
+    }
+  }
+
+  const contactLabel = (c: WaveContact) => {
+    const name = [c.first_name, c.last_name].filter(Boolean).join(" ");
+    return name ? `${name} · ${c.email}` : c.email;
+  };
 
   const fmt = (d: string) =>
     new Date(d).toLocaleDateString("fr-FR", {
@@ -423,7 +481,7 @@ export default function AdminEmailCampaignsPage() {
                       <TableCell className="text-right">
                         <div className="flex items-center justify-end gap-1">
                           {c.status === "draft" && (
-                            <Button variant="ghost" size="icon" onClick={() => setLaunchTarget(c)} title="Lancer">
+                            <Button variant="ghost" size="icon" onClick={() => setLaunchTarget(c)} title="Charger les contacts">
                               <Play className="h-4 w-4 text-green-600" />
                             </Button>
                           )}
@@ -437,13 +495,13 @@ export default function AdminEmailCampaignsPage() {
                               <Button variant="ghost" size="icon" onClick={() => handleResume(c.id)} title="Reprendre">
                                 <RotateCcw className="h-4 w-4" />
                               </Button>
-                              <Button variant="ghost" size="icon" onClick={() => setLaunchTarget(c)} title="Relancer">
+                              <Button variant="ghost" size="icon" onClick={() => setLaunchTarget(c)} title="Recharger les contacts">
                                 <Play className="h-4 w-4 text-green-600" />
                               </Button>
                             </>
                           )}
                           {(c.status === "running" || c.status === "paused" || c.status === "completed") && (
-                            <Button variant="ghost" size="icon" onClick={() => openWaves(c)} title="Vagues d'envoi">
+                            <Button variant="ghost" size="icon" onClick={() => openWaves(c)} title="Programmer les envois (vagues)">
                               <Layers className="h-4 w-4" />
                             </Button>
                           )}
@@ -539,15 +597,16 @@ export default function AdminEmailCampaignsPage() {
       <Dialog open={launchTarget !== null} onOpenChange={(open) => { if (!open) setLaunchTarget(null); }}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Lancer la campagne ?</DialogTitle>
+            <DialogTitle>Charger les contacts ?</DialogTitle>
             <DialogDescription>
-              Les contacts des listes sélectionnées sont chargés en attente. Vous
-              programmerez ensuite leur envoi par vagues de 100, quand vous le voulez.
+              Les contacts des listes sélectionnées sont mis en attente.{" "}
+              <strong>Aucun mail n&apos;est envoyé à cette étape.</strong> Ensuite, via
+              l&apos;icône « Vagues », vous choisissez quand et combien partent.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
             <Button variant="outline" onClick={() => setLaunchTarget(null)}>Annuler</Button>
-            <Button onClick={handleLaunch}>Lancer</Button>
+            <Button onClick={handleLaunch}>Charger les contacts</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -662,85 +721,126 @@ export default function AdminEmailCampaignsPage() {
               <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
             </div>
           ) : waves ? (
-            <div className="space-y-4">
+            <div className="space-y-5">
+              {/* Bloc 1 : programmer un envoi */}
               {wavesTarget?.status === "running" && waves.pending_count > 0 && (
-                <div className="flex flex-wrap items-end gap-3 rounded-lg border p-3">
-                  <div className="space-y-1">
-                    <Label className="text-xs">Contacts</Label>
-                    <Input
-                      type="number"
-                      min={1}
-                      max={Math.min(waves.wave_max_size, waves.pending_count)}
-                      value={waveCount}
-                      onChange={(e) => setWaveCount(Number(e.target.value))}
-                      className="w-24"
-                    />
+                <div className="rounded-lg border p-3 space-y-3">
+                  <p className="text-sm font-medium">Programmer un envoi</p>
+                  <div className="flex flex-wrap items-end gap-3">
+                    <div className="space-y-1">
+                      <Label className="text-xs">Combien de contacts</Label>
+                      <Input
+                        type="number"
+                        min={1}
+                        max={Math.min(waves.wave_max_size, waves.pending_count)}
+                        value={waveCount}
+                        onChange={(e) => setWaveCount(Number(e.target.value))}
+                        className="w-24"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs">Quand (date et heure)</Label>
+                      <Input
+                        type="datetime-local"
+                        value={waveDate}
+                        onChange={(e) => setWaveDate(e.target.value)}
+                        className="w-56"
+                      />
+                    </div>
+                    <Button
+                      onClick={handleScheduleWave}
+                      disabled={schedulingWave || !waveDate || waveCount < 1}
+                    >
+                      {schedulingWave && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                      Programmer cet envoi
+                    </Button>
                   </div>
-                  <div className="space-y-1">
-                    <Label className="text-xs">Date et heure d&apos;envoi</Label>
-                    <Input
-                      type="datetime-local"
-                      value={waveDate}
-                      onChange={(e) => setWaveDate(e.target.value)}
-                      className="w-56"
-                    />
-                  </div>
-                  <Button
-                    onClick={handleScheduleWave}
-                    disabled={schedulingWave || !waveDate || waveCount < 1}
+                  <button
+                    type="button"
+                    onClick={() => setShowPreview((v) => !v)}
+                    className="text-xs text-primary underline-offset-2 hover:underline"
                   >
-                    {schedulingWave && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                    Programmer
-                  </Button>
+                    {showPreview ? "Masquer" : "Voir"} les{" "}
+                    {Math.min(waveCount, previewContacts.length)} contacts qui partiront
+                  </button>
+                  {showPreview && (
+                    <div className="max-h-40 overflow-auto rounded border bg-muted/30 p-2 text-xs space-y-0.5">
+                      {previewContacts.length === 0 ? (
+                        <div className="text-muted-foreground">Aucun contact en attente.</div>
+                      ) : (
+                        previewContacts.slice(0, waveCount).map((c, i) => (
+                          <div key={i} className="text-muted-foreground">{contactLabel(c)}</div>
+                        ))
+                      )}
+                    </div>
+                  )}
                 </div>
               )}
               {wavesTarget?.status === "running" && waves.pending_count === 0 && (
                 <p className="text-sm text-muted-foreground">
-                  Tous les contacts ont été répartis en vagues.
+                  Tous les contacts ont été répartis en envois.
                 </p>
               )}
 
+              {/* Bloc 2 : envois programmés / faits */}
               {waves.waves.length === 0 ? (
                 <p className="text-sm text-muted-foreground">
-                  Aucune vague programmée pour l&apos;instant.
+                  Aucun envoi programmé pour l&apos;instant.
                 </p>
               ) : (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Vague</TableHead>
-                      <TableHead>Envoi prévu</TableHead>
-                      <TableHead className="text-right">Contacts</TableHead>
-                      <TableHead>Statut</TableHead>
-                      <TableHead className="text-right"></TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {waves.waves.map((w) => {
-                      const badge = WAVE_STATUS[w.status] ?? { label: w.status, variant: "outline" as const };
-                      return (
-                        <TableRow key={w.id}>
-                          <TableCell className="font-medium">#{w.number}</TableCell>
-                          <TableCell className="text-muted-foreground">{fmtDateTime(w.scheduled_at)}</TableCell>
-                          <TableCell className="text-right">{w.recipient_count}</TableCell>
-                          <TableCell><Badge variant={badge.variant}>{badge.label}</Badge></TableCell>
-                          <TableCell className="text-right">
+                <div className="space-y-2">
+                  <p className="text-xs font-medium text-muted-foreground">
+                    Envois programmés / faits
+                  </p>
+                  {waves.waves.map((w) => {
+                    const badge = WAVE_STATUS[w.status] ?? { label: w.status, variant: "outline" as const };
+                    const expanded = expandedWaveId === w.id;
+                    return (
+                      <div key={w.id} className="rounded-lg border">
+                        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 p-2.5 text-sm">
+                          <span className="font-medium">Envoi {w.number}</span>
+                          <span className="text-muted-foreground">· {w.recipient_count} contacts</span>
+                          <span className="text-muted-foreground">· {fmtDateTime(w.scheduled_at)}</span>
+                          <Badge variant={badge.variant} className="ml-1">{badge.label}</Badge>
+                          <div className="ml-auto flex items-center gap-1">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-7 text-xs"
+                              onClick={() => toggleWaveContacts(w.id)}
+                            >
+                              {expanded ? "Masquer" : "Voir la liste"}
+                            </Button>
                             {w.status === "scheduled" && (
                               <Button
                                 variant="ghost"
                                 size="icon"
+                                className="h-7 w-7"
                                 onClick={() => handleCancelWave(w.id)}
-                                title="Annuler"
+                                title="Annuler cet envoi"
                               >
                                 <X className="h-4 w-4 text-destructive" />
                               </Button>
                             )}
-                          </TableCell>
-                        </TableRow>
-                      );
-                    })}
-                  </TableBody>
-                </Table>
+                          </div>
+                        </div>
+                        {expanded && (
+                          <div className="border-t max-h-40 overflow-auto bg-muted/30 p-2 text-xs space-y-0.5">
+                            {loadingWaveContacts ? (
+                              <div className="flex justify-center py-2">
+                                <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                              </div>
+                            ) : (
+                              waveContacts.map((c, i) => (
+                                <div key={i} className="text-muted-foreground">{contactLabel(c)}</div>
+                              ))
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
               )}
             </div>
           ) : null}

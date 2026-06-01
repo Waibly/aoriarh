@@ -22,6 +22,7 @@ from app.schemas.emailing import (
     EmailTemplateUpdate,
     SequenceStepRead,
     StepBranchRead,
+    WaveContact,
     WaveScheduleRequest,
 )
 from app.services.emailing_service import (
@@ -341,6 +342,35 @@ async def list_campaign_waves(
     service = EmailCampaignService(db)
     overview = await service.get_waves(campaign_id)
     return CampaignWavesOverview(**overview)
+
+
+@router.get(
+    "/campaigns/{campaign_id}/waves/preview", response_model=list[WaveContact]
+)
+async def preview_next_wave_contacts(
+    campaign_id: uuid.UUID,
+    count: int = Query(100),
+    user: User = Depends(require_role(["admin"])),
+    db: AsyncSession = Depends(get_db),
+) -> list[WaveContact]:
+    service = EmailCampaignService(db)
+    contacts = await service.preview_next_contacts(campaign_id, count)
+    return [WaveContact(**c) for c in contacts]
+
+
+@router.get(
+    "/campaigns/{campaign_id}/waves/{wave_id}/contacts",
+    response_model=list[WaveContact],
+)
+async def list_wave_contacts(
+    campaign_id: uuid.UUID,
+    wave_id: uuid.UUID,
+    user: User = Depends(require_role(["admin"])),
+    db: AsyncSession = Depends(get_db),
+) -> list[WaveContact]:
+    service = EmailCampaignService(db)
+    contacts = await service.list_wave_contacts(campaign_id, wave_id)
+    return [WaveContact(**c) for c in contacts]
 
 
 @router.post(
