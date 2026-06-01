@@ -10,6 +10,8 @@ from app.schemas.emailing import (
     BrevoContact,
     BrevoList,
     CampaignStats,
+    CampaignWaveRead,
+    CampaignWavesOverview,
     EmailCampaignCreate,
     EmailCampaignRead,
     EmailSequenceCreate,
@@ -20,6 +22,7 @@ from app.schemas.emailing import (
     EmailTemplateUpdate,
     SequenceStepRead,
     StepBranchRead,
+    WaveScheduleRequest,
 )
 from app.services.emailing_service import (
     EmailCampaignService,
@@ -322,6 +325,60 @@ async def get_campaign_stats(
     service = EmailCampaignService(db)
     stats = await service.get_stats(campaign_id)
     return CampaignStats(**stats)
+
+
+# ──────────────────────────────────────────────
+#  Vagues d'envoi
+# ──────────────────────────────────────────────
+
+
+@router.get("/campaigns/{campaign_id}/waves", response_model=CampaignWavesOverview)
+async def list_campaign_waves(
+    campaign_id: uuid.UUID,
+    user: User = Depends(require_role(["admin"])),
+    db: AsyncSession = Depends(get_db),
+) -> CampaignWavesOverview:
+    service = EmailCampaignService(db)
+    overview = await service.get_waves(campaign_id)
+    return CampaignWavesOverview(**overview)
+
+
+@router.post(
+    "/campaigns/{campaign_id}/waves",
+    response_model=CampaignWaveRead,
+    status_code=status.HTTP_201_CREATED,
+)
+async def schedule_campaign_wave(
+    campaign_id: uuid.UUID,
+    data: WaveScheduleRequest,
+    user: User = Depends(require_role(["admin"])),
+    db: AsyncSession = Depends(get_db),
+) -> CampaignWaveRead:
+    service = EmailCampaignService(db)
+    wave = await service.schedule_wave(campaign_id, data.count, data.scheduled_at)
+    return CampaignWaveRead(
+        id=wave.id,
+        number=wave.number,
+        scheduled_at=wave.scheduled_at,
+        recipient_count=wave.recipient_count,
+        sent_count=0,
+        done_count=0,
+        status="scheduled",
+    )
+
+
+@router.delete(
+    "/campaigns/{campaign_id}/waves/{wave_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def cancel_campaign_wave(
+    campaign_id: uuid.UUID,
+    wave_id: uuid.UUID,
+    user: User = Depends(require_role(["admin"])),
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    service = EmailCampaignService(db)
+    await service.cancel_wave(campaign_id, wave_id)
 
 
 # ──────────────────────────────────────────────

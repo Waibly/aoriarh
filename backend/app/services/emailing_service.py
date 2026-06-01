@@ -4,7 +4,7 @@ from datetime import UTC, datetime, timedelta
 
 import httpx
 from fastapi import HTTPException, status
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -13,6 +13,7 @@ from app.models.emailing import (
     EmailCampaign,
     EmailCampaignEvent,
     EmailCampaignRecipient,
+    EmailCampaignWave,
     EmailSequence,
     EmailSequenceStep,
     EmailSequenceStepBranch,
@@ -22,6 +23,11 @@ from app.models.emailing import (
 logger = logging.getLogger(__name__)
 
 BREVO_BASE = "https://api.brevo.com/v3"
+
+# Limite quotidienne du plan Brevo (mails / jour, tout compte confondu).
+BREVO_DAILY_LIMIT = 300
+# Taille maximale d'une vague d'envoi.
+WAVE_MAX_SIZE = 100
 
 
 def _brevo_headers() -> dict[str, str]:
@@ -447,6 +453,203 @@ class EmailCampaignService:
             "steps": steps_stats,
         }
 
+    # ──────────────────────────────────────────
+    #  Vagues d'envoi (envoi par tranches de 100)
+    # ──────────────────────────────────────────
+
+    async def get_waves(self, campaign_id: uuid.UUID) -> dict:
+        campaign = await self.get(campaign_id)
+
+        waves_result = await self.db.execute(
+            select(EmailCampaignWave)
+            .where(EmailCampaignWave.campaign_id == campaign_id)
+            .order_by(EmailCampaignWave.number)
+        )
+        waves = list(waves_result.scalars().all())
+
+        # Agrégats par vague (démarrés / terminés) en une seule requête.
+        agg_result = await self.db.execute(
+            select(
+                EmailCampaignRecipient.wave_id,
+                func.count().label("total"),
+                func.count()
+                .filter(EmailCampaignRecipient.current_step > 0)
+                .label("started"),
+                func.count()
+                .filter(EmailCampaignRecipient.status == "completed")
+                .label("done"),
+            )
+            .where(
+                EmailCampaignRecipient.campaign_id == campaign_id,
+                EmailCampaignRecipient.wave_id.isnot(None),
+            )
+            .group_by(EmailCampaignRecipient.wave_id)
+        )
+        agg = {row.wave_id: row for row in agg_result.all()}
+
+        wave_items = []
+        for w in waves:
+            row = agg.get(w.id)
+            started = row.started if row else 0
+            done = row.done if row else 0
+            if w.recipient_count > 0 and done >= w.recipient_count:
+                status_label = "done"
+            elif started > 0:
+                status_label = "sending"
+            else:
+                status_label = "scheduled"
+            wave_items.append({
+                "id": w.id,
+                "number": w.number,
+                "scheduled_at": w.scheduled_at,
+                "recipient_count": w.recipient_count,
+                "sent_count": started,
+                "done_count": done,
+                "status": status_label,
+            })
+
+        total_result = await self.db.execute(
+            select(func.count()).select_from(EmailCampaignRecipient)
+            .where(EmailCampaignRecipient.campaign_id == campaign_id)
+        )
+        total_recipients = total_result.scalar() or 0
+
+        pending_result = await self.db.execute(
+            select(func.count()).select_from(EmailCampaignRecipient)
+            .where(
+                EmailCampaignRecipient.campaign_id == campaign_id,
+                EmailCampaignRecipient.wave_id.is_(None),
+                EmailCampaignRecipient.status == "active",
+            )
+        )
+        pending_count = pending_result.scalar() or 0
+
+        return {
+            "campaign_id": campaign_id,
+            "status": campaign.status,
+            "total_recipients": total_recipients,
+            "pending_count": pending_count,
+            "daily_limit": BREVO_DAILY_LIMIT,
+            "wave_max_size": WAVE_MAX_SIZE,
+            "waves": wave_items,
+        }
+
+    async def schedule_wave(
+        self,
+        campaign_id: uuid.UUID,
+        count: int,
+        scheduled_at: datetime,
+    ) -> EmailCampaignWave:
+        campaign = await self.get(campaign_id)
+        if campaign.status != "running":
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST,
+                "Lancez la campagne avant de programmer un envoi.",
+            )
+
+        if scheduled_at.tzinfo is None:
+            scheduled_at = scheduled_at.replace(tzinfo=UTC)
+
+        count = min(max(count, 1), WAVE_MAX_SIZE)
+
+        # Garde-fou Brevo : 300 mails / jour, toutes campagnes confondues.
+        day_start = scheduled_at.replace(hour=0, minute=0, second=0, microsecond=0)
+        day_end = day_start + timedelta(days=1)
+        already_result = await self.db.execute(
+            select(func.coalesce(func.sum(EmailCampaignWave.recipient_count), 0))
+            .where(
+                EmailCampaignWave.scheduled_at >= day_start,
+                EmailCampaignWave.scheduled_at < day_end,
+            )
+        )
+        already = already_result.scalar() or 0
+        if already + count > BREVO_DAILY_LIMIT:
+            remaining = max(BREVO_DAILY_LIMIT - already, 0)
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST,
+                f"Limite Brevo de {BREVO_DAILY_LIMIT} mails/jour atteinte pour le "
+                f"{day_start.date().isoformat()} : il reste {remaining} envoi(s) "
+                "possible(s) ce jour-là.",
+            )
+
+        # Verrouille les N prochains contacts en stock. Un contact = une seule
+        # vague : SKIP LOCKED + passage en wave_id non nul rendent impossible
+        # qu'il soit pris par deux vagues.
+        picked_result = await self.db.execute(
+            select(EmailCampaignRecipient)
+            .where(
+                EmailCampaignRecipient.campaign_id == campaign_id,
+                EmailCampaignRecipient.wave_id.is_(None),
+                EmailCampaignRecipient.status == "active",
+            )
+            .order_by(EmailCampaignRecipient.created_at, EmailCampaignRecipient.id)
+            .limit(count)
+            .with_for_update(skip_locked=True)
+        )
+        recipients = list(picked_result.scalars().all())
+        if not recipients:
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST,
+                "Plus aucun contact en attente dans cette campagne.",
+            )
+
+        number_result = await self.db.execute(
+            select(func.coalesce(func.max(EmailCampaignWave.number), 0))
+            .where(EmailCampaignWave.campaign_id == campaign_id)
+        )
+        next_number = (number_result.scalar() or 0) + 1
+
+        wave = EmailCampaignWave(
+            campaign_id=campaign_id,
+            number=next_number,
+            scheduled_at=scheduled_at,
+            recipient_count=len(recipients),
+        )
+        self.db.add(wave)
+        await self.db.flush()
+
+        for r in recipients:
+            r.wave_id = wave.id
+            r.scheduled_at = scheduled_at
+
+        await self.db.commit()
+        await self.db.refresh(wave)
+        return wave
+
+    async def cancel_wave(
+        self, campaign_id: uuid.UUID, wave_id: uuid.UUID
+    ) -> None:
+        wave_result = await self.db.execute(
+            select(EmailCampaignWave).where(
+                EmailCampaignWave.id == wave_id,
+                EmailCampaignWave.campaign_id == campaign_id,
+            )
+        )
+        wave = wave_result.scalar_one_or_none()
+        if not wave:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "Vague introuvable")
+
+        started_result = await self.db.execute(
+            select(func.count()).select_from(EmailCampaignRecipient).where(
+                EmailCampaignRecipient.wave_id == wave_id,
+                EmailCampaignRecipient.current_step > 0,
+            )
+        )
+        if (started_result.scalar() or 0) > 0:
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST,
+                "Cette vague est déjà partie, impossible de l'annuler.",
+            )
+
+        # Remet les contacts en stock.
+        await self.db.execute(
+            update(EmailCampaignRecipient)
+            .where(EmailCampaignRecipient.wave_id == wave_id)
+            .values(wave_id=None, scheduled_at=None)
+        )
+        await self.db.delete(wave)
+        await self.db.commit()
+
 
 # ──────────────────────────────────────────────
 #  Brevo API helpers
@@ -524,7 +727,10 @@ async def _fetch_brevo_list_contacts(list_ids: list[int]) -> list[dict]:
     all_contacts: list[dict] = []
 
     for list_id in list_ids:
-        contacts = await fetch_brevo_list_contacts(list_id)
+        # Récupère TOUS les contacts de la liste (la valeur par défaut de
+        # fetch_brevo_list_contacts plafonne à 500, ce qui tronquerait une
+        # grosse liste). Une campagne doit charger l'intégralité du stock.
+        contacts = await fetch_brevo_list_contacts(list_id, limit=1_000_000)
         for c in contacts:
             if c["email"] and c["email"] not in seen_emails:
                 seen_emails.add(c["email"])
@@ -625,33 +831,36 @@ async def process_campaign_emails(db: AsyncSession) -> int:
     campaigns = list(result.scalars().unique().all())
 
     for campaign in campaigns:
-        if not campaign.scheduled_at:
-            continue
-
         steps = sorted(campaign.sequence.steps, key=lambda s: s.position)
         if not steps:
             continue
 
+        # Seuls les contacts rattachés à une vague programmée (scheduled_at non
+        # nul) sont envoyés. Le stock (scheduled_at NULL) attend sa vague.
         recipients_result = await db.execute(
             select(EmailCampaignRecipient)
             .options(selectinload(EmailCampaignRecipient.events))
             .where(
                 EmailCampaignRecipient.campaign_id == campaign.id,
                 EmailCampaignRecipient.status == "active",
+                EmailCampaignRecipient.scheduled_at.isnot(None),
             )
         )
         recipients = list(recipients_result.scalars().unique().all())
-
-        all_done = True
 
         for recipient in recipients:
             next_step_index = recipient.current_step
             if next_step_index >= len(steps):
                 continue
 
-            all_done = False
             step = steps[next_step_index]
-            send_after = campaign.scheduled_at + timedelta(days=step.delay_days)
+            # Le calendrier (mail 1 puis relances J+N) est ancré sur la date de
+            # la vague du contact, pas sur celle de la campagne. Chaque vague a
+            # donc son propre échéancier.
+            wave_date = recipient.scheduled_at
+            if wave_date.tzinfo is None:
+                wave_date = wave_date.replace(tzinfo=UTC)
+            send_after = wave_date + timedelta(days=step.delay_days)
 
             if now < send_after:
                 continue
@@ -715,7 +924,23 @@ async def process_campaign_emails(db: AsyncSession) -> int:
                 if recipient.current_step >= len(steps):
                     recipient.status = "completed"
 
-        if all_done and recipients:
+        # La campagne n'est terminée que lorsqu'il ne reste plus AUCUN contact
+        # actif à traiter : ni en stock (pas encore programmé), ni en cours de
+        # séquence. Tant qu'il reste du stock, on garde la campagne « running »
+        # pour pouvoir programmer de nouvelles vagues.
+        remaining_result = await db.execute(
+            select(func.count()).select_from(EmailCampaignRecipient)
+            .where(
+                EmailCampaignRecipient.campaign_id == campaign.id,
+                EmailCampaignRecipient.status == "active",
+                EmailCampaignRecipient.current_step < len(steps),
+            )
+        )
+        total_result = await db.execute(
+            select(func.count()).select_from(EmailCampaignRecipient)
+            .where(EmailCampaignRecipient.campaign_id == campaign.id)
+        )
+        if (total_result.scalar() or 0) > 0 and (remaining_result.scalar() or 0) == 0:
             campaign.status = "completed"
 
         await db.commit()

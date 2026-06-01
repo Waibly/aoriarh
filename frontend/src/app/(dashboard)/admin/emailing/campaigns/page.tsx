@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
-import { Loader2, Plus, Play, Pause, RotateCcw, Trash2, BarChart3 } from "lucide-react";
+import { Loader2, Plus, Play, Pause, RotateCcw, Trash2, BarChart3, Layers, X } from "lucide-react";
 import { toast } from "sonner";
 import { apiFetch } from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -98,6 +98,32 @@ interface CampaignStats {
   steps: StepStats[];
 }
 
+interface CampaignWave {
+  id: string;
+  number: number;
+  scheduled_at: string;
+  recipient_count: number;
+  sent_count: number;
+  done_count: number;
+  status: string;
+}
+
+interface WavesOverview {
+  campaign_id: string;
+  status: string;
+  total_recipients: number;
+  pending_count: number;
+  daily_limit: number;
+  wave_max_size: number;
+  waves: CampaignWave[];
+}
+
+const WAVE_STATUS: Record<string, { label: string; variant: "default" | "secondary" | "outline" }> = {
+  scheduled: { label: "Programmée", variant: "outline" },
+  sending: { label: "En cours", variant: "default" },
+  done: { label: "Terminée", variant: "secondary" },
+};
+
 const STATUS_BADGE: Record<string, { label: string; variant: "default" | "secondary" | "outline" | "destructive" }> = {
   draft: { label: "Brouillon", variant: "outline" },
   running: { label: "En cours", variant: "default" },
@@ -126,6 +152,13 @@ export default function AdminEmailCampaignsPage() {
 
   const [deleteTarget, setDeleteTarget] = useState<EmailCampaign | null>(null);
   const [launchTarget, setLaunchTarget] = useState<EmailCampaign | null>(null);
+
+  const [wavesTarget, setWavesTarget] = useState<EmailCampaign | null>(null);
+  const [waves, setWaves] = useState<WavesOverview | null>(null);
+  const [loadingWaves, setLoadingWaves] = useState(false);
+  const [waveCount, setWaveCount] = useState(100);
+  const [waveDate, setWaveDate] = useState("");
+  const [schedulingWave, setSchedulingWave] = useState(false);
 
   const fetchData = useCallback(async () => {
     if (!token) return;
@@ -247,9 +280,76 @@ export default function AdminEmailCampaignsPage() {
     }
   }
 
+  const loadWaves = useCallback(async (campaignId: string) => {
+    if (!token) return;
+    setLoadingWaves(true);
+    try {
+      const data = await apiFetch<WavesOverview>(
+        `/admin/emailing/campaigns/${campaignId}/waves`,
+        { token },
+      );
+      setWaves(data);
+      setWaveCount(Math.min(100, data.pending_count) || 100);
+    } catch {
+      toast.error("Erreur lors du chargement des vagues");
+    } finally {
+      setLoadingWaves(false);
+    }
+  }, [token]);
+
+  function openWaves(campaign: EmailCampaign) {
+    setWavesTarget(campaign);
+    setWaveDate("");
+    loadWaves(campaign.id);
+  }
+
+  async function handleScheduleWave() {
+    if (!token || !wavesTarget || !waveDate || waveCount < 1) return;
+    setSchedulingWave(true);
+    try {
+      await apiFetch(`/admin/emailing/campaigns/${wavesTarget.id}/waves`, {
+        method: "POST",
+        token,
+        // datetime-local est en heure locale : on l'envoie en UTC ISO.
+        body: JSON.stringify({
+          count: waveCount,
+          scheduled_at: new Date(waveDate).toISOString(),
+        }),
+      });
+      toast.success("Envoi programmé");
+      setWaveDate("");
+      await loadWaves(wavesTarget.id);
+      fetchData();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Erreur");
+    } finally {
+      setSchedulingWave(false);
+    }
+  }
+
+  async function handleCancelWave(waveId: string) {
+    if (!token || !wavesTarget) return;
+    try {
+      await apiFetch(`/admin/emailing/campaigns/${wavesTarget.id}/waves/${waveId}`, {
+        method: "DELETE",
+        token,
+      });
+      toast.success("Vague annulée");
+      await loadWaves(wavesTarget.id);
+      fetchData();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Erreur");
+    }
+  }
+
   const fmt = (d: string) =>
     new Date(d).toLocaleDateString("fr-FR", {
       day: "numeric", month: "short", year: "numeric",
+    });
+
+  const fmtDateTime = (d: string) =>
+    new Date(d).toLocaleString("fr-FR", {
+      day: "numeric", month: "short", hour: "2-digit", minute: "2-digit",
     });
 
   const listName = (id: number) => brevoLists.find((l) => l.id === id)?.name ?? `#${id}`;
@@ -341,6 +441,11 @@ export default function AdminEmailCampaignsPage() {
                                 <Play className="h-4 w-4 text-green-600" />
                               </Button>
                             </>
+                          )}
+                          {(c.status === "running" || c.status === "paused" || c.status === "completed") && (
+                            <Button variant="ghost" size="icon" onClick={() => openWaves(c)} title="Vagues d'envoi">
+                              <Layers className="h-4 w-4" />
+                            </Button>
                           )}
                           {(c.status === "running" || c.status === "completed") && (
                             <Button variant="ghost" size="icon" onClick={() => openStats(c)} title="Stats">
@@ -436,7 +541,8 @@ export default function AdminEmailCampaignsPage() {
           <DialogHeader>
             <DialogTitle>Lancer la campagne ?</DialogTitle>
             <DialogDescription>
-              Les contacts des listes sélectionnées vont commencer à recevoir les emails de la séquence.
+              Les contacts des listes sélectionnées sont chargés en attente. Vous
+              programmerez ensuite leur envoi par vagues de 100, quand vous le voulez.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
@@ -532,6 +638,110 @@ export default function AdminEmailCampaignsPage() {
                   ))}
                 </TableBody>
               </Table>
+            </div>
+          ) : null}
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialog : Vagues d'envoi */}
+      <Dialog
+        open={wavesTarget !== null}
+        onOpenChange={(open) => { if (!open) { setWavesTarget(null); setWaves(null); } }}
+      >
+        <DialogContent className="sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Vagues d&apos;envoi — {wavesTarget?.name}</DialogTitle>
+            <DialogDescription>
+              {waves
+                ? `${waves.pending_count} contact(s) en attente sur ${waves.total_recipients}. Maximum ${waves.wave_max_size} par envoi, ${waves.daily_limit}/jour (limite Brevo).`
+                : "Chargement…"}
+            </DialogDescription>
+          </DialogHeader>
+          {loadingWaves ? (
+            <div className="flex justify-center py-8">
+              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+            </div>
+          ) : waves ? (
+            <div className="space-y-4">
+              {wavesTarget?.status === "running" && waves.pending_count > 0 && (
+                <div className="flex flex-wrap items-end gap-3 rounded-lg border p-3">
+                  <div className="space-y-1">
+                    <Label className="text-xs">Contacts</Label>
+                    <Input
+                      type="number"
+                      min={1}
+                      max={Math.min(waves.wave_max_size, waves.pending_count)}
+                      value={waveCount}
+                      onChange={(e) => setWaveCount(Number(e.target.value))}
+                      className="w-24"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs">Date et heure d&apos;envoi</Label>
+                    <Input
+                      type="datetime-local"
+                      value={waveDate}
+                      onChange={(e) => setWaveDate(e.target.value)}
+                      className="w-56"
+                    />
+                  </div>
+                  <Button
+                    onClick={handleScheduleWave}
+                    disabled={schedulingWave || !waveDate || waveCount < 1}
+                  >
+                    {schedulingWave && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                    Programmer
+                  </Button>
+                </div>
+              )}
+              {wavesTarget?.status === "running" && waves.pending_count === 0 && (
+                <p className="text-sm text-muted-foreground">
+                  Tous les contacts ont été répartis en vagues.
+                </p>
+              )}
+
+              {waves.waves.length === 0 ? (
+                <p className="text-sm text-muted-foreground">
+                  Aucune vague programmée pour l&apos;instant.
+                </p>
+              ) : (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Vague</TableHead>
+                      <TableHead>Envoi prévu</TableHead>
+                      <TableHead className="text-right">Contacts</TableHead>
+                      <TableHead>Statut</TableHead>
+                      <TableHead className="text-right"></TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {waves.waves.map((w) => {
+                      const badge = WAVE_STATUS[w.status] ?? { label: w.status, variant: "outline" as const };
+                      return (
+                        <TableRow key={w.id}>
+                          <TableCell className="font-medium">#{w.number}</TableCell>
+                          <TableCell className="text-muted-foreground">{fmtDateTime(w.scheduled_at)}</TableCell>
+                          <TableCell className="text-right">{w.recipient_count}</TableCell>
+                          <TableCell><Badge variant={badge.variant}>{badge.label}</Badge></TableCell>
+                          <TableCell className="text-right">
+                            {w.status === "scheduled" && (
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => handleCancelWave(w.id)}
+                                title="Annuler"
+                              >
+                                <X className="h-4 w-4 text-destructive" />
+                              </Button>
+                            )}
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              )}
             </div>
           ) : null}
         </DialogContent>

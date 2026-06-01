@@ -97,6 +97,37 @@ class EmailCampaign(TimestampMixin, Base):
         back_populates="campaign",
         cascade="all, delete-orphan",
     )
+    waves = relationship(
+        "EmailCampaignWave",
+        back_populates="campaign",
+        order_by="EmailCampaignWave.number",
+        cascade="all, delete-orphan",
+    )
+
+
+class EmailCampaignWave(TimestampMixin, Base):
+    """Un envoi planifié d'un sous-ensemble de contacts d'une campagne.
+
+    Les contacts d'une campagne sont chargés « en stock » (wave_id NULL) au
+    lancement, puis l'admin programme des vagues de N contacts (max 100) à la
+    date de son choix. Chaque contact est verrouillé sur une seule vague, donc
+    ne peut jamais recevoir deux fois le même envoi.
+    """
+
+    __tablename__ = "email_campaign_waves"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=generate_uuid)
+    campaign_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("email_campaigns.id", ondelete="CASCADE"), nullable=False
+    )
+    number: Mapped[int] = mapped_column(Integer, nullable=False)
+    scheduled_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    recipient_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+
+    campaign = relationship("EmailCampaign", back_populates="waves")
+    recipients = relationship("EmailCampaignRecipient", back_populates="wave")
 
 
 class EmailCampaignRecipient(TimestampMixin, Base):
@@ -106,6 +137,9 @@ class EmailCampaignRecipient(TimestampMixin, Base):
     campaign_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("email_campaigns.id", ondelete="CASCADE"), nullable=False
     )
+    wave_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("email_campaign_waves.id", ondelete="SET NULL"), nullable=True
+    )
     email: Mapped[str] = mapped_column(String(320), nullable=False)
     brevo_contact_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     first_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
@@ -113,11 +147,18 @@ class EmailCampaignRecipient(TimestampMixin, Base):
     company: Mapped[str | None] = mapped_column(String(255), nullable=True)
     current_step: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="active")
+    # Date d'envoi du 1er mail (= date de la vague). Les relances de la
+    # séquence (J+3, J+7...) se calculent à partir de cette date, propre à
+    # chaque vague. NULL = encore en stock, pas encore programmé.
+    scheduled_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     last_sent_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
 
     campaign = relationship("EmailCampaign", back_populates="recipients")
+    wave = relationship("EmailCampaignWave", back_populates="recipients")
     events = relationship(
         "EmailCampaignEvent",
         back_populates="recipient",

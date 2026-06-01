@@ -114,6 +114,35 @@ class EmailCampaignRead(BaseModel):
     updated_at: datetime
 
 
+# --- Waves (vagues d'envoi) ---
+
+class WaveScheduleRequest(BaseModel):
+    count: int = 100
+    scheduled_at: datetime
+
+
+class CampaignWaveRead(BaseModel):
+    model_config = {"from_attributes": True}
+
+    id: uuid.UUID
+    number: int
+    scheduled_at: datetime
+    recipient_count: int
+    sent_count: int = 0
+    done_count: int = 0
+    status: str = "scheduled"  # scheduled | sending | done
+
+
+class CampaignWavesOverview(BaseModel):
+    campaign_id: uuid.UUID
+    status: str
+    total_recipients: int
+    pending_count: int
+    daily_limit: int = 300
+    wave_max_size: int = 100
+    waves: list[CampaignWaveRead] = []
+
+
 # --- Stats ---
 
 class CampaignBranchStats(BaseModel):
