@@ -56,6 +56,48 @@ def test_title_keywords_keep_smic_decree():
     ) is True
 
 
+def test_title_keywords_match_plural_forms():
+    # Mot entier tolérant au pluriel : "travailleur" capte "travailleurs",
+    # "congé" capte "congés".
+    assert _title_matches_keywords(
+        "Décret n° 2026-260 relatif à la protection des jeunes travailleurs"
+    ) is True
+    assert _title_matches_keywords("Décret relatif aux congés payés") is True
+
+
+def test_title_keywords_catch_conge_de_naissance():
+    # Cas qui a motivé la refonte : capté par "congé" en mot entier.
+    assert _title_matches_keywords(
+        "Décret n° 2026-419 du 30 mai 2026 relatif au congé supplémentaire de naissance"
+    ) is True
+
+
+def test_naissance_does_not_match_reconnaissance():
+    # Frontière gauche stricte : "naissance" ne doit pas matcher "reconnaissance".
+    assert _title_matches_keywords(
+        "Décret portant reconnaissance de l'association des producteurs"
+    ) is False
+
+
+def test_title_keywords_catch_apprenti():
+    assert _title_matches_keywords(
+        "Décret n° 2026-168 relatif à l'aide exceptionnelle aux employeurs d'apprentis"
+    ) is True
+
+
+def test_exclusion_vetoes_fonction_publique_even_with_keyword():
+    # "temps de travail" matche, mais "agents publics" est un veto (hors périmètre).
+    assert _title_matches_keywords(
+        "Décret relatif au temps de travail des agents publics"
+    ) is False
+
+
+def test_exclusion_vetoes_prime_activite():
+    assert _title_matches_keywords(
+        "Décret portant revalorisation du montant forfaitaire de la prime d'activité"
+    ) is False
+
+
 # --- _is_rh_relevant (filtre mixte) ------------------------------------------
 
 def test_relevant_when_modifies_code_travail_even_without_keyword():
@@ -63,8 +105,10 @@ def test_relevant_when_modifies_code_travail_even_without_keyword():
     assert _is_rh_relevant("Décret n° 2026-1 portant diverses mesures", {_CODE_TRAVAIL_ID}) is True
 
 
-def test_relevant_when_modifies_code_secu():
-    assert _is_rh_relevant("Décret technique", {_CODE_SECU_ID}) is True
+def test_secu_link_alone_no_longer_keeps():
+    # Le Code de la sécu ne fait PLUS partie du filet (trop large : médical,
+    # retraite, prestations). Sans mot-clé de titre, un lien sécu seul ne suffit pas.
+    assert _is_rh_relevant("Décret technique", {_CODE_SECU_ID}) is False
 
 
 def test_relevant_when_keyword_even_without_code_link():
@@ -73,6 +117,14 @@ def test_relevant_when_keyword_even_without_code_link():
 
 def test_irrelevant_when_no_keyword_and_no_code_link():
     assert _is_rh_relevant("Arrêté portant nomination d'un préfet", set()) is False
+
+
+def test_exclusion_vetoes_even_when_modifies_code_travail():
+    # Le veto périmètre l'emporte sur le filet code : une revalorisation de la
+    # prime d'activité qui toucherait le Code du travail reste exclue.
+    assert _is_rh_relevant(
+        "Décret portant revalorisation de la prime d'activité", {_CODE_TRAVAIL_ID}
+    ) is False
 
 
 # --- mapping nature → source_type --------------------------------------------

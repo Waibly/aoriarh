@@ -21,6 +21,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import logging
+import re
 import time
 import unicodedata
 import uuid
@@ -50,10 +51,14 @@ _MAX_PAGES = 20  # safety cap on /search pagination
 
 _FOND = "LODA_DATE"
 
-# LEGITEXT des codes qu'on suit : un texte qui modifie l'un d'eux est RH-pertinent
+# LEGITEXT des codes. Le FILET de sécurité ne retient que le Code du travail :
+# un texte qui le modifie/cite est gardé même sans mot-clé de titre. Le Code de
+# la sécurité sociale n'est PAS dans le filet (il sous-tend tout le médical, la
+# retraite, les prestations sociales → trop de bruit). Le sécu-RH (cotisations,
+# AT/MP, sécurité sociale) est couvert par les mots-clés de titre ci-dessous.
 _CODE_TRAVAIL_ID = "LEGITEXT000006072050"
 _CODE_SECU_ID = "LEGITEXT000006073189"
-_RELEVANT_CODE_IDS = frozenset({_CODE_TRAVAIL_ID, _CODE_SECU_ID})
+_RELEVANT_CODE_IDS = frozenset({_CODE_TRAVAIL_ID})
 
 # Natures LODA → source_type de la hiérarchie des normes
 _NATURE_TO_SOURCE_TYPE = {
@@ -63,50 +68,76 @@ _NATURE_TO_SOURCE_TYPE = {
     "ARRETE": "arrete",
 }
 
-# Mots-clés RH (normalisés sans accents, en minuscules) cherchés dans le titre.
-# Volontairement précis : on évite les mots trop larges ("emploi" attrapait les
-# concours administratifs, "rémunération" les honoraires médicaux, "congé" la
-# congélation). "travail" isolé est conservé car en titre de JO il désigne
-# quasi-toujours le droit du travail (et capte "travailleur", "télétravail"…).
+# Mots-clés RH (forme normalisée, accents retirés, MINUSCULES, au SINGULIER).
+# Le matching se fait en mot entier avec tolérance au pluriel (_word_in), donc
+# "travailleur" capte "travailleurs", "conge" capte "congés", etc. La frontière
+# gauche stricte empêche les collisions de sous-chaîne (p.ex. "naissance" qui
+# matchait "recoNNAISSANCE", "conge" qui ne matche pas "congédiement").
+# Périmètre : RH employeur secteur privé + médical/hospitalier. Hors périmètre
+# (cf. _EXCLUSION_KEYWORDS) : fonction publique et aides sociales individuelles.
 _RH_KEYWORDS = (
-    "code du travail",
-    "securite sociale",
-    "travail",
-    "travailleur",
-    "salarie",
-    "salaire minimum",
-    "licenciement",
-    "duree du travail",
-    "temps de travail",
-    "risques professionnels",
-    "document unique",
-    "duerp",
-    "sante au travail",
-    "accident du travail",
-    "maladie professionnelle",
-    "rupture conventionnelle",
-    "plan de sauvegarde de l'emploi",
-    "demandeur d'emploi",
-    "france travail",
-    "pole emploi",
-    "comite social",
-    "cse",
-    "teletravail",
-    "conges payes",
-    "conge parental",
-    "conge maternite",
-    "conge de paternite",
-    "smic",
-    "harcelement",
-    "inaptitude",
-    "formation professionnelle",
-    "apprentissage",
-    "negociation collective",
-    "convention collective",
-    "egalite professionnelle",
-    "prevention des risques",
-    "medecine du travail",
-    "penibilite",
+    # Contrat & rupture
+    "contrat de travail", "embauche", "periode d'essai", "licenciement",
+    "demission", "preavis", "rupture conventionnelle", "prud'hommes", "cdd", "cdi",
+    # Temps de travail
+    "duree du travail", "temps de travail", "heure supplementaire", "forfait jours",
+    "forfait annuel", "travail de nuit", "travail dominical", "astreinte",
+    "amenagement du temps", "rtt",
+    # Rémunération & épargne salariale
+    "salaire", "salaire minimum", "smic", "interessement", "epargne salariale",
+    "participation aux benefices", "partage de la valeur", "prime de partage",
+    # Congés
+    "conge", "conge paye", "paternite", "maternite", "parentalite",
+    # Santé & sécurité au travail
+    "sante au travail", "medecine du travail", "accident du travail",
+    "maladie professionnelle", "document unique", "duerp", "risque professionnel",
+    "risque psychosocial", "penibilite", "amiante", "inaptitude", "harcelement",
+    "prevention des risques", "compte professionnel de prevention",
+    # Représentation du personnel
+    "comite social", "cse", "syndicat", "syndical", "election professionnelle",
+    "bdese", "delegue syndical", "representant du personnel", "representativite",
+    # Négociation collective
+    "convention collective", "accord collectif", "accord de branche",
+    "accord d'entreprise", "accord interprofessionnel", "negociation collective",
+    "branche professionnelle",
+    # Égalité & handicap
+    "egalite professionnelle", "index egalite", "egalite femmes", "discrimination",
+    "travailleur handicape", "rqth", "oeth", "agefiph",
+    # Formation & alternance
+    "formation professionnelle", "compte personnel de formation", "cpf",
+    "apprentissage", "apprenti", "alternance", "contrat de professionnalisation",
+    "opco", "developpement des competences",
+    # Emploi & chômage
+    "demandeur d'emploi", "france travail", "pole emploi", "activite partielle",
+    "assurance chomage", "plan de sauvegarde de l'emploi", "plan social",
+    # Socle & formes d'emploi
+    "code du travail", "securite sociale", "cotisation sociale", "travail",
+    "travailleur", "salarie", "teletravail", "interim", "travail temporaire",
+    "portage salarial", "groupement d'employeurs", "detachement de salarie",
+    "jeune travailleur",
+)
+
+# Exclusions = VETO : si l'un de ces termes est dans le titre, le texte est
+# rejeté même s'il matche un mot-clé RH ou modifie le Code du travail. Couvre le
+# bruit administratif, la fonction publique (hors périmètre : privé uniquement)
+# et les aides sociales individuelles (RSA, AAH, prime d'activité…).
+# Recherchés en sous-chaîne : ce sont des expressions distinctives.
+_EXCLUSION_KEYWORDS = (
+    # Bruit administratif
+    "delegation de signature", "nomination", "est nomme", "sont nommes",
+    "cessation de fonctions", "legion d'honneur", "ordre national du merite",
+    "catastrophe naturelle", "site classe", "organisation de producteurs",
+    "organisations de producteurs",
+    # Fonction publique (hors périmètre)
+    "fonction publique", "agents publics", "fonctionnaires", "regime indemnitaire",
+    "rifseep", "echelonnement indiciaire", "statut particulier", "cadre d'emplois",
+    "corps des", "corps de", "emplois ouvrant droit", "liste des fonctions",
+    "liste des emplois", "integration directe",
+    # Aides sociales individuelles (hors périmètre)
+    "prime d'activite", "revenu de solidarite active",
+    "allocation aux adultes handicapes", "allocation pour adulte handicape",
+    "allocation de solidarite specifique", "allocation temporaire d'attente",
+    "revalorisation de l'allocation", "minimum vieillesse",
 )
 
 
@@ -116,18 +147,44 @@ def _normalize(text: str) -> str:
     return "".join(c for c in nfkd if not unicodedata.combining(c))
 
 
+def _word_in(keyword: str, normalized: str) -> bool:
+    """Vrai si le mot-clé (forme singulier) apparaît en mot entier dans le texte
+    normalisé, en tolérant le pluriel (s/x) sur chaque mot. Frontière gauche
+    stricte → pas de collision de sous-chaîne (« naissance » vs « reconnaissance »)."""
+    parts = [
+        re.escape(re.sub(r"[sx]$", "", word)) + r"(?:s|x)?"
+        for word in keyword.split(" ")
+    ]
+    pattern = r"(?<![a-z])" + r"\s+".join(parts) + r"(?![a-z])"
+    return re.search(pattern, normalized) is not None
+
+
+def _is_excluded(title: str) -> bool:
+    """Veto périmètre : fonction publique, aides sociales, bruit administratif."""
+    normalized = _normalize(title)
+    return any(excl in normalized for excl in _EXCLUSION_KEYWORDS)
+
+
+def _title_has_rh_keyword(title: str) -> bool:
+    normalized = _normalize(title)
+    return any(_word_in(kw, normalized) for kw in _RH_KEYWORDS)
+
+
 def _is_rh_relevant(title: str, modified_code_ids: set[str]) -> bool:
-    """Filtre mixte : titre RH OU modifie un code suivi."""
+    """Filtre final : exclusion = veto absolu ; sinon titre RH OU modifie le
+    Code du travail (filet)."""
+    if _is_excluded(title):
+        return False
     if modified_code_ids & _RELEVANT_CODE_IDS:
         return True
-    normalized = _normalize(title)
-    return any(kw in normalized for kw in _RH_KEYWORDS)
+    return _title_has_rh_keyword(title)
 
 
 def _title_matches_keywords(title: str) -> bool:
-    """Pré-filtre bon marché appliqué avant toute consultation (borne le quota)."""
-    normalized = _normalize(title)
-    return any(kw in normalized for kw in _RH_KEYWORDS)
+    """Pré-filtre titre (avant consultation) : mot-clé RH ET pas d'exclusion."""
+    if _is_excluded(title):
+        return False
+    return _title_has_rh_keyword(title)
 
 
 # --- Types ------------------------------------------------------------------
@@ -290,8 +347,22 @@ class JorfService:
                     if not cid or nature not in _NATURE_TO_SOURCE_TYPE:
                         continue
 
-                    # Pré-filtre titre AVANT consultation (borne le quota PISTE).
-                    if not _title_matches_keywords(title):
+                    # Exclusion = veto : on ne consulte même pas (quota + bruit).
+                    if _is_excluded(title):
+                        result.filtered_out += 1
+                        continue
+
+                    # Décision de consultation :
+                    #  - titre RH → on consulte (cas nominal) ;
+                    #  - sinon, on consulte quand même les textes substantiels
+                    #    (lois / ordonnances / décrets) pour laisser le filet
+                    #    « modifie le Code du travail » les rattraper même avec
+                    #    un titre vague (ex. « congé supplémentaire de naissance »
+                    #    quand le mot-clé manque) ;
+                    #  - les ARRÊTÉS sans mot-clé sont écartés sans consultation :
+                    #    volume trop élevé, le RH y est déjà capté par le titre.
+                    title_ok = _title_has_rh_keyword(title)
+                    if not title_ok and nature == "ARRETE":
                         result.filtered_out += 1
                         continue
 
