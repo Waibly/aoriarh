@@ -2,7 +2,7 @@
 
 import { Fragment, useCallback, useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
-import { Loader2, Plus, Download, RefreshCw, Pause, RotateCcw, Trash2, BarChart3, Layers, X } from "lucide-react";
+import { Loader2, Plus, Download, RefreshCw, Pause, RotateCcw, Trash2, BarChart3, Layers, Send, X } from "lucide-react";
 import { toast } from "sonner";
 import { apiFetch } from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -164,6 +164,7 @@ export default function AdminEmailCampaignsPage() {
   const [loadingStats, setLoadingStats] = useState(false);
 
   const [deleteTarget, setDeleteTarget] = useState<EmailCampaign | null>(null);
+  const [running, setRunning] = useState(false);
 
   const [wavesTarget, setWavesTarget] = useState<EmailCampaign | null>(null);
   const [waves, setWaves] = useState<WavesOverview | null>(null);
@@ -246,6 +247,20 @@ export default function AdminEmailCampaignsPage() {
       fetchData();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Erreur");
+    }
+  }
+
+  async function handleRunNow() {
+    if (!token || running) return;
+    setRunning(true);
+    try {
+      const res = await apiFetch<{ sent: number }>("/admin/emailing/run", { method: "POST", token });
+      toast.success(res.sent > 0 ? `${res.sent} mail(s) envoyé(s)` : "Rien à envoyer pour le moment");
+      fetchData();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Erreur");
+    } finally {
+      setRunning(false);
     }
   }
 
@@ -559,6 +574,11 @@ export default function AdminEmailCampaignsPage() {
                           {c.status !== "running" && (
                             <Button variant="ghost" size="icon" onClick={() => setDeleteTarget(c)} title="Supprimer">
                               <Trash2 className="h-4 w-4 text-destructive" />
+                            </Button>
+                          )}
+                          {c.status === "running" && (
+                            <Button variant="ghost" size="icon" onClick={handleRunNow} disabled={running} title="Envoyer maintenant (déclenche le moteur sans attendre l'heure)">
+                              {running ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4 text-primary" />}
                             </Button>
                           )}
                         </div>

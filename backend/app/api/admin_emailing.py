@@ -31,6 +31,7 @@ from app.services.emailing_service import (
     EmailTemplateService,
     fetch_brevo_list_contacts,
     fetch_brevo_lists,
+    process_campaign_emails,
 )
 
 router = APIRouter()
@@ -215,6 +216,17 @@ async def list_campaigns(
     service = EmailCampaignService(db)
     items = await service.list_all(status_filter)
     return [EmailCampaignRead(**item) for item in items]
+
+
+@router.post("/run")
+async def run_engine_now(
+    user: User = Depends(require_role(["admin"])),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Déclenche le moteur d'envoi tout de suite (sans attendre le passage
+    horaire). Respecte les mêmes plafonds (100/passage, quota journalier)."""
+    sent = await process_campaign_emails(db)
+    return {"sent": sent}
 
 
 @router.post("/campaigns", response_model=EmailCampaignRead, status_code=status.HTTP_201_CREATED)
