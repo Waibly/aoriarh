@@ -1593,8 +1593,11 @@ class WorkerSettings:
         # billing lifecycle, so newly suspended accounts don't get purged
         # in the same tick they were suspended in).
         cron(run_data_retention_purge, hour=10, minute=0),
-        # Emailing campaigns: every hour, process pending campaign emails
-        cron(run_emailing_campaigns, hour={h for h in range(6, 22)}, minute=0),
+        # Emailing campaigns: toutes les heures (24/7) pour honorer l'heure de
+        # programmation des vagues. Les envois ne partent qu'aux dates choisies
+        # par l'admin (relances à la même heure que la vague), donc pas d'envoi
+        # nocturne involontaire ; le plafond 100/passage protège du flood.
+        cron(run_emailing_campaigns, minute=0),
     ]
     redis_settings = _parse_redis_settings()
     # 8 parallel jobs : doc ingestion is mostly Voyage AI / Qdrant I/O bound,
