@@ -2,7 +2,7 @@
 
 import { Fragment, useCallback, useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
-import { Loader2, Plus, Download, Pause, RotateCcw, Trash2, BarChart3, Layers, X } from "lucide-react";
+import { Loader2, Plus, Download, RefreshCw, Pause, RotateCcw, Trash2, BarChart3, Layers, X } from "lucide-react";
 import { toast } from "sonner";
 import { apiFetch } from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -164,7 +164,6 @@ export default function AdminEmailCampaignsPage() {
   const [loadingStats, setLoadingStats] = useState(false);
 
   const [deleteTarget, setDeleteTarget] = useState<EmailCampaign | null>(null);
-  const [launchTarget, setLaunchTarget] = useState<EmailCampaign | null>(null);
 
   const [wavesTarget, setWavesTarget] = useState<EmailCampaign | null>(null);
   const [waves, setWaves] = useState<WavesOverview | null>(null);
@@ -211,7 +210,7 @@ export default function AdminEmailCampaignsPage() {
     if (!token || !formName.trim() || !formSequenceId || formListIds.length === 0) return;
     setSaving(true);
     try {
-      await apiFetch("/admin/emailing/campaigns", {
+      const created = await apiFetch<{ id: string }>("/admin/emailing/campaigns", {
         method: "POST",
         token,
         body: JSON.stringify({
@@ -220,7 +219,13 @@ export default function AdminEmailCampaignsPage() {
           brevo_list_ids: formListIds,
         }),
       });
-      toast.success("Campagne créée");
+      // Chargement automatique des contacts dans la foulée.
+      try {
+        await apiFetch(`/admin/emailing/campaigns/${created.id}/launch`, { method: "POST", token });
+        toast.success("Campagne créée — contacts chargés. Programmez vos envois via « Vagues ».");
+      } catch {
+        toast.error("Campagne créée, mais le chargement des contacts a échoué. Cliquez « Charger les contacts » pour réessayer.");
+      }
       setCreateOpen(false);
       setFormName("");
       setFormSequenceId("");
@@ -233,14 +238,11 @@ export default function AdminEmailCampaignsPage() {
     }
   }
 
-  async function handleLaunch() {
-    if (!token || !launchTarget) return;
+  async function handleRefresh(id: string) {
+    if (!token) return;
     try {
-      await apiFetch(`/admin/emailing/campaigns/${launchTarget.id}/launch`, {
-        method: "POST", token,
-      });
-      toast.success("Contacts chargés — programmez vos envois via « Vagues »");
-      setLaunchTarget(null);
+      await apiFetch(`/admin/emailing/campaigns/${id}/launch`, { method: "POST", token });
+      toast.success("Contacts à jour");
       fetchData();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Erreur");
@@ -525,7 +527,7 @@ export default function AdminEmailCampaignsPage() {
                       <TableCell className="text-right">
                         <div className="flex items-center justify-end gap-1">
                           {c.status === "draft" && (
-                            <Button variant="ghost" size="icon" onClick={() => setLaunchTarget(c)} title="Charger les contacts">
+                            <Button variant="ghost" size="icon" onClick={() => handleRefresh(c.id)} title="Charger les contacts">
                               <Download className="h-4 w-4 text-green-600" />
                             </Button>
                           )}
@@ -535,14 +537,14 @@ export default function AdminEmailCampaignsPage() {
                             </Button>
                           )}
                           {c.status === "paused" && (
-                            <>
-                              <Button variant="ghost" size="icon" onClick={() => handleResume(c.id)} title="Reprendre">
-                                <RotateCcw className="h-4 w-4" />
-                              </Button>
-                              <Button variant="ghost" size="icon" onClick={() => setLaunchTarget(c)} title="Recharger les contacts">
-                                <Download className="h-4 w-4 text-green-600" />
-                              </Button>
-                            </>
+                            <Button variant="ghost" size="icon" onClick={() => handleResume(c.id)} title="Reprendre">
+                              <RotateCcw className="h-4 w-4" />
+                            </Button>
+                          )}
+                          {(c.status === "running" || c.status === "paused") && (
+                            <Button variant="ghost" size="icon" onClick={() => handleRefresh(c.id)} title="Rafraîchir les contacts (récupère les nouveaux de la liste Brevo)">
+                              <RefreshCw className="h-4 w-4" />
+                            </Button>
                           )}
                           {(c.status === "running" || c.status === "paused" || c.status === "completed") && (
                             <Button variant="ghost" size="icon" onClick={() => openWaves(c)} title="Programmer les envois (vagues)">
@@ -633,24 +635,6 @@ export default function AdminEmailCampaignsPage() {
               {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               Créer
             </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Dialog : Lancer */}
-      <Dialog open={launchTarget !== null} onOpenChange={(open) => { if (!open) setLaunchTarget(null); }}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Charger les contacts ?</DialogTitle>
-            <DialogDescription>
-              Les contacts des listes sélectionnées sont mis en attente.{" "}
-              <strong>Aucun mail n&apos;est envoyé à cette étape.</strong> Ensuite, via
-              l&apos;icône « Vagues », vous choisissez quand et combien partent.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setLaunchTarget(null)}>Annuler</Button>
-            <Button onClick={handleLaunch}>Charger les contacts</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

@@ -431,10 +431,12 @@ class EmailCampaignService:
     async def launch(self, campaign_id: uuid.UUID) -> EmailCampaign:
         campaign = await self.get(campaign_id)
 
-        if campaign.status not in ("draft", "paused"):
+        # draft : chargement initial. running/paused : rafraîchissement (récupère
+        # les nouveaux contacts ajoutés à la liste Brevo depuis le 1er chargement).
+        if campaign.status not in ("draft", "paused", "running"):
             raise HTTPException(
                 status.HTTP_400_BAD_REQUEST,
-                f"Impossible de lancer une campagne en statut '{campaign.status}'",
+                f"Impossible de charger les contacts en statut '{campaign.status}'",
             )
 
         contacts = await _fetch_brevo_list_contacts(campaign.brevo_list_ids)
