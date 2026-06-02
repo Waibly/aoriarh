@@ -613,7 +613,7 @@ export default function AdminEmailCampaignsPage() {
 
       {/* Dialog : Stats */}
       <Dialog open={statsOpen} onOpenChange={setStatsOpen}>
-        <DialogContent className="sm:max-w-3xl">
+        <DialogContent className="sm:max-w-5xl w-[95vw] max-h-[85vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Statistiques — {stats?.campaign_name}</DialogTitle>
           </DialogHeader>
