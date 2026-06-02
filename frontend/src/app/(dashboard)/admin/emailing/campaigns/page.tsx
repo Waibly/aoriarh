@@ -613,7 +613,7 @@ export default function AdminEmailCampaignsPage() {
 
       {/* Dialog : Stats */}
       <Dialog open={statsOpen} onOpenChange={setStatsOpen}>
-        <DialogContent className="sm:max-w-2xl">
+        <DialogContent className="sm:max-w-3xl">
           <DialogHeader>
             <DialogTitle>Statistiques — {stats?.campaign_name}</DialogTitle>
           </DialogHeader>
@@ -622,7 +622,9 @@ export default function AdminEmailCampaignsPage() {
               <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
             </div>
           ) : stats ? (
-            <div className="space-y-4">
+            // min-w-0 : laisse le conteneur rétrécir pour que la table scrolle
+            // horizontalement au lieu de déborder hors de la fenêtre.
+            <div className="space-y-4 min-w-0">
               <div className="flex gap-4 text-sm">
                 <div><span className="font-medium">{stats.total_recipients}</span> contacts</div>
                 <Badge variant={STATUS_BADGE[stats.status]?.variant ?? "outline"}>
@@ -672,7 +674,7 @@ export default function AdminEmailCampaignsPage() {
                       {step.branches.map((branch) => (
                         <TableRow key={`${step.step_position}-${branch.condition}`} className="bg-muted/30">
                           <TableCell className="pl-8">
-                            <div className="flex items-center gap-1.5 text-xs">
+                            <div className="flex flex-wrap items-center gap-1.5 text-xs">
                               <span className="text-muted-foreground">↳</span>
                               <Badge variant="outline" className="text-xs">
                                 {CONDITION_LABELS[branch.condition] ?? branch.condition}
