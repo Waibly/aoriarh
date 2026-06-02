@@ -6,9 +6,11 @@ from fastapi import HTTPException
 
 from app.models.emailing import (
     EmailCampaign,
+    EmailCampaignEvent,
     EmailCampaignRecipient,
     EmailSequence,
     EmailSequenceStep,
+    EmailSequenceStepBranch,
     EmailTemplate,
 )
 from app.services.emailing_service import (
@@ -176,6 +178,51 @@ async def test_preview_matches_locked_contacts():
         # L'aperçu suivant ne remontre pas les contacts déjà verrouillés.
         preview2 = await service.preview_next_contacts(campaign.id, 100)
         assert {c["email"] for c in preview2}.isdisjoint({c["email"] for c in preview})
+
+
+async def test_get_stats_with_branches_does_not_lazyload():
+    """get_stats doit précharger branches + template (sinon MissingGreenlet async)."""
+    async with test_session_factory() as session:
+        tpl = EmailTemplate(name="T", subject="x", html_body="y")
+        tpl_branch = EmailTemplate(name="T2", subject="x2", html_body="y2")
+        session.add_all([tpl, tpl_branch])
+        await session.flush()
+
+        seq = EmailSequence(name="S", status="active")
+        session.add(seq)
+        await session.flush()
+
+        step0 = EmailSequenceStep(sequence_id=seq.id, template_id=tpl.id, position=0)
+        step1 = EmailSequenceStep(sequence_id=seq.id, template_id=tpl.id, position=1, delay_days=3)
+        session.add_all([step0, step1])
+        await session.flush()
+        session.add(
+            EmailSequenceStepBranch(
+                step_id=step1.id, condition="opened_not_clicked", template_id=tpl_branch.id
+            )
+        )
+
+        campaign = EmailCampaign(
+            name="test", sequence_id=seq.id, brevo_list_ids=[1], status="running",
+            scheduled_at=datetime.now(UTC),
+        )
+        session.add(campaign)
+        await session.flush()
+        recipient = EmailCampaignRecipient(campaign_id=campaign.id, email="a@x.fr", current_step=1)
+        session.add(recipient)
+        await session.flush()
+        session.add(
+            EmailCampaignEvent(
+                campaign_id=campaign.id, recipient_id=recipient.id, step_position=0,
+                event_type="sent", occurred_at=datetime.now(UTC),
+            )
+        )
+        await session.commit()
+
+        stats = await EmailCampaignService(session).get_stats(campaign.id)
+        assert stats["total_recipients"] == 1
+        assert stats["steps"][0]["sent"] == 1
+        assert len(stats["steps"][1]["branches"]) == 1
 
 
 async def test_cron_respects_wave_schedule(monkeypatch):

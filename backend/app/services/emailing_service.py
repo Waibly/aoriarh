@@ -282,7 +282,14 @@ class EmailCampaignService:
             .options(
                 selectinload(EmailCampaign.sequence)
                 .selectinload(EmailSequence.steps)
-                .selectinload(EmailSequenceStep.template)
+                .selectinload(EmailSequenceStep.template),
+                # Les branches + leur template sont nécessaires à get_stats ;
+                # sans ce préchargement, l'accès déclenche un lazy-load IO
+                # interdit en async (MissingGreenlet).
+                selectinload(EmailCampaign.sequence)
+                .selectinload(EmailSequence.steps)
+                .selectinload(EmailSequenceStep.branches)
+                .selectinload(EmailSequenceStepBranch.template),
             )
             .where(EmailCampaign.id == campaign_id)
         )
