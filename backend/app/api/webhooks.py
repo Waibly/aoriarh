@@ -1,11 +1,12 @@
 import logging
 from datetime import UTC, datetime
 
-from fastapi import APIRouter, Depends, Request, status
+from fastapi import APIRouter, Depends, Query, Request, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.core.config import settings
 from app.core.database import get_db
 from app.models.emailing import (
     EmailCampaign,
@@ -34,8 +35,15 @@ EVENT_MAP = {
 @router.post("/brevo", status_code=status.HTTP_200_OK)
 async def brevo_webhook(
     request: Request,
+    token: str | None = Query(None),
     db: AsyncSession = Depends(get_db),
 ) -> dict:
+    # Authentification : si un secret est configuré, Brevo doit appeler l'URL
+    # avec ?token=<secret>. Tout appel sans le bon token est rejeté (empêche un
+    # tiers de forger des ouvertures ou de désinscrire des contacts).
+    if settings.brevo_webhook_secret and token != settings.brevo_webhook_secret:
+        return {"status": "ignored", "reason": "unauthorized"}
+
     try:
         payload = await request.json()
     except Exception:

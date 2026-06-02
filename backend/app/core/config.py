@@ -43,6 +43,9 @@ class Settings(BaseSettings):
     # Brevo (email + contacts)
     brevo_api_key: str  # OBLIGATOIRE — pas de défaut
     brevo_list_id: int = 0  # ID de la liste "Clients AORIA RH" dans Brevo (0 = désactivé)
+    # Secret partagé pour authentifier le webhook entrant Brevo (?token=...).
+    # Vide = pas de vérification (rétro-compatible).
+    brevo_webhook_secret: str = ""
     support_email: str = "hello@aoriarh.fr"
     frontend_url: str = "http://localhost:3000"
 
