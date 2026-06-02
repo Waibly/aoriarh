@@ -28,6 +28,15 @@ BREVO_BASE = "https://api.brevo.com/v3"
 BREVO_DAILY_LIMIT = 300
 # Taille maximale d'une vague d'envoi.
 WAVE_MAX_SIZE = 100
+# Plafond d'envois par passage du moteur (toutes les heures) : on ne touche
+# jamais plus de 100 personnes d'un coup, vagues ET relances confondues.
+MAX_PER_RUN = 100
+# Marge réservée aux mails transactionnels (inscription, etc.) qui consomment
+# aussi le quota Brevo. Le moteur de campagnes ne dépasse pas (limite - marge)
+# envois par jour.
+DAILY_SEND_RESERVE = 20
+# Nombre d'échecs d'envoi consécutifs avant d'abandonner un contact ("failed").
+MAX_SEND_ATTEMPTS = 3
 
 
 def _brevo_headers() -> dict[str, str]:
@@ -110,8 +119,8 @@ class EmailTemplateService:
         }) if tpl.preview_text else None
         results = []
         for email in to_emails:
-            success = await _send_via_brevo(email, None, tpl.subject, html, preview_text=preview)
-            results.append({"email": email, "sent": success})
+            result = await _send_via_brevo(email, None, tpl.subject, html, preview_text=preview)
+            results.append({"email": email, "sent": result == "ok"})
         return results
 
 
@@ -807,10 +816,17 @@ async def _send_via_brevo(
     subject: str,
     html_content: str,
     preview_text: str | None = None,
-) -> bool:
+) -> str:
+    """Envoie un mail via Brevo. Renvoie un statut :
+
+    - "ok"    : envoyé (HTTP 2xx)
+    - "quota" : quota Brevo atteint (HTTP 429) → arrêter le run, réessayer plus tard
+    - "skip"  : pas de clé API configurée → rien à faire
+    - "error" : autre échec (réseau, 4xx/5xx) → réessayer ce contact
+    """
     if not settings.brevo_api_key:
         logger.warning("Brevo API key not configured, skipping email to %s", to_email)
-        return False
+        return "skip"
 
     payload: dict = {
         "sender": {"name": "Aoria RH", "email": "noreply@aoriarh.fr"},
@@ -821,20 +837,28 @@ async def _send_via_brevo(
     if preview_text:
         payload["previewText"] = preview_text
 
-    async with httpx.AsyncClient() as client:
-        response = await client.post(
-            f"{BREVO_BASE}/smtp/email",
-            json=payload,
-            headers=_brevo_headers(),
-            timeout=10.0,
-        )
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                f"{BREVO_BASE}/smtp/email",
+                json=payload,
+                headers=_brevo_headers(),
+                timeout=10.0,
+            )
+    except httpx.HTTPError as exc:
+        logger.error("Brevo send network error to %s: %s", to_email, exc)
+        return "error"
 
     if response.status_code in (200, 201):
         logger.info("Campaign email sent to %s: %s", to_email, subject)
-        return True
+        return "ok"
+
+    if response.status_code == 429:
+        logger.warning("Brevo quota/rate limit reached (429), stopping run")
+        return "quota"
 
     logger.error("Brevo send error %s: %s", response.status_code, response.text)
-    return False
+    return "error"
 
 
 # ──────────────────────────────────────────────
@@ -867,10 +891,46 @@ def _determine_recipient_condition(
         return "not_opened"
 
 
+def _resolve_template_for_step(step, steps, next_step_index, events):
+    """Retourne (template, branch_condition) pour l'étape courante d'un contact.
+
+    Gère le branchement conditionnel (en fonction du comportement à l'étape
+    précédente). branch_condition est None hors branchement.
+    """
+    if step.branches and next_step_index > 0:
+        prev_step = steps[next_step_index - 1]
+        condition = _determine_recipient_condition(events, prev_step.position)
+        for branch in step.branches:
+            if branch.condition == condition:
+                return (branch.template or step.template), condition
+        return step.template, condition
+    return step.template, None
+
+
 async def process_campaign_emails(db: AsyncSession) -> int:
     now = datetime.now(UTC)
-    total_sent = 0
 
+    # 1) Budget du passage : jamais plus de MAX_PER_RUN d'un coup, et au global
+    #    on ne dépasse pas (limite Brevo - marge transactionnels) par jour.
+    day_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    sent_today = (
+        await db.execute(
+            select(func.count()).select_from(EmailCampaignEvent).where(
+                EmailCampaignEvent.event_type == "sent",
+                EmailCampaignEvent.occurred_at >= day_start,
+            )
+        )
+    ).scalar() or 0
+    daily_remaining = max(0, (BREVO_DAILY_LIMIT - DAILY_SEND_RESERVE) - sent_today)
+    run_budget = min(MAX_PER_RUN, daily_remaining)
+    if run_budget <= 0:
+        logger.info(
+            "Campaign cron: plafond journalier atteint (%d envoyés aujourd'hui)",
+            sent_today,
+        )
+        return 0
+
+    # 2) Campagnes actives + leurs séquences
     result = await db.execute(
         select(EmailCampaign)
         .options(
@@ -886,13 +946,17 @@ async def process_campaign_emails(db: AsyncSession) -> int:
     )
     campaigns = list(result.scalars().unique().all())
 
+    # 3) Collecte de TOUS les envois dus, toutes campagnes confondues. On
+    #    capture des VALEURS simples (pas d'objet ORM) pour pouvoir commiter
+    #    après chaque envoi sans souci d'expiration de session.
+    pending: list[dict] = []
     for campaign in campaigns:
         steps = sorted(campaign.sequence.steps, key=lambda s: s.position)
         if not steps:
             continue
 
         # Seuls les contacts rattachés à une vague programmée (scheduled_at non
-        # nul) sont envoyés. Le stock (scheduled_at NULL) attend sa vague.
+        # nul) sont envoyés ; le stock (scheduled_at NULL) attend sa vague.
         recipients_result = await db.execute(
             select(EmailCampaignRecipient)
             .options(selectinload(EmailCampaignRecipient.events))
@@ -902,104 +966,147 @@ async def process_campaign_emails(db: AsyncSession) -> int:
                 EmailCampaignRecipient.scheduled_at.isnot(None),
             )
         )
-        recipients = list(recipients_result.scalars().unique().all())
-
-        for recipient in recipients:
-            next_step_index = recipient.current_step
-            if next_step_index >= len(steps):
+        for recipient in recipients_result.scalars().unique().all():
+            idx = recipient.current_step
+            if idx >= len(steps):
                 continue
 
-            step = steps[next_step_index]
+            step = steps[idx]
             # Le calendrier (mail 1 puis relances J+N) est ancré sur la date de
-            # la vague du contact, pas sur celle de la campagne. Chaque vague a
-            # donc son propre échéancier.
+            # la vague du contact, propre à chaque vague.
             wave_date = recipient.scheduled_at
             if wave_date.tzinfo is None:
                 wave_date = wave_date.replace(tzinfo=UTC)
             send_after = wave_date + timedelta(days=step.delay_days)
-
             if now < send_after:
                 continue
 
-            template = None
-            branch_condition = None
-
-            if step.branches and next_step_index > 0:
-                prev_step = steps[next_step_index - 1]
-                condition = _determine_recipient_condition(
-                    recipient.events, prev_step.position
-                )
-                branch_condition = condition
-
-                for branch in step.branches:
-                    if branch.condition == condition:
-                        template = branch.template
-                        break
-
-                if not template:
-                    template = step.template
-            else:
-                template = step.template
-
+            template, branch_condition = _resolve_template_for_step(
+                step, steps, idx, recipient.events
+            )
             if not template:
                 continue
 
-            variables = {
-                "prenom": recipient.first_name or "",
-                "nom": recipient.last_name or "",
-                "entreprise": recipient.company or "",
-                "poste": "",
-            }
-            html = _render_variables(template.html_body, variables)
-            subject = _render_variables(template.subject, variables)
-            preview = _render_variables(template.preview_text, variables) if template.preview_text else None
+            pending.append({
+                "send_after": send_after,
+                "recipient_id": recipient.id,
+                "campaign_id": campaign.id,
+                "email": recipient.email,
+                "first_name": recipient.first_name,
+                "last_name": recipient.last_name,
+                "company": recipient.company,
+                "current_step": idx,
+                "len_steps": len(steps),
+                "send_attempts": recipient.send_attempts or 0,
+                "step_position": step.position,
+                "branch_condition": branch_condition,
+                "html_body": template.html_body,
+                "subject": template.subject,
+                "preview_text": template.preview_text,
+            })
 
-            success = await _send_via_brevo(
-                to_email=recipient.email,
-                to_name=recipient.first_name,
-                subject=subject,
-                html_content=html,
-                preview_text=preview,
-            )
+    # 4) Les plus anciens d'abord : relances et vieilles vagues prioritaires.
+    pending.sort(key=lambda p: p["send_after"])
 
-            if success:
-                recipient.current_step = next_step_index + 1
-                recipient.last_sent_at = now
+    # 5) Envoi dans la limite du budget, avec persistance APRÈS chaque envoi
+    #    (un crash ne peut plus re-déclencher des mails déjà partis).
+    total_sent = 0
+    for p in pending:
+        if total_sent >= run_budget:
+            break
 
-                event = EmailCampaignEvent(
-                    campaign_id=campaign.id,
-                    recipient_id=recipient.id,
-                    step_position=step.position,
-                    event_type="sent",
-                    branch_condition=branch_condition,
-                    occurred_at=now,
+        variables = {
+            "prenom": p["first_name"] or "",
+            "nom": p["last_name"] or "",
+            "entreprise": p["company"] or "",
+            "poste": "",
+        }
+        html = _render_variables(p["html_body"], variables)
+        subject = _render_variables(p["subject"], variables)
+        preview = _render_variables(p["preview_text"], variables) if p["preview_text"] else None
+
+        status_result = await _send_via_brevo(
+            to_email=p["email"],
+            to_name=p["first_name"],
+            subject=subject,
+            html_content=html,
+            preview_text=preview,
+        )
+
+        if status_result == "ok":
+            new_step = p["current_step"] + 1
+            await db.execute(
+                update(EmailCampaignRecipient)
+                .where(EmailCampaignRecipient.id == p["recipient_id"])
+                .values(
+                    current_step=new_step,
+                    last_sent_at=now,
+                    send_attempts=0,
+                    status="completed" if new_step >= p["len_steps"] else "active",
                 )
-                db.add(event)
-                total_sent += 1
-
-                if recipient.current_step >= len(steps):
-                    recipient.status = "completed"
-
-        # La campagne n'est terminée que lorsqu'il ne reste plus AUCUN contact
-        # actif à traiter : ni en stock (pas encore programmé), ni en cours de
-        # séquence. Tant qu'il reste du stock, on garde la campagne « running »
-        # pour pouvoir programmer de nouvelles vagues.
-        remaining_result = await db.execute(
-            select(func.count()).select_from(EmailCampaignRecipient)
-            .where(
-                EmailCampaignRecipient.campaign_id == campaign.id,
-                EmailCampaignRecipient.status == "active",
-                EmailCampaignRecipient.current_step < len(steps),
             )
-        )
-        total_result = await db.execute(
-            select(func.count()).select_from(EmailCampaignRecipient)
-            .where(EmailCampaignRecipient.campaign_id == campaign.id)
-        )
-        if (total_result.scalar() or 0) > 0 and (remaining_result.scalar() or 0) == 0:
-            campaign.status = "completed"
+            db.add(EmailCampaignEvent(
+                campaign_id=p["campaign_id"],
+                recipient_id=p["recipient_id"],
+                step_position=p["step_position"],
+                event_type="sent",
+                branch_condition=p["branch_condition"],
+                occurred_at=now,
+            ))
+            await db.commit()
+            total_sent += 1
+        elif status_result in ("quota", "skip"):
+            # Quota Brevo atteint (429) ou pas de clé : on stoppe, on reprendra
+            # au prochain passage. Les envois déjà faits restent persistés.
+            logger.warning("Campaign cron: arrêt du run (%s)", status_result)
+            break
+        else:  # "error"
+            new_attempts = p["send_attempts"] + 1
+            new_status = "failed" if new_attempts >= MAX_SEND_ATTEMPTS else "active"
+            await db.execute(
+                update(EmailCampaignRecipient)
+                .where(EmailCampaignRecipient.id == p["recipient_id"])
+                .values(send_attempts=new_attempts, status=new_status)
+            )
+            await db.commit()
+            if new_status == "failed":
+                logger.error(
+                    "Recipient %s marqué 'failed' après %d échecs",
+                    p["email"], new_attempts,
+                )
 
-        await db.commit()
+    # 6) Marquer terminées les campagnes sans contact actif restant (ni stock,
+    #    ni séquence en cours). Tant qu'il reste du stock, on garde "running".
+    for campaign in campaigns:
+        steps = campaign.sequence.steps
+        if not steps:
+            continue
+        remaining = (
+            await db.execute(
+                select(func.count()).select_from(EmailCampaignRecipient).where(
+                    EmailCampaignRecipient.campaign_id == campaign.id,
+                    EmailCampaignRecipient.status == "active",
+                    EmailCampaignRecipient.current_step < len(steps),
+                )
+            )
+        ).scalar() or 0
+        total = (
+            await db.execute(
+                select(func.count()).select_from(EmailCampaignRecipient).where(
+                    EmailCampaignRecipient.campaign_id == campaign.id
+                )
+            )
+        ).scalar() or 0
+        if total > 0 and remaining == 0 and campaign.status == "running":
+            await db.execute(
+                update(EmailCampaign)
+                .where(EmailCampaign.id == campaign.id)
+                .values(status="completed")
+            )
+    await db.commit()
 
-    logger.info("Campaign cron: %d emails sent", total_sent)
+    logger.info(
+        "Campaign cron: %d envoyés (budget passage=%d, déjà %d aujourd'hui)",
+        total_sent, run_budget, sent_today,
+    )
     return total_sent

@@ -15,6 +15,7 @@ from app.models.emailing import (
 )
 from app.services.emailing_service import (
     BREVO_DAILY_LIMIT,
+    MAX_SEND_ATTEMPTS,
     WAVE_MAX_SIZE,
     EmailCampaignService,
     process_campaign_emails,
@@ -256,3 +257,79 @@ async def test_cron_respects_wave_schedule(monkeypatch):
 
     assert total == 100  # uniquement la vague échue
     assert len(sent_to) == 100
+
+
+async def _make_scheduled_campaign(session, n: int):
+    """Campagne 1 étape avec n contacts actifs déjà programmés dans le passé."""
+    tpl = EmailTemplate(name="T", subject="Bonjour {{prenom}}", html_body="<p>{{prenom}}</p>")
+    session.add(tpl)
+    await session.flush()
+    seq = EmailSequence(name="S", status="active")
+    session.add(seq)
+    await session.flush()
+    session.add(EmailSequenceStep(sequence_id=seq.id, template_id=tpl.id, position=0, delay_days=0))
+    campaign = EmailCampaign(
+        name="C", sequence_id=seq.id, brevo_list_ids=[1], status="running",
+        scheduled_at=datetime.now(UTC),
+    )
+    session.add(campaign)
+    await session.flush()
+    past = datetime.now(UTC) - timedelta(days=1)
+    for i in range(n):
+        session.add(EmailCampaignRecipient(
+            campaign_id=campaign.id, email=f"c{i}@x.fr", first_name=f"P{i}",
+            status="active", scheduled_at=past,
+        ))
+    await session.commit()
+    return campaign
+
+
+async def test_cron_caps_at_100_per_run(monkeypatch):
+    """Jamais plus de 100 personnes touchées d'un coup, même si 250 sont dues."""
+    async def fake_send(**kwargs):
+        return "ok"
+    monkeypatch.setattr("app.services.emailing_service._send_via_brevo", fake_send)
+
+    async with test_session_factory() as session:
+        await _make_scheduled_campaign(session, 250)
+    async with test_session_factory() as session:
+        sent = await process_campaign_emails(session)
+    assert sent == 100
+
+
+async def test_cron_marks_failed_after_max_attempts(monkeypatch):
+    async def fake_send(**kwargs):
+        return "error"
+    monkeypatch.setattr("app.services.emailing_service._send_via_brevo", fake_send)
+
+    async with test_session_factory() as session:
+        await _make_scheduled_campaign(session, 1)
+    for _ in range(MAX_SEND_ATTEMPTS):
+        async with test_session_factory() as session:
+            await process_campaign_emails(session)
+
+    from sqlalchemy import func, select
+    async with test_session_factory() as session:
+        recipient = (await session.execute(select(EmailCampaignRecipient))).scalar_one()
+        sent_events = (await session.execute(
+            select(func.count()).select_from(EmailCampaignEvent)
+            .where(EmailCampaignEvent.event_type == "sent")
+        )).scalar()
+    assert recipient.send_attempts == MAX_SEND_ATTEMPTS
+    assert recipient.status == "failed"
+    assert sent_events == 0  # un échec ne crée jamais d'événement "envoyé"
+
+
+async def test_cron_stops_on_quota(monkeypatch):
+    """429 Brevo → on s'arrête proprement au lieu de marteler."""
+    sequence = ["ok", "ok", "quota", "ok", "ok"]
+
+    async def fake_send(**kwargs):
+        return sequence.pop(0)
+    monkeypatch.setattr("app.services.emailing_service._send_via_brevo", fake_send)
+
+    async with test_session_factory() as session:
+        await _make_scheduled_campaign(session, 5)
+    async with test_session_factory() as session:
+        sent = await process_campaign_emails(session)
+    assert sent == 2  # s'arrête à la 3e (quota)

@@ -20,8 +20,8 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 EVENT_MAP = {
-    "delivered": "sent",
-    "request": "sent",
+    # "delivered"/"request" ne sont PAS mappés vers "sent" : le moteur d'envoi
+    # crée déjà l'événement "sent". Les inclure créerait un double comptage.
     "opened": "opened",
     "unique_opened": "opened",
     "click": "clicked",

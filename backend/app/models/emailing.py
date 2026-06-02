@@ -146,7 +146,12 @@ class EmailCampaignRecipient(TimestampMixin, Base):
     last_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     company: Mapped[str | None] = mapped_column(String(255), nullable=True)
     current_step: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    # active | completed | bounced | unsubscribed | failed
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="active")
+    # Nombre d'échecs d'envoi consécutifs (réinitialisé à 0 après un envoi
+    # réussi). Au-delà de MAX_SEND_ATTEMPTS, le contact passe en "failed" et
+    # n'est plus retenté.
+    send_attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     # Date d'envoi du 1er mail (= date de la vague). Les relances de la
     # séquence (J+3, J+7...) se calculent à partir de cette date, propre à
     # chaque vague. NULL = encore en stock, pas encore programmé.
