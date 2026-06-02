@@ -59,6 +59,7 @@ interface EmailCampaign {
   scheduled_at: string | null;
   current_step: number;
   recipient_count: number;
+  sent_count: number;
   created_at: string;
 }
 
@@ -123,6 +124,11 @@ interface WaveContact {
   first_name: string | null;
   last_name: string | null;
   company: string | null;
+  status: string;
+  sent: boolean;
+  sent_at: string | null;
+  opened: boolean;
+  clicked: boolean;
 }
 
 const WAVE_STATUS: Record<string, { label: string; variant: "default" | "secondary" | "outline" }> = {
@@ -400,6 +406,24 @@ export default function AdminEmailCampaignsPage() {
     return name ? `${name} · ${c.email}` : c.email;
   };
 
+  const contactStatus = (c: WaveContact) => {
+    if (c.status === "unsubscribed")
+      return <span className="text-destructive">⛔ Désinscrit</span>;
+    if (c.status === "bounced")
+      return <span className="text-amber-600">⚠ Bounce</span>;
+    if (c.status === "failed")
+      return <span className="text-destructive">✕ Échec</span>;
+    if (c.sent)
+      return (
+        <span className="text-green-700 dark:text-green-500">
+          ✓ Envoyé{c.sent_at ? ` ${fmtDateTime(c.sent_at)}` : ""}
+          {c.opened ? " · 👁 Ouvert" : ""}
+          {c.clicked ? " · 🖱 Cliqué" : ""}
+        </span>
+      );
+    return <span className="text-muted-foreground">⏳ En attente</span>;
+  };
+
   const fmt = (d: string) =>
     new Date(d).toLocaleDateString("fr-FR", {
       day: "numeric", month: "short", year: "numeric",
@@ -471,7 +495,16 @@ export default function AdminEmailCampaignsPage() {
                           ))}
                         </div>
                       </TableCell>
-                      <TableCell>{c.recipient_count}</TableCell>
+                      <TableCell title="Envoyés / total">
+                        {c.recipient_count > 0 ? (
+                          <span>
+                            <span className="font-medium">{c.sent_count}</span>
+                            <span className="text-muted-foreground"> / {c.recipient_count}</span>
+                          </span>
+                        ) : (
+                          <span className="text-muted-foreground">0</span>
+                        )}
+                      </TableCell>
                       <TableCell>
                         <Badge variant={badge.variant}>{badge.label}</Badge>
                       </TableCell>
@@ -834,7 +867,13 @@ export default function AdminEmailCampaignsPage() {
                               </div>
                             ) : (
                               waveContacts.map((c, i) => (
-                                <div key={i} className="text-muted-foreground">{contactLabel(c)}</div>
+                                <div
+                                  key={i}
+                                  className="flex flex-wrap items-center justify-between gap-x-3 gap-y-0.5 py-0.5"
+                                >
+                                  <span className="text-muted-foreground">{contactLabel(c)}</span>
+                                  <span>{contactStatus(c)}</span>
+                                </div>
                               ))
                             )}
                           </div>

@@ -354,6 +354,16 @@ class EmailCampaignService:
             )
             recipient_count = count_result.scalar() or 0
 
+            # Combien ont déjà reçu au moins le 1er mail (progression).
+            sent_result = await self.db.execute(
+                select(func.count()).select_from(EmailCampaignRecipient)
+                .where(
+                    EmailCampaignRecipient.campaign_id == c.id,
+                    EmailCampaignRecipient.current_step > 0,
+                )
+            )
+            sent_count = sent_result.scalar() or 0
+
             items.append({
                 "id": c.id,
                 "name": c.name,
@@ -364,6 +374,7 @@ class EmailCampaignService:
                 "scheduled_at": c.scheduled_at,
                 "current_step": c.current_step,
                 "recipient_count": recipient_count,
+                "sent_count": sent_count,
                 "created_at": c.created_at,
                 "updated_at": c.updated_at,
             })
@@ -642,12 +653,19 @@ class EmailCampaignService:
         }
 
     @staticmethod
-    def _contact_dict(r: EmailCampaignRecipient) -> dict:
+    def _contact_dict(
+        r: EmailCampaignRecipient, *, opened: bool = False, clicked: bool = False
+    ) -> dict:
         return {
             "email": r.email,
             "first_name": r.first_name,
             "last_name": r.last_name,
             "company": r.company,
+            "status": r.status,
+            "sent": r.current_step > 0,
+            "sent_at": r.last_sent_at,
+            "opened": opened,
+            "clicked": clicked,
         }
 
     async def preview_next_contacts(
@@ -685,10 +703,17 @@ class EmailCampaignService:
             raise HTTPException(status.HTTP_404_NOT_FOUND, "Vague introuvable")
         result = await self.db.execute(
             select(EmailCampaignRecipient)
+            .options(selectinload(EmailCampaignRecipient.events))
             .where(EmailCampaignRecipient.wave_id == wave_id)
             .order_by(EmailCampaignRecipient.created_at, EmailCampaignRecipient.id)
         )
-        return [self._contact_dict(r) for r in result.scalars().all()]
+        contacts = []
+        for r in result.scalars().unique().all():
+            types = {e.event_type for e in r.events}
+            contacts.append(self._contact_dict(
+                r, opened="opened" in types, clicked="clicked" in types
+            ))
+        return contacts
 
     async def schedule_wave(
         self,

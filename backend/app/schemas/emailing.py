@@ -110,6 +110,7 @@ class EmailCampaignRead(BaseModel):
     scheduled_at: datetime | None = None
     current_step: int
     recipient_count: int = 0
+    sent_count: int = 0
     created_at: datetime
     updated_at: datetime
 
@@ -148,6 +149,11 @@ class WaveContact(BaseModel):
     first_name: str | None = None
     last_name: str | None = None
     company: str | None = None
+    status: str = "active"  # active | completed | bounced | unsubscribed | failed
+    sent: bool = False
+    sent_at: datetime | None = None
+    opened: bool = False
+    clicked: bool = False
 
 
 # --- Stats ---
