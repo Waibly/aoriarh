@@ -1,8 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { Fragment, useCallback, useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
-import { Loader2, Plus, Play, Pause, RotateCcw, Trash2, BarChart3, Layers, X } from "lucide-react";
+import { Loader2, Plus, Download, Pause, RotateCcw, Trash2, BarChart3, Layers, X } from "lucide-react";
 import { toast } from "sonner";
 import { apiFetch } from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -339,6 +339,10 @@ export default function AdminEmailCampaignsPage() {
 
   async function handleScheduleWave() {
     if (!token || !wavesTarget || !waveDate || waveCount < 1) return;
+    if (new Date(waveDate).getTime() < Date.now()) {
+      toast.error("Choisissez une date dans le futur");
+      return;
+    }
     setSchedulingWave(true);
     try {
       await apiFetch(`/admin/emailing/campaigns/${wavesTarget.id}/waves`, {
@@ -434,6 +438,13 @@ export default function AdminEmailCampaignsPage() {
       day: "numeric", month: "short", hour: "2-digit", minute: "2-digit",
     });
 
+  // "now" au format datetime-local (heure locale) — pour bloquer le passé.
+  const minDateTime = () => {
+    const d = new Date();
+    d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
+    return d.toISOString().slice(0, 16);
+  };
+
   const listName = (id: number) => brevoLists.find((l) => l.id === id)?.name ?? `#${id}`;
 
   const pct = (n: number, total: number) =>
@@ -464,7 +475,7 @@ export default function AdminEmailCampaignsPage() {
                 <TableHead>Listes</TableHead>
                 <TableHead>Contacts</TableHead>
                 <TableHead>Statut</TableHead>
-                <TableHead>Lancée le</TableHead>
+                <TableHead>Créée le</TableHead>
                 <TableHead className="text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
@@ -509,13 +520,13 @@ export default function AdminEmailCampaignsPage() {
                         <Badge variant={badge.variant}>{badge.label}</Badge>
                       </TableCell>
                       <TableCell className="text-muted-foreground">
-                        {c.scheduled_at ? fmt(c.scheduled_at) : "—"}
+                        {fmt(c.created_at)}
                       </TableCell>
                       <TableCell className="text-right">
                         <div className="flex items-center justify-end gap-1">
                           {c.status === "draft" && (
                             <Button variant="ghost" size="icon" onClick={() => setLaunchTarget(c)} title="Charger les contacts">
-                              <Play className="h-4 w-4 text-green-600" />
+                              <Download className="h-4 w-4 text-green-600" />
                             </Button>
                           )}
                           {c.status === "running" && (
@@ -529,7 +540,7 @@ export default function AdminEmailCampaignsPage() {
                                 <RotateCcw className="h-4 w-4" />
                               </Button>
                               <Button variant="ghost" size="icon" onClick={() => setLaunchTarget(c)} title="Recharger les contacts">
-                                <Play className="h-4 w-4 text-green-600" />
+                                <Download className="h-4 w-4 text-green-600" />
                               </Button>
                             </>
                           )}
@@ -677,8 +688,8 @@ export default function AdminEmailCampaignsPage() {
                 </TableHeader>
                 <TableBody>
                   {stats.steps.map((step) => (
-                    <>
-                      <TableRow key={step.step_position}>
+                    <Fragment key={step.step_position}>
+                      <TableRow>
                         <TableCell>
                           <div>
                             <span className="font-medium">Jour {step.delay_days}</span>
@@ -728,7 +739,7 @@ export default function AdminEmailCampaignsPage() {
                           <TableCell className="text-right text-xs">{branch.unsubscribed}</TableCell>
                         </TableRow>
                       ))}
-                    </>
+                    </Fragment>
                   ))}
                 </TableBody>
               </Table>
@@ -778,6 +789,7 @@ export default function AdminEmailCampaignsPage() {
                       <Input
                         type="datetime-local"
                         value={waveDate}
+                        min={minDateTime()}
                         onChange={(e) => setWaveDate(e.target.value)}
                         className="w-56"
                       />
@@ -814,6 +826,11 @@ export default function AdminEmailCampaignsPage() {
               {wavesTarget?.status === "running" && waves.pending_count === 0 && (
                 <p className="text-sm text-muted-foreground">
                   Tous les contacts ont été répartis en envois.
+                </p>
+              )}
+              {wavesTarget?.status === "paused" && (
+                <p className="text-sm text-muted-foreground">
+                  Campagne en pause. Reprenez-la pour programmer de nouveaux envois.
                 </p>
               )}
 
