@@ -171,6 +171,18 @@ class EmailCampaignRecipient(TimestampMixin, Base):
     )
 
 
+class EmailUnsubscribe(Base):
+    """Liste de suppression : emails désinscrits. Un email présent ici n'est
+    plus jamais ajouté à une campagne (filtré au lancement) — conformité RGPD."""
+
+    __tablename__ = "email_unsubscribes"
+
+    email: Mapped[str] = mapped_column(String(320), primary_key=True)
+    unsubscribed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+
+
 class EmailCampaignEvent(Base):
     __tablename__ = "email_campaign_events"
 

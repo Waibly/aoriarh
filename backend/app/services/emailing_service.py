@@ -1,3 +1,5 @@
+import hashlib
+import hmac
 import logging
 import uuid
 from datetime import UTC, datetime, timedelta
@@ -18,6 +20,7 @@ from app.models.emailing import (
     EmailSequenceStep,
     EmailSequenceStepBranch,
     EmailTemplate,
+    EmailUnsubscribe,
 )
 
 logger = logging.getLogger(__name__)
@@ -44,6 +47,91 @@ def _brevo_headers() -> dict[str, str]:
         "api-key": settings.brevo_api_key,
         "Content-Type": "application/json",
     }
+
+
+# ──────────────────────────────────────────────
+#  Désinscription (lien signé par contact)
+# ──────────────────────────────────────────────
+
+
+def unsubscribe_signature(recipient_id: uuid.UUID) -> str:
+    """Signature HMAC d'un id de destinataire (empêche de désinscrire autrui)."""
+    return hmac.new(
+        settings.secret_key.encode(),
+        str(recipient_id).encode(),
+        hashlib.sha256,
+    ).hexdigest()[:32]
+
+
+def verify_unsubscribe_signature(recipient_id: uuid.UUID, sig: str | None) -> bool:
+    return bool(sig) and hmac.compare_digest(unsubscribe_signature(recipient_id), sig)
+
+
+def unsubscribe_url(recipient_id: uuid.UUID) -> str:
+    return (
+        f"{settings.api_base_url.rstrip('/')}/api/v1/emailing/unsubscribe"
+        f"?rid={recipient_id}&sig={unsubscribe_signature(recipient_id)}"
+    )
+
+
+async def process_unsubscribe(
+    db: AsyncSession, recipient_id: uuid.UUID
+) -> EmailCampaignRecipient | None:
+    """Désinscrit un contact : liste de suppression + statut sur toutes ses
+    lignes (toutes campagnes) + événement pour les stats. Idempotent."""
+    recipient = (
+        await db.execute(
+            select(EmailCampaignRecipient).where(
+                EmailCampaignRecipient.id == recipient_id
+            )
+        )
+    ).scalar_one_or_none()
+    if not recipient:
+        return None
+
+    email = recipient.email
+    now = datetime.now(UTC)
+
+    already = (
+        await db.execute(
+            select(EmailUnsubscribe).where(EmailUnsubscribe.email == email)
+        )
+    ).scalar_one_or_none()
+    if not already:
+        db.add(EmailUnsubscribe(email=email, unsubscribed_at=now))
+
+    # Toutes les lignes de ce mail (toutes campagnes) → désinscrit.
+    await db.execute(
+        update(EmailCampaignRecipient)
+        .where(
+            EmailCampaignRecipient.email == email,
+            EmailCampaignRecipient.status.in_(["active", "completed"]),
+        )
+        .values(status="unsubscribed")
+    )
+
+    # Événement rattaché à la campagne d'où vient le clic (dernière étape envoyée).
+    last_sent = (
+        await db.execute(
+            select(EmailCampaignEvent.step_position)
+            .where(
+                EmailCampaignEvent.recipient_id == recipient_id,
+                EmailCampaignEvent.event_type == "sent",
+            )
+            .order_by(EmailCampaignEvent.occurred_at.desc())
+            .limit(1)
+        )
+    ).scalar()
+    db.add(EmailCampaignEvent(
+        campaign_id=recipient.campaign_id,
+        recipient_id=recipient_id,
+        step_position=last_sent or 0,
+        event_type="unsubscribed",
+        occurred_at=now,
+    ))
+
+    await db.commit()
+    return recipient
 
 
 # ──────────────────────────────────────────────
@@ -105,18 +193,15 @@ class EmailTemplateService:
 
     async def send_test(self, template_id: uuid.UUID, to_emails: list[str]) -> list[dict]:
         tpl = await self.get(template_id)
-        html = _render_variables(tpl.html_body, {
+        test_vars = {
             "prenom": "Jean",
             "nom": "Dupont",
             "entreprise": "Entreprise Test",
             "poste": "DRH",
-        })
-        preview = _render_variables(tpl.preview_text, {
-            "prenom": "Jean",
-            "nom": "Dupont",
-            "entreprise": "Entreprise Test",
-            "poste": "DRH",
-        }) if tpl.preview_text else None
+            "desinscription": "#",
+        }
+        html = _render_variables(tpl.html_body, test_vars)
+        preview = _render_variables(tpl.preview_text, test_vars) if tpl.preview_text else None
         results = []
         for email in to_emails:
             result = await _send_via_brevo(email, None, tpl.subject, html, preview_text=preview)
@@ -355,8 +440,14 @@ class EmailCampaignService:
         )
         existing_emails = {row[0] for row in result.all()}
 
+        # Liste de suppression : on ne ré-ajoute jamais un email désinscrit.
+        suppressed = {
+            row[0]
+            for row in (await self.db.execute(select(EmailUnsubscribe.email))).all()
+        }
+
         for contact in contacts:
-            if contact["email"] not in existing_emails:
+            if contact["email"] not in existing_emails and contact["email"] not in suppressed:
                 recipient = EmailCampaignRecipient(
                     campaign_id=campaign_id,
                     email=contact["email"],
@@ -1020,6 +1111,7 @@ async def process_campaign_emails(db: AsyncSession) -> int:
             "nom": p["last_name"] or "",
             "entreprise": p["company"] or "",
             "poste": "",
+            "desinscription": unsubscribe_url(p["recipient_id"]),
         }
         html = _render_variables(p["html_body"], variables)
         subject = _render_variables(p["subject"], variables)

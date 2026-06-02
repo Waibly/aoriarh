@@ -12,6 +12,7 @@ from app.models.emailing import (
     EmailSequenceStep,
     EmailSequenceStepBranch,
     EmailTemplate,
+    EmailUnsubscribe,
 )
 from app.services.emailing_service import (
     BREVO_DAILY_LIMIT,
@@ -318,6 +319,52 @@ async def test_cron_marks_failed_after_max_attempts(monkeypatch):
     assert recipient.send_attempts == MAX_SEND_ATTEMPTS
     assert recipient.status == "failed"
     assert sent_events == 0  # un échec ne crée jamais d'événement "envoyé"
+
+
+async def test_unsubscribe_marks_all_rows_and_suppresses(monkeypatch):
+    from sqlalchemy import func, select
+    from app.services import emailing_service as svc
+
+    async with test_session_factory() as session:
+        c1 = await _make_scheduled_campaign(session, 0)
+        c2 = await _make_scheduled_campaign(session, 0)
+        r1 = EmailCampaignRecipient(campaign_id=c1.id, email="bob@x.fr", status="active", current_step=1)
+        r2 = EmailCampaignRecipient(campaign_id=c2.id, email="bob@x.fr", status="active")
+        r3 = EmailCampaignRecipient(campaign_id=c1.id, email="autre@x.fr", status="active")
+        session.add_all([r1, r2, r3])
+        await session.flush()
+        rid = r1.id
+        await session.commit()
+
+    async with test_session_factory() as session:
+        await svc.process_unsubscribe(session, rid)
+
+    async with test_session_factory() as session:
+        bob = [s for (s,) in (await session.execute(
+            select(EmailCampaignRecipient.status).where(EmailCampaignRecipient.email == "bob@x.fr")
+        )).all()]
+        autre = (await session.execute(
+            select(EmailCampaignRecipient.status).where(EmailCampaignRecipient.email == "autre@x.fr")
+        )).scalar()
+        suppressed = (await session.execute(
+            select(func.count()).select_from(EmailUnsubscribe)
+        )).scalar()
+    assert bob == ["unsubscribed", "unsubscribed"]  # toutes les lignes du même email
+    assert autre == "active"
+    assert suppressed == 1
+
+
+async def test_unsubscribe_signature_roundtrip():
+    import uuid
+    from app.services.emailing_service import (
+        unsubscribe_signature, verify_unsubscribe_signature, unsubscribe_url,
+    )
+    rid = uuid.uuid4()
+    sig = unsubscribe_signature(rid)
+    assert verify_unsubscribe_signature(rid, sig)
+    assert not verify_unsubscribe_signature(rid, "tampered")
+    assert not verify_unsubscribe_signature(rid, None)
+    assert str(rid) in unsubscribe_url(rid)
 
 
 async def test_cron_stops_on_quota(monkeypatch):

@@ -48,6 +48,9 @@ class Settings(BaseSettings):
     brevo_webhook_secret: str = ""
     support_email: str = "hello@aoriarh.fr"
     frontend_url: str = "http://localhost:3000"
+    # URL publique de l'API (pour les liens cliquables dans les emails, ex.
+    # désinscription). En prod : https://api.aoriarh.fr
+    api_base_url: str = "http://localhost:8000"
 
     # Stripe
     stripe_secret_key: str = ""

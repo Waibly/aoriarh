@@ -35,6 +35,7 @@ from app.api import (
     conventions,
     conversations,
     documents,
+    emailing_public,
     invitations,
     organisations,
     plan_invitations,
@@ -266,6 +267,11 @@ app.include_router(
     webhooks.router,
     prefix="/api/v1/webhooks",
     tags=["webhooks"],
+)
+app.include_router(
+    emailing_public.router,
+    prefix="/api/v1/emailing",
+    tags=["emailing-public"],
 )
 
 
