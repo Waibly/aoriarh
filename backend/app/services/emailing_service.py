@@ -1102,8 +1102,13 @@ def _determine_recipient_condition(
     prev_events = [e for e in events if e.step_position == prev_step_position]
     event_types = {e.event_type for e in prev_events}
 
-    has_opened = "opened" in event_types
     has_clicked = "clicked" in event_types
+    # Un clic implique forcément une ouverture (impossible de cliquer un lien
+    # sans avoir ouvert le mail). Le pixel d'ouverture, lui, n'est pas fiable
+    # (images bloquées). On compte donc tout clic comme une ouverture, sinon un
+    # contact qui a cliqué mais dont l'ouverture n'a pas été trackée tomberait
+    # à tort dans "pas ouvert" et recevrait le mauvais mail.
+    has_opened = "opened" in event_types or has_clicked
 
     if has_opened and has_clicked:
         return "opened_and_clicked"
