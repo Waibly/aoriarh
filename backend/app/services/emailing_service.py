@@ -979,6 +979,110 @@ async def _send_via_brevo(
     return "error"
 
 
+async def _delete_brevo_contact(email: str) -> bool:
+    """Supprime un contact de Brevo via son email. Renvoie True si OK.
+
+    - 204 : supprimé.
+    - 404 : déjà absent de Brevo → considéré comme un succès (rien à faire).
+    - autre / réseau : échec → l'appelant ne marquera pas le contact purgé,
+      il sera retenté au prochain passage du moteur.
+    """
+    if not settings.brevo_api_key:
+        return False
+
+    import urllib.parse
+
+    identifier = urllib.parse.quote(email, safe="")
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.delete(
+                f"{BREVO_BASE}/contacts/{identifier}",
+                headers={"api-key": settings.brevo_api_key},
+                timeout=10.0,
+            )
+    except httpx.HTTPError as exc:
+        logger.error("Brevo delete network error for %s: %s", email, exc)
+        return False
+
+    if response.status_code in (204, 404):
+        return True
+
+    logger.error(
+        "Brevo delete error %s for %s: %s",
+        response.status_code, email, response.text,
+    )
+    return False
+
+
+# Plafond de suppressions Brevo par passage du moteur, pour borner la durée
+# du cron même si un gros backlog de rebonds s'est accumulé.
+MAX_PURGE_PER_RUN = 200
+
+
+async def purge_bounced_contacts(
+    db: AsyncSession, *, limit: int = MAX_PURGE_PER_RUN, dry_run: bool = False
+) -> int:
+    """Supprime de Brevo les contacts qui ont rebondi (status="bounced") et qui
+    n'ont pas encore été purgés (brevo_purged_at NULL).
+
+    Pourquoi : un taux de rebond élevé dégrade la réputation d'expéditeur et
+    donc la délivrabilité de TOUTES les vagues suivantes. On retire donc les
+    adresses mortes après chaque vague, automatiquement.
+
+    - Dédup par email (un même email peut avoir plusieurs lignes / campagnes) ;
+      en cas de succès, toutes ses lignes sont marquées purgées d'un coup.
+    - En cas d'échec d'un appel Brevo, la ligne reste non purgée → retentée au
+      prochain passage (idempotent, pas de perte).
+    - dry_run=True : liste sans rien supprimer (utilisé par le script d'aperçu).
+
+    Renvoie le nombre d'emails distincts purgés (0 en dry-run).
+    """
+    emails = list(
+        (
+            await db.execute(
+                select(EmailCampaignRecipient.email)
+                .where(
+                    EmailCampaignRecipient.status == "bounced",
+                    EmailCampaignRecipient.brevo_purged_at.is_(None),
+                    EmailCampaignRecipient.email.isnot(None),
+                )
+                .distinct()
+                .limit(limit)
+            )
+        ).scalars()
+    )
+    if not emails:
+        return 0
+
+    if dry_run:
+        for email in emails:
+            logger.info("[dry-run] supprimerait de Brevo : %s", email)
+        logger.info("[dry-run] %d adresse(s) en rebond à purger", len(emails))
+        return 0
+
+    now = datetime.now(UTC)
+    purged = 0
+    for email in emails:
+        if not await _delete_brevo_contact(email):
+            continue
+        # Marque purgées TOUTES les lignes de cet email (toutes campagnes).
+        await db.execute(
+            update(EmailCampaignRecipient)
+            .where(
+                EmailCampaignRecipient.email == email,
+                EmailCampaignRecipient.status == "bounced",
+                EmailCampaignRecipient.brevo_purged_at.is_(None),
+            )
+            .values(brevo_purged_at=now)
+        )
+        await db.commit()
+        purged += 1
+
+    if purged:
+        logger.info("Purge rebonds Brevo : %d contact(s) supprimé(s)", purged)
+    return purged
+
+
 # ──────────────────────────────────────────────
 #  Cron job : process active campaigns
 # ──────────────────────────────────────────────
@@ -1223,6 +1327,14 @@ async def process_campaign_emails(db: AsyncSession) -> int:
                 .values(status="completed")
             )
     await db.commit()
+
+    # 7) Nettoyage : retire de Brevo les adresses qui ont rebondi, pour
+    #    protéger la réputation d'expéditeur. Isolé dans un try/except : un
+    #    souci côté Brevo ne doit jamais empêcher la campagne d'avancer.
+    try:
+        await purge_bounced_contacts(db)
+    except Exception:
+        logger.exception("Campaign cron: purge des rebonds Brevo échouée")
 
     logger.info(
         "Campaign cron: %d envoyés (budget passage=%d, déjà %d aujourd'hui)",

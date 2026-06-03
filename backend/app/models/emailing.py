@@ -161,6 +161,12 @@ class EmailCampaignRecipient(TimestampMixin, Base):
     last_sent_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    # Date à laquelle le contact a été supprimé de Brevo après un rebond
+    # (status="bounced"). NULL = pas encore purgé. Évite de rappeler l'API
+    # Brevo pour les mêmes adresses à chaque passage du moteur.
+    brevo_purged_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
     campaign = relationship("EmailCampaign", back_populates="recipients")
     wave = relationship("EmailCampaignWave", back_populates="recipients")

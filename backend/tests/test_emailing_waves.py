@@ -380,3 +380,112 @@ async def test_cron_stops_on_quota(monkeypatch):
     async with test_session_factory() as session:
         sent = await process_campaign_emails(session)
     assert sent == 2  # s'arrête à la 3e (quota)
+
+
+async def test_purge_bounced_deletes_and_marks_all_rows(monkeypatch):
+    """Purge : supprime de Brevo chaque email rebondi, marque toutes ses lignes
+    purgées, et ne touche ni aux actifs ni aux déjà-purgés."""
+    from sqlalchemy import select
+    from app.services import emailing_service as svc
+
+    deleted: list[str] = []
+
+    async def fake_delete(email):
+        deleted.append(email)
+        return True
+
+    monkeypatch.setattr(svc, "_delete_brevo_contact", fake_delete)
+
+    async with test_session_factory() as session:
+        c1 = await _make_scheduled_campaign(session, 0)
+        c2 = await _make_scheduled_campaign(session, 0)
+        # Même email rebondi dans 2 campagnes → 2 lignes, 1 seul appel Brevo.
+        session.add_all([
+            EmailCampaignRecipient(campaign_id=c1.id, email="dead@x.fr", status="bounced"),
+            EmailCampaignRecipient(campaign_id=c2.id, email="dead@x.fr", status="bounced"),
+            EmailCampaignRecipient(campaign_id=c1.id, email="soft@x.fr", status="bounced"),
+            EmailCampaignRecipient(campaign_id=c1.id, email="ok@x.fr", status="active"),
+        ])
+        await session.commit()
+
+    async with test_session_factory() as session:
+        purged = await svc.purge_bounced_contacts(session)
+
+    assert purged == 2  # 2 emails distincts (dead, soft), pas 3 lignes
+    assert set(deleted) == {"dead@x.fr", "soft@x.fr"}
+
+    async with test_session_factory() as session:
+        dead_rows = (await session.execute(
+            select(EmailCampaignRecipient.brevo_purged_at)
+            .where(EmailCampaignRecipient.email == "dead@x.fr")
+        )).scalars().all()
+        ok_row = (await session.execute(
+            select(EmailCampaignRecipient)
+            .where(EmailCampaignRecipient.email == "ok@x.fr")
+        )).scalar_one()
+    assert all(d is not None for d in dead_rows)  # les 2 lignes marquées
+    assert ok_row.brevo_purged_at is None and ok_row.status == "active"
+
+    # Deuxième passage : tout est déjà purgé → aucun nouvel appel Brevo.
+    deleted.clear()
+    async with test_session_factory() as session:
+        again = await svc.purge_bounced_contacts(session)
+    assert again == 0 and deleted == []
+
+
+async def test_purge_bounced_retries_on_failure(monkeypatch):
+    """Un échec Brevo laisse la ligne non purgée → retentée au passage suivant."""
+    from sqlalchemy import select
+    from app.services import emailing_service as svc
+
+    outcomes = [False, True]
+
+    async def fake_delete(email):
+        return outcomes.pop(0)
+
+    monkeypatch.setattr(svc, "_delete_brevo_contact", fake_delete)
+
+    async with test_session_factory() as session:
+        c = await _make_scheduled_campaign(session, 0)
+        session.add(EmailCampaignRecipient(campaign_id=c.id, email="flap@x.fr", status="bounced"))
+        await session.commit()
+
+    async with test_session_factory() as session:
+        assert await svc.purge_bounced_contacts(session) == 0  # échec → pas purgé
+    async with test_session_factory() as session:
+        row = (await session.execute(select(EmailCampaignRecipient))).scalar_one()
+        assert row.brevo_purged_at is None
+
+    async with test_session_factory() as session:
+        assert await svc.purge_bounced_contacts(session) == 1  # retry → purgé
+    async with test_session_factory() as session:
+        row = (await session.execute(select(EmailCampaignRecipient))).scalar_one()
+        assert row.brevo_purged_at is not None
+
+
+async def test_purge_bounced_dry_run_does_not_delete(monkeypatch):
+    """dry_run : aucun appel Brevo, aucune ligne marquée."""
+    from sqlalchemy import select
+    from app.services import emailing_service as svc
+
+    called = False
+
+    async def fake_delete(email):
+        nonlocal called
+        called = True
+        return True
+
+    monkeypatch.setattr(svc, "_delete_brevo_contact", fake_delete)
+
+    async with test_session_factory() as session:
+        c = await _make_scheduled_campaign(session, 0)
+        session.add(EmailCampaignRecipient(campaign_id=c.id, email="dead@x.fr", status="bounced"))
+        await session.commit()
+
+    async with test_session_factory() as session:
+        assert await svc.purge_bounced_contacts(session, dry_run=True) == 0
+    assert called is False
+
+    async with test_session_factory() as session:
+        row = (await session.execute(select(EmailCampaignRecipient))).scalar_one()
+        assert row.brevo_purged_at is None
