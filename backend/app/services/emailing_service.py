@@ -507,6 +507,30 @@ class EmailCampaignService:
         await self.db.delete(campaign)
         await self.db.commit()
 
+    async def _opened_or_clicked_count(
+        self,
+        campaign_id: uuid.UUID,
+        step_position: int,
+        branch_condition: str | None = None,
+    ) -> int:
+        """Distinct recipients who opened OR clicked at this step (a click
+        implies an open). Counts unique recipients, so someone who both opened
+        and clicked is counted once."""
+        conditions = [
+            EmailCampaignEvent.campaign_id == campaign_id,
+            EmailCampaignEvent.step_position == step_position,
+            EmailCampaignEvent.event_type.in_(["opened", "clicked"]),
+        ]
+        if branch_condition is not None:
+            conditions.append(
+                EmailCampaignEvent.branch_condition == branch_condition,
+            )
+        result = await self.db.execute(
+            select(func.count(func.distinct(EmailCampaignEvent.recipient_id)))
+            .where(*conditions)
+        )
+        return result.scalar() or 0
+
     async def get_stats(self, campaign_id: uuid.UUID) -> dict:
         campaign = await self.get(campaign_id)
 
@@ -528,6 +552,14 @@ class EmailCampaignService:
                 ).group_by(EmailCampaignEvent.event_type)
             )
             counts = dict(events_result.all())
+            # Un clic implique une ouverture (cf. _determine_recipient_condition) :
+            # le pixel d'ouverture est peu fiable (images bloquées), pas le clic.
+            # « Ouverts » = contacts uniques ayant ouvert OU cliqué, pour rester
+            # cohérent avec la logique d'aiguillage et ne jamais afficher plus de
+            # clics que d'ouvertures.
+            opened = await self._opened_or_clicked_count(
+                campaign_id, step.position,
+            )
 
             branch_stats = []
             if step.branches:
@@ -543,11 +575,14 @@ class EmailCampaignService:
                         ).group_by(EmailCampaignEvent.event_type)
                     )
                     br_counts = dict(br_events.all())
+                    br_opened = await self._opened_or_clicked_count(
+                        campaign_id, step.position, branch.condition,
+                    )
                     branch_stats.append({
                         "condition": branch.condition,
                         "template_name": branch.template.name if branch.template else None,
                         "sent": br_counts.get("sent", 0),
-                        "opened": br_counts.get("opened", 0),
+                        "opened": br_opened,
                         "clicked": br_counts.get("clicked", 0),
                         "bounced": br_counts.get("bounced", 0),
                         "unsubscribed": br_counts.get("unsubscribed", 0),
@@ -558,7 +593,7 @@ class EmailCampaignService:
                 "template_name": step.template.name if step.template else None,
                 "delay_days": step.delay_days,
                 "sent": counts.get("sent", 0),
-                "opened": counts.get("opened", 0),
+                "opened": opened,
                 "clicked": counts.get("clicked", 0),
                 "bounced": counts.get("bounced", 0),
                 "unsubscribed": counts.get("unsubscribed", 0),

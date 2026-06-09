@@ -227,6 +227,55 @@ async def test_get_stats_with_branches_does_not_lazyload():
         assert len(stats["steps"][1]["branches"]) == 1
 
 
+@pytest.mark.asyncio
+async def test_get_stats_counts_click_as_open():
+    """Un clic compte comme une ouverture (pixel d'ouverture non fiable) :
+    on ne doit jamais afficher plus de clics que d'ouvertures."""
+    async with test_session_factory() as session:
+        tpl = EmailTemplate(name="T", subject="x", html_body="y")
+        session.add(tpl)
+        await session.flush()
+
+        seq = EmailSequence(name="S", status="active")
+        session.add(seq)
+        await session.flush()
+        step0 = EmailSequenceStep(sequence_id=seq.id, template_id=tpl.id, position=0)
+        session.add(step0)
+        await session.flush()
+
+        campaign = EmailCampaign(
+            name="test", sequence_id=seq.id, brevo_list_ids=[1], status="running",
+            scheduled_at=datetime.now(UTC),
+        )
+        session.add(campaign)
+        await session.flush()
+
+        # Recipient A: clicked but NO open event (images blocked).
+        ra = EmailCampaignRecipient(campaign_id=campaign.id, email="a@x.fr", current_step=0)
+        # Recipient B: opened only.
+        rb = EmailCampaignRecipient(campaign_id=campaign.id, email="b@x.fr", current_step=0)
+        session.add_all([ra, rb])
+        await session.flush()
+        session.add_all([
+            EmailCampaignEvent(
+                campaign_id=campaign.id, recipient_id=ra.id, step_position=0,
+                event_type="clicked", occurred_at=datetime.now(UTC),
+            ),
+            EmailCampaignEvent(
+                campaign_id=campaign.id, recipient_id=rb.id, step_position=0,
+                event_type="opened", occurred_at=datetime.now(UTC),
+            ),
+        ])
+        await session.commit()
+
+        stats = await EmailCampaignService(session).get_stats(campaign.id)
+        step = stats["steps"][0]
+        assert step["clicked"] == 1
+        # A clicked (counts as open) + B opened → 2 distinct openers.
+        assert step["opened"] == 2
+        assert step["opened"] >= step["clicked"]
+
+
 async def test_cron_respects_wave_schedule(monkeypatch):
     """Le cron n'envoie que les vagues échues ; le stock et le futur attendent."""
     sent_to: list[str] = []
