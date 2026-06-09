@@ -538,3 +538,119 @@ async def test_purge_bounced_dry_run_does_not_delete(monkeypatch):
     async with test_session_factory() as session:
         row = (await session.execute(select(EmailCampaignRecipient))).scalar_one()
         assert row.brevo_purged_at is None
+
+
+@pytest.mark.asyncio
+async def test_get_stats_excludes_machine_clicks():
+    """Un clic « machine » (bot de sécurité) est exclu des ouvertures et des
+    clics, et reporté à part dans clicked_machine."""
+    async with test_session_factory() as session:
+        tpl = EmailTemplate(name="T", subject="x", html_body="y")
+        session.add(tpl)
+        await session.flush()
+        seq = EmailSequence(name="S", status="active")
+        session.add(seq)
+        await session.flush()
+        step0 = EmailSequenceStep(sequence_id=seq.id, template_id=tpl.id, position=0)
+        session.add(step0)
+        await session.flush()
+        campaign = EmailCampaign(
+            name="test", sequence_id=seq.id, brevo_list_ids=[1], status="running",
+            scheduled_at=datetime.now(UTC),
+        )
+        session.add(campaign)
+        await session.flush()
+        r = EmailCampaignRecipient(campaign_id=campaign.id, email="bot@x.fr", current_step=0)
+        session.add(r)
+        await session.flush()
+        session.add(
+            EmailCampaignEvent(
+                campaign_id=campaign.id, recipient_id=r.id, step_position=0,
+                event_type="clicked_machine", occurred_at=datetime.now(UTC),
+            )
+        )
+        await session.commit()
+
+        stats = await EmailCampaignService(session).get_stats(campaign.id)
+        step = stats["steps"][0]
+        assert step["clicked"] == 0          # le bot ne compte pas comme clic
+        assert step["opened"] == 0           # ni comme ouverture
+        assert step["clicked_machine"] == 1  # mais il est visible à part
+
+
+@pytest.mark.asyncio
+async def test_webhook_tags_fast_click_as_machine():
+    """Un clic qui arrive juste après l'envoi est requalifié en clic machine ;
+    un clic tardif reste un vrai clic."""
+    from sqlalchemy import select
+
+    from app.api.webhooks import brevo_webhook
+
+    class _FakeRequest:
+        def __init__(self, payload):
+            self._payload = payload
+
+        async def json(self):
+            return self._payload
+
+    async with test_session_factory() as session:
+        tpl = EmailTemplate(name="T", subject="x", html_body="y")
+        session.add(tpl)
+        await session.flush()
+        seq = EmailSequence(name="S", status="active")
+        session.add(seq)
+        await session.flush()
+        step0 = EmailSequenceStep(sequence_id=seq.id, template_id=tpl.id, position=0)
+        session.add(step0)
+        await session.flush()
+        campaign = EmailCampaign(
+            name="c", sequence_id=seq.id, brevo_list_ids=[1], status="running",
+            scheduled_at=datetime.now(UTC),
+        )
+        session.add(campaign)
+        await session.flush()
+
+        fast = EmailCampaignRecipient(
+            campaign_id=campaign.id, email="fast@x.fr", current_step=1,
+            last_sent_at=datetime.now(UTC),
+        )
+        slow = EmailCampaignRecipient(
+            campaign_id=campaign.id, email="slow@x.fr", current_step=1,
+            last_sent_at=datetime.now(UTC) - timedelta(minutes=10),
+        )
+        session.add_all([fast, slow])
+        await session.flush()
+        session.add_all([
+            EmailCampaignEvent(
+                campaign_id=campaign.id, recipient_id=fast.id, step_position=0,
+                event_type="sent", occurred_at=datetime.now(UTC),
+            ),
+            EmailCampaignEvent(
+                campaign_id=campaign.id, recipient_id=slow.id, step_position=0,
+                event_type="sent", occurred_at=datetime.now(UTC) - timedelta(minutes=10),
+            ),
+        ])
+        await session.commit()
+
+        await brevo_webhook(_FakeRequest({"event": "click", "email": "fast@x.fr"}), token=None, db=session)
+        await brevo_webhook(_FakeRequest({"event": "click", "email": "slow@x.fr"}), token=None, db=session)
+
+        rows = (await session.execute(
+            select(EmailCampaignEvent.event_type)
+            .join(EmailCampaignRecipient, EmailCampaignEvent.recipient_id == EmailCampaignRecipient.id)
+            .where(
+                EmailCampaignRecipient.email == "fast@x.fr",
+                EmailCampaignEvent.event_type.in_(["clicked", "clicked_machine"]),
+            )
+        )).scalars().all()
+        assert rows == ["clicked_machine"]
+
+        rows_slow = (await session.execute(
+            select(EmailCampaignEvent.event_type)
+            .join(EmailCampaignRecipient, EmailCampaignEvent.recipient_id == EmailCampaignRecipient.id)
+            .where(
+                EmailCampaignRecipient.email == "slow@x.fr",
+                EmailCampaignEvent.event_type.in_(["clicked", "clicked_machine"]),
+            )
+        )).scalars().all()
+        assert rows_slow == ["clicked"]

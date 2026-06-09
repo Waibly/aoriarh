@@ -69,6 +69,7 @@ interface BranchStats {
   sent: number;
   opened: number;
   clicked: number;
+  clicked_machine: number;
   bounced: number;
   unsubscribed: number;
 }
@@ -80,6 +81,7 @@ interface StepStats {
   sent: number;
   opened: number;
   clicked: number;
+  clicked_machine: number;
   bounced: number;
   unsubscribed: number;
   branches: BranchStats[];
@@ -715,6 +717,11 @@ export default function AdminEmailCampaignsPage() {
                         </TableCell>
                         <TableCell className="text-right">
                           {step.clicked} <span className="text-xs text-muted-foreground">({pct(step.clicked, step.sent)})</span>
+                          {(step.clicked_machine ?? 0) > 0 && (
+                            <span className="block text-[10px] text-muted-foreground">
+                              {step.clicked_machine} bot{step.clicked_machine > 1 ? "s" : ""} filtré{step.clicked_machine > 1 ? "s" : ""}
+                            </span>
+                          )}
                         </TableCell>
                         <TableCell className="text-right">{step.bounced}</TableCell>
                         <TableCell className="text-right">{step.unsubscribed}</TableCell>
@@ -738,6 +745,11 @@ export default function AdminEmailCampaignsPage() {
                           </TableCell>
                           <TableCell className="text-right text-xs">
                             {branch.clicked} <span className="text-muted-foreground">({pct(branch.clicked, branch.sent)})</span>
+                            {(branch.clicked_machine ?? 0) > 0 && (
+                              <span className="block text-[10px] text-muted-foreground">
+                                {branch.clicked_machine} bot{branch.clicked_machine > 1 ? "s" : ""} filtré{branch.clicked_machine > 1 ? "s" : ""}
+                              </span>
+                            )}
                           </TableCell>
                           <TableCell className="text-right text-xs">{branch.bounced}</TableCell>
                           <TableCell className="text-right text-xs">{branch.unsubscribed}</TableCell>

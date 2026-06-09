@@ -164,6 +164,7 @@ class CampaignBranchStats(BaseModel):
     sent: int = 0
     opened: int = 0
     clicked: int = 0
+    clicked_machine: int = 0  # clics de bots de sécurité (exclus de "clicked")
     bounced: int = 0
     unsubscribed: int = 0
 
@@ -175,6 +176,7 @@ class CampaignStepStats(BaseModel):
     sent: int = 0
     opened: int = 0
     clicked: int = 0
+    clicked_machine: int = 0  # clics de bots de sécurité (exclus de "clicked")
     bounced: int = 0
     unsubscribed: int = 0
     branches: list[CampaignBranchStats] = []

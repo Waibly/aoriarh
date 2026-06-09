@@ -584,6 +584,7 @@ class EmailCampaignService:
                         "sent": br_counts.get("sent", 0),
                         "opened": br_opened,
                         "clicked": br_counts.get("clicked", 0),
+                        "clicked_machine": br_counts.get("clicked_machine", 0),
                         "bounced": br_counts.get("bounced", 0),
                         "unsubscribed": br_counts.get("unsubscribed", 0),
                     })
@@ -595,6 +596,7 @@ class EmailCampaignService:
                 "sent": counts.get("sent", 0),
                 "opened": opened,
                 "clicked": counts.get("clicked", 0),
+                "clicked_machine": counts.get("clicked_machine", 0),
                 "bounced": counts.get("bounced", 0),
                 "unsubscribed": counts.get("unsubscribed", 0),
                 "branches": branch_stats,

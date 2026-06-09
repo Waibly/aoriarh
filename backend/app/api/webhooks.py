@@ -1,5 +1,5 @@
 import logging
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, Query, Request, status
 from sqlalchemy import func, select
@@ -18,6 +18,14 @@ from app.models.emailing import (
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+# Faux clics : les filtres de sécurité des messageries (Microsoft Defender,
+# Proofpoint, Mimecast…) cliquent automatiquement TOUS les liens d'un mail
+# entrant pour les scanner, dans les secondes/minutes qui suivent la réception,
+# avant tout humain. Mesuré en prod : la quasi-totalité des clics arrivent en
+# moins de 2 min. Un clic survenant dans cette fenêtre est traité comme un clic
+# « machine » (event_type "clicked_machine") et exclu des stats et de la relance.
+MACHINE_CLICK_WINDOW = timedelta(seconds=120)
 
 EVENT_MAP = {
     # "delivered"/"request" ne sont PAS mappés vers "sent" : le moteur d'envoi
@@ -92,6 +100,30 @@ async def brevo_webhook(
         steps = sorted(campaign.sequence.steps, key=lambda s: s.position)
         idx = min(max(recipient.current_step - 1, 0), len(steps) - 1)
         step_position = steps[idx].position
+
+    # Faux clic (bot de sécurité) : un clic qui arrive juste après l'envoi ne
+    # peut pas être humain. On le requalifie en "clicked_machine" pour que les
+    # stats et l'aiguillage l'ignorent (sinon des contacts non engagés seraient
+    # comptés comme cliqueurs et recevraient le mauvais mail de relance).
+    if event_type == "clicked":
+        sent_at = (
+            await db.execute(
+                select(EmailCampaignEvent.occurred_at)
+                .where(
+                    EmailCampaignEvent.recipient_id == recipient.id,
+                    EmailCampaignEvent.step_position == step_position,
+                    EmailCampaignEvent.event_type == "sent",
+                )
+                .order_by(EmailCampaignEvent.occurred_at.asc())
+                .limit(1)
+            )
+        ).scalar_one_or_none()
+        if sent_at is not None and datetime.now(UTC) - sent_at < MACHINE_CLICK_WINDOW:
+            event_type = "clicked_machine"
+            logger.info(
+                "Clic machine ignoré (%s, +%.0fs après envoi)",
+                email, (datetime.now(UTC) - sent_at).total_seconds(),
+            )
 
     # Dédup : Brevo peut renvoyer plusieurs fois la même ouverture / le même
     # clic. On ne compte qu'une fois par (contact, étape, type) pour éviter des
