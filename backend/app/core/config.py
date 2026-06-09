@@ -31,8 +31,8 @@ class Settings(BaseSettings):
     voyage_api_key: str  # OBLIGATOIRE — pas de défaut
     voyage_embedding_model: str = "voyage-law-2"
 
-    # LLM
-    llm_model: str = "gpt-5-mini"
+    # LLM — modèle de génération de la réponse finale
+    llm_model: str = "gpt-5.2"
 
     # Auth / JWT
     secret_key: str  # OBLIGATOIRE — pas de défaut

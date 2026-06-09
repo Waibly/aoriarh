@@ -110,6 +110,10 @@ class RagTrace:
     model: str | None = None
     out_of_scope: bool = False
     no_results: bool = False
+    # C1 — Confiance du retrieval : meilleur score de reranking et drapeau
+    # "faible pertinence" qui déclenche une consigne de rigueur à la génération.
+    max_rerank_score: float | None = None
+    low_confidence: bool = False
     error: str | None = None
 
     def to_dict(self) -> dict:
@@ -127,6 +131,8 @@ class RagTrace:
             "model": self.model,
             "out_of_scope": self.out_of_scope,
             "no_results": self.no_results,
+            "max_rerank_score": self.max_rerank_score,
+            "low_confidence": self.low_confidence,
             "error": self.error,
         }
 
@@ -254,6 +260,7 @@ Le RH qui te consulte doit sécuriser une décision. Tes réponses obéissent à
 - **Récence** : quand plusieurs textes (avenants, accords, grilles) fixent une valeur différente pour la même chose (salaire, indemnité, valeur du point, coefficient, durée), retiens TOUJOURS celui dont la date d'effet est la plus récente. Un avenant de 2021 remplace un avenant de 2017 sur le même sujet. Ne cite PAS les valeurs obsolètes sauf pour contexte historique.
 - **Jurisprudence** = interprète la loi, ne la remplace pas. Cite avec référence complète (Cass. soc., date, n° pourvoi). Privilégie le plus récent.
 - **Anti-hallucination** : appuie-toi sur les sources fournies. N'invente PAS d'articles, de chiffres ou de jurisprudence. En revanche, si les sources ne couvrent pas un aspect, tu peux donner la règle générale de droit du travail que tu connais en le signalant brièvement UNE SEULE FOIS en fin de réponse. Ne JAMAIS écrire "vos sources ne couvrent pas" ou "vos sources ne permettent pas" de façon répétée : le RH attend une position claire, pas des hésitations.
+- **Termes de l'art — sens technique exact** : certains mots ont un sens juridique précis qu'il ne faut JAMAIS diluer dans leur sens courant. En particulier, **« salarié protégé »** désigne le **statut protecteur** des titulaires d'un mandat représentatif (délégué syndical, élu/représentant CSE, conseiller prud'homme, etc., art. L.2411-1 et s.), dont le licenciement est subordonné à l'**autorisation de l'inspecteur du travail**. Ce statut est à DISTINGUER d'une simple **protection contre le licenciement** : la salariée enceinte (art. L.1225-4), le salarié en congé maternité/paternité/naissance, en AT/MP, etc. sont **protégés contre le licenciement** mais **ne sont PAS des « salariés protégés »** au sens technique (pas d'autorisation administrative — régime de nullité civile). Si l'utilisateur emploie un terme de l'art, réponds dans son sens technique et corrige explicitement toute assimilation erronée. La même rigueur vaut pour les autres termes de l'art (faute grave vs faute lourde, rupture conventionnelle vs prise d'acte, etc.).
 
 ## FORMAT — adapte-le à l'intention de la question
 
@@ -271,7 +278,7 @@ Choisis le format AVANT d'écrire, selon ce que la question appelle :
 | Recherche de fond (dispositif complet, plusieurs textes) | Réponse développée, structurée avec des titres ## ; couvre tout ce qui s'applique. |
 
 - Pour une question binaire, commence par **Oui** / **Non** / **Ça dépend**. Sinon, commence directement par le contenu, sans "Oui." d'acquiescement superflu.
-- **Quand l'utilisateur colle ou affirme une phrase globalement correcte mais imprécise** (ex: une définition simplifiée, une règle énoncée sans ses conditions), ne commence PAS par "Non" pour pointer une nuance technique : confirme d'abord ce qui est juste, puis ajoute la précision (ex: "**Oui, en pratique** — avec une nuance : …"). Réserve "Non" aux affirmations réellement fausses, pas aux raccourcis globalement exacts.
+- **Quand l'utilisateur colle ou affirme une phrase globalement correcte mais imprécise** (ex: une définition simplifiée, une règle énoncée sans ses conditions), ne commence PAS par "Non" pour pointer une nuance technique : confirme d'abord ce qui est juste, puis ajoute la précision (ex: "**Oui, en pratique** — avec une nuance : …"). Réserve "Non" aux affirmations réellement fausses, pas aux raccourcis globalement exacts. **Exception — termes de l'art** : si l'imprécision porte sur un terme au sens juridique défini (cf. « salarié protégé », « faute lourde »…), la précision PRIME sur l'acquiescement — réponds dans le sens technique et corrige l'assimilation, quitte à commencer par « Non, pas au sens juridique du terme : … ».
 - Pour une situation à risque, identifie LE risque principal (celui qui pèse le plus lourd juridiquement) avant les risques secondaires. Ne liste pas 10 risques au même niveau.
 - **Titres** : pour une réponse longue (recherche de fond, sujet à plusieurs volets), structure avec des titres markdown (## / ###) pour que le RH navigue d'un coup d'œil. Pour une réponse courte, n'en mets pas — ils l'alourdiraient.
 - **Tableaux** dès qu'il y a des cas, barèmes ou comparaisons.
@@ -439,8 +446,18 @@ Règles :
 du document, de l'accord ou du sujet identifié dans l'historique ou les sources citées. \
 C'est CRITIQUE pour que la recherche trouve le bon document.
 - CONSERVE : organisation, CCN/IDCC, statut salarié, type contrat, situation factuelle.
-- Si la question introduit un nouveau sujet sans lien, retourne-la telle quelle.
+- Retourne la question TELLE QUELLE UNIQUEMENT si elle est déjà parfaitement \
+autonome ET introduit un sujet juridique entièrement nouveau, sans aucun lien \
+avec l'historique. Dans le DOUTE, reformule. Une relance de suivi — même courte \
+(« il en manque », « et pour X ? », « donne la durée pour chacun », « complète », \
+« lesquels ? ») — doit TOUJOURS être réécrite en reprenant EXPLICITEMENT le sujet \
+de l'échange en cours. Ne renvoie jamais une relance vague inchangée.
 - Réponds UNIQUEMENT avec la question reformulée."""
+
+
+def _normalize_question(s: str) -> str:
+    """Normalise une question pour comparer reformulation et original (C2)."""
+    return " ".join((s or "").lower().split()).strip(" ?.!,;:")
 
 
 class RAGAgent:
@@ -569,9 +586,15 @@ class RAGAgent:
             fallback=results[:RERANK_TOP_K],
         )
         t3 = time.perf_counter()
+        # C1 — Confiance du retrieval (cf. prepare_context) sur scores propres.
+        _max_score = max((r.score for r in results), default=None)
+        low_confidence = (
+            _max_score is not None and _max_score < rag_config.LOW_CONFIDENCE_RERANK
+        )
         logger.info(
-            "[PERF] Step 3 — Reranking %.0fms | %d results",
+            "[PERF] Step 3 — Reranking %.0fms | %d results%s",
             (t3 - t2) * 1000, len(results),
+            " | LOW_CONFIDENCE" if low_confidence else "",
         )
 
         # --- Step 3.5: Parent expansion (small-to-big) ---
@@ -620,7 +643,10 @@ class RAGAgent:
         # --- Step 6: Generation ---
         t_gen = time.perf_counter()
         answer = await self._step_with_timeout(
-            self._generate(query, results, org_context=org_context, history=history),
+            self._generate(
+                query, results, org_context=org_context, history=history,
+                low_confidence=low_confidence,
+            ),
             fallback=self._fallback_answer(results),
         )
         logger.info(
@@ -728,9 +754,19 @@ class RAGAgent:
 
         trace.perf_ms["rerank"] = (time.perf_counter() - t2) * 1000
         trace.rerank_results = _serialize_chunks(results, limit=RERANK_TOP_K)
+        # C1 — Confiance du retrieval : si même le meilleur document reste sous
+        # le seuil, la recherche est faible -> on signalera à la génération de
+        # ne rien inventer. Calculé ici sur les scores de rerank propres.
+        trace.max_rerank_score = max((r.score for r in results), default=None)
+        trace.low_confidence = (
+            trace.max_rerank_score is not None
+            and trace.max_rerank_score < rag_config.LOW_CONFIDENCE_RERANK
+        )
         logger.info(
-            "[PERF] Step 3 — Reranking %.0fms | %d results",
+            "[PERF] Step 3 — Reranking %.0fms | %d results | max_score=%.3f%s",
             trace.perf_ms["rerank"], len(results),
+            trace.max_rerank_score if trace.max_rerank_score is not None else -1.0,
+            " | LOW_CONFIDENCE" if trace.low_confidence else "",
         )
 
         # Step 3.5: Parent expansion (small-to-big)
@@ -793,11 +829,14 @@ class RAGAgent:
         org_context: dict[str, str | None] | None = None,
         history: list[dict[str, str]] | None = None,
         buffer_size: int = 10,
+        low_confidence: bool = False,
     ) -> AsyncGenerator[str, None]:
         """Stream the LLM generation token by token (buffered)."""
         t_start = time.perf_counter()
         context = self._build_context(results)
-        user_content = self._build_user_message(query, context, org_context, history)
+        user_content = self._build_user_message(
+            query, context, org_context, history, low_confidence=low_confidence,
+        )
         logger.info(
             "[RAG] stream org_context injected: %s",
             org_context if org_context else "None",
@@ -912,7 +951,7 @@ class RAGAgent:
         user_content += f"Question de suivi : {query}"
 
         response = await self.llm.chat.completions.create(
-            model="gpt-5-mini",
+            model=rag_config.CONDENSE_MODEL,
             messages=[
                 {"role": "system", "content": _CONDENSE_PROMPT},
                 {"role": "user", "content": user_content},
@@ -924,7 +963,7 @@ class RAGAgent:
         if response.usage:
             await cost_tracker.log(
                 provider="openai",
-                model="gpt-5-mini",
+                model=rag_config.CONDENSE_MODEL,
                 operation_type="condense",
                 tokens_input=response.usage.prompt_tokens,
                 tokens_output=response.usage.completion_tokens,
@@ -934,7 +973,36 @@ class RAGAgent:
                 context_id=self._conversation_id,
                 is_replay=self._is_replay,
             )
-        return response.choices[0].message.content or query
+        condensed = (response.choices[0].message.content or query).strip() or query
+
+        # C2 — Filet de sécurité : si le modèle a renvoyé la relance quasiment
+        # telle quelle alors qu'une conversation est en cours, la requête de
+        # recherche perd le sujet ("la durée pour chacun" -> chacun = ?). On la
+        # rattache au sujet courant (dernière question substantielle de l'user)
+        # pour que le retrieval reste sur les rails.
+        if _normalize_question(condensed) == _normalize_question(query):
+            anchor = self._running_topic(history)
+            if anchor:
+                condensed = f"{anchor} {query}"
+                logger.info(
+                    "[CONDENSE] Relance non reformulée — requête ancrée sur le sujet courant",
+                )
+        return condensed
+
+    def _running_topic(self, history: list[dict[str, str]]) -> str | None:
+        """Dernière question substantielle de l'utilisateur dans l'historique.
+
+        Sert d'ancre pour les relances vagues ("il en manque", "pour chacun")
+        que le condenseur n'a pas réécrites : on réinjecte ce sujet dans la
+        requête de recherche pour éviter la dérive.
+        """
+        for msg in reversed(history):
+            if msg.get("role") == "user":
+                text = (msg.get("content") or "").strip()
+                # On saute les relances courtes/anaphoriques sans contenu propre.
+                if len(text.split()) >= 5:
+                    return text.rstrip(" ?.!")[:200]
+        return None
 
     @staticmethod
     def _build_expand_user_message(
@@ -974,18 +1042,18 @@ class RAGAgent:
         """Step 1: Expand the user query into 5 search variants."""
         user_content = self._build_expand_user_message(query, org_context)
         response = await self.llm.chat.completions.create(
-            model="gpt-4o-mini",
+            model=rag_config.EXPAND_MODEL,
             messages=[
                 {"role": "system", "content": _QUERY_EXPAND_PROMPT},
                 {"role": "user", "content": user_content},
             ],
-            temperature=0.3,
-            max_tokens=600,
+            max_completion_tokens=800,
+            reasoning_effort="minimal",
         )
         if response.usage:
             await cost_tracker.log(
                 provider="openai",
-                model="gpt-4o-mini",
+                model=rag_config.EXPAND_MODEL,
                 operation_type="expand",
                 tokens_input=response.usage.prompt_tokens,
                 tokens_output=response.usage.completion_tokens,
@@ -1016,18 +1084,18 @@ class RAGAgent:
         surface them. Never shown to the user — embedding signal only.
         """
         response = await self.llm.chat.completions.create(
-            model="gpt-4o-mini",
+            model=rag_config.EXPAND_MODEL,
             messages=[
                 {"role": "system", "content": _LEGAL_ANCHOR_PROMPT},
                 {"role": "user", "content": self._build_expand_user_message(query, org_context)},
             ],
-            temperature=0.2,
-            max_tokens=200,
+            max_completion_tokens=400,
+            reasoning_effort="minimal",
         )
         if response.usage:
             await cost_tracker.log(
                 provider="openai",
-                model="gpt-4o-mini",
+                model=rag_config.EXPAND_MODEL,
                 operation_type="expand",
                 tokens_input=response.usage.prompt_tokens,
                 tokens_output=response.usage.completion_tokens,
@@ -1420,9 +1488,23 @@ class RAGAgent:
         context: str,
         org_context: dict[str, str | None] | None = None,
         history: list[dict[str, str]] | None = None,
+        low_confidence: bool = False,
     ) -> str:
         """Build the user message with sources, optional org context, history, and question."""
         parts = [f"Sources documentaires :\n\n{context}"]
+        if low_confidence:
+            parts.append(
+                "## RIGUEUR SUR LES SOURCES (pertinence limitée détectée)\n"
+                "Les sources ci-dessus ont une pertinence limitée pour cette "
+                "question précise. Règle stricte : n'avance AUCUN chiffre, délai, "
+                "durée, montant, seuil, article ou référence de jurisprudence qui "
+                "ne figure pas littéralement dans ces sources. Tu peux énoncer la "
+                "règle générale que tu connais en la présentant explicitement comme "
+                "telle (et non comme sourcée). Si un point précisément demandé "
+                "n'est pas couvert par les sources, dis-le en une phrase et invite "
+                "à reformuler ou préciser, plutôt que de produire une réponse "
+                "détaillée non sourcée."
+            )
         if org_context and any(org_context.values()):
             parts.append(self._build_org_context_block(org_context))
         if history:
@@ -1446,10 +1528,13 @@ class RAGAgent:
         results: list[SearchResult],
         org_context: dict[str, str | None] | None = None,
         history: list[dict[str, str]] | None = None,
+        low_confidence: bool = False,
     ) -> str:
         """Step 6: Generate the answer using the LLM with retrieved context."""
         context = self._build_context(results)
-        user_content = self._build_user_message(query, context, org_context, history)
+        user_content = self._build_user_message(
+            query, context, org_context, history, low_confidence=low_confidence,
+        )
         logger.info(
             "[RAG] org_context injected: %s",
             org_context if org_context else "None",
