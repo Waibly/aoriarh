@@ -263,18 +263,27 @@ class TestSearchWithExpansion:
             [_make_result("chunk3", 0.7, "doc3", 0)],
         ]
 
-        call_count = 0
+        variant_calls = 0
+        leg_calls = 0
 
-        async def mock_search(query, org_id, top_k=20, org_idcc_list=None):
-            nonlocal call_count
+        async def mock_search(
+            query, org_id, top_k=20, org_idcc_list=None, source_type_filter=None,
+        ):
+            nonlocal variant_calls, leg_calls
+            # The legislation floor runs one auxiliary search restricted to
+            # written-law source types (source_type_filter set). Keep it empty
+            # here; counted separately.
+            if source_type_filter is not None:
+                leg_calls += 1
+                return []
             # _search_with_expansion prepends the original query, so we handle
             # more calls than variants; return empty for extras.
             result = (
-                results_per_variant[call_count]
-                if call_count < len(results_per_variant)
+                results_per_variant[variant_calls]
+                if variant_calls < len(results_per_variant)
                 else []
             )
-            call_count += 1
+            variant_calls += 1
             return result
 
         agent.search_engine = MagicMock()
@@ -288,7 +297,8 @@ class TestSearchWithExpansion:
         assert len(variants) == 4
         assert variants[0] == "test query"
         assert len(results) >= 3  # at least 3 unique chunks
-        assert call_count == 4  # original + 3 variants searched in parallel
+        assert variant_calls == 4  # original + 3 variants searched in parallel
+        assert leg_calls == 1  # one legislation-floor search ran alongside
 
     @pytest.mark.asyncio
     async def test_search_with_overlap_deduplicates(self, agent):
@@ -300,8 +310,12 @@ class TestSearchWithExpansion:
 
         call_count = 0
 
-        async def mock_search(query, org_id, top_k=20, org_idcc_list=None):
+        async def mock_search(
+            query, org_id, top_k=20, org_idcc_list=None, source_type_filter=None,
+        ):
             nonlocal call_count
+            if source_type_filter is not None:
+                return []  # legislation floor: nothing extra for this test
             call_count += 1
             # Both variants return the same document
             return [
@@ -335,8 +349,12 @@ class TestSearchWithExpansion:
 
         call_count = 0
 
-        async def mock_search(query, org_id, top_k=20, org_idcc_list=None):
+        async def mock_search(
+            query, org_id, top_k=20, org_idcc_list=None, source_type_filter=None,
+        ):
             nonlocal call_count
+            if source_type_filter is not None:
+                return []  # legislation floor
             call_count += 1
             if call_count == 1:
                 raise RuntimeError("Search failed")
@@ -349,5 +367,46 @@ class TestSearchWithExpansion:
             "test query", "org-123",
         )
 
-        # First variant failed but second succeeded
+        # First variant failed but the others succeeded (same doc → 1 result)
         assert len(results) == 1
+
+    @pytest.mark.asyncio
+    async def test_legislation_floor_injects_law(self, agent):
+        """The legislation floor injects a written-law candidate into the pool
+        even when every variant search returns only jurisprudence."""
+        agent.llm.chat.completions.create.return_value = _mock_llm_response(
+            "1. Variant A\n2. Variant B"
+        )
+
+        law = SearchResult(
+            text="art. L.2411-1", doc_name="Code du travail",
+            document_id="code-leg", source_type="code_travail",
+            norme_niveau=3, norme_poids=0.9, chunk_index=0, score=0.5,
+            article_nums=["L2411-1"],
+        )
+
+        async def mock_search(
+            query, org_id, top_k=20, org_idcc_list=None, source_type_filter=None,
+        ):
+            if source_type_filter is not None:
+                # legislation-only auxiliary search surfaces a code article
+                return [law]
+            # main variant searches return only jurisprudence
+            return [
+                SearchResult(
+                    text="arret", doc_name="Cass", document_id="jur1",
+                    source_type="arret_cour_cassation", norme_niveau=4,
+                    norme_poids=0.85, chunk_index=0, score=0.9,
+                ),
+            ]
+
+        agent.search_engine = MagicMock()
+        agent.search_engine.search = mock_search
+
+        results, _variants = await agent._search_with_expansion(
+            "comment licencier un salarie protege", "org-123",
+        )
+
+        doc_ids = {r.document_id for r in results}
+        assert "code-leg" in doc_ids  # legislation floor injected the article
+        assert "jur1" in doc_ids

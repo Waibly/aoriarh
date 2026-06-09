@@ -12,6 +12,7 @@ from app.core.config import settings
 import app.rag.config as rag_config
 from app.rag.config import (
     CONDENSE_HISTORY_LIMIT,
+    LEGISLATION_FLOOR_TOP,
     RAG_MAX_ITERATIONS,
     RAG_TIMEOUT_GLOBAL,
     RAG_TIMEOUT_PER_STEP,
@@ -38,6 +39,16 @@ _llm = AsyncOpenAI(
     max_retries=2,
 )
 _search_engine = HybridSearch()
+
+# "Written law" source types = hierarchy levels 1–5 EXCEPT jurisprudence
+# (level 4). The legislation floor runs an auxiliary retrieval restricted to
+# these types so codified articles reach the reranker even when the corpus is
+# dominated by jurisprudence (e.g. ~16k arrêts vs a handful of code documents).
+_LEGISLATION_SOURCE_TYPES: list[str] = sorted(
+    st
+    for st, meta in DOCUMENT_TYPE_HIERARCHY.items()
+    if isinstance(meta.get("niveau"), int) and meta["niveau"] <= 5 and meta["niveau"] != 4
+)
 
 
 @dataclass
@@ -277,6 +288,8 @@ Choisis le format AVANT d'écrire, selon ce que la question appelle :
   - les articles de loi clés : **art. L.1234-1** Code du travail, **art. R.4121-1**
   N'utilise PAS le gras sur : les phrases entières, les articulations logiques ("en outre", "par ailleurs"), les descriptions narratives. Le gras doit aider l'œil à scanner, pas saturer la lecture.
 - **Cite les références légales dans le texte** : articles de loi (art. L.1234-1), articles de CCN (art. 33 CCNT66), jurisprudence (Cass. soc., date, n° pourvoi). Le RH doit pouvoir copier-coller ta réponse avec ses fondements juridiques. Ne cite PAS les noms des documents sources (affichés séparément dans l'UI). Français uniquement.
+- **Ne renvoie JAMAIS à un numéro de source** (« Source 3 », « Sources 8, 9 ») : cette numérotation est interne et invisible pour le RH. Réfère-toi toujours à la référence juridique elle-même (l'article, le n° de pourvoi, la date de l'arrêt).
+- **N'affirme qu'une référence figure « dans vos sources » que si elle y est réellement.** Si tu cites un article ou un arrêt qui n'apparaît pas dans les sources fournies (parce que tu le connais par ailleurs), présente-le comme la règle générale applicable, sans laisser entendre qu'il provient des sources. Ne fabrique jamais le rattachement d'une référence à une source.
 - **Pose-toi DANS l'organisation, pas en face.** Quand le contexte fournit le nom de l'organisation (bloc « Entreprise de l'utilisateur : <Nom> »), utilise ce nom directement : « chez <Nom> », « l'accord d'entreprise de <Nom> », « la CCN qui s'applique à <Nom> ». Si le nom n'est pas fourni, replie-toi sur « ici », « dans cette organisation », « la règle qui s'applique ici ». Privilégie « côté employeur », « côté salarié », « le point critique », « ce qu'il faut surveiller ». Évite : « chez nous », « notre entreprise », « nos accords » ; « vous devez », « votre CCN », « veillez à » (ton de tiers extérieur) ; « je vais expliquer », « Souhaitez-vous que je… », « Je peux aussi… », « N'hésitez pas… ».
 - **Termine par 1 à 3 questions complémentaires** qui font avancer la décision du RH (jamais des offres de service du type « Souhaitez-vous que je… »). Format :
 
@@ -381,6 +394,20 @@ une variante au format suivant :
 ## Format de sortie
 - Chaque variante sur une ligne, précédée de son numéro (1. 2. 3. 4. 5.)
 - Aucune explication, aucun préambule"""
+
+_LEGAL_ANCHOR_PROMPT = """\
+Tu es un juriste en droit social français. À partir de la question de l'utilisateur, \
+rédige UNE requête de recherche dense en vocabulaire LÉGISLATIF codifié, destinée à \
+retrouver les ARTICLES de loi applicables (Code du travail et autres codes).
+
+Règles :
+- Nomme les notions juridiques exactes et les NUMÉROS D'ARTICLES probables \
+(ex : L.2411-1, R.2421-1, L.2422-4), même si tu n'es pas certain du numéro exact : \
+ce texte sert UNIQUEMENT à retrouver les bons textes, il n'est jamais montré à l'utilisateur.
+- N'emploie AUCUN terme renvoyant à la jurisprudence (pas de « arrêt », « Cass », \
+« juge », « cour », « nullité »…) : on ne cherche ici que des textes de loi.
+- N'introduis aucun concept juridique étranger à la question.
+- 1 à 3 phrases denses, sur une seule ligne, sans préambule ni mise en forme."""
 
 _CONDENSE_PROMPT = """\
 Tu reformules une question de suivi en question autonome et complète.
@@ -549,7 +576,9 @@ class RAGAgent:
 
         # --- Step 3.5: Parent expansion (small-to-big) ---
         t_exp = time.perf_counter()
-        results = expand_to_parents(results, self.search_engine.qdrant)
+        results = expand_to_parents(
+            results, self.search_engine.qdrant, min_legislation=2,
+        )
         logger.info(
             "[PERF] Step 3.5 — Parent expansion %.0fms | %d groups",
             (time.perf_counter() - t_exp) * 1000, len(results),
@@ -706,7 +735,9 @@ class RAGAgent:
 
         # Step 3.5: Parent expansion (small-to-big)
         t_exp = time.perf_counter()
-        results = expand_to_parents(results, self.search_engine.qdrant)
+        results = expand_to_parents(
+            results, self.search_engine.qdrant, min_legislation=2,
+        )
         trace.perf_ms["parent_expansion"] = (time.perf_counter() - t_exp) * 1000
         trace.parent_groups = _serialize_chunks(results, limit=15, text_chars=400)
         logger.info(
@@ -969,6 +1000,45 @@ class RAGAgent:
             return [_OUT_OF_SCOPE_MARKER]
         return self._parse_variants(content, query)
 
+    async def _generate_legal_anchor(
+        self,
+        query: str,
+        org_context: dict[str, str | None] | None = None,
+    ) -> str:
+        """Generate a legislation-targeted search query (codified vocabulary +
+        likely article numbers).
+
+        Used by the legislation floor: a conversational question ("quelle
+        procédure pour licencier un salarié protégé ?") matches verbose
+        jurisprudence far better than terse code articles, so the relevant
+        articles never enter the candidate pool. This anchor restates the
+        question in codified terms so an auxiliary legislation-only search can
+        surface them. Never shown to the user — embedding signal only.
+        """
+        response = await self.llm.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": _LEGAL_ANCHOR_PROMPT},
+                {"role": "user", "content": self._build_expand_user_message(query, org_context)},
+            ],
+            temperature=0.2,
+            max_tokens=200,
+        )
+        if response.usage:
+            await cost_tracker.log(
+                provider="openai",
+                model="gpt-4o-mini",
+                operation_type="expand",
+                tokens_input=response.usage.prompt_tokens,
+                tokens_output=response.usage.completion_tokens,
+                organisation_id=self._org_id,
+                user_id=self._user_id,
+                context_type="question",
+                context_id=self._conversation_id,
+                is_replay=self._is_replay,
+            )
+        return (response.choices[0].message.content or "").strip()
+
     @staticmethod
     def _parse_variants(content: str, original_query: str) -> list[str]:
         """Parse numbered variants from LLM response."""
@@ -1078,10 +1148,26 @@ class RAGAgent:
                 ", ".join(source_type_filter),
             )
 
-        variants = await self._step_with_timeout(
+        # Legislation floor: when the user did NOT ask for a specific source
+        # category, also run an auxiliary legislation-only retrieval so codified
+        # articles get a fair shot at the reranker. Skipped when an explicit
+        # intent is set (we then respect exactly what the user asked for).
+        apply_legislation_floor = source_type_filter is None
+
+        # Expand the query and (in parallel) build the legislation anchor query.
+        expand_coro = self._step_with_timeout(
             self._expand_queries(query, org_context=org_context),
             fallback=[query],
         )
+        if apply_legislation_floor:
+            anchor_coro = self._step_with_timeout(
+                self._generate_legal_anchor(query, org_context=org_context),
+                fallback="",
+            )
+            variants, legal_anchor = await asyncio.gather(expand_coro, anchor_coro)
+        else:
+            variants = await expand_coro
+            legal_anchor = ""
         t1 = time.perf_counter()
         logger.info(
             "[PERF] Step 1 — Query expansion %.0fms | %d variants: %s",
@@ -1090,14 +1176,21 @@ class RAGAgent:
             " | ".join(v[:60] for v in variants),
         )
 
+        # Out-of-scope short-circuit: don't run the legislation floor either.
+        if variants and variants[0] == _OUT_OF_SCOPE_MARKER:
+            return [], variants
+
         # Always include the original query as variant #0 so identifiers like
         # article numbers / numéros de pourvoi (which are stripped from LLM
-        # variants by design) are still searched. Skip if it's the OOS marker.
-        if variants and variants[0] != _OUT_OF_SCOPE_MARKER:
-            if query not in variants:
-                variants = [query] + variants
+        # variants by design) are still searched.
+        if variants and query not in variants:
+            variants = [query] + variants
 
-        # Search all variants in parallel
+        # Search all variants in parallel. Append one legislation-only search
+        # (using the anchor query, or the raw query if the anchor failed) whose
+        # results are injected into the pool rather than RRF-fused — fusing it
+        # in would dilute it, since the near-duplicate variants all "vote"
+        # jurisprudence and outnumber it.
         search_tasks = [
             self.search_engine.search(
                 variant, organisation_id, top_k=TOP_K,
@@ -1106,22 +1199,34 @@ class RAGAgent:
             )
             for variant in variants
         ]
+        leg_task_idx: int | None = None
+        if apply_legislation_floor:
+            leg_task_idx = len(search_tasks)
+            search_tasks.append(
+                self.search_engine.search(
+                    legal_anchor or query, organisation_id, top_k=TOP_K,
+                    org_idcc_list=org_idcc_list,
+                    source_type_filter=_LEGISLATION_SOURCE_TYPES,
+                )
+            )
         search_results = await asyncio.gather(*search_tasks, return_exceptions=True)
 
-        # Filter out errors
+        # Split variant results (RRF-fused) from the legislation results (injected)
         valid_results: list[list[SearchResult]] = []
+        leg_results: list[SearchResult] = []
         for i, result in enumerate(search_results):
             if isinstance(result, Exception):
-                logger.warning(
-                    "Search failed for variant %d: %s", i, result,
-                )
+                logger.warning("Search failed for task %d: %s", i, result)
+                continue
+            if i == leg_task_idx:
+                leg_results = result
             else:
                 valid_results.append(result)
 
         t2 = time.perf_counter()
         logger.info(
             "[PERF] Step 2 — Parallel search ×%d %.0fms | %s results per variant",
-            len(variants),
+            len(valid_results),
             (t2 - t1) * 1000,
             ", ".join(str(len(r)) for r in valid_results),
         )
@@ -1129,9 +1234,25 @@ class RAGAgent:
         if not valid_results:
             return [], variants
 
-        # Fuse results with RRF
+        # Fuse variant results with RRF, then inject the legislation floor.
         fused = self._reciprocal_rank_fusion(valid_results)
-        return fused[:TOP_K], variants
+        pool = fused[:TOP_K]
+        if leg_results:
+            seen = {(r.document_id, r.chunk_index) for r in pool}
+            injected = 0
+            for r in leg_results[:LEGISLATION_FLOOR_TOP]:
+                key = (r.document_id, r.chunk_index)
+                if key in seen:
+                    continue
+                seen.add(key)
+                pool.append(r)
+                injected += 1
+            if injected:
+                logger.info(
+                    "[LEGFLOOR] Injected %d legislation candidate(s) (pool: %d)",
+                    injected, len(pool),
+                )
+        return pool, variants
 
     def _cross_reference(self, results: list[SearchResult]) -> list[SearchResult]:
         """Step 4: Boost documents cited multiple times."""
@@ -1150,13 +1271,17 @@ class RAGAgent:
     def _build_context(self, results: list[SearchResult]) -> str:
         """Build context string from search results."""
         context_parts: list[str] = []
-        for i, r in enumerate(results, 1):
+        for r in results:
             type_info = DOCUMENT_TYPE_HIERARCHY.get(r.source_type, {})
             niveau = type_info.get("niveau", "?")
             label = _SOURCE_TYPE_LABELS.get(r.source_type, r.source_type)
 
+            # No "[Source N]" numbering: that index is internal (it does not
+            # match the de-duplicated, category-grouped list shown in the UI),
+            # so any "Source 8, 9" back-reference the model writes is dead. The
+            # model cites by legal reference (article / n° pourvoi) instead.
             header = (
-                f"[Source {i}]\n"
+                "[Source]\n"
                 f"Document : {r.doc_name}\n"
                 f"Type : {label} (niveau hiérarchique {niveau}/9 — "
                 f"{'norme supérieure' if isinstance(niveau, int) and niveau <= 4 else 'norme inférieure'})\n"

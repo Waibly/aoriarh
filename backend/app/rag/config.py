@@ -10,6 +10,12 @@ TOP_K = 20
 RERANK_TOP_K = 15
 RERANK_MODEL = "rerank-2"
 
+# Legislation floor: number of "written-law" candidates pulled by the auxiliary
+# legislation-only retrieval and injected into the candidate pool, so codified
+# articles always reach the reranker even when jurisprudence dominates the main
+# hybrid search. The reranker still decides which (if any) make the final cut.
+LEGISLATION_FLOOR_TOP = 5
+
 CONDENSE_HISTORY_LIMIT = 6
 
 RAG_TIMEOUT_GLOBAL = 120.0

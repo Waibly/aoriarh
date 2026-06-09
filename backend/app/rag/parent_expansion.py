@@ -29,10 +29,17 @@ from qdrant_client.models import (
     MatchValue,
 )
 
+from app.rag.norme_hierarchy import DOCUMENT_TYPE_HIERARCHY
 from app.rag.qdrant_store import COLLECTION_NAME
 from app.rag.search import SearchResult
 
 logger = logging.getLogger(__name__)
+
+
+def _is_legislation(source_type: str) -> bool:
+    """True for "written law" (hierarchy levels 1–5 except jurisprudence)."""
+    niveau = DOCUMENT_TYPE_HIERARCHY.get(source_type, {}).get("niveau")
+    return isinstance(niveau, int) and niveau <= 5 and niveau != 4
 
 # --- Tunables -----------------------------------------------------------------
 
@@ -540,12 +547,21 @@ def _merge_group(
 def expand_to_parents(
     results: list[SearchResult],
     qdrant,
+    min_legislation: int = 0,
 ) -> list[SearchResult]:
     """Expand each retrieved chunk to its parent group and return merged results.
 
     The output preserves descending score order. At most MAX_PARENT_GROUPS
     groups are returned. The original chunks are NOT preserved separately —
     each parent group becomes a single SearchResult.
+
+    min_legislation: guarantee that up to this many "written-law" groups
+    (Code/loi/décret…) already present in the reranked input survive the
+    MAX_PARENT_GROUPS cap. The reranker buries terse code articles below
+    verbose jurisprudence, so a directly-applicable article can land at rank
+    11–15 and get dropped. This only rescues legislation the reranker already
+    accepted into its output — it never injects new law — so questions whose
+    rerank carries no legislation (pure jurisprudence) are untouched.
     """
     if not results:
         return results
@@ -583,4 +599,27 @@ def expand_to_parents(
         expanded.append(merged)
 
     expanded.sort(key=lambda r: r.score, reverse=True)
-    return expanded[:MAX_PARENT_GROUPS]
+    if len(expanded) <= MAX_PARENT_GROUPS:
+        return expanded
+
+    kept = expanded[:MAX_PARENT_GROUPS]
+    if min_legislation > 0:
+        present = sum(1 for r in kept if _is_legislation(r.source_type))
+        if present < min_legislation:
+            dropped_leg = [
+                r for r in expanded[MAX_PARENT_GROUPS:]
+                if _is_legislation(r.source_type)
+            ]
+            need = min_legislation - present
+            for r in dropped_leg[:need]:
+                # Replace the lowest-scored non-legislation group still kept.
+                for j in range(len(kept) - 1, -1, -1):
+                    if not _is_legislation(kept[j].source_type):
+                        logger.info(
+                            "[LEGFLOOR] Preserved %s through parent cap (score %.3f)",
+                            r.source_type, r.score,
+                        )
+                        kept[j] = r
+                        break
+            kept.sort(key=lambda r: r.score, reverse=True)
+    return kept

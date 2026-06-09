@@ -365,3 +365,62 @@ class TestFetchByIdentifiers:
         assert len(out) == 1
         assert out[0].text == "arrêt content"
         assert qdrant.scroll.called
+
+
+# --- legislation floor preservation ------------------------------------------
+
+
+def _jur(i: int, score: float) -> SearchResult:
+    return _make_chunk(
+        doc_id=f"jur{i}", chunk_index=0, text=f"arret {i}",
+        source_type="arret_cour_cassation", score=score, doc_name=f"Cass {i}",
+    )
+
+
+def _code(i: int, art: str, score: float) -> SearchResult:
+    return _make_chunk(
+        doc_id=f"code{i}", chunk_index=0, text=f"article {art}",
+        source_type="code_travail", article_nums=[art], score=score,
+        doc_name="Code du travail",
+    )
+
+
+def _n_legislation(results: list[SearchResult]) -> int:
+    return sum(1 for r in results if r.source_type.startswith("code_"))
+
+
+class TestLegislationFloorPreservation:
+    def _results(self) -> list[SearchResult]:
+        # 10 jurisprudence (highest scores) + 2 code articles ranked 11–12
+        return [_jur(i, 0.90 - i * 0.02) for i in range(10)] + [
+            _code(1, "L2411-1", 0.62),
+            _code(2, "R2421-3", 0.60),
+        ]
+
+    def test_default_drops_low_ranked_legislation(self):
+        out = expand_to_parents(self._results(), _make_qdrant_mock({}))
+        assert len(out) == MAX_PARENT_GROUPS
+        assert _n_legislation(out) == 0  # code cut by the cap, as before
+
+    def test_min_legislation_preserves_articles(self):
+        out = expand_to_parents(
+            self._results(), _make_qdrant_mock({}), min_legislation=2,
+        )
+        assert len(out) == MAX_PARENT_GROUPS
+        assert _n_legislation(out) == 2
+        arts = sorted(r.article_nums[0] for r in out if r.article_nums)
+        assert arts == ["L2411-1", "R2421-3"]
+
+    def test_pure_jurisprudence_not_polluted(self):
+        # No legislation in the reranked input → nothing is forced in.
+        pure = [_jur(i, 0.90 - i * 0.02) for i in range(12)]
+        out = expand_to_parents(pure, _make_qdrant_mock({}), min_legislation=2)
+        assert _n_legislation(out) == 0
+
+    def test_legislation_already_kept_is_not_duplicated(self):
+        # One code article already in the top-10 → no spurious swapping.
+        mixed = [_code(1, "L1111-1", 0.95)] + [
+            _jur(i, 0.90 - i * 0.02) for i in range(11)
+        ]
+        out = expand_to_parents(mixed, _make_qdrant_mock({}), min_legislation=2)
+        assert _n_legislation(out) == 1
