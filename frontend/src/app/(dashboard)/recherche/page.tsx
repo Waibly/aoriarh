@@ -334,19 +334,20 @@ export default function RechercheDocumentairePage() {
   }
 
   return (
-    <div className="mx-auto w-full max-w-4xl">
-      <div className="rounded-2xl border bg-card p-5 shadow-sm sm:p-6">
-        <div className="mb-4">
-          <h1 className="flex items-center gap-2 text-xl font-semibold">
-            <Search className="h-5 w-5 text-primary" />
-            Recherche documentaire
-          </h1>
-        </div>
+    <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl bg-white p-4 dark:bg-card">
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        <div className="mx-auto w-full min-w-0 max-w-4xl space-y-4 px-2 py-1 sm:px-4">
+          <div className="flex items-center gap-2">
+            <h1 className="flex items-center gap-2 text-xl font-semibold">
+              <Search className="h-5 w-5 text-primary" />
+              Recherche documentaire
+            </h1>
+          </div>
 
-        {searchField}
+          {searchField}
 
-        {/* Résultats */}
-        <div className="mt-6 space-y-4">
+          {/* Résultats */}
+          <div className="space-y-4">
           {loading && (
             <div className="space-y-4">
               {[0, 1, 2].map((i) => (
@@ -477,6 +478,7 @@ export default function RechercheDocumentairePage() {
               </div>
             </>
           )}
+          </div>
         </div>
       </div>
 
