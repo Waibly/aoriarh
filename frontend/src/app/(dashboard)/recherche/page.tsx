@@ -282,48 +282,53 @@ export default function RechercheDocumentairePage() {
     </div>
   );
 
+  if (!hasSearched) {
+    // État à vide — pleine hauteur, disposition du WelcomeScreen du chat.
+    return (
+      <div className="flex flex-1 flex-col items-center justify-center rounded-xl bg-white px-4 py-8 duration-500 animate-in fade-in dark:bg-card">
+        <div className="mb-6 flex h-16 w-16 items-center justify-center rounded-2xl bg-primary/10">
+          <Search className="h-8 w-8 text-primary" />
+        </div>
+        <h1 className="text-2xl font-semibold tracking-tight">
+          Recherche documentaire
+        </h1>
+        <p className="mt-1 text-base text-muted-foreground">
+          Le moteur de recherche juridique
+        </p>
+        <p className="mt-4 max-w-md text-center text-sm text-muted-foreground">
+          Posez votre question : Aoriarh remonte les textes pertinents (lois,
+          jurisprudence, conventions), sans réponse rédigée.
+        </p>
+        <div className="mt-8 w-full max-w-2xl">{searchField}</div>
+        <div className="mt-6 grid w-full max-w-2xl grid-cols-1 gap-3 sm:grid-cols-2">
+          {SUGGESTIONS.map((s) => (
+            <button
+              key={s}
+              onClick={() => runSearch(s)}
+              className="flex items-center gap-2 rounded-xl bg-primary/10 px-4 py-3 text-left text-sm text-foreground transition-colors hover:bg-primary/20"
+            >
+              <Search className="size-4 shrink-0 text-primary" />
+              {s}
+            </button>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="mx-auto w-full max-w-4xl">
       <div className="rounded-2xl border bg-card p-5 shadow-sm sm:p-6">
-        {!hasSearched ? (
-          /* État à vide — design "welcome" comme la page de chat */
-          <div className="flex flex-col items-center justify-center px-2 py-10 text-center duration-500 animate-in fade-in sm:py-16">
-            <div className="mb-5 flex h-14 w-14 items-center justify-center rounded-2xl bg-primary/10">
-              <Search className="h-7 w-7 text-primary" />
-            </div>
-            <h1 className="text-2xl font-semibold tracking-tight">
-              Recherche documentaire
-            </h1>
-            <p className="mt-2 max-w-md text-sm text-muted-foreground">
-              Posez votre question : Aoriarh remonte les textes pertinents (lois,
-              jurisprudence, conventions), sans réponse rédigée.
-            </p>
-            <div className="mt-7 w-full max-w-2xl">{searchField}</div>
-            <div className="mt-5 grid w-full max-w-2xl grid-cols-1 gap-3 sm:grid-cols-2">
-              {SUGGESTIONS.map((s) => (
-                <button
-                  key={s}
-                  onClick={() => runSearch(s)}
-                  className="flex items-center gap-2 rounded-xl bg-primary/10 px-4 py-3 text-left text-sm text-foreground transition-colors hover:bg-primary/20"
-                >
-                  <Search className="size-4 shrink-0 text-primary" />
-                  {s}
-                </button>
-              ))}
-            </div>
-          </div>
-        ) : (
-          <>
-            <div className="mb-4">
-              <h1 className="flex items-center gap-2 text-xl font-semibold">
-                <Search className="h-5 w-5 text-primary" />
-                Recherche documentaire
-              </h1>
-            </div>
+        <div className="mb-4">
+          <h1 className="flex items-center gap-2 text-xl font-semibold">
+            <Search className="h-5 w-5 text-primary" />
+            Recherche documentaire
+          </h1>
+        </div>
 
-            {searchField}
+        {searchField}
 
-            {/* Résultats */}
+        {/* Résultats */}
         <div className="mt-6 space-y-4">
           {loading && (
             <div className="space-y-4">
@@ -435,9 +440,7 @@ export default function RechercheDocumentairePage() {
               </div>
             </>
           )}
-            </div>
-          </>
-        )}
+        </div>
       </div>
 
       {/* Drawer document complet */}
