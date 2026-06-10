@@ -60,13 +60,22 @@ function buildTerms(query: string): Set<string> {
  */
 function cleanExcerpt(text: string, max = 480): string {
   let t = text;
-  const i = t.lastIndexOf("###");
-  if (i !== -1) t = t.slice(i + 3);
+  // L'article fusionné commence par un fil d'Ariane ("## Partie … ### Article X").
+  // On garde à partir du PREMIER "### Article" (le début réel de l'article), pas
+  // du dernier (qui serait le marqueur "(suite)" = la fin de l'article).
+  const first = t.indexOf("### Article");
+  if (first !== -1) t = t.slice(first);
+  // Retire tous les marqueurs de titre/jointure de chunks ("### Article Lxxx",
+  // "### Article Lxxx (suite)") pour recoller l'article en continu.
+  t = t.replace(
+    /###\s*Article\s+[LRD]\.?\s*[\w.\-]*\s*(?:\(suite\))?/gi,
+    " ",
+  );
   t = t
     .replace(/[#>]+/g, " ")
     .replace(/\s+/g, " ")
     .trim();
-  // Retire le préfixe "Article L2411-1 (suite)" redondant avec la référence.
+  // Retire un éventuel "Article Lxxx (suite)" résiduel en tête.
   t = t.replace(/^Article\s+[LRD]\.?\s*\d[\w.\-]*\s*(?:\(suite\))?\s*/i, "").trim();
   if (t.length > max) {
     t = t.slice(0, max).replace(/\s+\S*$/, "") + " …";
