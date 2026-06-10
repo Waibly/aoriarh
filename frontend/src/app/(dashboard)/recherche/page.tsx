@@ -1,0 +1,358 @@
+"use client";
+
+import { useCallback, useMemo, useState } from "react";
+import Link from "next/link";
+import { useSession } from "next-auth/react";
+import { Search, ArrowUp, FileText, Sparkles, Loader2 } from "lucide-react";
+import { useOrg } from "@/lib/org-context";
+import {
+  searchDocuments,
+  type DocSearchCard,
+  type DocSearchResponse,
+} from "@/lib/search-api";
+import { getSourceFullContent, type SourceFullContent } from "@/lib/chat-api";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Card, CardContent } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet";
+import { cn } from "@/lib/utils";
+
+// --- Surlignage ------------------------------------------------------------
+const STOPWORDS = new Set([
+  "le", "la", "les", "un", "une", "des", "de", "du", "et", "ou", "au", "aux",
+  "en", "dans", "par", "pour", "sur", "que", "qui", "quoi", "est", "ce", "cet",
+  "cette", "ces", "il", "elle", "on", "ne", "pas", "plus", "avec", "sans", "se",
+  "si", "quel", "quelle", "quels", "quelles", "comment", "quand", "son", "sa",
+  "ses", "leur", "leurs", "mon", "ma", "mes", "the", "estce",
+]);
+
+function norm(s: string): string {
+  return s
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .replace(/[^a-z0-9]/g, "");
+}
+
+function buildTerms(query: string, variants: string[]): Set<string> {
+  const raw = [query, ...variants].join(" ");
+  const terms = new Set<string>();
+  for (const w of raw.split(/\s+/)) {
+    const n = norm(w);
+    if (n.length >= 3 && !STOPWORDS.has(n)) terms.add(n);
+  }
+  return terms;
+}
+
+function Highlighted({ text, terms }: { text: string; terms: Set<string> }) {
+  if (!terms.size) return <>{text}</>;
+  const parts = text.split(/(\s+)/);
+  return (
+    <>
+      {parts.map((part, i) => {
+        const n = norm(part);
+        const match = n.length >= 3 && terms.has(n);
+        return match ? (
+          <mark
+            key={i}
+            className="rounded bg-primary/15 px-0.5 text-primary-foreground/90 [color:inherit]"
+          >
+            {part}
+          </mark>
+        ) : (
+          <span key={i}>{part}</span>
+        );
+      })}
+    </>
+  );
+}
+
+// --- Pertinence ------------------------------------------------------------
+function relevanceLevel(score: number): number {
+  if (score >= 0.7) return 5;
+  if (score >= 0.55) return 4;
+  if (score >= 0.4) return 3;
+  if (score >= 0.25) return 2;
+  return 1;
+}
+
+function RelevanceDots({ score }: { score: number }) {
+  const level = relevanceLevel(score);
+  return (
+    <span className="inline-flex items-center gap-0.5" title={`Pertinence ${level}/5`}>
+      {[1, 2, 3, 4, 5].map((i) => (
+        <span
+          key={i}
+          className={cn(
+            "h-1.5 w-1.5 rounded-full",
+            i <= level ? "bg-primary" : "bg-muted-foreground/25",
+          )}
+        />
+      ))}
+    </span>
+  );
+}
+
+// --- Référence d'une carte -------------------------------------------------
+function cardReference(c: DocSearchCard): string {
+  if (c.numero_pourvoi || c.date_decision) {
+    const bits = [c.juridiction, c.chambre, c.date_decision]
+      .filter(Boolean)
+      .join(" ");
+    return [bits, c.numero_pourvoi ? `n° ${c.numero_pourvoi}` : ""]
+      .filter(Boolean)
+      .join(", ");
+  }
+  if (c.article_nums && c.article_nums.length) {
+    return `Art. ${c.article_nums.join(" · ")}`;
+  }
+  return c.section_path || c.document_name;
+}
+
+// --- Page ------------------------------------------------------------------
+export default function RechercheDocumentairePage() {
+  const { data: session } = useSession();
+  const { currentOrg } = useOrg();
+
+  const [query, setQuery] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [data, setData] = useState<DocSearchResponse | null>(null);
+
+  // Drawer document complet
+  const [openDoc, setOpenDoc] = useState(false);
+  const [docLoading, setDocLoading] = useState(false);
+  const [docContent, setDocContent] = useState<SourceFullContent | null>(null);
+
+  const terms = useMemo(
+    () => buildTerms(data?.query_used ?? "", data?.variants ?? []),
+    [data],
+  );
+
+  const isAdmin = session?.user?.role === "admin";
+
+  const runSearch = useCallback(async () => {
+    const token = session?.access_token;
+    if (!token || !currentOrg || !query.trim()) return;
+    setLoading(true);
+    setError(null);
+    setData(null);
+    try {
+      const res = await searchDocuments(currentOrg.id, query.trim(), token);
+      setData(res);
+    } catch {
+      setError("La recherche a échoué. Réessayez dans un instant.");
+    } finally {
+      setLoading(false);
+    }
+  }, [session, currentOrg, query]);
+
+  const openFullDocument = useCallback(
+    async (documentId: string) => {
+      const token = session?.access_token;
+      if (!token) return;
+      setOpenDoc(true);
+      setDocLoading(true);
+      setDocContent(null);
+      try {
+        const content = await getSourceFullContent(documentId, token);
+        setDocContent(content);
+      } catch {
+        setDocContent(null);
+      } finally {
+        setDocLoading(false);
+      }
+    },
+    [session],
+  );
+
+  if (!isAdmin) {
+    return (
+      <div className="mx-auto max-w-2xl px-6 py-16 text-center text-muted-foreground">
+        Cette fonctionnalité est réservée aux administrateurs.
+      </div>
+    );
+  }
+
+  const hasResults = data && data.results.length > 0;
+
+  return (
+    <div className="mx-auto flex h-full max-w-4xl flex-col px-4 py-6 sm:px-6">
+      {/* En-tête */}
+      <div className="mb-4">
+        <h1 className="flex items-center gap-2 text-xl font-semibold">
+          <Search className="h-5 w-5 text-primary" />
+          Recherche documentaire
+        </h1>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Posez votre question : Aoriarh remonte les textes pertinents, sans
+          interprétation.
+        </p>
+      </div>
+
+      {/* Champ de recherche */}
+      <div
+        className={cn(
+          "flex items-end gap-2 rounded-xl border border-input bg-white px-4 py-3 shadow-sm dark:bg-card",
+        )}
+      >
+        <textarea
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && !e.shiftKey) {
+              e.preventDefault();
+              runSearch();
+            }
+          }}
+          placeholder="Ex : contrepartie obligatoire en repos au-delà du contingent"
+          rows={1}
+          className="flex-1 resize-none bg-transparent py-0.5 text-base text-foreground outline-none placeholder:text-muted-foreground"
+        />
+        <Button
+          size="icon-sm"
+          onClick={runSearch}
+          disabled={loading || !query.trim() || !currentOrg}
+        >
+          {loading ? (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          ) : (
+            <ArrowUp className="h-4 w-4" />
+          )}
+        </Button>
+      </div>
+
+      {/* Résultats */}
+      <div className="mt-6 flex-1 space-y-4 overflow-y-auto pb-10">
+        {loading && (
+          <div className="space-y-4">
+            {[0, 1, 2].map((i) => (
+              <Skeleton key={i} className="h-32 w-full rounded-xl" />
+            ))}
+          </div>
+        )}
+
+        {error && (
+          <p className="rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+            {error}
+          </p>
+        )}
+
+        {data && data.out_of_scope && (
+          <p className="rounded-lg border bg-muted px-4 py-3 text-sm text-muted-foreground">
+            Cette question ne semble pas relever du droit social. Reformulez pour
+            cibler une règle RH précise.
+          </p>
+        )}
+
+        {data && !data.out_of_scope && !hasResults && (
+          <p className="rounded-lg border bg-muted px-4 py-3 text-sm text-muted-foreground">
+            Aucune source pertinente trouvée pour cette question. Essayez de la
+            reformuler.
+          </p>
+        )}
+
+        {hasResults && (
+          <>
+            {/* Encart payant — en tête des résultats */}
+            <div className="rounded-xl border border-primary/30 bg-primary/5 p-4">
+              <p className="flex items-center gap-2 font-medium text-primary">
+                <Sparkles className="h-4 w-4" />
+                Les textes, vous les avez. L&apos;analyse de votre cas, c&apos;est
+                Aoriarh qui la fait.
+              </p>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Aoriarh lit ces sources et vous donne la marche à suivre, appliquée
+                à votre situation.
+              </p>
+              <Button className="mt-3" size="sm" asChild>
+                <Link href="/chat">Demander l&apos;analyse à Aoriarh</Link>
+              </Button>
+            </div>
+
+            <p className="text-xs text-muted-foreground">
+              {data.results.length} source
+              {data.results.length > 1 ? "s" : ""} · triées par pertinence
+            </p>
+
+            {data.results.map((c, idx) => (
+              <Card key={`${c.document_id}-${idx}`} className="overflow-hidden">
+                <CardContent className="p-4">
+                  <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Badge variant="secondary" className="font-normal">
+                        {c.source_type_label}
+                      </Badge>
+                      <span className="text-sm font-medium">
+                        {cardReference(c)}
+                      </span>
+                    </div>
+                    <RelevanceDots score={c.score} />
+                  </div>
+
+                  <p className="text-sm leading-relaxed text-foreground/90">
+                    <Highlighted text={c.excerpt} terms={terms} />
+                  </p>
+
+                  <div className="mt-3 flex items-center justify-between gap-2">
+                    <span className="truncate text-xs text-muted-foreground">
+                      {c.document_name}
+                    </span>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="shrink-0 text-primary"
+                      onClick={() => openFullDocument(c.document_id)}
+                    >
+                      <FileText className="mr-1 h-4 w-4" />
+                      Voir le document complet
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </>
+        )}
+      </div>
+
+      {/* Drawer document complet */}
+      <Sheet open={openDoc} onOpenChange={setOpenDoc}>
+        <SheetContent
+          side="right"
+          className="w-full overflow-y-auto sm:max-w-2xl"
+        >
+          <SheetHeader>
+            <SheetTitle className="pr-6 text-left">
+              {docContent?.name ?? "Document"}
+            </SheetTitle>
+          </SheetHeader>
+          <div className="mt-4 px-1">
+            {docLoading && (
+              <div className="space-y-3">
+                {[0, 1, 2, 3, 4].map((i) => (
+                  <Skeleton key={i} className="h-4 w-full" />
+                ))}
+              </div>
+            )}
+            {!docLoading && docContent && (
+              <pre className="whitespace-pre-wrap break-words font-sans text-sm leading-relaxed text-foreground/90">
+                {docContent.content}
+              </pre>
+            )}
+            {!docLoading && !docContent && (
+              <p className="text-sm text-muted-foreground">
+                Impossible de charger le document.
+              </p>
+            )}
+          </div>
+        </SheetContent>
+      </Sheet>
+    </div>
+  );
+}

@@ -17,7 +17,12 @@ from app.core.dependencies import get_current_user
 from app.models.document import Document
 from app.models.organisation import Organisation
 from app.models.user import User
-from app.rag.agent import RAGAgent, _OUT_OF_SCOPE_MARKER, _OUT_OF_SCOPE_ANSWER
+from app.rag.agent import (
+    RAGAgent,
+    _OUT_OF_SCOPE_MARKER,
+    _OUT_OF_SCOPE_ANSWER,
+    _SOURCE_TYPE_LABELS,
+)
 from app.rag.intent_router import classify_intent, Intent
 from app.schemas.conversation import (
     ChatRequest,
@@ -379,6 +384,136 @@ async def _load_org_context(
 def _sse_event(event: str, data: dict) -> str:
     """Format a Server-Sent Event."""
     return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
+
+
+# --- Recherche documentaire (admin v1) -------------------------------------
+# Recherche de sources sans génération LLM : on lance le pipeline de retrieval
+# (expansion → recherche → rerank → expansion parent) et on renvoie les chunks
+# remontés, un par carte. Pas de génération : coût quasi nul. Réservé aux admins
+# pour cette v1.
+
+
+class DocumentSearchRequest(BaseModel):
+    organisation_id: uuid.UUID
+    query: str
+
+
+class DocumentSearchCard(BaseModel):
+    document_id: str
+    document_name: str
+    source_type: str
+    source_type_label: str
+    norme_niveau: int
+    score: float
+    excerpt: str
+    article_nums: list[str] | None = None
+    section_path: str | None = None
+    juridiction: str | None = None
+    chambre: str | None = None
+    numero_pourvoi: str | None = None
+    date_decision: str | None = None
+    solution: str | None = None
+    publication: str | None = None
+
+
+class DocumentSearchResponse(BaseModel):
+    query_used: str
+    variants: list[str]
+    out_of_scope: bool
+    results: list[DocumentSearchCard]
+
+
+@router.post("/search", response_model=DocumentSearchResponse)
+@limiter.limit("30/minute")
+async def search_documents(
+    data: DocumentSearchRequest,
+    request: Request,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> DocumentSearchResponse:
+    """Recherche documentaire sans génération (cartes de sources). Admin v1."""
+    if user.role != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Fonctionnalité réservée aux administrateurs.",
+        )
+
+    org_context = await _load_org_context(db, data.organisation_id)
+    if org_context is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Organisation introuvable.",
+        )
+    org_context["profil_metier"] = user.profil_metier
+
+    # Liste IDCC de l'org pour filtrer la recherche (même logique que le chat).
+    if org_context.get("not_subject_to_ccn"):
+        org_idcc_list = None
+    else:
+        from app.models.ccn import OrganisationConvention
+        idcc_result = await db.execute(
+            select(OrganisationConvention.idcc).where(
+                OrganisationConvention.organisation_id == data.organisation_id,
+                OrganisationConvention.use_custom.is_(False),
+            )
+        )
+        org_idcc_list = [r[0] for r in idcc_result.all()] or None
+
+    agent = RAGAgent()
+    question_id = uuid.uuid4()  # contexte de coût (embeddings + rerank + expansion)
+    results, reformulated, rag_trace = await agent.prepare_context(
+        query=data.query,
+        organisation_id=str(data.organisation_id),
+        org_context=org_context,
+        history=None,
+        cited_sources=None,
+        org_idcc_list=org_idcc_list,
+        user_id=str(user.id),
+        conversation_id=str(question_id),
+    )
+
+    if reformulated == _OUT_OF_SCOPE_MARKER:
+        return DocumentSearchResponse(
+            query_used=data.query, variants=[], out_of_scope=True, results=[],
+        )
+
+    cards: list[DocumentSearchCard] = []
+    seen: set[tuple[str, int]] = set()
+    for r in results:
+        key = (r.document_id, r.chunk_index)
+        if key in seen:
+            continue
+        seen.add(key)
+        passage = (r.seed_text or r.text or "").strip()
+        if not passage:
+            continue
+        cards.append(
+            DocumentSearchCard(
+                document_id=r.document_id,
+                document_name=r.doc_name,
+                source_type=r.source_type,
+                source_type_label=_SOURCE_TYPE_LABELS.get(r.source_type, r.source_type),
+                norme_niveau=r.norme_niveau,
+                score=round(float(r.score or 0.0), 4),
+                excerpt=passage,
+                article_nums=r.article_nums,
+                section_path=r.section_path,
+                juridiction=r.juridiction,
+                chambre=r.chambre,
+                numero_pourvoi=r.numero_pourvoi,
+                date_decision=r.date_decision,
+                solution=r.solution,
+                publication=r.publication,
+            )
+        )
+
+    cards.sort(key=lambda c: c.score, reverse=True)
+    return DocumentSearchResponse(
+        query_used=reformulated or data.query,
+        variants=list(rag_trace.variants or []),
+        out_of_scope=False,
+        results=cards,
+    )
 
 
 @router.post("/{conversation_id}/chat/stream")

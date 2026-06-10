@@ -31,6 +31,7 @@ import {
   Plus,
   Scale,
   Mail,
+  Search,
 } from "lucide-react";
 import { apiFetch } from "@/lib/api";
 import { fetchQuota, type QuotaInfo } from "@/lib/billing-api";
@@ -76,6 +77,7 @@ import type { Conversation } from "@/types/api";
 
 const navigation = [
   { name: "Nouvelle question", href: "/chat", icon: Scale },
+  { name: "Recherche documentaire", href: "/recherche", icon: Search, adminOnly: true },
   { name: "Documents", href: "/documents", icon: FileText },
   { name: "Organisation", href: "/organisation", icon: Building2 },
   { name: "Équipe", href: "/team", icon: UsersRound, managerOnly: true },
@@ -430,7 +432,15 @@ export function Sidebar({
         {/* Navigation principale */}
         <nav className="space-y-1 px-2 py-2">
           {navigation
-            .filter((item) => !item.managerOnly || session?.user?.role === "manager" || session?.user?.role === "admin")
+            .filter((item) => {
+              if (item.adminOnly) return session?.user?.role === "admin";
+              if (item.managerOnly)
+                return (
+                  session?.user?.role === "manager" ||
+                  session?.user?.role === "admin"
+                );
+              return true;
+            })
             .map((item) => {
             const isActive =
               item.href === "/chat"
