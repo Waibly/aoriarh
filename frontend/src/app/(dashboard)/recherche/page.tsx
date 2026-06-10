@@ -21,6 +21,9 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { cn } from "@/lib/utils";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+import rehypeSanitize from "rehype-sanitize";
 
 // --- Surlignage ------------------------------------------------------------
 const STOPWORDS = new Set([
@@ -61,21 +64,23 @@ function buildTerms(query: string): Set<string> {
 function cleanExcerpt(text: string, max = 480): string {
   let t = text;
   // L'article fusionné commence par un fil d'Ariane ("## Partie … ### Article X").
-  // On garde à partir du PREMIER "### Article" (le début réel de l'article), pas
-  // du dernier (qui serait le marqueur "(suite)" = la fin de l'article).
+  // On garde à partir du PREMIER "### Article" (le début réel de l'article).
   const first = t.indexOf("### Article");
   if (first !== -1) t = t.slice(first);
-  // Retire tous les marqueurs de titre/jointure de chunks ("### Article Lxxx",
-  // "### Article Lxxx (suite)") pour recoller l'article en continu.
-  t = t.replace(
-    /###\s*Article\s+[LRD]\.?\s*[\w.\-]*\s*(?:\(suite\))?/gi,
-    " ",
-  );
+  // Recolle les sous-chunks ("### Article Lxxx (suite)") en sauts de ligne.
+  t = t.replace(/###\s*Article\s+[LRD]\.?\s*[\w.\-]*\s*(?:\(suite\))?/gi, "\n");
+  t = t.replace(/[#>]+/g, " ");
+  // Mise en page : un saut de ligne avant chaque énumérateur juridique
+  // (1° 2° … et a) b) …) pour casser le pavé.
+  t = t.replace(/\s+(\d{1,2}°)/g, "\n$1");
+  t = t.replace(/\s+([a-z]\)\s)/g, "\n$1");
+  // Nettoyage : collapse espaces, garde et normalise les sauts de ligne.
   t = t
-    .replace(/[#>]+/g, " ")
-    .replace(/\s+/g, " ")
+    .replace(/[ \t]+/g, " ")
+    .replace(/ ?\n ?/g, "\n")
+    .replace(/\n{2,}/g, "\n")
     .trim();
-  // Retire un éventuel "Article Lxxx (suite)" résiduel en tête.
+  // Retire un "Article Lxxx (suite)" résiduel en tête.
   t = t.replace(/^Article\s+[LRD]\.?\s*\d[\w.\-]*\s*(?:\(suite\))?\s*/i, "").trim();
   if (t.length > max) {
     t = t.slice(0, max).replace(/\s+\S*$/, "") + " …";
@@ -443,7 +448,7 @@ export default function RechercheDocumentairePage() {
                                 {cardReference(c)}
                               </p>
                             )}
-                            <p className="text-sm leading-relaxed text-foreground/90">
+                            <p className="whitespace-pre-wrap text-sm leading-relaxed text-foreground/90">
                               <Highlighted
                                 text={isOpen ? full : short}
                                 terms={terms}
@@ -512,8 +517,13 @@ export default function RechercheDocumentairePage() {
               </div>
             )}
             {!docLoading && docContent && (
-              <div className="whitespace-pre-wrap break-words text-sm leading-7 text-foreground/90">
-                {cleanFullText(docContent.content)}
+              <div className="prose prose-sm dark:prose-invert max-w-none text-[0.9375rem] leading-7 text-foreground [&_h1]:mb-3 [&_h1]:mt-6 [&_h1]:text-lg [&_h1]:font-semibold [&_h2]:mb-2 [&_h2]:mt-5 [&_h2]:text-base [&_h2]:font-semibold [&_h3]:mb-2 [&_h3]:mt-4 [&_h3]:text-[0.9375rem] [&_h3]:font-semibold [&_li]:my-0.5 [&_li]:leading-7 [&_ol]:my-3 [&_ol]:list-decimal [&_ol]:pl-5 [&_p]:my-3 [&_p]:leading-7 [&_ul]:my-3 [&_ul]:list-disc [&_ul]:pl-5 [&>*:first-child]:mt-0">
+                <ReactMarkdown
+                  remarkPlugins={[remarkGfm]}
+                  rehypePlugins={[rehypeSanitize]}
+                >
+                  {cleanFullText(docContent.content)}
+                </ReactMarkdown>
               </div>
             )}
             {!docLoading && !docContent && (
