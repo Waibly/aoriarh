@@ -70,6 +70,11 @@ function cleanExcerpt(text: string, max = 480): string {
   // Recolle les sous-chunks ("### Article Lxxx (suite)") en sauts de ligne.
   t = t.replace(/###\s*Article\s+[LRD]\.?\s*[\w.\-]*\s*(?:\(suite\))?/gi, "\n");
   t = t.replace(/[#>]+/g, " ");
+  // Tableaux markdown : retirer les lignes de séparation (| --- | --- |) et
+  // transformer les barres restantes en séparateurs lisibles, pas en "|" bruts.
+  t = t.replace(/\|?\s*:?-{2,}:?\s*(?:\|\s*:?-{2,}:?\s*)*\|?/g, " ");
+  t = t.replace(/\s*\|\s*/g, " · ");
+  t = t.replace(/(?:\s·)+/g, " ·").replace(/·\s*·/g, "·");
   // Mise en page : un saut de ligne avant chaque énumérateur juridique
   // (1° 2° … et a) b) …) pour casser le pavé.
   t = t.replace(/\s+(\d{1,2}°)/g, "\n$1");
