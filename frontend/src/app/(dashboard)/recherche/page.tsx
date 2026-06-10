@@ -30,6 +30,8 @@ const STOPWORDS = new Set([
   "cette", "ces", "il", "elle", "on", "ne", "pas", "plus", "avec", "sans", "se",
   "si", "quel", "quelle", "quels", "quelles", "comment", "quand", "son", "sa",
   "ses", "leur", "leurs", "mon", "ma", "mes", "the", "estce",
+  "sont", "ete", "etre", "fait", "font", "par", "ont", "ainsi", "dont", "lors",
+  "selon", "tout", "tous", "toute", "toutes", "leur", "cas",
 ]);
 
 function norm(s: string): string {
@@ -40,14 +42,35 @@ function norm(s: string): string {
     .replace(/[^a-z0-9]/g, "");
 }
 
-function buildTerms(query: string, variants: string[]): Set<string> {
-  const raw = [query, ...variants].join(" ");
+function buildTerms(query: string): Set<string> {
+  // Surligner uniquement les mots de la question de l'utilisateur, pas les
+  // variantes de recherche (qui contiennent tout le vocabulaire juridique et
+  // feraient tout s'allumer).
   const terms = new Set<string>();
-  for (const w of raw.split(/\s+/)) {
+  for (const w of query.split(/\s+/)) {
     const n = norm(w);
-    if (n.length >= 3 && !STOPWORDS.has(n)) terms.add(n);
+    if (n.length >= 4 && !STOPWORDS.has(n)) terms.add(n);
   }
   return terms;
+}
+
+/**
+ * Nettoie l'extrait : retire le fil d'Ariane markdown (## … > … ### Article X)
+ * et tronque pour garder des cartes compactes. Le document complet reste à un
+ * clic.
+ */
+function cleanExcerpt(text: string, max = 480): string {
+  let t = text;
+  const i = t.lastIndexOf("###");
+  if (i !== -1) t = t.slice(i + 3);
+  t = t
+    .replace(/[#>]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (t.length > max) {
+    t = t.slice(0, max).replace(/\s+\S*$/, "") + " …";
+  }
+  return t;
 }
 
 function Highlighted({ text, terms }: { text: string; terms: Set<string> }) {
@@ -61,7 +84,7 @@ function Highlighted({ text, terms }: { text: string; terms: Set<string> }) {
         return match ? (
           <mark
             key={i}
-            className="rounded bg-primary/15 px-0.5 text-primary-foreground/90 [color:inherit]"
+            className="rounded-[3px] bg-primary/15 px-0.5 font-medium text-foreground"
           >
             {part}
           </mark>
@@ -130,10 +153,7 @@ export default function RechercheDocumentairePage() {
   const [docLoading, setDocLoading] = useState(false);
   const [docContent, setDocContent] = useState<SourceFullContent | null>(null);
 
-  const terms = useMemo(
-    () => buildTerms(data?.query_used ?? "", data?.variants ?? []),
-    [data],
-  );
+  const terms = useMemo(() => buildTerms(data?.query_used ?? ""), [data]);
 
   const isAdmin = session?.user?.role === "admin";
 
@@ -297,7 +317,7 @@ export default function RechercheDocumentairePage() {
                   </div>
 
                   <p className="text-sm leading-relaxed text-foreground/90">
-                    <Highlighted text={c.excerpt} terms={terms} />
+                    <Highlighted text={cleanExcerpt(c.excerpt)} terms={terms} />
                   </p>
 
                   <div className="mt-3 flex items-center justify-between gap-2">
