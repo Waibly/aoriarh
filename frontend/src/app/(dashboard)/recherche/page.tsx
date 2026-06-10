@@ -3,7 +3,7 @@
 import { useCallback, useMemo, useState } from "react";
 import Link from "next/link";
 import { useSession } from "next-auth/react";
-import { Search, ArrowUp, FileText, Sparkles, Loader2 } from "lucide-react";
+import { Search, ArrowUp, FileText, Sparkles, Loader2, Star } from "lucide-react";
 import { useOrg } from "@/lib/org-context";
 import {
   searchDocuments,
@@ -120,16 +120,21 @@ function relevanceLevel(score: number): number {
   return 1;
 }
 
-function RelevanceDots({ score }: { score: number }) {
+function RelevanceStars({ score }: { score: number }) {
   const level = relevanceLevel(score);
   return (
-    <span className="inline-flex items-center gap-0.5" title={`Pertinence ${level}/5`}>
+    <span
+      className="inline-flex items-center gap-0.5"
+      title={`Pertinence ${level}/5`}
+    >
       {[1, 2, 3, 4, 5].map((i) => (
-        <span
+        <Star
           key={i}
           className={cn(
-            "h-1.5 w-1.5 rounded-full",
-            i <= level ? "bg-primary" : "bg-muted-foreground/25",
+            "h-3.5 w-3.5",
+            i <= level
+              ? "fill-primary text-primary"
+              : "fill-transparent text-muted-foreground/30",
           )}
         />
       ))}
@@ -175,6 +180,17 @@ export default function RechercheDocumentairePage() {
   const [docLoading, setDocLoading] = useState(false);
   const [docContent, setDocContent] = useState<SourceFullContent | null>(null);
   const [selectedCard, setSelectedCard] = useState<DocSearchCard | null>(null);
+  // Extraits dépliés (passage retrouvé en entier), par clé groupe-item.
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+
+  const toggleExpanded = useCallback((key: string) => {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }, []);
 
   const terms = useMemo(() => buildTerms(data?.query_used ?? ""), [data]);
 
@@ -210,6 +226,7 @@ export default function RechercheDocumentairePage() {
       setLoading(true);
       setError(null);
       setData(null);
+      setExpanded(new Set());
       try {
         const res = await searchDocuments(currentOrg.id, text, token);
         setData(res);
@@ -397,31 +414,51 @@ export default function RechercheDocumentairePage() {
                           {g.head.document_name}
                         </span>
                       </div>
-                      <RelevanceDots score={g.best} />
+                      <div className="flex shrink-0 items-center gap-1.5">
+                        <span className="text-xs text-muted-foreground">
+                          Pertinence
+                        </span>
+                        <RelevanceStars score={g.best} />
+                      </div>
                     </div>
 
                     <div className="space-y-3">
-                      {g.items.map((c, ci) => (
-                        <div
-                          key={ci}
-                          className={cn(
-                            g.items.length > 1 &&
-                              "border-l-2 border-primary/20 pl-3",
-                          )}
-                        >
-                          {g.items.length > 1 && (
-                            <p className="mb-0.5 text-sm font-medium text-primary">
-                              {cardReference(c)}
+                      {g.items.map((c, ci) => {
+                        const key = `${gi}-${ci}`;
+                        const isOpen = expanded.has(key);
+                        const full = cleanExcerpt(c.excerpt, 100000);
+                        const short = cleanExcerpt(c.excerpt);
+                        const canExpand = full.length > short.length;
+                        return (
+                          <div
+                            key={ci}
+                            className={cn(
+                              g.items.length > 1 &&
+                                "border-l-2 border-primary/20 pl-3",
+                            )}
+                          >
+                            {g.items.length > 1 && (
+                              <p className="mb-0.5 text-sm font-medium text-primary">
+                                {cardReference(c)}
+                              </p>
+                            )}
+                            <p className="text-sm leading-relaxed text-foreground/90">
+                              <Highlighted
+                                text={isOpen ? full : short}
+                                terms={terms}
+                              />
                             </p>
-                          )}
-                          <p className="text-sm leading-relaxed text-foreground/90">
-                            <Highlighted
-                              text={cleanExcerpt(c.excerpt)}
-                              terms={terms}
-                            />
-                          </p>
-                        </div>
-                      ))}
+                            {canExpand && (
+                              <button
+                                onClick={() => toggleExpanded(key)}
+                                className="mt-1 text-xs font-medium text-primary hover:underline"
+                              >
+                                {isOpen ? "Réduire" : "Voir l'extrait complet"}
+                              </button>
+                            )}
+                          </div>
+                        );
+                      })}
                     </div>
 
                     <div className="mt-2">
