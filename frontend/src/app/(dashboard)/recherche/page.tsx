@@ -153,6 +153,13 @@ function cardReference(c: DocSearchCard): string {
   return c.section_path || c.document_name;
 }
 
+const SUGGESTIONS = [
+  "Salariés protégés",
+  "Durée de la période d'essai d'un cadre",
+  "Contrepartie obligatoire en repos",
+  "Indemnité légale de licenciement",
+];
+
 // --- Page ------------------------------------------------------------------
 export default function RechercheDocumentairePage() {
   const { data: session } = useSession();
@@ -194,21 +201,26 @@ export default function RechercheDocumentairePage() {
 
   const isAdmin = session?.user?.role === "admin";
 
-  const runSearch = useCallback(async () => {
-    const token = session?.access_token;
-    if (!token || !currentOrg || !query.trim()) return;
-    setLoading(true);
-    setError(null);
-    setData(null);
-    try {
-      const res = await searchDocuments(currentOrg.id, query.trim(), token);
-      setData(res);
-    } catch {
-      setError("La recherche a échoué. Réessayez dans un instant.");
-    } finally {
-      setLoading(false);
-    }
-  }, [session, currentOrg, query]);
+  const runSearch = useCallback(
+    async (q?: string) => {
+      const text = (q ?? query).trim();
+      const token = session?.access_token;
+      if (!token || !currentOrg || !text) return;
+      setQuery(text);
+      setLoading(true);
+      setError(null);
+      setData(null);
+      try {
+        const res = await searchDocuments(currentOrg.id, text, token);
+        setData(res);
+      } catch {
+        setError("La recherche a échoué. Réessayez dans un instant.");
+      } finally {
+        setLoading(false);
+      }
+    },
+    [session, currentOrg, query],
+  );
 
   const openFullDocument = useCallback(
     async (card: DocSearchCard) => {
@@ -239,51 +251,79 @@ export default function RechercheDocumentairePage() {
   }
 
   const hasResults = data && data.results.length > 0;
+  const hasSearched = loading || data !== null;
+
+  const searchField = (
+    <div className="flex items-end gap-2 rounded-xl border border-input bg-background px-4 py-3">
+      <textarea
+        value={query}
+        onChange={(e) => setQuery(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" && !e.shiftKey) {
+            e.preventDefault();
+            runSearch();
+          }
+        }}
+        placeholder="Ex : contrepartie obligatoire en repos au-delà du contingent"
+        rows={1}
+        className="flex-1 resize-none bg-transparent py-0.5 text-base text-foreground outline-none placeholder:text-muted-foreground"
+      />
+      <Button
+        size="icon-sm"
+        onClick={() => runSearch()}
+        disabled={loading || !query.trim() || !currentOrg}
+      >
+        {loading ? (
+          <Loader2 className="h-4 w-4 animate-spin" />
+        ) : (
+          <ArrowUp className="h-4 w-4" />
+        )}
+      </Button>
+    </div>
+  );
 
   return (
     <div className="mx-auto w-full max-w-4xl">
       <div className="rounded-2xl border bg-card p-5 shadow-sm sm:p-6">
-        {/* En-tête */}
-        <div className="mb-4">
-          <h1 className="flex items-center gap-2 text-xl font-semibold">
-            <Search className="h-5 w-5 text-primary" />
-            Recherche documentaire
-          </h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Posez votre question : Aoriarh remonte les textes pertinents, sans
-            réponse rédigée.
-          </p>
-        </div>
+        {!hasSearched ? (
+          /* État à vide — design "welcome" comme la page de chat */
+          <div className="flex flex-col items-center justify-center px-2 py-10 text-center duration-500 animate-in fade-in sm:py-16">
+            <div className="mb-5 flex h-14 w-14 items-center justify-center rounded-2xl bg-primary/10">
+              <Search className="h-7 w-7 text-primary" />
+            </div>
+            <h1 className="text-2xl font-semibold tracking-tight">
+              Recherche documentaire
+            </h1>
+            <p className="mt-2 max-w-md text-sm text-muted-foreground">
+              Posez votre question : Aoriarh remonte les textes pertinents (lois,
+              jurisprudence, conventions), sans réponse rédigée.
+            </p>
+            <div className="mt-7 w-full max-w-2xl">{searchField}</div>
+            <div className="mt-5 grid w-full max-w-2xl grid-cols-1 gap-3 sm:grid-cols-2">
+              {SUGGESTIONS.map((s) => (
+                <button
+                  key={s}
+                  onClick={() => runSearch(s)}
+                  className="flex items-center gap-2 rounded-xl bg-primary/10 px-4 py-3 text-left text-sm text-foreground transition-colors hover:bg-primary/20"
+                >
+                  <Search className="size-4 shrink-0 text-primary" />
+                  {s}
+                </button>
+              ))}
+            </div>
+          </div>
+        ) : (
+          <>
+            <div className="mb-4">
+              <h1 className="flex items-center gap-2 text-xl font-semibold">
+                <Search className="h-5 w-5 text-primary" />
+                Recherche documentaire
+              </h1>
+            </div>
 
-        {/* Champ de recherche */}
-        <div className="flex items-end gap-2 rounded-xl border border-input bg-background px-4 py-3">
-          <textarea
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey) {
-                e.preventDefault();
-                runSearch();
-              }
-            }}
-            placeholder="Ex : contrepartie obligatoire en repos au-delà du contingent"
-            rows={1}
-            className="flex-1 resize-none bg-transparent py-0.5 text-base text-foreground outline-none placeholder:text-muted-foreground"
-          />
-          <Button
-            size="icon-sm"
-            onClick={runSearch}
-            disabled={loading || !query.trim() || !currentOrg}
-          >
-            {loading ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <ArrowUp className="h-4 w-4" />
-            )}
-          </Button>
-        </div>
+            {searchField}
 
-        {/* Résultats */}
+            {/* Résultats */}
         <div className="mt-6 space-y-4">
           {loading && (
             <div className="space-y-4">
@@ -395,7 +435,9 @@ export default function RechercheDocumentairePage() {
               </div>
             </>
           )}
-        </div>
+            </div>
+          </>
+        )}
       </div>
 
       {/* Drawer document complet */}
