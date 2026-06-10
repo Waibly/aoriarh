@@ -13,7 +13,6 @@ import {
 import { getSourceFullContent, type SourceFullContent } from "@/lib/chat-api";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Sheet,
@@ -71,6 +70,11 @@ function cleanExcerpt(text: string, max = 480): string {
     t = t.slice(0, max).replace(/\s+\S*$/, "") + " …";
   }
   return t;
+}
+
+/** Nettoie le texte intégral pour le volet : retire les lignes vides en excès. */
+function cleanFullText(text: string): string {
+  return text.replace(/\n{3,}/g, "\n\n").trim();
 }
 
 function Highlighted({ text, terms }: { text: string; terms: Set<string> }) {
@@ -152,6 +156,7 @@ export default function RechercheDocumentairePage() {
   const [openDoc, setOpenDoc] = useState(false);
   const [docLoading, setDocLoading] = useState(false);
   const [docContent, setDocContent] = useState<SourceFullContent | null>(null);
+  const [selectedCard, setSelectedCard] = useState<DocSearchCard | null>(null);
 
   const terms = useMemo(() => buildTerms(data?.query_used ?? ""), [data]);
 
@@ -174,14 +179,15 @@ export default function RechercheDocumentairePage() {
   }, [session, currentOrg, query]);
 
   const openFullDocument = useCallback(
-    async (documentId: string) => {
+    async (card: DocSearchCard) => {
       const token = session?.access_token;
       if (!token) return;
+      setSelectedCard(card);
       setOpenDoc(true);
       setDocLoading(true);
       setDocContent(null);
       try {
-        const content = await getSourceFullContent(documentId, token);
+        const content = await getSourceFullContent(card.document_id, token);
         setDocContent(content);
       } catch {
         setDocContent(null);
@@ -203,167 +209,175 @@ export default function RechercheDocumentairePage() {
   const hasResults = data && data.results.length > 0;
 
   return (
-    <div className="mx-auto flex h-full max-w-4xl flex-col px-4 py-6 sm:px-6">
-      {/* En-tête */}
-      <div className="mb-4">
-        <h1 className="flex items-center gap-2 text-xl font-semibold">
-          <Search className="h-5 w-5 text-primary" />
-          Recherche documentaire
-        </h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Posez votre question : Aoriarh remonte les textes pertinents, sans
-          interprétation.
-        </p>
-      </div>
-
-      {/* Champ de recherche */}
-      <div
-        className={cn(
-          "flex items-end gap-2 rounded-xl border border-input bg-white px-4 py-3 shadow-sm dark:bg-card",
-        )}
-      >
-        <textarea
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && !e.shiftKey) {
-              e.preventDefault();
-              runSearch();
-            }
-          }}
-          placeholder="Ex : contrepartie obligatoire en repos au-delà du contingent"
-          rows={1}
-          className="flex-1 resize-none bg-transparent py-0.5 text-base text-foreground outline-none placeholder:text-muted-foreground"
-        />
-        <Button
-          size="icon-sm"
-          onClick={runSearch}
-          disabled={loading || !query.trim() || !currentOrg}
-        >
-          {loading ? (
-            <Loader2 className="h-4 w-4 animate-spin" />
-          ) : (
-            <ArrowUp className="h-4 w-4" />
-          )}
-        </Button>
-      </div>
-
-      {/* Résultats */}
-      <div className="mt-6 flex-1 space-y-4 overflow-y-auto pb-10">
-        {loading && (
-          <div className="space-y-4">
-            {[0, 1, 2].map((i) => (
-              <Skeleton key={i} className="h-32 w-full rounded-xl" />
-            ))}
-          </div>
-        )}
-
-        {error && (
-          <p className="rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
-            {error}
+    <div className="mx-auto w-full max-w-4xl">
+      <div className="rounded-2xl border bg-card p-5 shadow-sm sm:p-6">
+        {/* En-tête */}
+        <div className="mb-4">
+          <h1 className="flex items-center gap-2 text-xl font-semibold">
+            <Search className="h-5 w-5 text-primary" />
+            Recherche documentaire
+          </h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Posez votre question : Aoriarh remonte les textes pertinents, sans
+            réponse rédigée.
           </p>
-        )}
+        </div>
 
-        {data && data.out_of_scope && (
-          <p className="rounded-lg border bg-muted px-4 py-3 text-sm text-muted-foreground">
-            Cette question ne semble pas relever du droit social. Reformulez pour
-            cibler une règle RH précise.
-          </p>
-        )}
+        {/* Champ de recherche */}
+        <div className="flex items-end gap-2 rounded-xl border border-input bg-background px-4 py-3">
+          <textarea
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                runSearch();
+              }
+            }}
+            placeholder="Ex : contrepartie obligatoire en repos au-delà du contingent"
+            rows={1}
+            className="flex-1 resize-none bg-transparent py-0.5 text-base text-foreground outline-none placeholder:text-muted-foreground"
+          />
+          <Button
+            size="icon-sm"
+            onClick={runSearch}
+            disabled={loading || !query.trim() || !currentOrg}
+          >
+            {loading ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <ArrowUp className="h-4 w-4" />
+            )}
+          </Button>
+        </div>
 
-        {data && !data.out_of_scope && !hasResults && (
-          <p className="rounded-lg border bg-muted px-4 py-3 text-sm text-muted-foreground">
-            Aucune source pertinente trouvée pour cette question. Essayez de la
-            reformuler.
-          </p>
-        )}
-
-        {hasResults && (
-          <>
-            {/* Encart payant — en tête des résultats */}
-            <div className="rounded-xl border border-primary/30 bg-primary/5 p-4">
-              <p className="flex items-center gap-2 font-medium text-primary">
-                <Sparkles className="h-4 w-4" />
-                Les textes, vous les avez. L&apos;analyse de votre cas, c&apos;est
-                Aoriarh qui la fait.
-              </p>
-              <p className="mt-1 text-sm text-muted-foreground">
-                Aoriarh lit ces sources et vous donne la marche à suivre, appliquée
-                à votre situation.
-              </p>
-              <Button className="mt-3" size="sm" asChild>
-                <Link href="/chat">Demander l&apos;analyse à Aoriarh</Link>
-              </Button>
+        {/* Résultats */}
+        <div className="mt-6 space-y-4">
+          {loading && (
+            <div className="space-y-4">
+              {[0, 1, 2].map((i) => (
+                <Skeleton key={i} className="h-24 w-full rounded-xl" />
+              ))}
             </div>
+          )}
 
-            <p className="text-xs text-muted-foreground">
-              {data.results.length} source
-              {data.results.length > 1 ? "s" : ""} · triées par pertinence
+          {error && (
+            <p className="rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+              {error}
             </p>
+          )}
 
-            {data.results.map((c, idx) => (
-              <Card key={`${c.document_id}-${idx}`} className="overflow-hidden">
-                <CardContent className="p-4">
-                  <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <Badge variant="secondary" className="font-normal">
-                        {c.source_type_label}
-                      </Badge>
-                      <span className="text-sm font-medium">
-                        {cardReference(c)}
-                      </span>
+          {data && data.out_of_scope && (
+            <p className="rounded-lg border bg-muted px-4 py-3 text-sm text-muted-foreground">
+              Cette question ne semble pas relever du droit social. Reformulez
+              pour cibler une règle RH précise.
+            </p>
+          )}
+
+          {data && !data.out_of_scope && !hasResults && (
+            <p className="rounded-lg border bg-muted px-4 py-3 text-sm text-muted-foreground">
+              Aucune source pertinente trouvée pour cette question. Essayez de la
+              reformuler.
+            </p>
+          )}
+
+          {hasResults && (
+            <>
+              {/* Encart payant — en tête des résultats */}
+              <div className="rounded-xl border border-primary/30 bg-primary/5 p-4">
+                <p className="flex items-center gap-2 font-medium text-primary">
+                  <Sparkles className="h-4 w-4 shrink-0" />
+                  Les textes, vous les avez. L&apos;analyse de votre cas,
+                  c&apos;est Aoriarh qui la fait.
+                </p>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Aoriarh lit ces sources et vous donne la marche à suivre,
+                  appliquée à votre situation.
+                </p>
+                <Button className="mt-3" size="sm" asChild>
+                  <Link href="/chat">Demander l&apos;analyse à Aoriarh</Link>
+                </Button>
+              </div>
+
+              <p className="text-xs text-muted-foreground">
+                {data.results.length} source
+                {data.results.length > 1 ? "s" : ""} · triées par pertinence
+              </p>
+
+              <div className="divide-y divide-border">
+                {data.results.map((c, idx) => (
+                  <article
+                    key={`${c.document_id}-${idx}`}
+                    className="py-4 first:pt-0"
+                  >
+                    <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Badge variant="secondary" className="font-normal">
+                          {c.source_type_label}
+                        </Badge>
+                        <span className="text-sm font-semibold">
+                          {cardReference(c)}
+                        </span>
+                      </div>
+                      <RelevanceDots score={c.score} />
                     </div>
-                    <RelevanceDots score={c.score} />
-                  </div>
 
-                  <p className="text-sm leading-relaxed text-foreground/90">
-                    <Highlighted text={cleanExcerpt(c.excerpt)} terms={terms} />
-                  </p>
+                    <p className="text-sm leading-relaxed text-foreground/90">
+                      <Highlighted text={cleanExcerpt(c.excerpt)} terms={terms} />
+                    </p>
 
-                  <div className="mt-3 flex items-center justify-between gap-2">
-                    <span className="truncate text-xs text-muted-foreground">
-                      {c.document_name}
-                    </span>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="shrink-0 text-primary"
-                      onClick={() => openFullDocument(c.document_id)}
-                    >
-                      <FileText className="mr-1 h-4 w-4" />
-                      Voir le document complet
-                    </Button>
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
-          </>
-        )}
+                    <div className="mt-2">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-auto px-0 text-primary hover:bg-transparent hover:underline"
+                        onClick={() => openFullDocument(c)}
+                      >
+                        <FileText className="mr-1 h-4 w-4" />
+                        Voir le document complet
+                      </Button>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
       </div>
 
       {/* Drawer document complet */}
       <Sheet open={openDoc} onOpenChange={setOpenDoc}>
         <SheetContent
           side="right"
-          className="w-full overflow-y-auto sm:max-w-2xl"
+          className="flex w-full flex-col gap-0 p-0 sm:max-w-2xl"
         >
-          <SheetHeader>
-            <SheetTitle className="pr-6 text-left">
-              {docContent?.name ?? "Document"}
+          <SheetHeader className="border-b px-6 py-4">
+            {selectedCard && (
+              <div className="mb-1 flex flex-wrap items-center gap-2">
+                <Badge variant="secondary" className="font-normal">
+                  {selectedCard.source_type_label}
+                </Badge>
+                <span className="text-sm font-semibold text-foreground">
+                  {cardReference(selectedCard)}
+                </span>
+              </div>
+            )}
+            <SheetTitle className="pr-8 text-left text-sm font-normal text-muted-foreground">
+              {docContent?.name ?? selectedCard?.document_name ?? "Document"}
             </SheetTitle>
           </SheetHeader>
-          <div className="mt-4 px-1">
+          <div className="flex-1 overflow-y-auto px-6 py-5">
             {docLoading && (
               <div className="space-y-3">
-                {[0, 1, 2, 3, 4].map((i) => (
+                {[0, 1, 2, 3, 4, 5].map((i) => (
                   <Skeleton key={i} className="h-4 w-full" />
                 ))}
               </div>
             )}
             {!docLoading && docContent && (
-              <pre className="whitespace-pre-wrap break-words font-sans text-sm leading-relaxed text-foreground/90">
-                {docContent.content}
-              </pre>
+              <div className="whitespace-pre-wrap break-words text-sm leading-7 text-foreground/90">
+                {cleanFullText(docContent.content)}
+              </div>
             )}
             {!docLoading && !docContent && (
               <p className="text-sm text-muted-foreground">
