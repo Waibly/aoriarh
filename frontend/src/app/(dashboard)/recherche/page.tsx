@@ -93,6 +93,36 @@ function cleanFullText(text: string): string {
   return text.replace(/\n{3,}/g, "\n\n").trim();
 }
 
+/**
+ * Borne le contenu rendu dans le volet. Les codes (Code du travail…) font
+ * plusieurs Mo : tout rendre en markdown crée un DOM énorme, lent à monter ET à
+ * démonter (fermeture qui rame). On limite à une fenêtre, centrée si possible
+ * sur l'article cliqué.
+ */
+function clampDoc(
+  content: string,
+  card: DocSearchCard | null,
+  max = 40000,
+): { text: string; truncated: boolean } {
+  const text = cleanFullText(content);
+  if (text.length <= max) return { text, truncated: false };
+  let start = 0;
+  const art = card?.article_nums?.[0];
+  if (art) {
+    const pat = art
+      .replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+      .replace(/^([LRD])/, "$1\\.?\\s?");
+    const m = text.match(new RegExp(pat));
+    if (m && m.index !== undefined && m.index > max / 2) {
+      start = m.index - Math.floor(max / 2);
+    }
+  }
+  let slice = text.slice(start, start + max);
+  if (start > 0) slice = "[…]\n\n" + slice;
+  if (start + max < text.length) slice = slice + "\n\n[…]";
+  return { text: slice, truncated: true };
+}
+
 function Highlighted({ text, terms }: { text: string; terms: Set<string> }) {
   if (!terms.size) return <>{text}</>;
   const parts = text.split(/(\s+)/);
@@ -219,6 +249,12 @@ export default function RechercheDocumentairePage() {
     }
     return Array.from(map.values()).sort((a, b) => b.best - a.best);
   }, [data]);
+
+  // Contenu borné pour le volet (perf sur les gros documents type codes).
+  const docMarkdown = useMemo(
+    () => (docContent ? clampDoc(docContent.content, selectedCard) : null),
+    [docContent, selectedCard],
+  );
 
   const isAdmin = session?.user?.role === "admin";
 
@@ -516,15 +552,22 @@ export default function RechercheDocumentairePage() {
                 ))}
               </div>
             )}
-            {!docLoading && docContent && (
-              <div className="prose prose-sm dark:prose-invert max-w-none text-[0.9375rem] leading-7 text-foreground [&_h1]:mb-3 [&_h1]:mt-6 [&_h1]:text-lg [&_h1]:font-semibold [&_h2]:mb-2 [&_h2]:mt-5 [&_h2]:text-base [&_h2]:font-semibold [&_h3]:mb-2 [&_h3]:mt-4 [&_h3]:text-[0.9375rem] [&_h3]:font-semibold [&_li]:my-0.5 [&_li]:leading-7 [&_ol]:my-3 [&_ol]:list-decimal [&_ol]:pl-5 [&_p]:my-3 [&_p]:leading-7 [&_ul]:my-3 [&_ul]:list-disc [&_ul]:pl-5 [&>*:first-child]:mt-0">
-                <ReactMarkdown
-                  remarkPlugins={[remarkGfm]}
-                  rehypePlugins={[rehypeSanitize]}
-                >
-                  {cleanFullText(docContent.content)}
-                </ReactMarkdown>
-              </div>
+            {!docLoading && docMarkdown && (
+              <>
+                {docMarkdown.truncated && (
+                  <p className="mb-3 rounded-md bg-muted px-3 py-2 text-xs text-muted-foreground">
+                    Document volumineux : extrait affiché autour de la source.
+                  </p>
+                )}
+                <div className="prose prose-sm dark:prose-invert max-w-none text-[0.9375rem] leading-7 text-foreground [&_h1]:mb-3 [&_h1]:mt-6 [&_h1]:text-lg [&_h1]:font-semibold [&_h2]:mb-2 [&_h2]:mt-5 [&_h2]:text-base [&_h2]:font-semibold [&_h3]:mb-2 [&_h3]:mt-4 [&_h3]:text-[0.9375rem] [&_h3]:font-semibold [&_li]:my-0.5 [&_li]:leading-7 [&_ol]:my-3 [&_ol]:list-decimal [&_ol]:pl-5 [&_p]:my-3 [&_p]:leading-7 [&_ul]:my-3 [&_ul]:list-disc [&_ul]:pl-5 [&>*:first-child]:mt-0">
+                  <ReactMarkdown
+                    remarkPlugins={[remarkGfm]}
+                    rehypePlugins={[rehypeSanitize]}
+                  >
+                    {docMarkdown.text}
+                  </ReactMarkdown>
+                </div>
+              </>
             )}
             {!docLoading && !docContent && (
               <p className="text-sm text-muted-foreground">
