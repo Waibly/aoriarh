@@ -66,6 +66,8 @@ function cleanExcerpt(text: string, max = 480): string {
     .replace(/[#>]+/g, " ")
     .replace(/\s+/g, " ")
     .trim();
+  // Retire le préfixe "Article L2411-1 (suite)" redondant avec la référence.
+  t = t.replace(/^Article\s+[LRD]\.?\s*\d[\w.\-]*\s*(?:\(suite\))?\s*/i, "").trim();
   if (t.length > max) {
     t = t.slice(0, max).replace(/\s+\S*$/, "") + " …";
   }
@@ -159,6 +161,27 @@ export default function RechercheDocumentairePage() {
   const [selectedCard, setSelectedCard] = useState<DocSearchCard | null>(null);
 
   const terms = useMemo(() => buildTerms(data?.query_used ?? ""), [data]);
+
+  // Regroupement par document : les articles d'un même document sont rassemblés
+  // (ex. tous les articles du Code du travail dans un seul bloc). Groupes triés
+  // par meilleure pertinence. 100% frontend : ne touche pas le pipeline.
+  const groups = useMemo(() => {
+    if (!data) return [];
+    const map = new Map<
+      string,
+      { head: DocSearchCard; items: DocSearchCard[]; best: number }
+    >();
+    for (const c of data.results) {
+      const g = map.get(c.document_id);
+      if (g) {
+        g.items.push(c);
+        if (c.score > g.best) g.best = c.score;
+      } else {
+        map.set(c.document_id, { head: c, items: [c], best: c.score });
+      }
+    }
+    return Array.from(map.values()).sort((a, b) => b.best - a.best);
+  }, [data]);
 
   const isAdmin = session?.user?.role === "admin";
 
@@ -300,44 +323,65 @@ export default function RechercheDocumentairePage() {
               </div>
 
               <p className="text-xs text-muted-foreground">
-                {data.results.length} source
-                {data.results.length > 1 ? "s" : ""} · triées par pertinence
+                {data.results.length} extrait
+                {data.results.length > 1 ? "s" : ""} dans {groups.length} document
+                {groups.length > 1 ? "s" : ""} · triés par pertinence
               </p>
 
               <div className="divide-y divide-border">
-                {data.results.map((c, idx) => (
-                  <article
-                    key={`${c.document_id}-${idx}`}
+                {groups.map((g, gi) => (
+                  <section
+                    key={`${g.head.document_id}-${gi}`}
                     className="py-4 first:pt-0"
                   >
-                    <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2">
-                      <div className="flex flex-wrap items-center gap-2">
+                    <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex min-w-0 flex-wrap items-center gap-2">
                         <Badge variant="secondary" className="font-normal">
-                          {c.source_type_label}
+                          {g.head.source_type_label}
                         </Badge>
                         <span className="text-sm font-semibold">
-                          {cardReference(c)}
+                          {g.head.document_name}
                         </span>
                       </div>
-                      <RelevanceDots score={c.score} />
+                      <RelevanceDots score={g.best} />
                     </div>
 
-                    <p className="text-sm leading-relaxed text-foreground/90">
-                      <Highlighted text={cleanExcerpt(c.excerpt)} terms={terms} />
-                    </p>
+                    <div className="space-y-3">
+                      {g.items.map((c, ci) => (
+                        <div
+                          key={ci}
+                          className={cn(
+                            g.items.length > 1 &&
+                              "border-l-2 border-primary/20 pl-3",
+                          )}
+                        >
+                          {g.items.length > 1 && (
+                            <p className="mb-0.5 text-sm font-medium text-primary">
+                              {cardReference(c)}
+                            </p>
+                          )}
+                          <p className="text-sm leading-relaxed text-foreground/90">
+                            <Highlighted
+                              text={cleanExcerpt(c.excerpt)}
+                              terms={terms}
+                            />
+                          </p>
+                        </div>
+                      ))}
+                    </div>
 
                     <div className="mt-2">
                       <Button
                         variant="ghost"
                         size="sm"
                         className="h-auto px-0 text-primary hover:bg-transparent hover:underline"
-                        onClick={() => openFullDocument(c)}
+                        onClick={() => openFullDocument(g.head)}
                       >
                         <FileText className="mr-1 h-4 w-4" />
                         Voir le document complet
                       </Button>
                     </div>
-                  </article>
+                  </section>
                 ))}
               </div>
             </>
