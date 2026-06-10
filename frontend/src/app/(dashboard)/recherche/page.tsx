@@ -400,11 +400,11 @@ export default function RechercheDocumentairePage() {
                 {groups.length > 1 ? "s" : ""} · triés par pertinence
               </p>
 
-              <div className="space-y-5">
+              <div className="space-y-6">
                 {groups.map((g, gi) => (
                   <section
                     key={`${g.head.document_id}-${gi}`}
-                    className="rounded-xl border bg-card p-4 shadow-sm"
+                    className="rounded-xl border bg-card p-5 shadow-sm"
                   >
                     <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
                       <div className="flex min-w-0 flex-wrap items-center gap-2">
@@ -423,7 +423,7 @@ export default function RechercheDocumentairePage() {
                       </div>
                     </div>
 
-                    <div className="space-y-3">
+                    <div className="space-y-5">
                       {g.items.map((c, ci) => {
                         const key = `${gi}-${ci}`;
                         const isOpen = expanded.has(key);
