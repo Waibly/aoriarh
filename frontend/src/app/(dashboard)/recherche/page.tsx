@@ -382,11 +382,11 @@ export default function RechercheDocumentairePage() {
                 {groups.length > 1 ? "s" : ""} · triés par pertinence
               </p>
 
-              <div className="divide-y divide-border">
+              <div className="space-y-3">
                 {groups.map((g, gi) => (
                   <section
                     key={`${g.head.document_id}-${gi}`}
-                    className="py-4 first:pt-0"
+                    className="rounded-xl border border-border bg-background p-4"
                   >
                     <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
                       <div className="flex min-w-0 flex-wrap items-center gap-2">
