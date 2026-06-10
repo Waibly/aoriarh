@@ -70,11 +70,6 @@ function cleanExcerpt(text: string, max = 480): string {
   // Recolle les sous-chunks ("### Article Lxxx (suite)") en sauts de ligne.
   t = t.replace(/###\s*Article\s+[LRD]\.?\s*[\w.\-]*\s*(?:\(suite\))?/gi, "\n");
   t = t.replace(/[#>]+/g, " ");
-  // Tableaux markdown : retirer les lignes de séparation (| --- | --- |) et
-  // transformer les barres restantes en séparateurs lisibles, pas en "|" bruts.
-  t = t.replace(/\|?\s*:?-{2,}:?\s*(?:\|\s*:?-{2,}:?\s*)*\|?/g, " ");
-  t = t.replace(/\s*\|\s*/g, " · ");
-  t = t.replace(/(?:\s·)+/g, " ·").replace(/·\s*·/g, "·");
   // Mise en page : un saut de ligne avant chaque énumérateur juridique
   // (1° 2° … et a) b) …) pour casser le pavé.
   t = t.replace(/\s+(\d{1,2}°)/g, "\n$1");
@@ -96,6 +91,31 @@ function cleanExcerpt(text: string, max = 480): string {
 /** Nettoie le texte intégral pour le volet : retire les lignes vides en excès. */
 function cleanFullText(text: string): string {
   return text.replace(/\n{3,}/g, "\n\n").trim();
+}
+
+/** Détecte un tableau markdown (ligne de séparation type | --- | --- |). */
+function hasMarkdownTable(s: string): boolean {
+  return /\|\s*:?-{2,}:?\s*\|/.test(s);
+}
+
+/**
+ * Prépare un extrait CONTENANT un tableau pour un rendu markdown : on retire
+ * les titres (## fil d'Ariane, ### Article) mais on garde le tableau intact,
+ * et on borne la longueur en coupant à une fin de ligne (jamais au milieu
+ * d'une ligne de tableau).
+ */
+function excerptMarkdown(text: string, max = 5000): string {
+  let t = text;
+  const first = t.indexOf("### Article");
+  if (first !== -1) t = t.slice(first);
+  t = t.replace(/^#{1,6}[^\n]*$/gm, "").replace(/\n{3,}/g, "\n\n").trim();
+  if (t.length > max) {
+    t = t.slice(0, max);
+    const nl = t.lastIndexOf("\n");
+    if (nl > max * 0.5) t = t.slice(0, nl);
+    t += "\n\n…";
+  }
+  return t;
 }
 
 /**
@@ -472,6 +492,33 @@ export default function RechercheDocumentairePage() {
                     <div className="space-y-5">
                       {g.items.map((c, ci) => {
                         const key = `${gi}-${ci}`;
+                        // Extrait contenant un tableau -> rendu markdown (vrai
+                        // tableau), pas de texte aplati ni de surlignage.
+                        if (hasMarkdownTable(c.excerpt)) {
+                          return (
+                            <div
+                              key={ci}
+                              className={cn(
+                                g.items.length > 1 &&
+                                  "border-l-2 border-primary/20 pl-3",
+                              )}
+                            >
+                              {g.items.length > 1 && (
+                                <p className="mb-1 text-sm font-medium text-primary">
+                                  {cardReference(c)}
+                                </p>
+                              )}
+                              <div className="prose prose-sm dark:prose-invert max-w-none text-sm leading-relaxed [&_p]:my-2 [&_table]:my-2 [&_table]:w-full [&_table]:border-collapse [&_table]:text-xs [&_td]:border [&_td]:border-border [&_td]:px-2 [&_td]:py-1 [&_td]:align-top [&_th]:border [&_th]:border-border [&_th]:bg-muted [&_th]:px-2 [&_th]:py-1 [&_th]:text-left [&_th]:font-semibold">
+                                <ReactMarkdown
+                                  remarkPlugins={[remarkGfm]}
+                                  rehypePlugins={[rehypeSanitize]}
+                                >
+                                  {excerptMarkdown(c.excerpt)}
+                                </ReactMarkdown>
+                              </div>
+                            </div>
+                          );
+                        }
                         const isOpen = expanded.has(key);
                         const full = cleanExcerpt(c.excerpt, 100000);
                         const short = cleanExcerpt(c.excerpt);
