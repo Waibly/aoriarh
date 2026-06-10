@@ -1320,6 +1320,41 @@ class RAGAgent:
                     "[LEGFLOOR] Injected %d legislation candidate(s) (pool: %d)",
                     injected, len(pool),
                 )
+
+        # Articles explicitement nommés par l'ancre législative : le LLM nomme
+        # le bon article (ex. "L1235-3" pour le barème Macron) même quand son
+        # texte terse s'embed mal contre une requête familière ("barème macron").
+        # On les récupère par numéro et on les injecte dans le pool. Mesuré :
+        # L1235-3 passe d'absent à visible, sans régression sur les autres
+        # requêtes. Le reranker reste seul juge de l'ordre final.
+        if apply_legislation_floor and legal_anchor:
+            anchor_arts = detect_identifiers(legal_anchor).get("article_nums", [])[:3]
+            if anchor_arts:
+                try:
+                    anchor_chunks = fetch_by_identifiers(
+                        self.search_engine.qdrant,
+                        {"numero_pourvoi": [], "article_nums": anchor_arts},
+                        organisation_id=organisation_id,
+                        org_idcc_list=org_idcc_list,
+                    )
+                except Exception:
+                    logger.exception("[ANCHOR] Article injection failed")
+                    anchor_chunks = []
+                seen_a = {(r.document_id, r.chunk_index) for r in pool}
+                added = 0
+                for c in anchor_chunks:
+                    key = (c.document_id, c.chunk_index)
+                    if key not in seen_a:
+                        seen_a.add(key)
+                        pool.insert(0, c)
+                        added += 1
+                if added:
+                    logger.info(
+                        "[ANCHOR] Injected %d article chunk(s) named by anchor "
+                        "(pool: %d)",
+                        added, len(pool),
+                    )
+
         return pool, variants
 
     def _cross_reference(self, results: list[SearchResult]) -> list[SearchResult]:
