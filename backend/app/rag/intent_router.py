@@ -305,9 +305,12 @@ async def _classify_via_llm(query: str, llm: AsyncOpenAI) -> Intent:
                 {"role": "system", "content": _CLASSIFIER_PROMPT},
                 {"role": "user", "content": query[:1000]},
             ],
-            temperature=0.0,
-            # gpt-5 family rejects max_tokens, exige max_completion_tokens.
-            max_completion_tokens=30,
+            # gpt-5 family rejects max_tokens (exige max_completion_tokens)
+            # ET toute temperature ≠ 1 (erreur 400 → le classifieur tombait
+            # silencieusement en fallback legal_question sur chaque appel).
+            # 100 tokens : le raisonnement (même "minimal") consomme le budget
+            # de complétion — 30 affamait la sortie JSON.
+            max_completion_tokens=100,
             response_format={"type": "json_object"},
             reasoning_effort="minimal",
         )

@@ -932,13 +932,16 @@ class RAGAgent:
             user_content += "\n".join(context_parts) + "\n\n"
         user_content += f"Question de suivi : {query}"
 
+        # NB: pas de `temperature` — la famille gpt-5 rejette toute valeur ≠ 1
+        # (erreur 400). Ce paramètre silencieusement fatal a tué la
+        # condensation en prod pendant des semaines (113/113 suivis non
+        # reformulés) : le fallback renvoyait la relance brute.
         response = await self.llm.chat.completions.create(
             model=rag_config.CONDENSE_MODEL,
             messages=[
                 {"role": "system", "content": _CONDENSE_PROMPT},
                 {"role": "user", "content": user_content},
             ],
-            temperature=0.0,
             max_completion_tokens=400,
             reasoning_effort="minimal",
         )

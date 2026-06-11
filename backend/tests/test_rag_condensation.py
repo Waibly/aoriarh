@@ -42,8 +42,11 @@ class TestCondensation:
         assert result == "Quels sont les délais de préavis pour un CDD ?"
         agent.llm.chat.completions.create.assert_called_once()
         call_args = agent.llm.chat.completions.create.call_args
-        assert call_args.kwargs["model"] == "gpt-4o-mini"
-        assert call_args.kwargs["temperature"] == 0.0
+        from app.rag.config import CONDENSE_MODEL
+        assert call_args.kwargs["model"] == CONDENSE_MODEL
+        # Régression : la famille gpt-5 rejette toute temperature ≠ 1 (400).
+        # Ce paramètre a tué la condensation en prod (fallback silencieux).
+        assert "temperature" not in call_args.kwargs
 
     @pytest.mark.asyncio
     async def test_no_history_skips_condensation(self, agent):
@@ -58,8 +61,8 @@ class TestCondensation:
 
         await agent.prepare_context("simple question", "org-123", history=None)
 
-        # Only one LLM call (reformulation), no condensation
-        assert agent.llm.chat.completions.create.call_count == 1
+        # Two LLM calls (expansion + ancre législative), no condensation
+        assert agent.llm.chat.completions.create.call_count == 2
 
     @pytest.mark.asyncio
     async def test_history_truncated_to_limit(self, agent):
@@ -86,7 +89,8 @@ class TestCondensation:
         """If condensation LLM fails, pipeline should use original query."""
         agent.llm.chat.completions.create.side_effect = [
             Exception("LLM error"),  # condensation fails
-            _mock_llm_response("reformulated"),  # reformulation succeeds
+            _mock_llm_response("reformulated"),  # expansion succeeds
+            _mock_llm_response("ancre législative"),  # legal anchor succeeds
         ]
         agent.search_engine = MagicMock()
         agent.search_engine.search = AsyncMock(return_value=[])
@@ -103,7 +107,8 @@ class TestCondensation:
         )
 
         # Should fall back to original query and continue with reformulation
-        assert agent.llm.chat.completions.create.call_count == 2
+        # (condensation ratée + expansion + ancre législative)
+        assert agent.llm.chat.completions.create.call_count == 3
 
     @pytest.mark.asyncio
     async def test_long_messages_truncated(self, agent):
@@ -111,7 +116,7 @@ class TestCondensation:
             "condensed"
         )
 
-        long_content = "x" * 1000
+        long_content = "x" * 3000
         history = [
             {"role": "user", "content": long_content},
         ]
@@ -120,11 +125,11 @@ class TestCondensation:
 
         call_args = agent.llm.chat.completions.create.call_args
         user_content = call_args.kwargs["messages"][1]["content"]
-        # Content should be truncated to 500 chars per message
+        # Content should be truncated to 1500 chars per message
         lines = user_content.split("\n")
         history_line = [l for l in lines if l.startswith("Utilisateur:")][0]
-        # 500 chars + "Utilisateur: " prefix
-        assert len(history_line) <= 520
+        # 1500 chars + "Utilisateur: " prefix
+        assert len(history_line) <= 1520
 
     @pytest.mark.asyncio
     async def test_condense_returns_query_on_none_content(self, agent):
