@@ -1451,6 +1451,13 @@ class RAGAgent:
                         article_label = r.section_path
                 header += f"Localisation : {article_label}\n"
 
+            # Date of the text (CCN, avenants, lois…) so the LLM can apply the
+            # recency rule ("l'avenant le plus récent gagne") on facts, not on
+            # a guess from the document name. Jurisprudence already carries its
+            # own date via the Référence line below.
+            if r.content_date and not (r.numero_pourvoi or r.date_decision):
+                header += f"Date du texte : {r.content_date}\n"
+
             # Add jurisprudence metadata when available
             if r.numero_pourvoi or r.date_decision:
                 juris_parts: list[str] = []
