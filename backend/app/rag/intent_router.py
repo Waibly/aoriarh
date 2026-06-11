@@ -115,7 +115,10 @@ _PATTERNS_SCOPE = [
 ]
 
 _PATTERNS_CAPABILITIES = [
-    r"\b(que|qu')\s*(sais|peux|fais|fait)-?(tu|vous)\b",
+    # Ancré en fin de question : « que sais-tu faire ? » oui, mais PAS
+    # « que peux-tu me dire sur le préavis ? » (vraie question juridique
+    # qui doit partir en RAG, pas recevoir la présentation produit).
+    r"\b(que|qu')\s*(sais|peux|fais|fait)[- ]?(tu|vous)\s*(faire|pour\s+moi|m['']aider)?\s*\??\s*$",
     r"\b(quelles?|quel)\s+(sont|est)\s+(tes|vos)\s+(capacit|fonctionnalit|fonction)",
     r"\b(à quoi|pour quoi|pourquoi|comment)\s+(sers|sert|utilis)",
     r"\b(qui es[- ]tu|qui êtes-vous|tu es qui|c'est quoi|qu'est-ce que)\b.{0,30}\b(aoria|toi|vous)\b",

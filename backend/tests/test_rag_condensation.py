@@ -141,3 +141,32 @@ class TestCondensation:
 
         result = await agent._condense_question("my question", history)
         assert result == "my question"
+
+
+class TestBuildUserMessageCondensed:
+    """La question condensée (utilisée pour chercher les sources) doit être
+    fournie à la génération quand elle diffère de la relance brute."""
+
+    def test_condensed_appended_when_different(self, agent):
+        msg = agent._build_user_message(
+            "Et pour un CDD ?",
+            context="[Source]\nContenu : x",
+            condensed_query="Quels sont les délais de préavis pour un CDD ?",
+        )
+        assert "Question : Et pour un CDD ?" in msg
+        assert "Quels sont les délais de préavis pour un CDD ?" in msg
+        assert "replacée dans le contexte" in msg
+
+    def test_condensed_omitted_when_identical(self, agent):
+        msg = agent._build_user_message(
+            "Quel préavis pour un CDD ?",
+            context="[Source]\nContenu : x",
+            condensed_query="quel préavis pour un CDD",
+        )
+        assert "replacée dans le contexte" not in msg
+
+    def test_no_condensed(self, agent):
+        msg = agent._build_user_message(
+            "Question simple", context="[Source]\nContenu : x",
+        )
+        assert "replacée dans le contexte" not in msg

@@ -565,11 +565,17 @@ async def chat_stream(
             # greeting). Évite : (a) hallucination sur questions méta,
             # (b) leakage de l'architecture vers l'utilisateur, (c) coût RAG
             # inutile pour les salutations / questions hors-scope.
+            # En cours de conversation, une relance est presque toujours la
+            # suite de l'échange juridique : le classifieur LLM la jugerait
+            # SANS l'historique (« Et pour les cadres ? » n'a aucun sens seul).
+            # On garde les préfiltres déterministes (sécurité IP, salutations)
+            # mais on saute le classifieur dès qu'il y a un historique.
             intent_result = await classify_intent(
                 query=data.message,
                 db=db,
                 llm=agent.llm,
                 organisation_id=conversation.organisation_id,
+                use_llm_fallback=not history,
             )
             if intent_result.static_answer is not None:
                 logger.info(
@@ -712,7 +718,13 @@ async def chat_stream(
 
             full_answer = ""
             try:
-                async for chunk in agent.stream_generate(data.message, results, org_context=org_context, history=history, low_confidence=rag_trace.low_confidence):
+                async for chunk in agent.stream_generate(
+                    data.message, results,
+                    org_context=org_context,
+                    history=history,
+                    low_confidence=rag_trace.low_confidence,
+                    condensed_query=reformulated,
+                ):
                     if await request.is_disconnected():
                         logger.info("Client disconnected during streaming")
                         return

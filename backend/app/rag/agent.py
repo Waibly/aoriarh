@@ -444,6 +444,9 @@ et la procédure (autorisation inspection du travail) ?"
 
 Règles :
 - La question reformulée doit être compréhensible SANS l'historique.
+- Formule TOUJOURS le résultat à la forme INTERROGATIVE (une question, pas une \
+consigne ni une affirmation : jamais « Vous pouvez fournir… » ou « Donne la \
+liste… », mais « Quelle est… ? », « Quels sont… ? »).
 - RÉSOUS les références pronominales et démonstratifs : "cet accord", "ce texte", \
 "cette convention", "ce salarié", "cette procédure" → remplace par le nom exact \
 du document, de l'accord ou du sujet identifié dans l'historique ou les sources citées. \
@@ -812,12 +815,14 @@ class RAGAgent:
         history: list[dict[str, str]] | None = None,
         buffer_size: int = 10,
         low_confidence: bool = False,
+        condensed_query: str | None = None,
     ) -> AsyncGenerator[str, None]:
         """Stream the LLM generation token by token (buffered)."""
         t_start = time.perf_counter()
         context = self._build_context(results)
         user_content = self._build_user_message(
             query, context, org_context, history, low_confidence=low_confidence,
+            condensed_query=condensed_query,
         )
         logger.info(
             "[RAG] stream org_context injected: %s",
@@ -942,7 +947,9 @@ class RAGAgent:
                 {"role": "system", "content": _CONDENSE_PROMPT},
                 {"role": "user", "content": user_content},
             ],
-            max_completion_tokens=400,
+            # 800 : le raisonnement de gpt-5-mini partage ce budget avec la
+            # sortie — 400 risquait de tronquer les condensations denses.
+            max_completion_tokens=800,
             reasoning_effort="minimal",
         )
         if response.usage:
@@ -1600,6 +1607,7 @@ class RAGAgent:
         org_context: dict[str, str | None] | None = None,
         history: list[dict[str, str]] | None = None,
         low_confidence: bool = False,
+        condensed_query: str | None = None,
     ) -> str:
         """Build the user message with sources, optional org context, history, and question."""
         parts = [f"Sources documentaires :\n\n{context}"]
@@ -1619,7 +1627,10 @@ class RAGAgent:
         if org_context and any(org_context.values()):
             parts.append(self._build_org_context_block(org_context))
         if history:
-            recent = history[-4:]
+            # Même fenêtre que la condensation (6 messages) : la génération ne
+            # doit pas voir MOINS de contexte que l'étape qui a interprété la
+            # relance pour chercher les sources.
+            recent = history[-CONDENSE_HISTORY_LIMIT:]
             history_lines = []
             for msg in recent:
                 role = "Utilisateur" if msg["role"] == "user" else "Assistant"
@@ -1631,6 +1642,15 @@ class RAGAgent:
                 "## Historique de la conversation\n\n" + "\n\n".join(history_lines)
             )
         parts.append(f"Question : {query}")
+        # Alignement retrieval/génération : les sources ont été cherchées avec
+        # la question condensée (relance replacée dans son contexte). On la
+        # fournit pour que la génération réponde à la même interprétation,
+        # sans remplacer les mots réels de l'utilisateur.
+        if condensed_query and _normalize_question(condensed_query) != _normalize_question(query):
+            parts.append(
+                "(Question replacée dans le contexte de la conversation, "
+                f"utilisée pour sélectionner les sources : {condensed_query})"
+            )
         return "\n\n".join(parts)
 
     async def _generate(
