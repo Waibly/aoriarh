@@ -24,6 +24,15 @@ TOP_K = 20
 RERANK_TOP_K = 15
 RERANK_MODEL = "rerank-2"
 
+# Plancher de pertinence (étape 3.6) : les groupes parents dont le score de
+# rerank est sous ce seuil ne sont ni affichés à l'utilisateur, ni envoyés à la
+# génération. Calibré par rejeu des 188 traces prod (juin 2026) : à 0,35 on
+# coupe ~17 % des groupes, échantillon vérifié = hors-sujet (décrets pensions
+# sur questions BDESE, guides de bonnes pratiques sur opposition CSE…).
+# Garde-fou : on conserve toujours les SOURCE_FLOOR_MIN_KEEP mieux notés.
+SOURCE_SCORE_FLOOR = 0.35
+SOURCE_FLOOR_MIN_KEEP = 3
+
 # Legislation floor: number of "written-law" candidates pulled by the auxiliary
 # legislation-only retrieval and injected into the candidate pool, so codified
 # articles always reach the reranker even when jurisprudence dominates the main
@@ -34,4 +43,3 @@ CONDENSE_HISTORY_LIMIT = 6
 
 RAG_TIMEOUT_GLOBAL = 120.0
 RAG_TIMEOUT_PER_STEP = 60.0
-RAG_MAX_ITERATIONS = 2

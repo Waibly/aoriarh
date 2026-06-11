@@ -1,0 +1,983 @@
+created_at;q;st;score;doc
+2026-06-09 20:32:43.171929+00;Télétravail supprimé — le CSE peut s'y opposer ?;decret;0.291;Décret n° 2025-1381 du 26 décembre 2025 relatif aux instances de dialogue social et à la négociation collective au sein 
+2026-06-09 20:32:43.171929+00;Télétravail supprimé — le CSE peut s'y opposer ?;accord_branche;0.283;Accords de branche — Syntec (IDCC 1486)
+2026-06-09 20:32:43.171929+00;Télétravail supprimé — le CSE peut s'y opposer ?;accord_branche;0.283;Accords de branche — Syntec (IDCC 1486)
+2026-06-09 20:32:43.171929+00;Télétravail supprimé — le CSE peut s'y opposer ?;convention_collective_nationale;0.283;CCN Syntec (IDCC 1486)
+2026-06-09 12:32:29.623265+00;Je veux la liste complète, indique la durée de protection pour chacun;decret;0.350;Décret n° 2025-860 du 29 août 2025 fixant les niveaux de prise en charge des contrats d'apprentissage
+2026-06-09 12:32:29.623265+00;Je veux la liste complète, indique la durée de protection pour chacun;arrete;0.326;Arrêté du 1er décembre 2025 portant délégation de signature aux agents chargés de l'animation de la politique ministérie
+2026-06-09 12:32:29.623265+00;Je veux la liste complète, indique la durée de protection pour chacun;code_sante_publique_reglementaire;0.336;Code de la santé publique — Partie réglementaire
+2026-06-09 12:32:29.623265+00;Je veux la liste complète, indique la durée de protection pour chacun;code_securite_sociale;0.336;Code de la sécurité sociale — Partie législative
+2026-06-09 12:31:18.55786+00;Il manque encore certains types de salariés;arret_cour_cassation;0.336;Cass. Chambre civile 2, 16/10/2025, n° 23-16.569
+2026-06-09 12:31:18.55786+00;Il manque encore certains types de salariés;arret_cour_cassation;0.305;Cass. Chambre sociale, 01/07/2009, n° 08-40.988
+2026-06-09 12:31:18.55786+00;Il manque encore certains types de salariés;arret_cour_cassation;0.346;Cass. Chambre sociale, 22/01/2025, n° 23-20.466
+2026-06-09 10:03:04.31136+00;pourquoi tu n'inclus pas TOUS LES SALARIÉS PROTÉGÉS ?;arrete;0.326;Arrêté du 26 novembre 2025 modifiant l'arrêté du 12 novembre 2024 relatif aux critères d'affectation du solde de la taxe
+2026-06-09 10:02:20.453+00;NON JE VEUX QUE TU FASSES UN TABLEAU INDIQUANT L'ENSEMBLE DES SALARIÉS PROTÉGÉS, LA DURÉE DE PROTECTION ET LES RÉFÉRENCES LEGALES;arrete;0.332;Arrêté du 2 décembre 2025 portant modification de l'arrêté du 17 octobre 1995 modifié relatif à la tarification des risq
+2026-06-09 10:02:20.453+00;NON JE VEUX QUE TU FASSES UN TABLEAU INDIQUANT L'ENSEMBLE DES SALARIÉS PROTÉGÉS, LA DURÉE DE PROTECTION ET LES RÉFÉRENCES LEGALES;arret_cour_cassation;0.342;Cass. Chambre sociale, 12/06/2024, n° 23-10.838
+2026-06-09 10:02:20.453+00;NON JE VEUX QUE TU FASSES UN TABLEAU INDIQUANT L'ENSEMBLE DES SALARIÉS PROTÉGÉS, LA DURÉE DE PROTECTION ET LES RÉFÉRENCES LEGALES;arret_cour_cassation;0.346;Cass. Chambre sociale, 05/01/2022, n° 20-12.471
+2026-06-09 10:02:20.453+00;NON JE VEUX QUE TU FASSES UN TABLEAU INDIQUANT L'ENSEMBLE DES SALARIÉS PROTÉGÉS, LA DURÉE DE PROTECTION ET LES RÉFÉRENCES LEGALES;arret_cour_cassation;0.346;Cass. Chambre sociale, 17/12/2025, n° 23-20.468
+2026-06-09 09:58:59.372414+00;Intègre ces éléments dans le tableau et vérifie s'il manque d'autres éléments;code_securite_sociale;0.344;Code de la sécurité sociale — Partie législative
+2026-06-09 09:52:29.367404+00;Fais moi un nouveau tableau récapitulatif en incluant tous les salariés protégés, la durée de protection et la référence légale;arret_cour_cassation;0.295;Cass. Chambre sociale, 17/12/2025, n° 23-20.468
+2026-06-09 09:52:29.367404+00;Fais moi un nouveau tableau récapitulatif en incluant tous les salariés protégés, la durée de protection et la référence légale;code_securite_sociale_reglementaire;0.295;Code de la sécurité sociale — Partie réglementaire
+2026-06-09 09:52:29.367404+00;Fais moi un nouveau tableau récapitulatif en incluant tous les salariés protégés, la durée de protection et la référence légale;code_travail;0.346;Code du travail — Partie législative
+2026-06-09 09:52:29.367404+00;Fais moi un nouveau tableau récapitulatif en incluant tous les salariés protégés, la durée de protection et la référence légale;arret_cour_cassation;0.318;Cass. Chambre sociale, 05/01/2022, n° 20-12.471
+2026-06-09 09:52:29.367404+00;Fais moi un nouveau tableau récapitulatif en incluant tous les salariés protégés, la durée de protection et la référence légale;arret_cour_cassation;0.307;Cass. Chambre sociale, 01/06/2017, n° 16-16.779
+2026-06-09 09:52:29.367404+00;Fais moi un nouveau tableau récapitulatif en incluant tous les salariés protégés, la durée de protection et la référence légale;arret_cour_cassation;0.297;Cass. Chambre sociale, 12/06/2024, n° 23-10.838
+2026-06-09 09:47:28.543771+00;Tu as oublié ces statuts : salarié en congé paternité, salarié en grossesse, en congé maternité, élus CSE;code_travail;0.334;Code du travail — Partie législative
+2026-06-09 09:47:28.543771+00;Tu as oublié ces statuts : salarié en congé paternité, salarié en grossesse, en congé maternité, élus CSE;arret_cour_cassation;0.346;Cass. Chambre sociale, 15/10/2025, n° 24-60.159
+2026-06-09 09:47:28.543771+00;Tu as oublié ces statuts : salarié en congé paternité, salarié en grossesse, en congé maternité, élus CSE;arret_cour_cassation;0.318;Cass. Chambre sociale, 31/01/2018, n° 16-17.886
+2026-06-09 09:47:28.543771+00;Tu as oublié ces statuts : salarié en congé paternité, salarié en grossesse, en congé maternité, élus CSE;arret_cour_cassation;0.322;Cass. Chambre sociale, 22/09/2021, n° 20-16.859
+2026-06-09 09:47:28.543771+00;Tu as oublié ces statuts : salarié en congé paternité, salarié en grossesse, en congé maternité, élus CSE;arret_cour_cassation;0.338;Cass. Chambre sociale, 13/09/2023, n° 22-14.043
+2026-06-09 09:47:28.543771+00;Tu as oublié ces statuts : salarié en congé paternité, salarié en grossesse, en congé maternité, élus CSE;code_travail;0.342;Code du travail — Partie législative
+2026-06-09 09:47:28.543771+00;Tu as oublié ces statuts : salarié en congé paternité, salarié en grossesse, en congé maternité, élus CSE;arret_cour_cassation;0.342;Cass. Chambre sociale, 17/12/2025, n° 24-20.405
+2026-06-07 16:21:13.397016+00;Organiser un archivage sécurisé et daté
+
+Classez chaque entretien dans le dossier individuel (papier ou numérique) avec index : date, type d’entretien, preuve de remise. Conservez ces pièces au moins pendant la durée du contrat + 5 ans, afin de couvrir les prescriptions en matière de rupture et de demandes indemnitaires.
+
+Est ce vrai ?;arret_cour_appel;0.315;Cour d'appel de Grenoble, Ch.sociale-sect.prud'hom, 26/02/2026, n° 23/02318
+2026-06-07 16:21:13.397016+00;Organiser un archivage sécurisé et daté
+
+Classez chaque entretien dans le dossier individuel (papier ou numérique) avec index : date, type d’entretien, preuve de remise. Conservez ces pièces au moins pendant la durée du contrat + 5 ans, afin de couvrir les prescriptions en matière de rupture et de demandes indemnitaires.
+
+Est ce vrai ?;arret_cour_cassation;0.287;Cass. Chambre sociale, 09/10/2019, n° 18-13.529
+2026-06-07 16:21:13.397016+00;Organiser un archivage sécurisé et daté
+
+Classez chaque entretien dans le dossier individuel (papier ou numérique) avec index : date, type d’entretien, preuve de remise. Conservez ces pièces au moins pendant la durée du contrat + 5 ans, afin de couvrir les prescriptions en matière de rupture et de demandes indemnitaires.
+
+Est ce vrai ?;arret_cour_cassation;0.293;Cass. Chambre sociale, 12/06/2024, n° 22-20.473
+2026-06-07 16:21:13.397016+00;Organiser un archivage sécurisé et daté
+
+Classez chaque entretien dans le dossier individuel (papier ou numérique) avec index : date, type d’entretien, preuve de remise. Conservez ces pièces au moins pendant la durée du contrat + 5 ans, afin de couvrir les prescriptions en matière de rupture et de demandes indemnitaires.
+
+Est ce vrai ?;code_sante_publique_reglementaire;0.301;Code de la santé publique — Partie réglementaire
+2026-06-07 16:21:13.397016+00;Organiser un archivage sécurisé et daté
+
+Classez chaque entretien dans le dossier individuel (papier ou numérique) avec index : date, type d’entretien, preuve de remise. Conservez ces pièces au moins pendant la durée du contrat + 5 ans, afin de couvrir les prescriptions en matière de rupture et de demandes indemnitaires.
+
+Est ce vrai ?;arret_cour_appel;0.239;Cour d'appel de Amiens, 5EME CHAMBRE PRUD'HOMALE, 29/04/2026, n° 25/02255
+2026-06-07 16:21:13.397016+00;Organiser un archivage sécurisé et daté
+
+Classez chaque entretien dans le dossier individuel (papier ou numérique) avec index : date, type d’entretien, preuve de remise. Conservez ces pièces au moins pendant la durée du contrat + 5 ans, afin de couvrir les prescriptions en matière de rupture et de demandes indemnitaires.
+
+Est ce vrai ?;code_sante_publique_reglementaire;0.275;Code de la santé publique — Partie réglementaire
+2026-06-07 16:21:13.397016+00;Organiser un archivage sécurisé et daté
+
+Classez chaque entretien dans le dossier individuel (papier ou numérique) avec index : date, type d’entretien, preuve de remise. Conservez ces pièces au moins pendant la durée du contrat + 5 ans, afin de couvrir les prescriptions en matière de rupture et de demandes indemnitaires.
+
+Est ce vrai ?;arret_cour_appel;0.285;Cour d'appel de Lyon, CHAMBRE SOCIALE A, 06/05/2026, n° 23/02409
+2026-06-07 15:56:05.72352+00;Comment rédiger, faire signer et conserver les entretiens annuels et professionnels afin qu’ils puissent être utilisés comme éléments de preuve en cas de contestation par un salarié ?;arret_cour_appel;0.326;Cour d'appel de Pau, Chambre sociale, 30/04/2026, n° 24/00728
+2026-06-07 15:56:05.72352+00;Comment rédiger, faire signer et conserver les entretiens annuels et professionnels afin qu’ils puissent être utilisés comme éléments de preuve en cas de contestation par un salarié ?;arret_cour_cassation;0.334;Cass. Chambre sociale, 11/03/2026, n° 24-22.163
+2026-06-07 15:56:05.72352+00;Comment rédiger, faire signer et conserver les entretiens annuels et professionnels afin qu’ils puissent être utilisés comme éléments de preuve en cas de contestation par un salarié ?;arret_cour_cassation;0.277;Cass. Chambre sociale, 14/02/2024, n° 22-20.430
+2026-06-07 15:04:58.703193+00;Tu es d'accord avec ça : Checklist contrat, disciplinaire, santé et dispositifs spécifiques
+
+Pour un dossier salarié prêt à un contentieux, visez une conservation alignée sur les prescriptions légales (par exemple 24 mois pour certains dispositifs d’insertion, article R.5132-1-7 C. trav.) et, à défaut de texte précis dans vos sources, sur le délai de prescription le plus défavorable (notamment 2 ans pour de nombreuses actions liées au contrat, article L.1471-1 C. trav.). La liste ci‑dessous distingue obligations textuelles et pratiques prudentes.
+
+
+
+
+
+Contrat de travail et avenants – Pratique prudente : durée du contrat + au moins 5 ans après la rupture (vos sources ne fixent pas de délai chiffré). Vérifier : pièce présente, lisible, signée.
+
+
+
+Correspondances disciplinaires (avertissements, mises à pied, licenciement, rupture conventionnelle) – Pratique prudente : au moins pendant les délais d’actions potentielles (minimum 2 ans, art. L.1471-1 C. trav., mentionné dans vos sources). Vérifier : classement chronologique, pièces complètes.
+
+
+
+Suivi de la santé au travail côté employeur (convocations, avis d’aptitude/inaptitude, échanges administratifs) – Pratique prudente : 5 ans après la fin du contrat. Dossier médical conservé par le service de santé, pas dans le dossier RH. Vérifier : aucune donnée médicale détaillée dans vos archives internes.
+
+
+
+Justificatifs d’absences et congés (demandes, validations, soldes) – Pratique prudente : au moins 2 ans après la période concernée, les éléments de paie associés restant 6 ans (art. L.243-16 CSS cité dans vos sources). Vérifier : cohérence entre soldes de congés et bulletins.
+
+
+
+Documents de formation (conventions, convocations, attestations, preuves de réalisation) – Pratique prudente : 3 à 5 ans selon le financement et les risques de contestation (durée non chiffrée dans vos sources). Vérifier : traçabilité des formations obligatoires et de prévention.
+
+
+
+Registre du personnel et mentions individuelles – Pratique prudente dans le dossier salarié : conserver une copie des mentions essentielles 5 ans après le départ. Vos sources ne fixent pas ici de durée détaillée, ajuster selon votre politique d’archivage global.
+
+
+
+Pièces d’éligibilité à des dispositifs d’insertion par l’activité économique – Obligation textuelle : 24 mois à compter de la déclaration d’éligibilité (article R.5132-1-7 C. trav. repris dans vos sources). Vérifier : date de départ clairement identifiée, archivage séparé si le dispositif est temporaire.
+
+
+
+Autres pièces de preuve liées à un litige potentiel (témoignages, e‑mails, comptes rendus) – Pratique prudente : conserver au moins pendant le délai de prescription du litige visé (souvent 2 ans, art. L.1471-1 C. trav., dans vos sources), et jusqu’à clôture définitive du contentieux si une action est engagée.
+
+
+
+RGPD et proportionnalité – Pour chaque document, vérifier : finalité identifiée, durée justifiée (texte ou prescription), accès restreint. Vos sources rappellent que tous les délais de conservation ne sont pas listés : certaines durées restent donc des choix de prudence à formaliser dans votre politique interne.;code_sante_publique_reglementaire;0.154;Code de la santé publique — Partie réglementaire
+2026-06-07 14:39:54.577665+00;Oui je souhaite une liste complète au format tableau. indique aussi fiche d'évaluation, attestation d'entretien, dossier disciplinaire et toutes informations utiles;arret_cour_appel;0.295;Cour d'appel de Nimes, 5ème chambre sociale PH, 24/03/2026, n° 24/03516
+2026-06-07 14:39:54.577665+00;Oui je souhaite une liste complète au format tableau. indique aussi fiche d'évaluation, attestation d'entretien, dossier disciplinaire et toutes informations utiles;arret_cour_appel;0.281;Cour d'appel de Rennes, 7ème Ch Prud'homale, 05/03/2026, n° 23/00114
+2026-06-07 14:39:54.577665+00;Oui je souhaite une liste complète au format tableau. indique aussi fiche d'évaluation, attestation d'entretien, dossier disciplinaire et toutes informations utiles;arret_cour_cassation;0.285;Cass. Chambre sociale, 15/10/2025, n° 22-20.716
+2026-06-07 14:39:54.577665+00;Oui je souhaite une liste complète au format tableau. indique aussi fiche d'évaluation, attestation d'entretien, dossier disciplinaire et toutes informations utiles;arret_cour_appel;0.291;Cour d'appel de Grenoble, Ch.sociale-sect.prud'hom, 24/03/2026, n° 23/03147
+2026-06-07 14:39:54.577665+00;Oui je souhaite une liste complète au format tableau. indique aussi fiche d'évaluation, attestation d'entretien, dossier disciplinaire et toutes informations utiles;arret_cour_appel;0.299;Cour d'appel de Nimes, 5ème chambre sociale PH, 17/03/2026, n° 24/03330
+2026-06-07 14:39:54.577665+00;Oui je souhaite une liste complète au format tableau. indique aussi fiche d'évaluation, attestation d'entretien, dossier disciplinaire et toutes informations utiles;code_sante_publique_reglementaire;0.305;Code de la santé publique — Partie réglementaire
+2026-06-07 14:39:54.577665+00;Oui je souhaite une liste complète au format tableau. indique aussi fiche d'évaluation, attestation d'entretien, dossier disciplinaire et toutes informations utiles;code_sante_publique_reglementaire;0.315;Code de la santé publique — Partie réglementaire
+2026-06-07 14:36:46.678875+00;Ne te limite pas à une SARL de moins de 10 salariés. Donne les informations de façon générale;code_travail_reglementaire;0.350;Code du travail — Partie réglementaire
+2026-06-07 13:40:25.676811+00;Es tu d'accord avec ces éléments ?
+Poser la hiérarchie des normes dans chaque procédure
+Commencez chaque trame par un bloc « Base juridique » rappelant : loi/règlement > jurisprudence > contrat de travail > documents d’entreprise > usages. Indiquez les codes applicables (travail, civil, sécurité sociale, RGPD) et, le cas échéant, le Code du commerce si la décision touche un dirigeant.
+
+Ajoutez une mention standard : « En cas de conflit, la règle la plus favorable au salarié issue de ces textes sera appliquée », et prévoyez un encart pour citer une éventuelle règle interne plus favorable.
+
+Formaliser une procédure disciplinaire conforme aux articles L1332-1 et suivants
+Rédigez une fiche procédure qui déroule : vérification du règlement intérieur ou de la note disciplinaire, convocation écrite à entretien (délai, objet, rappel de l’assistance), tenue de l’entretien, décision écrite motivée et notifiée. Référencez explicitement les articles L1332-1 et suivants du Code du travail.
+
+Intégrez une checklist : contrat, règlement ou politique disciplinaire, mails ou rapports factuels, témoignages, convocations, procès-verbal d’entretien, lettre de sanction ou licenciement. Prévoyez un tableau d’archivage avec date d’envoi, mode (LRAR, remise en main propre) et copie numérisée.
+
+Encadrer les modifications du contrat par avenant écrit
+Pour toute modification de fonctions, de rémunération ou de durée du travail, votre procédure doit imposer un avenant écrit accepté, en s’appuyant sur la jurisprudence (Cass. soc., 10 juillet 2002, à citer dans la trame). Distinguez clairement simple changement des conditions de travail et modification du contrat.
+
+Checklist à intégrer : contrat initial, fiche de poste, projet d’avenant, preuve de remise et de délai de réflexion, réponse du salarié. Prévoyez un champ obligatoire « Conséquences en cas de refus » avec référence aux articles du Code du travail cités.
+
+Structurer une procédure d’enquête interne (harcèlement, faits sensibles)
+Élaborez une procédure d’alerte et d’enquête qui prévoit : réception de l’alerte, décision d’ouverture, information du salarié visé des griefs, recueil des observations, audition des témoins, rapport et décisions. Rappelez la décision Cass. soc., 8 juin 2016 sur la nécessité d’informer le salarié et de lui permettre de s’expliquer.
+
+Prévoyez une checklist de pièces : alerte, désignation de l’enquêteur, comptes rendus d’audition, résumé des faits remis au salarié, réponses de celui-ci, rapport final. Ajoutez un encart RGPD pour le traitement des données issues de l’enquête.
+
+Encadrer absences, visites médicales et gestion des dossiers RH
+Rédigez une procédure « absences / visites médicales » décrivant déclaration de l’absence, justificatifs, échanges avec le service de santé au travail et visites de reprise. Listez les pièces : arrêts maladie, convocations, comptes rendus médicaux transmis à l’employeur, échanges avec le salarié.
+
+Pour chaque salarié, fixez dans une courte procédure la structure du dossier RH individuel : contrat et avenants, entretiens, avertissements, formations, décisions disciplinaires. Précisez la durée de conservation et rendez obligatoire l’horodatage de chaque ajout (date, auteur, type de pièce).
+
+Installer un archivage horodaté et exploitable devant un juge
+Terminez par une procédure transversale d’archivage : où sont stockées les convocations, PV d’entretien, lettres de licenciement, preuves de diffusion des politiques, DUERP et mises à jour. Imposez la numérisation et l’horodatage systématiques.
+
+Prévoyez un tableau standard à joindre à chaque décision RH : références juridiques citées (articles, arrêts, décisions), liste de pièces internes annexées, dates clés de la procédure. Cet encadré deviendra le sommaire de votre éventuel dossier prud’homal.;arret_cour_cassation;0.322;Cass. Chambre sociale, 14/02/2024, n° 22-19.351
+2026-06-07 13:40:25.676811+00;Es tu d'accord avec ces éléments ?
+Poser la hiérarchie des normes dans chaque procédure
+Commencez chaque trame par un bloc « Base juridique » rappelant : loi/règlement > jurisprudence > contrat de travail > documents d’entreprise > usages. Indiquez les codes applicables (travail, civil, sécurité sociale, RGPD) et, le cas échéant, le Code du commerce si la décision touche un dirigeant.
+
+Ajoutez une mention standard : « En cas de conflit, la règle la plus favorable au salarié issue de ces textes sera appliquée », et prévoyez un encart pour citer une éventuelle règle interne plus favorable.
+
+Formaliser une procédure disciplinaire conforme aux articles L1332-1 et suivants
+Rédigez une fiche procédure qui déroule : vérification du règlement intérieur ou de la note disciplinaire, convocation écrite à entretien (délai, objet, rappel de l’assistance), tenue de l’entretien, décision écrite motivée et notifiée. Référencez explicitement les articles L1332-1 et suivants du Code du travail.
+
+Intégrez une checklist : contrat, règlement ou politique disciplinaire, mails ou rapports factuels, témoignages, convocations, procès-verbal d’entretien, lettre de sanction ou licenciement. Prévoyez un tableau d’archivage avec date d’envoi, mode (LRAR, remise en main propre) et copie numérisée.
+
+Encadrer les modifications du contrat par avenant écrit
+Pour toute modification de fonctions, de rémunération ou de durée du travail, votre procédure doit imposer un avenant écrit accepté, en s’appuyant sur la jurisprudence (Cass. soc., 10 juillet 2002, à citer dans la trame). Distinguez clairement simple changement des conditions de travail et modification du contrat.
+
+Checklist à intégrer : contrat initial, fiche de poste, projet d’avenant, preuve de remise et de délai de réflexion, réponse du salarié. Prévoyez un champ obligatoire « Conséquences en cas de refus » avec référence aux articles du Code du travail cités.
+
+Structurer une procédure d’enquête interne (harcèlement, faits sensibles)
+Élaborez une procédure d’alerte et d’enquête qui prévoit : réception de l’alerte, décision d’ouverture, information du salarié visé des griefs, recueil des observations, audition des témoins, rapport et décisions. Rappelez la décision Cass. soc., 8 juin 2016 sur la nécessité d’informer le salarié et de lui permettre de s’expliquer.
+
+Prévoyez une checklist de pièces : alerte, désignation de l’enquêteur, comptes rendus d’audition, résumé des faits remis au salarié, réponses de celui-ci, rapport final. Ajoutez un encart RGPD pour le traitement des données issues de l’enquête.
+
+Encadrer absences, visites médicales et gestion des dossiers RH
+Rédigez une procédure « absences / visites médicales » décrivant déclaration de l’absence, justificatifs, échanges avec le service de santé au travail et visites de reprise. Listez les pièces : arrêts maladie, convocations, comptes rendus médicaux transmis à l’employeur, échanges avec le salarié.
+
+Pour chaque salarié, fixez dans une courte procédure la structure du dossier RH individuel : contrat et avenants, entretiens, avertissements, formations, décisions disciplinaires. Précisez la durée de conservation et rendez obligatoire l’horodatage de chaque ajout (date, auteur, type de pièce).
+
+Installer un archivage horodaté et exploitable devant un juge
+Terminez par une procédure transversale d’archivage : où sont stockées les convocations, PV d’entretien, lettres de licenciement, preuves de diffusion des politiques, DUERP et mises à jour. Imposez la numérisation et l’horodatage systématiques.
+
+Prévoyez un tableau standard à joindre à chaque décision RH : références juridiques citées (articles, arrêts, décisions), liste de pièces internes annexées, dates clés de la procédure. Cet encadré deviendra le sommaire de votre éventuel dossier prud’homal.;arret_cour_appel;0.328;Cour d'appel de Nimes, 5ème chambre sociale PH, 12/05/2026, n° 24/02855
+2026-06-07 13:22:02.693346+00;Dans une entreprise dépourvue de convention collective applicable, la rédaction des documents RH doit respecter les normes supérieures (loi, règlements et dispositions d’ordre public), telles qu’interprétées par la jurisprudence. Il convient ensuite de vérifier les engagements contractuels existants (contrats de travail, statuts particuliers), puis les actes internes de l’entreprise (règlement intérieur, décisions unilatérales, notes de service, chartes) ainsi que les éventuels usages. Lorsqu’un document interne accorde un avantage aux salariés, il est recommandé de citer précisément sa source et de conserver une version datée permettant d’en justifier l’application.;arret_cour_cassation;0.316;Cass. Chambre sociale, 24/09/2025, n° 24-10.017
+2026-06-07 13:22:02.693346+00;Dans une entreprise dépourvue de convention collective applicable, la rédaction des documents RH doit respecter les normes supérieures (loi, règlements et dispositions d’ordre public), telles qu’interprétées par la jurisprudence. Il convient ensuite de vérifier les engagements contractuels existants (contrats de travail, statuts particuliers), puis les actes internes de l’entreprise (règlement intérieur, décisions unilatérales, notes de service, chartes) ainsi que les éventuels usages. Lorsqu’un document interne accorde un avantage aux salariés, il est recommandé de citer précisément sa source et de conserver une version datée permettant d’en justifier l’application.;arret_cour_cassation;0.320;Cass. Chambre sociale, 17/01/2024, n° 22-15.372
+2026-06-07 13:22:02.693346+00;Dans une entreprise dépourvue de convention collective applicable, la rédaction des documents RH doit respecter les normes supérieures (loi, règlements et dispositions d’ordre public), telles qu’interprétées par la jurisprudence. Il convient ensuite de vérifier les engagements contractuels existants (contrats de travail, statuts particuliers), puis les actes internes de l’entreprise (règlement intérieur, décisions unilatérales, notes de service, chartes) ainsi que les éventuels usages. Lorsqu’un document interne accorde un avantage aux salariés, il est recommandé de citer précisément sa source et de conserver une version datée permettant d’en justifier l’application.;arret_cour_cassation;0.332;Cass. Chambre sociale, 07/11/2006, n° 04-41.390
+2026-06-07 13:22:02.693346+00;Dans une entreprise dépourvue de convention collective applicable, la rédaction des documents RH doit respecter les normes supérieures (loi, règlements et dispositions d’ordre public), telles qu’interprétées par la jurisprudence. Il convient ensuite de vérifier les engagements contractuels existants (contrats de travail, statuts particuliers), puis les actes internes de l’entreprise (règlement intérieur, décisions unilatérales, notes de service, chartes) ainsi que les éventuels usages. Lorsqu’un document interne accorde un avantage aux salariés, il est recommandé de citer précisément sa source et de conserver une version datée permettant d’en justifier l’application.;arret_cour_cassation;0.342;Cass. Chambre sociale, 23/06/2021, n° 19-15.737
+2026-06-07 13:22:02.693346+00;Dans une entreprise dépourvue de convention collective applicable, la rédaction des documents RH doit respecter les normes supérieures (loi, règlements et dispositions d’ordre public), telles qu’interprétées par la jurisprudence. Il convient ensuite de vérifier les engagements contractuels existants (contrats de travail, statuts particuliers), puis les actes internes de l’entreprise (règlement intérieur, décisions unilatérales, notes de service, chartes) ainsi que les éventuels usages. Lorsqu’un document interne accorde un avantage aux salariés, il est recommandé de citer précisément sa source et de conserver une version datée permettant d’en justifier l’application.;arret_cour_appel;0.301;Cour d'appel de Caen, 1ère chambre sociale, 21/05/2026, n° 25/00660
+2026-06-05 17:40:50.168744+00;Quels documents internes permettent de sécuriser les décisions RH et de démontrer que les salariés sont traités selon des règles cohérentes et connues ?;arret_cour_appel;0.315;Cour d'appel de Lyon, CHAMBRE SOCIALE A, 25/03/2026, n° 21/08837
+2026-06-05 17:40:50.168744+00;Quels documents internes permettent de sécuriser les décisions RH et de démontrer que les salariés sont traités selon des règles cohérentes et connues ?;arret_cour_cassation;0.275;Cass. Chambre sociale, 17/01/2024, n° 22-15.372
+2026-06-05 17:40:50.168744+00;Quels documents internes permettent de sécuriser les décisions RH et de démontrer que les salariés sont traités selon des règles cohérentes et connues ?;arret_cour_cassation;0.287;Cass. Chambre sociale, 28/01/2026, n° 24-22.786
+2026-06-05 17:40:50.168744+00;Quels documents internes permettent de sécuriser les décisions RH et de démontrer que les salariés sont traités selon des règles cohérentes et connues ?;arret_cour_cassation;0.307;Cass. Chambre sociale, 08/03/2023, n° 21-12.492
+2026-06-05 17:40:50.168744+00;Quels documents internes permettent de sécuriser les décisions RH et de démontrer que les salariés sont traités selon des règles cohérentes et connues ?;arret_cour_cassation;0.320;Cass. Chambre sociale, 14/01/2026, n° 24-13.234
+2026-06-05 17:20:35.048559+00;Est ce que c'est vrai ? La communication aux parties doit rester factuelle : information écrite à la personne plaignante sur l’issue de l’enquête, notification de sanction ou de non‑sanction à la personne mise en cause, information minimale éventuellement donnée aux témoins. Conservez ces échanges, car la jurisprudence récente contrôle finement la logique suivie par l’employeur et sanctionne les lacunes non justifiées (Cass. soc. 18/06/2025 ; Cass. soc. 01/04/2026 ; CA Reims 18/03/2026).;arret_cour_cassation;0.311;Cass. Chambre sociale, 29/06/2022, n° 21-11.077
+2026-06-05 17:20:35.048559+00;Est ce que c'est vrai ? La communication aux parties doit rester factuelle : information écrite à la personne plaignante sur l’issue de l’enquête, notification de sanction ou de non‑sanction à la personne mise en cause, information minimale éventuellement donnée aux témoins. Conservez ces échanges, car la jurisprudence récente contrôle finement la logique suivie par l’employeur et sanctionne les lacunes non justifiées (Cass. soc. 18/06/2025 ; Cass. soc. 01/04/2026 ; CA Reims 18/03/2026).;arret_cour_appel;0.322;Cour d'appel de Riom, Chambre Sociale, 17/03/2026, n° 23/00169
+2026-06-01 10:37:27.515486+00;INTÈGRE LES ELEMENTS DE RÉPONSE DANS CETTE LISTE !;arret_cour_cassation;0.285;Cass. Chambre sociale, 10/09/2025, n° 24-14.487
+2026-06-01 10:37:27.515486+00;INTÈGRE LES ELEMENTS DE RÉPONSE DANS CETTE LISTE !;code_sante_publique;0.297;Code de la santé publique — Partie législative
+2026-06-01 10:37:27.515486+00;INTÈGRE LES ELEMENTS DE RÉPONSE DANS CETTE LISTE !;arret_cour_cassation;0.295;Cass. Chambre civile 2, 09/10/2025, n° 25-60.123
+2026-06-01 10:37:27.515486+00;INTÈGRE LES ELEMENTS DE RÉPONSE DANS CETTE LISTE !;arret_cour_cassation;0.277;Cass. Chambre sociale, 03/12/2025, n° 24-17.681
+2026-06-01 10:37:27.515486+00;INTÈGRE LES ELEMENTS DE RÉPONSE DANS CETTE LISTE !;code_securite_sociale;0.266;Code de la sécurité sociale — Partie législative
+2026-06-01 10:37:27.515486+00;INTÈGRE LES ELEMENTS DE RÉPONSE DANS CETTE LISTE !;code_action_sociale;0.311;Code de l'action sociale et des familles
+2026-06-01 10:37:27.515486+00;INTÈGRE LES ELEMENTS DE RÉPONSE DANS CETTE LISTE !;arret_cour_appel;0.254;Cour d'appel de Caen, 2ème chambre sociale, 05/03/2026, n° 25/00121
+2026-06-01 10:35:00.397466+00;Fais moi une liste précise à indiquer dans ma diffusion;arrete;0.316;Arrêté du 23 mai 2025 portant délégation de signature aux agents chargés de l'animation de la politique ministérielle de
+2026-06-01 10:35:00.397466+00;Fais moi une liste précise à indiquer dans ma diffusion;code_sante_publique;0.350;Code de la santé publique — Partie législative
+2026-06-01 10:35:00.397466+00;Fais moi une liste précise à indiquer dans ma diffusion;arrete;0.334;Arrêté du 20 octobre 2025 portant délégation de signature aux agents chargés de l'animation de la politique ministériell
+2026-06-01 10:35:00.397466+00;Fais moi une liste précise à indiquer dans ma diffusion;arret_cour_appel;0.328;Cour d'appel de Grenoble, Ch.sociale-sect.prud'hom, 24/03/2026, n° 23/03056
+2026-06-01 10:35:00.397466+00;Fais moi une liste précise à indiquer dans ma diffusion;arrete;0.307;Arrêté du 1er décembre 2025 portant délégation de signature aux agents chargés de l'animation de la politique ministérie
+2026-06-01 10:12:39.765422+00;Peux tu me réécrire le post en intégrant les modifications que tu recommandes ?;decret;0.332;Décret n° 2025-1446 du 31 décembre 2025 relatif aux modalités d'application de divers dispositifs d'exonérations de coti
+2026-06-01 10:12:39.765422+00;Peux tu me réécrire le post en intégrant les modifications que tu recommandes ?;arret_cour_cassation;0.336;Cass. Chambre sociale, 10/07/2024, n° 22-18.481
+2026-06-01 10:12:39.765422+00;Peux tu me réécrire le post en intégrant les modifications que tu recommandes ?;arret_cour_cassation;0.328;Cass. Chambre sociale, 26/06/2019, n° 18-10.918
+2026-06-01 10:12:39.765422+00;Peux tu me réécrire le post en intégrant les modifications que tu recommandes ?;arret_cour_appel;0.315;Cour d'appel de Rouen, Chambre Sociale, 16/04/2026, n° 25/01900
+2026-06-01 10:12:39.765422+00;Peux tu me réécrire le post en intégrant les modifications que tu recommandes ?;arret_cour_appel;0.313;Cour d'appel de Versailles, Chambre sociale 4-5, 26/03/2026, n° 24/00499
+2026-06-01 10:10:27.439064+00;Donc mon précédent post est bon;arret_cour_cassation;0.277;Cass. Chambre sociale, 06/02/2013, n° 11-23.738
+2026-06-01 10:10:27.439064+00;Donc mon précédent post est bon;code_securite_sociale_reglementaire;0.266;Code de la sécurité sociale — Partie réglementaire
+2026-06-01 10:10:27.439064+00;Donc mon précédent post est bon;arret_cour_cassation;0.248;Cass. Chambre sociale, 09/04/2025, n° 22-24.653
+2026-06-01 10:10:27.439064+00;Donc mon précédent post est bon;arret_cour_appel;0.285;Cour d'appel de Poitiers, Chambre Sociale, 30/04/2026, n° 22/02257
+2026-06-01 10:10:27.439064+00;Donc mon précédent post est bon;arret_cour_cassation;0.291;Cass. Chambre sociale, 21/09/2011, n° 10-19.017
+2026-06-01 10:10:27.439064+00;Donc mon précédent post est bon;arret_cour_cassation;0.245;Cass. Chambre sociale, 28/11/2018, n° 17-20.007
+2026-06-01 10:10:27.439064+00;Donc mon précédent post est bon;arret_cour_cassation;0.295;Cass. Chambre sociale, 26/03/2025, n° 22-18.311
+2026-06-01 10:08:48.357968+00;Vérifie ces éléments dans le décret Vous affirmez que le décret n°2026-419 du 30/05/2026 insère les articles D.1225-11-3 à D.1225-11-5 : je n’ai pas le texte réglementaire de ce décret dans les sources que vous m’avez fournies. La loi renvoie bien à des dispositions réglementaires, mais il faut vérifier le texte publié pour confirmer la numérotation des articles et leur teneur.
+Vous écrivez que la notification doit obligatoirement être adressée en LRAR ou remise contre récépissé : l’article L.1225-46-2 fourni ne prévoit pas expressément ces modalités. Plusieurs congés prévoient LRAR/remise contre récépissé, mais pour sécuriser la preuve il faut vérifier le décret pour connaître la forme exigée. En l’absence du décret dans vos sources, retenez au minimum l’obligation pratique suivante : demande écrite + justificatif, et conservation d’une preuve de réception (LRAR, récépissé, accusé de réception de courriel).;arret_cour_cassation;0.248;Cass. Chambre civile 2, 04/12/2025, n° 23-16.339
+2026-06-01 10:08:48.357968+00;Vérifie ces éléments dans le décret Vous affirmez que le décret n°2026-419 du 30/05/2026 insère les articles D.1225-11-3 à D.1225-11-5 : je n’ai pas le texte réglementaire de ce décret dans les sources que vous m’avez fournies. La loi renvoie bien à des dispositions réglementaires, mais il faut vérifier le texte publié pour confirmer la numérotation des articles et leur teneur.
+Vous écrivez que la notification doit obligatoirement être adressée en LRAR ou remise contre récépissé : l’article L.1225-46-2 fourni ne prévoit pas expressément ces modalités. Plusieurs congés prévoient LRAR/remise contre récépissé, mais pour sécuriser la preuve il faut vérifier le décret pour connaître la forme exigée. En l’absence du décret dans vos sources, retenez au minimum l’obligation pratique suivante : demande écrite + justificatif, et conservation d’une preuve de réception (LRAR, récépissé, accusé de réception de courriel).;arret_cour_appel;0.220;Cour d'appel de Grenoble, Ch.sociale-sect.prud'hom, 02/04/2026, n° 23/02433
+2026-06-01 10:08:48.357968+00;Vérifie ces éléments dans le décret Vous affirmez que le décret n°2026-419 du 30/05/2026 insère les articles D.1225-11-3 à D.1225-11-5 : je n’ai pas le texte réglementaire de ce décret dans les sources que vous m’avez fournies. La loi renvoie bien à des dispositions réglementaires, mais il faut vérifier le texte publié pour confirmer la numérotation des articles et leur teneur.
+Vous écrivez que la notification doit obligatoirement être adressée en LRAR ou remise contre récépissé : l’article L.1225-46-2 fourni ne prévoit pas expressément ces modalités. Plusieurs congés prévoient LRAR/remise contre récépissé, mais pour sécuriser la preuve il faut vérifier le décret pour connaître la forme exigée. En l’absence du décret dans vos sources, retenez au minimum l’obligation pratique suivante : demande écrite + justificatif, et conservation d’une preuve de réception (LRAR, récépissé, accusé de réception de courriel).;arret_cour_cassation;0.231;Cass. Chambre civile 2, 13/05/2026, n° 23-17.689
+2026-06-01 10:08:48.357968+00;Vérifie ces éléments dans le décret Vous affirmez que le décret n°2026-419 du 30/05/2026 insère les articles D.1225-11-3 à D.1225-11-5 : je n’ai pas le texte réglementaire de ce décret dans les sources que vous m’avez fournies. La loi renvoie bien à des dispositions réglementaires, mais il faut vérifier le texte publié pour confirmer la numérotation des articles et leur teneur.
+Vous écrivez que la notification doit obligatoirement être adressée en LRAR ou remise contre récépissé : l’article L.1225-46-2 fourni ne prévoit pas expressément ces modalités. Plusieurs congés prévoient LRAR/remise contre récépissé, mais pour sécuriser la preuve il faut vérifier le décret pour connaître la forme exigée. En l’absence du décret dans vos sources, retenez au minimum l’obligation pratique suivante : demande écrite + justificatif, et conservation d’une preuve de réception (LRAR, récépissé, accusé de réception de courriel).;arret_cour_appel;0.239;Cour d'appel de Rennes, 7ème Ch Prud'homale, 21/05/2026, n° 25/04986
+2026-06-01 10:08:48.357968+00;Vérifie ces éléments dans le décret Vous affirmez que le décret n°2026-419 du 30/05/2026 insère les articles D.1225-11-3 à D.1225-11-5 : je n’ai pas le texte réglementaire de ce décret dans les sources que vous m’avez fournies. La loi renvoie bien à des dispositions réglementaires, mais il faut vérifier le texte publié pour confirmer la numérotation des articles et leur teneur.
+Vous écrivez que la notification doit obligatoirement être adressée en LRAR ou remise contre récépissé : l’article L.1225-46-2 fourni ne prévoit pas expressément ces modalités. Plusieurs congés prévoient LRAR/remise contre récépissé, mais pour sécuriser la preuve il faut vérifier le décret pour connaître la forme exigée. En l’absence du décret dans vos sources, retenez au minimum l’obligation pratique suivante : demande écrite + justificatif, et conservation d’une preuve de réception (LRAR, récépissé, accusé de réception de courriel).;code_commerce;0.248;Code de commerce — Partie législative
+2026-06-01 10:08:48.357968+00;Vérifie ces éléments dans le décret Vous affirmez que le décret n°2026-419 du 30/05/2026 insère les articles D.1225-11-3 à D.1225-11-5 : je n’ai pas le texte réglementaire de ce décret dans les sources que vous m’avez fournies. La loi renvoie bien à des dispositions réglementaires, mais il faut vérifier le texte publié pour confirmer la numérotation des articles et leur teneur.
+Vous écrivez que la notification doit obligatoirement être adressée en LRAR ou remise contre récépissé : l’article L.1225-46-2 fourni ne prévoit pas expressément ces modalités. Plusieurs congés prévoient LRAR/remise contre récépissé, mais pour sécuriser la preuve il faut vérifier le décret pour connaître la forme exigée. En l’absence du décret dans vos sources, retenez au minimum l’obligation pratique suivante : demande écrite + justificatif, et conservation d’une preuve de réception (LRAR, récépissé, accusé de réception de courriel).;code_sante_publique_reglementaire;0.260;Code de la santé publique — Partie réglementaire
+2026-06-01 10:08:48.357968+00;Vérifie ces éléments dans le décret Vous affirmez que le décret n°2026-419 du 30/05/2026 insère les articles D.1225-11-3 à D.1225-11-5 : je n’ai pas le texte réglementaire de ce décret dans les sources que vous m’avez fournies. La loi renvoie bien à des dispositions réglementaires, mais il faut vérifier le texte publié pour confirmer la numérotation des articles et leur teneur.
+Vous écrivez que la notification doit obligatoirement être adressée en LRAR ou remise contre récépissé : l’article L.1225-46-2 fourni ne prévoit pas expressément ces modalités. Plusieurs congés prévoient LRAR/remise contre récépissé, mais pour sécuriser la preuve il faut vérifier le décret pour connaître la forme exigée. En l’absence du décret dans vos sources, retenez au minimum l’obligation pratique suivante : demande écrite + justificatif, et conservation d’une preuve de réception (LRAR, récépissé, accusé de réception de courriel).;arret_cour_appel;0.313;Cour d'appel de Grenoble, Ch.sociale-sect.prud'hom, 12/05/2026, n° 26/00825
+2026-06-01 09:59:41.5174+00;Peux tu me réécrire le texte avec les bons éléments ?;arrete;0.322;Arrêté du 7 avril 2026 relatif à la délivrance de titres de formation professionnelle maritime aux marins relevant de l'
+2026-06-01 09:59:41.5174+00;Peux tu me réécrire le texte avec les bons éléments ?;arret_cour_appel;0.275;Cour d'appel de Nimes, 5ème chambre sociale PH, 31/03/2026, n° 24/02871
+2026-06-01 09:59:41.5174+00;Peux tu me réécrire le texte avec les bons éléments ?;arret_cour_appel;0.289;Cour d'appel de Nimes, 5ème chambre sociale PH, 24/02/2026, n° 24/02618
+2026-06-01 09:59:41.5174+00;Peux tu me réécrire le texte avec les bons éléments ?;decret;0.297;Décret n° 2025-1409 du 30 décembre 2025 relatif aux pensions de retraite des personnes non salariées des professions agr
+2026-06-01 09:59:41.5174+00;Peux tu me réécrire le texte avec les bons éléments ?;arret_cour_appel;0.328;Cour d'appel de Versailles, Chambre sociale 4-5, 26/03/2026, n° 24/00547
+2026-06-01 09:59:41.5174+00;Peux tu me réécrire le texte avec les bons éléments ?;arret_cour_cassation;0.322;Cass. Chambre sociale, 06/04/2016, n° 14-13.484
+2026-06-01 09:35:40.817481+00;Quels sont les éléments différenciants par rapport à avant ?;code_travail_reglementaire;0.291;Code du travail — Partie réglementaire
+2026-06-01 09:35:40.817481+00;Quels sont les éléments différenciants par rapport à avant ?;arret_cour_appel;0.250;Cour d'appel de Rennes, 9ème Ch Sécurité Sociale, 06/05/2026, n° 23/04419
+2026-06-01 09:35:40.817481+00;Quels sont les éléments différenciants par rapport à avant ?;arret_cour_cassation;0.254;Cass. Chambre civile 2, 20/11/2025, n° 25-70.017
+2026-06-01 09:35:40.817481+00;Quels sont les éléments différenciants par rapport à avant ?;code_general_impots;0.256;Code général des impôts — Partie législative
+2026-06-01 09:35:40.817481+00;Quels sont les éléments différenciants par rapport à avant ?;arret_cour_appel;0.275;Cour d'appel de Caen, 1ère chambre sociale, 26/02/2026, n° 24/02754
+2026-06-01 09:35:40.817481+00;Quels sont les éléments différenciants par rapport à avant ?;arrete;0.301;Arrêté du 7 mai 2026 relatif aux barèmes indicatifs d'incapacité permanente professionnelle et fonctionnelle en applicat
+2026-06-01 09:35:40.817481+00;Quels sont les éléments différenciants par rapport à avant ?;arret_cour_cassation;0.295;Cass. Chambre sociale, 27/01/2015, n° 13-22.179
+2026-05-29 14:04:52.671408+00;Pourtant ce n'est ce que dit Cass. soc. 9 avril 2026, n° 24-22.122;arret_cour_appel;0.307;Cour d'appel de Nimes, 5ème chambre sociale PH, 24/02/2026, n° 24/03038
+2026-05-29 14:04:52.671408+00;Pourtant ce n'est ce que dit Cass. soc. 9 avril 2026, n° 24-22.122;arret_cour_appel;0.283;Cour d'appel de Douai, Sociale C salle 3, 30/04/2026, n° 24/01938
+2026-05-29 14:04:52.671408+00;Pourtant ce n'est ce que dit Cass. soc. 9 avril 2026, n° 24-22.122;arret_cour_appel;0.270;Cour d'appel de Amiens, 5EME CHAMBRE PRUD'HOMALE, 04/03/2026, n° 25/02336
+2026-05-29 14:04:52.671408+00;Pourtant ce n'est ce que dit Cass. soc. 9 avril 2026, n° 24-22.122;arret_cour_cassation;0.266;Cass. Chambre civile 2, 09/04/2026, n° 23-22.698
+2026-05-29 14:04:52.671408+00;Pourtant ce n'est ce que dit Cass. soc. 9 avril 2026, n° 24-22.122;arret_cour_cassation;0.256;Cass. Chambre civile 2, 09/04/2026, n° 24-12.173
+2026-05-29 14:04:52.671408+00;Pourtant ce n'est ce que dit Cass. soc. 9 avril 2026, n° 24-22.122;arret_cour_appel;0.250;Cour d'appel de Rennes, 7ème Ch Prud'homale, 05/03/2026, n° 25/01902
+2026-05-29 14:04:52.671408+00;Pourtant ce n'est ce que dit Cass. soc. 9 avril 2026, n° 24-22.122;arret_cour_cassation;0.287;Cass. Chambre criminelle, 09/04/2026, n° 26-80.420
+2026-05-29 13:52:37.843196+00;Est ce que le contenu obligatoire de la BDESE a changé ?;code_securite_sociale_reglementaire;0.322;Code de la sécurité sociale — Partie réglementaire
+2026-05-29 13:52:37.843196+00;Est ce que le contenu obligatoire de la BDESE a changé ?;decret;0.311;Décret n° 2025-1410 du 30 décembre 2025 relatif aux pensions de retraite des personnes non salariées des professions agr
+2026-05-29 13:52:37.843196+00;Est ce que le contenu obligatoire de la BDESE a changé ?;decret;0.322;Décret n° 2025-1410 du 30 décembre 2025 relatif aux pensions de retraite des personnes non salariées des professions agr
+2026-05-29 13:52:37.843196+00;Est ce que le contenu obligatoire de la BDESE a changé ?;decision_conseil_constitutionnel;0.350;Cons. const., 19/02/2026, n° 2026-901 DC
+2026-05-29 13:51:17.724199+00;Avec la directive transparence salariale, l'Index 
+ égalité est-il remplacé par 7 indicateurs distincts ? Quel seuil d'effectif, 
+ quelle périodicité de publication ? Calendrier et textes.;code_travail;0.207;Code du travail — Partie législative
+2026-05-29 13:51:17.724199+00;Avec la directive transparence salariale, l'Index 
+ égalité est-il remplacé par 7 indicateurs distincts ? Quel seuil d'effectif, 
+ quelle périodicité de publication ? Calendrier et textes.;arret_cour_cassation;0.190;Cass. Chambre sociale, 03/07/2014, n° 14-40.027
+2026-05-29 12:49:36.003402+00;Quels sont les éléments à mettre en place dans une BDESE en fonction de la taille de l'entreprise ? sont ils différents ?;arret_cour_cassation;0.260;Cass. Chambre sociale, 03/12/2025, n° 24-10.326
+2026-05-29 12:49:36.003402+00;Quels sont les éléments à mettre en place dans une BDESE en fonction de la taille de l'entreprise ? sont ils différents ?;code_travail_reglementaire;0.293;Code du travail — Partie réglementaire
+2026-05-29 12:49:36.003402+00;Quels sont les éléments à mettre en place dans une BDESE en fonction de la taille de l'entreprise ? sont ils différents ?;code_travail_reglementaire;0.233;Code du travail — Partie réglementaire
+2026-05-29 12:49:36.003402+00;Quels sont les éléments à mettre en place dans une BDESE en fonction de la taille de l'entreprise ? sont ils différents ?;arret_cour_cassation;0.190;Cass. Chambre sociale, 07/09/2017, n° 16-12.473
+2026-05-29 12:49:36.003402+00;Quels sont les éléments à mettre en place dans une BDESE en fonction de la taille de l'entreprise ? sont ils différents ?;arret_cour_cassation;0.160;Cass. Chambre sociale, 27/03/2019, n° 17-31.715
+2026-05-29 12:47:39.050303+00;quel est le seuil pour mettre en place une BDESE;code_action_sociale;0.326;Code de l'action sociale et des familles
+2026-05-29 12:36:38.491899+00;fais moi un tableau récap de ce qu'il faut intégrer dans la BDESE par taille d'entreprise;code_securite_sociale;0.248;Code de la sécurité sociale — Partie législative
+2026-05-29 12:36:38.491899+00;fais moi un tableau récap de ce qu'il faut intégrer dans la BDESE par taille d'entreprise;arret_cour_cassation;0.266;Cass. Chambre sociale, 31/05/2012, n° 10-22.759
+2026-05-29 12:36:38.491899+00;fais moi un tableau récap de ce qu'il faut intégrer dans la BDESE par taille d'entreprise;code_travail_reglementaire;0.334;Code du travail — Partie réglementaire
+2026-05-29 12:36:38.491899+00;fais moi un tableau récap de ce qu'il faut intégrer dans la BDESE par taille d'entreprise;arret_cour_appel;0.307;Cour d'appel de Chambery, Chbre Sociale Prud'Hommes, 19/03/2026, n° 24/01132
+2026-05-29 12:36:38.491899+00;fais moi un tableau récap de ce qu'il faut intégrer dans la BDESE par taille d'entreprise;code_securite_sociale;0.281;Code de la sécurité sociale — Partie législative
+2026-05-29 12:36:38.491899+00;fais moi un tableau récap de ce qu'il faut intégrer dans la BDESE par taille d'entreprise;code_securite_sociale;0.256;Code de la sécurité sociale — Partie législative
+2026-05-29 12:36:38.491899+00;fais moi un tableau récap de ce qu'il faut intégrer dans la BDESE par taille d'entreprise;arret_cour_cassation;0.260;Cass. Chambre sociale, 26/06/2013, n° 11-27.413
+2026-05-29 12:33:59.960775+00;vérifie les textes du Code du travail et les décrets/arrêtés ministériels relatifs à la BDESE (dates octobre 2025 / janvier 2026);code_travail_reglementaire;0.254;Code du travail — Partie réglementaire
+2026-05-29 12:33:59.960775+00;vérifie les textes du Code du travail et les décrets/arrêtés ministériels relatifs à la BDESE (dates octobre 2025 / janvier 2026);code_travail_reglementaire;0.254;Code du travail — Partie réglementaire
+2026-05-29 12:33:59.960775+00;vérifie les textes du Code du travail et les décrets/arrêtés ministériels relatifs à la BDESE (dates octobre 2025 / janvier 2026);code_travail_reglementaire;0.245;Code du travail — Partie réglementaire
+2026-05-29 12:33:59.960775+00;vérifie les textes du Code du travail et les décrets/arrêtés ministériels relatifs à la BDESE (dates octobre 2025 / janvier 2026);code_travail_reglementaire;0.242;Code du travail — Partie réglementaire
+2026-05-29 12:33:59.960775+00;vérifie les textes du Code du travail et les décrets/arrêtés ministériels relatifs à la BDESE (dates octobre 2025 / janvier 2026);code_travail_reglementaire;0.248;Code du travail — Partie réglementaire
+2026-05-29 12:33:59.960775+00;vérifie les textes du Code du travail et les décrets/arrêtés ministériels relatifs à la BDESE (dates octobre 2025 / janvier 2026);code_travail_reglementaire;0.250;Code du travail — Partie réglementaire
+2026-05-29 12:33:59.960775+00;vérifie les textes du Code du travail et les décrets/arrêtés ministériels relatifs à la BDESE (dates octobre 2025 / janvier 2026);code_travail_reglementaire;0.260;Code du travail — Partie réglementaire
+2026-05-29 12:32:43.584064+00;Quelles rubriques ont été ajoutées à la BDESE en octobre
+ 2025 et janvier 2026 (entretiens de parcours, périodes de reconversion) ? Ces
+ obligations sont-elles d'ordre public ? Textes à l'appui.;arrete;0.295;Arrêté du 29 octobre 2025 modifiant l'arrêté du 28 avril 2025 établissant divers classements des emplois occupés par les
+2026-05-29 12:32:43.584064+00;Quelles rubriques ont été ajoutées à la BDESE en octobre
+ 2025 et janvier 2026 (entretiens de parcours, périodes de reconversion) ? Ces
+ obligations sont-elles d'ordre public ? Textes à l'appui.;decret;0.283;Décret n° 2025-1410 du 30 décembre 2025 relatif aux pensions de retraite des personnes non salariées des professions agr
+2026-05-29 12:32:43.584064+00;Quelles rubriques ont été ajoutées à la BDESE en octobre
+ 2025 et janvier 2026 (entretiens de parcours, périodes de reconversion) ? Ces
+ obligations sont-elles d'ordre public ? Textes à l'appui.;decret;0.273;Décret n° 2025-1409 du 30 décembre 2025 relatif aux pensions de retraite des personnes non salariées des professions agr
+2026-05-29 12:24:45.94981+00;la transposition doit être effective avant le 07/06/2026. 
+Action
+
+<100
+
+100–149
+
+150–249
+
+≥250
+
+Fourchette salariale avant entretien
+
+✓
+
+✓
+
+✓
+
+✓
+
+Ne pas demander l’ancien salaire
+
+✓
+
+✓
+
+✓
+
+✓
+
+Critères de rémunération accessibles
+
+✓
+
+✓
+
+✓
+
+✓
+
+Données conformes RGPD
+
+✓
+
+✓
+
+✓
+
+✓
+
+Reporting volontaire possible
+
+✓
+
+Reporting tous les 3 ans dès 2031
+
+✓
+
+Reporting tous les 3 ans dès 2027
+
+✓
+
+Reporting annuel
+
+✓
+
+Correction si écart > 5 % non justifié
+
+✓
+
+✓
+
+✓;code_travail_reglementaire;0.289;Code du travail — Partie réglementaire
+2026-05-29 12:24:45.94981+00;la transposition doit être effective avant le 07/06/2026. 
+Action
+
+<100
+
+100–149
+
+150–249
+
+≥250
+
+Fourchette salariale avant entretien
+
+✓
+
+✓
+
+✓
+
+✓
+
+Ne pas demander l’ancien salaire
+
+✓
+
+✓
+
+✓
+
+✓
+
+Critères de rémunération accessibles
+
+✓
+
+✓
+
+✓
+
+✓
+
+Données conformes RGPD
+
+✓
+
+✓
+
+✓
+
+✓
+
+Reporting volontaire possible
+
+✓
+
+Reporting tous les 3 ans dès 2031
+
+✓
+
+Reporting tous les 3 ans dès 2027
+
+✓
+
+Reporting annuel
+
+✓
+
+Correction si écart > 5 % non justifié
+
+✓
+
+✓
+
+✓;decret;0.185;Décret n° 2025-1410 du 30 décembre 2025 relatif aux pensions de retraite des personnes non salariées des professions agr
+2026-05-29 12:24:45.94981+00;la transposition doit être effective avant le 07/06/2026. 
+Action
+
+<100
+
+100–149
+
+150–249
+
+≥250
+
+Fourchette salariale avant entretien
+
+✓
+
+✓
+
+✓
+
+✓
+
+Ne pas demander l’ancien salaire
+
+✓
+
+✓
+
+✓
+
+✓
+
+Critères de rémunération accessibles
+
+✓
+
+✓
+
+✓
+
+✓
+
+Données conformes RGPD
+
+✓
+
+✓
+
+✓
+
+✓
+
+Reporting volontaire possible
+
+✓
+
+Reporting tous les 3 ans dès 2031
+
+✓
+
+Reporting tous les 3 ans dès 2027
+
+✓
+
+Reporting annuel
+
+✓
+
+Correction si écart > 5 % non justifié
+
+✓
+
+✓
+
+✓;arret_cour_cassation;0.192;Cass. Chambre sociale, 07/07/2015, n° 15-12.417
+2026-05-29 12:24:45.94981+00;la transposition doit être effective avant le 07/06/2026. 
+Action
+
+<100
+
+100–149
+
+150–249
+
+≥250
+
+Fourchette salariale avant entretien
+
+✓
+
+✓
+
+✓
+
+✓
+
+Ne pas demander l’ancien salaire
+
+✓
+
+✓
+
+✓
+
+✓
+
+Critères de rémunération accessibles
+
+✓
+
+✓
+
+✓
+
+✓
+
+Données conformes RGPD
+
+✓
+
+✓
+
+✓
+
+✓
+
+Reporting volontaire possible
+
+✓
+
+Reporting tous les 3 ans dès 2031
+
+✓
+
+Reporting tous les 3 ans dès 2027
+
+✓
+
+Reporting annuel
+
+✓
+
+Correction si écart > 5 % non justifié
+
+✓
+
+✓
+
+✓;code_action_sociale;0.194;Code de l'action sociale et des familles
+2026-05-29 12:24:45.94981+00;la transposition doit être effective avant le 07/06/2026. 
+Action
+
+<100
+
+100–149
+
+150–249
+
+≥250
+
+Fourchette salariale avant entretien
+
+✓
+
+✓
+
+✓
+
+✓
+
+Ne pas demander l’ancien salaire
+
+✓
+
+✓
+
+✓
+
+✓
+
+Critères de rémunération accessibles
+
+✓
+
+✓
+
+✓
+
+✓
+
+Données conformes RGPD
+
+✓
+
+✓
+
+✓
+
+✓
+
+Reporting volontaire possible
+
+✓
+
+Reporting tous les 3 ans dès 2031
+
+✓
+
+Reporting tous les 3 ans dès 2027
+
+✓
+
+Reporting annuel
+
+✓
+
+Correction si écart > 5 % non justifié
+
+✓
+
+✓
+
+✓;arret_cour_appel;0.194;Cour d'appel de Versailles, Chambre sociale 4-3, 02/03/2026, n° 23/01461
+2026-05-29 12:24:45.94981+00;la transposition doit être effective avant le 07/06/2026. 
+Action
+
+<100
+
+100–149
+
+150–249
+
+≥250
+
+Fourchette salariale avant entretien
+
+✓
+
+✓
+
+✓
+
+✓
+
+Ne pas demander l’ancien salaire
+
+✓
+
+✓
+
+✓
+
+✓
+
+Critères de rémunération accessibles
+
+✓
+
+✓
+
+✓
+
+✓
+
+Données conformes RGPD
+
+✓
+
+✓
+
+✓
+
+✓
+
+Reporting volontaire possible
+
+✓
+
+Reporting tous les 3 ans dès 2031
+
+✓
+
+Reporting tous les 3 ans dès 2027
+
+✓
+
+Reporting annuel
+
+✓
+
+Correction si écart > 5 % non justifié
+
+✓
+
+✓
+
+✓;code_monetaire_financier;0.202;Code monétaire et financier — Partie législative
+2026-05-29 12:24:45.94981+00;la transposition doit être effective avant le 07/06/2026. 
+Action
+
+<100
+
+100–149
+
+150–249
+
+≥250
+
+Fourchette salariale avant entretien
+
+✓
+
+✓
+
+✓
+
+✓
+
+Ne pas demander l’ancien salaire
+
+✓
+
+✓
+
+✓
+
+✓
+
+Critères de rémunération accessibles
+
+✓
+
+✓
+
+✓
+
+✓
+
+Données conformes RGPD
+
+✓
+
+✓
+
+✓
+
+✓
+
+Reporting volontaire possible
+
+✓
+
+Reporting tous les 3 ans dès 2031
+
+✓
+
+Reporting tous les 3 ans dès 2027
+
+✓
+
+Reporting annuel
+
+✓
+
+Correction si écart > 5 % non justifié
+
+✓
+
+✓
+
+✓;code_travail_reglementaire;0.250;Code du travail — Partie réglementaire
+2026-05-29 12:17:57.88504+00;juste avant je t'ai demandé s'il s'agissait de cette directive et tu m'as dit NON;arret_cour_appel;0.277;Cour d'appel de Nimes, 5ème chambre sociale PH, 17/03/2026, n° 24/03577
+2026-05-29 12:17:57.88504+00;juste avant je t'ai demandé s'il s'agissait de cette directive et tu m'as dit NON;arret_cour_appel;0.277;Cour d'appel de Nimes, 5ème chambre sociale PH, 24/02/2026, n° 24/03038
+2026-05-29 12:17:57.88504+00;juste avant je t'ai demandé s'il s'agissait de cette directive et tu m'as dit NON;code_commerce_reglementaire;0.305;Code de commerce — Partie réglementaire
+2026-05-29 12:17:57.88504+00;juste avant je t'ai demandé s'il s'agissait de cette directive et tu m'as dit NON;loi;0.295;LOI n° 2025-989 du 24 octobre 2025 portant transposition des accords nationaux interprofessionnels en faveur de l'emploi
+2026-05-29 12:17:57.88504+00;juste avant je t'ai demandé s'il s'agissait de cette directive et tu m'as dit NON;arret_cour_appel;0.320;Cour d'appel de Basse Terre, Chambre Sociale, 02/03/2026, n° 24/00410
+2026-05-29 12:17:57.88504+00;juste avant je t'ai demandé s'il s'agissait de cette directive et tu m'as dit NON;arret_cour_appel;0.342;Cour d'appel de Nimes, 5ème chambre sociale PH, 16/03/2026, n° 24/03844
+2026-05-29 12:17:57.88504+00;juste avant je t'ai demandé s'il s'agissait de cette directive et tu m'as dit NON;decret;0.275;Décret n° 2025-1446 du 31 décembre 2025 relatif aux modalités d'application de divers dispositifs d'exonérations de coti
+2026-05-29 12:14:59.37117+00;le Parlement européen et le Conseil ont adopté une directive sur la transparence en matière de rémunération qu’il revient aux États membres de transposer dans leur droit national. La date limite de transposition prévue par la directive est août 2026, ce qui impose aux États d’avoir intégré ces nouvelles obligations dans leur droit interne d’ici cette échéance. Quelle est cette directive ? numéro ?;code_commerce_reglementaire;0.330;Code de commerce — Partie réglementaire
+2026-05-29 12:10:17.652764+00;Télétravail supprimé — le CSE peut s'y opposer ?;arret_cour_cassation;0.336;Cass. Chambre sociale, 18/03/2026, n° 24-15.990
+2026-05-29 12:10:17.652764+00;Télétravail supprimé — le CSE peut s'y opposer ?;arret_cour_cassation;0.350;Cass. Chambre sociale, 03/12/2025, n° 24-10.326
+2026-05-29 12:10:17.652764+00;Télétravail supprimé — le CSE peut s'y opposer ?;accord_branche;0.283;Accords de branche — Syntec (IDCC 1486)
+2026-05-29 12:10:17.652764+00;Télétravail supprimé — le CSE peut s'y opposer ?;convention_collective_nationale;0.283;CCN Syntec (IDCC 1486)
+2026-05-29 12:10:17.652764+00;Télétravail supprimé — le CSE peut s'y opposer ?;arret_cour_cassation;0.250;Cass. Chambre sociale, 11/09/2019, n° 18-23.764
+2026-05-29 12:10:17.652764+00;Télétravail supprimé — le CSE peut s'y opposer ?;accord_branche;0.283;Accords de branche — Syntec (IDCC 1486)
+2026-05-29 11:21:34.835797+00;est ce qu'il s'agit de la directive 2023/970 ?;arret_cour_cassation;0.334;Cass. Chambre sociale, 28/03/2018, n° 16-19.086
+2026-05-29 11:21:34.835797+00;est ce qu'il s'agit de la directive 2023/970 ?;arret_cour_appel;0.295;Cour d'appel de Nimes, 5ème chambre sociale PH, 24/02/2026, n° 24/03038
+2026-05-29 11:21:34.835797+00;est ce qu'il s'agit de la directive 2023/970 ?;arret_cour_appel;0.285;Cour d'appel de Rouen, Chambre Sociale, 26/03/2026, n° 25/02177
+2026-05-29 11:21:34.835797+00;est ce qu'il s'agit de la directive 2023/970 ?;code_commerce_reglementaire;0.248;Code de commerce — Partie réglementaire
+2026-05-29 11:21:34.835797+00;est ce qu'il s'agit de la directive 2023/970 ?;arret_cour_appel;0.242;Cour d'appel de Bordeaux, CHAMBRE SOCIALE SECTION B, 26/02/2026, n° 25/02762
+2026-05-29 11:21:34.835797+00;est ce qu'il s'agit de la directive 2023/970 ?;code_commerce_reglementaire;0.236;Code de commerce — Partie réglementaire
+2026-05-29 11:10:14.261742+00;Peux tu faire un tableau récapitulatif des actions à mettre en place par taille d'entreprise ?;code_commerce;0.256;Code de commerce — Partie législative
+2026-05-29 11:10:14.261742+00;Peux tu faire un tableau récapitulatif des actions à mettre en place par taille d'entreprise ?;arret_cour_appel;0.250;Cour d'appel de Rennes, 8ème Ch Prud'homale, 25/02/2026, n° 22/04174
+2026-05-29 11:10:14.261742+00;Peux tu faire un tableau récapitulatif des actions à mettre en place par taille d'entreprise ?;arret_cour_cassation;0.256;Cass. Chambre sociale, 27/03/2012, n° 11-14.223
+2026-05-29 11:10:14.261742+00;Peux tu faire un tableau récapitulatif des actions à mettre en place par taille d'entreprise ?;code_commerce;0.326;Code de commerce — Partie législative
+2026-05-29 11:10:14.261742+00;Peux tu faire un tableau récapitulatif des actions à mettre en place par taille d'entreprise ?;code_commerce_reglementaire;0.301;Code de commerce — Partie réglementaire
+2026-05-29 11:10:14.261742+00;Peux tu faire un tableau récapitulatif des actions à mettre en place par taille d'entreprise ?;code_monetaire_financier;0.277;Code monétaire et financier — Partie législative
+2026-05-29 11:10:14.261742+00;Peux tu faire un tableau récapitulatif des actions à mettre en place par taille d'entreprise ?;code_commerce;0.275;Code de commerce — Partie législative
+2026-05-29 11:07:19.823286+00;Que faut il exactement mettre en place avant cette échéance ?;code_travail_reglementaire;0.332;Code du travail — Partie réglementaire
+2026-05-29 11:05:58.900664+00;la transparence des salaires est une directive européenne à mettre en place en août 2026 ?;arret_cour_appel;0.218;Cour d'appel de Rennes, 7ème Ch Prud'homale, 09/04/2026, n° 24/01550
+2026-05-29 11:05:58.900664+00;la transparence des salaires est une directive européenne à mettre en place en août 2026 ?;arret_cour_appel;0.231;Cour d'appel de Lyon, CHAMBRE SOCIALE A, 25/03/2026, n° 21/08837
+2026-05-29 11:05:58.900664+00;la transparence des salaires est une directive européenne à mettre en place en août 2026 ?;arret_cour_appel;0.281;Cour d'appel de Metz, Chambre Sociale-Section 1, 09/03/2026, n° 23/02408
+2026-05-29 11:05:58.900664+00;la transparence des salaires est une directive européenne à mettre en place en août 2026 ?;arret_cour_appel;0.316;Cour d'appel de Chambery, Chbre Sociale Prud'Hommes, 19/03/2026, n° 24/00448
+2026-05-29 11:05:58.900664+00;la transparence des salaires est une directive européenne à mettre en place en août 2026 ?;arret_cour_cassation;0.311;Cass. Chambre sociale, 21/09/2017, n° 16-24.022
+2026-05-29 11:05:58.900664+00;la transparence des salaires est une directive européenne à mettre en place en août 2026 ?;arret_cour_cassation;0.285;Cass. Chambre sociale, 25/03/2026, n° 24-21.765
+2026-05-29 11:05:58.900664+00;la transparence des salaires est une directive européenne à mettre en place en août 2026 ?;code_travail_reglementaire;0.285;Code du travail — Partie réglementaire
+2026-05-29 11:01:34.897963+00;Quelles sont les obligations transparence salariale applicables dès le 1er 
+ salarié vs reporting réservé aux 100+ / 50+.;code_travail_reglementaire;0.299;Code du travail — Partie réglementaire
+2026-05-29 11:01:34.897963+00;Quelles sont les obligations transparence salariale applicables dès le 1er 
+ salarié vs reporting réservé aux 100+ / 50+.;code_travail_reglementaire;0.299;Code du travail — Partie réglementaire
+2026-05-29 11:01:34.897963+00;Quelles sont les obligations transparence salariale applicables dès le 1er 
+ salarié vs reporting réservé aux 100+ / 50+.;arret_cour_cassation;0.307;Cass. Chambre sociale, 01/06/2023, n° 21-23.393
+2026-05-29 11:01:34.897963+00;Quelles sont les obligations transparence salariale applicables dès le 1er 
+ salarié vs reporting réservé aux 100+ / 50+.;code_travail_reglementaire;0.328;Code du travail — Partie réglementaire
+2026-05-29 11:01:34.897963+00;Quelles sont les obligations transparence salariale applicables dès le 1er 
+ salarié vs reporting réservé aux 100+ / 50+.;code_commerce_reglementaire;0.346;Code de commerce — Partie réglementaire
+2026-05-29 11:01:34.897963+00;Quelles sont les obligations transparence salariale applicables dès le 1er 
+ salarié vs reporting réservé aux 100+ / 50+.;arret_cour_cassation;0.307;Cass. Chambre sociale, 16/12/2014, n° 13-22.308
+2026-05-29 10:49:47.8078+00;Est on obligé de mettre en place un dispositif autour du partage de la valeur ?;arret_cour_cassation;0.332;Cass. Chambre criminelle, 04/03/2026, n° 25-82.738
+2026-05-29 10:49:47.8078+00;Est on obligé de mettre en place un dispositif autour du partage de la valeur ?;arret_cour_cassation;0.316;Cass. Chambre sociale, 05/07/2023, n° 21-24.122
+2026-05-29 10:49:47.8078+00;Est on obligé de mettre en place un dispositif autour du partage de la valeur ?;arret_cour_cassation;0.260;Cass. Chambre commerciale, 07/05/2025, n° 23-24.041
+2026-05-29 10:49:47.8078+00;Est on obligé de mettre en place un dispositif autour du partage de la valeur ?;code_travail_reglementaire;0.239;Code du travail — Partie réglementaire
+2026-05-28 15:44:27.743554+00;3 ans de télétravail, l'entreprise peut elle le stopper ?;arret_cour_appel;0.348;Cour d'appel de Lyon, CHAMBRE SOCIALE A, 11/03/2026, n° 23/01441
+2026-05-28 15:44:27.743554+00;3 ans de télétravail, l'entreprise peut elle le stopper ?;arret_cour_appel;0.330;Cour d'appel de Chambery, Chbre Sociale Prud'Hommes, 26/03/2026, n° 24/00760
+2026-05-28 15:44:27.743554+00;3 ans de télétravail, l'entreprise peut elle le stopper ?;arret_cour_cassation;0.322;Cass. Chambre sociale, 12/05/2021, n° 20-17.288
+2026-05-28 15:44:27.743554+00;3 ans de télétravail, l'entreprise peut elle le stopper ?;arret_cour_cassation;0.322;Cass. Chambre sociale, 26/09/2018, n° 17-11.102
+2026-05-28 15:44:27.743554+00;3 ans de télétravail, l'entreprise peut elle le stopper ?;code_travail;0.326;Code du travail — Partie législative
+2026-05-28 14:53:41.493708+00;Argument rejeté : appliquer uniquement le seuil légal actuel de 60 jours.
+Solution retenue : la CCN propreté impose une visite après 3 semaines, et cette règle conventionnelle continue de s’appliquer malgré la modification du Code du travail.;convention_collective_nationale;0.289;Avenant n° 1 du 10 janvier 2023 
+à l’accord du 3 février 2022 
+relatif à la mise en place du dispositif de la promotion 
+2026-05-28 14:53:41.493708+00;Argument rejeté : appliquer uniquement le seuil légal actuel de 60 jours.
+Solution retenue : la CCN propreté impose une visite après 3 semaines, et cette règle conventionnelle continue de s’appliquer malgré la modification du Code du travail.;code_travail_reglementaire;0.299;Code du travail — Partie réglementaire
+2026-05-28 14:53:41.493708+00;Argument rejeté : appliquer uniquement le seuil légal actuel de 60 jours.
+Solution retenue : la CCN propreté impose une visite après 3 semaines, et cette règle conventionnelle continue de s’appliquer malgré la modification du Code du travail.;accord_branche;0.277;Accords de branche — Entreprises de propreté et services associés (26 juillet 2011) (IDCC 3043)
+2026-05-28 14:53:41.493708+00;Argument rejeté : appliquer uniquement le seuil légal actuel de 60 jours.
+Solution retenue : la CCN propreté impose une visite après 3 semaines, et cette règle conventionnelle continue de s’appliquer malgré la modification du Code du travail.;convention_collective_nationale;0.320;CCN Entreprises de propreté et services associés (26 juillet 2011) (IDCC 3043) — Avenants et annexes
+2026-05-28 14:53:41.493708+00;Argument rejeté : appliquer uniquement le seuil légal actuel de 60 jours.
+Solution retenue : la CCN propreté impose une visite après 3 semaines, et cette règle conventionnelle continue de s’appliquer malgré la modification du Code du travail.;convention_collective_nationale;0.313;CCN Entreprises de propreté et services associés (26 juillet 2011) (IDCC 3043) — Avenants et annexes
+2026-05-28 14:53:41.493708+00;Argument rejeté : appliquer uniquement le seuil légal actuel de 60 jours.
+Solution retenue : la CCN propreté impose une visite après 3 semaines, et cette règle conventionnelle continue de s’appliquer malgré la modification du Code du travail.;accord_branche;0.328;Accords de branche — Entreprises de propreté et services associés (26 juillet 2011) (IDCC 3043)
+2026-05-28 14:49:22.062532+00;Tu reprends l'argument faux qui a été rejeté par la cour de cassation;arret_cour_cassation;0.348;Cass. Chambre civile 2, 12/02/2026, n° 24-10.913
+2026-05-28 14:44:56.434696+00;Fais moi une synthèse de Cass. soc., 06/05/2026, n° 24-13.599;arret_cour_appel;0.297;Cour d'appel de Agen, CHAMBRE SOCIALE, 03/03/2026, n° 24/00766
+2026-05-28 14:44:56.434696+00;Fais moi une synthèse de Cass. soc., 06/05/2026, n° 24-13.599;arret_cour_appel;0.295;Cour d'appel de Rennes, 7ème Ch Prud'homale, 05/03/2026, n° 25/00759
+2026-05-28 14:44:56.434696+00;Fais moi une synthèse de Cass. soc., 06/05/2026, n° 24-13.599;arret_cour_cassation;0.239;Cass. Chambre sociale, 26/06/2013, n° 12-15.208
+2026-05-28 14:44:56.434696+00;Fais moi une synthèse de Cass. soc., 06/05/2026, n° 24-13.599;arret_cour_appel;0.305;Cour d'appel de Reims, Chambre sociale, 05/03/2026, n° 24/01934
+2026-05-28 14:44:56.434696+00;Fais moi une synthèse de Cass. soc., 06/05/2026, n° 24-13.599;arret_cour_cassation;0.226;Cass. Chambre sociale, 06/03/2024, n° 22-13.672
+2026-05-28 14:39:41.005725+00;pourtant Aux termes de l'article 3.4, alinéa 2, de la convention collective nationale des entreprises de propreté et services associés du 26 juillet 2011, les salariés sont obligatoirement soumis à un examen médical dans les conditions prévues par la loi. Après une absence pour cause de maladie professionnelle, d'accident du travail de plus de 8 jours, après un congé de maternité, une absence d'au moins 3 semaines pour cause de maladie ou d'accident non professionnel, les salariés doivent passer une visite médicale lors de la reprise du travail selon les modalités déterminées légalement.;convention_collective_nationale;0.301;CCN Entreprises de propreté et services associés (26 juillet 2011) (IDCC 3043)
+2026-05-28 14:39:41.005725+00;pourtant Aux termes de l'article 3.4, alinéa 2, de la convention collective nationale des entreprises de propreté et services associés du 26 juillet 2011, les salariés sont obligatoirement soumis à un examen médical dans les conditions prévues par la loi. Après une absence pour cause de maladie professionnelle, d'accident du travail de plus de 8 jours, après un congé de maternité, une absence d'au moins 3 semaines pour cause de maladie ou d'accident non professionnel, les salariés doivent passer une visite médicale lors de la reprise du travail selon les modalités déterminées légalement.;accord_branche;0.301;Accords de branche — Entreprises de propreté et services associés (26 juillet 2011) (IDCC 3043)
+2026-05-28 14:39:41.005725+00;pourtant Aux termes de l'article 3.4, alinéa 2, de la convention collective nationale des entreprises de propreté et services associés du 26 juillet 2011, les salariés sont obligatoirement soumis à un examen médical dans les conditions prévues par la loi. Après une absence pour cause de maladie professionnelle, d'accident du travail de plus de 8 jours, après un congé de maternité, une absence d'au moins 3 semaines pour cause de maladie ou d'accident non professionnel, les salariés doivent passer une visite médicale lors de la reprise du travail selon les modalités déterminées légalement.;accord_branche;0.322;Accords de branche — Entreprises de propreté et services associés (26 juillet 2011) (IDCC 3043)
+2026-05-28 14:39:41.005725+00;pourtant Aux termes de l'article 3.4, alinéa 2, de la convention collective nationale des entreprises de propreté et services associés du 26 juillet 2011, les salariés sont obligatoirement soumis à un examen médical dans les conditions prévues par la loi. Après une absence pour cause de maladie professionnelle, d'accident du travail de plus de 8 jours, après un congé de maternité, une absence d'au moins 3 semaines pour cause de maladie ou d'accident non professionnel, les salariés doivent passer une visite médicale lors de la reprise du travail selon les modalités déterminées légalement.;convention_collective_nationale;0.313;CCN Entreprises de propreté et services associés (26 juillet 2011) (IDCC 3043) — Avenants et annexes
+2026-05-28 14:21:29.194851+00;Cass. soc., 06/05/2026, n° 24-13.599 précise que l'employeur aurait dû faire une visite médicale de reprise car la CCN prévoit 3 semaine d'arrêt maladie pour faire une visite de reprise;accord_branche;0.338;Accords de branche — Entreprises de propreté et services associés (26 juillet 2011) (IDCC 3043)
+2026-05-28 14:21:29.194851+00;Cass. soc., 06/05/2026, n° 24-13.599 précise que l'employeur aurait dû faire une visite médicale de reprise car la CCN prévoit 3 semaine d'arrêt maladie pour faire une visite de reprise;convention_collective_nationale;0.330;CCN Entreprises de propreté et services associés (26 juillet 2011) (IDCC 3043) — Avenants et annexes
+2026-05-28 13:22:45.572927+00;Qu'implique la loi du 11 mai 2026 concernant l'absence de mise à jour du DUERP ?;arret_cour_appel;0.266;Cour d'appel de Versailles, Chambre sociale 4-6, 26/03/2026, n° 26/00336
+2026-05-28 13:22:45.572927+00;Qu'implique la loi du 11 mai 2026 concernant l'absence de mise à jour du DUERP ?;decision_conseil_constitutionnel;0.293;Cons. const., 19/02/2026, n° 2026-901 DC
+2026-05-28 13:22:45.572927+00;Qu'implique la loi du 11 mai 2026 concernant l'absence de mise à jour du DUERP ?;decision_conseil_constitutionnel;0.307;Cons. const., 07/05/2026, n° 2026-1198 QPC
+2026-05-28 13:22:45.572927+00;Qu'implique la loi du 11 mai 2026 concernant l'absence de mise à jour du DUERP ?;arret_cour_appel;0.315;Cour d'appel de Versailles, Chambre sociale 4-6, 26/03/2026, n° 24/01217
+2026-05-28 13:22:45.572927+00;Qu'implique la loi du 11 mai 2026 concernant l'absence de mise à jour du DUERP ?;decision_conseil_constitutionnel;0.231;Cons. const., 18/02/2026, n° 2026-900 DC
+2026-05-28 13:22:45.572927+00;Qu'implique la loi du 11 mai 2026 concernant l'absence de mise à jour du DUERP ?;decision_conseil_constitutionnel;0.254;Cons. const., 19/02/2026, n° 2026-901 DC
+2026-05-28 13:22:45.572927+00;Qu'implique la loi du 11 mai 2026 concernant l'absence de mise à jour du DUERP ?;decision_conseil_constitutionnel;0.266;Cons. const., 19/02/2026, n° 2026-901 DC
+2026-05-28 12:48:20.003916+00;L'employeur est il obligé de mettre en place une transparence salariale ?;arret_cour_cassation;0.348;Cass. Chambre sociale, 05/07/2023, n° 21-24.122
+2026-05-28 12:48:20.003916+00;L'employeur est il obligé de mettre en place une transparence salariale ?;arret_cour_cassation;0.332;Cass. Chambre sociale, 20/02/2019, n° 17-17.744
+2026-05-28 12:48:20.003916+00;L'employeur est il obligé de mettre en place une transparence salariale ?;code_travail;0.346;Code du travail — Partie législative
+2026-05-26 21:11:05.229229+00;il a des procédures de licenciement de postes qui ne seront pas remplacé par des humain mais par l'ia. c'est légal ?;arret_cour_cassation;0.330;Cass. Chambre sociale, 05/11/2014, n° 13-17.270
+2026-05-26 21:11:05.229229+00;il a des procédures de licenciement de postes qui ne seront pas remplacé par des humain mais par l'ia. c'est légal ?;arret_cour_appel;0.281;Cour d'appel de Douai, Sociale C salle 1, 30/04/2026, n° 24/01951
+2026-05-26 21:11:05.229229+00;il a des procédures de licenciement de postes qui ne seront pas remplacé par des humain mais par l'ia. c'est légal ?;arret_cour_cassation;0.260;Cass. Chambre sociale, 11/01/2012, n° 10-12.930
+2026-05-26 21:11:05.229229+00;il a des procédures de licenciement de postes qui ne seront pas remplacé par des humain mais par l'ia. c'est légal ?;arret_cour_appel;0.270;Cour d'appel de Bordeaux, CHAMBRE SOCIALE SECTION A, 21/04/2026, n° 23/04793
+2026-05-26 21:11:05.229229+00;il a des procédures de licenciement de postes qui ne seront pas remplacé par des humain mais par l'ia. c'est légal ?;arret_cour_cassation;0.270;Cass. Chambre sociale, 14/09/2017, n° 16-20.552
+2026-05-26 21:11:05.229229+00;il a des procédures de licenciement de postes qui ne seront pas remplacé par des humain mais par l'ia. c'est légal ?;arret_cour_appel;0.264;Cour d'appel de Douai, Sociale B salle 2, 30/04/2026, n° 24/02204
+2026-05-26 19:58:51.830491+00;Télétravail supprimé — le CSE peut s'y opposer ?;arret_cour_cassation;0.318;Cass. Chambre sociale, 03/12/2025, n° 24-10.326
+2026-05-26 13:31:53.980174+00;Les horaires d'un service entier ont été changés sans consulter le cse. Quels sont les recours du CSE dans cette situation ? Quels sont les risques pour l'employeur ?;arret_cour_appel;0.348;Cour d'appel de Limoges, Chambre sociale, 19/03/2026, n° 25/00337
+2026-05-26 13:31:53.980174+00;Les horaires d'un service entier ont été changés sans consulter le cse. Quels sont les recours du CSE dans cette situation ? Quels sont les risques pour l'employeur ?;arret_cour_cassation;0.316;Cass. Chambre sociale, 30/06/2010, n° 09-13.640
+2026-05-26 13:31:53.980174+00;Les horaires d'un service entier ont été changés sans consulter le cse. Quels sont les recours du CSE dans cette situation ? Quels sont les risques pour l'employeur ?;arret_cour_cassation;0.322;Cass. Chambre sociale, 18/10/2023, n° 22-10.761
+2026-05-22 15:04:02.923967+00;Est ce qu'une salarié enceinte peut réduire son temps de travail ?;arret_cour_appel;0.336;Cour d'appel de Amiens, 5EME CHAMBRE PRUD'HOMALE, 04/03/2026, n° 25/01296
+2026-05-22 15:04:02.923967+00;Est ce qu'une salarié enceinte peut réduire son temps de travail ?;arret_cour_cassation;0.350;Cass. Chambre sociale, 17/06/2009, n° 08-41.077
+2026-05-12 19:02:55.882368+00;Oui il faut rédiger un mail à la mission locale, aide moi;code_travail;0.334;Code du travail — Partie législative
+2026-05-12 19:02:55.882368+00;Oui il faut rédiger un mail à la mission locale, aide moi;code_sante_publique_reglementaire;0.315;Code de la santé publique — Partie réglementaire
+2026-05-12 19:02:55.882368+00;Oui il faut rédiger un mail à la mission locale, aide moi;arret_cour_cassation;0.332;Cass. Chambre sociale, 27/11/2019, n° 18-13.790
+2026-05-12 19:02:55.882368+00;Oui il faut rédiger un mail à la mission locale, aide moi;arret_cour_appel;0.266;Cour d'appel de Nimes, 5ème chambre sociale PH, 24/03/2026, n° 24/03516
+2026-05-12 19:02:55.882368+00;Oui il faut rédiger un mail à la mission locale, aide moi;arret_cour_cassation;0.287;Cass. Chambre sociale, 08/02/2017, n° 15-21.064
+2026-05-12 19:02:55.882368+00;Oui il faut rédiger un mail à la mission locale, aide moi;arret_cour_cassation;0.305;Cass. Chambre civile 2, 18/09/2025, n° 23-10.454
+2026-05-12 18:57:39.349219+00;Une amie a eu un rdv à la mission locale concernant sa situation et notamment le montant de son indemnisation. On lui avait affirmé au téléphone qu'elle pouvait cumuler l'ARE et le CEJ. Celle ci étant dans un parcours de diagnostic d'autisme. La personne qui l'a reçue lui a rit au nez lorsqu'elle a voulu lui poser des questions pour mieux comprendre la situation. En effet, cette personne lui a indiqué que cumuler l'ARE et le CEJ n'était pas envisageable. Quels articles de lois concerne le dénigrement auprès d'une personne sensible ? Celle ci ayant fait plusieurs crises à la suite de ce rendez vous;arret_cour_appel;0.273;Cour d'appel de Rouen, Chambre Sociale, 12/03/2026, n° 25/01281
+2026-05-12 18:57:39.349219+00;Une amie a eu un rdv à la mission locale concernant sa situation et notamment le montant de son indemnisation. On lui avait affirmé au téléphone qu'elle pouvait cumuler l'ARE et le CEJ. Celle ci étant dans un parcours de diagnostic d'autisme. La personne qui l'a reçue lui a rit au nez lorsqu'elle a voulu lui poser des questions pour mieux comprendre la situation. En effet, cette personne lui a indiqué que cumuler l'ARE et le CEJ n'était pas envisageable. Quels articles de lois concerne le dénigrement auprès d'une personne sensible ? Celle ci ayant fait plusieurs crises à la suite de ce rendez vous;arret_cour_cassation;0.277;Cass. Chambre sociale, 10/12/2025, n° 24-15.412
+2026-05-12 18:57:39.349219+00;Une amie a eu un rdv à la mission locale concernant sa situation et notamment le montant de son indemnisation. On lui avait affirmé au téléphone qu'elle pouvait cumuler l'ARE et le CEJ. Celle ci étant dans un parcours de diagnostic d'autisme. La personne qui l'a reçue lui a rit au nez lorsqu'elle a voulu lui poser des questions pour mieux comprendre la situation. En effet, cette personne lui a indiqué que cumuler l'ARE et le CEJ n'était pas envisageable. Quels articles de lois concerne le dénigrement auprès d'une personne sensible ? Celle ci ayant fait plusieurs crises à la suite de ce rendez vous;arret_cour_appel;0.283;Cour d'appel de Limoges, Chambre sociale, 26/02/2026, n° 25/00307
+2026-05-12 18:57:39.349219+00;Une amie a eu un rdv à la mission locale concernant sa situation et notamment le montant de son indemnisation. On lui avait affirmé au téléphone qu'elle pouvait cumuler l'ARE et le CEJ. Celle ci étant dans un parcours de diagnostic d'autisme. La personne qui l'a reçue lui a rit au nez lorsqu'elle a voulu lui poser des questions pour mieux comprendre la situation. En effet, cette personne lui a indiqué que cumuler l'ARE et le CEJ n'était pas envisageable. Quels articles de lois concerne le dénigrement auprès d'une personne sensible ? Celle ci ayant fait plusieurs crises à la suite de ce rendez vous;arret_cour_cassation;0.281;Cass. Chambre sociale, 16/02/2022, n° 20-16.171
+2026-05-12 18:57:39.349219+00;Une amie a eu un rdv à la mission locale concernant sa situation et notamment le montant de son indemnisation. On lui avait affirmé au téléphone qu'elle pouvait cumuler l'ARE et le CEJ. Celle ci étant dans un parcours de diagnostic d'autisme. La personne qui l'a reçue lui a rit au nez lorsqu'elle a voulu lui poser des questions pour mieux comprendre la situation. En effet, cette personne lui a indiqué que cumuler l'ARE et le CEJ n'était pas envisageable. Quels articles de lois concerne le dénigrement auprès d'une personne sensible ? Celle ci ayant fait plusieurs crises à la suite de ce rendez vous;arret_cour_cassation;0.266;Cass. Chambre sociale, 01/03/2017, n° 15-21.568
+2026-05-12 18:57:39.349219+00;Une amie a eu un rdv à la mission locale concernant sa situation et notamment le montant de son indemnisation. On lui avait affirmé au téléphone qu'elle pouvait cumuler l'ARE et le CEJ. Celle ci étant dans un parcours de diagnostic d'autisme. La personne qui l'a reçue lui a rit au nez lorsqu'elle a voulu lui poser des questions pour mieux comprendre la situation. En effet, cette personne lui a indiqué que cumuler l'ARE et le CEJ n'était pas envisageable. Quels articles de lois concerne le dénigrement auprès d'une personne sensible ? Celle ci ayant fait plusieurs crises à la suite de ce rendez vous;arret_cour_appel;0.266;Cour d'appel de Basse Terre, Chambre Sociale, 16/03/2026, n° 24/00811
+2026-05-12 18:57:39.349219+00;Une amie a eu un rdv à la mission locale concernant sa situation et notamment le montant de son indemnisation. On lui avait affirmé au téléphone qu'elle pouvait cumuler l'ARE et le CEJ. Celle ci étant dans un parcours de diagnostic d'autisme. La personne qui l'a reçue lui a rit au nez lorsqu'elle a voulu lui poser des questions pour mieux comprendre la situation. En effet, cette personne lui a indiqué que cumuler l'ARE et le CEJ n'était pas envisageable. Quels articles de lois concerne le dénigrement auprès d'une personne sensible ? Celle ci ayant fait plusieurs crises à la suite de ce rendez vous;arret_cour_cassation;0.270;Cass. Chambre criminelle, 08/04/2025, n° 23-86.596
+2026-05-12 10:28:25.735538+00;Un utilisateur est parti en congés paternité sans mettre de message d'absence, est-il possible de transférer ses emails vers quelqu'un d'autre sans le prévenir ?;arret_cour_cassation;0.318;Cass. Chambre sociale, 26/06/2012, n° 11-15.310
+2026-05-12 10:28:25.735538+00;Un utilisateur est parti en congés paternité sans mettre de message d'absence, est-il possible de transférer ses emails vers quelqu'un d'autre sans le prévenir ?;arret_cour_cassation;0.338;Cass. Chambre sociale, 27/05/2025, n° 24-11.388
+2026-05-12 10:28:25.735538+00;Un utilisateur est parti en congés paternité sans mettre de message d'absence, est-il possible de transférer ses emails vers quelqu'un d'autre sans le prévenir ?;code_travail;0.328;Code du travail — Partie législative
+2026-05-11 12:23:09.285475+00;l'association est hors la loi si elle a dit au travers d'une note de service que les congés étaient perdus s'ils n'étaient pas pris avant la fin de la période ?;arret_cour_cassation;0.326;Cass. Chambre sociale, 27/09/2023, n° 22-12.435
+2026-05-11 12:23:09.285475+00;l'association est hors la loi si elle a dit au travers d'une note de service que les congés étaient perdus s'ils n'étaient pas pris avant la fin de la période ?;arret_cour_cassation;0.332;Cass. Chambre sociale, 22/09/2021, n° 19-17.046
+2026-05-11 12:23:09.285475+00;l'association est hors la loi si elle a dit au travers d'une note de service que les congés étaient perdus s'ils n'étaient pas pris avant la fin de la période ?;arret_cour_cassation;0.315;Cass. Chambre sociale, 15/09/2021, n° 20-16.010
+2026-05-11 12:20:35.584832+00;J'ai besoin d'une confirmation pour savoir si les congés trimestriels attribués par la CCN ont la même règle que les congés payés de base;convention_collective_nationale;0.275;CCN Handicapés : établissements et services pour les personnes inadaptées et handicapées (IDCC 0413)
+2026-05-11 12:20:35.584832+00;J'ai besoin d'une confirmation pour savoir si les congés trimestriels attribués par la CCN ont la même règle que les congés payés de base;convention_collective_nationale;0.305;CCN Handicapés : établissements et services pour les personnes inadaptées et handicapées (IDCC 0413) — Avenants et annex
+2026-05-11 12:20:35.584832+00;J'ai besoin d'une confirmation pour savoir si les congés trimestriels attribués par la CCN ont la même règle que les congés payés de base;accord_branche;0.342;Accords de branche — Handicapés : établissements et services pour les personnes inadaptées et handicapées (IDCC 0413)
+2026-05-11 12:20:35.584832+00;J'ai besoin d'une confirmation pour savoir si les congés trimestriels attribués par la CCN ont la même règle que les congés payés de base;accord_branche;0.342;Accords de branche — Handicapés : établissements et services pour les personnes inadaptées et handicapées (IDCC 0413)
+2026-05-11 12:20:35.584832+00;J'ai besoin d'une confirmation pour savoir si les congés trimestriels attribués par la CCN ont la même règle que les congés payés de base;convention_collective_nationale;0.275;CCN Handicapés : établissements et services pour les personnes inadaptées et handicapées (IDCC 0413)
+2026-05-11 12:15:33.34371+00;Vérifie maintenant dans la CCN les informations sur le report des congés trimestriels au trimestre suivant quand le salarié est en arrêt maladie;convention_collective_nationale;0.330;CCN Handicapés : établissements et services pour les personnes inadaptées et handicapées (IDCC 0413)
+2026-05-11 12:15:33.34371+00;Vérifie maintenant dans la CCN les informations sur le report des congés trimestriels au trimestre suivant quand le salarié est en arrêt maladie;convention_collective_nationale;0.330;CCN Handicapés : établissements et services pour les personnes inadaptées et handicapées (IDCC 0413)
+2026-05-11 12:15:33.34371+00;Vérifie maintenant dans la CCN les informations sur le report des congés trimestriels au trimestre suivant quand le salarié est en arrêt maladie;convention_collective_nationale;0.346;CCN Handicapés : établissements et services pour les personnes inadaptées et handicapées (IDCC 0413)
+2026-05-11 12:15:33.34371+00;Vérifie maintenant dans la CCN les informations sur le report des congés trimestriels au trimestre suivant quand le salarié est en arrêt maladie;accord_branche;0.260;Accords de branche — Handicapés : établissements et services pour les personnes inadaptées et handicapées (IDCC 0413)
+2026-05-11 12:15:33.34371+00;Vérifie maintenant dans la CCN les informations sur le report des congés trimestriels au trimestre suivant quand le salarié est en arrêt maladie;convention_collective_nationale;0.277;CCN Handicapés : établissements et services pour les personnes inadaptées et handicapées (IDCC 0413)
+2026-05-11 12:15:33.34371+00;Vérifie maintenant dans la CCN les informations sur le report des congés trimestriels au trimestre suivant quand le salarié est en arrêt maladie;convention_collective_nationale;0.277;CCN Handicapés : établissements et services pour les personnes inadaptées et handicapées (IDCC 0413)
+2026-05-11 12:15:33.34371+00;Vérifie maintenant dans la CCN les informations sur le report des congés trimestriels au trimestre suivant quand le salarié est en arrêt maladie;convention_collective_nationale;0.285;CCN Handicapés : établissements et services pour les personnes inadaptées et handicapées (IDCC 0413) — Avenants et annex
+2026-05-08 18:08:13.604252+00;tu connais les ordonnances Macron ?;arret_cour_cassation;0.291;Cass. Chambre sociale, 22/09/2021, n° 19-23.390
+2026-05-08 18:08:13.604252+00;tu connais les ordonnances Macron ?;convention_collective_nationale;0.315;CCN Syntec (IDCC 1486)
+2026-05-08 18:08:13.604252+00;tu connais les ordonnances Macron ?;accord_branche;0.320;Accords de branche — Syntec (IDCC 1486)
+2026-05-08 18:08:13.604252+00;tu connais les ordonnances Macron ?;accord_branche;0.320;Accords de branche — Syntec (IDCC 1486)
+2026-05-08 18:08:13.604252+00;tu connais les ordonnances Macron ?;accord_branche;0.320;Accords de branche — Syntec (IDCC 1486)
+2026-05-08 18:08:13.604252+00;tu connais les ordonnances Macron ?;convention_collective_nationale;0.320;CCN Syntec (IDCC 1486)
+2026-05-08 18:08:13.604252+00;tu connais les ordonnances Macron ?;convention_collective_nationale;0.283;CCN Syntec (IDCC 1486)
+2026-05-08 17:43:59.089067+00;c'est quoi les techno que t'utilises ?;convention_collective_nationale;0.273;CCN Syntec (IDCC 1486)
+2026-05-08 17:43:59.089067+00;c'est quoi les techno que t'utilises ?;accord_branche;0.220;Accords de branche — Syntec (IDCC 1486)
+2026-05-08 17:43:59.089067+00;c'est quoi les techno que t'utilises ?;code_commerce;0.220;Code de commerce — Partie législative
+2026-05-08 17:43:59.089067+00;c'est quoi les techno que t'utilises ?;accord_branche;0.220;Accords de branche — Syntec (IDCC 1486)
+2026-05-08 17:43:59.089067+00;c'est quoi les techno que t'utilises ?;accord_branche;0.220;Accords de branche — Syntec (IDCC 1486)
+2026-05-08 17:43:59.089067+00;c'est quoi les techno que t'utilises ?;accord_branche;0.220;Accords de branche — Syntec (IDCC 1486)
+2026-05-08 17:43:59.089067+00;c'est quoi les techno que t'utilises ?;accord_branche;0.273;Accords de branche — Syntec (IDCC 1486)
+2026-05-08 17:24:44.011656+00;tes sources datent de quand ?;code_monetaire_financier_reglementaire;0.270;Code monétaire et financier — Partie réglementaire
+2026-05-08 17:24:44.011656+00;tes sources datent de quand ?;arret_cour_cassation;0.277;Cass. Chambre criminelle, 15/04/2026, n° 25-83.533
+2026-05-08 17:24:44.011656+00;tes sources datent de quand ?;convention_collective_nationale;0.220;CCN Syntec (IDCC 1486)
+2026-05-08 17:24:44.011656+00;tes sources datent de quand ?;accord_branche;0.226;Accords de branche — Syntec (IDCC 1486)
+2026-05-08 17:24:44.011656+00;tes sources datent de quand ?;convention_collective_nationale;0.231;CCN Syntec (IDCC 1486)
+2026-05-08 17:24:44.011656+00;tes sources datent de quand ?;code_sante_publique_reglementaire;0.256;Code de la santé publique — Partie réglementaire
+2026-05-08 17:24:44.011656+00;tes sources datent de quand ?;code_travail_reglementaire;0.256;Code du travail — Partie réglementaire
+2026-05-05 20:42:16.824145+00;Un salarié en télétravail se blesse chez lui pendant ses horaires. Est-ce un accident du travail ?;arret_cour_cassation;0.277;Cass. Chambre sociale, 04/03/2020, n° 18-11.585
+2026-05-05 20:42:16.824145+00;Un salarié en télétravail se blesse chez lui pendant ses horaires. Est-ce un accident du travail ?;convention_collective_nationale;0.242;CCN Syntec (IDCC 1486)
+2026-05-05 20:42:16.824145+00;Un salarié en télétravail se blesse chez lui pendant ses horaires. Est-ce un accident du travail ?;arret_cour_cassation;0.256;Cass. Chambre sociale, 20/02/2019, n° 17-18.912
+2026-05-05 20:41:23.750509+00;Un salarié en télétravail se blesse chez lui pendant ses horaires. Est-ce un accident du travail ?;accord_branche;0.242;Accords de branche — Syntec (IDCC 1486)
+2026-05-05 20:41:23.750509+00;Un salarié en télétravail se blesse chez lui pendant ses horaires. Est-ce un accident du travail ?;arret_cour_cassation;0.277;Cass. Chambre sociale, 04/03/2020, n° 18-11.585
+2026-05-05 20:41:23.750509+00;Un salarié en télétravail se blesse chez lui pendant ses horaires. Est-ce un accident du travail ?;arret_cour_appel;0.332;Cour d'appel de Rennes, 7ème Ch Prud'homale, 02/04/2026, n° 23/01738
+2026-05-05 20:41:23.750509+00;Un salarié en télétravail se blesse chez lui pendant ses horaires. Est-ce un accident du travail ?;arret_cour_cassation;0.270;Cass. Chambre sociale, 13/01/2010, n° 08-18.202
+2026-05-05 20:14:49.65126+00;Un salarié en télétravail se blesse chez lui pendant ses horaires. Est-ce un accident du travail ?;accord_branche;0.242;Accords de branche — Syntec (IDCC 1486)
+2026-05-05 20:14:49.65126+00;Un salarié en télétravail se blesse chez lui pendant ses horaires. Est-ce un accident du travail ?;arret_cour_appel;0.332;Cour d'appel de Rennes, 7ème Ch Prud'homale, 02/04/2026, n° 23/01738
+2026-05-05 20:14:49.65126+00;Un salarié en télétravail se blesse chez lui pendant ses horaires. Est-ce un accident du travail ?;arret_cour_cassation;0.270;Cass. Chambre sociale, 13/01/2010, n° 08-18.202
+2026-05-05 20:14:49.65126+00;Un salarié en télétravail se blesse chez lui pendant ses horaires. Est-ce un accident du travail ?;arret_cour_cassation;0.277;Cass. Chambre sociale, 04/03/2020, n° 18-11.585
+2026-04-29 20:48:21.460346+00;je travaille dans un centre d'hébergement pour femmes et aurait souhaité savoir si les outils de la loi 2002-2 s'appliquent;code_securite_sociale;0.344;Code de la sécurité sociale — Partie législative
+2026-04-29 20:48:21.460346+00;je travaille dans un centre d'hébergement pour femmes et aurait souhaité savoir si les outils de la loi 2002-2 s'appliquent;code_sante_publique;0.342;Code de la santé publique — Partie législative
+2026-04-29 20:48:21.460346+00;je travaille dans un centre d'hébergement pour femmes et aurait souhaité savoir si les outils de la loi 2002-2 s'appliquent;convention_collective_nationale;0.350;CCN Handicapés : établissements et services pour les personnes inadaptées et handicapées (IDCC 0413)
+2026-04-29 20:44:57.808724+00;connais tu le code du travail polynésien?;code_travail_reglementaire;0.307;Code du travail — Partie réglementaire
+2026-04-29 20:44:57.808724+00;connais tu le code du travail polynésien?;code_travail_reglementaire;0.334;Code du travail — Partie réglementaire
+2026-04-29 20:44:57.808724+00;connais tu le code du travail polynésien?;code_travail;0.287;Code du travail — Partie législative
+2026-04-29 20:44:57.808724+00;connais tu le code du travail polynésien?;code_travail;0.283;Code du travail — Partie législative
+2026-04-29 20:44:57.808724+00;connais tu le code du travail polynésien?;code_travail;0.283;Code du travail — Partie législative
+2026-04-29 20:44:57.808724+00;connais tu le code du travail polynésien?;code_travail_reglementaire;0.297;Code du travail — Partie réglementaire
+2026-04-29 20:44:57.808724+00;connais tu le code du travail polynésien?;code_travail_reglementaire;0.318;Code du travail — Partie réglementaire
+(313 rows)

@@ -13,7 +13,6 @@ import app.rag.config as rag_config
 from app.rag.config import (
     CONDENSE_HISTORY_LIMIT,
     LEGISLATION_FLOOR_TOP,
-    RAG_MAX_ITERATIONS,
     RAG_TIMEOUT_GLOBAL,
     RAG_TIMEOUT_PER_STEP,
     RERANK_TOP_K,
@@ -106,6 +105,9 @@ class RagTrace:
     hybrid_results: list[dict] = field(default_factory=list)
     rerank_results: list[dict] = field(default_factory=list)
     parent_groups: list[dict] = field(default_factory=list)
+    # Groups removed by the relevance floor (step 3.6) — kept in the trace so
+    # the Quality page can audit what the noise cut actually removed.
+    groups_dropped: list[dict] = field(default_factory=list)
     perf_ms: dict[str, float] = field(default_factory=dict)
     model: str | None = None
     out_of_scope: bool = False
@@ -127,6 +129,7 @@ class RagTrace:
             "hybrid_results": self.hybrid_results,
             "rerank_results": self.rerank_results,
             "parent_groups": self.parent_groups,
+            "groups_dropped": self.groups_dropped,
             "perf_ms": self.perf_ms,
             "model": self.model,
             "out_of_scope": self.out_of_scope,
@@ -607,24 +610,8 @@ class RAGAgent:
             (time.perf_counter() - t_exp) * 1000, len(results),
         )
 
-        # --- Re-search if insufficient results ---
-        iteration = 0
-        while len(results) < 2 and iteration < RAG_MAX_ITERATIONS:
-            iteration += 1
-            logger.info("Step 2-3 — Re-search iteration %d", iteration)
-            additional = await self._step_with_timeout(
-                self.search_engine.search(
-                    query, organisation_id, top_k=RERANK_TOP_K * 2,
-                ),
-                fallback=[],
-            )
-            seen = {(r.document_id, r.chunk_index) for r in results}
-            for r in additional:
-                if (r.document_id, r.chunk_index) not in seen:
-                    results.append(r)
-                    seen.add((r.document_id, r.chunk_index))
-            results.sort(key=lambda r: r.score, reverse=True)
-            results = results[:RERANK_TOP_K]
+        # --- Step 3.6: Relevance floor (noise cut) ---
+        results, _dropped = self._apply_score_floor(results)
 
         if not results:
             return RAGResponse(
@@ -781,27 +768,22 @@ class RAGAgent:
             trace.perf_ms["parent_expansion"], len(results),
         )
 
-        iteration = 0
-        while len(results) < 2 and iteration < RAG_MAX_ITERATIONS:
-            iteration += 1
-            t_re = time.perf_counter()
-            logger.info("[PERF] Step 2-3 — Re-search iteration %d", iteration)
-            additional = await self._step_with_timeout(
-                self.search_engine.search(
-                    query, organisation_id, top_k=RERANK_TOP_K * 2,
-                ),
-                fallback=[],
-            )
-            seen = {(r.document_id, r.chunk_index) for r in results}
-            for r in additional:
-                if (r.document_id, r.chunk_index) not in seen:
-                    results.append(r)
-                    seen.add((r.document_id, r.chunk_index))
-            results.sort(key=lambda r: r.score, reverse=True)
-            results = results[:RERANK_TOP_K]
+        # Step 3.6: Relevance floor — drop weak groups (noise) before they
+        # reach the source panel and the generation context.
+        results, dropped = self._apply_score_floor(results)
+        if dropped:
+            trace.groups_dropped = [
+                {
+                    "doc_name": (r.doc_name or "")[:120],
+                    "source_type": r.source_type,
+                    "score": round(float(r.score), 4),
+                }
+                for r in dropped
+            ]
             logger.info(
-                "[PERF] Step 2-3 — Re-search iteration %d %.0fms | now %d results",
-                iteration, (time.perf_counter() - t_re) * 1000, len(results),
+                "[FLOOR] Dropped %d low-relevance group(s) (< %.2f): %s",
+                len(dropped), rag_config.SOURCE_SCORE_FLOOR,
+                ", ".join(f"{r.source_type}:{r.score:.2f}" for r in dropped),
             )
 
         t3 = time.perf_counter()
@@ -1254,11 +1236,55 @@ class RAGAgent:
         if variants and query not in variants:
             variants = [query] + variants
 
-        # Search all variants in parallel. Append one legislation-only search
-        # (using the anchor query, or the raw query if the anchor failed) whose
-        # results are injected into the pool rather than RRF-fused — fusing it
-        # in would dilute it, since the near-duplicate variants all "vote"
-        # jurisprudence and outnumber it.
+        pool = await self._run_variant_searches(
+            variants, legal_anchor, organisation_id,
+            org_idcc_list=org_idcc_list,
+            source_type_filter=source_type_filter,
+            apply_legislation_floor=apply_legislation_floor,
+        )
+
+        # Filet de sécurité : un filtre d'intention peut vider la recherche
+        # (l'org n'a aucun document du type demandé, ou la CCN n'est pas
+        # installée). Mesuré en prod : ~3 % des questions finissaient avec un
+        # pool vide puis des chunks bruts non rerankés. On relance alors le
+        # pipeline complet SANS filtre (plancher législation réactivé) pour
+        # que la chaîne qualité s'applique normalement.
+        if source_type_filter and len(pool) < 3:
+            logger.warning(
+                "[INTENT] Filtered search returned %d candidate(s) — "
+                "retrying without source-type filter", len(pool),
+            )
+            legal_anchor = await self._step_with_timeout(
+                self._generate_legal_anchor(query, org_context=org_context),
+                fallback="",
+            )
+            pool = await self._run_variant_searches(
+                variants, legal_anchor, organisation_id,
+                org_idcc_list=org_idcc_list,
+                source_type_filter=None,
+                apply_legislation_floor=True,
+            )
+
+        return pool, variants
+
+    async def _run_variant_searches(
+        self,
+        variants: list[str],
+        legal_anchor: str,
+        organisation_id: str,
+        org_idcc_list: list[str] | None = None,
+        source_type_filter: list[str] | None = None,
+        apply_legislation_floor: bool = True,
+    ) -> list[SearchResult]:
+        """Search all variants in parallel, fuse with RRF, inject the
+        legislation floor and the articles named by the legal anchor.
+
+        The legislation-only search (using the anchor query, or the first
+        variant if the anchor failed) is injected into the pool rather than
+        RRF-fused — fusing it in would dilute it, since the near-duplicate
+        variants all "vote" jurisprudence and outnumber it.
+        """
+        t1 = time.perf_counter()
         search_tasks = [
             self.search_engine.search(
                 variant, organisation_id, top_k=TOP_K,
@@ -1272,7 +1298,7 @@ class RAGAgent:
             leg_task_idx = len(search_tasks)
             search_tasks.append(
                 self.search_engine.search(
-                    legal_anchor or query, organisation_id, top_k=TOP_K,
+                    legal_anchor or variants[0], organisation_id, top_k=TOP_K,
                     org_idcc_list=org_idcc_list,
                     source_type_filter=_LEGISLATION_SOURCE_TYPES,
                 )
@@ -1300,7 +1326,7 @@ class RAGAgent:
         )
 
         if not valid_results:
-            return [], variants
+            return []
 
         # Fuse variant results with RRF, then inject the legislation floor.
         fused = self._reciprocal_rank_fusion(valid_results)
@@ -1355,7 +1381,29 @@ class RAGAgent:
                         added, len(pool),
                     )
 
-        return pool, variants
+        return pool
+
+    @staticmethod
+    def _apply_score_floor(
+        results: list[SearchResult],
+    ) -> tuple[list[SearchResult], list[SearchResult]]:
+        """Step 3.6: drop parent groups below the relevance floor.
+
+        Calibrated on prod traces (june 2026): ~52 % of served groups scored
+        < 0.5 and were mostly off-topic noise — shown to the user and paid for
+        in the generation context. The floor cuts that tail on the CLEAN
+        rerank scores (must run before the cross-reference boost). Guards:
+        the SOURCE_FLOOR_MIN_KEEP best groups always survive, so the LLM is
+        never starved even on a weak retrieval.
+
+        Returns (kept, dropped), both in descending score order.
+        """
+        if not results:
+            return results, []
+        ranked = sorted(results, key=lambda r: r.score, reverse=True)
+        above = sum(1 for r in ranked if r.score >= rag_config.SOURCE_SCORE_FLOOR)
+        cut = max(above, rag_config.SOURCE_FLOOR_MIN_KEEP)
+        return ranked[:cut], ranked[cut:]
 
     def _cross_reference(self, results: list[SearchResult]) -> list[SearchResult]:
         """Step 4: Boost documents cited multiple times."""
