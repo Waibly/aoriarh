@@ -170,3 +170,13 @@ class TestBuildUserMessageCondensed:
             "Question simple", context="[Source]\nContenu : x",
         )
         assert "replacée dans le contexte" not in msg
+
+
+class TestBuildUserMessageDate:
+    def test_date_du_jour_present(self, agent):
+        msg = agent._build_user_message(
+            "Le décret est-il en vigueur ?", context="[Source]\nContenu : x",
+        )
+        assert "Date du jour :" in msg
+        # La date précède la question pour cadrer le raisonnement temporel
+        assert msg.index("Date du jour :") < msg.index("Question :")
