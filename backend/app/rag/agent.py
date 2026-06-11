@@ -1092,18 +1092,32 @@ class RAGAgent:
             )
         return (response.choices[0].message.content or "").strip()
 
+    # Libellés des consignes du prompt d'expansion que le modèle recopie en
+    # tête de variante (~42 % des questions en prod). Laissés tels quels, ils
+    # partent dans la recherche : "QUESTION CORRIGÉE", "MOTS-CLÉS"… deviennent
+    # des termes BM25 parasites et décalent l'embedding dense.
+    _VARIANT_LABEL_RE = re.compile(
+        r"^(?:question\s+corrig[ée]e|intention\s+rh|terminologie\s+juridique"
+        r"|mots[-\s]?cl[ée]s|variante\s+ccn)\s*:\s*",
+        re.IGNORECASE,
+    )
+
     @staticmethod
     def _parse_variants(content: str, original_query: str) -> list[str]:
-        """Parse numbered variants from LLM response."""
+        """Parse numbered variants from LLM response (labels stripped, deduped)."""
         variants: list[str] = []
+        seen: set[str] = set()
         for line in content.strip().split("\n"):
             line = line.strip()
             # Match lines starting with "1.", "2.", "3." (with optional space/dash after)
             match = re.match(r"^\d+[\.\)]\s*[-–—]?\s*(.+)$", line)
-            if match:
-                variant = match.group(1).strip()
-                if variant:
-                    variants.append(variant)
+            if not match:
+                continue
+            variant = RAGAgent._VARIANT_LABEL_RE.sub("", match.group(1).strip()).strip()
+            key = " ".join(variant.lower().split())
+            if variant and key not in seen:
+                seen.add(key)
+                variants.append(variant)
 
         if not variants:
             return [original_query]
@@ -1235,8 +1249,12 @@ class RAGAgent:
 
         # Always include the original query as variant #0 so identifiers like
         # article numbers / numéros de pourvoi (which are stripped from LLM
-        # variants by design) are still searched.
-        if variants and query not in variants:
+        # variants by design) are still searched. Variants that only restate
+        # the original (typically the "question corrigée") are dropped: each
+        # duplicate costs one Voyage embedding + one Qdrant query for nothing.
+        if variants:
+            norm_q = _normalize_question(query)
+            variants = [v for v in variants if _normalize_question(v) != norm_q]
             variants = [query] + variants
 
         pool = await self._run_variant_searches(

@@ -147,8 +147,11 @@ class TestExpandQueries:
         assert len(variants) == 5
         agent.llm.chat.completions.create.assert_called_once()
         call_args = agent.llm.chat.completions.create.call_args
-        assert call_args.kwargs["temperature"] == 0.3
-        assert call_args.kwargs["max_tokens"] == 600
+        # Régression gpt-5 : ni temperature (≠1 rejetée, erreur 400), ni
+        # max_tokens (remplacé par max_completion_tokens).
+        assert "temperature" not in call_args.kwargs
+        assert "max_tokens" not in call_args.kwargs
+        assert call_args.kwargs["max_completion_tokens"] == 800
 
     @pytest.mark.asyncio
     async def test_expand_injects_org_context_in_user_message(self, agent):
@@ -410,3 +413,46 @@ class TestSearchWithExpansion:
         doc_ids = {r.document_id for r in results}
         assert "code-leg" in doc_ids  # legislation floor injected the article
         assert "jur1" in doc_ids
+
+
+class TestParseVariantsLabelsAndDedup:
+    """Le modèle recopie parfois les libellés du prompt (« QUESTION
+    CORRIGÉE : … ») en tête de variante — observé sur 42 % des questions
+    prod. Ils doivent être retirés avant la recherche, et les variantes
+    identiques dédupliquées."""
+
+    def test_strips_known_labels(self):
+        content = (
+            "1. QUESTION CORRIGÉE : Obligation de sécurité\n"
+            "2. INTENTION RH : obligations de l'employeur en santé-sécurité\n"
+            "3. TERMINOLOGIE JURIDIQUE : obligation de sécurité de résultat\n"
+            "4. MOTS-CLÉS : obligation sécurité employeur prévention\n"
+            "5. VARIANTE CCN : IDCC 1486 convention collective sécurité"
+        )
+        variants = RAGAgent._parse_variants(content, "obligation de sécurité")
+        assert variants == [
+            "Obligation de sécurité",
+            "obligations de l'employeur en santé-sécurité",
+            "obligation de sécurité de résultat",
+            "obligation sécurité employeur prévention",
+            "IDCC 1486 convention collective sécurité",
+        ]
+
+    def test_no_labels_passthrough(self):
+        content = "1. Quel délai de préavis ?\n2. délai congé démission"
+        variants = RAGAgent._parse_variants(content, "préavis")
+        assert variants == ["Quel délai de préavis ?", "délai congé démission"]
+
+    def test_dedupes_identical_variants(self):
+        content = (
+            "1. Obligation de sécurité\n"
+            "2. obligations en santé-sécurité\n"
+            "5. obligation de sécurité"
+        )
+        variants = RAGAgent._parse_variants(content, "obligation de sécurité")
+        assert variants == ["Obligation de sécurité", "obligations en santé-sécurité"]
+
+    def test_does_not_strip_legit_colon_content(self):
+        content = "1. BDESE : contenu obligatoire et rubriques"
+        variants = RAGAgent._parse_variants(content, "bdese")
+        assert variants == ["BDESE : contenu obligatoire et rubriques"]
