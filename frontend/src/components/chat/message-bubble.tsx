@@ -138,7 +138,7 @@ export function MessageBubble({ message, onFeedback }: MessageBubbleProps) {
             {/* Notation de la réponse */}
             {onFeedback && (
               <>
-                <span className="text-muted-foreground ml-1 hidden text-xs sm:inline">
+                <span className="text-foreground ml-1 hidden text-xs sm:inline">
                   Cette réponse est-elle bonne&nbsp;?
                 </span>
                 <Tooltip>
@@ -186,7 +186,7 @@ export function MessageBubble({ message, onFeedback }: MessageBubbleProps) {
               size="sm"
               onClick={handleFiche}
               disabled={ficheLoading}
-              className="ml-auto gap-1.5 border-primary/40 bg-transparent text-primary hover:bg-primary/10 hover:text-primary dark:border-primary/40 dark:bg-transparent dark:text-primary dark:hover:bg-primary/15"
+              className="ml-auto gap-1.5 border-primary/40 bg-white text-primary hover:bg-primary/10 hover:text-primary dark:border-primary/40 dark:bg-card dark:text-primary dark:hover:bg-primary/15"
             >
               {ficheLoading ? (
                 <Loader2 className="size-4 animate-spin" />
