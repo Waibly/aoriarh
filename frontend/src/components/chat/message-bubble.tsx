@@ -8,6 +8,11 @@ import rehypeSanitize from "rehype-sanitize";
 import remarkGfm from "remark-gfm";
 import { Copy, Check, ThumbsUp, ThumbsDown, Send, FileText, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { MessageSources } from "./message-sources";
 import { downloadFiche } from "@/lib/chat-api";
 import { cn } from "@/lib/utils";
@@ -114,73 +119,82 @@ export function MessageBubble({ message, onFeedback }: MessageBubbleProps) {
           </div>
         {!isTemp && (
           <div className="mt-3 flex flex-wrap items-center gap-1.5 rounded-xl border border-border bg-muted/40 px-2.5 py-2">
-            {/* Action principale : génération de la fiche pratique */}
+            {/* Copier la réponse */}
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  className="text-muted-foreground hover:text-foreground"
+                  onClick={handleCopy}
+                  aria-label={copied ? "Copié" : "Copier la réponse"}
+                >
+                  {copied ? <Check className="size-4" /> : <Copy className="size-4" />}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>{copied ? "Copié" : "Copier la réponse"}</TooltipContent>
+            </Tooltip>
+
+            {/* Notation de la réponse */}
+            {onFeedback && (
+              <>
+                <span className="text-muted-foreground ml-1 hidden text-xs sm:inline">
+                  Cette réponse est-elle bonne&nbsp;?
+                </span>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      className={cn(
+                        "text-muted-foreground hover:text-foreground",
+                        message.feedback === "up" &&
+                          "bg-primary/10 text-primary hover:text-primary",
+                      )}
+                      onClick={() => handleFeedback("up")}
+                      aria-label="Bonne réponse"
+                    >
+                      <ThumbsUp className="size-4" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>Bonne réponse</TooltipContent>
+                </Tooltip>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      className={cn(
+                        "text-muted-foreground hover:text-foreground",
+                        message.feedback === "down" &&
+                          "bg-destructive/10 text-destructive hover:text-destructive",
+                      )}
+                      onClick={() => handleFeedback("down")}
+                      aria-label="Réponse à améliorer"
+                    >
+                      <ThumbsDown className="size-4" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>Réponse à améliorer</TooltipContent>
+                </Tooltip>
+              </>
+            )}
+
+            {/* Création de la fiche pratique, à droite */}
             <Button
               variant="outline"
               size="sm"
               onClick={handleFiche}
               disabled={ficheLoading}
-              className="gap-1.5 border-primary/40 bg-transparent text-primary hover:bg-primary/10 hover:text-primary dark:border-primary/40 dark:bg-transparent dark:text-primary dark:hover:bg-primary/15"
+              className="ml-auto gap-1.5 border-primary/40 bg-transparent text-primary hover:bg-primary/10 hover:text-primary dark:border-primary/40 dark:bg-transparent dark:text-primary dark:hover:bg-primary/15"
             >
               {ficheLoading ? (
                 <Loader2 className="size-4 animate-spin" />
               ) : (
                 <FileText className="size-4" />
               )}
-              {ficheLoading ? "Génération…" : "Fiche pratique"}
+              {ficheLoading ? "Génération…" : "Créer une fiche pratique"}
             </Button>
-
-            <div className="bg-border mx-1 h-5 w-px" aria-hidden="true" />
-
-            {/* Copier la réponse */}
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              className="text-muted-foreground hover:text-foreground"
-              onClick={handleCopy}
-              aria-label={copied ? "Copié" : "Copier la réponse"}
-            >
-              {copied ? <Check className="size-4" /> : <Copy className="size-4" />}
-            </Button>
-
-            {/* Notation de la réponse */}
-            {onFeedback && (
-              <>
-                <span className="text-muted-foreground ml-1 hidden text-xs sm:inline">
-                  Utile&nbsp;?
-                </span>
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
-                  className={cn(
-                    "text-muted-foreground hover:text-foreground",
-                    message.feedback === "up" &&
-                      "bg-primary/10 text-primary hover:text-primary",
-                  )}
-                  onClick={() => handleFeedback("up")}
-                  aria-label="Bonne réponse"
-                >
-                  <ThumbsUp className="size-4" />
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
-                  className={cn(
-                    "text-muted-foreground hover:text-foreground",
-                    message.feedback === "down" &&
-                      "bg-destructive/10 text-destructive hover:text-destructive",
-                  )}
-                  onClick={() => handleFeedback("down")}
-                  aria-label="Mauvaise réponse"
-                >
-                  <ThumbsDown className="size-4" />
-                </Button>
-              </>
-            )}
-
-            <span className="text-muted-foreground ml-auto text-xs">
-              {formatTime(message.created_at)}
-            </span>
           </div>
         )}
         {showCommentInput && (
