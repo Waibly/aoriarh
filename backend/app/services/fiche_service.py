@@ -232,7 +232,8 @@ def render_fiche_html(
 <html lang="fr">
 <head><meta charset="utf-8"><title>{_inline(content.titre)}</title>
 <style>
-  @page {{ size: A4; margin: 14mm 0 0; }}
+  @page {{ size: A4; margin: 14mm 0; }}
+  @page:first {{ margin-top: 0; }}
   * {{ box-sizing: border-box; }}
   body {{ font-family: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
          color:#3f3f46; margin:0; font-size:13px; line-height:1.5; }}
