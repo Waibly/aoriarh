@@ -61,6 +61,30 @@ def _load_logo_svg() -> str:
 
 _LOGO_HTML = _load_logo_svg()
 
+
+def _icon(paths: str) -> str:
+    """Petite icône SVG (style lucide) qui hérite de la couleur du texte."""
+    return (
+        '<svg class="section-icon" viewBox="0 0 24 24" fill="none" '
+        'stroke="currentColor" stroke-width="2" stroke-linecap="round" '
+        f'stroke-linejoin="round">{paths}</svg>'
+    )
+
+
+_ICON_CLES = _icon('<circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/>')
+_ICON_WARN = _icon(
+    '<path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/>'
+    '<path d="M12 9v4"/><path d="M12 17h.01"/>'
+)
+_ICON_STEPS = _icon(
+    '<path d="M8 6h13"/><path d="M8 12h13"/><path d="M8 18h13"/>'
+    '<path d="M3 6h.01"/><path d="M3 12h.01"/><path d="M3 18h.01"/>'
+)
+_ICON_SOURCES = _icon(
+    '<path d="M12 7v14"/>'
+    '<path d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"/>'
+)
+
 FICHE_SYSTEM_PROMPT = """\
 Tu mets en forme une réponse juridique RH existante en fiche pratique imprimable.
 Tu ne fais QUE reformater le contenu fourni. Règles absolues :
@@ -69,7 +93,15 @@ Tu ne fais QUE reformater le contenu fourni. Règles absolues :
 - Reprends les tableaux markdown de la source à l'identique dans "tableaux_markdown".
 - N'invente jamais de référence juridique. Les sources sont gérées à part, hors de ta réponse.
 - Style : phrases courtes, une idée par puce, ton concret et actionnable, vocabulaire métier clair.
-- Si la réponse source porte sur un cas particulier non généralisable en fiche, mets eligible=false.
+- Adapte le format à l'information, choisis le bloc le plus lisible :
+  • "tableaux_markdown" : données chiffrées, comparaisons, barèmes, seuils, montants par tranche.
+  • "etapes" : procédure ou chronologie (liste numérotée d'actions dans l'ordre).
+  • "points_cles" : règles et faits clés (puces).
+  • "exceptions" : cas particuliers, pièges, conditions.
+  N'utilise que les blocs pertinents pour cette réponse, laisse les autres vides.
+- Produis une fiche pour TOUTE réponse juridique, y compris un cas particulier propre à l'utilisateur.
+  Mets eligible=false UNIQUEMENT si la réponse ne contient aucune information exploitable
+  (simple salutation, message d'erreur, question hors droit social).
 
 Réponds UNIQUEMENT en JSON valide selon ce schéma exact :
 {
@@ -204,7 +236,7 @@ def render_fiche_html(
 
     if content.points_cles:
         puces = "".join(f"<li>{_inline(p)}</li>" for p in content.points_cles)
-        blocks.append(f"<h2>Points clés</h2><ul>{puces}</ul>")
+        blocks.append(f"<h2>{_ICON_CLES}Points clés</h2><ul>{puces}</ul>")
 
     for table_md in content.tableaux_markdown:
         table_html = _md_table_to_html(table_md)
@@ -214,16 +246,19 @@ def render_fiche_html(
     if content.exceptions:
         items = "".join(f"<li>{_inline(e)}</li>" for e in content.exceptions)
         blocks.append(
-            f'<div class="exceptions"><strong>À surveiller</strong><ul>{items}</ul></div>'
+            f'<div class="exceptions"><strong>{_ICON_WARN}À surveiller</strong>'
+            f"<ul>{items}</ul></div>"
         )
 
     if content.etapes:
         items = "".join(f"<li>{_inline(s)}</li>" for s in content.etapes)
-        blocks.append(f"<h2>Étapes</h2><ol>{items}</ol>")
+        blocks.append(f"<h2>{_ICON_STEPS}Étapes</h2><ol>{items}</ol>")
 
     if sources:
         src_items = "".join(f"<li>{_format_source(s)}</li>" for s in sources)
-        blocks.append(f'<h2>Sources</h2><ul class="sources">{src_items}</ul>')
+        blocks.append(
+            f'<h2>{_ICON_SOURCES}Sources</h2><ul class="sources">{src_items}</ul>'
+        )
 
     org_line = f" — {html.escape(org_name)}" if org_name else ""
     body = "\n".join(blocks)
@@ -247,7 +282,8 @@ def render_fiche_html(
   .essentiel {{ background:#f5f3ff; border-left:4px solid {_VIOLET}; padding:12px 16px;
                font-size:14px; font-weight:600; margin-bottom:20px; }}
   h2 {{ color:{_VIOLET}; font-size:13px; text-transform:uppercase; letter-spacing:.5px;
-       margin:20px 0 8px; }}
+       margin:20px 0 8px; display:flex; align-items:center; gap:6px; }}
+  .section-icon {{ width:14px; height:14px; flex-shrink:0; }}
   ul, ol {{ margin:0 0 16px; padding-left:20px; }}
   li {{ margin-bottom:6px; }}
   table {{ width:100%; border-collapse:collapse; margin:8px 0 16px; font-size:12.5px; }}
@@ -255,6 +291,7 @@ def render_fiche_html(
   th {{ background:#f5f3ff; color:{_VIOLET}; }}
   .exceptions {{ background:#fff7ed; border:1px solid #fed7aa; border-radius:8px;
                 padding:10px 16px; margin-bottom:16px; }}
+  .exceptions strong {{ display:inline-flex; align-items:center; gap:6px; color:#b45309; }}
   .exceptions ul {{ margin:6px 0 0; }}
   .sources {{ font-size:12px; color:#5f6b6a; }}
   .footer {{ border-top:1px solid #ede9fe; margin:8px 32px 0; padding:14px 0; font-size:11px;
@@ -341,8 +378,8 @@ async def generate_fiche_content(
             eligible=False,
             content=None,
             reason=(
-                "Cette réponse porte sur un cas précis et ne se prête pas à une "
-                "fiche pratique générale."
+                "Cette réponse ne contient pas d'information juridique à mettre "
+                "en fiche."
             ),
         )
 
