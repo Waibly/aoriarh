@@ -4,7 +4,11 @@ version = "0.1.0"
 description = "AORIA RH - Assistant juridique RH par IA"
 requires-python = ">=3.12"
 dependencies = [
-    "fastapi>=0.115.0",
+    # Borné <0.116 : FastAPI 0.116+ tire Starlette 1.x, dont la nouvelle classe
+    # de route `_IncludedRouter` casse prometheus-fastapi-instrumentator 8.x
+    # (AttributeError sur route.path → 500 sur tout endpoint routé). Tant que
+    # l'instrumentator ne supporte pas Starlette 1.x, on reste sur la baseline.
+    "fastapi>=0.115.0,<0.116.0",
     "uvicorn[standard]>=0.34.0",
     "sqlalchemy[asyncio]>=2.0.36",
     "asyncpg>=0.30.0",
