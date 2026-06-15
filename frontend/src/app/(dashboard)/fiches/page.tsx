@@ -123,8 +123,8 @@ export default function FichesPage() {
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl bg-white p-4 dark:bg-card">
       <div className="min-h-0 flex-1 overflow-y-auto">
-        <div className="w-full min-w-0 space-y-4 px-2 py-1 sm:px-4">
-          <div>
+        <div className="w-full min-w-0 px-2 py-1 sm:px-4">
+          <div className="mb-8">
             <h1 className="flex items-center gap-2 text-xl font-semibold">
               <ClipboardList className="h-5 w-5 text-primary" />
               Fiches pratiques
@@ -165,7 +165,7 @@ export default function FichesPage() {
                 return (
                   <Card
                     key={fiche.id}
-                    className="group flex flex-col gap-0 overflow-hidden border border-primary/15 bg-primary/5 py-0 transition-all duration-200 hover:scale-[1.02] hover:shadow-md dark:bg-primary/10"
+                    className="group flex flex-col gap-0 overflow-hidden border border-primary/15 bg-white py-0 transition-shadow hover:shadow-md dark:bg-card"
                   >
                     <CardContent className="flex flex-1 flex-col gap-2 p-4">
                       <div className="bg-primary/10 flex size-9 items-center justify-center rounded-lg">
