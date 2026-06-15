@@ -6,6 +6,7 @@ from app.models.booster_purchase import BoosterPurchase
 from app.models.ccn import CcnReference, OrganisationConvention
 from app.models.conversation import Conversation, Message
 from app.models.document import Document
+from app.models.fiche import Fiche
 from app.models.emailing import (
     EmailCampaign,
     EmailCampaignEvent,
@@ -44,6 +45,7 @@ __all__ = [
     "EmailSequenceStep",
     "EmailSequenceStepBranch",
     "EmailTemplate",
+    "Fiche",
     "Invitation",
     "Membership",
     "Message",

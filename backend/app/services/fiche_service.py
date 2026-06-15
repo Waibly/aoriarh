@@ -77,12 +77,11 @@ class FicheContent:
 
 
 @dataclass
-class FicheResult:
-    """Résultat de génération : soit un PDF, soit un refus motivé."""
+class FicheGeneration:
+    """Résultat de l'appel LLM : contenu structuré, ou refus motivé."""
 
     eligible: bool
-    pdf_bytes: bytes | None
-    filename: str | None
+    content: FicheContent | None
     reason: str | None = None
 
 
@@ -270,20 +269,18 @@ def html_to_pdf(html_str: str) -> bytes:
 # --- Orchestration -------------------------------------------------------
 
 
-async def build_fiche(
+async def generate_fiche_content(
     *,
     question: str,
     answer_markdown: str,
-    sources: list[dict],
-    generated_at: datetime,
-    org_name: str | None = None,
     organisation_id: str | None = None,
     user_id: str | None = None,
-) -> FicheResult:
-    """Génère la fiche pratique PDF à partir d'une réponse RAG existante.
+) -> FicheGeneration:
+    """Appelle le LLM pour produire le contenu structuré de la fiche.
 
-    Renvoie un `FicheResult` : soit le PDF, soit `eligible=False` avec un motif
-    quand la réponse ne se prête pas à une fiche générale.
+    Ne rend pas le PDF (cf. `render_fiche_pdf`) : on stocke ce contenu et on
+    régénère le PDF à la demande avec la date du jour. Renvoie `eligible=False`
+    avec un motif quand la réponse ne se prête pas à une fiche générale.
     """
     user_content = (
         f"Question posée : {question}\n\n"
@@ -318,19 +315,32 @@ async def build_fiche(
     content = parse_fiche_content(raw)
 
     if not content.eligible or not content.titre or not content.points_cles:
-        return FicheResult(
+        return FicheGeneration(
             eligible=False,
-            pdf_bytes=None,
-            filename=None,
+            content=None,
             reason=(
                 "Cette réponse porte sur un cas précis et ne se prête pas à une "
                 "fiche pratique générale."
             ),
         )
 
+    return FicheGeneration(eligible=True, content=content)
+
+
+def render_fiche_pdf(
+    content: FicheContent,
+    sources: list[dict],
+    *,
+    generated_at: datetime,
+    org_name: str | None = None,
+) -> bytes:
+    """Rend le PDF de la fiche à partir du contenu structuré + sources."""
     html_str = render_fiche_html(
         content, sources, generated_at=generated_at, org_name=org_name
     )
-    pdf_bytes = html_to_pdf(html_str)
-    filename = f"fiche-{_slugify(content.titre)}.pdf"
-    return FicheResult(eligible=True, pdf_bytes=pdf_bytes, filename=filename)
+    return html_to_pdf(html_str)
+
+
+def fiche_filename(content: FicheContent) -> str:
+    """Nom de fichier PDF dérivé du titre de la fiche."""
+    return f"fiche-{_slugify(content.titre)}.pdf"

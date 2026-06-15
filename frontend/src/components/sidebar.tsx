@@ -9,6 +9,7 @@ import {
   MessageSquare,
   FileText,
   Files,
+  ClipboardList,
   Building2,
   ShieldCheck,
   Library,
@@ -78,6 +79,7 @@ import type { Conversation } from "@/types/api";
 const navigation = [
   { name: "Nouvelle question", href: "/chat", icon: Scale },
   { name: "Recherche documentaire", href: "/recherche", icon: Search, adminOnly: true },
+  { name: "Fiches pratiques", href: "/fiches", icon: ClipboardList },
   { name: "Documents", href: "/documents", icon: FileText },
   { name: "Organisation", href: "/organisation", icon: Building2 },
   { name: "Équipe", href: "/team", icon: UsersRound, managerOnly: true },

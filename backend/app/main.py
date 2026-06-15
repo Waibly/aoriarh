@@ -36,6 +36,7 @@ from app.api import (
     conversations,
     documents,
     emailing_public,
+    fiches,
     invitations,
     organisations,
     plan_invitations,
@@ -242,6 +243,7 @@ app.include_router(
 app.include_router(invitations.router, prefix="/api/v1", tags=["invitations"])
 app.include_router(team.router, prefix="/api/v1/team", tags=["team"])
 app.include_router(conversations.router, prefix="/api/v1/conversations", tags=["conversations"])
+app.include_router(fiches.router, prefix="/api/v1/fiches", tags=["fiches"])
 app.include_router(billing.router, prefix="/api/v1/billing", tags=["billing"])
 app.include_router(
     admin_billing.router,

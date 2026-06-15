@@ -236,12 +236,19 @@ async def generate_fiche(
     """Transforme une réponse de l'assistant en fiche pratique PDF imprimable.
 
     Met en forme la réponse déjà générée (pas de nouvelle génération RAG) via
-    un appel LLM dédié, puis rend un PDF à la charte AORIA RH. Renvoie 422 si la
-    réponse ne se prête pas à une fiche générale (cas particulier).
+    un appel LLM dédié, persiste la fiche (page « Mes fiches »), puis rend un PDF
+    à la charte AORIA RH. Renvoie 422 si la réponse ne se prête pas à une fiche
+    générale (cas particulier).
     """
+    import dataclasses as _dc
     from datetime import datetime
 
-    from app.services.fiche_service import build_fiche
+    from app.models.fiche import Fiche
+    from app.services.fiche_service import (
+        fiche_filename,
+        generate_fiche_content,
+        render_fiche_pdf,
+    )
 
     message = (await db.execute(
         select(Message).where(Message.id == message_id)
@@ -281,12 +288,9 @@ async def generate_fiche(
     sources = message.sources if isinstance(message.sources, list) else []
 
     try:
-        result = await build_fiche(
+        gen = await generate_fiche_content(
             question=question,
             answer_markdown=message.content,
-            sources=sources,
-            generated_at=datetime.now(),
-            org_name=org,
             organisation_id=str(conversation.organisation_id),
             user_id=str(user.id),
         )
@@ -297,17 +301,45 @@ async def generate_fiche(
             detail="La génération de la fiche a échoué. Veuillez réessayer.",
         )
 
-    if not result.eligible or result.pdf_bytes is None:
+    if not gen.eligible or gen.content is None:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=result.reason or "Cette réponse ne se prête pas à une fiche pratique.",
+            detail=gen.reason or "Cette réponse ne se prête pas à une fiche pratique.",
         )
 
+    # Persiste (ou met à jour) la fiche : une seule par message source, pour
+    # éviter les doublons quand l'utilisateur reclique sur le bouton.
+    content_dict = _dc.asdict(gen.content)
+    existing = (await db.execute(
+        select(Fiche).where(
+            Fiche.user_id == user.id,
+            Fiche.message_id == message.id,
+        )
+    )).scalar_one_or_none()
+    if existing is not None:
+        existing.title = gen.content.titre[:200]
+        existing.content = content_dict
+        existing.sources = sources
+    else:
+        db.add(Fiche(
+            organisation_id=conversation.organisation_id,
+            user_id=user.id,
+            message_id=message.id,
+            title=gen.content.titre[:200],
+            content=content_dict,
+            sources=sources,
+        ))
+    await db.commit()
+
+    pdf_bytes = render_fiche_pdf(
+        gen.content, sources, generated_at=datetime.now(), org_name=org
+    )
+
     return Response(
-        content=result.pdf_bytes,
+        content=pdf_bytes,
         media_type="application/pdf",
         headers={
-            "Content-Disposition": f'attachment; filename="{result.filename}"',
+            "Content-Disposition": f'attachment; filename="{fiche_filename(gen.content)}"',
         },
     )
 
