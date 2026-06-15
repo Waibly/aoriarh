@@ -1,12 +1,15 @@
 "use client";
 
 import { useState, useCallback, useRef } from "react";
+import { useSession } from "next-auth/react";
+import { toast } from "sonner";
 import ReactMarkdown from "react-markdown";
 import rehypeSanitize from "rehype-sanitize";
 import remarkGfm from "remark-gfm";
-import { Copy, Check, ThumbsUp, ThumbsDown, Send } from "lucide-react";
+import { Copy, Check, ThumbsUp, ThumbsDown, Send, FileText, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { MessageSources } from "./message-sources";
+import { downloadFiche } from "@/lib/chat-api";
 import { cn } from "@/lib/utils";
 import type { Message } from "@/types/api";
 
@@ -24,9 +27,11 @@ function formatTime(dateString: string): string {
 
 export function MessageBubble({ message, onFeedback }: MessageBubbleProps) {
   const isUser = message.role === "user";
+  const { data: session } = useSession();
   const [copied, setCopied] = useState(false);
   const [showCommentInput, setShowCommentInput] = useState(false);
   const [comment, setComment] = useState("");
+  const [ficheLoading, setFicheLoading] = useState(false);
   const commentRef = useRef<HTMLInputElement>(null);
 
   const handleCopy = useCallback(async () => {
@@ -68,6 +73,19 @@ export function MessageBubble({ message, onFeedback }: MessageBubbleProps) {
     onFeedback(message.id, "down", comment.trim());
     setShowCommentInput(false);
   }, [message.id, comment, onFeedback]);
+
+  const handleFiche = useCallback(async () => {
+    const token = session?.access_token;
+    if (!token || ficheLoading) return;
+    setFicheLoading(true);
+    try {
+      await downloadFiche(message.id, token);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "La génération de la fiche a échoué.");
+    } finally {
+      setFicheLoading(false);
+    }
+  }, [message.id, session?.access_token, ficheLoading]);
 
   const isTemp = message.id.startsWith("temp-") || message.id.startsWith("partial-");
 
@@ -140,6 +158,24 @@ export function MessageBubble({ message, onFeedback }: MessageBubbleProps) {
             {formatTime(message.created_at)}
           </span>
         </div>
+        {!isTemp && (
+          <div className="mt-3">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleFiche}
+              disabled={ficheLoading}
+              className="text-muted-foreground hover:text-foreground gap-1.5"
+            >
+              {ficheLoading ? (
+                <Loader2 className="size-3.5 animate-spin" />
+              ) : (
+                <FileText className="size-3.5" />
+              )}
+              {ficheLoading ? "Génération…" : "Fiche pratique"}
+            </Button>
+          </div>
+        )}
         {showCommentInput && (
           <div className="mt-2 flex items-center gap-2">
             <input

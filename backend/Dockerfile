@@ -2,6 +2,13 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
+# Libs système requises par WeasyPrint (rendu PDF des fiches pratiques) :
+# pango/cairo/gdk-pixbuf pour le rendu, fonts-dejavu pour le texte.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        libpango-1.0-0 libpangocairo-1.0-0 libpangoft2-1.0-0 \
+        libgdk-pixbuf-2.0-0 libffi8 libcairo2 shared-mime-info fonts-dejavu \
+    && rm -rf /var/lib/apt/lists/*
+
 COPY pyproject.toml .
 RUN pip install --no-cache-dir .
 

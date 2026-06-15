@@ -31,6 +31,7 @@ dependencies = [
     "redis>=5.0.0",
     "structlog>=24.0.0",
     "prometheus-fastapi-instrumentator>=7.0.0",
+    "weasyprint>=63.0",
 ]
 
 [project.optional-dependencies]

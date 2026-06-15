@@ -5,7 +5,7 @@ import time
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
-from fastapi.responses import StreamingResponse
+from fastapi.responses import Response, StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from sqlalchemy import select
@@ -14,6 +14,7 @@ from pydantic import BaseModel
 
 from app.core.database import get_db
 from app.core.dependencies import get_current_user
+from app.models.conversation import Message
 from app.models.document import Document
 from app.models.organisation import Organisation
 from app.models.user import User
@@ -222,6 +223,93 @@ async def update_message_feedback(
         comment=data.comment,
     )
     return message  # type: ignore[return-value]
+
+
+@router.post("/messages/{message_id}/fiche")
+@limiter.limit("10/minute")
+async def generate_fiche(
+    message_id: uuid.UUID,
+    request: Request,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> Response:
+    """Transforme une réponse de l'assistant en fiche pratique PDF imprimable.
+
+    Met en forme la réponse déjà générée (pas de nouvelle génération RAG) via
+    un appel LLM dédié, puis rend un PDF à la charte AORIA RH. Renvoie 422 si la
+    réponse ne se prête pas à une fiche générale (cas particulier).
+    """
+    from datetime import datetime
+
+    from app.services.fiche_service import build_fiche
+
+    message = (await db.execute(
+        select(Message).where(Message.id == message_id)
+    )).scalar_one_or_none()
+
+    if message is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Message non trouvé",
+        )
+
+    # Vérifie l'accès via la conversation (cloisonnement multi-tenant).
+    service = ConversationService(db)
+    conversation = await service.get_conversation(
+        conversation_id=message.conversation_id,
+        user=user,
+    )
+
+    if message.role != "assistant" or not (message.content or "").strip():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Seule une réponse de l'assistant peut être transformée en fiche.",
+        )
+
+    # Retrouve la question (dernier message utilisateur avant cette réponse).
+    question = ""
+    for m in conversation.messages:
+        if m.created_at >= message.created_at:
+            break
+        if m.role == "user":
+            question = m.content
+
+    org = (await db.execute(
+        select(Organisation.name).where(Organisation.id == conversation.organisation_id)
+    )).scalar_one_or_none()
+
+    sources = message.sources if isinstance(message.sources, list) else []
+
+    try:
+        result = await build_fiche(
+            question=question,
+            answer_markdown=message.content,
+            sources=sources,
+            generated_at=datetime.now(),
+            org_name=org,
+            organisation_id=str(conversation.organisation_id),
+            user_id=str(user.id),
+        )
+    except Exception:
+        logger.exception("Échec de génération de fiche pour le message %s", message_id)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="La génération de la fiche a échoué. Veuillez réessayer.",
+        )
+
+    if not result.eligible or result.pdf_bytes is None:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=result.reason or "Cette réponse ne se prête pas à une fiche pratique.",
+        )
+
+    return Response(
+        content=result.pdf_bytes,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'attachment; filename="{result.filename}"',
+        },
+    )
 
 
 @router.post("/{conversation_id}/chat", response_model=ChatResponse)

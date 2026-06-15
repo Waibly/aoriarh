@@ -94,6 +94,46 @@ export async function sendMessage(
   );
 }
 
+/**
+ * Génère la fiche pratique PDF d'une réponse et déclenche son téléchargement.
+ * Lève une erreur dont le message est affichable à l'utilisateur (notamment le
+ * motif de refus quand la réponse ne se prête pas à une fiche — HTTP 422).
+ */
+export async function downloadFiche(
+  messageId: string,
+  token: string,
+): Promise<void> {
+  const response = await authFetch(`/conversations/messages/${messageId}/fiche`, {
+    method: "POST",
+    token,
+  });
+
+  if (!response.ok) {
+    let message = "La génération de la fiche a échoué. Veuillez réessayer.";
+    try {
+      const data = await response.json();
+      if (typeof data?.detail === "string") message = data.detail;
+    } catch {
+      // pas de corps JSON — on garde le message générique
+    }
+    throw new Error(message);
+  }
+
+  const blob = await response.blob();
+  const disposition = response.headers.get("Content-Disposition") || "";
+  const match = disposition.match(/filename="?([^"]+)"?/);
+  const filename = match?.[1] || "fiche-pratique.pdf";
+
+  const url = window.URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.URL.revokeObjectURL(url);
+}
+
 export async function updateMessageFeedback(
   messageId: string,
   feedback: "up" | "down" | null,
