@@ -121,7 +121,7 @@ export default function FichesPage() {
             <div className="bg-muted flex size-12 items-center justify-center rounded-full">
               <ClipboardList className="text-muted-foreground size-6" />
             </div>
-            <p className="font-medium">Aucune fiche pratique pour l'instant</p>
+            <p className="font-medium">Aucune fiche pratique pour l&apos;instant</p>
             <p className="text-muted-foreground max-w-md text-sm">
               Posez une question dans le chat, puis cliquez sur « Fiche pratique »
               sous une réponse pour la transformer en fiche imprimable. Elle
@@ -192,7 +192,7 @@ export default function FichesPage() {
             <DialogTitle>Supprimer cette fiche ?</DialogTitle>
             <DialogDescription>
               « {toDelete?.title} » sera définitivement supprimée. Vous pourrez la
-              régénérer depuis la réponse d'origine dans le chat.
+              régénérer depuis la réponse d&apos;origine dans le chat.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
