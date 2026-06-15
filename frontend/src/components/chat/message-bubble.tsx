@@ -118,14 +118,14 @@ export function MessageBubble({ message, onFeedback }: MessageBubbleProps) {
             </ReactMarkdown>
           </div>
         {!isTemp && (
-          <div className="mt-3 flex flex-wrap items-center gap-1.5 rounded-xl border border-border bg-muted/40 px-2.5 py-2">
+          <div className="my-5 flex flex-wrap items-center gap-1.5 rounded-xl border border-primary/15 bg-primary/5 px-2.5 py-2">
             {/* Copier la réponse */}
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button
                   variant="ghost"
                   size="icon-sm"
-                  className="text-muted-foreground hover:text-foreground"
+                  className="text-primary/70 hover:text-primary"
                   onClick={handleCopy}
                   aria-label={copied ? "Copié" : "Copier la réponse"}
                 >
@@ -147,7 +147,7 @@ export function MessageBubble({ message, onFeedback }: MessageBubbleProps) {
                       variant="ghost"
                       size="icon-sm"
                       className={cn(
-                        "text-muted-foreground hover:text-foreground",
+                        "text-primary/70 hover:text-primary",
                         message.feedback === "up" &&
                           "bg-primary/10 text-primary hover:text-primary",
                       )}
@@ -165,7 +165,7 @@ export function MessageBubble({ message, onFeedback }: MessageBubbleProps) {
                       variant="ghost"
                       size="icon-sm"
                       className={cn(
-                        "text-muted-foreground hover:text-foreground",
+                        "text-primary/70 hover:text-destructive",
                         message.feedback === "down" &&
                           "bg-destructive/10 text-destructive hover:text-destructive",
                       )}
