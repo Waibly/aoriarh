@@ -6,7 +6,7 @@ import { toast } from "sonner";
 import ReactMarkdown from "react-markdown";
 import rehypeSanitize from "rehype-sanitize";
 import remarkGfm from "remark-gfm";
-import { Copy, Check, ThumbsUp, ThumbsDown, Send, FileText, Loader2 } from "lucide-react";
+import { Copy, Check, ThumbsUp, ThumbsDown, Send, ClipboardList, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Tooltip,
@@ -191,7 +191,7 @@ export function MessageBubble({ message, onFeedback }: MessageBubbleProps) {
               {ficheLoading ? (
                 <Loader2 className="size-4 animate-spin" />
               ) : (
-                <FileText className="size-4" />
+                <ClipboardList className="size-4" />
               )}
               {ficheLoading ? "Génération…" : "Créer une fiche pratique"}
             </Button>
