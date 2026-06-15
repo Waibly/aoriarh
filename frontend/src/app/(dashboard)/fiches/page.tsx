@@ -121,21 +121,18 @@ export default function FichesPage() {
   }, [token, toDelete]);
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl bg-white p-4 dark:bg-card">
-      <div className="min-h-0 flex-1 overflow-y-auto">
-        <div className="w-full min-w-0 px-2 py-1 sm:px-4">
-          <div className="mb-8">
-            <h1 className="flex items-center gap-2 text-xl font-semibold">
-              <ClipboardList className="h-5 w-5 text-primary" />
-              Fiches pratiques
-            </h1>
-            <p className="text-muted-foreground mt-1 text-sm">
-              Les fiches que vous avez générées depuis vos réponses. Le PDF est
-              recréé à chaque téléchargement, avec la date du jour.
-            </p>
-          </div>
-
-          {loading ? (
+    <div className="flex min-h-0 flex-1 flex-col gap-6">
+      <div className="min-w-0">
+        <h1 className="text-2xl font-semibold tracking-tight">Fiches pratiques</h1>
+        <p className="text-muted-foreground mt-1 text-sm">
+          Les fiches que vous avez générées depuis vos réponses. Le PDF est
+          recréé à chaque téléchargement, avec la date du jour.
+        </p>
+      </div>
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl bg-white p-4 dark:bg-card">
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          <div className="w-full min-w-0 px-2 py-1 sm:px-4">
+            {loading ? (
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
               {[0, 1, 2, 3].map((i) => (
                 <Skeleton key={i} className="h-44 w-full rounded-xl" />
@@ -242,6 +239,7 @@ export default function FichesPage() {
               })}
             </div>
           )}
+          </div>
         </div>
       </div>
 
