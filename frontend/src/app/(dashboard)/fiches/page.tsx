@@ -2,13 +2,14 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
-import { ClipboardList, Download, Loader2, Trash2, TriangleAlert } from "lucide-react";
+import { ClipboardList, Download, Eye, Loader2, Trash2, TriangleAlert } from "lucide-react";
 import { toast } from "sonner";
 import { useOrg } from "@/lib/org-context";
 import {
   listFiches,
   deleteFiche,
   downloadFicheById,
+  viewFicheById,
   type Fiche,
 } from "@/lib/fiches-api";
 import { Button } from "@/components/ui/button";
@@ -21,6 +22,11 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 
@@ -48,7 +54,7 @@ export default function FichesPage() {
 
   const [fiches, setFiches] = useState<Fiche[]>([]);
   const [loading, setLoading] = useState(true);
-  const [downloadingId, setDownloadingId] = useState<string | null>(null);
+  const [busyId, setBusyId] = useState<string | null>(null);
   const [toDelete, setToDelete] = useState<Fiche | null>(null);
   const [deleting, setDeleting] = useState(false);
 
@@ -69,19 +75,34 @@ export default function FichesPage() {
     fetchFiches();
   }, [fetchFiches]);
 
+  const handleView = useCallback(
+    async (fiche: Fiche) => {
+      if (!token || busyId) return;
+      setBusyId(fiche.id);
+      try {
+        await viewFicheById(fiche.id, token);
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "L'aperçu a échoué.");
+      } finally {
+        setBusyId(null);
+      }
+    },
+    [token, busyId],
+  );
+
   const handleDownload = useCallback(
     async (fiche: Fiche) => {
-      if (!token || downloadingId) return;
-      setDownloadingId(fiche.id);
+      if (!token || busyId) return;
+      setBusyId(fiche.id);
       try {
         await downloadFicheById(fiche.id, token);
       } catch (err) {
         toast.error(err instanceof Error ? err.message : "Le téléchargement a échoué.");
       } finally {
-        setDownloadingId(null);
+        setBusyId(null);
       }
     },
-    [token, downloadingId],
+    [token, busyId],
   );
 
   const handleDelete = useCallback(async () => {
@@ -102,7 +123,7 @@ export default function FichesPage() {
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl bg-white p-4 dark:bg-card">
       <div className="min-h-0 flex-1 overflow-y-auto">
-        <div className="mx-auto w-full min-w-0 max-w-4xl space-y-4 px-2 py-1 sm:px-4">
+        <div className="w-full min-w-0 space-y-4 px-2 py-1 sm:px-4">
           <div>
             <h1 className="flex items-center gap-2 text-xl font-semibold">
               <ClipboardList className="h-5 w-5 text-primary" />
@@ -115,80 +136,111 @@ export default function FichesPage() {
           </div>
 
           {loading ? (
-        <div className="space-y-3">
-          {[0, 1, 2].map((i) => (
-            <Skeleton key={i} className="h-20 w-full rounded-xl" />
-          ))}
-        </div>
-      ) : fiches.length === 0 ? (
-        <Card className="border-dashed">
-          <CardContent className="flex flex-col items-center gap-3 py-14 text-center">
-            <div className="bg-muted flex size-12 items-center justify-center rounded-full">
-              <ClipboardList className="text-muted-foreground size-6" />
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+              {[0, 1, 2, 3].map((i) => (
+                <Skeleton key={i} className="h-44 w-full rounded-xl" />
+              ))}
             </div>
-            <p className="font-medium">Aucune fiche pratique pour l&apos;instant</p>
-            <p className="text-muted-foreground max-w-md text-sm">
-              Posez une question dans le chat, puis cliquez sur « Fiche pratique »
-              sous une réponse pour la transformer en fiche imprimable. Elle
-              apparaîtra ici.
-            </p>
-          </CardContent>
-        </Card>
-      ) : (
-        <div className="space-y-3">
-          {fiches.map((fiche) => {
-            const months = monthsSince(fiche.created_at);
-            const stale =
-              (Date.now() - new Date(fiche.created_at).getTime()) / 86_400_000 >
-              STALE_AFTER_DAYS;
-            return (
-              <Card key={fiche.id}>
-                <CardContent className="flex flex-wrap items-center gap-4 py-4">
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate font-medium">{fiche.title}</p>
-                    <div className="text-muted-foreground mt-1 flex flex-wrap items-center gap-2 text-xs">
-                      <span>Créée le {formatDate(fiche.created_at)}</span>
+          ) : fiches.length === 0 ? (
+            <Card className="border-dashed">
+              <CardContent className="flex flex-col items-center gap-3 py-14 text-center">
+                <div className="bg-muted flex size-12 items-center justify-center rounded-full">
+                  <ClipboardList className="text-muted-foreground size-6" />
+                </div>
+                <p className="font-medium">Aucune fiche pratique pour l&apos;instant</p>
+                <p className="text-muted-foreground max-w-md text-sm">
+                  Posez une question dans le chat, puis cliquez sur « Créer une
+                  fiche pratique » sous une réponse. Elle apparaîtra ici.
+                </p>
+              </CardContent>
+            </Card>
+          ) : (
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+              {fiches.map((fiche) => {
+                const months = monthsSince(fiche.created_at);
+                const stale =
+                  (Date.now() - new Date(fiche.created_at).getTime()) / 86_400_000 >
+                  STALE_AFTER_DAYS;
+                const busy = busyId === fiche.id;
+                return (
+                  <Card
+                    key={fiche.id}
+                    className="group flex flex-col gap-0 overflow-hidden border border-primary/15 bg-primary/5 py-0 transition-all duration-200 hover:scale-[1.02] hover:shadow-md dark:bg-primary/10"
+                  >
+                    <CardContent className="flex flex-1 flex-col gap-2 p-4">
+                      <div className="bg-primary/10 flex size-9 items-center justify-center rounded-lg">
+                        <ClipboardList className="text-primary size-5" />
+                      </div>
+                      <p className="line-clamp-2 text-sm font-semibold leading-snug">
+                        {fiche.title}
+                      </p>
+                      <p className="text-muted-foreground mt-auto text-xs">
+                        Créée le {formatDate(fiche.created_at)}
+                      </p>
                       {stale && (
                         <Badge
                           variant="outline"
-                          className="border-amber-500/40 text-amber-600 dark:text-amber-400"
+                          className="w-fit border-amber-500/40 text-amber-600 dark:text-amber-400"
                         >
                           <TriangleAlert className="mr-1 size-3" />
-                          Il y a {months} mois — à vérifier
+                          {months} mois — à vérifier
                         </Badge>
                       )}
+                    </CardContent>
+                    <div className="flex items-center justify-end gap-0.5 border-t border-primary/10 px-2 py-1.5">
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="icon-sm"
+                            className="text-muted-foreground hover:text-primary"
+                            onClick={() => handleView(fiche)}
+                            disabled={busy}
+                            aria-label="Voir la fiche"
+                          >
+                            {busy ? (
+                              <Loader2 className="size-4 animate-spin" />
+                            ) : (
+                              <Eye className="size-4" />
+                            )}
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>Voir</TooltipContent>
+                      </Tooltip>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="icon-sm"
+                            className="text-muted-foreground hover:text-primary"
+                            onClick={() => handleDownload(fiche)}
+                            disabled={busy}
+                            aria-label="Télécharger la fiche"
+                          >
+                            <Download className="size-4" />
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>Télécharger</TooltipContent>
+                      </Tooltip>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="icon-sm"
+                            className="text-muted-foreground hover:text-destructive"
+                            onClick={() => setToDelete(fiche)}
+                            aria-label="Supprimer la fiche"
+                          >
+                            <Trash2 className="size-4" />
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>Supprimer</TooltipContent>
+                      </Tooltip>
                     </div>
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="gap-1.5 border-primary/40 bg-transparent text-primary hover:bg-primary/10 hover:text-primary"
-                      onClick={() => handleDownload(fiche)}
-                      disabled={downloadingId === fiche.id}
-                    >
-                      {downloadingId === fiche.id ? (
-                        <Loader2 className="size-4 animate-spin" />
-                      ) : (
-                        <Download className="size-4" />
-                      )}
-                      PDF
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon-sm"
-                      className="text-muted-foreground hover:text-destructive"
-                      onClick={() => setToDelete(fiche)}
-                      aria-label="Supprimer la fiche"
-                    >
-                      <Trash2 className="size-4" />
-                    </Button>
-                  </div>
-                </CardContent>
-              </Card>
-            );
-          })}
-        </div>
+                  </Card>
+                );
+              })}
+            </div>
           )}
         </div>
       </div>
