@@ -101,10 +101,10 @@ export function MessageSources({ sources }: MessageSourcesProps) {
           {sources.length > 1 ? "s" : ""}
         </CollapsibleTrigger>
         <CollapsibleContent>
-          <div className="mt-2 space-y-4">
+          <div className="mt-3 space-y-7">
             {groups.map((group) => (
               <div key={group.key}>
-                <h4 className="mb-2 px-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                <h4 className="mb-3 px-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                   {group.label} ({group.sources.length})
                 </h4>
                 <div className="space-y-2">

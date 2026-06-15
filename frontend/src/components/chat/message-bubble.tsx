@@ -118,7 +118,7 @@ export function MessageBubble({ message, onFeedback }: MessageBubbleProps) {
             </ReactMarkdown>
           </div>
         {!isTemp && (
-          <div className="my-5 flex flex-wrap items-center gap-1.5 rounded-xl border border-primary/15 bg-primary/5 px-2.5 py-2">
+          <div className="my-8 flex flex-wrap items-center gap-1.5 rounded-xl border border-primary/15 bg-primary/5 px-2.5 py-2">
             {/* Copier la réponse */}
             <Tooltip>
               <TooltipTrigger asChild>
