@@ -100,16 +100,21 @@ export default function FichesPage() {
   }, [token, toDelete]);
 
   return (
-    <div className="mx-auto w-full max-w-4xl px-4 py-8">
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold tracking-tight">Fiches pratiques</h1>
-        <p className="text-muted-foreground mt-1 text-sm">
-          Les fiches que vous avez générées depuis vos réponses. Le PDF est
-          recréé à chaque téléchargement, avec la date du jour.
-        </p>
-      </div>
+    <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl bg-white p-4 dark:bg-card">
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        <div className="mx-auto w-full min-w-0 max-w-4xl space-y-4 px-2 py-1 sm:px-4">
+          <div>
+            <h1 className="flex items-center gap-2 text-xl font-semibold">
+              <ClipboardList className="h-5 w-5 text-primary" />
+              Fiches pratiques
+            </h1>
+            <p className="text-muted-foreground mt-1 text-sm">
+              Les fiches que vous avez générées depuis vos réponses. Le PDF est
+              recréé à chaque téléchargement, avec la date du jour.
+            </p>
+          </div>
 
-      {loading ? (
+          {loading ? (
         <div className="space-y-3">
           {[0, 1, 2].map((i) => (
             <Skeleton key={i} className="h-20 w-full rounded-xl" />
@@ -184,7 +189,9 @@ export default function FichesPage() {
             );
           })}
         </div>
-      )}
+          )}
+        </div>
+      </div>
 
       <Dialog open={toDelete !== null} onOpenChange={(open) => !open && setToDelete(null)}>
         <DialogContent>
