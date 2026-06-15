@@ -78,7 +78,6 @@ import type { Conversation } from "@/types/api";
 
 const navigation = [
   { name: "Nouvelle question", href: "/chat", icon: Scale },
-  { name: "Recherche documentaire", href: "/recherche", icon: Search, adminOnly: true },
   { name: "Fiches pratiques", href: "/fiches", icon: ClipboardList },
   { name: "Documents", href: "/documents", icon: FileText },
   { name: "Organisation", href: "/organisation", icon: Building2 },
@@ -435,7 +434,6 @@ export function Sidebar({
         <nav className="space-y-1 px-2 py-2">
           {navigation
             .filter((item) => {
-              if (item.adminOnly) return session?.user?.role === "admin";
               if (item.managerOnly)
                 return (
                   session?.user?.role === "manager" ||
@@ -538,6 +536,21 @@ export function Sidebar({
                   <Link href="/admin/corpus">
                     <Library className="mr-2 h-5 w-5" />
                     Corpus juridique
+                  </Link>
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className={cn(
+                    "w-full justify-start font-normal",
+                    pathname.startsWith("/recherche") &&
+                      "bg-accent text-accent-foreground font-medium",
+                  )}
+                  asChild
+                >
+                  <Link href="/recherche">
+                    <Search className="mr-2 h-5 w-5" />
+                    Recherche documentaire
                   </Link>
                 </Button>
                 <Button
