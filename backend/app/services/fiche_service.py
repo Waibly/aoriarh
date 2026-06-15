@@ -20,6 +20,7 @@ import logging
 import re
 from dataclasses import dataclass
 from datetime import datetime
+from pathlib import Path
 
 import httpx
 from openai import AsyncOpenAI
@@ -40,6 +41,25 @@ _llm = AsyncOpenAI(
 
 # Couleurs de la charte (cf. app/services/email/templates.py).
 _VIOLET = "#652BB0"
+
+
+def _load_logo_svg() -> str:
+    """Logo AORIA RH (version blanche) à inliner dans l'en-tête violet.
+
+    Renvoie le SVG sans le prologue XML (inutile inline). Repli sur le texte
+    « AORIA RH » si le fichier est introuvable, pour ne jamais casser le rendu.
+    """
+    try:
+        raw = (Path(__file__).parent / "assets" / "logo-aoria-white.svg").read_text(
+            encoding="utf-8"
+        )
+        return re.sub(r"<\?xml[^>]*\?>\s*", "", raw).strip()
+    except OSError:
+        logger.warning("Logo AORIA RH introuvable — repli sur le texte")
+        return '<span class="logo-fallback">AORIA RH</span>'
+
+
+_LOGO_HTML = _load_logo_svg()
 
 FICHE_SYSTEM_PROMPT = """\
 Tu mets en forme une réponse juridique RH existante en fiche pratique imprimable.
@@ -217,8 +237,9 @@ def render_fiche_html(
   body {{ font-family: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
          color:#3f3f46; margin:0; font-size:13px; line-height:1.5; }}
   .header {{ background:{_VIOLET}; padding:20px 32px; text-align:center; }}
-  .header h1 {{ color:#fff; font-size:20px; font-weight:700; margin:0; letter-spacing:.5px; }}
-  .header .tag {{ color:#ede9fe; font-size:11px; margin-top:4px; text-transform:uppercase;
+  .header svg {{ height:34px; width:auto; }}
+  .header .logo-fallback {{ color:#fff; font-size:20px; font-weight:700; letter-spacing:.5px; }}
+  .header .tag {{ color:#ede9fe; font-size:11px; margin-top:6px; text-transform:uppercase;
                  letter-spacing:1px; }}
   .body {{ padding:24px 32px; }}
   h1.titre {{ color:{_VIOLET}; font-size:22px; font-weight:700; margin:0 0 12px; }}
@@ -241,7 +262,7 @@ def render_fiche_html(
 </style></head>
 <body>
   <div class="header">
-    <h1>AORIA RH</h1>
+    {_LOGO_HTML}
     <div class="tag">Fiche pratique</div>
   </div>
   <div class="body">
