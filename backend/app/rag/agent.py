@@ -1095,7 +1095,12 @@ class RAGAgent:
                 {"role": "system", "content": _LEGAL_ANCHOR_PROMPT},
                 {"role": "user", "content": self._build_expand_user_message(query, org_context)},
             ],
-            max_completion_tokens=400,
+            # gpt-5-mini en mode raisonnement consomme une partie du budget en
+            # reasoning tokens. À 400, le raisonnement épuisait le budget et le
+            # contenu revenait VIDE ~3 fois sur 4 (finish_reason=length), donc
+            # l'injection par numéro ne se déclenchait jamais. Mesuré : à 1500,
+            # 0 ancre vide sur 4 (le texte utile ne fait que ~350 tokens).
+            max_completion_tokens=1500,
             reasoning_effort="minimal",
         )
         if response.usage:
@@ -1396,7 +1401,13 @@ class RAGAgent:
         # L1235-3 passe d'absent à visible, sans régression sur les autres
         # requêtes. Le reranker reste seul juge de l'ordre final.
         if apply_legislation_floor and legal_anchor:
-            anchor_arts = detect_identifiers(legal_anchor).get("article_nums", [])[:3]
+            # Plafond relevé de 3 à 12 : les questions de procédure ("étapes des
+            # élections du CSE") s'appuient sur tout un bloc d'articles (L2314-1
+            # à -33). À 3, on ne récupérait que les premiers et on jetait les
+            # articles de délai/déclenchement (L2314-4, L2314-5...). Les articles
+            # injectés restent soumis au reranker et au plancher de score : pour
+            # une question pointue l'ancre ne nomme de toute façon que 1-3 articles.
+            anchor_arts = detect_identifiers(legal_anchor).get("article_nums", [])[:12]
             if anchor_arts:
                 try:
                     anchor_chunks = fetch_by_identifiers(
