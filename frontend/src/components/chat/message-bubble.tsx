@@ -112,68 +112,75 @@ export function MessageBubble({ message, onFeedback }: MessageBubbleProps) {
               {message.content}
             </ReactMarkdown>
           </div>
-        <div className="mt-2 flex items-center gap-2 opacity-0 transition-opacity group-hover/message:opacity-100">
-          {!isTemp && (
-            <>
-              <Button
-                variant="ghost"
-                size="icon-xs"
-                className="text-muted-foreground hover:text-foreground"
-                onClick={handleCopy}
-                aria-label={copied ? "Copié" : "Copier la réponse"}
-              >
-                {copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
-              </Button>
-              {onFeedback && (
-                <>
-                  <Button
-                    variant="ghost"
-                    size="icon-xs"
-                    className={cn(
-                      "text-muted-foreground hover:text-foreground",
-                      message.feedback === "up" && "text-primary hover:text-primary",
-                    )}
-                    onClick={() => handleFeedback("up")}
-                    aria-label="Bonne réponse"
-                  >
-                    <ThumbsUp className="size-3.5" />
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="icon-xs"
-                    className={cn(
-                      "text-muted-foreground hover:text-foreground",
-                      message.feedback === "down" && "text-destructive hover:text-destructive",
-                    )}
-                    onClick={() => handleFeedback("down")}
-                    aria-label="Mauvaise réponse"
-                  >
-                    <ThumbsDown className="size-3.5" />
-                  </Button>
-                </>
-              )}
-            </>
-          )}
-          <span className="text-muted-foreground text-xs">
-            {formatTime(message.created_at)}
-          </span>
-        </div>
         {!isTemp && (
-          <div className="mt-3">
+          <div className="mt-3 flex flex-wrap items-center gap-1.5 rounded-xl border border-border bg-muted/40 px-2.5 py-2">
+            {/* Action principale : génération de la fiche pratique */}
             <Button
               variant="outline"
               size="sm"
               onClick={handleFiche}
               disabled={ficheLoading}
-              className="text-muted-foreground hover:text-foreground gap-1.5"
+              className="gap-1.5 border-primary/40 bg-transparent text-primary hover:bg-primary/10 hover:text-primary dark:border-primary/40 dark:bg-transparent dark:text-primary dark:hover:bg-primary/15"
             >
               {ficheLoading ? (
-                <Loader2 className="size-3.5 animate-spin" />
+                <Loader2 className="size-4 animate-spin" />
               ) : (
-                <FileText className="size-3.5" />
+                <FileText className="size-4" />
               )}
               {ficheLoading ? "Génération…" : "Fiche pratique"}
             </Button>
+
+            <div className="bg-border mx-1 h-5 w-px" aria-hidden="true" />
+
+            {/* Copier la réponse */}
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              className="text-muted-foreground hover:text-foreground"
+              onClick={handleCopy}
+              aria-label={copied ? "Copié" : "Copier la réponse"}
+            >
+              {copied ? <Check className="size-4" /> : <Copy className="size-4" />}
+            </Button>
+
+            {/* Notation de la réponse */}
+            {onFeedback && (
+              <>
+                <span className="text-muted-foreground ml-1 hidden text-xs sm:inline">
+                  Utile&nbsp;?
+                </span>
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  className={cn(
+                    "text-muted-foreground hover:text-foreground",
+                    message.feedback === "up" &&
+                      "bg-primary/10 text-primary hover:text-primary",
+                  )}
+                  onClick={() => handleFeedback("up")}
+                  aria-label="Bonne réponse"
+                >
+                  <ThumbsUp className="size-4" />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  className={cn(
+                    "text-muted-foreground hover:text-foreground",
+                    message.feedback === "down" &&
+                      "bg-destructive/10 text-destructive hover:text-destructive",
+                  )}
+                  onClick={() => handleFeedback("down")}
+                  aria-label="Mauvaise réponse"
+                >
+                  <ThumbsDown className="size-4" />
+                </Button>
+              </>
+            )}
+
+            <span className="text-muted-foreground ml-auto text-xs">
+              {formatTime(message.created_at)}
+            </span>
           </div>
         )}
         {showCommentInput && (
