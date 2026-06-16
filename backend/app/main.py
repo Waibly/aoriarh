@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api import (
     admin_billing,
+    admin_business,
     admin_corpus,
     admin_costs,
     admin_dashboard,
@@ -227,6 +228,9 @@ app.include_router(
 )
 app.include_router(
     admin_dashboard.router, prefix="/api/v1/admin/dashboard", tags=["admin-dashboard"]
+)
+app.include_router(
+    admin_business.router, prefix="/api/v1/admin/business", tags=["admin-business"]
 )
 app.include_router(
     admin_costs.router, prefix="/api/v1/admin/costs", tags=["admin-costs"]

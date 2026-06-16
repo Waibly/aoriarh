@@ -14,7 +14,7 @@ export default auth((req) => {
   // logged in, otherwise to /login. The marketing site handles the rest.
   if (req.nextUrl.pathname === "/") {
     return NextResponse.redirect(
-      new URL(isLoggedIn ? "/chat" : "/login", req.nextUrl.origin),
+      new URL(isLoggedIn ? "/chat" : "/login", req.nextUrl.origin)
     );
   }
 
@@ -37,6 +37,18 @@ export default auth((req) => {
     const role = session?.user?.role;
     if (role !== "admin") {
       return NextResponse.redirect(new URL("/chat", req.nextUrl.origin));
+    }
+    // Bare /admin lands on the cockpit matching the staff profile:
+    // tech staff → technical console, everyone else → business cockpit.
+    if (
+      req.nextUrl.pathname === "/admin" ||
+      req.nextUrl.pathname === "/admin/"
+    ) {
+      const dest =
+        session?.user?.staff_role === "tech"
+          ? "/admin/home"
+          : "/admin/pilotage";
+      return NextResponse.redirect(new URL(dest, req.nextUrl.origin));
     }
   }
 

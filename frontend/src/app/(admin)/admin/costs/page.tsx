@@ -136,8 +136,12 @@ function getWeekNumber(d: Date): number {
   const target = new Date(d.valueOf());
   target.setDate(target.getDate() + 3 - ((target.getDay() + 6) % 7));
   const firstThursday = new Date(target.getFullYear(), 0, 4);
-  firstThursday.setDate(firstThursday.getDate() + 3 - ((firstThursday.getDay() + 6) % 7));
-  return 1 + Math.round((target.getTime() - firstThursday.getTime()) / 604800000);
+  firstThursday.setDate(
+    firstThursday.getDate() + 3 - ((firstThursday.getDay() + 6) % 7)
+  );
+  return (
+    1 + Math.round((target.getTime() - firstThursday.getTime()) / 604800000)
+  );
 }
 
 /** Fill missing periods so the chart X-axis is continuous */
@@ -209,6 +213,82 @@ const GRANULARITY_OPTIONS = [
   { value: "year", label: "Année" },
 ];
 
+// --- Margin banner (business rapprochement, in EUR) ---
+
+type MarginOverview = {
+  mrr_eur: number;
+  infra_cost_eur_30d: number;
+  gross_margin_eur: number;
+  infra_pct_of_mrr: number | null;
+};
+
+const fmtEur = (n: number) =>
+  new Intl.NumberFormat("fr-FR", {
+    style: "currency",
+    currency: "EUR",
+    maximumFractionDigits: 0,
+  }).format(n);
+
+function MarginBanner() {
+  const { data: session } = useSession();
+  const token = session?.access_token;
+  const [data, setData] = useState<MarginOverview | null>(null);
+
+  useEffect(() => {
+    if (!token) return;
+    apiFetch<MarginOverview>("/admin/business/overview", { token })
+      .then(setData)
+      .catch(() => {});
+  }, [token]);
+
+  if (!data) return null;
+  const marginGood = data.gross_margin_eur >= 0;
+
+  return (
+    <Card className="bg-muted/40">
+      <CardContent className="flex flex-wrap items-center gap-x-8 gap-y-3 py-4">
+        <div>
+          <p className="text-muted-foreground text-xs">MRR</p>
+          <p className="text-lg font-semibold tabular-nums">
+            {fmtEur(data.mrr_eur)}
+          </p>
+        </div>
+        <div>
+          <p className="text-muted-foreground text-xs">Coût infra (30 j)</p>
+          <p className="text-lg font-semibold tabular-nums">
+            {fmtEur(data.infra_cost_eur_30d)}
+          </p>
+        </div>
+        <div>
+          <p className="text-muted-foreground text-xs">Marge brute</p>
+          <p
+            className={
+              "text-lg font-semibold tabular-nums " +
+              (marginGood
+                ? "text-emerald-600 dark:text-emerald-400"
+                : "text-destructive")
+            }
+          >
+            {fmtEur(data.gross_margin_eur)}
+          </p>
+        </div>
+        <div>
+          <p className="text-muted-foreground text-xs">Coût infra / MRR</p>
+          <p className="text-lg font-semibold tabular-nums">
+            {data.infra_pct_of_mrr === null
+              ? "—"
+              : `${data.infra_pct_of_mrr} %`}
+          </p>
+        </div>
+        <p className="text-muted-foreground basis-full text-xs">
+          Le détail ci-dessous est exprimé en dollars (facturation des
+          fournisseurs). Conversion EUR au taux configuré.
+        </p>
+      </CardContent>
+    </Card>
+  );
+}
+
 // --- Component ---
 
 export default function AdminCostsPage() {
@@ -227,18 +307,28 @@ export default function AdminCostsPage() {
 
   // LLM model switch state
   const [currentModel, setCurrentModel] = useState<string>("");
-  const [availableModels, setAvailableModels] = useState<{ id: string; label: string; input_1m: number; output_1m: number }[]>([]);
+  const [availableModels, setAvailableModels] = useState<
+    { id: string; label: string; input_1m: number; output_1m: number }[]
+  >([]);
   const [switchingModel, setSwitchingModel] = useState(false);
 
   const fetchLlmModel = useCallback(async () => {
     if (!token) return;
     try {
-      const data = await apiFetch<{ current_model: string; available_models: { id: string; label: string; input_1m: number; output_1m: number }[] }>(
-        "/admin/costs/llm-model", { token }
-      );
+      const data = await apiFetch<{
+        current_model: string;
+        available_models: {
+          id: string;
+          label: string;
+          input_1m: number;
+          output_1m: number;
+        }[];
+      }>("/admin/costs/llm-model", { token });
       setCurrentModel(data.current_model);
       setAvailableModels(data.available_models);
-    } catch { /* ignore */ }
+    } catch {
+      /* ignore */
+    }
   }, [token]);
 
   const handleSwitchModel = async (modelId: string) => {
@@ -311,17 +401,24 @@ export default function AdminCostsPage() {
 
   if (!dashboard) return null;
 
-  const { summary, by_provider, by_organisation, by_user, pricing } =
-    dashboard;
+  const { summary, by_provider, by_organisation, by_user, pricing } = dashboard;
 
   // Fill periods for continuous X-axis
   const today = new Date();
   const dateFrom = new Date(today);
   dateFrom.setDate(dateFrom.getDate() - parseInt(range));
-  const filledPeriods = fillPeriods(dashboard.by_period, dateFrom, today, granularity);
+  const filledPeriods = fillPeriods(
+    dashboard.by_period,
+    dateFrom,
+    today,
+    granularity
+  );
 
   // Find max cost in period for bar chart
-  const maxPeriodCost = Math.max(...filledPeriods.map((p) => p.cost_usd), 0.001);
+  const maxPeriodCost = Math.max(
+    ...filledPeriods.map((p) => p.cost_usd),
+    0.001
+  );
 
   return (
     <div className="space-y-6">
@@ -358,18 +455,21 @@ export default function AdminCostsPage() {
         </div>
       </div>
 
+      {/* Business rapprochement (EUR) */}
+      <MarginBanner />
+
       {/* Summary cards */}
       <div className="grid gap-4 md:grid-cols-4">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Coût total</CardTitle>
-            <DollarSign className="h-4 w-4 text-muted-foreground" />
+            <DollarSign className="text-muted-foreground h-4 w-4" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
               {formatUSD(summary.total_cost_usd)}
             </div>
-            <p className="text-xs text-muted-foreground">
+            <p className="text-muted-foreground text-xs">
               {summary.total_calls.toLocaleString("fr-FR")} appels API
             </p>
           </CardContent>
@@ -379,13 +479,13 @@ export default function AdminCostsPage() {
             <CardTitle className="text-sm font-medium">
               Coût moyen / question
             </CardTitle>
-            <MessageSquare className="h-4 w-4 text-muted-foreground" />
+            <MessageSquare className="text-muted-foreground h-4 w-4" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
               {formatUSD(summary.avg_cost_per_question)}
             </div>
-            <p className="text-xs text-muted-foreground">
+            <p className="text-muted-foreground text-xs">
               {summary.total_questions.toLocaleString("fr-FR")} questions
             </p>
           </CardContent>
@@ -395,13 +495,13 @@ export default function AdminCostsPage() {
             <CardTitle className="text-sm font-medium">
               Coût moyen / upload
             </CardTitle>
-            <Upload className="h-4 w-4 text-muted-foreground" />
+            <Upload className="text-muted-foreground h-4 w-4" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
               {formatUSD(summary.avg_cost_per_ingestion)}
             </div>
-            <p className="text-xs text-muted-foreground">
+            <p className="text-muted-foreground text-xs">
               {summary.total_ingestions.toLocaleString("fr-FR")} documents
             </p>
           </CardContent>
@@ -409,13 +509,15 @@ export default function AdminCostsPage() {
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Tokens</CardTitle>
-            <Zap className="h-4 w-4 text-muted-foreground" />
+            <Zap className="text-muted-foreground h-4 w-4" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              {formatTokens(summary.total_tokens_input + summary.total_tokens_output)}
+              {formatTokens(
+                summary.total_tokens_input + summary.total_tokens_output
+              )}
             </div>
-            <p className="text-xs text-muted-foreground">
+            <p className="text-muted-foreground text-xs">
               {formatTokens(summary.total_tokens_input)} in /{" "}
               {formatTokens(summary.total_tokens_output)} out
             </p>
@@ -429,7 +531,14 @@ export default function AdminCostsPage() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-base">
               <TrendingUp className="h-4 w-4" />
-              Coûts par {granularity === "day" ? "jour" : granularity === "week" ? "semaine" : granularity === "month" ? "mois" : "année"}
+              Coûts par{" "}
+              {granularity === "day"
+                ? "jour"
+                : granularity === "week"
+                  ? "semaine"
+                  : granularity === "month"
+                    ? "mois"
+                    : "année"}
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -445,7 +554,10 @@ export default function AdminCostsPage() {
                 return Array.from({ length: steps + 1 }, (_, i) => nice * i);
               })();
               const yMax = yTicks[yTicks.length - 1] || maxPeriodCost;
-              const labelStep = Math.max(1, Math.ceil(filledPeriods.length / 12));
+              const labelStep = Math.max(
+                1,
+                Math.ceil(filledPeriods.length / 12)
+              );
 
               return (
                 <div className="flex">
@@ -457,24 +569,24 @@ export default function AdminCostsPage() {
                     {yTicks.map((tick, i) => (
                       <span
                         key={i}
-                        className="text-[10px] text-muted-foreground leading-none whitespace-nowrap"
+                        className="text-muted-foreground text-[10px] leading-none whitespace-nowrap"
                       >
                         {formatUSD(tick)}
                       </span>
                     ))}
                   </div>
                   {/* Chart area */}
-                  <div className="flex-1 min-w-0">
+                  <div className="min-w-0 flex-1">
                     {/* Grid lines + bars */}
                     <div
-                      className="relative border-l border-b border-border"
+                      className="border-border relative border-b border-l"
                       style={{ height: barArea }}
                     >
                       {/* Horizontal grid lines */}
                       {yTicks.slice(1).map((tick, i) => (
                         <div
                           key={i}
-                          className="absolute left-0 right-0 border-t border-border/40"
+                          className="border-border/40 absolute right-0 left-0 border-t"
                           style={{
                             bottom: `${(tick / yMax) * 100}%`,
                           }}
@@ -487,23 +599,23 @@ export default function AdminCostsPage() {
                           return (
                             <div
                               key={i}
-                              className="group relative flex-1 min-w-0"
+                              className="group relative min-w-0 flex-1"
                               style={{ height: "100%" }}
                             >
                               <div
-                                className="absolute bottom-0 left-0 right-0 rounded-t bg-primary/70 transition-colors hover:bg-primary"
+                                className="bg-primary/70 hover:bg-primary absolute right-0 bottom-0 left-0 rounded-t transition-colors"
                                 style={{
                                   height: `${Math.max(pct, 0.5)}%`,
                                 }}
                               />
                               {/* Tooltip */}
-                              <div className="pointer-events-none absolute -top-14 left-1/2 z-10 hidden -translate-x-1/2 rounded-md bg-popover border border-border px-2.5 py-1.5 text-xs text-popover-foreground shadow-md group-hover:block whitespace-nowrap">
+                              <div className="bg-popover border-border text-popover-foreground pointer-events-none absolute -top-14 left-1/2 z-10 hidden -translate-x-1/2 rounded-md border px-2.5 py-1.5 text-xs whitespace-nowrap shadow-md group-hover:block">
                                 <div className="font-medium">
                                   {formatPeriod(p.period, granularity)}
                                 </div>
                                 <div>
-                                  {formatUSD(p.cost_usd)} &middot;{" "}
-                                  {p.calls} appels
+                                  {formatUSD(p.cost_usd)} &middot; {p.calls}{" "}
+                                  appels
                                 </div>
                               </div>
                             </div>
@@ -512,11 +624,11 @@ export default function AdminCostsPage() {
                       </div>
                     </div>
                     {/* X-axis labels */}
-                    <div className="flex gap-[2px] px-[2px] mt-1">
+                    <div className="mt-1 flex gap-[2px] px-[2px]">
                       {filledPeriods.map((p, i) => (
                         <div
                           key={i}
-                          className="flex-1 min-w-0 text-center text-[10px] text-muted-foreground truncate"
+                          className="text-muted-foreground min-w-0 flex-1 truncate text-center text-[10px]"
                         >
                           {i % labelStep === 0 || i === filledPeriods.length - 1
                             ? formatPeriod(p.period, granularity)
@@ -611,7 +723,7 @@ export default function AdminCostsPage() {
                     <TableRow>
                       <TableCell
                         colSpan={7}
-                        className="text-center text-muted-foreground py-8"
+                        className="text-muted-foreground py-8 text-center"
                       >
                         Aucune donnée sur cette période
                       </TableCell>
@@ -669,7 +781,7 @@ export default function AdminCostsPage() {
                     <TableRow>
                       <TableCell
                         colSpan={6}
-                        className="text-center text-muted-foreground py-8"
+                        className="text-muted-foreground py-8 text-center"
                       >
                         Aucune donnée sur cette période
                       </TableCell>
@@ -727,7 +839,7 @@ export default function AdminCostsPage() {
                     <TableRow>
                       <TableCell
                         colSpan={6}
-                        className="text-center text-muted-foreground py-8"
+                        className="text-muted-foreground py-8 text-center"
                       >
                         Aucune donnée sur cette période
                       </TableCell>
@@ -751,9 +863,7 @@ export default function AdminCostsPage() {
                   variant="outline"
                   size="sm"
                   onClick={() => {
-                    setPricingDraft(
-                      pricing.map((p) => ({ ...p }))
-                    );
+                    setPricingDraft(pricing.map((p) => ({ ...p })));
                     setEditingPricing(true);
                   }}
                 >
@@ -815,74 +925,71 @@ export default function AdminCostsPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {(editingPricing ? pricingDraft : pricing).map(
-                    (row, i) => (
-                      <TableRow key={i}>
-                        <TableCell>
-                          <Badge variant="outline">{row.provider}</Badge>
-                        </TableCell>
-                        <TableCell className="font-mono text-sm break-all">
-                          {row.model}
-                        </TableCell>
-                        <TableCell className="text-right">
-                          {editingPricing ? (
+                  {(editingPricing ? pricingDraft : pricing).map((row, i) => (
+                    <TableRow key={i}>
+                      <TableCell>
+                        <Badge variant="outline">{row.provider}</Badge>
+                      </TableCell>
+                      <TableCell className="font-mono text-sm break-all">
+                        {row.model}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        {editingPricing ? (
+                          <Input
+                            type="number"
+                            step="0.0001"
+                            min="0"
+                            className="ml-auto h-8 w-28 text-right"
+                            value={row.price_input_per_million}
+                            onChange={(e) => {
+                              const val = parseFloat(e.target.value) || 0;
+                              setPricingDraft((prev) =>
+                                prev.map((p, j) =>
+                                  j === i
+                                    ? { ...p, price_input_per_million: val }
+                                    : p
+                                )
+                              );
+                            }}
+                          />
+                        ) : (
+                          `$${row.price_input_per_million.toFixed(4)}`
+                        )}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        {editingPricing ? (
+                          row.price_output_per_million !== null ? (
                             <Input
                               type="number"
                               step="0.0001"
                               min="0"
-                              className="w-28 ml-auto text-right h-8"
-                              value={row.price_input_per_million}
+                              className="ml-auto h-8 w-28 text-right"
+                              value={row.price_output_per_million}
                               onChange={(e) => {
                                 const val = parseFloat(e.target.value) || 0;
                                 setPricingDraft((prev) =>
                                   prev.map((p, j) =>
                                     j === i
-                                      ? { ...p, price_input_per_million: val }
+                                      ? {
+                                          ...p,
+                                          price_output_per_million: val,
+                                        }
                                       : p
                                   )
                                 );
                               }}
                             />
                           ) : (
-                            `$${row.price_input_per_million.toFixed(4)}`
-                          )}
-                        </TableCell>
-                        <TableCell className="text-right">
-                          {editingPricing ? (
-                            row.price_output_per_million !== null ? (
-                              <Input
-                                type="number"
-                                step="0.0001"
-                                min="0"
-                                className="w-28 ml-auto text-right h-8"
-                                value={row.price_output_per_million}
-                                onChange={(e) => {
-                                  const val =
-                                    parseFloat(e.target.value) || 0;
-                                  setPricingDraft((prev) =>
-                                    prev.map((p, j) =>
-                                      j === i
-                                        ? {
-                                            ...p,
-                                            price_output_per_million: val,
-                                          }
-                                        : p
-                                    )
-                                  );
-                                }}
-                              />
-                            ) : (
-                              <span className="text-muted-foreground">—</span>
-                            )
-                          ) : row.price_output_per_million !== null ? (
-                            `$${row.price_output_per_million.toFixed(4)}`
-                          ) : (
-                            "—"
-                          )}
-                        </TableCell>
-                      </TableRow>
-                    )
-                  )}
+                            <span className="text-muted-foreground">—</span>
+                          )
+                        ) : row.price_output_per_million !== null ? (
+                          `$${row.price_output_per_million.toFixed(4)}`
+                        ) : (
+                          "—"
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  ))}
                 </TableBody>
               </Table>
             </CardContent>

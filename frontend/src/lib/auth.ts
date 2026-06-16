@@ -3,7 +3,9 @@ import Credentials from "next-auth/providers/credentials";
 import Google from "next-auth/providers/google";
 
 const API_BASE_URL =
-  process.env.INTERNAL_API_URL || process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
+  process.env.INTERNAL_API_URL ||
+  process.env.NEXT_PUBLIC_API_URL ||
+  "http://localhost:8000/api/v1";
 
 declare module "next-auth" {
   interface User {
@@ -11,6 +13,7 @@ declare module "next-auth" {
     refresh_token: string;
     expires_at: number;
     role: string;
+    staff_role: string | null;
     full_name: string;
   }
 
@@ -22,6 +25,7 @@ declare module "next-auth" {
       email: string;
       full_name: string;
       role: string;
+      staff_role: string | null;
     };
   }
 }
@@ -33,6 +37,7 @@ declare module "@auth/core/jwt" {
     expires_at: number;
     id: string;
     role: string;
+    staff_role: string | null;
     full_name: string;
     error?: string;
   }
@@ -125,6 +130,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
             name: user.full_name,
             full_name: user.full_name,
             role: user.role,
+            staff_role: user.staff_role ?? null,
             access_token,
             refresh_token,
             expires_at: Math.floor(Date.now() / 1000) + expires_in,
@@ -157,7 +163,8 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
     async jwt({ token, user, account, profile, trigger, session: updateData }) {
       // Session update (e.g. user changed their name)
       if (trigger === "update" && updateData?.user) {
-        if (updateData.user.full_name) token.full_name = updateData.user.full_name;
+        if (updateData.user.full_name)
+          token.full_name = updateData.user.full_name;
         if (updateData.user.email) token.email = updateData.user.email;
         return token;
       }
@@ -169,13 +176,18 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         token.expires_at = user.expires_at;
         token.id = user.id as string;
         token.role = user.role;
+        token.staff_role = user.staff_role ?? null;
         token.full_name = user.full_name;
         return token;
       }
 
       // Initial sign-in via Google
       if (account?.provider === "google" && profile) {
-        const googleProfile = profile as { email: string; name: string; sub: string };
+        const googleProfile = profile as {
+          email: string;
+          name: string;
+          sub: string;
+        };
         const backendTokens = await getBackendTokensForGoogle({
           email: googleProfile.email ?? "",
           name: googleProfile.name ?? "",
@@ -199,9 +211,11 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
 
         token.access_token = backendTokens.access_token;
         token.refresh_token = backendTokens.refresh_token;
-        token.expires_at = Math.floor(Date.now() / 1000) + backendTokens.expires_in;
+        token.expires_at =
+          Math.floor(Date.now() / 1000) + backendTokens.expires_in;
         token.id = backendUser.id;
         token.role = backendUser.role;
+        token.staff_role = backendUser.staff_role ?? null;
         token.full_name = backendUser.full_name;
         return token;
       }
@@ -220,6 +234,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
       session.user.email = token.email as string;
       session.user.full_name = token.full_name;
       session.user.role = token.role;
+      session.user.staff_role = token.staff_role ?? null;
       if (token.error) {
         session.error = token.error;
       }

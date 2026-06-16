@@ -17,6 +17,10 @@ class User(TimestampMixin, Base):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     auth_provider: Mapped[str] = mapped_column(String(20), nullable=False, default="credentials", server_default="credentials")
     profil_metier: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    # Internal back-office staff segmentation: "business" | "tech" | None.
+    # None = sees everything and lands on the business cockpit. Only meaningful
+    # for users with role="admin".
+    staff_role: Mapped[str | None] = mapped_column(String(20), nullable=True)
 
     memberships = relationship("Membership", back_populates="user", lazy="selectin")
     conversations = relationship("Conversation", back_populates="user", lazy="selectin")

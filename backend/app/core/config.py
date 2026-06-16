@@ -34,6 +34,11 @@ class Settings(BaseSettings):
     # LLM — modèle de génération de la réponse finale
     llm_model: str = "gpt-5.2"
 
+    # Reporting des coûts — les fournisseurs (OpenAI, Voyage) facturent en USD.
+    # Le cockpit business convertit ces coûts en EUR pour les rapprocher du MRR.
+    # À ajuster si le taux dérive significativement.
+    usd_eur_rate: float = 0.92
+
     # Auth / JWT
     secret_key: str  # OBLIGATOIRE — pas de défaut
     access_token_expire_minutes: int = 30

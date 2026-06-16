@@ -11,9 +11,6 @@ import {
   ClipboardList,
   Building2,
   ShieldCheck,
-  Library,
-  Database,
-  Users,
   UsersRound,
   ChevronRight,
   ChevronsUpDown,
@@ -21,17 +18,9 @@ import {
   User,
   LogOut,
   Trash2,
-  Crown,
-  Gift,
-  UserCheck,
-  DollarSign,
-  TrendingUp,
-  Gauge,
   CreditCard,
   Plus,
   Scale,
-  Mail,
-  Search,
 } from "lucide-react";
 import { apiFetch } from "@/lib/api";
 import { fetchQuota, type QuotaInfo } from "@/lib/billing-api";
@@ -478,217 +467,26 @@ export function Sidebar({
           })}
         </nav>
 
-        {/* Administration (sous Organisation) */}
+        {/* Accès à l'espace d'administration (shell dédié) */}
         {session?.user?.role === "admin" && (
           <>
           <div className="px-4"><Separator /></div>
-          <div className="px-2 py-2">
-            <Collapsible defaultOpen={pathname.startsWith("/admin")}>
-              <CollapsibleTrigger asChild>
-                <Button variant="ghost" className="w-full justify-start font-normal">
-                  <ShieldCheck className="mr-2 h-5 w-5" />
-                  <span className="flex-1 text-left">Administration</span>
-                  <ChevronRight className="h-5 w-5 transition-transform duration-200 [[data-state=open]>&]:rotate-90" />
-                </Button>
-              </CollapsibleTrigger>
-              <CollapsibleContent className="space-y-1 pl-4 pt-1">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className={cn(
-                    "w-full justify-start font-normal",
-                    pathname === "/admin/home" &&
-                      "bg-accent text-accent-foreground font-medium",
-                  )}
-                  asChild
-                >
-                  <Link href="/admin/home">
-                    <TrendingUp className="mr-2 h-5 w-5" />
-                    Tableau de bord
-                  </Link>
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className={cn(
-                    "w-full justify-start font-normal",
-                    pathname.startsWith("/admin/users") &&
-                      "bg-accent text-accent-foreground font-medium",
-                  )}
-                  asChild
-                >
-                  <Link href="/admin/users">
-                    <Users className="mr-2 h-5 w-5" />
-                    Clients
-                  </Link>
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className={cn(
-                    "w-full justify-start font-normal",
-                    pathname.startsWith("/admin/corpus") &&
-                      "bg-accent text-accent-foreground font-medium",
-                  )}
-                  asChild
-                >
-                  <Link href="/admin/corpus">
-                    <Library className="mr-2 h-5 w-5" />
-                    Corpus juridique
-                  </Link>
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className={cn(
-                    "w-full justify-start font-normal",
-                    pathname.startsWith("/recherche") &&
-                      "bg-accent text-accent-foreground font-medium",
-                  )}
-                  asChild
-                >
-                  <Link href="/recherche">
-                    <Search className="mr-2 h-5 w-5" />
-                    Recherche documentaire
-                  </Link>
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className={cn(
-                    "w-full justify-start font-normal",
-                    pathname.startsWith("/admin/quality") &&
-                      "bg-accent text-accent-foreground font-medium",
-                  )}
-                  asChild
-                >
-                  <Link href="/admin/quality">
-                    <Gauge className="mr-2 h-5 w-5" />
-                    Qualité & conversations
-                  </Link>
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className={cn(
-                    "w-full justify-start font-normal",
-                    pathname.startsWith("/admin/qdrant") &&
-                      "bg-accent text-accent-foreground font-medium",
-                  )}
-                  asChild
-                >
-                  <Link href="/admin/qdrant">
-                    <Database className="mr-2 h-5 w-5" />
-                    Index Qdrant
-                  </Link>
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className={cn(
-                    "w-full justify-start font-normal",
-                    pathname.startsWith("/admin/costs") &&
-                      "bg-accent text-accent-foreground font-medium",
-                  )}
-                  asChild
-                >
-                  <Link href="/admin/costs">
-                    <DollarSign className="mr-2 h-5 w-5" />
-                    Suivi des coûts
-                  </Link>
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className={cn(
-                    "w-full justify-start font-normal",
-                    pathname.startsWith("/admin/billing") &&
-                      "bg-accent text-accent-foreground font-medium",
-                  )}
-                  asChild
-                >
-                  <Link href="/admin/billing">
-                    <CreditCard className="mr-2 h-5 w-5" />
-                    Facturation
-                  </Link>
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className={cn(
-                    "w-full justify-start font-normal",
-                    pathname.startsWith("/admin/plan-invitations") &&
-                      "bg-accent text-accent-foreground font-medium",
-                  )}
-                  asChild
-                >
-                  <Link href="/admin/plan-invitations">
-                    <Gift className="mr-2 h-5 w-5" />
-                    Liens promo
-                  </Link>
-                </Button>
-                <Collapsible defaultOpen={pathname.startsWith("/admin/emailing")}>
-                  <CollapsibleTrigger asChild>
-                    <Button variant="ghost" size="sm" className="w-full justify-start font-normal">
-                      <Mail className="mr-2 h-5 w-5" />
-                      <span className="flex-1 text-left">Emailing</span>
-                      <ChevronRight className="h-4 w-4 transition-transform duration-200 [[data-state=open]>&]:rotate-90" />
-                    </Button>
-                  </CollapsibleTrigger>
-                  <CollapsibleContent className="space-y-0.5 pl-4">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className={cn(
-                        "w-full justify-start font-normal text-xs",
-                        pathname.startsWith("/admin/emailing/templates") &&
-                          "bg-accent text-accent-foreground font-medium",
-                      )}
-                      asChild
-                    >
-                      <Link href="/admin/emailing/templates">Templates</Link>
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className={cn(
-                        "w-full justify-start font-normal text-xs",
-                        pathname.startsWith("/admin/emailing/sequences") &&
-                          "bg-accent text-accent-foreground font-medium",
-                      )}
-                      asChild
-                    >
-                      <Link href="/admin/emailing/sequences">Séquences</Link>
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className={cn(
-                        "w-full justify-start font-normal text-xs",
-                        pathname.startsWith("/admin/emailing/campaigns") &&
-                          "bg-accent text-accent-foreground font-medium",
-                      )}
-                      asChild
-                    >
-                      <Link href="/admin/emailing/campaigns">Campagnes</Link>
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className={cn(
-                        "w-full justify-start font-normal text-xs",
-                        pathname.startsWith("/admin/emailing/lists") &&
-                          "bg-accent text-accent-foreground font-medium",
-                      )}
-                      asChild
-                    >
-                      <Link href="/admin/emailing/lists">Listes Brevo</Link>
-                    </Button>
-                  </CollapsibleContent>
-                </Collapsible>
-              </CollapsibleContent>
-            </Collapsible>
-          </div>
+          <nav className="px-2 py-2">
+            <Button
+              variant="ghost"
+              className={cn(
+                "w-full justify-start font-normal",
+                pathname.startsWith("/admin") &&
+                  "bg-accent text-accent-foreground font-medium",
+              )}
+              asChild
+            >
+              <Link href="/admin/pilotage">
+                <ShieldCheck className="mr-2 h-5 w-5" />
+                Administration
+              </Link>
+            </Button>
+          </nav>
           </>
         )}
 

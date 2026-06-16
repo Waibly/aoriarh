@@ -73,6 +73,7 @@ async def get_me(
         created_at=user.created_at,
         auth_provider=user.auth_provider,
         profil_metier=user.profil_metier,
+        staff_role=user.staff_role,
         plan=plan,
         plan_expires_at=plan_expires_at,
         workspace_name=workspace_name,

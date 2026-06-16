@@ -33,6 +33,7 @@ class UserRead(BaseModel):
     created_at: datetime
     auth_provider: str = "credentials"
     profil_metier: str | None = None
+    staff_role: str | None = None
     plan: str | None = None
     plan_expires_at: datetime | None = None
     workspace_name: str | None = None
