@@ -81,8 +81,6 @@ function getInitials(name: string) {
     .slice(0, 2);
 }
 
-
-
 function ConversationItem({
   conv,
   isActive,
@@ -99,7 +97,7 @@ function ConversationItem({
         <div
           className={cn(
             "group/conv relative flex items-center rounded-md transition-colors",
-            isActive ? "bg-accent text-accent-foreground" : "hover:bg-accent/50",
+            isActive ? "bg-accent text-accent-foreground" : "hover:bg-accent/50"
           )}
         >
           <Link
@@ -107,9 +105,7 @@ function ConversationItem({
             className="flex min-w-0 flex-1 items-center gap-2 px-2 py-1.5"
           >
             <MessageSquare className="size-4 shrink-0 opacity-50" />
-            <span className="flex-1 truncate text-left text-sm">
-              {title}
-            </span>
+            <span className="flex-1 truncate text-left text-sm">{title}</span>
           </Link>
           <button
             onClick={(e) => {
@@ -120,7 +116,7 @@ function ConversationItem({
             className="shrink-0 cursor-pointer pr-2 lg:hidden lg:group-hover/conv:block"
             aria-label={`Supprimer ${title}`}
           >
-            <Trash2 className="size-4 text-destructive" />
+            <Trash2 className="text-destructive size-4" />
           </button>
         </div>
       </TooltipTrigger>
@@ -201,66 +197,68 @@ function ConversationHistory() {
   return (
     <>
       {conversations.length === 0 ? null : (
-      <>
-      <div className="px-4"><Separator /></div>
-      <div className="space-y-0.5 px-2 py-2">
-        <div className="flex items-center justify-between px-2 pb-1 pt-2">
-          <p className="text-muted-foreground text-xs font-medium">
-            Historique de chat
-          </p>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <button
-                type="button"
-                onClick={() => setClearAllOpen(true)}
-                className="text-muted-foreground hover:text-destructive p-1 -m-1 rounded hover:bg-muted/60 transition-colors"
-                aria-label="Effacer tout l'historique"
-              >
-                <Trash2 className="size-3.5" />
-              </button>
-            </TooltipTrigger>
-            <TooltipContent side="right">
-              Effacer tout l&apos;historique
-            </TooltipContent>
-          </Tooltip>
-        </div>
-        {visible.map((conv) => (
-          <ConversationItem
-            key={conv.id}
-            conv={conv}
-            isActive={pathname === `/chat/${conv.id}`}
-            onDelete={setDeleteTarget}
-          />
-        ))}
-        {overflow.length > 0 && (
-          <Collapsible>
-            <CollapsibleTrigger asChild>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="text-muted-foreground h-auto w-full justify-start gap-2 px-2 py-1.5 text-xs"
-              >
-                <ChevronRight className="size-4 shrink-0 transition-transform duration-200 [[data-state=open]>&]:rotate-90" />
-                <span>
-                  {overflow.length} conversation
-                  {overflow.length > 1 ? "s" : ""} de plus
-                </span>
-              </Button>
-            </CollapsibleTrigger>
-            <CollapsibleContent className="space-y-0.5">
-              {overflow.map((conv) => (
-                <ConversationItem
-                  key={conv.id}
-                  conv={conv}
-                  isActive={pathname === `/chat/${conv.id}`}
-                  onDelete={setDeleteTarget}
-                />
-              ))}
-            </CollapsibleContent>
-          </Collapsible>
-        )}
-      </div>
-      </>
+        <>
+          <div className="px-4">
+            <Separator />
+          </div>
+          <div className="space-y-0.5 px-2 py-2">
+            <div className="flex items-center justify-between px-2 pt-2 pb-1">
+              <p className="text-muted-foreground text-xs font-medium">
+                Historique de chat
+              </p>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    type="button"
+                    onClick={() => setClearAllOpen(true)}
+                    className="text-muted-foreground hover:text-destructive hover:bg-muted/60 -m-1 rounded p-1 transition-colors"
+                    aria-label="Effacer tout l'historique"
+                  >
+                    <Trash2 className="size-3.5" />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent side="right">
+                  Effacer tout l&apos;historique
+                </TooltipContent>
+              </Tooltip>
+            </div>
+            {visible.map((conv) => (
+              <ConversationItem
+                key={conv.id}
+                conv={conv}
+                isActive={pathname === `/chat/${conv.id}`}
+                onDelete={setDeleteTarget}
+              />
+            ))}
+            {overflow.length > 0 && (
+              <Collapsible>
+                <CollapsibleTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="text-muted-foreground h-auto w-full justify-start gap-2 px-2 py-1.5 text-xs"
+                  >
+                    <ChevronRight className="size-4 shrink-0 transition-transform duration-200 [[data-state=open]>&]:rotate-90" />
+                    <span>
+                      {overflow.length} conversation
+                      {overflow.length > 1 ? "s" : ""} de plus
+                    </span>
+                  </Button>
+                </CollapsibleTrigger>
+                <CollapsibleContent className="space-y-0.5">
+                  {overflow.map((conv) => (
+                    <ConversationItem
+                      key={conv.id}
+                      conv={conv}
+                      isActive={pathname === `/chat/${conv.id}`}
+                      onDelete={setDeleteTarget}
+                    />
+                  ))}
+                </CollapsibleContent>
+              </Collapsible>
+            )}
+          </div>
+        </>
       )}
 
       <Dialog
@@ -274,8 +272,8 @@ function ConversationHistory() {
             <DialogTitle>Supprimer la conversation</DialogTitle>
             <DialogDescription>
               Voulez-vous vraiment supprimer &laquo;&nbsp;
-              {deleteTarget?.title || "Nouvelle conversation"}&nbsp;&raquo; ? Cette
-              conversation disparaîtra de votre historique.
+              {deleteTarget?.title || "Nouvelle conversation"}&nbsp;&raquo; ?
+              Cette conversation disparaîtra de votre historique.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
@@ -300,8 +298,8 @@ function ConversationHistory() {
             <DialogTitle>Effacer tout l&apos;historique de chat</DialogTitle>
             <DialogDescription>
               Toutes vos conversations vont disparaître de votre historique.
-              Cette action concerne uniquement votre vue : les questions
-              restent enregistrées pour le suivi qualité et la facturation.
+              Cette action concerne uniquement votre vue : les questions restent
+              enregistrées pour le suivi qualité et la facturation.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
@@ -341,18 +339,29 @@ export function Sidebar({
   const token = session?.access_token;
   const { workspaceName, currentOrg } = useOrg();
 
-  const [userPlan, setUserPlan] = useState<{ plan: string; plan_expires_at: string | null } | null>(null);
+  const [userPlan, setUserPlan] = useState<{
+    plan: string;
+    plan_expires_at: string | null;
+  } | null>(null);
   const [quota, setQuota] = useState<QuotaInfo | null>(null);
 
   const fetchPlan = useCallback(() => {
     if (!token) return;
     const params = currentOrg?.id ? `?organisation_id=${currentOrg.id}` : "";
-    apiFetch<{ plan: string | null; plan_expires_at: string | null }>(`/users/me${params}`, { token })
+    apiFetch<{ plan: string | null; plan_expires_at: string | null }>(
+      `/users/me${params}`,
+      { token }
+    )
       .then((data) => {
-        setUserPlan({ plan: data.plan ?? "gratuit", plan_expires_at: data.plan_expires_at });
+        setUserPlan({
+          plan: data.plan ?? "gratuit",
+          plan_expires_at: data.plan_expires_at,
+        });
       })
       .catch(() => {});
-    fetchQuota(token).then(setQuota).catch(() => {});
+    fetchQuota(token)
+      .then(setQuota)
+      .catch(() => {});
   }, [token, currentOrg?.id]);
 
   useEffect(() => {
@@ -369,7 +378,9 @@ export function Sidebar({
   useEffect(() => {
     if (!token) return;
     const refreshQuota = () => {
-      fetchQuota(token).then(setQuota).catch(() => {});
+      fetchQuota(token)
+        .then(setQuota)
+        .catch(() => {});
     };
     window.addEventListener("quota-updated", refreshQuota);
     return () => window.removeEventListener("quota-updated", refreshQuota);
@@ -397,9 +408,9 @@ export function Sidebar({
     <>
       <aside
         className={cn(
-          "flex flex-col bg-sidebar text-sidebar-foreground",
-          variant === "desktop" && "hidden lg:flex w-64 shrink-0",
-          variant === "mobile" && "h-full w-full overflow-y-auto",
+          "bg-sidebar text-sidebar-foreground flex flex-col",
+          variant === "desktop" && "hidden w-64 shrink-0 lg:flex",
+          variant === "mobile" && "h-full w-full overflow-y-auto"
         )}
         onClick={(e) => {
           if (variant !== "mobile" || !onNavigate) return;
@@ -408,15 +419,31 @@ export function Sidebar({
         }}
       >
         <div className="p-4">
-          <Image src="/logo-aoria.svg" alt="AORIA RH" width={140} height={30} priority className="dark:hidden" />
-          <Image src="/logo-aoria-white.svg" alt="AORIA RH" width={140} height={30} priority className="hidden dark:block" />
+          <Image
+            src="/logo-aoria.svg"
+            alt="AORIA RH"
+            width={140}
+            height={30}
+            priority
+            className="dark:hidden"
+          />
+          <Image
+            src="/logo-aoria-white.svg"
+            alt="AORIA RH"
+            width={140}
+            height={30}
+            priority
+            className="hidden dark:block"
+          />
         </div>
 
         <div className="px-4 pb-4">
           <OrgSelector />
         </div>
 
-        <div className="px-4"><Separator /></div>
+        <div className="px-4">
+          <Separator />
+        </div>
 
         {/* Navigation principale */}
         <nav className="space-y-1 px-2 py-2">
@@ -430,99 +457,120 @@ export function Sidebar({
               return true;
             })
             .map((item) => {
-            const isActive =
-              item.href === "/chat"
-                ? pathname === "/chat"
-                : pathname.startsWith(item.href);
-            const isChat = item.href === "/chat";
-            return (
-              <div key={item.name} className="flex items-center gap-1">
-                <Button
-                  variant="ghost"
-                  className={cn(
-                    "flex-1 justify-start font-normal",
-                    isActive && "bg-accent text-accent-foreground font-medium",
-                  )}
-                  asChild
-                >
-                  <Link href={item.href}>
-                    <item.icon className="mr-2 h-5 w-5" />
-                    {item.name}
-                  </Link>
-                </Button>
-                {isChat && (
+              const isActive =
+                item.href === "/chat"
+                  ? pathname === "/chat"
+                  : pathname.startsWith(item.href);
+              const isChat = item.href === "/chat";
+              return (
+                <div key={item.name} className="flex items-center gap-1">
                   <Button
-                    size="icon-sm"
-                    className="bg-primary text-primary-foreground hover:bg-primary/90 shrink-0"
-                    title="Nouvelle conversation"
+                    variant="ghost"
+                    className={cn(
+                      "flex-1 justify-start font-normal",
+                      isActive && "bg-accent text-accent-foreground font-medium"
+                    )}
                     asChild
                   >
-                    <Link href="/chat">
-                      <Plus className="h-4 w-4" />
+                    <Link href={item.href}>
+                      <item.icon className="mr-2 h-5 w-5" />
+                      {item.name}
                     </Link>
                   </Button>
-                )}
-              </div>
-            );
-          })}
+                  {isChat && (
+                    <Button
+                      size="icon-sm"
+                      className="bg-primary text-primary-foreground hover:bg-primary/90 shrink-0"
+                      title="Nouvelle conversation"
+                      asChild
+                    >
+                      <Link href="/chat">
+                        <Plus className="h-4 w-4" />
+                      </Link>
+                    </Button>
+                  )}
+                </div>
+              );
+            })}
         </nav>
 
         {/* Accès à l'espace d'administration (shell dédié) */}
         {session?.user?.role === "admin" && (
           <>
-          <div className="px-4"><Separator /></div>
-          <nav className="px-2 py-2">
-            <Button
-              variant="ghost"
-              className={cn(
-                "w-full justify-start font-normal",
-                pathname.startsWith("/admin") &&
-                  "bg-accent text-accent-foreground font-medium",
-              )}
-              asChild
-            >
-              <Link href="/admin/pilotage">
-                <ShieldCheck className="mr-2 h-5 w-5" />
-                Administration
-              </Link>
-            </Button>
-          </nav>
+            <div className="px-4">
+              <Separator />
+            </div>
+            <nav className="px-2 py-2">
+              <Button
+                variant="ghost"
+                className={cn(
+                  "w-full justify-start font-normal",
+                  pathname.startsWith("/admin") &&
+                    "bg-accent text-accent-foreground font-medium"
+                )}
+                asChild
+              >
+                <Link href="/admin/pilotage">
+                  <ShieldCheck className="mr-2 h-5 w-5" />
+                  Administration
+                </Link>
+              </Button>
+            </nav>
           </>
         )}
 
-        {/* Historique des conversations */}
-        <ConversationHistory />
-
-        {/* Spacer */}
-        <div className="flex-1" />
+        {/* Historique des conversations.
+            Desktop : zone scrollable qui occupe l'espace restant, pour que les
+            blocs du bas (plan, utilisateur) restent ancrés quand la liste
+            s'allonge. Mobile : toute la sidebar défile déjà dans le Sheet. */}
+        {variant === "desktop" ? (
+          <div className="min-h-0 flex-1 overflow-y-auto">
+            <ConversationHistory />
+          </div>
+        ) : (
+          <>
+            <ConversationHistory />
+            <div className="flex-1" />
+          </>
+        )}
 
         {/* Espace de travail + Plan */}
         {userPlan && (
           <div className="px-3 pb-2">
-            <div className="rounded-lg border p-3 space-y-2">
+            <div className="space-y-2 rounded-lg border p-3">
               {workspaceName && (
-                <p className="text-xs font-semibold truncate">{workspaceName}</p>
+                <p className="truncate text-xs font-semibold">
+                  {workspaceName}
+                </p>
               )}
               <Link
                 href="/billing"
-                className="block -mx-1 px-1 rounded hover:bg-muted/60 transition-colors"
+                className="hover:bg-muted/60 -mx-1 block rounded px-1 transition-colors"
                 title="Voir mon abonnement"
               >
-                <p className={cn("text-xs font-semibold", currentPlanTextClass)}>
+                <p
+                  className={cn("text-xs font-semibold", currentPlanTextClass)}
+                >
                   Plan {currentPlanLabel}
                 </p>
                 {userPlan.plan === "gratuit" && userPlan.plan_expires_at && (
-                  <p className="text-[10px] text-muted-foreground truncate">
-                    Essai jusqu&apos;au {new Date(userPlan.plan_expires_at).toLocaleDateString("fr-FR")}
+                  <p className="text-muted-foreground truncate text-[10px]">
+                    Essai jusqu&apos;au{" "}
+                    {new Date(userPlan.plan_expires_at).toLocaleDateString(
+                      "fr-FR"
+                    )}
                   </p>
                 )}
                 {userPlan.plan === "invite" && userPlan.plan_expires_at && (
-                  <p className="text-[10px] text-muted-foreground truncate">
-                    Expire le {new Date(userPlan.plan_expires_at).toLocaleDateString("fr-FR")}
+                  <p className="text-muted-foreground truncate text-[10px]">
+                    Expire le{" "}
+                    {new Date(userPlan.plan_expires_at).toLocaleDateString(
+                      "fr-FR"
+                    )}
                   </p>
                 )}
                 {userPlan.plan === "vip" && (
-                  <p className="text-[11px] text-foreground">Accès illimité</p>
+                  <p className="text-foreground text-[11px]">Accès illimité</p>
                 )}
               </Link>
 
@@ -530,27 +578,40 @@ export function Sidebar({
               {quota && userPlan.plan !== "vip" && (
                 <div className="space-y-1">
                   <div className="flex items-center justify-between text-[10px] tabular-nums">
-                    <span className="text-muted-foreground">Questions ce mois</span>
-                    <span className={cn(
-                      "font-medium",
-                      quota.quota_status === "hard_warning" && "text-destructive",
-                      quota.quota_status === "soft_warning" && "text-orange-600 dark:text-orange-400",
-                    )}>
+                    <span className="text-muted-foreground">
+                      Questions ce mois
+                    </span>
+                    <span
+                      className={cn(
+                        "font-medium",
+                        quota.quota_status === "hard_warning" &&
+                          "text-destructive",
+                        quota.quota_status === "soft_warning" &&
+                          "text-orange-600 dark:text-orange-400"
+                      )}
+                    >
                       {quota.used} / {quota.quota}
                       {quota.booster_remaining > 0 && (
-                        <span className="text-muted-foreground"> +{quota.booster_remaining}</span>
+                        <span className="text-muted-foreground">
+                          {" "}
+                          +{quota.booster_remaining}
+                        </span>
                       )}
                     </span>
                   </div>
-                  <div className="h-1 w-full rounded-full bg-muted overflow-hidden">
+                  <div className="bg-muted h-1 w-full overflow-hidden rounded-full">
                     <div
                       className={cn(
                         "h-full transition-all",
-                        quota.quota_status === "hard_warning" ? "bg-destructive"
-                          : quota.quota_status === "soft_warning" ? "bg-orange-500"
-                          : "bg-primary",
+                        quota.quota_status === "hard_warning"
+                          ? "bg-destructive"
+                          : quota.quota_status === "soft_warning"
+                            ? "bg-orange-500"
+                            : "bg-primary"
                       )}
-                      style={{ width: `${Math.min(100, quota.quota > 0 ? (quota.used / quota.quota) * 100 : 0)}%` }}
+                      style={{
+                        width: `${Math.min(100, quota.quota > 0 ? (quota.used / quota.quota) * 100 : 0)}%`,
+                      }}
                     />
                   </div>
                 </div>
@@ -560,7 +621,9 @@ export function Sidebar({
         )}
 
         {/* Utilisateur */}
-        <div className="px-4"><Separator /></div>
+        <div className="px-4">
+          <Separator />
+        </div>
 
         <div className="p-2">
           <DropdownMenu>
