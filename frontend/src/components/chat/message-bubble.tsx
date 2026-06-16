@@ -6,13 +6,27 @@ import { toast } from "sonner";
 import ReactMarkdown from "react-markdown";
 import rehypeSanitize from "rehype-sanitize";
 import remarkGfm from "remark-gfm";
-import { Copy, Check, ThumbsUp, ThumbsDown, Send, ClipboardList, Loader2 } from "lucide-react";
+import {
+  Copy,
+  Check,
+  ThumbsUp,
+  ThumbsDown,
+  Send,
+  ClipboardList,
+  Loader2,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { MessageSources } from "./message-sources";
 import { downloadFiche } from "@/lib/chat-api";
 import { cn } from "@/lib/utils";
@@ -20,7 +34,11 @@ import type { Message } from "@/types/api";
 
 interface MessageBubbleProps {
   message: Message;
-  onFeedback?: (messageId: string, feedback: "up" | "down" | null, comment?: string | null) => void;
+  onFeedback?: (
+    messageId: string,
+    feedback: "up" | "down" | null,
+    comment?: string | null
+  ) => void;
 }
 
 function formatTime(dateString: string): string {
@@ -38,16 +56,27 @@ export function MessageBubble({ message, onFeedback }: MessageBubbleProps) {
   const [comment, setComment] = useState("");
   const [ficheLoading, setFicheLoading] = useState(false);
   const commentRef = useRef<HTMLInputElement>(null);
+  const proseRef = useRef<HTMLDivElement>(null);
 
-  const handleCopy = useCallback(async () => {
-    try {
-      await navigator.clipboard.writeText(message.content);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    } catch {
-      // Silently fail
-    }
-  }, [message.content]);
+  const handleCopy = useCallback(
+    async (format: "text" | "markdown") => {
+      // "text" copies what the user sees (rendered, no formatting symbols);
+      // "markdown" copies the raw source so formatting survives in a
+      // Markdown-aware editor.
+      const value =
+        format === "markdown"
+          ? message.content
+          : (proseRef.current?.innerText ?? message.content);
+      try {
+        await navigator.clipboard.writeText(value);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      } catch {
+        // Silently fail
+      }
+    },
+    [message.content]
+  );
 
   const handleFeedback = useCallback(
     (value: "up" | "down") => {
@@ -70,7 +99,7 @@ export function MessageBubble({ message, onFeedback }: MessageBubbleProps) {
         onFeedback(message.id, "up");
       }
     },
-    [message.id, message.feedback, onFeedback],
+    [message.id, message.feedback, onFeedback]
   );
 
   const handleSubmitComment = useCallback(() => {
@@ -86,20 +115,27 @@ export function MessageBubble({ message, onFeedback }: MessageBubbleProps) {
     try {
       await downloadFiche(message.id, token);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "La génération de la fiche a échoué.");
+      toast.error(
+        err instanceof Error
+          ? err.message
+          : "La génération de la fiche a échoué."
+      );
     } finally {
       setFicheLoading(false);
     }
   }, [message.id, session?.access_token, ficheLoading]);
 
-  const isTemp = message.id.startsWith("temp-") || message.id.startsWith("partial-");
+  const isTemp =
+    message.id.startsWith("temp-") || message.id.startsWith("partial-");
 
   if (isUser) {
     return (
       <div className="group/message flex justify-end">
         <div className="max-w-[80%]">
           <div className="bg-primary text-primary-foreground rounded-2xl rounded-tr-sm px-5 py-3">
-            <p className="whitespace-pre-wrap text-base leading-relaxed">{message.content}</p>
+            <p className="text-base leading-relaxed whitespace-pre-wrap">
+              {message.content}
+            </p>
           </div>
           <p className="text-muted-foreground mt-1 text-right text-xs opacity-0 transition-opacity group-hover/message:opacity-100">
             {formatTime(message.created_at)}
@@ -112,28 +148,58 @@ export function MessageBubble({ message, onFeedback }: MessageBubbleProps) {
   return (
     <div className="group/message flex w-full min-w-0 flex-col items-start">
       <div className="w-full min-w-0">
-        <div className="prose prose-sm dark:prose-invert max-w-none break-words text-[0.9375rem] leading-7 text-foreground [&_h1]:mt-6 [&_h1]:mb-3 [&_h1]:text-lg [&_h1]:font-bold [&_h1]:text-foreground [&_h2]:mt-6 [&_h2]:mb-3 [&_h2]:text-[1.0625rem] [&_h2]:font-bold [&_h2]:text-foreground [&_h3]:mt-5 [&_h3]:mb-2 [&_h3]:text-base [&_h3]:font-bold [&_h3]:text-foreground [&_p]:my-3 [&_p]:leading-7 [&_a]:text-primary [&_a]:underline-offset-2 [&_strong]:font-semibold [&_strong]:text-foreground [&_ul]:my-3 [&_ul]:pl-5 [&_ul]:list-disc [&_ol]:my-3 [&_ol]:pl-5 [&_ol]:list-decimal [&_li]:my-0.5 [&_li]:leading-7 [&_li::marker]:text-foreground/70 [&_pre]:overflow-x-auto [&_table]:block [&_table]:overflow-x-auto [&>*:first-child]:mt-0 [&>*:last-child]:mb-0">
-            <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeSanitize]}>
-              {message.content}
-            </ReactMarkdown>
-          </div>
+        <div
+          ref={proseRef}
+          className="prose prose-sm dark:prose-invert text-foreground [&_h1]:text-foreground [&_h2]:text-foreground [&_h3]:text-foreground [&_a]:text-primary [&_strong]:text-foreground [&_li::marker]:text-foreground/70 max-w-none text-[0.9375rem] leading-7 break-words [&_a]:underline-offset-2 [&_h1]:mt-6 [&_h1]:mb-3 [&_h1]:text-lg [&_h1]:font-bold [&_h2]:mt-6 [&_h2]:mb-3 [&_h2]:text-[1.0625rem] [&_h2]:font-bold [&_h3]:mt-5 [&_h3]:mb-2 [&_h3]:text-base [&_h3]:font-bold [&_li]:my-0.5 [&_li]:leading-7 [&_ol]:my-3 [&_ol]:list-decimal [&_ol]:pl-5 [&_p]:my-3 [&_p]:leading-7 [&_pre]:overflow-x-auto [&_strong]:font-semibold [&_table]:block [&_table]:overflow-x-auto [&_ul]:my-3 [&_ul]:list-disc [&_ul]:pl-5 [&>*:first-child]:mt-0 [&>*:last-child]:mb-0"
+        >
+          <ReactMarkdown
+            remarkPlugins={[remarkGfm]}
+            rehypePlugins={[rehypeSanitize]}
+          >
+            {message.content}
+          </ReactMarkdown>
+        </div>
         {!isTemp && (
-          <div className="my-8 flex flex-wrap items-center gap-1.5 rounded-xl border border-primary/15 bg-primary/5 px-2.5 py-2">
-            {/* Copier la réponse */}
-            <Tooltip>
-              <TooltipTrigger asChild>
+          <div className="border-primary/15 bg-primary/5 my-8 flex flex-wrap items-center gap-1.5 rounded-xl border px-2.5 py-2">
+            {/* Copier la réponse — choix du format */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
                 <Button
                   variant="ghost"
                   size="icon-sm"
                   className="text-primary/70 hover:text-primary"
-                  onClick={handleCopy}
                   aria-label={copied ? "Copié" : "Copier la réponse"}
                 >
-                  {copied ? <Check className="size-4" /> : <Copy className="size-4" />}
+                  {copied ? (
+                    <Check className="size-4" />
+                  ) : (
+                    <Copy className="size-4" />
+                  )}
                 </Button>
-              </TooltipTrigger>
-              <TooltipContent>{copied ? "Copié" : "Copier la réponse"}</TooltipContent>
-            </Tooltip>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start" className="w-72">
+                <DropdownMenuItem
+                  onSelect={() => handleCopy("text")}
+                  className="flex-col items-start gap-0.5"
+                >
+                  <span className="font-medium">Texte simple</span>
+                  <span className="text-muted-foreground text-xs">
+                    Sans symboles de mise en forme — idéal pour un e-mail ou
+                    Word
+                  </span>
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onSelect={() => handleCopy("markdown")}
+                  className="flex-col items-start gap-0.5"
+                >
+                  <span className="font-medium">Texte mis en forme</span>
+                  <span className="text-muted-foreground text-xs">
+                    Conserve titres, listes et gras — pour Notion, Obsidian…
+                    (Markdown)
+                  </span>
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
 
             {/* Notation de la réponse */}
             {onFeedback && (
@@ -149,7 +215,7 @@ export function MessageBubble({ message, onFeedback }: MessageBubbleProps) {
                       className={cn(
                         "text-primary/70 hover:text-primary",
                         message.feedback === "up" &&
-                          "bg-primary/10 text-primary hover:text-primary",
+                          "bg-primary/10 text-primary hover:text-primary"
                       )}
                       onClick={() => handleFeedback("up")}
                       aria-label="Bonne réponse"
@@ -167,7 +233,7 @@ export function MessageBubble({ message, onFeedback }: MessageBubbleProps) {
                       className={cn(
                         "text-primary/70 hover:text-destructive",
                         message.feedback === "down" &&
-                          "bg-destructive/10 text-destructive hover:text-destructive",
+                          "bg-destructive/10 text-destructive hover:text-destructive"
                       )}
                       onClick={() => handleFeedback("down")}
                       aria-label="Réponse à améliorer"
@@ -186,7 +252,7 @@ export function MessageBubble({ message, onFeedback }: MessageBubbleProps) {
               size="sm"
               onClick={handleFiche}
               disabled={ficheLoading}
-              className="ml-auto gap-1.5 border-primary/40 bg-white text-primary hover:bg-primary/10 hover:text-primary dark:border-primary/40 dark:bg-card dark:text-primary dark:hover:bg-primary/15"
+              className="border-primary/40 text-primary hover:bg-primary/10 hover:text-primary dark:border-primary/40 dark:bg-card dark:text-primary dark:hover:bg-primary/15 ml-auto gap-1.5 bg-white"
             >
               {ficheLoading ? (
                 <Loader2 className="size-4 animate-spin" />
@@ -206,10 +272,13 @@ export function MessageBubble({ message, onFeedback }: MessageBubbleProps) {
               onChange={(e) => setComment(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === "Enter") handleSubmitComment();
-                if (e.key === "Escape") { setShowCommentInput(false); setComment(""); }
+                if (e.key === "Escape") {
+                  setShowCommentInput(false);
+                  setComment("");
+                }
               }}
               placeholder="Qu'est-ce qui n'allait pas ?"
-              className="flex-1 rounded-md border border-input bg-background px-3 py-1.5 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+              className="border-input bg-background placeholder:text-muted-foreground focus:ring-ring flex-1 rounded-md border px-3 py-1.5 text-sm focus:ring-1 focus:outline-none"
               maxLength={1000}
             />
             <Button
