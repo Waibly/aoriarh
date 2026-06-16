@@ -26,6 +26,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { getPlanLabel } from "@/lib/plans";
+import { InfoTooltip } from "@/components/admin/info-tooltip";
 import { cn } from "@/lib/utils";
 
 type AtRiskAccount = {
@@ -96,12 +97,14 @@ function KpiCard({
   sub,
   icon: Icon,
   tone = "neutral",
+  info,
 }: {
   title: string;
   value: string;
   sub?: React.ReactNode;
   icon: React.ElementType;
   tone?: "neutral" | "good" | "warn" | "bad";
+  info?: React.ReactNode;
 }) {
   const toneClass =
     tone === "good"
@@ -114,8 +117,9 @@ function KpiCard({
   return (
     <Card>
       <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-        <CardTitle className="text-muted-foreground text-sm font-medium">
+        <CardTitle className="text-muted-foreground flex items-center gap-1.5 text-sm font-medium">
           {title}
+          {info && <InfoTooltip>{info}</InfoTooltip>}
         </CardTitle>
         <Icon className="text-muted-foreground h-4 w-4" />
       </CardHeader>
@@ -231,6 +235,14 @@ export default function AdminPilotagePage() {
           value={fmtEur(data.mrr_eur)}
           sub={`ARR estimé ${fmtEur(data.arr_eur)}`}
           icon={TrendingUp}
+          info={
+            <>
+              <b>Revenu mensuel récurrent</b> (Monthly Recurring Revenue) :
+              somme des abonnements payants actifs, ramenée au mois (un
+              abonnement annuel compte pour 1/12). L&apos;ARR est simplement le
+              MRR × 12.
+            </>
+          }
         />
         <KpiCard
           title="Marge brute (30 j)"
@@ -238,6 +250,14 @@ export default function AdminPilotagePage() {
           sub="MRR − coût d'infrastructure"
           icon={Wallet}
           tone={marginTone}
+          info={
+            <>
+              <b>MRR − coût d&apos;infrastructure des 30 derniers jours.</b> Ce
+              qu&apos;il reste après les coûts techniques variables (IA,
+              embeddings). Ne déduit pas les charges fixes (salaires,
+              hébergement…).
+            </>
+          }
         />
         <KpiCard
           title="Coût infra (30 j)"
@@ -249,17 +269,33 @@ export default function AdminPilotagePage() {
           }
           icon={Percent}
           tone={infraTone}
+          info={
+            <>
+              Coût des appels aux fournisseurs IA (OpenAI, Voyage) sur 30 jours,
+              facturés en dollars et convertis en euros au taux configuré. Le
+              pourcentage indique la part du MRR absorbée par l&apos;infra (sain
+              en dessous de ~30 %).
+            </>
+          }
         />
         <KpiCard
           title="ARPU"
           value={data.arpu_eur === null ? "—" : fmtEur2(data.arpu_eur)}
           sub={`${data.active_subscriptions} abonnement${data.active_subscriptions > 1 ? "s" : ""} actif${data.active_subscriptions > 1 ? "s" : ""}`}
           icon={Users}
+          info={
+            <>
+              <b>Revenu moyen par compte</b> (Average Revenue Per User) : MRR
+              divisé par le nombre d&apos;abonnements payants actifs.
+            </>
+          }
         />
       </div>
       <Card>
         <CardHeader className="pb-2">
-          <CardTitle className="text-sm font-medium">Abonnements par plan</CardTitle>
+          <CardTitle className="text-sm font-medium">
+            Abonnements par plan
+          </CardTitle>
         </CardHeader>
         <CardContent className="flex flex-wrap gap-4">
           {Object.entries(data.subscriptions_by_plan).map(([plan, count]) => (
@@ -278,22 +314,33 @@ export default function AdminPilotagePage() {
           title="Nouveaux clients (30 j)"
           value={String(data.new_customers_30d)}
           icon={TrendingUp}
+          info="Nombre d'abonnements payants souscrits durant les 30 derniers jours."
         />
         <KpiCard
           title="Essais actifs"
           value={String(data.trial_active)}
           icon={Users}
+          info="Comptes actuellement en période d'essai gratuite (plan gratuit, statut « trialing ») — autant de conversions potentielles."
         />
         <KpiCard
           title="Conversion essai → payant"
           value={fmtPct(data.trial_to_paid_rate_30d)}
           sub="Sur 30 j (estimation)"
           icon={Percent}
+          info={
+            <>
+              Estimation : nouveaux clients payants (30 j) rapportés au total «
+              nouveaux payants + essais en cours ». Indique grossièrement
+              l&apos;efficacité du tunnel d&apos;essai. À affiner par cohorte
+              plus tard.
+            </>
+          }
         />
         <KpiCard
           title="Activations liens promo (30 j)"
           value={String(data.promo_activations_30d)}
           icon={TrendingUp}
+          info="Nombre de comptes ayant activé un lien d'invitation promo (plan Invité) durant les 30 derniers jours."
         />
       </div>
 
@@ -305,21 +352,34 @@ export default function AdminPilotagePage() {
           value={`${data.monthly_churn_pct} %`}
           icon={AlertTriangle}
           tone={churnTone}
+          info={
+            <>
+              <b>Taux d&apos;attrition.</b> Résiliations sur les 30 derniers
+              jours rapportées au nombre d&apos;abonnements actifs. Vert &lt; 2
+              %, orange 2–5 %, rouge &gt; 5 %.
+            </>
+          }
         />
         <KpiCard
           title="Paiements en retard"
           value={String(data.accounts_past_due)}
           icon={AlertTriangle}
           tone={data.accounts_past_due > 0 ? "bad" : "good"}
+          info="Abonnements au statut « past_due » : un prélèvement Stripe a échoué. Revenu à risque immédiat — à relancer."
         />
       </div>
       <Card>
         <CardHeader className="pb-2">
-          <CardTitle className="text-sm font-medium">
+          <CardTitle className="flex items-center gap-1.5 text-sm font-medium">
             Comptes à surveiller{" "}
             <span className="text-muted-foreground font-normal">
               ({data.at_risk.length})
             </span>
+            <InfoTooltip>
+              Comptes nécessitant une action : essai expirant dans moins de 14
+              jours, paiement en retard, ou client payant sans aucune question
+              posée sur les 30 derniers jours (dormant).
+            </InfoTooltip>
           </CardTitle>
         </CardHeader>
         <CardContent>
@@ -373,6 +433,13 @@ export default function AdminPilotagePage() {
           sub="Avis positifs / avis exprimés"
           icon={ThumbsUp}
           tone={satisfactionTone}
+          info={
+            <>
+              Part d&apos;avis positifs (👍) parmi les réponses notées par les
+              utilisateurs sur 30 jours. Les réponses non notées sont exclues du
+              calcul. Vert ≥ 80 %, orange 60–80 %, rouge &lt; 60 %.
+            </>
+          }
         />
         <KpiCard
           title="Questions (30 j)"
@@ -383,6 +450,7 @@ export default function AdminPilotagePage() {
               : `${data.questions_trend_pct > 0 ? "+" : ""}${data.questions_trend_pct} % vs 30 j préc.`
           }
           icon={MessageSquare}
+          info="Nombre de questions posées sur 30 jours (signal d'usage), avec l'évolution par rapport aux 30 jours précédents."
         />
         <KpiCard
           title="Avis négatifs"
@@ -395,6 +463,7 @@ export default function AdminPilotagePage() {
                 ? "warn"
                 : "good"
           }
+          info="Part de réponses notées 👎 parmi toutes les réponses des 30 derniers jours. Vert < 5 %, orange 5–15 %, rouge > 15 %."
         />
         <KpiCard
           title="Questions sans réponse"
@@ -406,6 +475,7 @@ export default function AdminPilotagePage() {
           }
           icon={AlertTriangle}
           tone={data.no_sources_rate > 0.05 ? "warn" : "good"}
+          info="Part de questions dans le périmètre pour lesquelles le RAG n'a trouvé aucune source (hors refus « hors sujet »). Signale un manque dans le corpus = promesse non tenue."
         />
       </div>
     </div>

@@ -26,6 +26,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { getPlanLabel } from "@/lib/plans";
+import { InfoTooltip } from "@/components/admin/info-tooltip";
 
 type BillingMetrics = {
   mrr_eur: number;
@@ -69,7 +70,10 @@ type StripeStatus = {
   webhook_configured: boolean;
 };
 
-const STATUS_COLORS: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
+const STATUS_COLORS: Record<
+  string,
+  "default" | "secondary" | "destructive" | "outline"
+> = {
   active: "default",
   trialing: "secondary",
   past_due: "outline",
@@ -101,7 +105,9 @@ export default function AdminBillingPage() {
       const query = statusFilter === "all" ? "" : `?status=${statusFilter}`;
       const [m, s, p, st] = await Promise.all([
         apiFetch<BillingMetrics>("/admin/billing/metrics", { token }),
-        apiFetch<SubscriptionRow[]>(`/admin/billing/subscriptions${query}`, { token }),
+        apiFetch<SubscriptionRow[]>(`/admin/billing/subscriptions${query}`, {
+          token,
+        }),
         apiFetch<PendingPurgeRow[]>("/admin/accounts/pending-purge", { token }),
         apiFetch<StripeStatus>("/admin/billing/stripe-status", { token }),
       ]);
@@ -110,7 +116,9 @@ export default function AdminBillingPage() {
       setPending(p);
       setStripeStatus(st);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Impossible de charger les données");
+      toast.error(
+        err instanceof Error ? err.message : "Impossible de charger les données"
+      );
     } finally {
       setLoading(false);
     }
@@ -126,13 +134,15 @@ export default function AdminBillingPage() {
       !confirm(
         `Télécharger toutes les données du compte « ${accountName} » au format JSON ?\n\n` +
           `Contenu : profil, utilisateurs, organisations, documents, abonnement, factures, historique des questions.\n\n` +
-          `Utilisé pour répondre à une demande RGPD (droit d'accès, article 15).`,
+          `Utilisé pour répondre à une demande RGPD (droit d'accès, article 15).`
       )
     ) {
       return;
     }
     try {
-      const data = await apiFetch(`/admin/accounts/${accountId}/export`, { token });
+      const data = await apiFetch(`/admin/accounts/${accountId}/export`, {
+        token,
+      });
       const blob = new Blob([JSON.stringify(data, null, 2)], {
         type: "application/json",
       });
@@ -147,40 +157,42 @@ export default function AdminBillingPage() {
       toast.error(
         err instanceof Error && err.message
           ? err.message
-          : "Le fichier d'export n'a pas pu être généré. Réessayez dans quelques instants.",
+          : "Le fichier d'export n'a pas pu être généré. Réessayez dans quelques instants."
       );
     }
   };
 
   const handleCancelSubscription = async (
     subscriptionId: string,
-    ownerEmail: string | null,
+    ownerEmail: string | null
   ) => {
     if (!token) return;
     const mode = confirm(
       `Résilier l'abonnement de ${ownerEmail ?? "ce compte"} ?\n\n` +
         `OK  = résilier à la fin de la période (recommandé, le client garde son accès jusqu'à l'échéance)\n` +
         `Annuler = ne rien faire\n\n` +
-        `Pour une résiliation immédiate sans accès restant, fais-le depuis le dashboard Stripe.`,
+        `Pour une résiliation immédiate sans accès restant, fais-le depuis le dashboard Stripe.`
     );
     if (!mode) return;
     try {
-      const res = await apiFetch<{ status: string; cancel_at_period_end: boolean }>(
-        `/admin/billing/subscriptions/${subscriptionId}/cancel`,
-        {
-          token,
-          method: "POST",
-          body: JSON.stringify({ at_period_end: true }),
-        },
-      );
+      const res = await apiFetch<{
+        status: string;
+        cancel_at_period_end: boolean;
+      }>(`/admin/billing/subscriptions/${subscriptionId}/cancel`, {
+        token,
+        method: "POST",
+        body: JSON.stringify({ at_period_end: true }),
+      });
       toast.success(
         res.cancel_at_period_end
           ? "Résiliation programmée à la fin de la période"
-          : `Subscription résiliée (status: ${res.status})`,
+          : `Subscription résiliée (status: ${res.status})`
       );
       loadAll();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Échec de la résiliation");
+      toast.error(
+        err instanceof Error ? err.message : "Échec de la résiliation"
+      );
     }
   };
 
@@ -192,7 +204,7 @@ export default function AdminBillingPage() {
           `Toutes les données seront effacées : profil, utilisateurs, organisations, documents, ` +
           `conversations, abonnement et historique.\n\n` +
           `Cette action est IRRÉVERSIBLE. Pense à exporter les données avant ` +
-          `si le client a demandé un accès RGPD.`,
+          `si le client a demandé un accès RGPD.`
       )
     ) {
       return;
@@ -200,12 +212,14 @@ export default function AdminBillingPage() {
     try {
       const res = await apiFetch<{ summary: Record<string, number> }>(
         `/admin/accounts/${accountId}/erase`,
-        { token, method: "POST" },
+        { token, method: "POST" }
       );
       toast.success(`Compte supprimé — ${JSON.stringify(res.summary)}`);
       loadAll();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Échec de la suppression");
+      toast.error(
+        err instanceof Error ? err.message : "Échec de la suppression"
+      );
     }
   };
 
@@ -223,8 +237,9 @@ export default function AdminBillingPage() {
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
         <div>
           <h1 className="text-2xl font-semibold">Facturation & abonnements</h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            Vue d&apos;ensemble des revenus récurrents, du pipeline d&apos;essais et de la rétention RGPD.
+          <p className="text-muted-foreground mt-1 text-sm">
+            Vue d&apos;ensemble des revenus récurrents, du pipeline
+            d&apos;essais et de la rétention RGPD.
           </p>
         </div>
         {stripeStatus && stripeStatus.configured && (
@@ -243,7 +258,10 @@ export default function AdminBillingPage() {
                 : "Webhook Stripe non configuré — les événements ne seront pas reçus"
             }
           >
-            Stripe {stripeStatus.mode === "live" ? "LIVE" : stripeStatus.mode?.toUpperCase() ?? "?"}
+            Stripe{" "}
+            {stripeStatus.mode === "live"
+              ? "LIVE"
+              : (stripeStatus.mode?.toUpperCase() ?? "?")}
           </Badge>
         )}
       </div>
@@ -253,59 +271,92 @@ export default function AdminBillingPage() {
         <div className="grid gap-4 md:grid-cols-4">
           <Card>
             <CardHeader className="pb-2">
-              <CardTitle className="text-xs font-medium text-muted-foreground flex items-center gap-1.5">
+              <CardTitle className="text-muted-foreground flex items-center gap-1.5 text-xs font-medium">
                 <DollarSign className="h-3.5 w-3.5" />
                 MRR
+                <InfoTooltip>
+                  <b>Revenu mensuel récurrent</b> : somme des abonnements
+                  payants actifs ramenée au mois (un abonnement annuel compte
+                  pour 1/12). L&apos;ARR est le MRR × 12.
+                </InfoTooltip>
               </CardTitle>
             </CardHeader>
             <CardContent>
               <p className="text-2xl font-bold tabular-nums">
-                {metrics.mrr_eur.toLocaleString("fr-FR", { maximumFractionDigits: 0 })} €
+                {metrics.mrr_eur.toLocaleString("fr-FR", {
+                  maximumFractionDigits: 0,
+                })}{" "}
+                €
               </p>
-              <p className="text-xs text-muted-foreground mt-1">
-                ARR ≈ {metrics.arr_eur.toLocaleString("fr-FR", { maximumFractionDigits: 0 })} €
+              <p className="text-muted-foreground mt-1 text-xs">
+                ARR ≈{" "}
+                {metrics.arr_eur.toLocaleString("fr-FR", {
+                  maximumFractionDigits: 0,
+                })}{" "}
+                €
               </p>
             </CardContent>
           </Card>
           <Card>
             <CardHeader className="pb-2">
-              <CardTitle className="text-xs font-medium text-muted-foreground flex items-center gap-1.5">
+              <CardTitle className="text-muted-foreground flex items-center gap-1.5 text-xs font-medium">
                 <TrendingUp className="h-3.5 w-3.5" />
                 Abonnements actifs
+                <InfoTooltip>
+                  Abonnements payants en cours (statuts actif, en essai ou en
+                  retard de paiement), répartis par plan.
+                </InfoTooltip>
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <p className="text-2xl font-bold tabular-nums">{metrics.active_subscriptions}</p>
-              <p className="text-xs text-muted-foreground mt-1">
-                Solo {metrics.subscriptions_by_plan.solo ?? 0} · Équipe {metrics.subscriptions_by_plan.equipe ?? 0} · Groupe {metrics.subscriptions_by_plan.groupe ?? 0}
+              <p className="text-2xl font-bold tabular-nums">
+                {metrics.active_subscriptions}
+              </p>
+              <p className="text-muted-foreground mt-1 text-xs">
+                Solo {metrics.subscriptions_by_plan.solo ?? 0} · Équipe{" "}
+                {metrics.subscriptions_by_plan.equipe ?? 0} · Groupe{" "}
+                {metrics.subscriptions_by_plan.groupe ?? 0}
               </p>
             </CardContent>
           </Card>
           <Card>
             <CardHeader className="pb-2">
-              <CardTitle className="text-xs font-medium text-muted-foreground flex items-center gap-1.5">
+              <CardTitle className="text-muted-foreground flex items-center gap-1.5 text-xs font-medium">
                 <Users className="h-3.5 w-3.5" />
                 Essais actifs
+                <InfoTooltip>
+                  Comptes en période d&apos;essai gratuite. « Conversions sur 30
+                  j » = nouveaux abonnements payants souscrits sur la période.
+                </InfoTooltip>
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <p className="text-2xl font-bold tabular-nums">{metrics.trial_active}</p>
-              <p className="text-xs text-muted-foreground mt-1">
+              <p className="text-2xl font-bold tabular-nums">
+                {metrics.trial_active}
+              </p>
+              <p className="text-muted-foreground mt-1 text-xs">
                 {metrics.new_subscriptions_30d} conversions sur 30 j
               </p>
             </CardContent>
           </Card>
           <Card>
             <CardHeader className="pb-2">
-              <CardTitle className="text-xs font-medium text-muted-foreground flex items-center gap-1.5">
+              <CardTitle className="text-muted-foreground flex items-center gap-1.5 text-xs font-medium">
                 <AlertTriangle className="h-3.5 w-3.5" />
                 Churn (30 j)
+                <InfoTooltip>
+                  <b>Taux d&apos;attrition</b> : résiliations des 30 derniers
+                  jours rapportées au nombre d&apos;abonnements actifs.
+                </InfoTooltip>
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <p className="text-2xl font-bold tabular-nums">{metrics.monthly_churn_pct} %</p>
-              <p className="text-xs text-muted-foreground mt-1">
-                {metrics.cancellations_30d} résiliations · {metrics.accounts_suspended} suspendus
+              <p className="text-2xl font-bold tabular-nums">
+                {metrics.monthly_churn_pct} %
+              </p>
+              <p className="text-muted-foreground mt-1 text-xs">
+                {metrics.cancellations_30d} résiliations ·{" "}
+                {metrics.accounts_suspended} suspendus
               </p>
             </CardContent>
           </Card>
@@ -320,7 +371,7 @@ export default function AdminBillingPage() {
             <select
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value)}
-              className="h-8 rounded-md border bg-background px-2 text-sm"
+              className="bg-background h-8 rounded-md border px-2 text-sm"
             >
               <option value="all">Tous</option>
               <option value="active">Actifs</option>
@@ -347,19 +398,30 @@ export default function AdminBillingPage() {
             <TableBody>
               {subs.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={8} className="text-center text-muted-foreground py-8">
+                  <TableCell
+                    colSpan={8}
+                    className="text-muted-foreground py-8 text-center"
+                  >
                     Aucun abonnement.
                   </TableCell>
                 </TableRow>
               ) : (
                 subs.map((s) => (
                   <TableRow key={s.subscription_id}>
-                    <TableCell className="font-medium">{s.account_name ?? "—"}</TableCell>
-                    <TableCell className="text-muted-foreground">{s.owner_email ?? "—"}</TableCell>
+                    <TableCell className="font-medium">
+                      {s.account_name ?? "—"}
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">
+                      {s.owner_email ?? "—"}
+                    </TableCell>
                     <TableCell>{getPlanLabel(s.plan)}</TableCell>
-                    <TableCell>{s.billing_cycle === "monthly" ? "Mensuel" : "Annuel"}</TableCell>
                     <TableCell>
-                      <Badge variant={STATUS_COLORS[s.status] ?? "outline"}>{s.status}</Badge>
+                      {s.billing_cycle === "monthly" ? "Mensuel" : "Annuel"}
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant={STATUS_COLORS[s.status] ?? "outline"}>
+                        {s.status}
+                      </Badge>
                       {s.cancel_at_period_end && (
                         <Badge variant="destructive" className="ml-2">
                           Résiliation prévue
@@ -368,7 +430,9 @@ export default function AdminBillingPage() {
                     </TableCell>
                     <TableCell className="text-muted-foreground">
                       {s.current_period_end
-                        ? new Date(s.current_period_end).toLocaleDateString("fr-FR")
+                        ? new Date(s.current_period_end).toLocaleDateString(
+                            "fr-FR"
+                          )
                         : "—"}
                     </TableCell>
                     <TableCell className="text-right tabular-nums">
@@ -380,21 +444,31 @@ export default function AdminBillingPage() {
                           variant="outline"
                           size="sm"
                           onClick={() =>
-                            handleExport(s.account_id, s.account_name ?? "compte")
+                            handleExport(
+                              s.account_id,
+                              s.account_name ?? "compte"
+                            )
                           }
                           title="Télécharger toutes les données (droit d'accès RGPD)"
                         >
-                          <Download className="h-3.5 w-3.5 mr-1" />
+                          <Download className="mr-1 h-3.5 w-3.5" />
                           Exporter
                         </Button>
-                        {(s.status === "active" || s.status === "trialing" || s.status === "past_due") && (
+                        {(s.status === "active" ||
+                          s.status === "trialing" ||
+                          s.status === "past_due") && (
                           <Button
                             variant="outline"
                             size="sm"
-                            onClick={() => handleCancelSubscription(s.subscription_id, s.owner_email)}
+                            onClick={() =>
+                              handleCancelSubscription(
+                                s.subscription_id,
+                                s.owner_email
+                              )
+                            }
                             disabled={s.cancel_at_period_end}
                           >
-                            <XCircle className="h-3.5 w-3.5 mr-1" />
+                            <XCircle className="mr-1 h-3.5 w-3.5" />
                             Résilier
                           </Button>
                         )}
@@ -418,25 +492,28 @@ export default function AdminBillingPage() {
               <Badge variant="destructive">{pending.length}</Badge>
             )}
           </CardTitle>
-          <p className="text-sm text-muted-foreground">
-            Comptes inactifs depuis trop longtemps (essai non transformé, abonnement résilié, paiement non régularisé).
-            Une suppression automatique est planifiée chaque jour à 12h (heure de Paris).
-            Avant suppression, vous pouvez&nbsp;:
+          <p className="text-muted-foreground text-sm">
+            Comptes inactifs depuis trop longtemps (essai non transformé,
+            abonnement résilié, paiement non régularisé). Une suppression
+            automatique est planifiée chaque jour à 12h (heure de Paris). Avant
+            suppression, vous pouvez&nbsp;:
           </p>
-          <ul className="text-sm text-muted-foreground list-disc pl-5 space-y-1 mt-2">
+          <ul className="text-muted-foreground mt-2 list-disc space-y-1 pl-5 text-sm">
             <li>
-              <strong>Exporter les données</strong> — télécharge un fichier JSON avec
-              toutes les infos du compte (pour répondre à une demande RGPD d&apos;accès).
+              <strong>Exporter les données</strong> — télécharge un fichier JSON
+              avec toutes les infos du compte (pour répondre à une demande RGPD
+              d&apos;accès).
             </li>
             <li>
-              <strong>Supprimer maintenant</strong> — efface définitivement le compte
-              sans attendre le cron (utile pour une demande RGPD d&apos;effacement).
+              <strong>Supprimer maintenant</strong> — efface définitivement le
+              compte sans attendre le cron (utile pour une demande RGPD
+              d&apos;effacement).
             </li>
           </ul>
         </CardHeader>
         <CardContent>
           {pending.length === 0 ? (
-            <p className="text-sm text-muted-foreground py-4 text-center">
+            <p className="text-muted-foreground py-4 text-center text-sm">
               Aucun compte en attente de purge.
             </p>
           ) : (
@@ -453,8 +530,12 @@ export default function AdminBillingPage() {
               <TableBody>
                 {pending.map((p) => (
                   <TableRow key={p.account_id}>
-                    <TableCell className="font-medium">{p.account_name}</TableCell>
-                    <TableCell className="text-muted-foreground">{p.owner_email}</TableCell>
+                    <TableCell className="font-medium">
+                      {p.account_name}
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">
+                      {p.owner_email}
+                    </TableCell>
                     <TableCell>{REASON_LABELS[p.reason] ?? p.reason}</TableCell>
                     <TableCell className="text-muted-foreground">
                       {new Date(p.eligible_since).toLocaleDateString("fr-FR")}
@@ -463,11 +544,13 @@ export default function AdminBillingPage() {
                       <Button
                         variant="outline"
                         size="sm"
-                        onClick={() => handleExport(p.account_id, p.account_name)}
+                        onClick={() =>
+                          handleExport(p.account_id, p.account_name)
+                        }
                         className="mr-2"
                         title="Télécharger toutes les données au format JSON"
                       >
-                        <Download className="h-3.5 w-3.5 mr-1" />
+                        <Download className="mr-1 h-3.5 w-3.5" />
                         Exporter les données
                       </Button>
                       <Button
@@ -476,7 +559,7 @@ export default function AdminBillingPage() {
                         onClick={() => handleErase(p.account_id, p.owner_email)}
                         title="Effacer définitivement ce compte"
                       >
-                        <Trash2 className="h-3.5 w-3.5 mr-1" />
+                        <Trash2 className="mr-1 h-3.5 w-3.5" />
                         Supprimer maintenant
                       </Button>
                     </TableCell>

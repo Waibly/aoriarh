@@ -33,6 +33,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
+import { InfoTooltip } from "@/components/admin/info-tooltip";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
@@ -248,19 +249,37 @@ function MarginBanner() {
     <Card className="bg-muted/40">
       <CardContent className="flex flex-wrap items-center gap-x-8 gap-y-3 py-4">
         <div>
-          <p className="text-muted-foreground text-xs">MRR</p>
+          <p className="text-muted-foreground flex items-center gap-1.5 text-xs">
+            MRR
+            <InfoTooltip>
+              <b>Revenu mensuel récurrent</b> : somme des abonnements payants
+              actifs ramenée au mois (un annuel = 1/12). En euros.
+            </InfoTooltip>
+          </p>
           <p className="text-lg font-semibold tabular-nums">
             {fmtEur(data.mrr_eur)}
           </p>
         </div>
         <div>
-          <p className="text-muted-foreground text-xs">Coût infra (30 j)</p>
+          <p className="text-muted-foreground flex items-center gap-1.5 text-xs">
+            Coût infra (30 j)
+            <InfoTooltip>
+              Coût des appels IA (OpenAI, Voyage) sur 30 jours, facturé en
+              dollars et converti en euros au taux configuré.
+            </InfoTooltip>
+          </p>
           <p className="text-lg font-semibold tabular-nums">
             {fmtEur(data.infra_cost_eur_30d)}
           </p>
         </div>
         <div>
-          <p className="text-muted-foreground text-xs">Marge brute</p>
+          <p className="text-muted-foreground flex items-center gap-1.5 text-xs">
+            Marge brute
+            <InfoTooltip>
+              MRR − coût d&apos;infrastructure (30 j). Avant charges fixes
+              (salaires, hébergement…).
+            </InfoTooltip>
+          </p>
           <p
             className={
               "text-lg font-semibold tabular-nums " +
@@ -273,7 +292,13 @@ function MarginBanner() {
           </p>
         </div>
         <div>
-          <p className="text-muted-foreground text-xs">Coût infra / MRR</p>
+          <p className="text-muted-foreground flex items-center gap-1.5 text-xs">
+            Coût infra / MRR
+            <InfoTooltip>
+              Part du revenu absorbée par les coûts techniques variables. Sain
+              en dessous de ~30 %.
+            </InfoTooltip>
+          </p>
           <p className="text-lg font-semibold tabular-nums">
             {data.infra_pct_of_mrr === null
               ? "—"
