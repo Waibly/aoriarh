@@ -131,7 +131,7 @@ export default function FichesPage() {
       </div>
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl bg-white p-4 dark:bg-card">
         <div className="min-h-0 flex-1 overflow-y-auto">
-          <div className="w-full min-w-0 px-2 py-1 sm:px-4">
+          <div className="w-full min-w-0 p-2 sm:p-4">
             {loading ? (
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
               {[0, 1, 2, 3].map((i) => (
