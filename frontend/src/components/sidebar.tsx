@@ -7,7 +7,6 @@ import { usePathname, useRouter } from "next/navigation";
 import { useSession, signOut } from "next-auth/react";
 import {
   MessageSquare,
-  FileText,
   Files,
   ClipboardList,
   Building2,
@@ -79,7 +78,7 @@ import type { Conversation } from "@/types/api";
 const navigation = [
   { name: "Nouvelle question", href: "/chat", icon: Scale },
   { name: "Fiches pratiques", href: "/fiches", icon: ClipboardList },
-  { name: "Documents", href: "/documents", icon: FileText },
+  { name: "Documents", href: "/documents", icon: Files },
   { name: "Organisation", href: "/organisation", icon: Building2 },
   { name: "Équipe", href: "/team", icon: UsersRound, managerOnly: true },
 ];
