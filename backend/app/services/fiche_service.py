@@ -14,6 +14,7 @@ système natives (pango/cairo).
 
 from __future__ import annotations
 
+import base64
 import html
 import json
 import logging
@@ -60,6 +61,40 @@ def _load_logo_svg() -> str:
 
 
 _LOGO_HTML = _load_logo_svg()
+
+
+def _load_fonts_css() -> str:
+    """Embarque les polices du site (Inter + Sora) en @font-face pour WeasyPrint.
+
+    Les .woff2 (variables, axe de graisse 100→900) sont copiés depuis le site et
+    inlinés en base64 : le PDF reste fidèle à la charte sans dépendre des polices
+    système ni du chemin d'exécution. Repli silencieux sur la pile système si un
+    fichier manque, pour ne jamais casser le rendu.
+    """
+    fonts_dir = Path(__file__).parent / "assets" / "fonts"
+    faces = [
+        ("Inter Variable", "inter-latin-wght-normal.woff2"),
+        ("Inter Variable", "inter-latin-ext-wght-normal.woff2"),
+        ("Sora Variable", "sora-latin-wght-normal.woff2"),
+        ("Sora Variable", "sora-latin-ext-wght-normal.woff2"),
+    ]
+    blocks = []
+    for family, filename in faces:
+        try:
+            raw = (fonts_dir / filename).read_bytes()
+        except OSError:
+            logger.warning("Police %s introuvable — repli sur la pile système", filename)
+            continue
+        b64 = base64.b64encode(raw).decode("ascii")
+        blocks.append(
+            f"@font-face {{ font-family:'{family}'; font-weight:100 900; "
+            f"font-style:normal; font-display:swap; "
+            f"src:url(data:font/woff2;base64,{b64}) format('woff2'); }}"
+        )
+    return "\n  ".join(blocks)
+
+
+_FONTS_CSS = _load_fonts_css()
 
 
 def _icon(paths: str) -> str:
@@ -267,21 +302,25 @@ def render_fiche_html(
 <html lang="fr">
 <head><meta charset="utf-8"><title>{_inline(content.titre)}</title>
 <style>
+  {_FONTS_CSS}
   @page {{ size: A4; margin: 14mm 0; }}
   @page:first {{ margin-top: 0; }}
   * {{ box-sizing: border-box; }}
-  body {{ font-family: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
+  body {{ font-family: 'Inter Variable', 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
          color:#3f3f46; margin:0; font-size:13px; line-height:1.5; }}
   .header {{ background:{_VIOLET}; padding:20px 32px; text-align:center; }}
   .header svg {{ height:34px; width:auto; }}
-  .header .logo-fallback {{ color:#fff; font-size:20px; font-weight:700; letter-spacing:.5px; }}
+  .header .logo-fallback {{ font-family:'Sora Variable','Segoe UI',sans-serif; color:#fff;
+                            font-size:20px; font-weight:800; letter-spacing:.5px; }}
   .header .tag {{ color:#ede9fe; font-size:11px; margin-top:6px; text-transform:uppercase;
                  letter-spacing:1px; }}
   .body {{ padding:24px 32px; }}
-  h1.titre {{ color:{_VIOLET}; font-size:22px; font-weight:700; margin:0 0 12px; }}
+  h1.titre {{ font-family:'Sora Variable','Segoe UI',sans-serif; color:{_VIOLET};
+             font-size:22px; font-weight:800; letter-spacing:-0.02em; margin:0 0 12px; }}
   .essentiel {{ background:#f5f3ff; border-left:4px solid {_VIOLET}; padding:12px 16px;
                font-size:14px; font-weight:600; margin-bottom:20px; }}
-  h2 {{ color:{_VIOLET}; font-size:13px; text-transform:uppercase; letter-spacing:.5px;
+  h2 {{ font-family:'Sora Variable','Segoe UI',sans-serif; color:{_VIOLET}; font-size:13px;
+       font-weight:700; text-transform:uppercase; letter-spacing:.5px;
        margin:20px 0 8px; display:flex; align-items:center; gap:6px; }}
   .section-icon {{ width:14px; height:14px; flex-shrink:0; }}
   ul, ol {{ margin:0 0 16px; padding-left:20px; }}
