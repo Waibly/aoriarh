@@ -51,19 +51,14 @@ export function MessageList({
     return () => viewport.removeEventListener("scroll", handleScroll);
   }, []);
 
-  // Auto-scroll when new messages are added (only if user is near bottom)
+  // Scroll to the freshly sent message (only if user is near bottom).
+  // Deliberately NOT following the streaming output: once the answer starts
+  // generating, the view stays put so the user can read at their own pace.
   useEffect(() => {
     if (isNearBottomRef.current) {
       scrollToBottom();
     }
   }, [messages, scrollToBottom]);
-
-  // Follow streaming output (only if user is near bottom)
-  useEffect(() => {
-    if (isStreaming && isNearBottomRef.current) {
-      scrollToBottom("instant");
-    }
-  }, [streamingContent, isStreaming, scrollToBottom]);
 
   const showStatus = isStreaming && !streamingContent && !!streamingStatus;
   const showThinking = isStreaming && !streamingContent && !streamingStatus;

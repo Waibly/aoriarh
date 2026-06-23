@@ -14,6 +14,7 @@
   "dependencies": {
     "@stripe/stripe-js": "^5.0.0",
     "@tailwindcss/typography": "^0.5.19",
+    "@types/hast": "^3.0.4",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",
@@ -29,7 +30,8 @@
     "rehype-sanitize": "^6.0.0",
     "remark-gfm": "^4.0.1",
     "sonner": "^2.0.7",
-    "tailwind-merge": "^3.5.0"
+    "tailwind-merge": "^3.5.0",
+    "unist-util-visit": "^5.1.0"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3.0.0",

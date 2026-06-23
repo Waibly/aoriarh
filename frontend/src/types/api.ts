@@ -97,6 +97,9 @@ export interface MessageSource {
   norme_niveau: number;
   excerpt: string;
   full_text?: string;
+  // Structure (législation / conventionnel)
+  article_nums?: string[] | null;
+  section_path?: string | null;
   // Jurisprudence metadata
   juridiction?: string | null;
   chambre?: string | null;

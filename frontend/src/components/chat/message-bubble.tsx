@@ -1,11 +1,17 @@
 "use client";
 
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useRef, useMemo, type ComponentProps } from "react";
 import { useSession } from "next-auth/react";
 import { toast } from "sonner";
 import ReactMarkdown from "react-markdown";
 import rehypeSanitize from "rehype-sanitize";
 import remarkGfm from "remark-gfm";
+import { buildRefIndex } from "@/lib/legal-refs";
+import { rehypeLegalRefs } from "@/lib/legal-refs/rehype-legal-refs";
+import {
+  LegalRefAnchor,
+  SourceViewerProvider,
+} from "@/components/chat/source-viewer-context";
 import {
   Copy,
   Check,
@@ -47,6 +53,8 @@ function formatTime(dateString: string): string {
     minute: "2-digit",
   });
 }
+
+const MD_COMPONENTS = { a: LegalRefAnchor };
 
 export function MessageBubble({ message, onFeedback }: MessageBubbleProps) {
   const isUser = message.role === "user";
@@ -128,6 +136,20 @@ export function MessageBubble({ message, onFeedback }: MessageBubbleProps) {
   const isTemp =
     message.id.startsWith("temp-") || message.id.startsWith("partial-");
 
+  const messageSources = useMemo(
+    () => message.sources ?? [],
+    [message.sources],
+  );
+  const rehypePlugins = useMemo<
+    ComponentProps<typeof ReactMarkdown>["rehypePlugins"]
+  >(
+    () => [
+      [rehypeLegalRefs, { index: buildRefIndex(messageSources) }],
+      rehypeSanitize,
+    ],
+    [messageSources],
+  );
+
   if (isUser) {
     return (
       <div className="group/message flex justify-end">
@@ -147,6 +169,7 @@ export function MessageBubble({ message, onFeedback }: MessageBubbleProps) {
 
   return (
     <div className="group/message flex w-full min-w-0 flex-col items-start">
+      <SourceViewerProvider sources={messageSources}>
       <div className="w-full min-w-0">
         <div
           ref={proseRef}
@@ -154,7 +177,8 @@ export function MessageBubble({ message, onFeedback }: MessageBubbleProps) {
         >
           <ReactMarkdown
             remarkPlugins={[remarkGfm]}
-            rehypePlugins={[rehypeSanitize]}
+            rehypePlugins={rehypePlugins}
+            components={MD_COMPONENTS}
           >
             {message.content}
           </ReactMarkdown>
@@ -292,10 +316,11 @@ export function MessageBubble({ message, onFeedback }: MessageBubbleProps) {
             </Button>
           </div>
         )}
-        {message.sources && message.sources.length > 0 && (
-          <MessageSources sources={message.sources} />
+        {messageSources.length > 0 && (
+          <MessageSources sources={messageSources} />
         )}
       </div>
+      </SourceViewerProvider>
     </div>
   );
 }
