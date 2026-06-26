@@ -163,6 +163,66 @@ async def run_judilibre_sync(
         logger.exception("Worker: Judilibre sync failed")
 
 
+async def run_jurisprudence_presence_check(ctx: dict) -> None:
+    """Contrôle de présence mensuel (LECTURE SEULE).
+
+    Repère les arrêts qu'on détient mais qui ont disparu de Judilibre
+    (retirés en amont par la Cour de cassation, cf. incident 2026-06-23).
+    SIGNALE seulement : ne supprime rien. La liste part dans les logs et un
+    résumé dans le SyncLog (visible au cockpit corpus). La suppression reste
+    une décision humaine (sauvegarde + DELETE /admin/documents/{id}).
+    """
+    import time as _time
+
+    logger.info("Worker: jurisprudence presence check started")
+    session_factory = ctx["session_factory"]
+    log_id = await _create_sync_log(session_factory, "juris_presence")
+    t0 = _time.monotonic()
+    try:
+        from app.services.judilibre_service import JudilibreService
+
+        service = JudilibreService()
+        async with session_factory() as db:
+            res = await service.find_deleted_decisions(db)
+
+        gone = res.gone
+        if gone:
+            logger.warning(
+                "Worker: presence check — %d décision(s) DISPARUE(S) de Judilibre "
+                "(à examiner/retirer)", len(gone),
+            )
+            for g in gone:
+                logger.warning(
+                    "  DISPARUE | %s | n° %s | %s | doc_id=%s",
+                    g.source_type, g.numero_pourvoi, g.name, g.doc_id,
+                )
+            summary = f"{len(gone)} disparue(s) : " + "; ".join(
+                g.numero_pourvoi for g in gone[:30]
+            )
+        else:
+            logger.info("Worker: presence check — aucune décision disparue")
+            summary = "aucune décision disparue"
+
+        await _finish_sync_log(
+            session_factory, log_id,
+            success=True,
+            items_fetched=res.checked,
+            items_skipped=res.present,
+            items_updated=res.unknown,
+            errors=len(gone),
+            error_message=summary,
+            duration_ms=int((_time.monotonic() - t0) * 1000),
+        )
+    except Exception as exc:
+        logger.exception("Worker: jurisprudence presence check failed")
+        await _finish_sync_log(
+            session_factory, log_id,
+            success=False,
+            error_message=str(exc),
+            duration_ms=int((_time.monotonic() - t0) * 1000),
+        )
+
+
 async def run_kali_install(
     ctx: dict, org_convention_id: str, user_id: str, force_refetch: bool = False,
 ) -> None:
@@ -1568,6 +1628,7 @@ class WorkerSettings:
         run_jorf_sync,
         run_legislation_sync,
         run_scheduled_sync,
+        run_jurisprudence_presence_check,
         run_billing_lifecycle,
         run_data_retention_purge,
         run_daily_bocc_check,
@@ -1587,6 +1648,11 @@ class WorkerSettings:
         # BOCC : vérification quotidienne (DILA peut publier n'importe quand).
         # Si rien de nouveau, sync_log = success / 0 items (pas une erreur).
         cron(run_daily_bocc_check, hour=2, minute=30),
+        # Contrôle de présence jurisprudence : 1er du mois 3h UTC. Repère les
+        # arrêts retirés de Judilibre qu'on détient encore (cf. incident
+        # 2026-06-23). Lecture seule, signale dans le SyncLog ; la suppression
+        # reste manuelle. ~1-2h de scan (12k+ recherches Cass + export CA).
+        cron(run_jurisprudence_presence_check, day=1, hour=3, minute=0),
         # Billing lifecycle: every day at 9:00 AM UTC (trial reminders + expirations)
         cron(run_billing_lifecycle, hour=9, minute=0),
         # GDPR data retention purge: every day at 10:00 AM UTC (after the

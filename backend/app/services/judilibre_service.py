@@ -14,7 +14,7 @@ import re
 import time
 import uuid
 from dataclasses import dataclass, field
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 
 import httpx
 from sqlalchemy import select
@@ -193,6 +193,30 @@ class SyncResult:
     filtered_out: int = 0
     errors: int = 0
     error_messages: list[str] = field(default_factory=list)
+
+
+@dataclass
+class DeletedDecision:
+    """Une décision qu'on détient mais qui a disparu de Judilibre."""
+
+    doc_id: str
+    source_type: str
+    numero_pourvoi: str
+    name: str
+    date_decision: str | None
+
+
+@dataclass
+class DeletedScanResult:
+    """Résultat du scan de présence (lecture seule, ne supprime rien)."""
+
+    checked: int = 0
+    present: int = 0
+    # Décisions confirmées disparues de Judilibre.
+    gone: list[DeletedDecision] = field(default_factory=list)
+    # Décisions qu'on n'a pas pu vérifier (export d'un jour en échec, pas
+    # de date…) : on ne conclut JAMAIS à une suppression sur un doute.
+    unknown: int = 0
 
 
 class JudilibreService:
@@ -621,7 +645,226 @@ class JudilibreService:
             "last_sync": row.last_sync.isoformat() if row.last_sync else None,
         }
 
+    async def find_deleted_decisions(self, db: AsyncSession) -> DeletedScanResult:
+        """Scan LECTURE SEULE : repère les arrêts qu'on détient mais qui ont
+        disparu de Judilibre (retirés en amont par la Cour de cassation).
+
+        Ne supprime rien — sert au contrôle de présence mensuel qui SIGNALE
+        les décisions à examiner.
+
+        Deux méthodes selon la source, car les numéros ne se cherchent pas
+        de la même façon :
+        - Cass : ``/search`` par numéro de pourvoi (indexé, recherche exacte).
+        - CA   : les numéros de rôle ne sont PAS cherchables à l'exact ; on
+                 exporte les décisions CA du jour et on teste la présence du
+                 numéro dans ce jour-là.
+        Conseil constitutionnel : hors Judilibre, ignoré.
+
+        En cas de doute (export d'un jour en échec, pas de date), la décision
+        est comptée ``unknown`` — jamais ``gone``.
+        """
+        from collections import defaultdict
+
+        result = DeletedScanResult()
+        if not self._client_id or not self._client_secret:
+            logger.warning("find_deleted_decisions: credentials PISTE absents")
+            return result
+
+        rows = (
+            await db.execute(
+                select(
+                    Document.id,
+                    Document.source_type,
+                    Document.numero_pourvoi,
+                    Document.name,
+                    Document.date_decision,
+                    Document.juridiction,
+                ).where(
+                    Document.organisation_id.is_(None),
+                    Document.source_type.in_(
+                        ["arret_cour_cassation", "arret_cour_appel"]
+                    ),
+                    Document.numero_pourvoi.isnot(None),
+                    Document.numero_pourvoi != "",
+                )
+            )
+        ).all()
+
+        cass = [r for r in rows if r.source_type == "arret_cour_cassation"]
+        ca = [r for r in rows if r.source_type == "arret_cour_appel"]
+        logger.info(
+            "find_deleted_decisions: %d Cass + %d CA à vérifier", len(cass), len(ca)
+        )
+
+        async with httpx.AsyncClient(timeout=_REQUEST_TIMEOUT) as client:
+            # === Cour de cassation : recherche par numéro de pourvoi ===
+            for r in cass:
+                result.checked += 1
+                data = await self._api_get(
+                    client,
+                    "/search",
+                    {"query": r.numero_pourvoi, "jurisdiction": ["cc"], "page_size": 10},
+                )
+                if data is None:
+                    result.unknown += 1
+                    continue
+                if self._number_in_results(r.numero_pourvoi, data.get("results", [])):
+                    result.present += 1
+                else:
+                    result.gone.append(self._to_deleted(r))
+
+            # === Cours d'appel : export jour par jour, test de présence ===
+            by_day: dict[str, list] = defaultdict(list)
+            for r in ca:
+                if r.date_decision:
+                    by_day[r.date_decision.isoformat()].append(r)
+                else:
+                    result.checked += 1
+                    result.unknown += 1  # sans date, on ne peut pas vérifier
+
+            for day, docs in by_day.items():
+                day_index = await self._export_ca_day_numbers(client, day)
+                for r in docs:
+                    result.checked += 1
+                    if day_index is None:
+                        result.unknown += 1  # export du jour en échec → doute
+                        continue
+                    pairs, locations = day_index
+                    num = self._norm_number(r.numero_pourvoi)
+                    loc = self._location_code_from_label(r.juridiction)
+                    if loc is not None and (loc, num) in pairs:
+                        result.present += 1
+                    elif loc is not None and loc in locations:
+                        # La cour a publié d'autres arrêts ce jour-là (export
+                        # sain) mais pas celui-ci → vraiment disparu.
+                        result.gone.append(self._to_deleted(r))
+                    elif loc is None and num in {n for _, n in pairs}:
+                        # Pas de code cour exploitable : repli sur le numéro seul.
+                        result.present += 1
+                    else:
+                        # Cour absente du jour (ou libellé non mappable) :
+                        # on ne conclut pas pour éviter un faux positif.
+                        result.unknown += 1
+
+        logger.info(
+            "find_deleted_decisions terminé : %d vérifiées, %d présentes, "
+            "%d disparues, %d indéterminées",
+            result.checked, result.present, len(result.gone), result.unknown,
+        )
+        return result
+
     # --- Private methods ---
+
+    @staticmethod
+    def _norm_number(s: str) -> str:
+        """Normalise un numéro pour comparaison robuste (retire ponctuation)."""
+        return re.sub(r"[^0-9a-z]", "", (s or "").lower())
+
+    @classmethod
+    def _number_in_results(cls, numero: str, results: list[dict]) -> bool:
+        """Vrai si ``numero`` figure exactement parmi les résultats /search."""
+        target = cls._norm_number(numero)
+        for res in results:
+            nums = list(res.get("numbers") or [])
+            if res.get("number"):
+                nums.append(res["number"])
+            if any(cls._norm_number(n) == target for n in nums):
+                return True
+        return False
+
+    @staticmethod
+    def _to_deleted(row) -> "DeletedDecision":
+        return DeletedDecision(
+            doc_id=str(row.id),
+            source_type=row.source_type,
+            numero_pourvoi=row.numero_pourvoi,
+            name=row.name,
+            date_decision=row.date_decision.isoformat() if row.date_decision else None,
+        )
+
+    @staticmethod
+    def _location_code_from_label(juridiction: str | None) -> str | None:
+        """Retrouve le code 'location' Judilibre (ex. ``ca_reims``) depuis le
+        libellé stocké (ex. ``Cour d'appel de Reims``).
+
+        Le libellé a été construit DEPUIS ce code à l'ingestion via une
+        transformation déterministe (``location.replace('ca_','').replace
+        ('_',' ').title()``), donc l'inverse est fiable. Renvoie ``None`` si
+        le libellé ne suit pas ce schéma (on retombera sur le numéro seul).
+        """
+        if not juridiction:
+            return None
+        rest = juridiction
+        for prefix in (
+            "Cour d'appel de ", "Cour d'appel d'", "Cour d'appel du ",
+            "Cour d'appel des ", "Cour d'appel ",
+        ):
+            if rest.startswith(prefix):
+                rest = rest[len(prefix):]
+                break
+        else:
+            return None  # libellé inattendu
+        rest = rest.strip().lower()
+        if not rest:
+            return None
+        return "ca_" + rest.replace(" ", "_")
+
+    async def _export_ca_day_numbers(
+        self, client: httpx.AsyncClient, day: str
+    ) -> tuple[set[tuple[str, str]], set[str]] | None:
+        """Index des arrêts CA présents sur Judilibre un jour donné.
+
+        Retourne ``(pairs, locations)`` où ``pairs`` est l'ensemble des couples
+        ``(location, numéro_normalisé)`` et ``locations`` l'ensemble des cours
+        ayant publié ce jour-là. Les numéros de rôle CA n'étant pas uniques
+        entre cours, le couple (cour, numéro) est nécessaire pour décider.
+
+        Retourne ``None`` si l'export a échoué (ou jour anormalement vide),
+        pour ne JAMAIS conclure à une suppression sur un export incomplet —
+        c'est ce qui causait les faux positifs lors du diagnostic initial.
+        """
+        pairs: set[tuple[str, str]] = set()
+        locations: set[str] = set()
+        date_end = (date.fromisoformat(day) + timedelta(days=1)).isoformat()
+        batch = 0
+        while batch < 200:  # garde-fou (CA ~1000/jour, bien sous la limite)
+            data = await self._api_get(
+                client,
+                "/export",
+                {
+                    "jurisdiction": "ca",
+                    "date_start": day,
+                    "date_end": date_end,
+                    "batch": batch,
+                    "batch_size": _BATCH_SIZE,
+                },
+            )
+            if data is None:
+                # _api_get renvoie None sur 404/416/échec réseau. À batch 0,
+                # c'est un échec dur → on ne conclut pas.
+                if batch == 0:
+                    return None
+                break
+            # Un jour ouvré a toujours des centaines d'arrêts CA : total 0 au
+            # premier batch est suspect (anomalie API) → on ne conclut pas.
+            if batch == 0 and data.get("total", 0) == 0:
+                return None
+            items = data.get("results", [])
+            if not items:
+                break
+            for x in items:
+                loc = (x.get("location") or "").lower()
+                if loc:
+                    locations.add(loc)
+                nums = list(x.get("numbers") or [])
+                if x.get("number"):
+                    nums.append(x["number"])
+                for n in nums:
+                    pairs.add((loc, self._norm_number(n)))
+            if not data.get("next_batch"):
+                break
+            batch += 1
+        return pairs, locations
 
     @staticmethod
     def _parse_decision(raw: dict) -> JudilibreDecision | None:
