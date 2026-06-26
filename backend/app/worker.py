@@ -20,6 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from sqlalchemy import select
 
 from app.core.config import settings
+from app.models.document import Document
 from app.rag.ingestion import IngestionPipeline
 
 logger = structlog.get_logger(__name__)
@@ -975,7 +976,6 @@ async def run_jurisprudence_initialization(ctx: dict, user_id: str) -> None:
         # On appelle directement la méthode dédiée pour ne pas relancer
         # les Cass qui ont déjà tourné en phase A.
         import time as _time
-        import traceback
         from datetime import UTC, datetime
         from app.models.sync_log import SyncLog
         from app.services.judilibre_service import JudilibreService
