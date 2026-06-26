@@ -456,3 +456,17 @@ class TestParseVariantsLabelsAndDedup:
         content = "1. BDESE : contenu obligatoire et rubriques"
         variants = RAGAgent._parse_variants(content, "bdese")
         assert variants == ["BDESE : contenu obligatoire et rubriques"]
+
+    def test_drops_no_ccn_instruction_leak(self):
+        """Sans CCN rattachée, le modèle émet parfois une méta-ligne au lieu de
+        s'arrêter — elle ne doit pas devenir une requête de recherche."""
+        content = (
+            "1. quel est le seuil pour une BDESE\n"
+            "2. BDESE seuil 50 salariés CSE obligations\n"
+            "3. (pas de CCN rattachée, donc pas de variante CCN)"
+        )
+        variants = RAGAgent._parse_variants(content, "bdese")
+        assert variants == [
+            "quel est le seuil pour une BDESE",
+            "BDESE seuil 50 salariés CSE obligations",
+        ]

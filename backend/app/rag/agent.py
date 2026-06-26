@@ -374,13 +374,14 @@ Côté employeur, il faut saisir le service de santé au travail dès que la dat
 
 _QUERY_EXPAND_PROMPT = """\
 Tu es un expert RH spécialisé en droit social français. Ta mission : transformer \
-la question d'un utilisateur en 5 variantes de recherche pour maximiser la \
-récupération des articles pertinents (Code du travail, CCN, jurisprudence, \
+la question d'un utilisateur en 2 ou 3 variantes de recherche DIVERSES (chacune \
+apporte un angle différent, jamais une simple paraphrase d'une autre) pour \
+récupérer les documents pertinents (Code du travail, CCN, jurisprudence, \
 règlement intérieur, contrats).
 
 ## Règle absolue — anti-hallucination juridique
 N'introduis JAMAIS un concept juridique qui n'est pas dans la question d'origine. \
-Ne confonds pas :
+N'ajoute aucune sous-question ni détail non demandé. Ne confonds pas :
 - prescription ≠ forclusion ≠ déchéance
 - licenciement ≠ rupture conventionnelle ≠ démission ≠ résiliation judiciaire
 - indemnité ≠ dommages-intérêts ≠ allocation
@@ -389,57 +390,37 @@ Ne confonds pas :
 - congé ≠ absence ≠ suspension du contrat
 En l'absence de synonyme direct et sûr, RÉPÈTE le terme d'origine.
 
-## Génère exactement 5 variantes, numérotées 1. à 5.
+## Génère les variantes numérotées (1. puis 2. puis éventuellement 3.)
 
-1. QUESTION CORRIGÉE : la question de l'utilisateur, avec uniquement les fautes \
-d'orthographe et de frappe évidentes corrigées. Ne reformule pas, ne change pas \
-le vocabulaire, ne résume pas. Préserve tels quels les identifiants (articles, \
-numéros de pourvoi, IDCC).
+1. REFORMULATION : la question de l'utilisateur, COURTE et fidèle, fautes \
+d'orthographe/frappe corrigées. Ne change pas le vocabulaire, ne résume pas, \
+n'ajoute aucune sous-question ni détail. Préserve tels quels les identifiants \
+(articles, numéros de pourvoi, IDCC).
 
-2. INTENTION RH : reformulation selon ce que cherche un praticien RH au \
-quotidien. Désambiguïse les termes courants du métier. Ex: "c'est quoi \
-collectif obligatoire" → régime de mutuelle/prévoyance d'entreprise à \
-adhésion obligatoire (PAS des négociations collectives). Pas d'identifiants.
+2. MOTS-CLÉS : 6 à 10 mots-clés séparés par des espaces — les mots de la \
+question, leurs synonymes directs, et la désambiguïsation des termes courants du \
+métier RH (sans ajouter de concept voisin). Règles :
+   - Désambiguïse le jargon : "collectif obligatoire" → mutuelle prévoyance \
+entreprise adhésion obligatoire (PAS négociation collective).
+   - Intègre l'équivalent conventionnel ANCIEN (CCN avant 1980, comme la CCN 66) \
+UNIQUEMENT si le terme figure dans la question : préavis ↔ délai-congé ; période \
+d'essai ↔ essai probatoire ; congés payés ↔ congés annuels ; salaire ↔ \
+appointements / rémunération conventionnelle ; indemnité de licenciement ↔ \
+indemnité conventionnelle de rupture ; sanction disciplinaire ↔ mesure \
+disciplinaire ; promotion ↔ avancement ; rupture du contrat ↔ cessation d'emploi.
+   - Inclus TEL QUEL tout identifiant ("L4121-1", "22-18.875").
+   - N'ajoute AUCUN autre synonyme ni concept voisin.
 
-3. TERMINOLOGIE JURIDIQUE : reformulation avec les termes techniques du droit \
-social français — UNIQUEMENT des synonymes directs et sûrs du vocabulaire de \
-la question. N'ajoute pas de concept voisin ni de notion associée. Pas d'identifiants.
-
-Si la question contient un des termes ci-dessous, intègre SON ÉQUIVALENT \
-CONVENTIONNEL ANCIEN (utilisé dans les CCN rédigées avant 1980, comme la CCN 66) :
-- préavis ↔ délai-congé
-- prescription disciplinaire ↔ annulation de sanction, effacement de sanction
-- indemnité de licenciement ↔ indemnité conventionnelle de rupture
-- congés payés ↔ congés annuels
-- salaire ↔ appointements (cadres) / rémunération conventionnelle
-- période d'essai ↔ essai probatoire, essai
-- rupture du contrat ↔ cessation d'emploi, fin des fonctions
-- promotion ↔ avancement
-- sanction disciplinaire ↔ mesure disciplinaire (observation, avertissement, mise à pied, licenciement)
-
-Règle stricte : n'ajoute AUCUN autre synonyme que ceux listés ci-dessus. Si le \
-terme n'est pas dans la liste, conserve le vocabulaire d'origine.
-
-4. MOTS-CLÉS : 5-8 mots-clés séparés par des espaces, composés des mots de la \
-question et de leurs synonymes directs. Pas de concepts associés, pas de termes \
-juridiques voisins. Si la question contient un identifiant (ex: "L4121-1", \
-"22-18.875"), INCLUS-LE TEL QUEL.
-
-5. VARIANTE CCN : Si le bloc [ORGANISATION] du message utilisateur indique \
-une CCN rattachée (ligne "- CCN rattachée : ..."), génère SYSTÉMATIQUEMENT \
-une variante au format suivant :
-   <IDCC extrait entre parenthèses> convention collective <mots-clés du sujet>
-   Exemples :
-   - CCN = "CCN Handicapés (IDCC 0413)" + question = "délai de préavis" \
-→ "IDCC 0413 convention collective délai préavis"
-   - CCN = "Syntec (IDCC 1486)" + question = "télétravail" \
-→ "IDCC 1486 convention collective télétravail"
-   Si aucune CCN n'est rattachée (bloc [ORGANISATION] absent ou sans ligne \
-"- CCN rattachée"), répète la variante 1 à l'identique.
+3. VARIANTE CCN — UNIQUEMENT si le bloc [ORGANISATION] du message indique une \
+ligne "- CCN rattachée : ...". Format : \
+<IDCC entre parenthèses> convention collective <mots-clés du sujet>. \
+Ex : "IDCC 0413 convention collective délai préavis". \
+Si AUCUNE CCN n'est rattachée, N'ÉMETS PAS cette variante : ne renvoie que les \
+variantes 1 et 2.
 
 ## Format de sortie
-- Chaque variante sur une ligne, précédée de son numéro (1. 2. 3. 4. 5.)
-- Aucune explication, aucun préambule"""
+- Chaque variante sur une ligne, précédée de son numéro (1. 2. 3.)
+- Aucune explication, aucun préambule, aucun texte d'instruction recopié"""
 
 _LEGAL_ANCHOR_PROMPT = """\
 Tu es un juriste en droit social français. À partir de la question de l'utilisateur, \
@@ -456,45 +437,43 @@ ce texte sert UNIQUEMENT à retrouver les bons textes, il n'est jamais montré �
 - 1 à 3 phrases denses, sur une seule ligne, sans préambule ni mise en forme."""
 
 _CONDENSE_PROMPT = """\
-Tu reformules une question de suivi en question autonome et complète.
+Tu reformules une question de suivi en question autonome, compréhensible SANS \
+l'historique, destinée à une recherche documentaire.
 
 Méthode :
-1. Lis l'historique et identifie le SUJET EN COURS (ex: mutation, licenciement, \
-congés) et la SITUATION FACTUELLE accumulée (type de contrat, statut du salarié, \
-CCN, ce qui a été décidé/proposé dans les échanges précédents).
-2. Lis les CONCLUSIONS de l'assistant dans les réponses précédentes — elles \
-contiennent des faits établis (ex: "le site ferme", "salarié protégé", \
-"autorisation de l'inspection du travail nécessaire").
-3. Reformule la question de suivi en intégrant TOUT ce contexte.
+1. Identifie le SUJET en cours et la SITUATION factuelle déjà établie (type de \
+contrat, statut du salarié, CCN/IDCC, faits validés dans les échanges).
+2. RÉSOUS les références : "cet accord", "ce texte", "cette convention", \
+"ce salarié", "cette procédure", "ça", "c'est correct ?" → remplace par le nom/ \
+sujet exact identifié dans l'historique ou les sources citées. C'est CRITIQUE \
+pour que la recherche trouve le bon document.
+3. Réécris la question de suivi en y intégrant ce contexte — et RIEN DE PLUS.
+
+Règles strictes :
+- COURTE : 1 à 2 phrases. Reste au plus près de la formulation de l'utilisateur.
+- N'AJOUTE AUCUNE sous-question, contrainte, hypothèse ou précision que \
+l'utilisateur n'a pas formulée. Garde EXACTEMENT les sous-questions posées : s'il \
+en pose plusieurs, garde-les ; s'il n'en pose qu'une, n'en invente pas d'autres. \
+Interdit : « en supposant que… », ou ajouter « + conditions de renouvellement / \
+références d'articles / dates d'effet / échelons » quand ce n'est pas demandé.
+- Si l'utilisateur fait relire ou corriger un TEXTE qu'il a collé, NE RECOPIE PAS \
+ce texte : désigne-le par une référence courte (« la note sur X »).
+- Forme TOUJOURS INTERROGATIVE (une question, pas une consigne ni une \
+affirmation : « Quelle est… ? », « Quels sont… ? »).
+- CONSERVE : organisation, CCN/IDCC, statut salarié, type de contrat, situation \
+factuelle.
+- Renvoie la question TELLE QUELLE uniquement si elle est déjà autonome ET sans \
+lien avec l'historique. Dans le doute, reformule (mais COURT). Une relance vague \
+(« il en manque », « et pour X ? », « complète », « lesquels ? ») doit reprendre \
+EXPLICITEMENT le sujet en cours.
+- Réponds UNIQUEMENT avec la question reformulée.
 
 Exemple :
-- Q1: "Un salarié refuse sa mutation, quelles options ?"
-- R1: (explique les cas, salarié protégé, modification du contrat...)
-- Q2: "Le site ferme, je peux le licencier ?"
-- R2: (oui avec autorisation, obligation de reclassement...)
-- Q3: "Je n'ai qu'un seul poste, c'est un élu CSE"
-- → Reformulation : "Dans le cas d'une fermeture de site avec un élu CSE \
-qui refuse sa mutation, l'employeur ne peut proposer qu'un seul poste de \
-reclassement correspondant à ses fonctions actuelles. Quelles sont les options \
-et la procédure (autorisation inspection du travail) ?"
-
-Règles :
-- La question reformulée doit être compréhensible SANS l'historique.
-- Formule TOUJOURS le résultat à la forme INTERROGATIVE (une question, pas une \
-consigne ni une affirmation : jamais « Vous pouvez fournir… » ou « Donne la \
-liste… », mais « Quelle est… ? », « Quels sont… ? »).
-- RÉSOUS les références pronominales et démonstratifs : "cet accord", "ce texte", \
-"cette convention", "ce salarié", "cette procédure" → remplace par le nom exact \
-du document, de l'accord ou du sujet identifié dans l'historique ou les sources citées. \
-C'est CRITIQUE pour que la recherche trouve le bon document.
-- CONSERVE : organisation, CCN/IDCC, statut salarié, type contrat, situation factuelle.
-- Retourne la question TELLE QUELLE UNIQUEMENT si elle est déjà parfaitement \
-autonome ET introduit un sujet juridique entièrement nouveau, sans aucun lien \
-avec l'historique. Dans le DOUTE, reformule. Une relance de suivi — même courte \
-(« il en manque », « et pour X ? », « donne la durée pour chacun », « complète », \
-« lesquels ? ») — doit TOUJOURS être réécrite en reprenant EXPLICITEMENT le sujet \
-de l'échange en cours. Ne renvoie jamais une relance vague inchangée.
-- Réponds UNIQUEMENT avec la question reformulée."""
+- Historique : sujet = durée de la période d'essai de l'éducateur spécialisé \
+(CCN66 / IDCC 0413), organisation Empreintes.
+- Q : « et pour un chef de service ? »
+- → « Quelle est la durée de la période d'essai en CDI pour un chef de service \
+selon la CCN66 (IDCC 0413) ? »"""
 
 
 def _normalize_question(s: str) -> str:
@@ -1083,7 +1062,7 @@ class RAGAgent:
         query: str,
         org_context: dict[str, str | None] | None = None,
     ) -> list[str]:
-        """Step 1: Expand the user query into 5 search variants."""
+        """Step 1: Expand the user query into 2-3 search variants."""
         user_content = self._build_expand_user_message(query, org_context)
         response = await self.llm.chat.completions.create(
             model=rag_config.EXPAND_MODEL,
@@ -1161,8 +1140,8 @@ class RAGAgent:
     # partent dans la recherche : "QUESTION CORRIGÉE", "MOTS-CLÉS"… deviennent
     # des termes BM25 parasites et décalent l'embedding dense.
     _VARIANT_LABEL_RE = re.compile(
-        r"^(?:question\s+corrig[ée]e|intention\s+rh|terminologie\s+juridique"
-        r"|mots[-\s]?cl[ée]s|variante\s+ccn)\s*:\s*",
+        r"^(?:reformulation|question\s+corrig[ée]e|intention\s+rh"
+        r"|terminologie\s+juridique|mots[-\s]?cl[ée]s|variante\s+ccn)\s*:\s*",
         re.IGNORECASE,
     )
 
@@ -1179,6 +1158,14 @@ class RAGAgent:
                 continue
             variant = RAGAgent._VARIANT_LABEL_RE.sub("", match.group(1).strip()).strip()
             key = " ".join(variant.lower().split())
+            # Filtre les fuites d'instruction (ex. « (pas de CCN rattachée, donc
+            # pas de variante CCN) » émis quand l'org n'a pas de convention) :
+            # ces méta-lignes ne doivent pas devenir des requêtes de recherche.
+            if any(p in key for p in (
+                "pas de variante", "ccn rattachée", "ccn rattachee",
+                "répéter la question", "répète la variante", "répète la question",
+            )):
+                continue
             if variant and key not in seen:
                 seen.add(key)
                 variants.append(variant)
