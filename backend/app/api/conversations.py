@@ -483,12 +483,20 @@ async def _load_org_context(
     )
     installed_ccns = ccn_result.all()
 
-    # Build convention_collective string from installed CCNs if not manually set
-    convention_str = org.convention_collective
-    if not convention_str and installed_ccns:
+    # Source de vérité = les CCN réellement installées (celles qui sont
+    # cherchables dans Qdrant). Le champ libre `org.convention_collective`
+    # n'est qu'un fallback legacy : il n'était PAS resynchronisé lors d'un
+    # changement de CCN, ce qui réinjectait l'ancienne convention dans le
+    # contexte (ex. on supprime Propreté + installe la CCN66 mais le contexte
+    # continue d'annoncer « Propreté » à la génération). On reconstruit donc
+    # toujours depuis les conventions installées dès qu'il y en a, et on ne
+    # retombe sur le champ libre que pour les orgs sans CCN installée.
+    if installed_ccns:
         convention_str = "; ".join(
             f"{row.titre} (IDCC {row.idcc})" for row in installed_ccns
         )
+    else:
+        convention_str = org.convention_collective
 
     ctx: dict[str, str | bool | None] = {
         "nom": org.name,

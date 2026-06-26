@@ -12,6 +12,7 @@ from openai import AsyncOpenAI
 from app.core.config import settings
 import app.rag.config as rag_config
 from app.rag.config import (
+    CCN_FLOOR_TOP,
     CONDENSE_HISTORY_LIMIT,
     LEGISLATION_FLOOR_TOP,
     RAG_TIMEOUT_GLOBAL,
@@ -49,6 +50,39 @@ _LEGISLATION_SOURCE_TYPES: list[str] = sorted(
     for st, meta in DOCUMENT_TYPE_HIERARCHY.items()
     if isinstance(meta.get("niveau"), int) and meta["niveau"] <= 5 and meta["niveau"] != 4
 )
+
+# Types « convention collective » de l'org. Tout résultat de ce type présent
+# dans le pool a passé le filtre IDCC (cf. HybridSearch.search) : c'est donc la
+# convention installée de l'organisation. Sert au repêchage et au plancher de
+# confiance dédiés aux CCN.
+_CCN_SOURCE_TYPES: frozenset[str] = frozenset(
+    {"convention_collective_nationale", "accord_branche"}
+)
+
+
+def _assess_confidence(
+    results: list["SearchResult"],
+) -> tuple[float | None, bool]:
+    """Confiance du retrieval, consciente du type de source.
+
+    On est confiant si l'on dispose soit d'une source générale forte
+    (≥ LOW_CONFIDENCE_RERANK), soit d'un match CCN décent
+    (≥ CCN_LOW_CONFIDENCE_RERANK) : un article de la convention installée de
+    l'org reranke structurellement plus bas mais reste une vraie réponse.
+
+    Renvoie (meilleur_score_global, low_confidence).
+    """
+    if not results:
+        return None, False
+    best = max(r.score for r in results)
+    best_ccn = max(
+        (r.score for r in results if r.source_type in _CCN_SOURCE_TYPES),
+        default=None,
+    )
+    confident = best >= rag_config.LOW_CONFIDENCE_RERANK or (
+        best_ccn is not None and best_ccn >= rag_config.CCN_LOW_CONFIDENCE_RERANK
+    )
+    return best, not confident
 
 
 @dataclass
@@ -601,16 +635,18 @@ class RAGAgent:
         t2 = time.perf_counter()
 
         # --- Step 3: Cross-encoder reranking ---
+        _pool_pre_rerank = results
         results = await self._step_with_timeout(
             self.reranker.rerank(query, results, top_k=RERANK_TOP_K),
             fallback=results[:RERANK_TOP_K],
         )
-        t3 = time.perf_counter()
-        # C1 — Confiance du retrieval (cf. prepare_context) sur scores propres.
-        _max_score = max((r.score for r in results), default=None)
-        low_confidence = (
-            _max_score is not None and _max_score < rag_config.LOW_CONFIDENCE_RERANK
+        results = self._ensure_ccn_represented(
+            _pool_pre_rerank, results, org_idcc_list,
         )
+        t3 = time.perf_counter()
+        # C1 — Confiance du retrieval (cf. prepare_context) sur scores propres,
+        # avec un seuil dédié plus bas pour la CCN de l'org.
+        _max_score, low_confidence = _assess_confidence(results)
         logger.info(
             "[PERF] Step 3 — Reranking %.0fms | %d results%s",
             (t3 - t2) * 1000, len(results),
@@ -751,21 +787,23 @@ class RAGAgent:
         t2 = time.perf_counter()
 
         # Step 3: Reranking
+        _pool_pre_rerank = results
         results = await self._step_with_timeout(
             self.reranker.rerank(query, results, top_k=RERANK_TOP_K),
             fallback=results[:RERANK_TOP_K],
+        )
+        results = self._ensure_ccn_represented(
+            _pool_pre_rerank, results, org_idcc_list,
         )
 
         trace.perf_ms["rerank"] = (time.perf_counter() - t2) * 1000
         trace.rerank_results = _serialize_chunks(results, limit=RERANK_TOP_K)
         # C1 — Confiance du retrieval : si même le meilleur document reste sous
         # le seuil, la recherche est faible -> on signalera à la génération de
-        # ne rien inventer. Calculé ici sur les scores de rerank propres.
-        trace.max_rerank_score = max((r.score for r in results), default=None)
-        trace.low_confidence = (
-            trace.max_rerank_score is not None
-            and trace.max_rerank_score < rag_config.LOW_CONFIDENCE_RERANK
-        )
+        # ne rien inventer. Calculé ici sur les scores de rerank propres, avec
+        # un seuil dédié plus bas pour la CCN installée de l'org (qui reranke
+        # structurellement plus bas que le Code du travail).
+        trace.max_rerank_score, trace.low_confidence = _assess_confidence(results)
         logger.info(
             "[PERF] Step 3 — Reranking %.0fms | %d results | max_score=%.3f%s",
             trace.perf_ms["rerank"], len(results),
@@ -1350,17 +1388,41 @@ class RAGAgent:
                     source_type_filter=_LEGISLATION_SOURCE_TYPES,
                 )
             )
+        # Plancher CCN : recherche auxiliaire restreinte à la convention de
+        # l'org, pour qu'elle atteigne TOUJOURS le reranker. Indispensable car
+        # le filtre d'intention restreint souvent la recherche principale au
+        # seul Code du travail (question « selon le Code du travail… »), ce qui
+        # excluait totalement la convention de l'org — alors qu'elle peut y
+        # déroger. On l'active dès que l'org a une CCN, SAUF si la recherche
+        # principale est déjà restreinte à la CCN (la question porte alors
+        # explicitement dessus : inutile de la dupliquer).
+        ccn_already_searched = source_type_filter is not None and any(
+            st in _CCN_SOURCE_TYPES for st in source_type_filter
+        )
+        ccn_task_idx: int | None = None
+        if org_idcc_list and not ccn_already_searched:
+            ccn_task_idx = len(search_tasks)
+            search_tasks.append(
+                self.search_engine.search(
+                    variants[0], organisation_id, top_k=TOP_K,
+                    org_idcc_list=org_idcc_list,
+                    source_type_filter=sorted(_CCN_SOURCE_TYPES),
+                )
+            )
         search_results = await asyncio.gather(*search_tasks, return_exceptions=True)
 
-        # Split variant results (RRF-fused) from the legislation results (injected)
+        # Split variant results (RRF-fused) from the floor results (injected)
         valid_results: list[list[SearchResult]] = []
         leg_results: list[SearchResult] = []
+        ccn_results: list[SearchResult] = []
         for i, result in enumerate(search_results):
             if isinstance(result, Exception):
                 logger.warning("Search failed for task %d: %s", i, result)
                 continue
             if i == leg_task_idx:
                 leg_results = result
+            elif i == ccn_task_idx:
+                ccn_results = result
             else:
                 valid_results.append(result)
 
@@ -1375,13 +1437,16 @@ class RAGAgent:
         if not valid_results:
             return []
 
-        # Fuse variant results with RRF, then inject the legislation floor.
+        # Fuse variant results with RRF, then inject the floors (legislation +
+        # CCN). Both are injected rather than RRF-fused: fusing them in would
+        # dilute them, since the near-duplicate variants out-vote them.
         fused = self._reciprocal_rank_fusion(valid_results)
         pool = fused[:TOP_K]
-        if leg_results:
-            seen = {(r.document_id, r.chunk_index) for r in pool}
+        seen = {(r.document_id, r.chunk_index) for r in pool}
+
+        def _inject(candidates: list[SearchResult], cap: int, label: str) -> None:
             injected = 0
-            for r in leg_results[:LEGISLATION_FLOOR_TOP]:
+            for r in candidates[:cap]:
                 key = (r.document_id, r.chunk_index)
                 if key in seen:
                     continue
@@ -1390,9 +1455,14 @@ class RAGAgent:
                 injected += 1
             if injected:
                 logger.info(
-                    "[LEGFLOOR] Injected %d legislation candidate(s) (pool: %d)",
-                    injected, len(pool),
+                    "[%s] Injected %d candidate(s) (pool: %d)",
+                    label, injected, len(pool),
                 )
+
+        if leg_results:
+            _inject(leg_results, LEGISLATION_FLOOR_TOP, "LEGFLOOR")
+        if ccn_results:
+            _inject(ccn_results, CCN_FLOOR_TOP, "CCNFLOOR")
 
         # Articles explicitement nommés par l'ancre législative : le LLM nomme
         # le bon article (ex. "L1235-3" pour le barème Macron) même quand son
@@ -1456,7 +1526,71 @@ class RAGAgent:
         ranked = sorted(results, key=lambda r: r.score, reverse=True)
         above = sum(1 for r in ranked if r.score >= rag_config.SOURCE_SCORE_FLOOR)
         cut = max(above, rag_config.SOURCE_FLOOR_MIN_KEEP)
-        return ranked[:cut], ranked[cut:]
+        kept, dropped = ranked[:cut], ranked[cut:]
+
+        # Repêchage CCN : la convention installée de l'org reranke plus bas que
+        # le Code du travail et tombe sous le plancher général sur les questions
+        # cadrées « Code du travail ». On repêche les meilleurs groupes CCN
+        # tombés (jusqu'à CCN_FLOOR_RESCUE), tant qu'ils restent pertinents, pour
+        # que la convention de l'org atteigne toujours la génération.
+        if dropped:
+            rescued: list[SearchResult] = []
+            rest: list[SearchResult] = []
+            for r in dropped:
+                if (
+                    len(rescued) < rag_config.CCN_FLOOR_RESCUE
+                    and r.source_type in _CCN_SOURCE_TYPES
+                    and r.score >= rag_config.CCN_SCORE_FLOOR
+                ):
+                    rescued.append(r)
+                else:
+                    rest.append(r)
+            if rescued:
+                kept = sorted(
+                    kept + rescued, key=lambda r: r.score, reverse=True
+                )
+                dropped = rest
+        return kept, dropped
+
+    @staticmethod
+    def _ensure_ccn_represented(
+        pool: list["SearchResult"],
+        reranked: list["SearchResult"],
+        org_idcc_list: list[str] | None,
+    ) -> list["SearchResult"]:
+        """Garantit que la convention de l'org atteigne la génération.
+
+        Sur une question cadrée « selon le Code du travail… », les articles du
+        Code raflent les RERANK_TOP_K places et la CCN de l'org — pourtant
+        présente dans le pool — est coupée AU rerank, avant le plancher de
+        pertinence (donc avant son repêchage). Le reranker a néanmoins déjà
+        scoré tout le pool : on réinjecte simplement les meilleurs groupes CCN
+        coupés (bornés à CCN_FLOOR_RESCUE), sans appel API supplémentaire. Ne
+        se déclenche que si l'org a une CCN ET qu'aucune CCN n'a survécu au
+        rerank.
+        """
+        if not org_idcc_list:
+            return reranked
+        if any(r.source_type in _CCN_SOURCE_TYPES for r in reranked):
+            return reranked
+        kept = {(r.document_id, r.chunk_index) for r in reranked}
+        extra = sorted(
+            (
+                r
+                for r in pool
+                if r.source_type in _CCN_SOURCE_TYPES
+                and (r.document_id, r.chunk_index) not in kept
+            ),
+            key=lambda r: r.score,
+            reverse=True,
+        )[: rag_config.CCN_FLOOR_RESCUE]
+        if extra:
+            logger.info(
+                "[CCNFLOOR] Réinjecté %d groupe(s) CCN coupé(s) au rerank "
+                "(scores %s)",
+                len(extra), [round(r.score, 3) for r in extra],
+            )
+        return reranked + extra
 
     def _cross_reference(self, results: list[SearchResult]) -> list[SearchResult]:
         """Step 4: Boost documents cited multiple times."""

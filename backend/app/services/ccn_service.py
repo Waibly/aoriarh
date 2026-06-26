@@ -4,7 +4,13 @@ import logging
 import uuid
 
 from fastapi import HTTPException, status
-from qdrant_client.models import FieldCondition, Filter, FilterSelector, MatchValue
+from qdrant_client.models import (
+    FieldCondition,
+    Filter,
+    FilterSelector,
+    MatchAny,
+    MatchValue,
+)
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
@@ -125,40 +131,30 @@ class CcnService:
                 detail=f"Convention IDCC {idcc} non trouvée pour cette organisation",
             )
 
+        # Une CCN installée = un doc « convention_collective_nationale » ET un
+        # doc « accord_branche » (+ variantes grilles/avenants). On nettoie les
+        # DEUX types : ne traiter que la CCN laissait l'accord de branche (et ses
+        # vecteurs) orphelins dans Qdrant.
+        ccn_types = ["convention_collective_nationale", "accord_branche"]
+
         # Only delete org-specific CCN docs (custom uploads), NOT common ones
         docs_result = await self.db.execute(
             select(Document).where(
                 Document.organisation_id == organisation_id,
-                Document.source_type == "convention_collective_nationale",
+                Document.source_type.in_(ccn_types),
                 Document.name.ilike(f"%IDCC {idcc}%"),
             )
         )
         ccn_docs = docs_result.scalars().all()
 
         for doc in ccn_docs:
-            try:
-                client = get_qdrant_client()
-                client.delete(
-                    collection_name=COLLECTION_NAME,
-                    points_selector=FilterSelector(
-                        filter=Filter(
-                            must=[
-                                FieldCondition(
-                                    key="document_id",
-                                    match=MatchValue(value=str(doc.id)),
-                                )
-                            ]
-                        )
-                    ),
-                )
-            except Exception:
-                logger.warning("Failed to delete Qdrant chunks for document %s", doc.id)
+            self._delete_qdrant_by_document(doc.id)
 
         if ccn_docs:
             await self.db.execute(
                 delete(Document).where(
                     Document.organisation_id == organisation_id,
-                    Document.source_type == "convention_collective_nationale",
+                    Document.source_type.in_(ccn_types),
                     Document.name.ilike(f"%IDCC {idcc}%"),
                 )
             )
@@ -175,33 +171,71 @@ class CcnService:
             common_docs = await self.db.execute(
                 select(Document).where(
                     Document.organisation_id.is_(None),
-                    Document.source_type == "convention_collective_nationale",
+                    Document.source_type.in_(ccn_types),
                     Document.name.ilike(f"%IDCC {idcc}%"),
                 )
             )
             for doc in common_docs.scalars().all():
-                try:
-                    client = get_qdrant_client()
-                    client.delete(
-                        collection_name=COLLECTION_NAME,
-                        points_selector=FilterSelector(
-                            filter=Filter(
-                                must=[FieldCondition(key="document_id", match=MatchValue(value=str(doc.id)))]
-                            )
-                        ),
-                    )
-                except Exception:
-                    logger.warning("Failed to delete Qdrant chunks for common doc %s", doc.id)
+                self._delete_qdrant_by_document(doc.id)
             await self.db.execute(
                 delete(Document).where(
                     Document.organisation_id.is_(None),
-                    Document.source_type == "convention_collective_nationale",
+                    Document.source_type.in_(ccn_types),
                     Document.name.ilike(f"%IDCC {idcc}%"),
                 )
             )
 
+            # Filet de sécurité : certains docs CCN n'ont pas « IDCC NNNN » dans
+            # leur nom (le ilike ci-dessus les rate), mais leurs vecteurs portent
+            # toujours le payload `idcc`. On purge donc directement par payload
+            # pour ne laisser aucun chunk orphelin re-remontable plus tard.
+            try:
+                client = get_qdrant_client()
+                client.delete(
+                    collection_name=COLLECTION_NAME,
+                    points_selector=FilterSelector(
+                        filter=Filter(
+                            must=[
+                                FieldCondition(
+                                    key="idcc", match=MatchValue(value=idcc)
+                                ),
+                                FieldCondition(
+                                    key="source_type",
+                                    match=MatchAny(any=ccn_types),
+                                ),
+                            ]
+                        )
+                    ),
+                )
+            except Exception:
+                logger.warning(
+                    "Failed to delete leftover Qdrant chunks for IDCC %s", idcc
+                )
+
         await self.db.delete(org_conv)
         await self.db.commit()
+
+    def _delete_qdrant_by_document(self, document_id: uuid.UUID) -> None:
+        """Supprime tous les vecteurs d'un document dans Qdrant (best-effort)."""
+        try:
+            client = get_qdrant_client()
+            client.delete(
+                collection_name=COLLECTION_NAME,
+                points_selector=FilterSelector(
+                    filter=Filter(
+                        must=[
+                            FieldCondition(
+                                key="document_id",
+                                match=MatchValue(value=str(document_id)),
+                            )
+                        ]
+                    )
+                ),
+            )
+        except Exception:
+            logger.warning(
+                "Failed to delete Qdrant chunks for document %s", document_id
+            )
 
     async def sync_convention(
         self, organisation_id: uuid.UUID, idcc: str, user_id: uuid.UUID
