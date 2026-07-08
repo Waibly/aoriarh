@@ -26,6 +26,14 @@ LOW_CONFIDENCE_RERANK = 0.6
 # une vraie réponse : c'est littéralement sa convention installée.
 CCN_LOW_CONFIDENCE_RERANK = 0.30
 
+# Pénalité géographique : facteur multiplicatif appliqué au score de rerank d'un
+# texte spécifique à un territoire ultramarin (voir geo_filter.py). À 0,5 on
+# divise son score par deux, ce qui suffit à le faire passer sous les textes
+# nationaux pertinents (et souvent sous le plancher de pertinence 0,35). On
+# rétrograde toujours : les orgs ultramarines sont un cas particulier non géré
+# en v1 (pas d'attribut de territoire sur l'organisation).
+GEO_PENALTY_FACTOR = 0.5
+
 CHUNK_SIZE = 1024
 CHUNK_OVERLAP = 100
 

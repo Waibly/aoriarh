@@ -5,7 +5,8 @@ import time
 import httpx
 
 from app.core.config import settings
-from app.rag.config import RERANK_MODEL
+from app.rag.config import GEO_PENALTY_FACTOR, RERANK_MODEL
+from app.rag.geo_filter import is_territorial_specific
 from app.rag.search import SearchResult
 from app.services.cost_tracker import cost_tracker
 
@@ -89,6 +90,21 @@ class VoyageReranker:
         for item in ranked_data:
             idx = item["index"]
             results[idx].score = item["relevance_score"]
+
+        # Pénalité géographique : un texte propre à un territoire ultramarin
+        # (décret d'adaptation « pour Mayotte »…) peut reranker en tête tout en
+        # étant hors-sujet pour une org de métropole. On le rétrograde avant le
+        # tri, pour qu'il sorte du top-k (voir geo_filter.py).
+        penalized = 0
+        for r in results:
+            if is_territorial_specific(r.text, r.doc_name):
+                r.score *= GEO_PENALTY_FACTOR
+                penalized += 1
+        if penalized:
+            logger.info(
+                "[GEO] %d résultat(s) territorialement spécifique(s) rétrogradé(s) (×%.2f)",
+                penalized, GEO_PENALTY_FACTOR,
+            )
 
         # Sort by weighted score descending
         reranked = sorted(results, key=lambda r: r.score, reverse=True)
