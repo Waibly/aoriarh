@@ -224,8 +224,14 @@ async def public_ask(
                 await db.commit()
                 await db.refresh(conversation)
 
-            # Contexte org démo (sans CCN → corpus commun uniquement).
+            # Contexte org démo (sans CCN → corpus commun uniquement). On retire
+            # le NOM de l'org : sinon le prompt de génération écrit « chez <Nom> »
+            # (ici « chez AORIA RH — Démo publique »), ce qui n'a pas de sens pour
+            # un visiteur anonyme. Réponse générique attendue (« ici », « côté
+            # employeur »), pas personnalisée à une entreprise.
             org_context = await _load_org_context(db, demo_org_id)
+            if org_context is not None:
+                org_context["nom"] = None
 
             try:
                 yield _sse_event("chat_meta", {"conversation_id": str(conversation.id)})
@@ -304,7 +310,9 @@ async def public_ask(
                 try:
                     async for chunk in agent.stream_generate(
                         message, results,
-                        org_context=org_context,
+                        # Pas de bloc « Entreprise de l'utilisateur » en démo :
+                        # réponse générique, jamais « chez <une entreprise> ».
+                        org_context=None,
                         history=None,
                         low_confidence=rag_trace.low_confidence,
                         condensed_query=reformulated,
