@@ -73,6 +73,38 @@ _BALANCE_JURIS_CAP = 4  # arrêts max avant report en fin de liste
 _BALANCE_CCN_CAP = 3  # textes CCN max avant report en fin de liste
 _BALANCE_PROMOTE_RATIO = 0.7  # on ne hisse la règle en tête que si compétitive
 
+# Reference-following : un décret/une loi est un texte MODIFICATIF (« l'article X
+# est ainsi rédigé »), souvent illisible seul et mal reranké. La règle applicable
+# vit dans l'article CONSOLIDÉ (déjà à jour dans la base). Quand un tel texte est
+# récupéré, on lit les articles qu'il modifie et on injecte leurs versions
+# consolidées dans le pool. Déterministe (regex + lookup), sans LLM.
+_MODIFYING_SOURCE_TYPES: frozenset[str] = frozenset({"loi", "decret", "arrete"})
+_ART_TOKEN = r"[LRD]\.?\s?\d+(?:[-‑–]\d+)*"
+_MODIF_ARTICLE_RE = re.compile(
+    r"[Aa]rticle\s+(" + _ART_TOKEN + r")\s+est\s+(?:ainsi\s+)?"
+    r"(?:rédigé|modifié|insér|abrogé|complété|remplacé|supprimé)"
+)
+_INSERT_ARTICLE_RE = re.compile(
+    r"[Aa]près\s+l'article\s+(" + _ART_TOKEN + r")\s+(?:est|sont)\s+insér"
+)
+_MAX_FOLLOWED_ARTICLES = 12
+
+
+def _normalize_article_num(raw: str) -> str:
+    """Clé canonique d'un article, alignée sur le format stocké (« D. 241-7 » → « D241-7 »)."""
+    return (
+        raw.upper().replace(".", "").replace(" ", "").replace("‑", "-").replace("–", "-")
+    )
+
+
+def _extract_modified_articles(text: str) -> set[str]:
+    """Articles de code qu'un texte modificatif crée/modifie (clés normalisées)."""
+    out: set[str] = set()
+    for rx in (_MODIF_ARTICLE_RE, _INSERT_ARTICLE_RE):
+        for m in rx.finditer(text or ""):
+            out.add(_normalize_article_num(m.group(1)))
+    return out
+
 
 def _assess_confidence(
     results: list["SearchResult"],
@@ -1509,6 +1541,43 @@ class RAGAgent:
                         "(pool: %d)",
                         added, len(pool),
                     )
+
+        # Reference-following : suivre les textes modificatifs (décret/loi/arrêté)
+        # présents dans le pool vers les articles consolidés qu'ils modifient, et
+        # injecter ces articles à jour. Le reranker reste seul juge : un article
+        # hors sujet (ex. modif Mayotte) reranke bas et sera écarté par le plancher.
+        modified: set[str] = set()
+        for r in pool:
+            if r.source_type in _MODIFYING_SOURCE_TYPES:
+                modified |= _extract_modified_articles(r.text)
+        if modified:
+            try:
+                follow_chunks = fetch_by_identifiers(
+                    self.search_engine.qdrant,
+                    {
+                        "numero_pourvoi": [],
+                        "article_nums": sorted(modified)[:_MAX_FOLLOWED_ARTICLES],
+                    },
+                    organisation_id=organisation_id,
+                    org_idcc_list=org_idcc_list,
+                )
+            except Exception:
+                logger.exception("[FOLLOW] Modified-article injection failed")
+                follow_chunks = []
+            seen_f = {(c.document_id, c.chunk_index) for c in pool}
+            added_f = 0
+            for c in follow_chunks:
+                key = (c.document_id, c.chunk_index)
+                if key not in seen_f:
+                    seen_f.add(key)
+                    pool.insert(0, c)
+                    added_f += 1
+            if added_f:
+                logger.info(
+                    "[FOLLOW] Injected %d consolidated article chunk(s) from %d "
+                    "modified ref(s) (pool: %d)",
+                    added_f, len(modified), len(pool),
+                )
 
         return pool
 
