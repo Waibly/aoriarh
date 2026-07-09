@@ -131,15 +131,29 @@ function DemoClient() {
     <div className="flex flex-col gap-6">
       <div>
         <p className="inline-flex items-center gap-2 rounded-full bg-primary/10 px-3 py-1 text-xs font-medium text-primary">
-          Démonstration
+          Démonstration — réponse générale
         </p>
         <h1 className="mt-3 text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">
           Posez votre question de droit social
         </h1>
         <p className="mt-2 text-sm text-muted-foreground">
-          Réponse fondée sur le socle légal commun (Code du travail,
-          jurisprudence), avec ses sources. Créez un compte pour l&apos;adapter à
-          votre convention collective et à vos documents.
+          Une réponse claire et sourcée, fondée sur le droit commun (Code du
+          travail, jurisprudence).
+        </p>
+      </div>
+
+      {/* Distinction bien visible : démo = générique / compte = personnalisé */}
+      <div className="rounded-xl border border-border bg-muted/30 p-4 text-sm leading-relaxed">
+        <p className="text-foreground">
+          <span className="font-semibold">Ici, en démo :</span> réponse{" "}
+          <span className="font-semibold">générale</span>, fondée uniquement sur
+          le droit commun (Code du travail, jurisprudence).
+        </p>
+        <p className="mt-1.5 text-muted-foreground">
+          <span className="font-medium text-foreground">Avec un compte :</span>{" "}
+          votre convention collective appliquée, vos documents internes (accords,
+          règlement intérieur…) et une réponse adaptée à votre profil (DRH,
+          dirigeant, élu CSE…).
         </p>
       </div>
 
@@ -245,11 +259,27 @@ function DemoClient() {
       {done && (
         <div className="rounded-2xl border border-primary/20 bg-primary/5 p-6">
           <h2 className="text-lg font-semibold text-foreground">
-            Une réponse calée sur votre convention collective ?
+            Passez de la réponse générale à la réponse adaptée à votre entreprise
           </h2>
           <p className="mt-2 text-sm text-muted-foreground">
-            Créez votre compte pour poser vos propres questions, appliquer votre
-            convention collective et interroger vos accords d&apos;entreprise.
+            Cette réponse est générale. Avec un compte, chaque réponse tient
+            compte de :
+          </p>
+          <ul className="mt-3 space-y-1.5 text-sm text-foreground">
+            {[
+              "Votre convention collective (appliquée automatiquement)",
+              "Vos documents internes : accords d’entreprise, règlement intérieur…",
+              "Votre profil : DRH, dirigeant, élu CSE, expert-comptable…",
+            ].map((item) => (
+              <li key={item} className="flex items-start gap-2">
+                <span className="mt-0.5 inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-primary text-[10px] font-bold text-primary-foreground">
+                  ✓
+                </span>
+                {item}
+              </li>
+            ))}
+          </ul>
+          <p className="mt-3 text-sm text-muted-foreground">
             14 jours gratuits, sans carte bancaire.
           </p>
           <div className="mt-4 flex flex-wrap gap-3">

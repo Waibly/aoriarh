@@ -121,9 +121,10 @@ class Settings(BaseSettings):
     # Bornes de longueur de la question (anti-abus / anti-coût).
     demo_min_question_chars: int = 8
     demo_max_question_chars: int = 500
-    # Modèle de génération FORCÉ pour la démo (indépendant de llm_model prod, qui
-    # peut être gpt-5.2 ~6x plus cher). Verrouille le coût par question.
-    demo_llm_model: str = "gpt-5-mini"
+    # Modèle de génération FORCÉ pour la démo. gpt-5.2 = même qualité que l'app
+    # (choix produit : la démo doit convaincre). ~6x plus cher que gpt-5-mini →
+    # le plafond demo_daily_budget_eur borne le coût quotidien.
+    demo_llm_model: str = "gpt-5.2"
     # Cloudflare Turnstile — secret serveur. Vide = vérification désactivée
     # (dev / rétro-compatible, même logique que brevo_webhook_secret).
     turnstile_secret: str = ""
