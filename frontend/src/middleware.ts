@@ -9,6 +9,8 @@ export default auth((req) => {
     req.nextUrl.pathname.startsWith("/register");
   const isInvitePage = req.nextUrl.pathname.startsWith("/invite");
   const isPromoPage = req.nextUrl.pathname.startsWith("/promo");
+  // Démo publique (hero du site → réponse dans l'app) : accessible sans compte.
+  const isDemoPage = req.nextUrl.pathname.startsWith("/demo");
 
   // Root "/" is not a landing page on app.aoriarh.fr: redirect to /chat if
   // logged in, otherwise to /login. The marketing site handles the rest.
@@ -18,7 +20,7 @@ export default auth((req) => {
     );
   }
 
-  if (isInvitePage || isPromoPage) {
+  if (isInvitePage || isPromoPage || isDemoPage) {
     return NextResponse.next();
   }
 

@@ -41,6 +41,7 @@ from app.api import (
     invitations,
     organisations,
     plan_invitations,
+    public,
     support,
     team,
     users,
@@ -110,12 +111,56 @@ async def seed_admin() -> None:
         logger.info("Admin account created: %s", settings.admin_email)
 
 
+async def seed_demo() -> None:
+    """Seed l'organisation + l'utilisateur techniques de la démo publique.
+
+    L'org démo n'a AUCUNE CCN installée et aucun document propre : le filtre
+    Qdrant existant ne lui remonte donc que le corpus commun (Code du travail,
+    jurisprudence…). Le user démo ne sert jamais à se connecter (mot de passe
+    aléatoire) : il porte seulement les conversations démo pour analytics et
+    rattachement futur au signup.
+    """
+    import secrets
+
+    from app.models.organisation import Organisation
+    from app.models.user import User as UserModel
+
+    async with async_session_factory() as session:
+        org = (await session.execute(
+            select(Organisation).where(Organisation.name == settings.demo_org_name)
+        )).scalar_one_or_none()
+        if org is None:
+            org = Organisation(name=settings.demo_org_name)
+            session.add(org)
+            logger.info("Demo organisation created: %s", settings.demo_org_name)
+
+        user = (await session.execute(
+            select(UserModel).where(UserModel.email == settings.demo_user_email)
+        )).scalar_one_or_none()
+        if user is None:
+            user = UserModel(
+                email=settings.demo_user_email,
+                hashed_password=hash_password(secrets.token_urlsafe(32)),
+                full_name="Démo publique",
+                role="user",
+            )
+            session.add(user)
+            logger.info("Demo user created: %s", settings.demo_user_email)
+
+        await session.commit()
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     if settings.seed_admin:
         await seed_admin()
     else:
         logger.info("Admin seeding disabled (SEED_ADMIN=false)")
+    if settings.demo_enabled:
+        try:
+            await seed_demo()
+        except Exception:
+            logger.exception("Demo seeding failed — public demo may be unavailable")
     # Sync LLM model from Redis (persisted by admin switch)
     try:
         from app.api.admin_costs import _get_active_model
@@ -278,6 +323,11 @@ app.include_router(
     emailing_public.router,
     prefix="/api/v1/emailing",
     tags=["emailing-public"],
+)
+app.include_router(
+    public.router,
+    prefix="/api/v1/public",
+    tags=["public-demo"],
 )
 
 

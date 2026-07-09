@@ -120,39 +120,22 @@ class HybridSearch:
         self._cost_context_id = context_id
         self._cost_is_replay = is_replay
 
-    async def search(
+    def _build_org_filter(
         self,
-        query: str,
         organisation_id: str,
-        top_k: int = TOP_K,
         org_idcc_list: list[str] | None = None,
         source_type_filter: list[str] | None = None,
-    ) -> list[SearchResult]:
-        """Execute a hybrid search combining dense and sparse vectors.
+    ) -> Filter:
+        """Construit le filtre Qdrant de cloisonnement multi-tenant.
 
-        org_idcc_list: if provided, CCN common docs are filtered to only include
-        these IDCCs. Other common docs (code du travail, jurisprudence) are always included.
-
-        source_type_filter: if provided, restrict search to ONLY these source_types.
-        Used when the user explicitly asks about a specific source category
-        (e.g. "Que dit la CCN..." → search only in CCN documents).
+        Autorise : (a) les documents propres de l'org, (b) les documents communs
+        NON-CCN (Code du travail, jurisprudence…), (c) les documents CCN communs
+        UNIQUEMENT pour les IDCC installés de l'org. Sans IDCC installé
+        (org_idcc_list vide/None), TOUTE CCN/accord de branche est exclu → corpus
+        commun strict. Extrait de search() sans changement de comportement pour
+        rendre le cloisonnement testable isolément (invariant de sécurité, cf.
+        démo publique corpus-commun-only).
         """
-        t0 = time.perf_counter()
-
-        # 1. Encode query — dense (Voyage AI) + sparse (BM25) in parallel
-        dense_task = self._encode_dense(query)
-        sparse_task = asyncio.to_thread(self._encode_sparse_sync, query)
-        dense_embedding, sparse_vector = await asyncio.gather(
-            dense_task, sparse_task,
-        )
-
-        t1 = time.perf_counter()
-        logger.info("[PERF] Encoding (dense+sparse parallel) %.0fms", (t1 - t0) * 1000)
-
-        # 2. Build organisation filter
-        # - org's own documents
-        # - common non-CCN documents (code du travail, jurisprudence, etc.)
-        # - common CCN documents ONLY for the org's selected IDCCs
         should_conditions = [
             # Org's own documents
             FieldCondition(
@@ -214,8 +197,8 @@ class HybridSearch:
 
         org_filter = Filter(should=should_conditions)
 
-        # 2b. If source_type_filter is set, wrap the org filter with a
-        # source_type constraint so we only search in the requested types.
+        # If source_type_filter is set, wrap the org filter with a source_type
+        # constraint so we only search in the requested types.
         if source_type_filter:
             org_filter = Filter(
                 must=[
@@ -226,6 +209,43 @@ class HybridSearch:
                     ),
                 ],
             )
+
+        return org_filter
+
+    async def search(
+        self,
+        query: str,
+        organisation_id: str,
+        top_k: int = TOP_K,
+        org_idcc_list: list[str] | None = None,
+        source_type_filter: list[str] | None = None,
+    ) -> list[SearchResult]:
+        """Execute a hybrid search combining dense and sparse vectors.
+
+        org_idcc_list: if provided, CCN common docs are filtered to only include
+        these IDCCs. Other common docs (code du travail, jurisprudence) are always included.
+
+        source_type_filter: if provided, restrict search to ONLY these source_types.
+        Used when the user explicitly asks about a specific source category
+        (e.g. "Que dit la CCN..." → search only in CCN documents).
+        """
+        t0 = time.perf_counter()
+
+        # 1. Encode query — dense (Voyage AI) + sparse (BM25) in parallel
+        dense_task = self._encode_dense(query)
+        sparse_task = asyncio.to_thread(self._encode_sparse_sync, query)
+        dense_embedding, sparse_vector = await asyncio.gather(
+            dense_task, sparse_task,
+        )
+
+        t1 = time.perf_counter()
+        logger.info("[PERF] Encoding (dense+sparse parallel) %.0fms", (t1 - t0) * 1000)
+
+        # 2. Build organisation filter (cloisonnement multi-tenant). Extrait en
+        # _build_org_filter pour être testé isolément.
+        org_filter = self._build_org_filter(
+            organisation_id, org_idcc_list, source_type_filter
+        )
 
         # 3. Hybrid query with RRF fusion via prefetch
         prefetch_dense = Prefetch(

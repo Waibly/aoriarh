@@ -18,9 +18,16 @@ const MD_COMPONENTS = { a: LegalRefAnchor };
 interface StreamingBubbleProps {
   content: string;
   sources?: MessageSource[] | null;
+  /** Affiche le curseur clignotant. Défaut true (comportement chat inchangé) ;
+   *  passer false pour une réponse déjà terminée (réutilisation hors streaming). */
+  streaming?: boolean;
 }
 
-export function StreamingBubble({ content, sources }: StreamingBubbleProps) {
+export function StreamingBubble({
+  content,
+  sources,
+  streaming = true,
+}: StreamingBubbleProps) {
   const safeSources = useMemo(() => sources ?? [], [sources]);
   const rehypePlugins = useMemo<
     ComponentProps<typeof ReactMarkdown>["rehypePlugins"]
@@ -44,7 +51,9 @@ export function StreamingBubble({ content, sources }: StreamingBubbleProps) {
             >
               {content}
             </ReactMarkdown>
-            <span className="ml-0.5 inline-block h-4 w-1.5 animate-pulse rounded-sm bg-[#652bb0]" />
+            {streaming && (
+              <span className="ml-0.5 inline-block h-4 w-1.5 animate-pulse rounded-sm bg-[#652bb0]" />
+            )}
           </div>
           {safeSources.length > 0 && <MessageSources sources={safeSources} />}
         </div>

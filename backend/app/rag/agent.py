@@ -898,8 +898,15 @@ class RAGAgent:
         buffer_size: int = 10,
         low_confidence: bool = False,
         condensed_query: str | None = None,
+        model_override: str | None = None,
     ) -> AsyncGenerator[str, None]:
-        """Stream the LLM generation token by token (buffered)."""
+        """Stream the LLM generation token by token (buffered).
+
+        `model_override` force le modèle de génération pour cet appel (défaut
+        None = rag_config.LLM_MODEL). Utilisé par la démo publique pour
+        verrouiller gpt-5-mini indépendamment du modèle prod.
+        """
+        gen_model = model_override or rag_config.LLM_MODEL
         t_start = time.perf_counter()
         context = self._build_context(results)
         user_content = self._build_user_message(
@@ -913,7 +920,7 @@ class RAGAgent:
 
         t_api = time.perf_counter()
         response = await self.llm.chat.completions.create(
-            model=rag_config.LLM_MODEL,
+            model=gen_model,
             messages=[
                 {"role": "system", "content": _SYSTEM_PROMPT},
                 {"role": "user", "content": user_content},
@@ -959,7 +966,7 @@ class RAGAgent:
         if stream_usage:
             await cost_tracker.log(
                 provider="openai",
-                model=rag_config.LLM_MODEL,
+                model=gen_model,
                 operation_type="generate",
                 tokens_input=stream_usage.prompt_tokens,
                 tokens_output=stream_usage.completion_tokens,

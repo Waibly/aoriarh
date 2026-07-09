@@ -108,6 +108,29 @@ class Settings(BaseSettings):
     # CORS
     backend_cors_origins: str = '["http://localhost:3000"]'
 
+    # --- Démo publique (hero du site marketing → réponse dans l'app) ----------
+    # Endpoint public /api/v1/public/ask : un visiteur non authentifié pose une
+    # question et obtient une réponse sourcée sur le CORPUS COMMUN uniquement
+    # (org démo sans CCN installée). Trois garde-fous : Turnstile + rate-limit
+    # IP (dans l'endpoint) + ce plafond de dépense quotidien.
+    demo_enabled: bool = True
+    # Plafond de dépense LLM/embeddings par JOUR pour toute la démo, en EUR.
+    # Au-delà, l'endpoint bascule en « démo pleine, créez un compte ». Le coût
+    # réel est en USD (api_usage_logs) : on convertit via usd_eur_rate.
+    demo_daily_budget_eur: float = 2.0
+    # Bornes de longueur de la question (anti-abus / anti-coût).
+    demo_min_question_chars: int = 8
+    demo_max_question_chars: int = 500
+    # Modèle de génération FORCÉ pour la démo (indépendant de llm_model prod, qui
+    # peut être gpt-5.2 ~6x plus cher). Verrouille le coût par question.
+    demo_llm_model: str = "gpt-5-mini"
+    # Cloudflare Turnstile — secret serveur. Vide = vérification désactivée
+    # (dev / rétro-compatible, même logique que brevo_webhook_secret).
+    turnstile_secret: str = ""
+    # Identité de l'org + user techniques « démo publique » (seedés au démarrage).
+    demo_org_name: str = "AORIA RH — Démo publique"
+    demo_user_email: str = "demo-public@aoriarh.fr"
+
     @field_validator("secret_key")
     @classmethod
     def secret_key_must_be_strong(cls, v: str) -> str:
