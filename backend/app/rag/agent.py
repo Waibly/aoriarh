@@ -59,6 +59,20 @@ _CCN_SOURCE_TYPES: frozenset[str] = frozenset(
     {"convention_collective_nationale", "accord_branche"}
 )
 
+# Jurisprudence source types (hierarchy level 4). Used by the source-type balance
+# to cap how many rulings may sit at the top of the final list, so the applicable
+# code/law/decree article is not drowned by jurisprudence on ruling-heavy topics.
+_JURIS_SOURCE_TYPES: frozenset[str] = frozenset(
+    st
+    for st, meta in DOCUMENT_TYPE_HIERARCHY.items()
+    if isinstance(meta.get("niveau"), int) and meta["niveau"] == 4
+)
+
+# Balance "hiérarchie des normes" : plafonds de sièges en tête de la liste finale.
+_BALANCE_JURIS_CAP = 4  # arrêts max avant report en fin de liste
+_BALANCE_CCN_CAP = 3  # textes CCN max avant report en fin de liste
+_BALANCE_PROMOTE_RATIO = 0.7  # on ne hisse la règle en tête que si compétitive
+
 
 def _assess_confidence(
     results: list["SearchResult"],
@@ -658,6 +672,8 @@ class RAGAgent:
 
         # --- Step 4: Cross-references ---
         results = self._cross_reference(results)
+        # --- Step 4.5: hiérarchie des normes (cf. _balance_source_types) ---
+        results = self._balance_source_types(results)
 
         # --- Step 6: Generation ---
         t_gen = time.perf_counter()
@@ -822,6 +838,9 @@ class RAGAgent:
 
         t3 = time.perf_counter()
         results = self._cross_reference(results)
+        # Step 4.5: hiérarchie des normes — la règle applicable ne doit pas être
+        # noyée sous la jurisprudence ou la CCN en tête de liste.
+        results = self._balance_source_types(results)
         logger.info(
             "[PERF] Step 4 — Cross-ref %.0fms",
             (time.perf_counter() - t3) * 1000,
@@ -1592,6 +1611,57 @@ class RAGAgent:
 
         results.sort(key=lambda r: r.score, reverse=True)
         return results
+
+    @staticmethod
+    def _balance_source_types(
+        results: list[SearchResult],
+    ) -> list[SearchResult]:
+        """Remet la hiérarchie des normes dans le classement FINAL.
+
+        Sur les sujets riches en jurisprudence (ou quand la CCN de l'org est
+        volumineuse), les arrêts (ou la CCN) raflent le haut de la liste et
+        noient la règle applicable — pourtant c'est la loi/le code/le décret qui
+        énonce la règle. Deux effets, sans jamais rien supprimer :
+        - on hisse le meilleur texte de loi/code/décret au 1er rang, à condition
+          qu'il soit compétitif (score >= 0,7 x meilleur score) ; sinon on ne
+          force rien (question réellement jurisprudentielle) ;
+        - on plafonne le nombre d'arrêts et de textes CCN en tête ; les
+          excédentaires sont reportés en fin de liste.
+        L'ordre par score est préservé partout ailleurs.
+        """
+        if len(results) <= 2:
+            return results
+        ordered = sorted(results, key=lambda r: r.score, reverse=True)
+        top_score = ordered[0].score
+        rules = [
+            r for r in ordered if r.source_type in _LEGISLATION_SOURCE_TYPES
+        ]
+        if rules and top_score > 0:
+            best = max(rules, key=lambda r: r.score)
+            if (
+                best is not ordered[0]
+                and best.score >= _BALANCE_PROMOTE_RATIO * top_score
+            ):
+                ordered.remove(best)
+                ordered.insert(0, best)
+
+        kept: list[SearchResult] = []
+        deferred: list[SearchResult] = []
+        n_juris = n_ccn = 0
+        for r in ordered:
+            st = r.source_type
+            if st in _JURIS_SOURCE_TYPES:
+                if n_juris >= _BALANCE_JURIS_CAP:
+                    deferred.append(r)
+                    continue
+                n_juris += 1
+            elif st in _CCN_SOURCE_TYPES:
+                if n_ccn >= _BALANCE_CCN_CAP:
+                    deferred.append(r)
+                    continue
+                n_ccn += 1
+            kept.append(r)
+        return kept + deferred
 
     def _build_context(self, results: list[SearchResult]) -> str:
         """Build context string from search results."""
