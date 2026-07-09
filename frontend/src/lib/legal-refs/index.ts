@@ -16,6 +16,7 @@ import type { MessageSource } from "@/types/api";
 export interface RefIndex {
   byArticle: Map<string, MessageSource>;
   byPourvoi: Map<string, MessageSource>;
+  byDocNumber: Map<string, MessageSource>;
 }
 
 /** Clé canonique d'un article : "R. 4463-3" / "art. R.4463-3" → "R4463-3". */
@@ -31,6 +32,14 @@ function normalizePourvoi(raw: string): string {
   return raw.replace(/\D/g, "");
 }
 
+/** Clé canonique d'un numéro de texte : "2025-887" → "2025887". */
+function normalizeDocNumber(raw: string): string {
+  return raw.replace(/\D/g, "");
+}
+
+/** Numéro d'un décret/loi/ordonnance dans le nom d'un document source. */
+const DOC_NAME_NUMBER_RE = /n[°ºo]\s?(\d{4}-\d+)/i;
+
 /**
  * Construit l'index de référencement à partir des sources d'un message.
  * - Pourvois : toute source jurisprudentielle portant un numéro de pourvoi.
@@ -42,6 +51,7 @@ function normalizePourvoi(raw: string): string {
 export function buildRefIndex(sources: MessageSource[]): RefIndex {
   const byArticle = new Map<string, MessageSource>();
   const byPourvoi = new Map<string, MessageSource>();
+  const byDocNumber = new Map<string, MessageSource>();
 
   for (const source of sources) {
     if (source.numero_pourvoi) {
@@ -54,9 +64,19 @@ export function buildRefIndex(sources: MessageSource[]): RefIndex {
         if (key && !byArticle.has(key)) byArticle.set(key, source);
       }
     }
+    // Numéro de décret/loi/ordonnance extrait du nom du document (ex.
+    // « Décret n° 2025-887 du… » → 2025-887), pour rendre la mention du texte
+    // cliquable vers son document.
+    if (getSourceGroup(source.source_type) === "legal") {
+      const num = source.document_name?.match(DOC_NAME_NUMBER_RE);
+      if (num) {
+        const key = normalizeDocNumber(num[1]);
+        if (key && !byDocNumber.has(key)) byDocNumber.set(key, source);
+      }
+    }
   }
 
-  return { byArticle, byPourvoi };
+  return { byArticle, byPourvoi, byDocNumber };
 }
 
 // Référence d'article : "art. R.4463-3", "article L1234-1", "R. 4624-31"…
@@ -66,6 +86,10 @@ export function buildRefIndex(sources: MessageSource[]): RefIndex {
 const ARTICLE_RE = /(?:[Aa]rt(?:icle)?s?\.?\s*)?([LRD])\.?\s?(\d+(?:[-–]\d+)*)/g;
 // Numéro de pourvoi / RG : "n° 25-10.127" (cassation) ou "n° 23/03765" (appel).
 const POURVOI_RE = /n[°ºo]\s?(\d[\d./-]{4,})/gi;
+// Numéro de texte réglementaire : "décret n° 2025-887", "loi n° 2025-1403".
+// Le mot (décret/loi/…) précède, ce qui le distingue d'un pourvoi et lui donne
+// la priorité (le hit démarre plus tôt et absorbe le "n° …" à l'intérieur).
+const DOC_NUMBER_RE = /(décrets?|lois?|ordonnances?|arrêtés?)\s+n[°ºo]\s?(\d{4}-\d+)/gi;
 
 interface Hit {
   start: number;
@@ -85,6 +109,12 @@ function collectHits(value: string, index: RefIndex): Hit[] {
   }
   for (const m of value.matchAll(POURVOI_RE)) {
     const source = index.byPourvoi.get(normalizePourvoi(m[1]));
+    if (source && m.index !== undefined) {
+      hits.push({ start: m.index, end: m.index + m[0].length, text: m[0], source });
+    }
+  }
+  for (const m of value.matchAll(DOC_NUMBER_RE)) {
+    const source = index.byDocNumber.get(normalizeDocNumber(m[2]));
     if (source && m.index !== undefined) {
       hits.push({ start: m.index, end: m.index + m[0].length, text: m[0], source });
     }
