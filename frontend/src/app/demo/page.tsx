@@ -185,13 +185,15 @@ function DemoClient() {
         </form>
       )}
 
-      {/* Conversation */}
+      {/* Conversation — même rendu que la page de réponse de l'app */}
       <div className="flex flex-col gap-6">
         {turns.map((turn, i) =>
           turn.role === "user" ? (
             <div key={i} className="flex justify-end">
-              <div className="max-w-[85%] rounded-2xl bg-primary px-4 py-3 text-primary-foreground">
-                {turn.content}
+              <div className="max-w-[80%] rounded-2xl rounded-tr-sm bg-primary px-5 py-3 text-primary-foreground">
+                <p className="whitespace-pre-wrap text-base leading-relaxed">
+                  {turn.content}
+                </p>
               </div>
             </div>
           ) : (
@@ -204,22 +206,13 @@ function DemoClient() {
           ),
         )}
 
-        {/* Réponse en cours de streaming */}
-        {isStreaming && (
-          <div className="flex flex-col gap-2">
-            {status && !streamingContent && (
-              <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                <span className="h-2 w-2 animate-pulse rounded-full bg-primary" />
-                {status}
-              </div>
-            )}
-            {streamingContent && (
-              <StreamingBubble
-                content={streamingContent}
-                sources={streamingSources}
-              />
-            )}
-          </div>
+        {/* Réponse en cours */}
+        {isStreaming && !streamingContent && <StatusIndicator step={status} />}
+        {isStreaming && streamingContent && (
+          <StreamingBubble
+            content={streamingContent}
+            sources={streamingSources}
+          />
         )}
       </div>
 
@@ -304,6 +297,44 @@ function DemoClient() {
         Information juridique à visée pédagogique, sans valeur de conseil
         juridique personnalisé.
       </p>
+    </div>
+  );
+}
+
+// Indicateur de statut repris à l'identique de la page de chat de l'app
+// (message-list.tsx) pour un rendu cohérent.
+function StatusIndicator({ step }: { step?: string | null }) {
+  return (
+    <div className="flex items-start gap-3">
+      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/10">
+        <svg
+          className="h-4 w-4 text-primary"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+        >
+          <path
+            d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2z"
+            strokeOpacity="0.3"
+          />
+          <path d="M12 2a10 10 0 0 1 10 10" strokeLinecap="round">
+            <animateTransform
+              attributeName="transform"
+              type="rotate"
+              from="0 12 12"
+              to="360 12 12"
+              dur="1s"
+              repeatCount="indefinite"
+            />
+          </path>
+        </svg>
+      </div>
+      <div className="flex items-center pt-1.5">
+        <span className="animate-pulse text-sm text-muted-foreground">
+          {step || "Réflexion en cours..."}
+        </span>
+      </div>
     </div>
   );
 }
