@@ -34,7 +34,7 @@ const PERKS = [
   { icon: MessagesSquare, text: "Poser toutes vos questions, en conversation continue" },
   { icon: Scale, text: "Votre convention collective, appliquée automatiquement" },
   { icon: FileText, text: "Vos documents internes : accords, règlement intérieur…" },
-  { icon: UserRound, text: "Des réponses adaptées à votre profil (DRH, dirigeant, élu CSE…)" },
+  { icon: UserRound, text: "Des réponses adaptées à votre profil (DRH, dirigeant, élu CSE…) et à votre entreprise" },
   { icon: ClipboardList, text: "Des fiches pratiques PDF prêtes à l’emploi" },
 ];
 
