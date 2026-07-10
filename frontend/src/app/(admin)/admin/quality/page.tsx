@@ -90,6 +90,7 @@ interface ConversationItem {
   latency_ms: number | null;
   cost_usd: number | null;
   has_trace: boolean;
+  is_demo: boolean;
 }
 
 interface ConversationListResponse {
@@ -476,7 +477,14 @@ export default function QualityPage() {
                       {c.organisation_name ?? "—"}
                     </TableCell>
                     <TableCell className="text-sm">
-                      <div className="line-clamp-2">{c.question || "(question non retrouvée)"}</div>
+                      <div className="line-clamp-2">
+                        {c.is_demo && (
+                          <Badge className="mr-1.5 border-0 bg-primary/10 text-primary hover:bg-primary/10 align-middle">
+                            Démo
+                          </Badge>
+                        )}
+                        {c.question || "(question non retrouvée)"}
+                      </div>
                     </TableCell>
                     <TableCell className="text-center">
                       <FeedbackBadge feedback={c.feedback} />

@@ -342,11 +342,17 @@ async def public_ask(
                     sources=sources_dicts if sources_dicts else None,
                 )
                 try:
+                    total_latency_ms = int((time.perf_counter() - t_total) * 1000)
+                    rag_trace.perf_ms["total"] = float(total_latency_ms)
+                    # Trace persistée comme pour le chat réel → les questions
+                    # démo apparaissent dans le BO Qualité admin (taguées via
+                    # l'org démo « AORIA RH — Démo publique »).
+                    assistant_message.rag_trace = rag_trace.to_dict()
                     assistant_message.question_id = question_id
-                    assistant_message.latency_ms = int((time.perf_counter() - t_total) * 1000)
+                    assistant_message.latency_ms = total_latency_ms
                     await db.commit()
                 except Exception:
-                    logger.exception("Démo: échec persistance question_id")
+                    logger.exception("Démo: échec persistance trace")
 
                 yield _sse_event("chat_done", {"upsell": _DEMO_UPSELL})
 

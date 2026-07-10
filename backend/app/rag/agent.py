@@ -455,6 +455,13 @@ appointements / rémunération conventionnelle ; indemnité de licenciement ↔ 
 indemnité conventionnelle de rupture ; sanction disciplinaire ↔ mesure \
 disciplinaire ; promotion ↔ avancement ; rupture du contrat ↔ cessation d'emploi.
    - Inclus TEL QUEL tout identifiant ("L4121-1", "22-18.875").
+   - Références temporelles relatives : si la question contient « cette année », \
+"actuellement", "en ce moment", "en vigueur", "aujourd'hui", "récemment", "le \
+dernier"/"la dernière", "à jour", etc., ajoute l'année (et si pertinent la date) \
+CONCRÈTE correspondante, déduite de la « Date du jour » fournie dans le message. \
+Ex. « le SMIC a-t-il été revalorisé cette année ? » avec une date du jour en 2026 \
+→ ajoute "2026" et "1er janvier 2026" aux mots-clés. Cela permet de retrouver les \
+décrets/arrêtés datés qui fixent les montants en vigueur.
    - N'ajoute AUCUN autre synonyme ni concept voisin.
 
 3. VARIANTE CCN — UNIQUEMENT si le bloc [ORGANISATION] du message indique une \
@@ -1091,8 +1098,9 @@ class RAGAgent:
         org_context: dict[str, str | None] | None,
     ) -> str:
         """Build the user message for query expansion with tenant context."""
+        header = f"Date du jour : {_today_fr()}."
         if not org_context:
-            return f"Question : {query}"
+            return f"{header}\nQuestion : {query}"
         lines = ["[ORGANISATION]"]
         if org_context.get("not_subject_to_ccn"):
             lines.append("- CCN rattachée : aucune (organisation non soumise à CCN)")
@@ -1110,10 +1118,10 @@ class RAGAgent:
         if forme:
             lines.append(f"- Forme juridique : {forme}")
         if len(lines) == 1:
-            return f"Question : {query}"
+            return f"{header}\nQuestion : {query}"
         lines.append("")
         lines.append(f"Question : {query}")
-        return "\n".join(lines)
+        return f"{header}\n" + "\n".join(lines)
 
     async def _expand_queries(
         self,

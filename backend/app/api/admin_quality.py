@@ -23,6 +23,7 @@ from app.core.dependencies import require_role
 from app.models.api_usage import ApiUsageLog
 from app.models.ccn import CcnReference, OrganisationConvention
 from app.models.conversation import Conversation, Message
+from app.core.config import settings
 from app.models.organisation import Organisation
 from app.models.user import User
 
@@ -72,6 +73,7 @@ class ConversationListItem(BaseModel):
     latency_ms: int | None
     cost_usd: float | None
     has_trace: bool
+    is_demo: bool = False  # question posée via la démo publique (org démo)
 
 
 class ConversationListResponse(BaseModel):
@@ -380,6 +382,7 @@ async def list_conversations(
                 latency_ms=msg.latency_ms,
                 cost_usd=cost_value,
                 has_trace=msg.rag_trace is not None,
+                is_demo=(org_name == settings.demo_org_name),
             )
         )
 
