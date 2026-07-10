@@ -121,6 +121,13 @@ class Settings(BaseSettings):
     # Bornes de longueur de la question (anti-abus / anti-coût).
     demo_min_question_chars: int = 8
     demo_max_question_chars: int = 500
+    # Rate-limit par IP RÉELLE du visiteur (X-Forwarded-For), partagé entre les
+    # workers via Redis (fail-open : si Redis est indisponible on laisse passer,
+    # le plafond de budget reste le garde-fou financier).
+    demo_max_questions_per_ip_per_minute: int = 5
+    demo_max_questions_per_ip_per_day: int = 30
+    # Plafond global (toutes IP) par minute — garde-fou anti-flood distribué.
+    demo_max_questions_global_per_minute: int = 120
     # Modèle de génération FORCÉ pour la démo. gpt-5.2 = même qualité que l'app
     # (choix produit : la démo doit convaincre). ~6x plus cher que gpt-5-mini →
     # le plafond demo_daily_budget_eur borne le coût quotidien.

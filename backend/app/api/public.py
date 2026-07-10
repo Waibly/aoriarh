@@ -15,12 +15,14 @@ Différences avec le chat authentifié (`conversations.chat_stream`) :
 
 Trois garde-fous anti-abus / anti-coût :
   1. Cloudflare Turnstile (désactivé si `turnstile_secret` vide).
-  2. Rate-limit par IP (slowapi).
+  2. Rate-limit par IP RÉELLE du visiteur (X-Forwarded-For) + plafond global par
+     minute, via Redis (partagé entre les workers, fail-open).
   3. Plafond de dépense quotidien global (`demo_daily_budget_eur`), mesuré sur
      les coûts réels attribués à l'org démo dans `api_usage_logs`.
 """
 
 import dataclasses
+import hashlib
 import logging
 import time
 import uuid
@@ -38,7 +40,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.conversations import _load_org_context, _sse_event
 from app.core.config import settings
 from app.core.database import async_session_factory, get_db
-from app.core.limiter import limiter
 from app.models.api_usage import ApiUsageLog
 from app.models.conversation import Conversation
 from app.models.organisation import Organisation
@@ -54,6 +55,64 @@ from app.services.conversation_service import ConversationService
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+_redis_client = None
+
+
+def _get_redis():
+    """Client Redis asyncio partagé (lazy). Même pattern qu'admin_costs."""
+    global _redis_client
+    if _redis_client is None:
+        import redis.asyncio as aioredis
+        _redis_client = aioredis.from_url(settings.redis_url, decode_responses=True)
+    return _redis_client
+
+
+def _client_ip(request: Request) -> str:
+    """IP RÉELLE du visiteur derrière le reverse proxy Caddy.
+
+    `request.client.host` = IP interne de Caddy (réseau Docker). Caddy renseigne
+    l'IP d'origine dans X-Forwarded-For (le 1er maillon est le client réel).
+    """
+    xff = request.headers.get("x-forwarded-for")
+    if xff:
+        first = xff.split(",")[0].strip()
+        if first:
+            return first
+    return get_remote_address(request)
+
+
+async def _demo_rate_limit_ok(request: Request) -> bool:
+    """Rate-limit démo par IP RÉELLE + plafond global/minute, via Redis (partagé
+    entre les workers gunicorn). Fail-open : toute erreur Redis → on autorise (le
+    plafond de budget quotidien reste le garde-fou financier)."""
+    try:
+        ip = _client_ip(request)
+        h = hashlib.sha256(ip.encode("utf-8")).hexdigest()[:16]  # IP hashée (RGPD)
+        now = datetime.now(timezone.utc)
+        minute = now.strftime("%Y%m%d%H%M")
+        day = now.strftime("%Y%m%d")
+        k_ip_min = f"demo:rl:ipmin:{minute}:{h}"
+        k_ip_day = f"demo:rl:ipday:{day}:{h}"
+        k_glob_min = f"demo:rl:globmin:{minute}"
+
+        r = _get_redis()
+        pipe = r.pipeline()
+        pipe.incr(k_ip_min); pipe.expire(k_ip_min, 120)
+        pipe.incr(k_ip_day); pipe.expire(k_ip_day, 90_000)
+        pipe.incr(k_glob_min); pipe.expire(k_glob_min, 120)
+        ip_min, _, ip_day, _, glob_min, _ = await pipe.execute()
+
+        if int(ip_min) > settings.demo_max_questions_per_ip_per_minute:
+            return False
+        if int(ip_day) > settings.demo_max_questions_per_ip_per_day:
+            return False
+        if int(glob_min) > settings.demo_max_questions_global_per_minute:
+            return False
+        return True
+    except Exception:
+        logger.warning("Démo: rate-limit Redis indisponible — fail-open")
+        return True
 
 # CTA affiché en fin de réponse pour pousser à l'inscription. Neutre côté
 # contenu (pas de superlatif), cohérent avec le ton du site.
@@ -149,8 +208,6 @@ async def _verify_turnstile(token: str | None, remote_ip: str | None) -> bool:
 
 
 @router.post("/ask")
-@limiter.limit("5/minute")
-@limiter.limit("15/day")
 async def public_ask(
     data: PublicAskRequest,
     request: Request,
@@ -159,12 +216,22 @@ async def public_ask(
     if not settings.demo_enabled:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Démo désactivée")
 
-    # 1. Anti-bot : Turnstile
-    remote_ip = get_remote_address(request)
+    # 1. Anti-bot : Turnstile (avec l'IP réelle du visiteur)
+    remote_ip = _client_ip(request)
     if not await _verify_turnstile(data.turnstile_token, remote_ip):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Vérification anti-robot échouée. Rechargez la page et réessayez.",
+        )
+
+    # 1b. Rate-limit par IP réelle (Redis, partagé entre workers)
+    if not await _demo_rate_limit_ok(request):
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=(
+                "Trop de questions en peu de temps. "
+                "Créez un compte gratuit pour continuer sans limite."
+            ),
         )
 
     # 2. Bornes de longueur (anti-coût / anti-abus)
