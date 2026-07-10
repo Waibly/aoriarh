@@ -7,8 +7,10 @@ export default function DemoLayout({
 }) {
   return (
     <div className="flex min-h-svh flex-col bg-white">
-      <header className="border-b border-border">
-        <div className="mx-auto flex w-full max-w-3xl items-center justify-between px-4 py-3 sm:px-6">
+      {/* Header aligné sur celui du site (aoriarh.fr) : pleine largeur max-w-6xl,
+          sticky, léger flou de fond. */}
+      <header className="sticky top-0 z-50 border-b border-border bg-white/85 backdrop-blur-md">
+        <div className="mx-auto flex h-16 w-full max-w-6xl items-center justify-between px-6">
           <img
             src="/logo-aoria.svg"
             alt="AORIA RH"
@@ -32,7 +34,8 @@ export default function DemoLayout({
           </div>
         </div>
       </header>
-      <main className="mx-auto w-full max-w-3xl flex-1 px-4 py-8 sm:px-6">
+      {/* Contenu à largeur de lecture confortable, centré. */}
+      <main className="mx-auto w-full max-w-3xl flex-1 px-6 py-8">
         {children}
       </main>
     </div>
