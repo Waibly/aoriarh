@@ -3,7 +3,9 @@
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useRef, useState } from "react";
+import { Check } from "lucide-react";
 
+import { ChatInput } from "@/components/chat/chat-input";
 import { StreamingBubble } from "@/components/chat/streaming-bubble";
 import {
   Turnstile,
@@ -21,6 +23,12 @@ interface Turn {
 
 const MAX_LEN = 500;
 
+const ACCOUNT_PERKS = [
+  "Votre convention collective, appliquée automatiquement",
+  "Vos documents internes : accords d’entreprise, règlement intérieur…",
+  "Une réponse adaptée à votre profil (DRH, dirigeant, élu CSE…)",
+];
+
 function DemoClient() {
   const searchParams = useSearchParams();
   const initialQuestion = (searchParams.get("q") || "").slice(0, MAX_LEN).trim();
@@ -32,7 +40,6 @@ function DemoClient() {
   const [isStreaming, setIsStreaming] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState(false);
-  const [followUp, setFollowUp] = useState("");
   const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
 
   const conversationIdRef = useRef<string | null>(null);
@@ -112,191 +119,123 @@ function DemoClient() {
     void runQuery(initialQuestion);
   }, [initialQuestion, turnstileToken, runQuery]);
 
-  const canSend =
-    !isStreaming &&
-    followUp.trim().length > 0 &&
-    (!TURNSTILE_ENABLED || !!turnstileToken);
-
-  const handleFollowUp = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!canSend) return;
-    const q = followUp;
-    setFollowUp("");
-    void runQuery(q);
-  };
-
-  const showWelcomeInput = !initialQuestion && turns.length === 0 && !isStreaming;
+  const hasConversation = turns.length > 0 || isStreaming;
+  const composerDisabled = isStreaming || (TURNSTILE_ENABLED && !turnstileToken);
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-8 py-2">
+      {/* En-tête */}
       <div>
-        <p className="inline-flex items-center gap-2 rounded-full bg-primary/10 px-3 py-1 text-xs font-medium text-primary">
+        <span className="inline-flex items-center gap-2 rounded-full bg-primary/10 px-3 py-1 text-xs font-semibold text-primary">
+          <span className="h-1.5 w-1.5 rounded-full bg-primary" />
           Démonstration — réponse générale
-        </p>
-        <h1 className="mt-3 text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">
+        </span>
+        <h1 className="mt-4 text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">
           Posez votre question de droit social
         </h1>
-        <p className="mt-2 text-sm text-muted-foreground">
+        <p className="mt-3 max-w-2xl text-base text-muted-foreground">
           Une réponse claire et sourcée, fondée sur le droit commun (Code du
           travail, jurisprudence).
         </p>
       </div>
 
-      {/* Distinction bien visible : démo = générique / compte = personnalisé */}
-      <div className="rounded-xl border border-border bg-muted/30 p-4 text-sm leading-relaxed">
-        <p className="text-foreground">
-          <span className="font-semibold">Ici, en démo :</span> réponse{" "}
-          <span className="font-semibold">générale</span>, fondée uniquement sur
-          le droit commun (Code du travail, jurisprudence).
-        </p>
-        <p className="mt-1.5 text-muted-foreground">
-          <span className="font-medium text-foreground">Avec un compte :</span>{" "}
-          votre convention collective appliquée, vos documents internes (accords,
-          règlement intérieur…) et une réponse adaptée à votre profil (DRH,
-          dirigeant, élu CSE…).
-        </p>
+      {/* Distinction démo (générique) / compte (personnalisé) */}
+      <div className="overflow-hidden rounded-2xl border border-border">
+        <div className="border-l-2 border-primary bg-primary/5 px-5 py-4">
+          <p className="text-sm text-foreground">
+            <span className="font-semibold">En démo :</span> réponse{" "}
+            <span className="font-semibold">générale</span>, fondée uniquement
+            sur le droit commun (Code du travail, jurisprudence).
+          </p>
+        </div>
+        <div className="bg-card px-5 py-4">
+          <p className="text-sm text-muted-foreground">
+            <span className="font-medium text-foreground">Avec un compte :</span>{" "}
+            votre convention collective, vos documents internes et une réponse
+            adaptée à votre profil.
+          </p>
+        </div>
       </div>
 
-      {/* Widget Turnstile unique et partagé : fournit le jeton pour la question
-          initiale (venue du hero via ?q=) comme pour les relances. Ne rend rien
-          si aucune clé n'est configurée. */}
+      {/* Widget Turnstile partagé (rien si aucune clé configurée) */}
       {TURNSTILE_ENABLED && (
         <Turnstile ref={turnstileRef} onVerify={setTurnstileToken} />
       )}
 
-      {/* Champ initial si on arrive sans question */}
-      {showWelcomeInput && (
-        <form onSubmit={handleFollowUp} className="flex flex-col gap-3">
-          <input
-            type="text"
-            value={followUp}
-            onChange={(e) => setFollowUp(e.target.value)}
-            maxLength={MAX_LEN}
-            placeholder="Posez votre question de droit social…"
-            className="w-full rounded-xl border border-border bg-white px-5 py-4 text-base text-foreground outline-none focus:ring-2 focus:ring-primary"
-          />
-          <button
-            type="submit"
-            disabled={!canSend}
-            className="inline-flex items-center justify-center gap-2 self-start rounded-xl bg-primary px-6 py-3 font-semibold text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
-          >
-            Obtenir une réponse
-          </button>
-        </form>
-      )}
-
-      {/* Conversation — même rendu que la page de réponse de l'app */}
-      <div className="flex flex-col gap-6">
-        {turns.map((turn, i) =>
-          turn.role === "user" ? (
-            <div key={i} className="flex justify-end">
-              <div className="max-w-[80%] rounded-2xl rounded-tr-sm bg-primary px-5 py-3 text-primary-foreground">
-                <p className="whitespace-pre-wrap text-base leading-relaxed">
-                  {turn.content}
-                </p>
+      {/* Conversation */}
+      {hasConversation && (
+        <div className="flex flex-col gap-6">
+          {turns.map((turn, i) =>
+            turn.role === "user" ? (
+              <div key={i} className="flex justify-end">
+                <div className="max-w-[85%] rounded-2xl rounded-tr-sm bg-primary px-5 py-3 text-primary-foreground">
+                  <p className="whitespace-pre-wrap text-base leading-relaxed">
+                    {turn.content}
+                  </p>
+                </div>
               </div>
-            </div>
-          ) : (
-            <StreamingBubble
-              key={i}
-              content={turn.content}
-              sources={turn.sources}
-              streaming={false}
-            />
-          ),
-        )}
+            ) : (
+              <StreamingBubble
+                key={i}
+                content={turn.content}
+                sources={turn.sources}
+                streaming={false}
+              />
+            ),
+          )}
 
-        {/* Réponse en cours */}
-        {isStreaming && !streamingContent && <StatusIndicator step={status} />}
-        {isStreaming && streamingContent && (
-          <StreamingBubble
-            content={streamingContent}
-            sources={streamingSources}
-          />
-        )}
-      </div>
+          {isStreaming && !streamingContent && <StatusIndicator step={status} />}
+          {isStreaming && streamingContent && (
+            <StreamingBubble
+              content={streamingContent}
+              sources={streamingSources}
+            />
+          )}
+        </div>
+      )}
 
       {/* Erreur */}
       {error && (
-        <div className="rounded-xl border border-border bg-muted/40 p-4 text-sm text-foreground">
+        <div className="rounded-xl border border-destructive/30 bg-destructive/5 p-4 text-sm text-foreground">
           {error}
         </div>
       )}
 
-      {/* Relance (quand une première réponse est arrivée) */}
-      {turns.length > 0 && !showWelcomeInput && (
-        <form
-          onSubmit={handleFollowUp}
-          className="flex flex-col gap-3 border-t border-border pt-6"
-        >
-          <input
-            type="text"
-            value={followUp}
-            onChange={(e) => setFollowUp(e.target.value)}
-            maxLength={MAX_LEN}
-            disabled={isStreaming}
-            placeholder="Poser une autre question…"
-            className="w-full rounded-xl border border-border bg-white px-5 py-4 text-base text-foreground outline-none focus:ring-2 focus:ring-primary disabled:opacity-60"
-          />
-          <button
-            type="submit"
-            disabled={!canSend}
-            className="inline-flex items-center justify-center gap-2 self-start rounded-xl border border-border px-5 py-2.5 text-sm font-semibold text-foreground transition-colors hover:bg-muted disabled:opacity-50"
-          >
-            Envoyer
-          </button>
-        </form>
-      )}
-
-      {/* Bandeau conversion (dès qu'une réponse est arrivée) */}
+      {/* Bandeau de conversion (après la première réponse) */}
       {done && (
         <div className="rounded-2xl border border-primary/20 bg-primary/5 p-6">
           <h2 className="text-lg font-semibold text-foreground">
-            Passez de la réponse générale à la réponse adaptée à votre entreprise
+            Passez à la réponse adaptée à votre entreprise
           </h2>
-          <p className="mt-2 text-sm text-muted-foreground">
-            Cette réponse est générale. Avec un compte, chaque réponse tient
-            compte de :
-          </p>
-          <ul className="mt-3 space-y-1.5 text-sm text-foreground">
-            {[
-              "Votre convention collective (appliquée automatiquement)",
-              "Vos documents internes : accords d’entreprise, règlement intérieur…",
-              "Votre profil : DRH, dirigeant, élu CSE, expert-comptable…",
-            ].map((item) => (
-              <li key={item} className="flex items-start gap-2">
-                <span className="mt-0.5 inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-primary text-[10px] font-bold text-primary-foreground">
-                  ✓
+          <ul className="mt-4 space-y-2.5">
+            {ACCOUNT_PERKS.map((perk) => (
+              <li key={perk} className="flex items-start gap-2.5 text-sm text-foreground">
+                <span className="mt-0.5 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground">
+                  <Check className="h-3 w-3" strokeWidth={3} />
                 </span>
-                {item}
+                {perk}
               </li>
             ))}
           </ul>
-          <p className="mt-3 text-sm text-muted-foreground">
-            14 jours gratuits, sans carte bancaire.
-          </p>
-          <div className="mt-4 flex flex-wrap gap-3">
+          <div className="mt-5 flex flex-wrap items-center gap-3">
             <Link
               href="/register"
-              className="inline-flex items-center justify-center gap-2 rounded-xl bg-primary px-6 py-3 font-semibold text-primary-foreground hover:bg-primary/90"
+              className="inline-flex items-center justify-center gap-2 rounded-xl bg-primary px-6 py-3 font-semibold text-primary-foreground transition-colors hover:bg-primary/90"
             >
               Créer mon compte
               <span aria-hidden>→</span>
             </Link>
-            <Link
-              href="/login"
-              className="inline-flex items-center justify-center rounded-xl border border-border px-6 py-3 font-semibold text-foreground hover:bg-muted"
-            >
-              Se connecter
-            </Link>
+            <span className="text-sm text-muted-foreground">
+              14 jours gratuits, sans carte bancaire
+            </span>
           </div>
         </div>
       )}
 
-      <p className="text-xs text-muted-foreground">
-        Information juridique à visée pédagogique, sans valeur de conseil
-        juridique personnalisé.
-      </p>
+      {/* Composer (le vrai champ de saisie de l'app) */}
+      <div className="-mx-4 sm:-mx-6">
+        <ChatInput onSend={runQuery} disabled={composerDisabled} />
+      </div>
     </div>
   );
 }
