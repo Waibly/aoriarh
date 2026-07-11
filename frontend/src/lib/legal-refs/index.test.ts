@@ -61,4 +61,27 @@ describe("liens juridiques", () => {
     // « n° 2025-887 » ne doit pas être traité comme un pourvoi orphelin.
     expect(links("décret n° 2025-887", sources)).toEqual([["décret n° 2025-887", "#src-d887"]]);
   });
+
+  test("arrêté cité par date numérique (JJ/MM/AAAA) → lien", () => {
+    const sources = [src({ document_id: "arr", document_name: "Arrêté du 22 mai 2026 relatif au relèvement du salaire minimum de croissance", source_type: "arrete" })];
+    expect(links("cf. Arrêté du 22/05/2026, art. 1-1°", sources)).toEqual([
+      ["Arrêté du 22/05/2026", "#src-arr"],
+    ]);
+  });
+
+  test("arrêté cité par date française → lien", () => {
+    const sources = [src({ document_id: "arr", document_name: "Arrêté du 22 mai 2026 relatif au relèvement du SMIC", source_type: "arrete" })];
+    expect(links("selon l'arrêté du 22 mai 2026", sources)).toEqual([
+      ["arrêté du 22 mai 2026", "#src-arr"],
+    ]);
+  });
+
+  test("pas de lien si l'arrêté cité n'est pas une source", () => {
+    expect(links("Arrêté du 22/05/2026", [])).toEqual([]);
+  });
+
+  test("pas de faux lien : date du texte ≠ date de la source", () => {
+    const sources = [src({ document_id: "arr", document_name: "Arrêté du 8 juin 2026 relatif au SMIC agricole", source_type: "arrete" })];
+    expect(links("Arrêté du 22/05/2026", sources)).toEqual([]);
+  });
 });

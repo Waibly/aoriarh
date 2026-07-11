@@ -17,6 +17,9 @@ export interface RefIndex {
   byArticle: Map<string, MessageSource>;
   byPourvoi: Map<string, MessageSource>;
   byDocNumber: Map<string, MessageSource>;
+  // Textes cités par DATE (arrêtés surtout, mais aussi décrets/lois/ordonnances
+  // quand aucun n° n'est donné). Clé : "<type>:<AAAA-MM-JJ>", ex. "arrete:2026-05-22".
+  byTypeDate: Map<string, MessageSource>;
 }
 
 /** Clé canonique d'un article : "R. 4463-3" / "art. R.4463-3" → "R4463-3". */
@@ -37,6 +40,40 @@ function normalizeDocNumber(raw: string): string {
   return raw.replace(/\D/g, "");
 }
 
+/** Retire les accents (é→e, û→u…) pour comparer mois et types sans casse d'accent. */
+function stripAccents(s: string): string {
+  return s.normalize("NFD").replace(/[̀-ͯ]/g, "");
+}
+
+const MONTHS_FR: Record<string, string> = {
+  janvier: "01", fevrier: "02", mars: "03", avril: "04", mai: "05", juin: "06",
+  juillet: "07", aout: "08", septembre: "09", octobre: "10", novembre: "11",
+  decembre: "12",
+};
+
+/** Types de textes cités par date (le n° existe rarement pour les arrêtés). */
+const DATE_SOURCE_TYPES = new Set(["arrete", "decret", "loi", "ordonnance"]);
+
+/**
+ * Extrait une date canonique "AAAA-MM-JJ" depuis un texte français
+ * ("22 mai 2026", "1er janvier 2026") ou numérique ("22/05/2026"). null sinon.
+ */
+function extractCanonicalDate(raw: string): string | null {
+  const fr = raw.match(/(\d{1,2})(?:er)?\s+([A-Za-zÀ-ÿ]+)\s+(\d{4})/);
+  if (fr) {
+    const mm = MONTHS_FR[stripAccents(fr[2]).toLowerCase()];
+    if (mm) return `${fr[3]}-${mm}-${fr[1].padStart(2, "0")}`;
+  }
+  const num = raw.match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+  if (num) return `${num[3]}-${num[2].padStart(2, "0")}-${num[1].padStart(2, "0")}`;
+  return null;
+}
+
+/** "Arrêtés" / "décret" → token canonique "arrete" / "decret". */
+function normalizeTypeWord(w: string): string {
+  return stripAccents(w).toLowerCase().replace(/s$/, "");
+}
+
 /** Numéro d'un décret/loi/ordonnance dans le nom d'un document source. */
 const DOC_NAME_NUMBER_RE = /n[°ºo]\s?(\d{4}-\d+)/i;
 
@@ -52,6 +89,7 @@ export function buildRefIndex(sources: MessageSource[]): RefIndex {
   const byArticle = new Map<string, MessageSource>();
   const byPourvoi = new Map<string, MessageSource>();
   const byDocNumber = new Map<string, MessageSource>();
+  const byTypeDate = new Map<string, MessageSource>();
 
   for (const source of sources) {
     if (source.numero_pourvoi) {
@@ -74,9 +112,18 @@ export function buildRefIndex(sources: MessageSource[]): RefIndex {
         if (key && !byDocNumber.has(key)) byDocNumber.set(key, source);
       }
     }
+    // Texte cité par DATE (arrêté surtout) : clé "<type>:<AAAA-MM-JJ>" depuis le
+    // nom du document (ex. « Arrêté du 22 mai 2026… » → "arrete:2026-05-22").
+    if (source.source_type && DATE_SOURCE_TYPES.has(source.source_type)) {
+      const date = extractCanonicalDate(source.document_name || "");
+      if (date) {
+        const key = `${source.source_type}:${date}`;
+        if (!byTypeDate.has(key)) byTypeDate.set(key, source);
+      }
+    }
   }
 
-  return { byArticle, byPourvoi, byDocNumber };
+  return { byArticle, byPourvoi, byDocNumber, byTypeDate };
 }
 
 // Référence d'article : "art. R.4463-3", "article L1234-1", "R. 4624-31"…
@@ -90,6 +137,10 @@ const POURVOI_RE = /n[°ºo]\s?(\d[\d./-]{4,})/gi;
 // Le mot (décret/loi/…) précède, ce qui le distingue d'un pourvoi et lui donne
 // la priorité (le hit démarre plus tôt et absorbe le "n° …" à l'intérieur).
 const DOC_NUMBER_RE = /(décrets?|lois?|ordonnances?|arrêtés?)\s+n[°ºo]\s?(\d{4}-\d+)/gi;
+// Texte cité par DATE, sans numéro : "Arrêté du 22/05/2026", "Arrêté du 22 mai
+// 2026", "Décret du 17 décembre 2025". Le mot du type précède directement "du".
+const DATE_REF_RE =
+  /(arrêtés?|décrets?|lois?|ordonnances?)\s+du\s+(\d{1,2}(?:er)?\s+[A-Za-zÀ-ÿ]+\s+\d{4}|\d{1,2}\/\d{1,2}\/\d{4})/gi;
 
 interface Hit {
   start: number;
@@ -115,6 +166,14 @@ function collectHits(value: string, index: RefIndex): Hit[] {
   }
   for (const m of value.matchAll(DOC_NUMBER_RE)) {
     const source = index.byDocNumber.get(normalizeDocNumber(m[2]));
+    if (source && m.index !== undefined) {
+      hits.push({ start: m.index, end: m.index + m[0].length, text: m[0], source });
+    }
+  }
+  for (const m of value.matchAll(DATE_REF_RE)) {
+    const date = extractCanonicalDate(m[2]);
+    if (!date) continue;
+    const source = index.byTypeDate.get(`${normalizeTypeWord(m[1])}:${date}`);
     if (source && m.index !== undefined) {
       hits.push({ start: m.index, end: m.index + m[0].length, text: m[0], source });
     }
