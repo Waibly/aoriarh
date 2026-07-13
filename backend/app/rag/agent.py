@@ -382,6 +382,7 @@ Choisis le format AVANT d'écrire, selon ce que la question appelle :
 - **Cite les références légales dans le texte** : articles de loi (art. L.1234-1), articles de CCN (art. 33 CCNT66), jurisprudence (Cass. soc., date, n° pourvoi). Le RH doit pouvoir copier-coller ta réponse avec ses fondements juridiques. Ne cite PAS les noms des documents sources (affichés séparément dans l'UI). Français uniquement.
 - **Ne renvoie JAMAIS à un numéro de source** (« Source 3 », « Sources 8, 9 ») : cette numérotation est interne et invisible pour le RH. Réfère-toi toujours à la référence juridique elle-même (l'article, le n° de pourvoi, la date de l'arrêt).
 - **N'affirme qu'une référence figure « dans vos sources » que si elle y est réellement.** Si tu cites un article ou un arrêt qui n'apparaît pas dans les sources fournies (parce que tu le connais par ailleurs), présente-le comme la règle générale applicable, sans laisser entendre qu'il provient des sources. Ne fabrique jamais le rattachement d'une référence à une source.
+- **Continuité de la conversation — n'inverse jamais la provenance.** Les références qui apparaissent dans TES réponses précédentes (bloc « Historique », tours « Toi (assistant) ») sont les tiennes : tu les as fournies à partir de sources mobilisées à ce moment-là. Ne les présente JAMAIS comme des arrêts ou des textes « mentionnés » ou « listés » par l'utilisateur, et ne les rejette pas au seul motif que « Sources documentaires » du tour courant ne les resortit pas (chaque question relance une recherche distincte ; une source citée un tour plus tôt reste valable). Ne consacre donc aucune section à énumérer ce que « l'utilisateur cite et qui ne figure pas dans les sources » — ce cas ne vaut que si l'utilisateur a lui-même écrit ces références dans SON dernier message. Si tu repères une vraie erreur dans une de tes citations passées, corrige-la explicitement comme ta propre correction, jamais en la reprochant à l'utilisateur. Quand le contexte fournit un bloc « Sources déjà mobilisées plus tôt dans la conversation », il contient le texte des sources de tes tours précédents : appuie-toi dessus pour un suivi, au même titre que les sources fraîches.
 - **Pose-toi DANS l'organisation, pas en face.** Quand le contexte fournit le nom de l'organisation (bloc « Entreprise de l'utilisateur : <Nom> »), utilise ce nom directement : « chez <Nom> », « l'accord d'entreprise de <Nom> », « la CCN qui s'applique à <Nom> ». Si le nom n'est pas fourni, replie-toi sur « ici », « dans cette organisation », « la règle qui s'applique ici ». Privilégie « côté employeur », « côté salarié », « le point critique », « ce qu'il faut surveiller ». Évite : « chez nous », « notre entreprise », « nos accords » ; « vous devez », « votre CCN », « veillez à » (ton de tiers extérieur) ; « je vais expliquer », « Souhaitez-vous que je… », « Je peux aussi… », « N'hésitez pas… ».
 - **Questions complémentaires** : si la décision du RH appelle une suite ou qu'une information décisive manque, termine par 1 à 3 questions qui la font avancer (jamais des offres de service du type « Souhaitez-vous que je… »). Si la question était simple et la réponse complète, n'en mets AUCUNE — ne remplis pas. Format :
 
@@ -906,19 +907,25 @@ class RAGAgent:
         low_confidence: bool = False,
         condensed_query: str | None = None,
         model_override: str | None = None,
+        carried_sources: list[dict] | None = None,
     ) -> AsyncGenerator[str, None]:
         """Stream the LLM generation token by token (buffered).
 
         `model_override` force le modèle de génération pour cet appel (défaut
         None = rag_config.LLM_MODEL). Utilisé par la démo publique pour
         verrouiller gpt-5-mini indépendamment du modèle prod.
+
+        `carried_sources` : sources mobilisées lors des tours précédents de la
+        conversation (relues depuis les messages persistés, PAS re-cherchées),
+        ré-injectées pour que le modèle puisse enchaîner sur ce qu'il vient de
+        citer sans avoir à le rechercher.
         """
         gen_model = model_override or rag_config.LLM_MODEL
         t_start = time.perf_counter()
         context = self._build_context(results)
         user_content = self._build_user_message(
             query, context, org_context, history, low_confidence=low_confidence,
-            condensed_query=condensed_query,
+            condensed_query=condensed_query, carried_sources=carried_sources,
         )
         logger.info(
             "[RAG] stream org_context injected: %s",
@@ -1900,6 +1907,67 @@ class RAGAgent:
         )
         return "\n".join(lines)
 
+    # Nombre max de sources portées d'un tour à l'autre et taille de chaque
+    # extrait : plafonds pour borner les tokens ajoutés au prompt de génération.
+    _CARRIED_MAX = 6
+    _CARRIED_TEXT_CHARS = 900
+
+    def _build_carried_context(self, carried: list[dict] | None) -> str:
+        """Rendu du bloc « sources déjà mobilisées » à partir des sources
+        persistées des tours précédents (dicts issus de `RAGSource`).
+
+        Relues, jamais re-cherchées. Bloc SÉPARÉ des sources fraîches pour
+        préserver la provenance et ne pas perturber le classement du tour."""
+        if not carried:
+            return ""
+        blocks: list[str] = []
+        for src in carried[: self._CARRIED_MAX]:
+            if not isinstance(src, dict):
+                continue
+            doc_name = src.get("document_name") or "Document"
+            label = src.get("source_type_label") or _SOURCE_TYPE_LABELS.get(
+                src.get("source_type", ""), src.get("source_type", "")
+            )
+            header = f"[Source déjà mobilisée]\nDocument : {doc_name}\nType : {label}\n"
+            # Référence juridique (juris) ou localisation (articles/section).
+            if src.get("numero_pourvoi") or src.get("date_decision"):
+                ref_parts: list[str] = []
+                jur = src.get("juridiction")
+                if jur:
+                    if src.get("chambre"):
+                        jur = f"{jur} {src['chambre']}"
+                    ref_parts.append(jur)
+                if src.get("date_decision"):
+                    ref_parts.append(str(src["date_decision"]))
+                if src.get("numero_pourvoi"):
+                    ref_parts.append(f"n° {src['numero_pourvoi']}")
+                if ref_parts:
+                    header += f"Référence : {', '.join(ref_parts)}\n"
+            else:
+                loc = ""
+                if src.get("article_nums"):
+                    nums = ", ".join(src["article_nums"])
+                    loc = f"Article{'s' if len(src['article_nums']) > 1 else ''} {nums}"
+                if src.get("section_path"):
+                    loc = f"{loc} — {src['section_path']}" if loc else src["section_path"]
+                if loc:
+                    header += f"Localisation : {loc}\n"
+            body = (src.get("excerpt") or src.get("full_text") or "").strip()
+            if len(body) > self._CARRIED_TEXT_CHARS:
+                body = body[: self._CARRIED_TEXT_CHARS].rstrip() + " [...]"
+            blocks.append(header + body)
+        if not blocks:
+            return ""
+        return (
+            "## Sources déjà mobilisées plus tôt dans la conversation\n\n"
+            "Ces sources ont été retrouvées lors de tours précédents de cet "
+            "échange. Elles restent un fondement VALIDE : tu peux t'appuyer "
+            "dessus et les citer pour répondre à un suivi, exactement comme les "
+            "« Sources documentaires » du tour courant. Elles les complètent "
+            "sans écraser les règles de hiérarchie des normes et de récence.\n\n"
+            + "\n\n".join(blocks)
+        )
+
     def _build_user_message(
         self,
         query: str,
@@ -1908,6 +1976,7 @@ class RAGAgent:
         history: list[dict[str, str]] | None = None,
         low_confidence: bool = False,
         condensed_query: str | None = None,
+        carried_sources: list[dict] | None = None,
     ) -> str:
         """Build the user message with sources, optional org context, history, and question."""
         parts = [f"Sources documentaires :\n\n{context}"]
@@ -1928,6 +1997,9 @@ class RAGAgent:
                 "formule et la méthode générale complète ainsi que la donnée "
                 "manquante à fournir — jamais un exposé qui contourne la question."
             )
+        carried_block = self._build_carried_context(carried_sources)
+        if carried_block:
+            parts.append(carried_block)
         if org_context and any(org_context.values()):
             parts.append(self._build_org_context_block(org_context))
         if history:
@@ -1937,13 +2009,18 @@ class RAGAgent:
             recent = history[-CONDENSE_HISTORY_LIMIT:]
             history_lines = []
             for msg in recent:
-                role = "Utilisateur" if msg["role"] == "user" else "Assistant"
+                role = "Utilisateur" if msg["role"] == "user" else "Toi (assistant)"
                 content = msg["content"][:2000]
                 if len(msg["content"]) > 2000:
                     content += " [...]"
                 history_lines.append(f"{role}: {content}")
             parts.append(
-                "## Historique de la conversation\n\n" + "\n\n".join(history_lines)
+                "## Historique de la conversation\n\n"
+                "Les tours « Toi (assistant) » sont TES réponses précédentes : "
+                "les références qu'ils contiennent sont les tiennes, appuyées sur "
+                "des sources mobilisées plus tôt dans l'échange — ce ne sont PAS "
+                "des affirmations de l'utilisateur.\n\n"
+                + "\n\n".join(history_lines)
             )
         # Sans la date, le modèle ne peut pas situer une entrée en vigueur ou
         # un délai (« le décret du 30/12/2025 » : passé ou futur ?) — critique

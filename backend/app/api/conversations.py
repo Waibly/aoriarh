@@ -514,6 +514,18 @@ def _sse_event(event: str, data: dict) -> str:
     return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
 
 
+def _source_key(src: dict) -> tuple:
+    """Clé d'identité d'une source pour la déduplication (Couche 2).
+
+    Une même source peut apparaître dans un tour précédent (source portée) ET
+    dans les résultats frais du tour courant : on l'écarte alors du bloc porté."""
+    return (
+        src.get("document_id"),
+        tuple(sorted(src.get("article_nums") or [])),
+        src.get("numero_pourvoi"),
+    )
+
+
 # --- Recherche documentaire (admin v1) -------------------------------------
 # Recherche de sources sans génération LLM : on lance le pipeline de retrieval
 # (expansion → recherche → rerank → expansion parent) et on renvoie les chunks
@@ -687,6 +699,29 @@ async def chat_stream(
                     name = src.get("document_name") if isinstance(src, dict) else None
                     if name and name not in cited_sources:
                         cited_sources.append(name)
+        # Couche 2 — sources portées : le TEXTE des sources des 2 derniers tours
+        # assistant, relu depuis les messages persistés (jamais re-cherché), pour
+        # que le modèle puisse enchaîner sur ce qu'il vient de citer. Les messages
+        # proviennent de `conversation` (déjà filtrée par organisation via
+        # get_conversation) → même organisation_id par construction, pas de
+        # cross-tenant. Déduplication vs sources fraîches faite plus bas.
+        carried_raw: list[dict] = []
+        _carried_seen: set = set()
+        _assistant_turns = 0
+        for m in reversed(recent_messages):
+            if m.role != "assistant" or not m.sources:
+                continue
+            _assistant_turns += 1
+            if _assistant_turns > 2:
+                break
+            for src in m.sources:
+                if not isinstance(src, dict):
+                    continue
+                key = _source_key(src)
+                if key in _carried_seen:
+                    continue
+                _carried_seen.add(key)
+                carried_raw.append(src)
         try:
             # 2a. INTENT ROUTER (Step -1 du pipeline) — court-circuite le RAG
             # pour les meta-questions (capabilities, sources, scope, internals,
@@ -832,6 +867,20 @@ async def chat_stream(
             sources = agent.format_sources(results)
             sources_dicts = [dataclasses.asdict(s) for s in sources]
             yield _sse_event("chat_sources", {"sources": sources_dicts})
+
+            # Couche 2 — écarte des sources portées celles déjà présentes dans les
+            # sources fraîches de ce tour (pas de doublon dans le prompt). Le
+            # panneau UI reste = sources fraîches ; les portées ne nourrissent que
+            # la génération.
+            _fresh_keys = {_source_key(s) for s in sources_dicts}
+            carried_sources = [
+                s for s in carried_raw if _source_key(s) not in _fresh_keys
+            ]
+            if carried_sources:
+                logger.info(
+                    "[RAG] Couche 2 — %d source(s) portée(s) injectée(s) en génération",
+                    len(carried_sources),
+                )
             t_sources = time.perf_counter()
             logger.info(
                 "[PERF] Sources sent to client %.0fms after request",
@@ -852,6 +901,7 @@ async def chat_stream(
                     history=history,
                     low_confidence=rag_trace.low_confidence,
                     condensed_query=reformulated,
+                    carried_sources=carried_sources or None,
                 ):
                     if await request.is_disconnected():
                         logger.info("Client disconnected during streaming")
