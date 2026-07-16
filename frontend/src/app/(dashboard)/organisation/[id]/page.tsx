@@ -162,7 +162,11 @@ export default function OrganisationDetailPage() {
     }
   };
 
-  if (loadingOrg) {
+  // Skeleton uniquement au tout premier chargement (pas de données encore).
+  // Sur les rechargements suivants (ex. après enregistrement dans la modale
+  // d'édition), garder le contenu monté : un skeleton plein écran démonterait
+  // la modale en plein submit et provoquerait un ferme/rouvre/referme visible.
+  if (loadingOrg && !org) {
     return (
       <div className="space-y-6">
         <Skeleton className="h-8 w-64" />
