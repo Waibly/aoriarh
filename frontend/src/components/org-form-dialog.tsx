@@ -198,7 +198,6 @@ export function OrgFormDialog({
                   values={orgValues}
                   onChange={setOrgValues}
                   token={token}
-                  requireTaille
                 />
                 <DialogFooter className="pt-2">
                   <Button
@@ -210,7 +209,7 @@ export function OrgFormDialog({
                   </Button>
                   <Button
                     type="button"
-                    disabled={!isOrgFormFieldsValid(orgValues, { requireTaille: true })}
+                    disabled={!isOrgFormFieldsValid(orgValues)}
                     onClick={() => setStep(2)}
                   >
                     Suivant

@@ -14,6 +14,11 @@ import { FORME_JURIDIQUE_OPTIONS, TAILLE_OPTIONS } from "@/types/api";
 import type { CcnReference } from "@/types/api";
 import { CcnSelector } from "@/components/ccn-selector";
 
+/** Sentinelle du choix « Non précisé » : Radix interdit une SelectItem à valeur
+ *  vide, mais on veut stocker taille = "" (→ envoyé comme null au backend, non
+ *  transmis au moteur RAG). Ne jamais persister cette valeur. */
+const TAILLE_NON_PRECISE = "__non_precise__";
+
 export interface OrgFormFieldsValues {
   name: string;
   formeJuridique: string;
@@ -103,11 +108,21 @@ export function OrgFormFields({
             <span className="text-muted-foreground text-xs font-normal">(facultatif)</span>
           )}
         </Label>
-        <Select value={values.taille} onValueChange={(v) => set("taille", v)}>
+        <Select
+          value={values.taille || TAILLE_NON_PRECISE}
+          onValueChange={(v) =>
+            set("taille", v === TAILLE_NON_PRECISE ? "" : v)
+          }
+        >
           <SelectTrigger id="taille">
-            <SelectValue placeholder="Nombre de salariés..." />
+            <SelectValue />
           </SelectTrigger>
           <SelectContent>
+            {/* Choix neutre par défaut : effectif non transmis au moteur, les
+                réponses ne raisonnent pas par seuil (11, 50…). Valeur stockée
+                vide ("") — Radix interdit une SelectItem à valeur vide, d'où la
+                sentinelle mappée sur "". */}
+            <SelectItem value={TAILLE_NON_PRECISE}>Non précisé</SelectItem>
             {TAILLE_OPTIONS.map((t) => (
               <SelectItem key={t} value={t}>
                 {t} salariés

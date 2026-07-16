@@ -524,13 +524,12 @@ function RegisterForm() {
             values={orgValues}
             onChange={setOrgValues}
             token={session.data?.access_token ?? ""}
-            requireTaille
           />
 
           <Button
             type="submit"
             disabled={
-              !isOrgFormFieldsValid(orgValues, { requireTaille: true }) ||
+              !isOrgFormFieldsValid(orgValues) ||
               !profilMetier ||
               isLoading
             }
@@ -711,7 +710,6 @@ function RegisterForm() {
                 values={orgValues}
                 onChange={setOrgValues}
                 token=""
-                requireTaille
               />
               <div className="flex gap-3">
                 <Button
@@ -726,10 +724,7 @@ function RegisterForm() {
                 <Button
                   type="submit"
                   className="flex-1"
-                  disabled={
-                    !isOrgFormFieldsValid(orgValues, { requireTaille: true }) ||
-                    isLoading
-                  }
+                  disabled={!isOrgFormFieldsValid(orgValues) || isLoading}
                 >
                   {isLoading ? "Création en cours..." : "Créer mon compte"}
                 </Button>
