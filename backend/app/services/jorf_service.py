@@ -187,6 +187,39 @@ def _title_matches_keywords(title: str) -> bool:
     return _title_has_rh_keyword(title)
 
 
+# --- Périmètre : deux régimes selon la nature du texte -----------------------
+#
+# LOI / ORDONNANCE / DÉCRET → aucun filtre, on prend tout.
+#   Le tri par mots-clés est une liste blanche : elle ne connaît que ce qu'on a
+#   pensé à y mettre et ne signale jamais ses propres oublis. Impossible d'en
+#   mesurer le rappel de l'intérieur. Cas d'école : la LOI 2023-1107 (partage de
+#   la valeur, obligation pour les entreprises de 11 à 49 salariés) ne tenait
+#   qu'à un mot-clé de titre, et le filet « modifie le Code du travail » ne
+#   l'aurait pas rattrapée — son article 5 est une expérimentation NON codifiée,
+#   elle ne touche pas au code. Le volume est faible (~1 500 textes/an) : le
+#   rappel prime sur le bruit.
+#
+# ARRÊTÉ → filtre conservé. ~29 500 textes sur 2020-2026, pour l'essentiel des
+#   nominations, délégations de signature et agréments d'accords de branche (ces
+#   derniers déjà couverts par l'ingestion des CCN).
+_NATURES_SANS_FILTRE = frozenset({"LOI", "ORDONNANCE", "DECRET"})
+
+
+def _should_consult(nature: str, title: str) -> bool:
+    """Faut-il consulter ce texte ? Décision AVANT /consult (borne le quota PISTE)."""
+    if nature in _NATURES_SANS_FILTRE:
+        return True
+    return _title_matches_keywords(title)
+
+
+def _should_keep(nature: str, title: str, modified_code_ids: set[str]) -> bool:
+    """Faut-il ingérer ce texte ? Décision APRÈS /consult (les codes modifiés
+    ne sont connus qu'une fois le texte consulté)."""
+    if nature in _NATURES_SANS_FILTRE:
+        return True
+    return _is_rh_relevant(title, modified_code_ids)
+
+
 # --- Types ------------------------------------------------------------------
 
 
@@ -347,22 +380,7 @@ class JorfService:
                     if not cid or nature not in _NATURE_TO_SOURCE_TYPE:
                         continue
 
-                    # Exclusion = veto : on ne consulte même pas (quota + bruit).
-                    if _is_excluded(title):
-                        result.filtered_out += 1
-                        continue
-
-                    # Décision de consultation :
-                    #  - titre RH → on consulte (cas nominal) ;
-                    #  - sinon, on consulte quand même les textes substantiels
-                    #    (lois / ordonnances / décrets) pour laisser le filet
-                    #    « modifie le Code du travail » les rattraper même avec
-                    #    un titre vague (ex. « congé supplémentaire de naissance »
-                    #    quand le mot-clé manque) ;
-                    #  - les ARRÊTÉS sans mot-clé sont écartés sans consultation :
-                    #    volume trop élevé, le RH y est déjà capté par le titre.
-                    title_ok = _title_has_rh_keyword(title)
-                    if not title_ok and nature == "ARRETE":
+                    if not _should_consult(nature, title):
                         result.filtered_out += 1
                         continue
 
@@ -380,7 +398,7 @@ class JorfService:
                     full_text, modified_code_ids, pub_date = self._parse_consult(
                         consult
                     )
-                    if not _is_rh_relevant(title, modified_code_ids):
+                    if not _should_keep(nature, title, modified_code_ids):
                         result.filtered_out += 1
                         continue
                     if not full_text or len(full_text) < 50:

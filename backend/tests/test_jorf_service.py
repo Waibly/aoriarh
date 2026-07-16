@@ -8,8 +8,65 @@ from app.services.jorf_service import (
     JorfService,
     _is_rh_relevant,
     _normalize,
+    _should_consult,
+    _should_keep,
     _title_matches_keywords,
 )
+
+# --- Périmètre : lois/ordonnances/décrets sans filtre, arrêtés filtrés --------
+#
+# Régression gardée : la LOI 2023-1107 (partage de la valeur) était absente du
+# corpus alors que la question « est-ce obligatoire pour les 11-49 ? » est une
+# vraie question RH. Elle ne modifie pas le Code du travail (article 5 = expéri-
+# mentation non codifiée), donc seul un mot-clé de titre la sauvait. On ne filtre
+# plus les textes substantiels.
+
+_LOI_1107 = (
+    "LOI n° 2023-1107 du 29 novembre 2023 portant transposition de l'accord "
+    "national interprofessionnel relatif au partage de la valeur au sein de "
+    "l'entreprise (1)"
+)
+
+
+def test_loi_consultee_et_gardee_sans_mot_cle_ni_lien_code():
+    """Le cas qui a motivé la règle : gardée même sans lien vers le code."""
+    assert _should_consult("LOI", _LOI_1107) is True
+    assert _should_keep("LOI", _LOI_1107, set()) is True
+
+
+def test_decret_au_titre_opaque_est_garde():
+    titre = "Décret n° 2024-1 portant diverses dispositions d'application"
+    assert _should_consult("DECRET", titre) is True
+    assert _should_keep("DECRET", titre, set()) is True
+
+
+def test_ordonnance_gardee_meme_si_titre_exclu():
+    """Pas de veto sur les textes substantiels : les exclusions ne s'appliquent
+    qu'aux arrêtés, où elles servent à écarter le bruit administratif."""
+    titre = "Ordonnance n° 2026-1 relative à la fonction publique territoriale"
+    assert _should_consult("ORDONNANCE", titre) is True
+    assert _should_keep("ORDONNANCE", titre, set()) is True
+
+
+def test_arrete_sans_mot_cle_rh_est_ecarte_avant_consultation():
+    titre = "Arrêté du 3 mars 2026 portant nomination au cabinet du ministre"
+    assert _should_consult("ARRETE", titre) is False
+
+
+def test_arrete_avec_mot_cle_rh_est_consulte_et_garde():
+    titre = "Arrêté du 3 mars 2026 relatif au document unique d'évaluation"
+    assert _should_consult("ARRETE", titre) is True
+    assert _should_keep("ARRETE", titre, set()) is True
+
+
+def test_arrete_exclu_reste_ecarte_meme_avec_mot_cle():
+    titre = "Arrêté du 3 mars 2026 sur le temps de travail dans la fonction publique"
+    assert _should_consult("ARRETE", titre) is False
+
+
+def test_arrete_sans_mot_cle_rattrape_par_le_filet_code_travail():
+    titre = "Arrêté du 3 mars 2026 portant diverses mesures techniques"
+    assert _should_keep("ARRETE", titre, {_CODE_TRAVAIL_ID}) is True
 
 
 # --- _normalize --------------------------------------------------------------
