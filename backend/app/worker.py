@@ -568,6 +568,63 @@ async def run_legislation_sync(ctx: dict) -> None:
     logger.info("Worker: legislation sync completed")
 
 
+async def run_ani_sync(ctx: dict) -> None:
+    """Cron mensuel — ANI (accords nationaux interprofessionnels) en vigueur depuis 2010.
+
+    Idempotent : ne (re)crée que les textes non encore ingérés (base + avenants).
+    Sert aussi de backfill au tout premier passage. Volume faible (~1-3/an).
+    """
+    import time as _time
+
+    from app.models.user import User
+
+    session_factory = ctx["session_factory"]
+    logger.info("Worker: ANI sync started")
+    sync_log_id = await _create_sync_log(session_factory, "ani")
+    t0 = _time.perf_counter()
+    try:
+        from app.services.kali_service import KaliService
+
+        async with session_factory() as db:
+            admin_result = await db.execute(
+                select(User).where(User.role == "admin", User.is_active.is_(True)).limit(1)
+            )
+            admin = admin_result.scalar_one_or_none()
+            if not admin:
+                logger.error("No active admin user found — cannot run ANI sync")
+                await _finish_sync_log(
+                    session_factory, sync_log_id,
+                    success=False, errors=1,
+                    error_message="no active admin user",
+                    duration_ms=int((_time.perf_counter() - t0) * 1000),
+                )
+                return
+
+            result = await KaliService().sync_ani(db, admin.id)
+
+        logger.info(
+            "Worker: ANI sync completed — %d listés, %d créés, %d sautés, %d erreurs",
+            result.fetched, result.created, result.skipped, result.errors,
+        )
+        await _finish_sync_log(
+            session_factory, sync_log_id,
+            success=result.errors == 0,
+            items_fetched=result.fetched,
+            items_created=result.created,
+            items_skipped=result.skipped,
+            errors=result.errors,
+            error_message="; ".join(result.error_messages[:5]) or None,
+            duration_ms=int((_time.perf_counter() - t0) * 1000),
+        )
+    except Exception as exc:
+        logger.exception("Worker: ANI sync failed")
+        await _finish_sync_log(
+            session_factory, sync_log_id,
+            success=False, errors=1, error_message=str(exc),
+            duration_ms=int((_time.perf_counter() - t0) * 1000),
+        )
+
+
 async def _run_jurisprudence_passes(
     db,
     session_factory,
@@ -1627,6 +1684,7 @@ class WorkerSettings:
         run_all_codes_sync,
         run_jorf_sync,
         run_legislation_sync,
+        run_ani_sync,
         run_scheduled_sync,
         run_jurisprudence_presence_check,
         run_billing_lifecycle,
@@ -1653,6 +1711,10 @@ class WorkerSettings:
         # 2026-06-23). Lecture seule, signale dans le SyncLog ; la suppression
         # reste manuelle. ~1-2h de scan (12k+ recherches Cass + export CA).
         cron(run_jurisprudence_presence_check, day=1, hour=3, minute=0),
+        # ANI (accords nationaux interprofessionnels) : 1er du mois 4h UTC.
+        # Idempotent (dédup sur l'id KALITEXT) : le 1er passage fait le backfill
+        # 2010→aujourd'hui, les suivants n'ajoutent que le nouvel ANI (~1-3/an).
+        cron(run_ani_sync, day=1, hour=4, minute=0),
         # Billing lifecycle: every day at 9:00 AM UTC (trial reminders + expirations)
         cron(run_billing_lifecycle, hour=9, minute=0),
         # GDPR data retention purge: every day at 10:00 AM UTC (after the

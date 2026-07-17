@@ -44,6 +44,7 @@ ARTICLE_AWARE_SOURCE_TYPES = {
     "code_general_impots_reglementaire",
     "convention_collective_nationale",
     "accord_branche",
+    "accord_national_interprofessionnel",
 }
 from app.rag.qdrant_store import COLLECTION_NAME, ensure_collection, get_qdrant_client
 from app.rag.text_cleaner import clean_text

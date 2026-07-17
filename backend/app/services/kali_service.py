@@ -11,7 +11,7 @@ import re
 import time
 import uuid
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 
 import httpx
 from sqlalchemy import select
@@ -66,6 +66,18 @@ class KaliBulkSyncResult:
     skipped_identical: int = 0
     errors: int = 0
     details: list[KaliSyncResult] = field(default_factory=list)
+
+
+@dataclass
+class AniSyncResult:
+    """Result of an ANI (accords nationaux interprofessionnels) sync."""
+
+    fetched: int = 0  # textes ANI listés dans KALI
+    created: int = 0  # nouveaux documents ingérés
+    skipped: int = 0  # déjà ingérés / hors périmètre / sans contenu
+    errors: int = 0
+    error_messages: list[str] = field(default_factory=list)
+    titles_created: list[str] = field(default_factory=list)
 
 
 class KaliService:
@@ -619,6 +631,243 @@ class KaliService:
             bulk_result.errors,
         )
         return bulk_result
+
+    # --- ANI (accords nationaux interprofessionnels) ---
+    #
+    # Les ANI vivent dans le fond KALI, à côté des CCN, mais sans IDCC — le
+    # chemin CCN (piloté par IDCC) ne les atteint pas. On les énumère via
+    # /search sur le titre, puis on ingère chaque texte (base + avenants) en
+    # vigueur comme document COMMUN. Volume faible : ~1-3 nouveaux ANI/an, donc
+    # un simple scan mensuel idempotent suffit (backfill au 1er passage).
+
+    _ANI_SEARCH_VALUE = "accord national interprofessionnel"
+    _ANI_MONTHS = {
+        "janvier": 1, "février": 2, "fevrier": 2, "mars": 3, "avril": 4,
+        "mai": 5, "juin": 6, "juillet": 7, "août": 8, "aout": 8,
+        "septembre": 9, "octobre": 10, "novembre": 11,
+        "décembre": 12, "decembre": 12,
+    }
+
+    async def sync_ani(
+        self,
+        db: AsyncSession,
+        user_id: uuid.UUID,
+        *,
+        since_year: int = 2010,
+    ) -> AniSyncResult:
+        """Ingère les ANI (base + avenants) en vigueur depuis `since_year`.
+
+        Idempotent : saute les textes déjà ingérés (dédup sur l'id KALITEXT
+        stocké dans ``numero_pourvoi``). Sert de backfill au 1er passage puis
+        de scan incrémental mensuel.
+        """
+        from app.services.storage_service import StorageService
+
+        result = AniSyncResult()
+        existing = await self._get_existing_ani_ids(db)
+        storage = StorageService()
+
+        async with httpx.AsyncClient(timeout=_REQUEST_TIMEOUT) as client:
+            candidates = await self._search_ani(client)
+            result.fetched = len(candidates)
+
+            for cand in candidates:
+                if not cand["id"]:
+                    continue
+                if cand["year"] < since_year:
+                    continue
+                if not cand["etat"].startswith("VIGUEUR"):
+                    continue  # abrogé / périmé : on ne nourrit pas le RAG
+                if cand["id"] in existing:
+                    result.skipped += 1
+                    continue
+
+                try:
+                    await asyncio.sleep(_API_THROTTLE)
+                    text_data = await self._api_post(
+                        client, "/consult/kaliText", json_body={"id": cand["id"]}
+                    )
+                    if text_data is None:
+                        result.errors += 1
+                        result.error_messages.append(f"{cand['id']} introuvable")
+                        continue
+
+                    articles = self._extract_articles_from_text(text_data)
+                    if not articles:
+                        result.skipped += 1
+                        continue
+
+                    text_content = self._format_ani_as_markdown(articles, cand["title"])
+                    doc = await self._create_ani_document(
+                        db, cand, text_content, user_id=user_id, storage=storage,
+                    )
+                    await enqueue_ingestion(str(doc.id))
+                    existing.add(cand["id"])
+                    result.created += 1
+                    result.titles_created.append(cand["title"])
+                    logger.info("ANI ingéré: %s (%s)", cand["title"][:80], cand["id"])
+                except Exception as exc:  # noqa: BLE001
+                    result.errors += 1
+                    result.error_messages.append(f"{cand['id']}: {exc}")
+                    logger.exception("ANI ingest failed for %s", cand["id"])
+
+        logger.info(
+            "ANI sync: %d listés, %d créés, %d sautés, %d erreurs",
+            result.fetched, result.created, result.skipped, result.errors,
+        )
+        return result
+
+    async def _search_ani(self, client: httpx.AsyncClient) -> list[dict]:
+        """Liste tous les textes ANI de KALI (base + avenants) via /search.
+
+        Retourne des dicts {id, title, etat, year, signature_date}.
+        """
+        rows: list[dict] = []
+        page = 1
+        while True:
+            data = await self._api_post(
+                client, "/search", json_body=self._ani_search_payload(page)
+            )
+            if not data:
+                break
+            results = data.get("results", [])
+            if not results:
+                break
+            for res in results:
+                titles = res.get("titles") or [{}]
+                t = titles[0]
+                title = re.sub(r"</?mark>", "", t.get("title", "")).strip()
+                sig_date = self._parse_ani_date(title)
+                rows.append({
+                    "id": t.get("id"),
+                    "title": title,
+                    "etat": res.get("etat") or "",
+                    "year": sig_date.year if sig_date else self._parse_ani_year(title),
+                    "signature_date": sig_date,
+                })
+            total = data.get("totalResultNumber", 0)
+            if page * 100 >= total:
+                break
+            page += 1
+            await asyncio.sleep(_API_THROTTLE)
+        return rows
+
+    @classmethod
+    def _ani_search_payload(cls, page: int) -> dict:
+        return {
+            "fond": "KALI",
+            "recherche": {
+                "champs": [{
+                    "typeChamp": "TITLE",
+                    "criteres": [{
+                        "typeRecherche": "TOUS_LES_MOTS_DANS_UN_CHAMP",
+                        "valeur": cls._ANI_SEARCH_VALUE,
+                        "operateur": "ET",
+                    }],
+                    "operateur": "ET",
+                }],
+                "pageNumber": page,
+                "pageSize": 100,
+                "operateur": "ET",
+                "sort": "PERTINENCE",
+                "typePagination": "DEFAUT",
+            },
+        }
+
+    @classmethod
+    def _parse_ani_date(cls, title: str) -> date | None:
+        """Extrait la date de signature depuis le titre (« ... du 5 octobre 2023 ... »)."""
+        m = re.search(
+            r"du\s+(\d{1,2})(?:er)?\s+([A-Za-zàâäéèêëîïôöûüç]+)\s+(\d{4})",
+            title,
+        )
+        if m:
+            month = cls._ANI_MONTHS.get(m.group(2).lower())
+            if month:
+                try:
+                    return date(int(m.group(3)), month, int(m.group(1)))
+                except ValueError:
+                    return None
+        return None
+
+    @staticmethod
+    def _parse_ani_year(title: str) -> int:
+        m = re.search(r"\b(?:19|20)\d{2}\b", title)
+        return int(m.group(0)) if m else 0
+
+    @staticmethod
+    async def _get_existing_ani_ids(db: AsyncSession) -> set[str]:
+        """Ids KALITEXT d'ANI déjà ingérés (stockés dans numero_pourvoi)."""
+        result = await db.execute(
+            select(Document.numero_pourvoi).where(
+                Document.source_type == "accord_national_interprofessionnel",
+                Document.organisation_id.is_(None),
+                Document.numero_pourvoi.isnot(None),
+            )
+        )
+        return {row[0] for row in result.all()}
+
+    async def _create_ani_document(
+        self,
+        db: AsyncSession,
+        cand: dict,
+        text_content: str,
+        *,
+        user_id: uuid.UUID,
+        storage,
+    ) -> Document:
+        """Crée un document COMMUN (org_id = NULL) pour un ANI."""
+        source_type = "accord_national_interprofessionnel"
+        hierarchy = DOCUMENT_TYPE_HIERARCHY[source_type]
+
+        file_id = uuid.uuid4()
+        storage_path = f"common/ani/{file_id}_{cand['id']}.txt"
+        text_bytes = text_content.encode("utf-8")
+        storage.put_file_bytes(storage_path, text_bytes, content_type="text/plain")
+        file_hash = hashlib.sha256(text_bytes).hexdigest()
+
+        doc = Document(
+            organisation_id=None,  # COMMON document
+            name=cand["title"][:250] or f"ANI {cand['id']}",
+            source_type=source_type,
+            norme_niveau=hierarchy["niveau"],
+            norme_poids=hierarchy["poids"],
+            storage_path=storage_path,
+            indexation_status="pending",
+            uploaded_by=user_id,
+            file_size=len(text_bytes),
+            file_format="txt",
+            file_hash=file_hash,
+            numero_pourvoi=cand["id"],  # clé de dédup = id KALITEXT
+            date_decision=cand["signature_date"],
+        )
+        db.add(doc)
+        await db.commit()
+        await db.refresh(doc)
+        return doc
+
+    @staticmethod
+    def _format_ani_as_markdown(articles: list[dict], title: str) -> str:
+        """Format un ANI (articles extraits) en Markdown pour l'ingestion."""
+        lines = [f"# {title}", ""]
+        current_section = ""
+        unnamed_counter = 0
+        for art in articles:
+            section = art.get("section", "")
+            if section and section != current_section:
+                current_section = section
+                lines.append(f"\n## {section}\n")
+
+            num = art.get("num", "")
+            if num:
+                lines.append(f"### Article {num}\n")
+            else:
+                unnamed_counter += 1
+                lines.append(f"### Article (sans numéro {unnamed_counter})\n")
+            lines.append(art["content"])
+            lines.append("")
+
+        return "\n".join(lines)
 
     # --- Private methods ---
 

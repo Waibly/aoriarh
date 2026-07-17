@@ -300,6 +300,7 @@ async def list_common_document_groups(
         "code_sante_publique": "Code de la santé publique (législatif)",
         "code_sante_publique_reglementaire": "Code de la santé publique (réglementaire)",
         "accord_branche": "Accord de branche",
+        "accord_national_interprofessionnel": "Accords nationaux interprofessionnels (ANI)",
         "code_commerce": "Code de commerce (législatif)",
         "code_commerce_reglementaire": "Code de commerce (réglementaire)",
         "code_general_impots": "Code général des impôts",
