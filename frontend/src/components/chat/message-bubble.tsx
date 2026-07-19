@@ -229,7 +229,7 @@ export function MessageBubble({ message, onFeedback }: MessageBubbleProps) {
             {onFeedback && (
               <>
                 <span className="text-foreground ml-1 hidden text-xs sm:inline">
-                  Cette réponse est-elle bonne&nbsp;?
+                  Est-ce que la réponse vous convient&nbsp;?
                 </span>
                 <Tooltip>
                   <TooltipTrigger asChild>
