@@ -80,6 +80,9 @@ DOCUMENT_TYPE_HIERARCHY: dict[str, dict] = {
     "decret": {"niveau": 5, "poids": 0.80},
     "arrete": {"niveau": 5, "poids": 0.80},
     "circulaire": {"niveau": 5, "poids": 0.80},
+    # BOSS — doctrine administrative opposable (cotisations & contributions
+    # sociales). Assimilé aux circulaires/instructions : niveau réglementaire.
+    "boss": {"niveau": 5, "poids": 0.80},
     "code_travail_reglementaire": {"niveau": 5, "poids": 0.80},
     # Niveau 6 — Conventions collectives
     "accord_national_interprofessionnel": {"niveau": 6, "poids": 0.75},

@@ -540,6 +540,65 @@ async def run_jorf_sync(ctx: dict, user_id: str) -> None:
         )
 
 
+async def run_boss_sync(ctx: dict, user_id: str) -> None:
+    """Tâche de synchronisation du BOSS (Bulletin Officiel de la Sécurité Sociale).
+
+    Crawle les 8 rubriques de boss.gouv.fr. Idempotent : ne (ré)ingère que les
+    pages dont le contenu a changé (dédup par hash sur le storage_path).
+    """
+    import time as _time
+    logger.info("Worker: BOSS sync started")
+    session_factory = ctx["session_factory"]
+    sync_log_id = await _create_sync_log(session_factory, "boss")
+    t0 = _time.perf_counter()
+    try:
+        from app.services.boss_service import BossService
+
+        service = BossService()
+        async with session_factory() as db:
+            result = await service.sync(db, uuid.UUID(user_id))
+        logger.info(
+            "Worker: BOSS sync completed — %d pages, %d créées, %d maj, %d inchangées, %d erreurs",
+            result.pages_crawled, result.docs_created, result.docs_updated,
+            result.docs_unchanged, result.errors,
+        )
+        await _finish_sync_log(
+            session_factory, sync_log_id,
+            success=result.errors == 0,
+            items_fetched=result.pages_crawled,
+            items_created=result.docs_created,
+            items_updated=result.docs_updated,
+            items_skipped=result.docs_unchanged,
+            errors=result.errors,
+            error_message="; ".join(result.error_messages[:5]) or None,
+            duration_ms=int((_time.perf_counter() - t0) * 1000),
+        )
+    except Exception as exc:
+        logger.exception("Worker: BOSS sync failed")
+        await _finish_sync_log(
+            session_factory, sync_log_id,
+            success=False, errors=1, error_message=str(exc),
+            duration_ms=int((_time.perf_counter() - t0) * 1000),
+        )
+
+
+async def run_scheduled_boss_sync(ctx: dict) -> None:
+    """Cron mensuel BOSS — récupère un admin actif puis lance la sync."""
+    from app.models.user import User
+
+    session_factory = ctx["session_factory"]
+    async with session_factory() as db:
+        admin_result = await db.execute(
+            select(User).where(User.role == "admin", User.is_active.is_(True)).limit(1)
+        )
+        admin = admin_result.scalar_one_or_none()
+        if not admin:
+            logger.error("No active admin user found — cannot run BOSS sync")
+            return
+        admin_id = str(admin.id)
+    await run_boss_sync(ctx, admin_id)
+
+
 async def run_legislation_sync(ctx: dict) -> None:
     """Cron du samedi — groupe « Lois & codes » : 9 codes + JORF.
 
@@ -1685,6 +1744,8 @@ class WorkerSettings:
         run_jorf_sync,
         run_legislation_sync,
         run_ani_sync,
+        run_boss_sync,
+        run_scheduled_boss_sync,
         run_scheduled_sync,
         run_jurisprudence_presence_check,
         run_billing_lifecycle,
@@ -1715,6 +1776,11 @@ class WorkerSettings:
         # Idempotent (dédup sur l'id KALITEXT) : le 1er passage fait le backfill
         # 2010→aujourd'hui, les suivants n'ajoutent que le nouvel ANI (~1-3/an).
         cron(run_ani_sync, day=1, hour=4, minute=0),
+        # BOSS (doctrine Sécu opposable) : 1er du mois 5h UTC. Le BOSS est mis à
+        # jour ~1-3 fois/mois. Idempotent (dédup par hash) : ne ré-indexe que les
+        # pages effectivement modifiées. Bouton admin « /admin/syncs/boss » pour
+        # un déclenchement immédiat (ex. grosse maj de janvier).
+        cron(run_scheduled_boss_sync, day=1, hour=5, minute=0),
         # Billing lifecycle: every day at 9:00 AM UTC (trial reminders + expirations)
         cron(run_billing_lifecycle, hour=9, minute=0),
         # GDPR data retention purge: every day at 10:00 AM UTC (after the

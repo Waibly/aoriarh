@@ -158,6 +158,27 @@ async def trigger_code_travail_sync(
     return {"detail": "Synchronisation du Code du travail lancée"}
 
 
+@router.post("/boss")
+async def trigger_boss_sync(
+    user: User = Depends(require_role(["admin"])),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Manually trigger BOSS sync (crawl des 8 rubriques de boss.gouv.fr)."""
+    running = await db.execute(
+        select(SyncLog).where(
+            SyncLog.sync_type == "boss",
+            SyncLog.status == "running",
+        )
+    )
+    if running.scalar_one_or_none():
+        from fastapi import HTTPException
+        raise HTTPException(status_code=409, detail="Une synchronisation BOSS est déjà en cours")
+
+    from app.rag.tasks import enqueue_boss_sync
+    await enqueue_boss_sync(str(user.id))
+    return {"detail": "Synchronisation BOSS lancée"}
+
+
 @router.post("/codes")
 async def trigger_all_codes_sync(
     user: User = Depends(require_role(["admin"])),

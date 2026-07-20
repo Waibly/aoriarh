@@ -105,6 +105,16 @@ async def enqueue_jorf_sync(user_id: str) -> None:
     logger.info("JORF sync job enqueued")
 
 
+async def enqueue_boss_sync(user_id: str) -> None:
+    """Enqueue a BOSS sync job (crawl des 8 rubriques de boss.gouv.fr)."""
+    pool = await get_arq_pool()
+    await pool.enqueue_job(
+        "run_boss_sync",
+        user_id,
+    )
+    logger.info("BOSS sync job enqueued")
+
+
 async def enqueue_scheduled_sync() -> None:
     """Enqueue the bi-monthly scheduled sync (jurisprudence + CCN rotation)."""
     pool = await get_arq_pool()

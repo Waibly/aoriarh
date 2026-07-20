@@ -126,6 +126,22 @@ _INTENT_PATTERNS: list[tuple[re.Pattern, list[str], bool]] = [
         ],
         False,
     ),
+    # BOSS — Bulletin officiel de la Sécurité sociale (doctrine cotisations).
+    # « boss » est aussi de l'argot pour « le manager » : on n'accepte donc que
+    # des formes dirigées non ambiguës ("que dit le BOSS", "selon le BOSS", "le
+    # BOSS prévoit…") ou le nom complet — jamais la forme possessive ("mon boss
+    # dit"). Document commun → pas de filtre org.
+    (
+        re.compile(
+            r"(?:que\s+" + _VERBS + r"|selon|d['’]apr[èe]s|aux\s+termes\s+d[eu]|dans)"
+            r"\s+(?:le\s+|du\s+)?boss\b"
+            r"|\b(?:le|du)\s+boss\s+(?:\S+\s+){0,2}?" + _VERBS
+            + r"|\bbulletin\s+officiel\s+de\s+la\s+s[ée]curit[ée]\s+sociale\b",
+            re.IGNORECASE,
+        ),
+        ["boss"],
+        False,
+    ),
     # DUE / Engagement unilatéral
     (
         re.compile(
