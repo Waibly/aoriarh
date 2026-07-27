@@ -97,6 +97,11 @@ def ensure_collection(client: QdrantClient) -> None:
 
     # Ensure newer indexes exist (added after initial collection creation)
     _ensure_payload_index(client, "idcc", PayloadSchemaType.KEYWORD)
+    # Champs filtrés par fetch_by_identifiers (boost/ancre/follow) : sans index,
+    # chaque scroll par numéro d'article ou de pourvoi scanne toute la collection
+    # (~1,3 s / article sur 400k points, mesuré en prod le 27/07/2026).
+    _ensure_payload_index(client, "article_nums", PayloadSchemaType.KEYWORD)
+    _ensure_payload_index(client, "numero_pourvoi", PayloadSchemaType.KEYWORD)
 
 
 def _ensure_payload_index(

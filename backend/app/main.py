@@ -170,6 +170,14 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
         logger.info("LLM model loaded from Redis: %s", model)
     except Exception:
         logger.info("LLM model: using default from config")
+    # Qdrant : garantit les index de payload au démarrage (idempotent), sans
+    # attendre une ingestion. Best-effort : un Qdrant indisponible ne doit pas
+    # empêcher l'API de démarrer.
+    try:
+        from app.rag.qdrant_store import ensure_collection, get_qdrant_client
+        ensure_collection(get_qdrant_client())
+    except Exception:
+        logger.exception("Qdrant index check failed at startup (non-blocking)")
     yield
 
 
