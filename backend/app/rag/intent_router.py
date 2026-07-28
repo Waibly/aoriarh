@@ -103,15 +103,19 @@ _PATTERNS_SCOPE = [
     r"\b(peux-tu|peut-on|peut on|pouvez-vous)\s+(répondre|me parler|m'aider)\s+(sur|à propos de|en (matière|droit))",
     r"\b(quelles?\s+convention(s)?\s+collectives?)\s+(tu|vous|que tu|que vous)\s+(connais|connaissez|maîtris|couvr|gèr)",
     r"\b(quelles?\s+(idcc|ccn))\s+(tu|vous)\b",
-    # Droits étrangers / autres branches du droit (catch direct, hors RH FR)
+    # Droits ÉTRANGERS uniquement (catch direct). Les autres branches du droit
+    # FRANÇAIS (pénal, civil, fiscal…) ne sont PAS des motifs de refus direct :
+    # une vraie question RH les cite légitimement (sanctions pénales du travail
+    # dissimulé, art. 1240 code civil, chauffeur et code de la route…) et le
+    # corpus contient d'ailleurs code pénal / code civil / code de commerce.
+    # L'ambiguïté est laissée au classifieur LLM (défaut sûr legal_question) ;
+    # en cours de conversation la question part directement en RAG.
     r"\b(droit\s+(polynésien|monégasque|suisse|belge|allemand|américain|anglais|chinois|québécois|étranger|international))\b",
-    r"\b(droit\s+(pénal|fiscal|commercial|civil|de la famille|administratif|immobilier|notarial))\b",
-    r"\b(code\s+(pénal|civil|de commerce|fiscal|général des impôts|de la route|de la santé|de la consommation))\b",
     # 'code du travail suisse/belge/...' — texte FR mais juridiction étrangère
     r"\b(code\s+\w+(\s+\w+){0,3})\s+(suisse|belge|allemand|américain|anglais|chinois|québécois|monégasque|polynésien|étranger)\b",
     r"\b(loi|législation|réglementation)\s+(suisse|belge|allemande|américaine|anglaise|chinoise|québécoise|monégasque|polynésienne|étrangère)\b",
-    # "tu connais X" UNIQUEMENT si X est un signal hors-scope évident
-    r"\b(tu|vous)\s+(connais|connaissez|sait|savez|maîtris)\b[^.?!]{0,40}\b(droit\s+(polynésien|monégasque|suisse|belge|allemand|américain|anglais|chinois|étranger|international|pénal|fiscal|commercial|civil|administratif|immobilier|notarial)|code\s+(pénal|civil|de commerce|fiscal))\b",
+    # "tu connais X" UNIQUEMENT si X est un droit étranger (signal évident)
+    r"\b(tu|vous)\s+(connais|connaissez|sait|savez|maîtris)\b[^.?!]{0,40}\bdroit\s+(polynésien|monégasque|suisse|belge|allemand|américain|anglais|chinois|étranger|international)\b",
 ]
 
 _PATTERNS_CAPABILITIES = [
@@ -238,11 +242,12 @@ async def _answer_scope_check(db: AsyncSession, query: str, organisation_id: uui
                 "du travail."
             )
 
-    # Détection mention de droit étranger / hors-scope évident
+    # Détection mention de droit ÉTRANGER (hors-scope évident). Les branches
+    # du droit français (pénal, civil…) ne déclenchent plus de refus : cf.
+    # commentaire de _PATTERNS_SCOPE.
     if re.search(
         r"\b(polynésien|monégasque|suisse|belge|allemand|américain|anglais|"
-        r"chinois|étranger|international|pénal|fiscal|commercial|civil|"
-        r"de la famille|administratif|immobilier|notarial)\b",
+        r"chinois|étranger|international)\b",
         query,
         re.IGNORECASE,
     ):
