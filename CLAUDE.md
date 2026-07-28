@@ -83,7 +83,7 @@ aoriarh/
 - **Demander avant de modifier des composants critiques** : ne pas se lancer dans des corrections sur le pipeline RAG, l'ingestion, les embeddings, ou tout composant qui impacte tous les documents/utilisateurs sans en discuter d'abord. Préférer ajouter du logging pour diagnostiquer avant de corriger.
 - **Cloisonnement** : toute requête Qdrant ou PostgreSQL doit filtrer par `organisation_id`. Ne jamais exposer des données cross-tenant.
 - **Hiérarchie des normes** : lors de contradictions entre sources, appliquer la priorité (1 = plus fort). Voir la table complète dans CAHIER_DES_CHARGES.md section 5.3.
-- **Performance RAG** : max 2 itérations de re-recherche, timeout global 15s, timeout par étape 3s, pas de boucle ouverte.
+- **Performance RAG** : pas de boucle ouverte ; une seule relance de recherche possible (filet anti-pool-vide du filtre d'intention). Règle UX : ne JAMAIS couper une réponse qui avance, même lentement — on surveille la progression, pas la durée. Garde-fous (`app/rag/config.py`) : 60 s par étape LLM/rerank (fallback d'étape), message de patience à 15 s sans progression, 120 s de borne globale sur la préparation du contexte, 180 s d'INACTIVITÉ (réarmée à chaque token) sur la génération streamée — seul un flux mort est abandonné, le déjà-émis est conservé et annoté.
 - **Tests** : écrire des tests unitaires pour toute nouvelle fonctionnalité. Tester systématiquement le cloisonnement multi-tenant.
 - **Sécurité** : ne jamais stocker de secrets dans le code. Utiliser des variables d'environnement (.env).
 

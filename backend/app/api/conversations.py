@@ -1,3 +1,4 @@
+import asyncio
 import dataclasses
 import json
 import logging
@@ -23,6 +24,11 @@ from app.rag.agent import (
     _OUT_OF_SCOPE_MARKER,
     _OUT_OF_SCOPE_ANSWER,
     _SOURCE_TYPE_LABELS,
+)
+from app.rag.config import (
+    RAG_SLOW_NOTICE,
+    RAG_TIMEOUT_CONTEXT,
+    RAG_TIMEOUT_STREAM_IDLE,
 )
 from app.rag.intent_router import classify_intent, Intent
 from app.schemas.conversation import (
@@ -514,6 +520,58 @@ def _sse_event(event: str, data: dict) -> str:
     return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
 
 
+_SLOW_GENERATION_NOTICE = (
+    "La rédaction prend plus de temps que d'habitude, "
+    "désolé pour l'attente…"
+)
+_SLOW_CONTEXT_NOTICE = (
+    "L'analyse prend plus de temps que d'habitude, merci de patienter…"
+)
+
+
+async def _stream_with_idle_guard(agen, idle_timeout: float, slow_notice: float):
+    """Itère un flux de génération en surveillant sa PROGRESSION, jamais sa durée.
+
+    Principe : ne jamais couper une réponse qui avance, même lentement.
+    Émet des tuples :
+    - ("chunk", str)  : un morceau de réponse ;
+    - ("slow", None)  : rien reçu depuis `slow_notice` s — informer l'utilisateur
+      que c'est plus long que d'habitude (émis au plus une fois) ;
+    - ("dead", None)  : rien reçu depuis `slow_notice + idle_timeout` s — le flux
+      est considéré mort, l'appelant conserve le déjà-émis.
+    """
+    aiter = agen.__aiter__()
+    notice_sent = False
+    task: asyncio.Task | None = None
+    try:
+        while True:
+            if task is None:
+                task = asyncio.ensure_future(anext(aiter))
+            timeout = idle_timeout if notice_sent else slow_notice
+            try:
+                # shield : le timeout ne doit pas annuler l'attente du token —
+                # on veut pouvoir continuer à l'attendre après l'avoir signalé.
+                chunk = await asyncio.wait_for(asyncio.shield(task), timeout)
+            except TimeoutError:
+                if not notice_sent:
+                    notice_sent = True
+                    yield ("slow", None)
+                    continue
+                yield ("dead", None)
+                return
+            except StopAsyncIteration:
+                return
+            task = None
+            yield ("chunk", chunk)
+    finally:
+        if task is not None and not task.done():
+            task.cancel()
+        try:
+            await agen.aclose()
+        except Exception:
+            pass
+
+
 def _source_key(src: dict) -> tuple:
     """Clé d'identité d'une source pour la déduplication (Couche 2).
 
@@ -800,7 +858,7 @@ async def chat_stream(
             # the whole conversation as before). The agent's `conversation_id`
             # parameter is in fact used as the cost context id.
             question_id = uuid.uuid4()
-            results, reformulated, rag_trace = await agent.prepare_context(
+            ctx_task = asyncio.ensure_future(agent.prepare_context(
                 query=data.message,
                 organisation_id=str(conversation.organisation_id),
                 org_context=org_context,
@@ -809,7 +867,35 @@ async def chat_stream(
                 org_idcc_list=org_idcc_list,
                 user_id=str(user.id),
                 conversation_id=str(question_id),
-            )
+            ))
+            try:
+                try:
+                    # Attente en deux temps : au-delà de RAG_SLOW_NOTICE on
+                    # prévient l'utilisateur (écran jamais figé sans info),
+                    # puis on continue d'attendre jusqu'à la borne globale.
+                    results, reformulated, rag_trace = await asyncio.wait_for(
+                        asyncio.shield(ctx_task), timeout=RAG_SLOW_NOTICE,
+                    )
+                except TimeoutError:
+                    yield _sse_event(
+                        "chat_status", {"step": _SLOW_CONTEXT_NOTICE},
+                    )
+                    results, reformulated, rag_trace = await asyncio.wait_for(
+                        ctx_task, timeout=RAG_TIMEOUT_CONTEXT,
+                    )
+            except TimeoutError:
+                logger.warning(
+                    "[PERF] prepare_context timed out (%.0fs) for: %s",
+                    RAG_TIMEOUT_CONTEXT, data.message[:100],
+                )
+                yield _sse_event("chat_error", {
+                    "error": "timeout",
+                    "message": (
+                        "Le traitement de votre question a pris trop de temps. "
+                        "Veuillez réessayer dans quelques instants."
+                    ),
+                })
+                return
 
             # --- Hors-scope: send refusal as a normal answer, save to history ---
             if reformulated == _OUT_OF_SCOPE_MARKER:
@@ -894,18 +980,36 @@ async def chat_stream(
                 return
 
             full_answer = ""
+            stream_dead = False
             try:
-                async for chunk in agent.stream_generate(
-                    data.message, results,
-                    org_context=org_context,
-                    history=history,
-                    low_confidence=rag_trace.low_confidence,
-                    condensed_query=reformulated,
-                    carried_sources=carried_sources or None,
+                # Garde d'inactivité : une réponse qui avance — même très
+                # lentement — n'est JAMAIS coupée. Si rien n'arrive pendant
+                # RAG_SLOW_NOTICE on affiche un message de patience ; si le
+                # silence atteint RAG_TIMEOUT_STREAM_IDLE le flux est
+                # considéré mort et le déjà-émis est conservé.
+                async for kind, chunk in _stream_with_idle_guard(
+                    agent.stream_generate(
+                        data.message, results,
+                        org_context=org_context,
+                        history=history,
+                        low_confidence=rag_trace.low_confidence,
+                        condensed_query=reformulated,
+                        carried_sources=carried_sources or None,
+                    ),
+                    idle_timeout=RAG_TIMEOUT_STREAM_IDLE,
+                    slow_notice=RAG_SLOW_NOTICE,
                 ):
                     if await request.is_disconnected():
                         logger.info("Client disconnected during streaming")
                         return
+                    if kind == "slow":
+                        yield _sse_event(
+                            "chat_status", {"step": _SLOW_GENERATION_NOTICE},
+                        )
+                        continue
+                    if kind == "dead":
+                        stream_dead = True
+                        break
                     full_answer += chunk
                     yield _sse_event("chat_delta", {"content": chunk})
             except Exception as stream_exc:
@@ -924,6 +1028,29 @@ async def chat_stream(
                     })
                     return
                 # Partial content exists — continue to save what we have
+
+            if stream_dead:
+                logger.warning(
+                    "[PERF] Stream silent for %.0fs — abandoned after %d chars",
+                    RAG_TIMEOUT_STREAM_IDLE, len(full_answer),
+                )
+                if not full_answer:
+                    yield _sse_event("chat_error", {
+                        "error": "timeout",
+                        "message": (
+                            "La génération de la réponse n'a pas pu démarrer. "
+                            "Veuillez réessayer dans quelques instants."
+                        ),
+                    })
+                    return
+                # Flux mort avec du contenu déjà émis : on le signale dans la
+                # réponse elle-même, pour l'écran ET pour le message persisté.
+                cut_notice = (
+                    "\n\n*La génération s'est interrompue en cours de route. "
+                    "Reposez la question pour obtenir la suite.*"
+                )
+                full_answer += cut_notice
+                yield _sse_event("chat_delta", {"content": cut_notice})
 
             t_stream_done = time.perf_counter()
 

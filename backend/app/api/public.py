@@ -21,6 +21,7 @@ Trois garde-fous anti-abus / anti-coût :
      les coûts réels attribués à l'org démo dans `api_usage_logs`.
 """
 
+import asyncio
 import dataclasses
 import hashlib
 import logging
@@ -37,7 +38,13 @@ from slowapi.util import get_remote_address
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.conversations import _load_org_context, _sse_event
+from app.api.conversations import (
+    _SLOW_CONTEXT_NOTICE,
+    _SLOW_GENERATION_NOTICE,
+    _load_org_context,
+    _sse_event,
+    _stream_with_idle_guard,
+)
 from app.core.config import settings
 from app.core.database import async_session_factory, get_db
 from app.models.api_usage import ApiUsageLog
@@ -48,6 +55,11 @@ from app.rag.agent import (
     RAGAgent,
     _OUT_OF_SCOPE_ANSWER,
     _OUT_OF_SCOPE_MARKER,
+)
+from app.rag.config import (
+    RAG_SLOW_NOTICE,
+    RAG_TIMEOUT_CONTEXT,
+    RAG_TIMEOUT_STREAM_IDLE,
 )
 from app.rag.intent_router import classify_intent
 from app.services.conversation_service import ConversationService
@@ -328,7 +340,7 @@ async def public_ask(
                 # 4. Préparation du contexte. org_idcc_list=None → corpus commun
                 # strict (aucune CCN). question_id = contexte de coût.
                 question_id = uuid.uuid4()
-                results, reformulated, rag_trace = await agent.prepare_context(
+                ctx_task = asyncio.ensure_future(agent.prepare_context(
                     query=message,
                     organisation_id=str(demo_org_id),
                     org_context=org_context,
@@ -337,7 +349,31 @@ async def public_ask(
                     org_idcc_list=None,
                     user_id=str(demo_user_id),
                     conversation_id=str(question_id),
-                )
+                ))
+                try:
+                    try:
+                        # Deux temps : message de patience à RAG_SLOW_NOTICE,
+                        # borne globale ensuite (cf. conversations.py).
+                        results, reformulated, rag_trace = await asyncio.wait_for(
+                            asyncio.shield(ctx_task), timeout=RAG_SLOW_NOTICE,
+                        )
+                    except TimeoutError:
+                        yield _sse_event(
+                            "chat_status", {"step": _SLOW_CONTEXT_NOTICE},
+                        )
+                        results, reformulated, rag_trace = await asyncio.wait_for(
+                            ctx_task, timeout=RAG_TIMEOUT_CONTEXT,
+                        )
+                except TimeoutError:
+                    logger.warning("Démo: prepare_context timeout (%.0fs)", RAG_TIMEOUT_CONTEXT)
+                    yield _sse_event("chat_error", {
+                        "error": "timeout",
+                        "message": (
+                            "Le traitement a pris trop de temps. "
+                            "Veuillez réessayer dans quelques instants."
+                        ),
+                    })
+                    return
 
                 if reformulated == _OUT_OF_SCOPE_MARKER:
                     await service.add_message(
@@ -374,19 +410,35 @@ async def public_ask(
                     return
 
                 full_answer = ""
+                stream_dead = False
                 try:
-                    async for chunk in agent.stream_generate(
-                        message, results,
-                        # Pas de bloc « Entreprise de l'utilisateur » en démo :
-                        # réponse générique, jamais « chez <une entreprise> ».
-                        org_context=None,
-                        history=None,
-                        low_confidence=rag_trace.low_confidence,
-                        condensed_query=reformulated,
-                        model_override=settings.demo_llm_model,
+                    # Garde d'inactivité (cf. conversations.py) : une réponse
+                    # qui avance n'est jamais coupée ; message de patience à
+                    # RAG_SLOW_NOTICE, abandon du seul flux réellement mort.
+                    async for kind, chunk in _stream_with_idle_guard(
+                        agent.stream_generate(
+                            message, results,
+                            # Pas de bloc « Entreprise de l'utilisateur » en démo :
+                            # réponse générique, jamais « chez <une entreprise> ».
+                            org_context=None,
+                            history=None,
+                            low_confidence=rag_trace.low_confidence,
+                            condensed_query=reformulated,
+                            model_override=settings.demo_llm_model,
+                        ),
+                        idle_timeout=RAG_TIMEOUT_STREAM_IDLE,
+                        slow_notice=RAG_SLOW_NOTICE,
                     ):
                         if await request.is_disconnected():
                             return
+                        if kind == "slow":
+                            yield _sse_event(
+                                "chat_status", {"step": _SLOW_GENERATION_NOTICE},
+                            )
+                            continue
+                        if kind == "dead":
+                            stream_dead = True
+                            break
                         full_answer += chunk
                         yield _sse_event("chat_delta", {"content": chunk})
                 except Exception as stream_exc:
@@ -398,6 +450,23 @@ async def public_ask(
                             "message": "Une erreur est survenue. Veuillez réessayer.",
                         })
                         return
+
+                if stream_dead:
+                    logger.warning(
+                        "Démo: flux muet %.0fs — abandonné (%d car.)",
+                        RAG_TIMEOUT_STREAM_IDLE, len(full_answer),
+                    )
+                    if not full_answer:
+                        yield _sse_event("chat_error", {
+                            "error": "timeout",
+                            "message": "La génération n'a pas pu démarrer. Réessayez.",
+                        })
+                        return
+                    cut_notice = (
+                        "\n\n*La génération s'est interrompue en cours de route.*"
+                    )
+                    full_answer += cut_notice
+                    yield _sse_event("chat_delta", {"content": cut_notice})
 
                 # 7. Persistance (pour analytics prospect + claim futur au signup).
                 await service.add_message(

@@ -82,3 +82,22 @@ CONDENSE_HISTORY_LIMIT = 6
 
 RAG_TIMEOUT_GLOBAL = 120.0
 RAG_TIMEOUT_PER_STEP = 60.0
+
+# Chemin STREAMING (le seul utilisé par le front) : filets de sécurité.
+# Principe directeur (Vanessa, 28/07) : ne JAMAIS couper une réponse qui
+# avance, même lentement — mieux vaut long et complet que rapide et tronqué.
+# On ne coupe que ce qui est réellement MORT (plus rien à attendre).
+# - CONTEXT : préparation du contexte (étapes 0-5, normal ~10 s). Chaque
+#   étape a déjà son fallback à RAG_TIMEOUT_PER_STEP ; cette borne globale ne
+#   vise que le blocage franc → erreur propre « réessayez ».
+# - STREAM_IDLE : INACTIVITÉ de la génération, réarmée à chaque token reçu.
+#   Une réponse lente mais vivante n'est jamais interrompue (l'incident du
+#   27/07 — 13 min 39 en continu — serait allé au bout) ; seul un flux
+#   silencieux pendant 3 min est abandonné, en conservant le déjà-émis.
+RAG_TIMEOUT_CONTEXT = 120.0
+RAG_TIMEOUT_STREAM_IDLE = 180.0
+# Au-delà de ce délai sans progression (contexte ou génération), on envoie un
+# message de patience à l'utilisateur (« ça prend plus de temps que
+# d'habitude… ») plutôt que de le laisser devant un écran figé. Purement
+# informatif : ne coupe rien.
+RAG_SLOW_NOTICE = 15.0

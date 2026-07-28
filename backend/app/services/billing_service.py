@@ -140,7 +140,12 @@ class BillingService:
     def is_plan_expired(account: Account) -> bool:
         if account.plan_expires_at is None:
             return False
-        return account.plan_expires_at < datetime.now(UTC)
+        expires = account.plan_expires_at
+        # SQLite (tests) restitue des datetimes naïfs malgré timezone=True ;
+        # on les interprète comme UTC pour que la comparaison reste valide.
+        if expires.tzinfo is None:
+            expires = expires.replace(tzinfo=UTC)
+        return expires < datetime.now(UTC)
 
     def ensure_plan_active(self, account: Account) -> None:
         """Raise 402 if the account cannot consume the service right now."""
