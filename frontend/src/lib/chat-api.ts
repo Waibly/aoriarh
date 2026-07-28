@@ -2,7 +2,6 @@ import { apiFetch, authFetch } from "@/lib/api";
 import type {
   Conversation,
   ConversationWithMessages,
-  ChatApiResponse,
   MessageSource,
 } from "@/types/api";
 
@@ -76,21 +75,6 @@ export async function getSourceFullContent(
   return apiFetch<SourceFullContent>(
     `/conversations/sources/${documentId}/full-content`,
     { token },
-  );
-}
-
-export async function sendMessage(
-  conversationId: string,
-  message: string,
-  token: string,
-): Promise<ChatApiResponse> {
-  return apiFetch<ChatApiResponse>(
-    `/conversations/${conversationId}/chat`,
-    {
-      method: "POST",
-      body: JSON.stringify({ message }),
-      token,
-    },
   );
 }
 

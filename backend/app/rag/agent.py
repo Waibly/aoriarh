@@ -15,7 +15,6 @@ from app.rag.config import (
     CCN_FLOOR_TOP,
     CONDENSE_HISTORY_LIMIT,
     LEGISLATION_FLOOR_TOP,
-    RAG_TIMEOUT_GLOBAL,
     RAG_TIMEOUT_PER_STEP,
     RERANK_TOP_K,
     TOP_K,
@@ -153,15 +152,6 @@ class RAGSource:
     # Structural metadata (optional, from ArticleChunker)
     article_nums: list[str] | None = None
     section_path: str | None = None
-
-
-@dataclass
-class RAGResponse:
-    """The final response from the RAG agent."""
-
-    answer: str
-    sources: list[RAGSource]
-    is_error: bool = False
 
 
 @dataclass
@@ -572,166 +562,6 @@ class RAGAgent:
             context_id=self._conversation_id,
             is_replay=self._is_replay,
         )
-
-    async def run(
-        self,
-        query: str,
-        organisation_id: str,
-        org_context: dict[str, str | None] | None = None,
-        history: list[dict[str, str]] | None = None,
-        user_id: str | None = None,
-        conversation_id: str | None = None,
-        is_replay: bool = False,
-    ) -> RAGResponse:
-        """Execute the full RAG pipeline with global timeout."""
-        self._org_id = organisation_id
-        self._user_id = user_id
-        self._conversation_id = conversation_id
-        self._is_replay = is_replay
-        t0 = time.perf_counter()
-        try:
-            result = await asyncio.wait_for(
-                self._pipeline(query, organisation_id, org_context=org_context, history=history),
-                timeout=RAG_TIMEOUT_GLOBAL,
-            )
-            logger.info(
-                "[PERF] ══ RAG pipeline completed %.0fms",
-                (time.perf_counter() - t0) * 1000,
-            )
-            return result
-        except TimeoutError:
-            logger.warning(
-                "RAG pipeline timed out (%.0fs) for query: %s",
-                RAG_TIMEOUT_GLOBAL, query[:100],
-            )
-            return RAGResponse(
-                answer=(
-                    "Désolé, le temps de traitement a été dépassé. "
-                    "Veuillez reformuler votre question ou réessayer."
-                ),
-                sources=[],
-                is_error=True,
-            )
-        except Exception as exc:
-            logger.exception("RAG pipeline error for query: %s", query[:100])
-            return RAGResponse(
-                answer=(
-                    "Une erreur est survenue lors du traitement "
-                    "de votre question. Veuillez réessayer."
-                ),
-                sources=[],
-                is_error=True,
-            )
-
-    async def _pipeline(
-        self,
-        query: str,
-        organisation_id: str,
-        org_context: dict[str, str | None] | None = None,
-        history: list[dict[str, str]] | None = None,
-        cited_sources: list[str] | None = None,
-        org_idcc_list: list[str] | None = None,
-    ) -> RAGResponse:
-        # --- Step 0: Condensation (multi-turn) ---
-        t0 = time.perf_counter()
-        if history:
-            query = await self._step_with_timeout(
-                self._condense_question(
-                    query, history,
-                    org_context=org_context,
-                    cited_sources=cited_sources,
-                ),
-                fallback=query,
-            )
-            logger.info(
-                "[PERF] Step 0 — Condensation %.0fms | %s",
-                (time.perf_counter() - t0) * 1000, query[:100],
-            )
-            if _OUT_OF_SCOPE_MARKER in query:
-                logger.info("[SCOPE] Question hors-scope détectée (condensation)")
-                return RAGResponse(answer=_OUT_OF_SCOPE_ANSWER, sources=[])
-
-        # --- Step 1-2: Query expansion + parallel search + RRF ---
-        results, _variants = await self._search_with_expansion(query, organisation_id, org_idcc_list=org_idcc_list, org_context=org_context)
-        if _variants and _variants[0] == _OUT_OF_SCOPE_MARKER:
-            logger.info("[SCOPE] Question hors-scope détectée (expansion)")
-            return RAGResponse(answer=_OUT_OF_SCOPE_ANSWER, sources=[])
-
-        # --- Step 1.5: Identifier-based retrieval boost ---
-        results = await self._inject_identifier_matches(
-            query, results, organisation_id, org_idcc_list,
-        )
-
-        t2 = time.perf_counter()
-
-        # --- Step 3: Cross-encoder reranking ---
-        _pool_pre_rerank = results
-        results = await self._step_with_timeout(
-            self.reranker.rerank(
-                query, results, top_k=RERANK_TOP_K, cost_ctx=self._cost_ctx,
-            ),
-            fallback=results[:RERANK_TOP_K],
-        )
-        results = self._ensure_ccn_represented(
-            _pool_pre_rerank, results, org_idcc_list,
-        )
-        t3 = time.perf_counter()
-        # C1 — Confiance du retrieval (cf. prepare_context) sur scores propres,
-        # avec un seuil dédié plus bas pour la CCN de l'org.
-        _max_score, low_confidence = _assess_confidence(results)
-        logger.info(
-            "[PERF] Step 3 — Reranking %.0fms | %d results%s",
-            (t3 - t2) * 1000, len(results),
-            " | LOW_CONFIDENCE" if low_confidence else "",
-        )
-
-        # --- Step 3.5: Parent expansion (small-to-big) ---
-        t_exp = time.perf_counter()
-        results = await expand_to_parents(
-            results, self.search_engine.qdrant, min_legislation=2,
-        )
-        logger.info(
-            "[PERF] Step 3.5 — Parent expansion %.0fms | %d groups",
-            (time.perf_counter() - t_exp) * 1000, len(results),
-        )
-
-        # --- Step 3.6: Relevance floor (noise cut) ---
-        results, _dropped = self._apply_score_floor(results)
-
-        if not results:
-            return RAGResponse(
-                answer=(
-                    "Je n'ai pas trouvé de documents pertinents dans "
-                    "votre base documentaire pour répondre à cette question. "
-                    "Vérifiez que les documents nécessaires ont bien été "
-                    "indexés dans votre organisation."
-                ),
-                sources=[],
-            )
-
-        # --- Step 4: Cross-references ---
-        results = self._cross_reference(results)
-        # --- Step 4.5: hiérarchie des normes (cf. _balance_source_types) ---
-        results = self._balance_source_types(results)
-
-        # --- Step 6: Generation ---
-        t_gen = time.perf_counter()
-        answer = await self._step_with_timeout(
-            self._generate(
-                query, results, org_context=org_context, history=history,
-                low_confidence=low_confidence,
-            ),
-            fallback=self._fallback_answer(results),
-        )
-        logger.info(
-            "[PERF] Step 6 — LLM generation %.0fms | %d chars",
-            (time.perf_counter() - t_gen) * 1000, len(answer),
-        )
-
-        # --- Step 7: Format sources ---
-        sources = self._format_sources(results)
-
-        return RAGResponse(answer=answer, sources=sources)
 
     # --- Streaming support ---
 
@@ -2044,48 +1874,6 @@ class RAGAgent:
             )
         return "\n\n".join(parts)
 
-    async def _generate(
-        self,
-        query: str,
-        results: list[SearchResult],
-        org_context: dict[str, str | None] | None = None,
-        history: list[dict[str, str]] | None = None,
-        low_confidence: bool = False,
-    ) -> str:
-        """Step 6: Generate the answer using the LLM with retrieved context."""
-        context = self._build_context(results)
-        user_content = self._build_user_message(
-            query, context, org_context, history, low_confidence=low_confidence,
-        )
-        logger.info(
-            "[RAG] org_context injected: %s",
-            org_context if org_context else "None",
-        )
-
-        response = await self.llm.chat.completions.create(
-            model=rag_config.LLM_MODEL,
-            messages=[
-                {"role": "system", "content": _SYSTEM_PROMPT},
-                {"role": "user", "content": user_content},
-            ],
-            max_completion_tokens=16000,
-            reasoning_effort="low",
-        )
-        if response.usage:
-            cost_tracker.log_bg(
-                provider="openai",
-                model=rag_config.LLM_MODEL,
-                operation_type="generate",
-                tokens_input=response.usage.prompt_tokens,
-                tokens_output=response.usage.completion_tokens,
-                organisation_id=self._org_id,
-                user_id=self._user_id,
-                context_type="question",
-                context_id=self._conversation_id,
-                is_replay=self._is_replay,
-            )
-        return response.choices[0].message.content or ""
-
     def _format_sources(self, results: list[SearchResult]) -> list[RAGSource]:
         """Step 7: Format search results into source references."""
         doc_chunks: dict[str, list[str]] = {}
@@ -2151,16 +1939,6 @@ class RAGAgent:
             )
 
         return sources
-
-    def _fallback_answer(self, results: list[SearchResult]) -> str:
-        """Generate a simple fallback answer if LLM call times out."""
-        doc_names = list({r.doc_name for r in results[:3]})
-        refs = ", ".join(doc_names)
-        return (
-            "J'ai trouvé des éléments pertinents dans les documents "
-            f"suivants : {refs}. Cependant, la génération de la réponse "
-            "détaillée a pris trop de temps. Veuillez réessayer."
-        )
 
     async def _step_with_timeout(self, coro, fallback):
         """Run a coroutine with per-step timeout, returning fallback on error."""

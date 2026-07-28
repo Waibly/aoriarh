@@ -30,10 +30,9 @@ from app.rag.config import (
     RAG_TIMEOUT_CONTEXT,
     RAG_TIMEOUT_STREAM_IDLE,
 )
-from app.rag.intent_router import classify_intent, Intent
+from app.rag.intent_router import classify_intent
 from app.schemas.conversation import (
     ChatRequest,
-    ChatResponse,
     ConversationCreate,
     ConversationRead,
     ConversationReadWithMessages,
@@ -347,121 +346,6 @@ async def generate_fiche(
         headers={
             "Content-Disposition": f'attachment; filename="{fiche_filename(gen.content)}"',
         },
-    )
-
-
-@router.post("/{conversation_id}/chat", response_model=ChatResponse)
-@limiter.limit("15/minute")
-async def chat(
-    conversation_id: uuid.UUID,
-    data: ChatRequest,
-    request: Request,
-    user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
-) -> ChatResponse:
-    service = ConversationService(db)
-    billing = BillingService(db)
-
-    # 1. Verify access
-    conversation = await service.get_conversation(
-        conversation_id=conversation_id,
-        user=user,
-    )
-
-    # 1b. Enforce quota / plan lifecycle (raises 402 if expired/suspended).
-    account = await billing.get_account_for_organisation(conversation.organisation_id)
-    await billing.check_question_quota(account)
-
-    # 2. Load org context for RAG
-    org_context = await _load_org_context(db, conversation.organisation_id)
-    if org_context is not None:
-        org_context["profil_metier"] = user.profil_metier
-
-    # 3. Call RAG agent FIRST — nothing saved yet
-    history = [
-        {"role": m.role, "content": m.content}
-        for m in conversation.messages[-6:]
-    ]
-    agent = RAGAgent()
-
-    # 3a. Intent router : court-circuit RAG pour les meta-questions
-    intent_result = await classify_intent(
-        query=data.message,
-        db=db,
-        llm=agent.llm,
-        organisation_id=conversation.organisation_id,
-    )
-    if intent_result.static_answer is not None:
-        logger.info("[INTENT] %s via %s — court-circuit RAG", intent_result.intent.value, intent_result.via)
-        meta_user = await service.add_message(
-            conversation_id=conversation_id,
-            role="user",
-            content=data.message,
-        )
-        meta_assistant = await service.add_message(
-            conversation_id=conversation_id,
-            role="assistant",
-            content=intent_result.static_answer,
-        )
-        if conversation.title is None:
-            title = data.message[:100].strip()
-            if len(data.message) > 100:
-                title = title.rsplit(" ", 1)[0] + "…"
-            await service.update_title(conversation_id, title)
-        await db.commit()
-        return ChatResponse(
-            message=meta_user,  # type: ignore[arg-type]
-            answer=meta_assistant,  # type: ignore[arg-type]
-        )
-
-    rag_response = await agent.run(
-        query=data.message,
-        organisation_id=str(conversation.organisation_id),
-        org_context=org_context,
-        history=history if history else None,
-        user_id=str(user.id),
-        conversation_id=str(conversation_id),
-    )
-
-    # 4. If RAG failed, return 503 — nothing in DB
-    if rag_response.is_error:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=rag_response.answer,
-        )
-
-    # 5. RAG succeeded — save user message + assistant response
-    sources_dicts = [
-        dataclasses.asdict(s) for s in rag_response.sources
-    ] if rag_response.sources else None
-
-    user_message = await service.add_message(
-        conversation_id=conversation_id,
-        role="user",
-        content=data.message,
-    )
-    assistant_message = await service.add_message(
-        conversation_id=conversation_id,
-        role="assistant",
-        content=rag_response.answer,
-        sources=sources_dicts,
-    )
-
-    # 5b. Increment the monthly question counter (fair-use: never blocks).
-    await billing.increment_question_count(account)
-
-    # 6. Auto-generate title from first message
-    if conversation.title is None:
-        title = data.message[:100].strip()
-        if len(data.message) > 100:
-            title = title.rsplit(" ", 1)[0] + "…"
-        await service.update_title(conversation_id, title)
-
-    await db.commit()
-
-    return ChatResponse(
-        message=user_message,  # type: ignore[arg-type]
-        answer=assistant_message,  # type: ignore[arg-type]
     )
 
 

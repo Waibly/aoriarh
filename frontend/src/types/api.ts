@@ -125,11 +125,6 @@ export interface ConversationWithMessages extends Conversation {
   messages: Message[];
 }
 
-export interface ChatApiResponse {
-  message: Message;
-  answer: Message;
-}
-
 export interface Invitation {
   id: string;
   email: string;

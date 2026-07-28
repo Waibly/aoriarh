@@ -80,7 +80,6 @@ CCN_FLOOR_TOP = 5
 
 CONDENSE_HISTORY_LIMIT = 6
 
-RAG_TIMEOUT_GLOBAL = 120.0
 RAG_TIMEOUT_PER_STEP = 60.0
 
 # Chemin STREAMING (le seul utilisé par le front) : filets de sécurité.
