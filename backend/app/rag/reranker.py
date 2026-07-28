@@ -5,6 +5,7 @@ import time
 import httpx
 
 from app.core.config import settings
+from app.core.http_client import get_shared_async_client
 from app.rag.config import GEO_PENALTY_FACTOR, RERANK_MODEL
 from app.rag.geo_filter import is_territorial_specific
 from app.rag.search import SearchResult
@@ -54,7 +55,7 @@ class VoyageReranker:
         )
         if tokens:
             ctx = cost_ctx or CostContext()
-            await cost_tracker.log(
+            cost_tracker.log_bg(
                 provider="voyageai",
                 model=RERANK_MODEL,
                 operation_type="rerank",
@@ -102,30 +103,31 @@ class VoyageReranker:
 
         for attempt in range(_MAX_RETRIES):
             try:
-                async with httpx.AsyncClient(timeout=10.0) as client:
-                    response = await client.post(
-                        "https://api.voyageai.com/v1/rerank",
-                        headers={
-                            "Authorization": f"Bearer {settings.voyage_api_key}",
-                            "Content-Type": "application/json",
-                        },
-                        json={
-                            "query": query,
-                            "documents": documents,
-                            "model": RERANK_MODEL,
-                            "truncation": True,
-                        },
+                # Client partagé keep-alive (cf. app/core/http_client.py).
+                client = get_shared_async_client()
+                response = await client.post(
+                    "https://api.voyageai.com/v1/rerank",
+                    headers={
+                        "Authorization": f"Bearer {settings.voyage_api_key}",
+                        "Content-Type": "application/json",
+                    },
+                    json={
+                        "query": query,
+                        "documents": documents,
+                        "model": RERANK_MODEL,
+                        "truncation": True,
+                    },
+                )
+                if response.status_code == 429 and attempt < _MAX_RETRIES - 1:
+                    delay = _RETRY_BASE_DELAY * (2 ** attempt)
+                    logger.warning(
+                        "[PERF] Voyage AI rerank rate limit (429), retrying in %.1fs...",
+                        delay,
                     )
-                    if response.status_code == 429 and attempt < _MAX_RETRIES - 1:
-                        delay = _RETRY_BASE_DELAY * (2 ** attempt)
-                        logger.warning(
-                            "[PERF] Voyage AI rerank rate limit (429), retrying in %.1fs...",
-                            delay,
-                        )
-                        await asyncio.sleep(delay)
-                        continue
-                    response.raise_for_status()
-                    return response.json()
+                    await asyncio.sleep(delay)
+                    continue
+                response.raise_for_status()
+                return response.json()
             except httpx.TimeoutException as e:
                 last_error = e
                 if attempt < _MAX_RETRIES - 1:

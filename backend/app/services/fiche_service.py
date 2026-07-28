@@ -397,7 +397,7 @@ async def generate_fiche_content(
     )
 
     if response.usage:
-        await cost_tracker.log(
+        cost_tracker.log_bg(
             provider="openai",
             model=FICHE_MODEL,
             operation_type="fiche",

@@ -17,6 +17,7 @@ from qdrant_client.models import (
 )
 
 from app.core.config import settings
+from app.core.http_client import get_shared_async_client
 from app.rag.config import EMBEDDING_MODEL, TOP_K
 from app.rag.qdrant_store import COLLECTION_NAME, get_qdrant_client
 from app.services.cost_tracker import CostContext, cost_tracker
@@ -316,49 +317,51 @@ class HybridSearch:
 
         for attempt in range(_MAX_RETRIES):
             try:
-                async with httpx.AsyncClient(timeout=10.0) as client:
-                    response = await client.post(
-                        "https://api.voyageai.com/v1/embeddings",
-                        headers={
-                            "Authorization": f"Bearer {settings.voyage_api_key}",
-                            "Content-Type": "application/json",
-                        },
-                        json={
-                            "input": [text],
-                            "model": EMBEDDING_MODEL,
-                            "input_type": "query",
-                        },
+                # Client partagé keep-alive : évite un handshake TCP+TLS par
+                # embedding (grosse part des 300-450 ms mesurés par appel).
+                client = get_shared_async_client()
+                response = await client.post(
+                    "https://api.voyageai.com/v1/embeddings",
+                    headers={
+                        "Authorization": f"Bearer {settings.voyage_api_key}",
+                        "Content-Type": "application/json",
+                    },
+                    json={
+                        "input": [text],
+                        "model": EMBEDDING_MODEL,
+                        "input_type": "query",
+                    },
+                )
+                if response.status_code == 429 and attempt < _MAX_RETRIES - 1:
+                    delay = _RETRY_BASE_DELAY * (2 ** attempt)
+                    logger.warning(
+                        "[PERF] Voyage AI rate limit (429), retrying in %.1fs...", delay,
                     )
-                    if response.status_code == 429 and attempt < _MAX_RETRIES - 1:
-                        delay = _RETRY_BASE_DELAY * (2 ** attempt)
-                        logger.warning(
-                            "[PERF] Voyage AI rate limit (429), retrying in %.1fs...", delay,
-                        )
-                        await asyncio.sleep(delay)
-                        continue
-                    response.raise_for_status()
-                    data = response.json()
-                    # Log embedding cost
-                    usage = data.get("usage", {})
-                    total_tokens = usage.get("total_tokens", 0)
-                    if total_tokens:
-                        ctx = cost_ctx or CostContext()
-                        await cost_tracker.log(
-                            provider="voyageai",
-                            model=EMBEDDING_MODEL,
-                            operation_type="embedding",
-                            tokens_input=total_tokens,
-                            organisation_id=ctx.organisation_id,
-                            user_id=ctx.user_id,
-                            context_type="question",
-                            context_id=ctx.context_id,
-                            is_replay=ctx.is_replay,
-                        )
-                    logger.info(
-                        "[PERF]   ├─ Dense embedding (Voyage AI) %.0fms (attempt %d)",
-                        (time.perf_counter() - t_start) * 1000, attempt + 1,
+                    await asyncio.sleep(delay)
+                    continue
+                response.raise_for_status()
+                data = response.json()
+                # Log embedding cost (en tâche de fond, hors chemin critique)
+                usage = data.get("usage", {})
+                total_tokens = usage.get("total_tokens", 0)
+                if total_tokens:
+                    ctx = cost_ctx or CostContext()
+                    cost_tracker.log_bg(
+                        provider="voyageai",
+                        model=EMBEDDING_MODEL,
+                        operation_type="embedding",
+                        tokens_input=total_tokens,
+                        organisation_id=ctx.organisation_id,
+                        user_id=ctx.user_id,
+                        context_type="question",
+                        context_id=ctx.context_id,
+                        is_replay=ctx.is_replay,
                     )
-                    return data["data"][0]["embedding"]
+                logger.info(
+                    "[PERF]   ├─ Dense embedding (Voyage AI) %.0fms (attempt %d)",
+                    (time.perf_counter() - t_start) * 1000, attempt + 1,
+                )
+                return data["data"][0]["embedding"]
             except httpx.TimeoutException as e:
                 last_error = e
                 if attempt < _MAX_RETRIES - 1:

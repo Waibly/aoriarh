@@ -978,7 +978,7 @@ class RAGAgent:
 
         # Log cost from stream usage
         if stream_usage:
-            await cost_tracker.log(
+            cost_tracker.log_bg(
                 provider="openai",
                 model=gen_model,
                 operation_type="generate",
@@ -1056,7 +1056,7 @@ class RAGAgent:
             reasoning_effort="minimal",
         )
         if response.usage:
-            await cost_tracker.log(
+            cost_tracker.log_bg(
                 provider="openai",
                 model=rag_config.CONDENSE_MODEL,
                 operation_type="condense",
@@ -1147,7 +1147,7 @@ class RAGAgent:
             reasoning_effort="minimal",
         )
         if response.usage:
-            await cost_tracker.log(
+            cost_tracker.log_bg(
                 provider="openai",
                 model=rag_config.EXPAND_MODEL,
                 operation_type="expand",
@@ -1194,7 +1194,7 @@ class RAGAgent:
             reasoning_effort="minimal",
         )
         if response.usage:
-            await cost_tracker.log(
+            cost_tracker.log_bg(
                 provider="openai",
                 model=rag_config.EXPAND_MODEL,
                 operation_type="expand",
@@ -2072,7 +2072,7 @@ class RAGAgent:
             reasoning_effort="low",
         )
         if response.usage:
-            await cost_tracker.log(
+            cost_tracker.log_bg(
                 provider="openai",
                 model=rag_config.LLM_MODEL,
                 operation_type="generate",

@@ -17,6 +17,7 @@ Usage:
     )
 """
 
+import asyncio
 import logging
 import uuid
 from dataclasses import dataclass
@@ -85,6 +86,34 @@ class CostContext:
 
 class CostTracker:
     """Fire-and-forget cost logger. Writes to DB in a dedicated session."""
+
+    def __init__(self) -> None:
+        # Références fortes sur les tâches de fond : sans elles, une tâche
+        # peut être ramassée par le GC avant d'avoir écrit son log.
+        self._bg_tasks: set[asyncio.Task] = set()
+
+    def log_bg(self, **kwargs) -> None:
+        """Écrit le coût en tâche de fond, HORS du chemin critique.
+
+        `log()` ouvre une session BDD + 2 SELECT (email, nom d'org) + INSERT :
+        awaité inline ~8-10 fois par question, cela s'additionnait dans la
+        latence perçue. Ici on programme l'écriture et on rend la main tout de
+        suite. `log()` avale déjà ses propres erreurs.
+        """
+        try:
+            task = asyncio.get_running_loop().create_task(self.log(**kwargs))
+        except RuntimeError:
+            # Pas d'event loop (contexte synchrone) : on ne peut pas écrire —
+            # même philosophie que log() : le tracking ne casse jamais l'appel.
+            logger.warning("[COST] log_bg appelé hors event loop — coût non tracé")
+            return
+        self._bg_tasks.add(task)
+        task.add_done_callback(self._bg_tasks.discard)
+
+    async def flush(self) -> None:
+        """Attend les écritures de fond en cours (tests, arrêt propre)."""
+        if self._bg_tasks:
+            await asyncio.gather(*tuple(self._bg_tasks), return_exceptions=True)
 
     async def log(
         self,

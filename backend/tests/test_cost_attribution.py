@@ -15,7 +15,7 @@ import asyncio
 
 from app.rag.reranker import VoyageReranker
 from app.rag.search import HybridSearch, SearchResult
-from app.services.cost_tracker import CostContext
+from app.services.cost_tracker import CostContext, cost_tracker
 
 
 def _res(i: int) -> SearchResult:
@@ -64,6 +64,7 @@ async def test_concurrent_rerank_costs_attributed_to_each_org(monkeypatch):
         ),
     )
 
+    await cost_tracker.flush()  # les logs partent en tâche de fond
     assert len(logged) == 2
     by_question = {kw["context_id"]: kw["organisation_id"] for kw in logged}
     assert by_question == {"question-A": "org-A", "question-B": "org-B"}
@@ -109,6 +110,7 @@ async def test_concurrent_embeddings_attributed_to_each_org(monkeypatch):
         ),
     )
 
+    await cost_tracker.flush()  # les logs partent en tâche de fond
     assert len(logged) == 2
     by_question = {kw["context_id"]: kw["organisation_id"] for kw in logged}
     assert by_question == {"question-A": "org-A", "question-B": "org-B"}
