@@ -108,10 +108,10 @@ def _make_qdrant_mock(siblings_by_filter):
 
 
 class TestExpandToParents:
-    def test_empty_input(self):
-        assert expand_to_parents([], MagicMock()) == []
+    async def test_empty_input(self):
+        assert await expand_to_parents([], MagicMock()) == []
 
-    def test_jurisprudence_fetches_full_doc(self):
+    async def test_jurisprudence_fetches_full_doc(self):
         # Seed: a single chunk of an arrêt; expansion should fetch all 5 chunks
         seed = _make_chunk(
             doc_id="doc-1",
@@ -135,7 +135,7 @@ class TestExpandToParents:
         qdrant = _make_qdrant_mock({
             (("document_id", "doc-1"),): sibling_payloads,
         })
-        out = expand_to_parents([seed], qdrant)
+        out = await expand_to_parents([seed], qdrant)
         assert len(out) == 1
         merged = out[0]
         assert merged.score == 0.8
@@ -143,7 +143,7 @@ class TestExpandToParents:
         for i in range(5):
             assert f"chunk {i}" in merged.text
 
-    def test_article_groups_by_article_num(self):
+    async def test_article_groups_by_article_num(self):
         # Two seed chunks of the same article in same doc → one merged group
         s1 = _make_chunk(
             doc_id="doc-2",
@@ -177,7 +177,7 @@ class TestExpandToParents:
         qdrant = _make_qdrant_mock({
             (("article_nums", ("L4121-1",)), ("document_id", "doc-2")): sibling_payloads,
         })
-        out = expand_to_parents([s1, s2], qdrant)
+        out = await expand_to_parents([s1, s2], qdrant)
         assert len(out) == 1
         merged = out[0]
         # Best score of the seeds
@@ -185,7 +185,7 @@ class TestExpandToParents:
         assert "art chunk 3" in merged.text
         assert "art chunk 5" in merged.text
 
-    def test_caps_to_max_parent_groups(self):
+    async def test_caps_to_max_parent_groups(self):
         # Build MAX_PARENT_GROUPS + 5 distinct doc seeds
         seeds = [
             _make_chunk(
@@ -199,10 +199,10 @@ class TestExpandToParents:
         ]
         # Mock returns no siblings for any filter
         qdrant = _make_qdrant_mock({})
-        out = expand_to_parents(seeds, qdrant)
+        out = await expand_to_parents(seeds, qdrant)
         assert len(out) == MAX_PARENT_GROUPS
 
-    def test_preserves_score_order(self):
+    async def test_preserves_score_order(self):
         seeds = [
             _make_chunk(
                 doc_id=f"doc-{i}",
@@ -214,7 +214,7 @@ class TestExpandToParents:
             for i, score in enumerate([0.3, 0.9, 0.5])
         ]
         qdrant = _make_qdrant_mock({})
-        out = expand_to_parents(seeds, qdrant)
+        out = await expand_to_parents(seeds, qdrant)
         scores = [r.score for r in out]
         assert scores == sorted(scores, reverse=True)
 
@@ -238,7 +238,7 @@ def _juris_payload(doc_id: str, idx: int, label: str, body: str) -> dict:
 
 
 class TestJurisprudenceMerge:
-    def test_keeps_holding_over_boilerplate(self):
+    async def test_keeps_holding_over_boilerplate(self):
         # A long arrêt: en-tête + faits (x2) + motifs + dispositif, > 9000 chars.
         # The holding (motifs/dispositif) sits at the END, the budget is finite,
         # so the merge must drop the boilerplate, not the ruling.
@@ -266,7 +266,7 @@ class TestJurisprudenceMerge:
         )
         qdrant = _make_qdrant_mock({(("document_id", doc_id),): payloads})
 
-        out = expand_to_parents([seed], qdrant)
+        out = await expand_to_parents([seed], qdrant)
         assert len(out) == 1
         merged = out[0].text
 
@@ -285,7 +285,7 @@ class TestJurisprudenceMerge:
         # Budget respected.
         assert len(merged) <= MAX_CHARS_PER_GROUP
 
-    def test_sets_seed_text_to_matched_passage(self):
+    async def test_sets_seed_text_to_matched_passage(self):
         motifs = "Réponse de la Cour. " + "motif blah. " * 50 + " MOTIFS_HOLDING"
         doc_id = "arret-2"
         payloads = [
@@ -301,7 +301,7 @@ class TestJurisprudenceMerge:
         )
         qdrant = _make_qdrant_mock({(("document_id", doc_id),): payloads})
 
-        out = expand_to_parents([seed], qdrant)
+        out = await expand_to_parents([seed], qdrant)
         seed_text = out[0].seed_text
         # Excerpt source = the matched passage, stripped of header and label.
         assert seed_text is not None
@@ -309,7 +309,7 @@ class TestJurisprudenceMerge:
         assert _META not in seed_text
         assert "[Motifs de la décision]" not in seed_text
 
-    def test_dedupes_overlap_and_repeated_header(self):
+    async def test_dedupes_overlap_and_repeated_header(self):
         # Two consecutive chunks of the same section share an overlap region
         # (as force-split chunks do). The merge must stitch it, not repeat it.
         overlap = "ZONE_DE_CHEVAUCHEMENT_UNIQUE_0123456789 "  # > 20 chars
@@ -329,7 +329,7 @@ class TestJurisprudenceMerge:
         )
         qdrant = _make_qdrant_mock({(("document_id", doc_id),): payloads})
 
-        merged = expand_to_parents([seed], qdrant)[0].text
+        merged = (await expand_to_parents([seed], qdrant))[0].text
         assert merged.count("ZONE_DE_CHEVAUCHEMENT_UNIQUE_0123456789") == 1
         assert merged.count(_META) == 1
         assert merged.count("[Faits et procédure]") == 1
@@ -339,13 +339,13 @@ class TestJurisprudenceMerge:
 
 
 class TestFetchByIdentifiers:
-    def test_no_identifiers_returns_empty(self):
-        out = fetch_by_identifiers(
+    async def test_no_identifiers_returns_empty(self):
+        out = await fetch_by_identifiers(
             MagicMock(), {"numero_pourvoi": [], "article_nums": []}, "org-1"
         )
         assert out == []
 
-    def test_pourvoi_scrolls_qdrant(self):
+    async def test_pourvoi_scrolls_qdrant(self):
         payload = {
             "text": "arrêt content",
             "doc_name": "Cass. soc.",
@@ -357,7 +357,7 @@ class TestFetchByIdentifiers:
         }
         qdrant = MagicMock()
         qdrant.scroll = MagicMock(return_value=([MagicMock(payload=payload)], None))
-        out = fetch_by_identifiers(
+        out = await fetch_by_identifiers(
             qdrant,
             {"numero_pourvoi": ["22-18.875"], "article_nums": []},
             organisation_id="org-1",
@@ -397,13 +397,13 @@ class TestLegislationFloorPreservation:
             _code(2, "R2421-3", 0.60),
         ]
 
-    def test_default_drops_low_ranked_legislation(self):
-        out = expand_to_parents(self._results(), _make_qdrant_mock({}))
+    async def test_default_drops_low_ranked_legislation(self):
+        out = await expand_to_parents(self._results(), _make_qdrant_mock({}))
         assert len(out) == MAX_PARENT_GROUPS
         assert _n_legislation(out) == 0  # code cut by the cap, as before
 
-    def test_min_legislation_preserves_articles(self):
-        out = expand_to_parents(
+    async def test_min_legislation_preserves_articles(self):
+        out = await expand_to_parents(
             self._results(), _make_qdrant_mock({}), min_legislation=2,
         )
         assert len(out) == MAX_PARENT_GROUPS
@@ -411,16 +411,16 @@ class TestLegislationFloorPreservation:
         arts = sorted(r.article_nums[0] for r in out if r.article_nums)
         assert arts == ["L2411-1", "R2421-3"]
 
-    def test_pure_jurisprudence_not_polluted(self):
+    async def test_pure_jurisprudence_not_polluted(self):
         # No legislation in the reranked input → nothing is forced in.
         pure = [_jur(i, 0.90 - i * 0.02) for i in range(12)]
-        out = expand_to_parents(pure, _make_qdrant_mock({}), min_legislation=2)
+        out = await expand_to_parents(pure, _make_qdrant_mock({}), min_legislation=2)
         assert _n_legislation(out) == 0
 
-    def test_legislation_already_kept_is_not_duplicated(self):
+    async def test_legislation_already_kept_is_not_duplicated(self):
         # One code article already in the top-10 → no spurious swapping.
         mixed = [_code(1, "L1111-1", 0.95)] + [
             _jur(i, 0.90 - i * 0.02) for i in range(11)
         ]
-        out = expand_to_parents(mixed, _make_qdrant_mock({}), min_legislation=2)
+        out = await expand_to_parents(mixed, _make_qdrant_mock({}), min_legislation=2)
         assert _n_legislation(out) == 1

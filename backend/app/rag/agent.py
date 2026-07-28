@@ -661,7 +661,7 @@ class RAGAgent:
             return RAGResponse(answer=_OUT_OF_SCOPE_ANSWER, sources=[])
 
         # --- Step 1.5: Identifier-based retrieval boost ---
-        results = self._inject_identifier_matches(
+        results = await self._inject_identifier_matches(
             query, results, organisation_id, org_idcc_list,
         )
 
@@ -688,7 +688,7 @@ class RAGAgent:
 
         # --- Step 3.5: Parent expansion (small-to-big) ---
         t_exp = time.perf_counter()
-        results = expand_to_parents(
+        results = await expand_to_parents(
             results, self.search_engine.qdrant, min_legislation=2,
         )
         logger.info(
@@ -799,7 +799,7 @@ class RAGAgent:
         except Exception:
             trace.identifiers_detected = {}
         pool_before_boost = len(results)
-        results = self._inject_identifier_matches(
+        results = await self._inject_identifier_matches(
             query, results, organisation_id, org_idcc_list,
         )
         trace.boost_injected = max(0, len(results) - pool_before_boost)
@@ -848,7 +848,7 @@ class RAGAgent:
 
         # Step 3.5: Parent expansion (small-to-big)
         t_exp = time.perf_counter()
-        results = expand_to_parents(
+        results = await expand_to_parents(
             results, self.search_engine.qdrant, min_legislation=2,
         )
         trace.perf_ms["parent_expansion"] = (time.perf_counter() - t_exp) * 1000
@@ -1273,7 +1273,7 @@ class RAGAgent:
         fused.sort(key=lambda r: r.score, reverse=True)
         return fused
 
-    def _inject_identifier_matches(
+    async def _inject_identifier_matches(
         self,
         query: str,
         results: list[SearchResult],
@@ -1291,7 +1291,7 @@ class RAGAgent:
         if not any(identifiers.values()):
             return results
         try:
-            extra = fetch_by_identifiers(
+            extra = await fetch_by_identifiers(
                 self.search_engine.qdrant,
                 identifiers,
                 organisation_id=organisation_id,
@@ -1540,7 +1540,7 @@ class RAGAgent:
             anchor_arts = detect_identifiers(legal_anchor).get("article_nums", [])[:12]
             if anchor_arts:
                 try:
-                    anchor_chunks = fetch_by_identifiers(
+                    anchor_chunks = await fetch_by_identifiers(
                         self.search_engine.qdrant,
                         {"numero_pourvoi": [], "article_nums": anchor_arts},
                         organisation_id=organisation_id,
@@ -1574,7 +1574,7 @@ class RAGAgent:
                 modified |= _extract_modified_articles(r.text)
         if modified:
             try:
-                follow_chunks = fetch_by_identifiers(
+                follow_chunks = await fetch_by_identifiers(
                     self.search_engine.qdrant,
                     {
                         "numero_pourvoi": [],

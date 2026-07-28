@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import JSON, DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -83,7 +83,10 @@ class EmailCampaign(TimestampMixin, Base):
         ForeignKey("email_sequences.id"), nullable=False
     )
     brevo_list_ids: Mapped[list[int]] = mapped_column(
-        ARRAY(Integer), nullable=False, default=list
+        # ARRAY n'existe qu'en PostgreSQL ; la variante JSON permet aux tests
+        # (SQLite) de créer la table. Aucun impact en prod (dialecte postgres).
+        ARRAY(Integer).with_variant(JSON(), "sqlite"),
+        nullable=False, default=list
     )
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="draft")
     scheduled_at: Mapped[datetime | None] = mapped_column(

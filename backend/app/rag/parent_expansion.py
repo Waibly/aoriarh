@@ -18,6 +18,7 @@ which fails on identifier-only queries (e.g. "que dit l'article L.4121-1").
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 import re
 from dataclasses import replace
@@ -184,21 +185,25 @@ def _build_org_access_filter(
     return Filter(should=should)
 
 
-def fetch_by_identifiers(
+async def fetch_by_identifiers(
     qdrant,
     identifiers: dict[str, list[str]],
     organisation_id: str | None,
     org_idcc_list: list[str] | None = None,
 ) -> list[SearchResult]:
-    """Fetch chunks matching identifiers via Qdrant scroll, respecting org access."""
+    """Fetch chunks matching identifiers via Qdrant scroll, respecting org access.
+
+    Le client Qdrant est synchrone : chaque scroll part dans un thread
+    (asyncio.to_thread) pour ne pas bloquer l'event loop, et les scrolls
+    (un par identifiant) s'exécutent en parallèle. L'ordre des résultats
+    reste déterministe : pourvois puis articles, dans l'ordre de détection.
+    """
     if not any(identifiers.values()):
         return []
 
     org_filter = _build_org_access_filter(organisation_id, org_idcc_list)
-    found: list[SearchResult] = []
-    seen: set[tuple[str, int]] = set()
 
-    def _scroll(extra_must: list) -> None:
+    def _scroll(extra_must: list) -> list[SearchResult]:
         must = list(extra_must)
         if org_filter is not None:
             # Nest the org access filter inside `must` so its `should` clauses
@@ -217,23 +222,29 @@ def fetch_by_identifiers(
             logger.warning(
                 "[BOOST] Identifier scroll failed (%s): %s", extra_must, exc
             )
-            return
-        for p in pts:
-            r = _payload_to_result(p.payload or {}, score=1.0)
+            return []
+        return [_payload_to_result(p.payload or {}, score=1.0) for p in pts]
+
+    conditions: list[list] = [
+        [FieldCondition(key="numero_pourvoi", match=MatchValue(value=pourvoi))]
+        for pourvoi in identifiers.get("numero_pourvoi", [])
+    ] + [
+        [FieldCondition(key="article_nums", match=MatchAny(any=[article]))]
+        for article in identifiers.get("article_nums", [])
+    ]
+    batches = await asyncio.gather(
+        *[asyncio.to_thread(_scroll, cond) for cond in conditions]
+    )
+
+    found: list[SearchResult] = []
+    seen: set[tuple[str, int]] = set()
+    for batch in batches:
+        for r in batch:
             key = (r.document_id, r.chunk_index)
             if key in seen:
                 continue
             seen.add(key)
             found.append(r)
-
-    for pourvoi in identifiers.get("numero_pourvoi", []):
-        _scroll([
-            FieldCondition(key="numero_pourvoi", match=MatchValue(value=pourvoi))
-        ])
-    for article in identifiers.get("article_nums", []):
-        _scroll([
-            FieldCondition(key="article_nums", match=MatchAny(any=[article]))
-        ])
 
     if found:
         logger.info(
@@ -544,7 +555,7 @@ def _merge_group(
     )
 
 
-def expand_to_parents(
+async def expand_to_parents(
     results: list[SearchResult],
     qdrant,
     min_legislation: int = 0,
@@ -580,9 +591,14 @@ def expand_to_parents(
         if r.score > group_best_score[key]:
             group_best_score[key] = r.score
 
+    # Un fetch de voisins par groupe parent, en parallèle et hors event loop
+    # (client Qdrant synchrone). Ordre garanti par gather.
+    siblings_lists = await asyncio.gather(
+        *[asyncio.to_thread(_fetch_siblings, qdrant, key) for key in group_order]
+    )
+
     expanded: list[SearchResult] = []
-    for key in group_order:
-        siblings = _fetch_siblings(qdrant, key)
+    for key, siblings in zip(group_order, siblings_lists):
         seeds = group_seeds[key]
         chunks = siblings if siblings else seeds
         is_juris = key[0] == "doc"

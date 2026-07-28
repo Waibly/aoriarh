@@ -264,7 +264,10 @@ class HybridSearch:
             filter=org_filter,
         )
 
-        results = self.qdrant.query_points(
+        # Client Qdrant synchrone : exécuté dans un thread pour ne pas bloquer
+        # l'event loop (les recherches des variantes tournent en parallèle).
+        results = await asyncio.to_thread(
+            self.qdrant.query_points,
             collection_name=COLLECTION_NAME,
             prefetch=[prefetch_dense, prefetch_sparse],
             query=FusionQuery(fusion="rrf"),
