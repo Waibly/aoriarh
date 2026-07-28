@@ -3,6 +3,7 @@ from httpx import ASGITransport, AsyncClient
 from slowapi import _rate_limit_exceeded_handler
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
+from app.core.config import settings
 from app.core.database import get_db
 from app.core.limiter import limiter
 from app.main import app
@@ -10,6 +11,13 @@ from app.models.base import Base
 
 # Disable rate limiting during tests
 limiter.enabled = False
+
+# Coupe tout envoi réel vers Brevo pendant les tests : send_email et
+# sync_contact_to_brevo court-circuitent quand la clé est vide. Sans ça, un
+# .env local avec la vraie clé fait partir de vrais mails « nouvel inscrit »
+# et crée de faux contacts dans la liste de prod à chaque run de pytest.
+settings.brevo_api_key = ""
+settings.brevo_list_id = 0
 
 TEST_DATABASE_URL = "sqlite+aiosqlite://"
 
