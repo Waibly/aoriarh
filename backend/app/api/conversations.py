@@ -801,19 +801,34 @@ async def chat_stream(
                     "message_id": str(oos_user.id),
                     "answer_id": str(oos_assistant.id),
                 })
-                # Persist minimal trace for the Quality page
+                # Persist minimal trace for the Quality page (trace et quota
+                # commités séparément — cf. bloc principal plus bas).
+                oos_needs_title = conversation.title is None
+                oos_trace_failed = False
                 try:
                     oos_assistant.rag_trace = rag_trace.to_dict()
                     oos_assistant.latency_ms = int((time.perf_counter() - t_total) * 1000)
                     oos_assistant.question_id = question_id
-                    await billing.increment_question_count(account)
                     await db.commit()
                 except Exception:
                     logger.exception(
                         "[QUALITY] Failed to persist out-of-scope trace for message %s",
                         oos_assistant.id,
                     )
-                if conversation.title is None:
+                    await db.rollback()
+                    oos_trace_failed = True
+                try:
+                    if oos_trace_failed:
+                        await db.refresh(account)
+                    await billing.increment_question_count(account)
+                    await db.commit()
+                except Exception:
+                    logger.exception(
+                        "[BILLING] Failed to increment question count for account %s",
+                        getattr(account, "id", "?"),
+                    )
+                    await db.rollback()
+                if oos_needs_title:
                     title = data.message[:100].strip()
                     if len(data.message) > 100:
                         title = title.rsplit(" ", 1)[0] + "…"
@@ -961,20 +976,42 @@ async def chat_stream(
             # on api_usage_logs.context_id = question_id, so /admin/quality
             # and /admin/costs always agree. Best-effort: a failure here must
             # NOT break the user response.
+            # Trace et quota sont commités SÉPARÉMENT : un échec de la trace
+            # (best-effort) ne doit pas faire sauter le décompte de la
+            # question, ni l'inverse.
+            # Capturé AVANT les commits/rollbacks best-effort : un rollback
+            # expire les instances ORM et `conversation.title` deviendrait
+            # inaccessible sans IO.
+            needs_title = conversation.title is None
+            trace_failed = False
             try:
                 assistant_message.rag_trace = rag_trace.to_dict()
                 assistant_message.question_id = question_id
                 assistant_message.latency_ms = total_latency_ms
-                await billing.increment_question_count(account)
                 await db.commit()
             except Exception:
                 logger.exception(
                     "[QUALITY] Failed to persist rag_trace for message %s",
                     assistant_message.id,
                 )
+                await db.rollback()
+                trace_failed = True
+            try:
+                if trace_failed:
+                    # rollback() expire les instances ORM : recharger le
+                    # compte avant de toucher à ses attributs.
+                    await db.refresh(account)
+                await billing.increment_question_count(account)
+                await db.commit()
+            except Exception:
+                logger.exception(
+                    "[BILLING] Failed to increment question count for account %s",
+                    getattr(account, "id", "?"),
+                )
+                await db.rollback()
 
             # 6. Auto-generate title
-            if conversation.title is None:
+            if needs_title:
                 title = data.message[:100].strip()
                 if len(data.message) > 100:
                     title = title.rsplit(" ", 1)[0] + "…"

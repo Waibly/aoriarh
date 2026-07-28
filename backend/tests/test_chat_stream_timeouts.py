@@ -171,3 +171,46 @@ async def test_slow_but_alive_stream_is_never_cut(
     assert "interrompue" not in body
     assert "chat_error" not in body
     assert "chat_done" in body
+
+
+async def test_quota_incremented_even_if_trace_persist_fails(
+    client: AsyncClient, manager_user: dict, monkeypatch,
+) -> None:
+    """Le décompte de quota ne doit pas dépendre de la persistance de la trace.
+
+    Trace qualité et quota sont commités séparément : si RagTrace.to_dict()
+    explose (best-effort), la question doit quand même être décomptée.
+    """
+    conv_id = await _make_conversation(client, manager_user)
+
+    async def ok_stream(self, *args, **kwargs):
+        yield "Réponse complète."
+
+    def broken_to_dict(self):
+        raise RuntimeError("trace corrompue (simulation)")
+
+    _patch_timings(monkeypatch, slow=5, context=10, idle=10)
+    monkeypatch.setattr(
+        "app.rag.agent.RAGAgent.prepare_context", _fast_prepare_context,
+    )
+    monkeypatch.setattr("app.rag.agent.RAGAgent.stream_generate", ok_stream)
+    monkeypatch.setattr(RagTrace, "to_dict", broken_to_dict)
+
+    before = await client.get(
+        "/api/v1/billing/quota", headers=auth_header(manager_user["token"]),
+    )
+    assert before.status_code == 200
+
+    res = await client.post(
+        f"/api/v1/conversations/{conv_id}/chat/stream",
+        headers=auth_header(manager_user["token"]),
+        json={"message": "Quelle est la durée du préavis ?"},
+    )
+    assert res.status_code == 200
+    assert "chat_done" in res.text  # la réponse est servie malgré la trace KO
+
+    after = await client.get(
+        "/api/v1/billing/quota", headers=auth_header(manager_user["token"]),
+    )
+    assert after.status_code == 200
+    assert after.json()["used"] == before.json()["used"] + 1
