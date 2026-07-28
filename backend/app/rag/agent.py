@@ -29,7 +29,7 @@ from app.rag.parent_expansion import (
 from app.rag.reranker import get_reranker
 from app.rag.source_intent import detect_source_intent
 from app.rag.search import HybridSearch, SearchResult
-from app.services.cost_tracker import cost_tracker
+from app.services.cost_tracker import CostContext, cost_tracker
 
 logger = logging.getLogger(__name__)
 
@@ -554,21 +554,19 @@ class RAGAgent:
         self.search_engine = _search_engine
         self.llm = _llm
         self.reranker = get_reranker()
-        # Cost tracking context — set by run()/prepare_context()
+        # Cost tracking context — set by run()/prepare_context(). L'agent est
+        # instancié PAR REQUÊTE : ces attributs sont sûrs ici. Le moteur de
+        # recherche et le reranker, eux, sont des singletons partagés : le
+        # contexte leur est passé PAR APPEL (cost_ctx), jamais stocké — sinon
+        # deux questions simultanées s'attribueraient mutuellement leurs coûts.
         self._org_id: str | None = None
         self._user_id: str | None = None
         self._conversation_id: str | None = None
         self._is_replay: bool = False
 
-    def _propagate_cost_context(self) -> None:
-        """Push cost tracking context to search engine and reranker."""
-        self.search_engine.set_cost_context(
-            organisation_id=self._org_id,
-            user_id=self._user_id,
-            context_id=self._conversation_id,
-            is_replay=self._is_replay,
-        )
-        self.reranker.set_cost_context(
+    @property
+    def _cost_ctx(self) -> CostContext:
+        return CostContext(
             organisation_id=self._org_id,
             user_id=self._user_id,
             context_id=self._conversation_id,
@@ -590,7 +588,6 @@ class RAGAgent:
         self._user_id = user_id
         self._conversation_id = conversation_id
         self._is_replay = is_replay
-        self._propagate_cost_context()
         t0 = time.perf_counter()
         try:
             result = await asyncio.wait_for(
@@ -670,7 +667,9 @@ class RAGAgent:
         # --- Step 3: Cross-encoder reranking ---
         _pool_pre_rerank = results
         results = await self._step_with_timeout(
-            self.reranker.rerank(query, results, top_k=RERANK_TOP_K),
+            self.reranker.rerank(
+                query, results, top_k=RERANK_TOP_K, cost_ctx=self._cost_ctx,
+            ),
             fallback=results[:RERANK_TOP_K],
         )
         results = self._ensure_ccn_represented(
@@ -753,7 +752,6 @@ class RAGAgent:
         self._user_id = user_id
         self._conversation_id = conversation_id
         self._is_replay = is_replay
-        self._propagate_cost_context()
         t0 = time.perf_counter()
 
         trace = RagTrace(query_original=query, model=rag_config.LLM_MODEL)
@@ -824,7 +822,9 @@ class RAGAgent:
         # Step 3: Reranking
         _pool_pre_rerank = results
         results = await self._step_with_timeout(
-            self.reranker.rerank(query, results, top_k=RERANK_TOP_K),
+            self.reranker.rerank(
+                query, results, top_k=RERANK_TOP_K, cost_ctx=self._cost_ctx,
+            ),
             fallback=results[:RERANK_TOP_K],
         )
         results = self._ensure_ccn_represented(
@@ -1435,6 +1435,7 @@ class RAGAgent:
                 variant, organisation_id, top_k=TOP_K,
                 org_idcc_list=org_idcc_list,
                 source_type_filter=source_type_filter,
+                cost_ctx=self._cost_ctx,
             )
             for variant in variants
         ]
@@ -1446,6 +1447,7 @@ class RAGAgent:
                     legal_anchor or variants[0], organisation_id, top_k=TOP_K,
                     org_idcc_list=org_idcc_list,
                     source_type_filter=_LEGISLATION_SOURCE_TYPES,
+                    cost_ctx=self._cost_ctx,
                 )
             )
         # Plancher CCN : recherche auxiliaire restreinte à la convention de
@@ -1467,6 +1469,7 @@ class RAGAgent:
                     variants[0], organisation_id, top_k=TOP_K,
                     org_idcc_list=org_idcc_list,
                     source_type_filter=sorted(_CCN_SOURCE_TYPES),
+                    cost_ctx=self._cost_ctx,
                 )
             )
         search_results = await asyncio.gather(*search_tasks, return_exceptions=True)

@@ -90,7 +90,8 @@ class TestParseVariants:
 class TestBuildExpandUserMessage:
     def test_no_org_context(self):
         msg = RAGAgent._build_expand_user_message("ma question", None)
-        assert msg == "Question : ma question"
+        assert msg.startswith("Date du jour : ")
+        assert msg.endswith("\nQuestion : ma question")
 
     def test_empty_org_context_fields(self):
         msg = RAGAgent._build_expand_user_message(
@@ -98,7 +99,8 @@ class TestBuildExpandUserMessage:
             {"nom": "Empreintes", "convention_collective": None},
         )
         # Only `nom` is not surfaced to the LLM → no [ORGANISATION] block
-        assert msg == "Question : ma question"
+        assert "[ORGANISATION]" not in msg
+        assert msg.endswith("\nQuestion : ma question")
 
     def test_with_ccn(self):
         msg = RAGAgent._build_expand_user_message(
@@ -181,7 +183,8 @@ class TestExpandQueries:
         await agent._expand_queries("ma question")
         call_args = agent.llm.chat.completions.create.call_args
         user_msg = call_args.kwargs["messages"][1]["content"]
-        assert user_msg == "Question : ma question"
+        assert user_msg.startswith("Date du jour : ")
+        assert user_msg.endswith("\nQuestion : ma question")
 
     @pytest.mark.asyncio
     async def test_expand_fallback_on_none(self, agent):
@@ -270,7 +273,7 @@ class TestSearchWithExpansion:
         leg_calls = 0
 
         async def mock_search(
-            query, org_id, top_k=20, org_idcc_list=None, source_type_filter=None,
+            query, org_id, top_k=20, org_idcc_list=None, source_type_filter=None, cost_ctx=None,
         ):
             nonlocal variant_calls, leg_calls
             # The legislation floor runs one auxiliary search restricted to
@@ -314,7 +317,7 @@ class TestSearchWithExpansion:
         call_count = 0
 
         async def mock_search(
-            query, org_id, top_k=20, org_idcc_list=None, source_type_filter=None,
+            query, org_id, top_k=20, org_idcc_list=None, source_type_filter=None, cost_ctx=None,
         ):
             nonlocal call_count
             if source_type_filter is not None:
@@ -353,7 +356,7 @@ class TestSearchWithExpansion:
         call_count = 0
 
         async def mock_search(
-            query, org_id, top_k=20, org_idcc_list=None, source_type_filter=None,
+            query, org_id, top_k=20, org_idcc_list=None, source_type_filter=None, cost_ctx=None,
         ):
             nonlocal call_count
             if source_type_filter is not None:
@@ -389,7 +392,7 @@ class TestSearchWithExpansion:
         )
 
         async def mock_search(
-            query, org_id, top_k=20, org_idcc_list=None, source_type_filter=None,
+            query, org_id, top_k=20, org_idcc_list=None, source_type_filter=None, cost_ctx=None,
         ):
             if source_type_filter is not None:
                 # legislation-only auxiliary search surfaces a code article

@@ -8,7 +8,7 @@ from app.core.config import settings
 from app.rag.config import GEO_PENALTY_FACTOR, RERANK_MODEL
 from app.rag.geo_filter import is_territorial_specific
 from app.rag.search import SearchResult
-from app.services.cost_tracker import cost_tracker
+from app.services.cost_tracker import CostContext, cost_tracker
 
 logger = logging.getLogger(__name__)
 
@@ -20,34 +20,19 @@ _RETRY_BASE_DELAY = 2.0
 class VoyageReranker:
     """Cross-encoder reranker using Voyage AI rerank-2."""
 
-    def __init__(self) -> None:
-        # Cost tracking context — set externally by RAGAgent
-        self._cost_org_id: str | None = None
-        self._cost_user_id: str | None = None
-        self._cost_context_id: str | None = None
-        self._cost_is_replay: bool = False
-
-    def set_cost_context(
-        self,
-        organisation_id: str | None = None,
-        user_id: str | None = None,
-        context_id: str | None = None,
-        is_replay: bool = False,
-    ) -> None:
-        self._cost_org_id = organisation_id
-        self._cost_user_id = user_id
-        self._cost_context_id = context_id
-        self._cost_is_replay = is_replay
-
     async def rerank(
         self,
         query: str,
         results: list[SearchResult],
         top_k: int = 5,
+        cost_ctx: CostContext | None = None,
     ) -> list[SearchResult]:
         """Rerank search results using Voyage AI cross-encoder.
 
         Falls back to truncated original results if the API call fails.
+
+        cost_ctx: attribution du coût (org/user/question) — passé par appel
+        car cette instance est un singleton partagé.
         """
         if len(results) <= 1:
             return results[:top_k]
@@ -68,16 +53,17 @@ class VoyageReranker:
             RERANK_MODEL, elapsed, tokens, len(results), min(top_k, len(results)),
         )
         if tokens:
+            ctx = cost_ctx or CostContext()
             await cost_tracker.log(
                 provider="voyageai",
                 model=RERANK_MODEL,
                 operation_type="rerank",
                 tokens_input=int(tokens),
-                organisation_id=self._cost_org_id,
-                user_id=self._cost_user_id,
+                organisation_id=ctx.organisation_id,
+                user_id=ctx.user_id,
                 context_type="question",
-                context_id=self._cost_context_id,
-                is_replay=self._cost_is_replay,
+                context_id=ctx.context_id,
+                is_replay=ctx.is_replay,
             )
 
         # Map reranked scores back to SearchResult objects.

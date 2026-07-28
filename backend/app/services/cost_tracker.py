@@ -19,6 +19,7 @@ Usage:
 
 import logging
 import uuid
+from dataclasses import dataclass
 from decimal import Decimal
 
 from sqlalchemy import select
@@ -63,6 +64,23 @@ def compute_cost(
     if output_price is not None and tokens_output > 0:
         cost += Decimal(str(tokens_output)) * Decimal(str(output_price)) / Decimal("1000000")
     return cost
+
+
+@dataclass(frozen=True)
+class CostContext:
+    """Contexte d'attribution d'un appel payant (org, user, question).
+
+    Passé EXPLICITEMENT aux composants partagés (HybridSearch, VoyageReranker)
+    à chaque appel. Ne jamais stocker ce contexte sur un singleton : deux
+    questions simultanées de deux organisations s'écraseraient mutuellement et
+    les coûts seraient facturés à la mauvaise org (race observée à l'audit du
+    27/07/2026).
+    """
+
+    organisation_id: str | None = None
+    user_id: str | None = None
+    context_id: str | None = None
+    is_replay: bool = False
 
 
 class CostTracker:

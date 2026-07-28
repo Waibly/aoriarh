@@ -19,7 +19,7 @@ from qdrant_client.models import (
 from app.core.config import settings
 from app.rag.config import EMBEDDING_MODEL, TOP_K
 from app.rag.qdrant_store import COLLECTION_NAME, get_qdrant_client
-from app.services.cost_tracker import cost_tracker
+from app.services.cost_tracker import CostContext, cost_tracker
 
 logger = logging.getLogger(__name__)
 
@@ -102,23 +102,6 @@ class HybridSearch:
 
     def __init__(self) -> None:
         self.qdrant = get_qdrant_client()
-        # Cost tracking context — set externally by RAGAgent
-        self._cost_org_id: str | None = None
-        self._cost_user_id: str | None = None
-        self._cost_context_id: str | None = None
-        self._cost_is_replay: bool = False
-
-    def set_cost_context(
-        self,
-        organisation_id: str | None = None,
-        user_id: str | None = None,
-        context_id: str | None = None,
-        is_replay: bool = False,
-    ) -> None:
-        self._cost_org_id = organisation_id
-        self._cost_user_id = user_id
-        self._cost_context_id = context_id
-        self._cost_is_replay = is_replay
 
     def _build_org_filter(
         self,
@@ -219,6 +202,7 @@ class HybridSearch:
         top_k: int = TOP_K,
         org_idcc_list: list[str] | None = None,
         source_type_filter: list[str] | None = None,
+        cost_ctx: CostContext | None = None,
     ) -> list[SearchResult]:
         """Execute a hybrid search combining dense and sparse vectors.
 
@@ -228,11 +212,14 @@ class HybridSearch:
         source_type_filter: if provided, restrict search to ONLY these source_types.
         Used when the user explicitly asks about a specific source category
         (e.g. "Que dit la CCN..." → search only in CCN documents).
+
+        cost_ctx: attribution du coût de l'embedding (org/user/question) —
+        passé par appel car cette instance est un singleton partagé.
         """
         t0 = time.perf_counter()
 
         # 1. Encode query — dense (Voyage AI) + sparse (BM25) in parallel
-        dense_task = self._encode_dense(query)
+        dense_task = self._encode_dense(query, cost_ctx)
         sparse_task = asyncio.to_thread(self._encode_sparse_sync, query)
         dense_embedding, sparse_vector = await asyncio.gather(
             dense_task, sparse_task,
@@ -320,7 +307,9 @@ class HybridSearch:
         search_results.sort(key=lambda r: r.score, reverse=True)
         return search_results[:top_k]
 
-    async def _encode_dense(self, text: str) -> list[float]:
+    async def _encode_dense(
+        self, text: str, cost_ctx: CostContext | None = None,
+    ) -> list[float]:
         """Encode text to dense vector using Voyage AI API with retry."""
         t_start = time.perf_counter()
         last_error: Exception | None = None
@@ -353,16 +342,17 @@ class HybridSearch:
                     usage = data.get("usage", {})
                     total_tokens = usage.get("total_tokens", 0)
                     if total_tokens:
+                        ctx = cost_ctx or CostContext()
                         await cost_tracker.log(
                             provider="voyageai",
                             model=EMBEDDING_MODEL,
                             operation_type="embedding",
                             tokens_input=total_tokens,
-                            organisation_id=self._cost_org_id,
-                            user_id=self._cost_user_id,
+                            organisation_id=ctx.organisation_id,
+                            user_id=ctx.user_id,
                             context_type="question",
-                            context_id=self._cost_context_id,
-                            is_replay=self._cost_is_replay,
+                            context_id=ctx.context_id,
+                            is_replay=ctx.is_replay,
                         )
                     logger.info(
                         "[PERF]   ├─ Dense embedding (Voyage AI) %.0fms (attempt %d)",
