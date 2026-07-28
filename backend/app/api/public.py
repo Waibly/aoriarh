@@ -362,7 +362,8 @@ async def public_ask(
                             "chat_status", {"step": _SLOW_CONTEXT_NOTICE},
                         )
                         results, reformulated, rag_trace = await asyncio.wait_for(
-                            ctx_task, timeout=RAG_TIMEOUT_CONTEXT,
+                            ctx_task,
+                            timeout=max(RAG_TIMEOUT_CONTEXT - RAG_SLOW_NOTICE, 1.0),
                         )
                 except TimeoutError:
                     logger.warning("Démo: prepare_context timeout (%.0fs)", RAG_TIMEOUT_CONTEXT)
@@ -489,6 +490,7 @@ async def public_ask(
                     await db.commit()
                 except Exception:
                     logger.exception("Démo: échec persistance trace")
+                    await db.rollback()
 
                 yield _sse_event("chat_done", {"upsell": _DEMO_UPSELL})
 

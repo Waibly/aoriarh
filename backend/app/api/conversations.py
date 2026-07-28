@@ -421,26 +421,38 @@ async def _stream_with_idle_guard(agen, idle_timeout: float, slow_notice: float)
     - ("chunk", str)  : un morceau de réponse ;
     - ("slow", None)  : rien reçu depuis `slow_notice` s — informer l'utilisateur
       que c'est plus long que d'habitude (émis au plus une fois) ;
-    - ("dead", None)  : rien reçu depuis `slow_notice + idle_timeout` s — le flux
-      est considéré mort, l'appelant conserve le déjà-émis.
+    - ("dead", None)  : rien reçu depuis `idle_timeout` s — le flux est
+      considéré mort, l'appelant conserve le déjà-émis.
     """
     aiter = agen.__aiter__()
     notice_sent = False
+    # Après le signal « slow », on n'attend que le RESTE du délai d'inactivité
+    # (le silence total avant abandon reste égal à idle_timeout).
+    remainder = max(idle_timeout - slow_notice, 0.05)
     task: asyncio.Task | None = None
     try:
         while True:
             if task is None:
                 task = asyncio.ensure_future(anext(aiter))
-            timeout = idle_timeout if notice_sent else slow_notice
             try:
                 # shield : le timeout ne doit pas annuler l'attente du token —
                 # on veut pouvoir continuer à l'attendre après l'avoir signalé.
-                chunk = await asyncio.wait_for(asyncio.shield(task), timeout)
+                if notice_sent:
+                    chunk = await asyncio.wait_for(
+                        asyncio.shield(task), idle_timeout,
+                    )
+                else:
+                    try:
+                        chunk = await asyncio.wait_for(
+                            asyncio.shield(task), slow_notice,
+                        )
+                    except TimeoutError:
+                        notice_sent = True
+                        yield ("slow", None)
+                        chunk = await asyncio.wait_for(
+                            asyncio.shield(task), remainder,
+                        )
             except TimeoutError:
-                if not notice_sent:
-                    notice_sent = True
-                    yield ("slow", None)
-                    continue
                 yield ("dead", None)
                 return
             except StopAsyncIteration:
@@ -450,6 +462,10 @@ async def _stream_with_idle_guard(agen, idle_timeout: float, slow_notice: float)
     finally:
         if task is not None and not task.done():
             task.cancel()
+            try:
+                await task
+            except BaseException:  # CancelledError inclus
+                pass
         try:
             await agen.aclose()
         except Exception:
@@ -764,8 +780,11 @@ async def chat_stream(
                     yield _sse_event(
                         "chat_status", {"step": _SLOW_CONTEXT_NOTICE},
                     )
+                    # Le reste de la borne globale (le seuil de patience est
+                    # déjà écoulé) : durée totale max = RAG_TIMEOUT_CONTEXT.
                     results, reformulated, rag_trace = await asyncio.wait_for(
-                        ctx_task, timeout=RAG_TIMEOUT_CONTEXT,
+                        ctx_task,
+                        timeout=max(RAG_TIMEOUT_CONTEXT - RAG_SLOW_NOTICE, 1.0),
                     )
             except TimeoutError:
                 logger.warning(
@@ -970,6 +989,10 @@ async def chat_stream(
                 content=full_answer,
                 sources=sources_dicts if sources_dicts else None,
             )
+            # Ids capturés tout de suite : un rollback best-effort plus bas
+            # expirerait les instances et l'accès à .id planterait chat_done.
+            user_message_id = str(user_message.id)
+            assistant_message_id = str(assistant_message.id)
 
             # 5b. Persist trace + question_id + latency on the assistant message.
             # The cost is NOT snapshot anymore — it is computed live via JOIN
@@ -992,7 +1015,7 @@ async def chat_stream(
             except Exception:
                 logger.exception(
                     "[QUALITY] Failed to persist rag_trace for message %s",
-                    assistant_message.id,
+                    assistant_message_id,
                 )
                 await db.rollback()
                 trace_failed = True
@@ -1024,8 +1047,8 @@ async def chat_stream(
 
             # 7. Send done event with IDs
             yield _sse_event("chat_done", {
-                "message_id": str(user_message.id),
-                "answer_id": str(assistant_message.id),
+                "message_id": user_message_id,
+                "answer_id": assistant_message_id,
             })
 
             logger.info(
