@@ -115,6 +115,22 @@ class ClientsResponse(BaseModel):
     page_size: int
 
 
+class SignupSourceRow(BaseModel):
+    utm_source: str | None
+    utm_medium: str | None
+    utm_campaign: str | None
+    signups: int
+    with_gclid: int
+
+
+class SignupsBySourceResponse(BaseModel):
+    since: str
+    days: int
+    total_signups: int
+    attributed_signups: int
+    rows: list[SignupSourceRow]
+
+
 # ---------------------------------------------------------------------------
 # Internal aggregation helpers
 # ---------------------------------------------------------------------------
@@ -495,4 +511,55 @@ async def get_clients(
         total=total,
         page=page,
         page_size=page_size,
+    )
+
+
+@router.get("/signups-by-source", response_model=SignupsBySourceResponse)
+async def get_signups_by_source(
+    days: int = Query(30, ge=1, le=365),
+    _: User = Depends(require_role(["admin"])),
+    db: AsyncSession = Depends(get_db),
+) -> SignupsBySourceResponse:
+    """Inscriptions groupées par source/campagne d'acquisition.
+
+    C'est l'arbitre de mesure du test SEA : ce que NOTRE base a enregistré à
+    l'inscription (attribution premier contact posée par le site vitrine),
+    indépendamment de ce que remontent GA4 ou Google Ads.
+    """
+    now = datetime.now(UTC)
+    since = now - timedelta(days=days)
+
+    total = (
+        await db.execute(select(func.count(User.id)).where(User.created_at >= since))
+    ).scalar() or 0
+
+    grouped = await db.execute(
+        select(
+            User.utm_source,
+            User.utm_medium,
+            User.utm_campaign,
+            func.count(User.id),
+            func.count(User.gclid),
+        )
+        .where(User.created_at >= since, User.attributed_at.isnot(None))
+        .group_by(User.utm_source, User.utm_medium, User.utm_campaign)
+        .order_by(func.count(User.id).desc())
+    )
+
+    rows = [
+        SignupSourceRow(
+            utm_source=source,
+            utm_medium=medium,
+            utm_campaign=campaign,
+            signups=signups,
+            with_gclid=with_gclid,
+        )
+        for source, medium, campaign, signups, with_gclid in grouped.all()
+    ]
+    return SignupsBySourceResponse(
+        since=since.isoformat(),
+        days=days,
+        total_signups=total,
+        attributed_signups=sum(r.signups for r in rows),
+        rows=rows,
     )

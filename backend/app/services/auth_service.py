@@ -16,7 +16,13 @@ from app.core.security import (
 from app.models.account import Account
 from app.models.invitation import Invitation
 from app.models.user import User
-from app.schemas.auth import GoogleAuthRequest, LoginRequest, RegisterRequest, TokenResponse
+from app.schemas.auth import (
+    GoogleAuthRequest,
+    LoginRequest,
+    RegisterRequest,
+    SignupAttribution,
+    TokenResponse,
+)
 from app.schemas.stripe_billing import BillingCycle, CommercialPlanCode
 from app.services.email.sender import is_test_email, send_email, sync_contact_to_brevo
 from app.services.email.templates import render_admin_new_signup_email
@@ -69,6 +75,26 @@ def _new_trial_account(name: str, owner_id) -> Account:
         plan_expires_at=now + timedelta(days=TRIAL_DURATION_DAYS),
         status="trialing",
     )
+
+
+def apply_attribution(user: User, attribution: SignupAttribution | None) -> None:
+    """Pose l'attribution marketing sur un utilisateur, en premier contact
+    uniquement : si l'utilisateur porte déjà une attribution, on n'écrase rien.
+    """
+    if attribution is None or attribution.is_empty():
+        return
+    if user.attributed_at is not None or user.utm_source or user.gclid or user.msclkid:
+        return
+    user.utm_source = attribution.utm_source
+    user.utm_medium = attribution.utm_medium
+    user.utm_campaign = attribution.utm_campaign
+    user.utm_term = attribution.utm_term
+    user.utm_content = attribution.utm_content
+    user.gclid = attribution.gclid
+    user.msclkid = attribution.msclkid
+    user.referrer = attribution.referrer
+    user.landing_page = attribution.landing_page
+    user.attributed_at = attribution.attributed_at or datetime.now(UTC)
 
 
 def _build_token_response(user_id: str, checkout_url: str | None = None) -> TokenResponse:
@@ -138,6 +164,7 @@ class AuthService:
                 full_name=data.full_name,
                 role="user",
             )
+            apply_attribution(user, data.attribution)
             self.db.add(user)
             await self.db.commit()
             await self.db.refresh(user)
@@ -150,6 +177,7 @@ class AuthService:
             full_name=data.full_name,
             role="manager",
         )
+        apply_attribution(user, data.attribution)
         self.db.add(user)
         await self.db.flush()
 
@@ -231,6 +259,7 @@ class AuthService:
                 auth_provider="google",
                 role="user",
             )
+            apply_attribution(user, data.attribution)
             self.db.add(user)
             await self.db.commit()
             await self.db.refresh(user)
@@ -244,6 +273,7 @@ class AuthService:
             auth_provider="google",
             role="manager",
         )
+        apply_attribution(user, data.attribution)
         self.db.add(user)
         await self.db.flush()
 

@@ -8,7 +8,9 @@ from app.core.dependencies import get_current_user
 from app.models.account import Account
 from app.models.organisation import Organisation
 from app.models.user import User
+from app.schemas.auth import SignupAttribution
 from app.schemas.user import PasswordChange, UserRead, UserUpdate
+from app.services.auth_service import apply_attribution
 from app.services.user_service import UserService
 
 router = APIRouter()
@@ -89,6 +91,28 @@ async def update_me(
 ) -> User:
     service = UserService(db)
     return await service.update_profile(user, data)
+
+
+@router.post("/me/attribution")
+async def set_my_attribution(
+    data: SignupAttribution,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Rattache l'attribution marketing à un compte déjà créé.
+
+    Utilisé par le parcours OAuth Google : la création du compte se fait côté
+    serveur (callback NextAuth) sans accès aux cookies du navigateur, donc le
+    front envoie l'attribution juste après la première connexion. Premier
+    contact conservé : no-op si le compte porte déjà une attribution.
+    """
+    already = user.attributed_at is not None or bool(
+        user.utm_source or user.gclid or user.msclkid
+    )
+    apply_attribution(user, data)
+    await db.commit()
+    written = not already and not data.is_empty()
+    return {"detail": "enregistrée" if written else "ignorée"}
 
 
 @router.post("/me/password")

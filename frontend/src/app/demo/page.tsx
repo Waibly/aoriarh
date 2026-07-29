@@ -19,6 +19,7 @@ import {
   type TurnstileHandle,
 } from "@/components/demo/turnstile";
 import { streamPublicAsk } from "@/lib/demo-api";
+import { trackDemoUtilisee } from "@/lib/gtag";
 import type { MessageSource } from "@/types/api";
 
 interface Turn {
@@ -96,6 +97,8 @@ function DemoClient() {
             setStatus(null);
             setIsStreaming(false);
             setDone(true);
+            // Conversion secondaire : la démo a rendu une réponse complète.
+            trackDemoUtilisee();
             if (TURNSTILE_ENABLED) turnstileRef.current?.reset();
           },
           onError: (msg) => {

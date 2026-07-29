@@ -23,6 +23,8 @@ import {
   isOrgFormFieldsValid,
   type OrgFormFieldsValues,
 } from "@/components/org/org-form-fields";
+import { getAttribution, sendAttribution } from "@/lib/attribution";
+import { trackEssaiDemarre } from "@/lib/gtag";
 
 const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
@@ -174,6 +176,12 @@ function RegisterForm() {
       return;
     }
 
+    // Parcours Google : le compte a été créé côté serveur (callback NextAuth)
+    // sans accès aux cookies du navigateur — on rattache l'attribution ici.
+    // Le backend conserve le premier contact, un doublon est ignoré.
+    void sendAttribution(token);
+    trackEssaiDemarre();
+
     try {
       if (profilMetier) {
         await fetch(`${API_BASE_URL}/users/me`, {
@@ -313,6 +321,7 @@ function RegisterForm() {
             !isInvitation && hasPaidPlanRequested ? requestedPlan : null,
           requested_cycle:
             !isInvitation && hasPaidPlanRequested ? requestedCycle : null,
+          attribution: getAttribution(),
         }),
       });
 
@@ -335,6 +344,9 @@ function RegisterForm() {
 
       const registerData = await res.json().catch(() => null);
       const accessToken = registerData?.access_token as string | undefined;
+
+      // Conversion principale : le compte d'essai vient d'être créé.
+      trackEssaiDemarre();
 
       if (profilMetier && accessToken) {
         try {

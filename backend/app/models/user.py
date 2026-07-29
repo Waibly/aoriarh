@@ -1,6 +1,7 @@
 import uuid
+from datetime import datetime
 
-from sqlalchemy import Boolean, String
+from sqlalchemy import Boolean, DateTime, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, TimestampMixin, generate_uuid
@@ -21,6 +22,19 @@ class User(TimestampMixin, Base):
     # None = sees everything and lands on the business cockpit. Only meaningful
     # for users with role="admin".
     staff_role: Mapped[str | None] = mapped_column(String(20), nullable=True)
+
+    # Attribution marketing du premier contact (capturée sur le site vitrine,
+    # transmise à l'inscription). Première visite conservée : jamais écrasée.
+    utm_source: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
+    utm_medium: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    utm_campaign: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
+    utm_term: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    utm_content: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    gclid: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    msclkid: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    referrer: Mapped[str | None] = mapped_column(String(1024), nullable=True)
+    landing_page: Mapped[str | None] = mapped_column(String(1024), nullable=True)
+    attributed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     memberships = relationship("Membership", back_populates="user", lazy="selectin")
     conversations = relationship("Conversation", back_populates="user", lazy="selectin")
