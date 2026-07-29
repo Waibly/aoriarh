@@ -10,6 +10,16 @@ logger = logging.getLogger(__name__)
 BREVO_API_URL = "https://api.brevo.com/v3/smtp/email"
 BREVO_CONTACTS_URL = "https://api.brevo.com/v3/contacts"
 
+# Domaines réservés aux suites de test (pytest, e2e, curl manuels). Dernier
+# rempart quand un run tourne avec la vraie clé Brevo : ces adresses ne
+# doivent jamais générer de mail ni de contact (incidents 28-29/07/2026).
+_TEST_EMAIL_DOMAINS = {"example.com", "example.org", "example.net", "test.com", "test.fr"}
+
+
+def is_test_email(email: str) -> bool:
+    domain = email.rpartition("@")[2].lower()
+    return domain in _TEST_EMAIL_DOMAINS or domain.endswith((".test", ".example", ".invalid", ".localhost"))
+
 
 def _brevo_headers() -> dict[str, str]:
     return {
@@ -63,6 +73,9 @@ async def sync_contact_to_brevo(
     Best-effort: returns False on any failure, never raises.
     """
     if not settings.brevo_api_key or not settings.brevo_list_id:
+        return False
+    if is_test_email(email):
+        logger.info("Brevo sync skipped for test address: %s", email)
         return False
 
     first_name, _, last_name = (full_name or "").partition(" ")

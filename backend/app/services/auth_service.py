@@ -18,7 +18,7 @@ from app.models.invitation import Invitation
 from app.models.user import User
 from app.schemas.auth import GoogleAuthRequest, LoginRequest, RegisterRequest, TokenResponse
 from app.schemas.stripe_billing import BillingCycle, CommercialPlanCode
-from app.services.email.sender import send_email, sync_contact_to_brevo
+from app.services.email.sender import is_test_email, send_email, sync_contact_to_brevo
 from app.services.email.templates import render_admin_new_signup_email
 from app.services.stripe_service import StripeService
 
@@ -35,6 +35,9 @@ async def _notify_admin_new_signup(
     self-service. Fire-and-forget : un échec n'interrompt jamais le signup.
     """
     if not settings.admin_email:
+        return
+    if is_test_email(email):
+        logger.info("Signup notification skipped for test address: %s", email)
         return
     try:
         subject, html = render_admin_new_signup_email(
