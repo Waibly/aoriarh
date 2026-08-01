@@ -140,10 +140,8 @@ class Settings(BaseSettings):
     demo_user_email: str = "demo-public@aoriarh.fr"
 
     # --- Notifications d'utilisation des outils publics ---------------------
-    # Les calculateurs du site marketing envoient uniquement un résumé
-    # agrégé/anonymisé après un calcul abouti. Aucun salaire, montant, date,
-    # user-agent ou IP en clair n'entre dans l'email.
-    tool_usage_notifications_enabled: bool = True
+    # Désactivées par défaut : aucun email ne doit être envoyé après un calcul.
+    tool_usage_notifications_enabled: bool = False
     tool_usage_notification_email: str = "vanessa@aoriarh.fr"
     tool_usage_allowed_origins: str = (
         "https://aoriarh.fr,http://localhost:4321,http://127.0.0.1:4321"
