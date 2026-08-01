@@ -42,6 +42,7 @@ from app.api import (
     organisations,
     plan_invitations,
     public,
+    public_tools,
     support,
     team,
     users,
@@ -336,6 +337,11 @@ app.include_router(
     public.router,
     prefix="/api/v1/public",
     tags=["public-demo"],
+)
+app.include_router(
+    public_tools.router,
+    prefix="/api/v1/public/tools",
+    tags=["public-tools"],
 )
 
 

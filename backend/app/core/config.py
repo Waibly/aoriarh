@@ -139,6 +139,17 @@ class Settings(BaseSettings):
     demo_org_name: str = "AORIA RH — Démo publique"
     demo_user_email: str = "demo-public@aoriarh.fr"
 
+    # --- Notifications d'utilisation des outils publics ---------------------
+    # Les calculateurs du site marketing envoient uniquement un résumé
+    # agrégé/anonymisé après un calcul abouti. Aucun salaire, montant, date,
+    # user-agent ou IP en clair n'entre dans l'email.
+    tool_usage_notifications_enabled: bool = True
+    tool_usage_notification_email: str = "vanessa@aoriarh.fr"
+    tool_usage_allowed_origins: str = (
+        "https://aoriarh.fr,http://localhost:4321,http://127.0.0.1:4321"
+    )
+    tool_usage_turnstile_hostnames: str = "aoriarh.fr,localhost,127.0.0.1"
+
     @field_validator("secret_key")
     @classmethod
     def secret_key_must_be_strong(cls, v: str) -> str:
@@ -180,8 +191,28 @@ class Settings(BaseSettings):
 
         value = self.backend_cors_origins.strip()
         if value.startswith("["):
-            return json.loads(value)
-        return [origin.strip() for origin in value.split(",") if origin.strip()]
+            configured = json.loads(value)
+        else:
+            configured = [origin.strip() for origin in value.split(",") if origin.strip()]
+        if self.tool_usage_notifications_enabled:
+            configured.extend(self.tool_usage_origins)
+        return sorted(set(configured))
+
+    @property
+    def tool_usage_origins(self) -> set[str]:
+        return {
+            origin.strip().rstrip("/")
+            for origin in self.tool_usage_allowed_origins.split(",")
+            if origin.strip()
+        }
+
+    @property
+    def tool_usage_hostnames(self) -> set[str]:
+        return {
+            hostname.strip().lower()
+            for hostname in self.tool_usage_turnstile_hostnames.split(",")
+            if hostname.strip()
+        }
 
 
 settings = Settings()
