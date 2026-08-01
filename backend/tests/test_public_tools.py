@@ -64,3 +64,12 @@ def test_email_escapes_acquisition_values_and_never_contains_turnstile() -> None
     assert "&lt;img src=x onerror=alert(1)&gt;" in rendered
     assert "verified-token" not in rendered
     assert "3k 4k" in rendered
+
+
+def test_hcr_scope_is_accepted_and_labelled() -> None:
+    payload = {**_valid_payload(), "agreement_scope": "ccn_1979"}
+    summary = DismissalToolSummary.model_validate_json(json.dumps(payload))
+
+    rendered = _email_html(summary)
+
+    assert "HCR (IDCC 1979)" in rendered

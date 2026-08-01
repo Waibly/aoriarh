@@ -47,7 +47,7 @@ class DismissalToolSummary(BaseModel):
     tool_id: Literal["dismissal_indemnity"]
     turnstile_token: str = Field(min_length=1, max_length=2_048)
     agreement_scope: Literal[
-        "ccn_0413", "ccn_1486", "other_ccn", "unknown_ccn", "no_ccn"
+        "ccn_0413", "ccn_1486", "ccn_1979", "other_ccn", "unknown_ccn", "no_ccn"
     ]
     professional_category: Literal[
         "non_cadre", "cadre", "cadre_direction", "etam", "engineer_cadre", "not_applicable"
@@ -189,6 +189,7 @@ async def _reserve_delivery(usage_id: UUID) -> Literal["accepted", "duplicate"]:
 _LABELS = {
     "ccn_0413": "CCN 66 (IDCC 0413)",
     "ccn_1486": "Syntec (IDCC 1486)",
+    "ccn_1979": "HCR (IDCC 1979)",
     "other_ccn": "Autre CCN",
     "unknown_ccn": "CCN inconnue",
     "no_ccn": "Sans CCN",
