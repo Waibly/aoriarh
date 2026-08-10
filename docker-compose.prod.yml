@@ -28,6 +28,14 @@ services:
     depends_on:
       - frontend
       - backend
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 256M
+        reservations:
+          cpus: "0.1"
+          memory: 64M
     networks:
       - aoriarh
 
@@ -93,10 +101,10 @@ services:
       resources:
         limits:
           cpus: "0.5"
-          memory: 512M
+          memory: 1G
         reservations:
           cpus: "0.25"
-          memory: 128M
+          memory: 256M
     healthcheck:
       test: ["CMD", "mc", "ready", "local"]
       interval: 5s
@@ -166,6 +174,11 @@ services:
       REDIS_URL: redis://redis:6379
       LOG_FORMAT: json
       WORKERS: ${WORKERS:-4}
+      DB_POOL_SIZE: ${DB_POOL_SIZE:-8}
+      DB_MAX_OVERFLOW: ${DB_MAX_OVERFLOW:-4}
+      DB_POOL_TIMEOUT: ${DB_POOL_TIMEOUT:-10}
+      GUNICORN_MAX_REQUESTS: ${GUNICORN_MAX_REQUESTS:-1000}
+      GUNICORN_MAX_REQUESTS_JITTER: ${GUNICORN_MAX_REQUESTS_JITTER:-200}
       JUDILIBRE_CLIENT_ID: ${JUDILIBRE_CLIENT_ID:-}
       JUDILIBRE_CLIENT_SECRET: ${JUDILIBRE_CLIENT_SECRET:-}
       JUDILIBRE_BASE_URL: ${JUDILIBRE_BASE_URL:-https://api.piste.gouv.fr/cassation/judilibre/v1.0}
@@ -192,10 +205,10 @@ services:
       resources:
         limits:
           cpus: "4.0"
-          memory: 4G
+          memory: 8G
         reservations:
           cpus: "1.0"
-          memory: 512M
+          memory: 4G
     depends_on:
       postgres:
         condition: service_healthy
@@ -256,14 +269,18 @@ services:
       STRIPE_PRICE_ADDON_DOCS: ${STRIPE_PRICE_ADDON_DOCS:-}
       STRIPE_PRICE_BOOSTER: ${STRIPE_PRICE_BOOSTER:-}
       LOG_FORMAT: json
+      DB_POOL_TIMEOUT: ${DB_POOL_TIMEOUT:-10}
+      WORKER_DB_POOL_SIZE: ${WORKER_DB_POOL_SIZE:-4}
+      WORKER_DB_MAX_OVERFLOW: ${WORKER_DB_MAX_OVERFLOW:-4}
+      WORKER_MAX_JOBS: ${WORKER_MAX_JOBS:-3}
     deploy:
       resources:
         limits:
-          cpus: "1.0"
+          cpus: "1.5"
           memory: 2G
         reservations:
           cpus: "0.25"
-          memory: 256M
+          memory: 1G
     depends_on:
       postgres:
         condition: service_healthy
@@ -351,10 +368,10 @@ services:
       resources:
         limits:
           cpus: "0.5"
-          memory: 512M
+          memory: 768M
         reservations:
           cpus: "0.1"
-          memory: 128M
+          memory: 256M
     networks:
       - aoriarh
 
@@ -371,7 +388,10 @@ services:
       resources:
         limits:
           cpus: "0.25"
-          memory: 128M
+          memory: 256M
+        reservations:
+          cpus: "0.05"
+          memory: 64M
     networks:
       - aoriarh
 
@@ -389,7 +409,7 @@ services:
       resources:
         limits:
           cpus: "0.5"
-          memory: 256M
+          memory: 384M
         reservations:
           cpus: "0.1"
           memory: 128M

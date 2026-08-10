@@ -1,4 +1,4 @@
-from pydantic import field_validator, model_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -11,6 +11,15 @@ class Settings(BaseSettings):
     postgres_db: str = "aoriarh"
     postgres_user: str = "aoriarh"
     postgres_password: str  # OBLIGATOIRE — pas de défaut
+    # Pools dimensionnés par processus. En production, quatre workers Gunicorn
+    # partagent le plafond PostgreSQL : 4 × (8 + 4) = 48 connexions maximum.
+    db_pool_size: int = Field(default=8, ge=1, le=50)
+    db_max_overflow: int = Field(default=4, ge=0, le=50)
+    db_pool_timeout: int = Field(default=10, ge=1, le=120)
+    # Le worker ARQ a son propre moteur SQLAlchemy et une concurrence distincte.
+    worker_db_pool_size: int = Field(default=4, ge=1, le=20)
+    worker_db_max_overflow: int = Field(default=4, ge=0, le=20)
+    worker_max_jobs: int = Field(default=3, ge=1, le=16)
 
     # Qdrant
     qdrant_host: str = "localhost"

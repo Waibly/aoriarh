@@ -21,7 +21,6 @@ RUN python -c "from fastembed import SparseTextEmbedding; SparseTextEmbedding(mo
 
 COPY . .
 
-# WORKERS configurable via variable d'environnement (défaut: 4)
-# Règle : (2 x vCPU) + 1, ajusté selon la RAM disponible
-# Voir TODO_PRODUCTION.md section 3 pour le dimensionnement
-CMD ["sh", "-c", "gunicorn app.main:app -w ${WORKERS:-4} -k uvicorn.workers.UvicornWorker --bind 0.0.0.0:8000 --timeout 120 --graceful-timeout 30"]
+# Quatre workers async suffisent sur le VPS 8 vCPU. Le recyclage progressif
+# évite qu'un processus conserve indéfiniment les caches accumulés.
+CMD ["sh", "-c", "gunicorn app.main:app -w ${WORKERS:-4} -k uvicorn.workers.UvicornWorker --bind 0.0.0.0:8000 --timeout 120 --graceful-timeout 30 --max-requests ${GUNICORN_MAX_REQUESTS:-1000} --max-requests-jitter ${GUNICORN_MAX_REQUESTS_JITTER:-200}"]

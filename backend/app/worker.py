@@ -32,9 +32,9 @@ async def on_startup(ctx: dict) -> None:
     engine = create_async_engine(
         settings.database_url,
         echo=False,
-        pool_size=8,
-        max_overflow=4,
-        pool_timeout=30,
+        pool_size=settings.worker_db_pool_size,
+        max_overflow=settings.worker_db_max_overflow,
+        pool_timeout=settings.db_pool_timeout,
         pool_recycle=1800,
     )
     ctx["engine"] = engine
@@ -1793,11 +1793,10 @@ class WorkerSettings:
         cron(run_emailing_campaigns, minute=0),
     ]
     redis_settings = _parse_redis_settings()
-    # 8 parallel jobs : doc ingestion is mostly Voyage AI / Qdrant I/O bound,
-    # the embedding API supports this rate easily, and Qdrant on the same
-    # VPS handles parallel upserts without contention. Validated under load
-    # 2026-04-09 (671-doc reindex completed in ~25 min vs ~75 min at 4 jobs).
-    max_jobs = 8
+    # Borné pour préserver les recherches interactives : chaque ingestion peut
+    # lancer jusqu'à 4 appels Voyage en parallèle. Trois jobs donnent donc un
+    # plafond de 12 appels, contre 32 auparavant.
+    max_jobs = settings.worker_max_jobs
     job_timeout = 14400  # 4h max (BOCC backfill peut prendre plusieurs heures)
     on_startup = on_startup
     on_shutdown = on_shutdown
