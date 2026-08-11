@@ -4,7 +4,12 @@ from uuid import UUID
 import pytest
 from pydantic import ValidationError
 
-from app.api.public_tools import DismissalToolSummary, _email_html
+from app.api.public_tools import (
+    DismissalToolSummary,
+    MutualTerminationToolSummary,
+    _email_html,
+    _mutual_termination_email_html,
+)
 
 
 def _valid_payload() -> dict:
@@ -73,3 +78,48 @@ def test_hcr_scope_is_accepted_and_labelled() -> None:
     rendered = _email_html(summary)
 
     assert "HCR (IDCC 1979)" in rendered
+
+
+def _valid_mutual_termination_payload() -> dict:
+    return {
+        "usage_id": "7c9e6a8d-75e1-4998-bc7e-45a794706ceb",
+        "schema_version": "1",
+        "tool_id": "mutual_termination",
+        "turnstile_token": "verified-token",
+        "result_scope": "detailed_estimate",
+        "protected_status": "no",
+        "agreement_scope": "supported_ccn",
+        "minimum_source": "conventional",
+        "selected_amount_bracket": "10k_25k",
+        "has_proposed_amount": True,
+        "viewport": "desktop",
+        "browser_language": "fr-FR",
+        "timezone": "Europe/Paris",
+        "acquisition": {
+            "utm_source": "google",
+            "utm_medium": "organic",
+            "utm_campaign": "outil-rupture",
+            "referrer_domain": "www.google.com",
+        },
+    }
+
+
+def test_mutual_termination_summary_is_anonymised_and_closed() -> None:
+    summary = MutualTerminationToolSummary.model_validate_json(
+        json.dumps(_valid_mutual_termination_payload())
+    )
+    rendered = _mutual_termination_email_html(summary)
+
+    assert "Rupture conventionnelle" in rendered
+    assert "Minimum conventionnel" in rendered
+    assert "verified-token" not in rendered
+
+    with pytest.raises(ValidationError):
+        MutualTerminationToolSummary.model_validate_json(
+            json.dumps(
+                {
+                    **_valid_mutual_termination_payload(),
+                    "reference_salary_exact": 345_678,
+                }
+            )
+        )

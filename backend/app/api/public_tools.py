@@ -26,7 +26,8 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 _MAX_BODY_BYTES = 12_000
-_TURNSTILE_ACTION = "dismissal_calculation"
+_DISMISSAL_TURNSTILE_ACTION = "dismissal_calculation"
+_MUTUAL_TERMINATION_TURNSTILE_ACTION = "mutual_termination_calculation"
 _redis_client = None
 
 
@@ -53,12 +54,8 @@ class DismissalToolSummary(BaseModel):
         "non_cadre", "cadre", "cadre_direction", "etam", "engineer_cadre", "not_applicable"
     ]
     salary_mode: Literal["stable_monthly", "monthly_detail"]
-    salary_bracket: Literal[
-        "under_2k", "2k_3k", "3k_4k", "4k_6k", "6k_10k", "10k_plus"
-    ]
-    seniority_bracket: Literal[
-        "under_8m", "8m_2y", "2y_5y", "5y_10y", "10y_20y", "20y_plus"
-    ]
+    salary_bracket: Literal["under_2k", "2k_3k", "3k_4k", "4k_6k", "6k_10k", "10k_plus"]
+    seniority_bracket: Literal["under_8m", "8m_2y", "2y_5y", "5y_10y", "10y_20y", "20y_plus"]
     legal_amount_bracket: Literal[
         "zero", "under_5k", "5k_10k", "10k_25k", "25k_50k", "50k_100k", "100k_plus"
     ]
@@ -86,12 +83,40 @@ class DismissalToolSummary(BaseModel):
     result_scope: Literal[
         "comparison", "legal_only_complete", "legal_only_incomplete", "review_required"
     ]
-    outcome: Literal[
-        "legal", "agreement", "equal", "legal_only", "not_due", "review_required"
-    ]
+    outcome: Literal["legal", "agreement", "equal", "legal_only", "not_due", "review_required"]
     has_absences: bool
     has_variable_compensation: bool
     has_complex_case: bool
+    viewport: Literal["mobile", "tablet", "desktop"]
+    browser_language: str = Field(min_length=2, max_length=16, pattern=r"^[A-Za-z-]+$")
+    timezone: str = Field(min_length=1, max_length=64, pattern=r"^[A-Za-z0-9_+./-]+$")
+    acquisition: ToolAcquisition
+
+
+class MutualTerminationToolSummary(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    usage_id: UUID
+    schema_version: Literal["1"]
+    tool_id: Literal["mutual_termination"]
+    turnstile_token: str = Field(min_length=1, max_length=2_048)
+    result_scope: Literal["calendar_only", "quick_estimate", "detailed_estimate"]
+    protected_status: Literal["no", "yes", "unknown"]
+    agreement_scope: Literal[
+        "supported_ccn", "other_ccn", "no_ccn", "unknown_ccn", "not_applicable"
+    ]
+    minimum_source: Literal["legal", "conventional", "same", "not_calculated"]
+    selected_amount_bracket: Literal[
+        "not_calculated",
+        "zero",
+        "under_5k",
+        "5k_10k",
+        "10k_25k",
+        "25k_50k",
+        "50k_100k",
+        "100k_plus",
+    ]
+    has_proposed_amount: bool
     viewport: Literal["mobile", "tablet", "desktop"]
     browser_language: str = Field(min_length=2, max_length=16, pattern=r"^[A-Za-z-]+$")
     timezone: str = Field(min_length=1, max_length=64, pattern=r"^[A-Za-z0-9_+./-]+$")
@@ -131,7 +156,7 @@ def _assert_browser_origin(request: Request) -> None:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Origine refusée.")
 
 
-async def _verify_turnstile(token: str, remote_ip: str) -> bool:
+async def _verify_turnstile(token: str, remote_ip: str, expected_action: str) -> bool:
     if not settings.turnstile_secret:
         logger.error("Notifications outils: TURNSTILE_SECRET absent")
         return False
@@ -148,9 +173,8 @@ async def _verify_turnstile(token: str, remote_ip: str) -> bool:
         verification = response.json()
         return bool(
             verification.get("success")
-            and verification.get("action") == _TURNSTILE_ACTION
-            and str(verification.get("hostname", "")).lower()
-            in settings.tool_usage_hostnames
+            and verification.get("action") == expected_action
+            and str(verification.get("hostname", "")).lower() in settings.tool_usage_hostnames
         )
     except Exception:
         logger.exception("Notifications outils: vérification Turnstile indisponible")
@@ -204,6 +228,14 @@ _LABELS = {
     "equal": "Montants identiques",
     "legal_only": "Résultat légal uniquement",
     "not_due": "Aucune indemnité due",
+    "calendar_only": "Calendrier uniquement",
+    "quick_estimate": "Estimation rapide",
+    "detailed_estimate": "Contrôle détaillé",
+    "supported_ccn": "CCN comparée par le moteur officiel",
+    "not_applicable": "Non applicable",
+    "conventional": "Minimum conventionnel",
+    "same": "Minima identiques",
+    "not_calculated": "Non calculé",
 }
 
 
@@ -259,6 +291,45 @@ def _email_html(summary: DismissalToolSummary) -> str:
     )
 
 
+def _mutual_termination_email_html(summary: MutualTerminationToolSummary) -> str:
+    rows = [
+        ("Outil", "Rupture conventionnelle — indemnité et calendrier"),
+        ("Utilisation", summary.usage_id),
+        ("Parcours", summary.result_scope),
+        ("Statut salarié protégé", summary.protected_status),
+        ("Convention collective", summary.agreement_scope),
+        ("Minimum retenu", summary.minimum_source),
+        ("Tranche du minimum", summary.selected_amount_bracket),
+        ("Montant négocié renseigné", summary.has_proposed_amount),
+        ("Écran", summary.viewport),
+        ("Langue du navigateur", summary.browser_language),
+        ("Fuseau horaire", summary.timezone),
+        ("Source UTM", summary.acquisition.utm_source or "—"),
+        ("Support UTM", summary.acquisition.utm_medium or "—"),
+        ("Campagne UTM", summary.acquisition.utm_campaign or "—"),
+        ("Domaine référent", summary.acquisition.referrer_domain or "—"),
+    ]
+    table = "".join(
+        "<tr>"
+        "<th style='padding:8px 12px;text-align:left;"
+        f"border-bottom:1px solid #e8e5ee'>{html.escape(label)}</th>"
+        "<td style='padding:8px 12px;"
+        f"border-bottom:1px solid #e8e5ee'>{html.escape(_display(value))}</td>"
+        "</tr>"
+        for label, value in rows
+    )
+    generated_at = datetime.now(UTC).strftime("%d/%m/%Y à %H:%M UTC")
+    return (
+        "<div style='font-family:Arial,sans-serif;color:#151321;max-width:720px'>"
+        "<h1 style='font-size:22px'>Nouvelle utilisation du simulateur</h1>"
+        f"<p>Calcul abouti le {generated_at}. Les valeurs sont volontairement regroupées "
+        "par catégories et ne contiennent ni identité, ni IP, ni dates, salaires "
+        "ou montants exacts.</p>"
+        f"<table style='border-collapse:collapse;width:100%;font-size:14px'>{table}</table>"
+        "</div>"
+    )
+
+
 @router.post("/dismissal-indemnity", status_code=status.HTTP_202_ACCEPTED)
 async def notify_dismissal_tool_usage(request: Request) -> dict[str, str]:
     if not settings.tool_usage_notifications_enabled:
@@ -296,7 +367,9 @@ async def notify_dismissal_tool_usage(request: Request) -> dict[str, str]:
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Notification momentanément indisponible.",
         ) from None
-    if not await _verify_turnstile(summary.turnstile_token, _client_ip(request)):
+    if not await _verify_turnstile(
+        summary.turnstile_token, _client_ip(request), _DISMISSAL_TURNSTILE_ACTION
+    ):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Vérification anti-robot échouée.",
@@ -318,6 +391,81 @@ async def notify_dismissal_tool_usage(request: Request) -> dict[str, str]:
             "Vanessa",
             "Nouvelle utilisation — simulateur indemnité de licenciement",
             _email_html(summary),
+        )
+    except Exception:
+        delivered = False
+        logger.exception("Notifications outils: échec d'envoi Brevo")
+    if not delivered:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Notification momentanément indisponible.",
+        )
+    return {"status": "accepted"}
+
+
+@router.post("/mutual-termination", status_code=status.HTTP_202_ACCEPTED)
+async def notify_mutual_termination_tool_usage(request: Request) -> dict[str, str]:
+    if not settings.tool_usage_notifications_enabled:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Fonction désactivée.")
+    _assert_browser_origin(request)
+    content_type = request.headers.get("content-type", "").split(";", 1)[0].strip().lower()
+    if content_type != "application/json":
+        raise HTTPException(status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE)
+    try:
+        content_length = int(request.headers.get("content-length", "0") or 0)
+    except ValueError:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST) from None
+    if content_length < 0 or content_length > _MAX_BODY_BYTES:
+        raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE)
+    body = bytearray()
+    async for chunk in request.stream():
+        body.extend(chunk)
+        if len(body) > _MAX_BODY_BYTES:
+            raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE)
+    try:
+        summary = MutualTerminationToolSummary.model_validate_json(bytes(body))
+    except (ValidationError, json.JSONDecodeError):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Résumé d'utilisation invalide.",
+        ) from None
+
+    try:
+        await _enforce_rate_limit(request)
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception("Notifications outils: Redis indisponible, envoi refusé")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Notification momentanément indisponible.",
+        ) from None
+    if not await _verify_turnstile(
+        summary.turnstile_token,
+        _client_ip(request),
+        _MUTUAL_TERMINATION_TURNSTILE_ACTION,
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Vérification anti-robot échouée.",
+        )
+    try:
+        reservation = await _reserve_delivery(summary.usage_id)
+    except Exception:
+        logger.exception("Notifications outils: Redis indisponible, envoi refusé")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Notification momentanément indisponible.",
+        ) from None
+    if reservation == "duplicate":
+        return {"status": "accepted"}
+
+    try:
+        delivered = await send_email(
+            settings.tool_usage_notification_email,
+            "Vanessa",
+            "Nouvelle utilisation — simulateur rupture conventionnelle",
+            _mutual_termination_email_html(summary),
         )
     except Exception:
         delivered = False
