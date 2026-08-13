@@ -42,6 +42,7 @@ from app.schemas.conversation import (
 from app.core.limiter import limiter
 from app.services.billing_service import BillingService
 from app.services.conversation_service import ConversationService
+from app.services.security_alert_service import send_security_alert_bg
 
 logger = logging.getLogger(__name__)
 
@@ -723,6 +724,22 @@ async def chat_stream(
                     await db.commit()
                 except Exception:
                     logger.exception("Failed to persist meta-answer message %s", meta_assistant.id)
+                if intent_result.security_event is not None:
+                    # Best-effort et hors chemin critique : Redis déduplique,
+                    # Brevo ne peut ni ralentir ni casser la réponse utilisateur.
+                    send_security_alert_bg(
+                        event_type=intent_result.security_event,
+                        query=data.message,
+                        user_id=str(user.id),
+                        user_email=user.email,
+                        user_name=user.full_name,
+                        user_role=user.role,
+                        organisation_id=str(conversation.organisation_id),
+                        organisation_name=(org_context or {}).get("nom"),
+                        conversation_id=str(conversation_id),
+                        message_id=str(meta_user.id),
+                        detected_via=intent_result.via,
+                    )
                 if conversation.title is None:
                     title = data.message[:100].strip()
                     if len(data.message) > 100:

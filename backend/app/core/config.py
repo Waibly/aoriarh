@@ -65,6 +65,10 @@ class Settings(BaseSettings):
     # Vide = pas de vérification (rétro-compatible).
     brevo_webhook_secret: str = ""
     support_email: str = "hello@aoriarh.fr"
+    # Alertes best-effort sur les demandes sensibles dans le chat authentifié.
+    # Elles sont dédupliquées via Redis et ne bloquent jamais la réponse.
+    security_alerts_enabled: bool = True
+    security_alert_email: str = "vanessa@aoriarh.fr"
     frontend_url: str = "http://localhost:3000"
     # URL publique de l'API (pour les liens cliquables dans les emails, ex.
     # désinscription). En prod : https://api.aoriarh.fr

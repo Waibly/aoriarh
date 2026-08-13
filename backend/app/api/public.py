@@ -64,6 +64,7 @@ from app.rag.config import (
 )
 from app.rag.intent_router import classify_intent
 from app.services.conversation_service import ConversationService
+from app.services.security_alert_service import send_security_alert_bg
 
 logger = logging.getLogger(__name__)
 
@@ -328,13 +329,30 @@ async def public_ask(
                     use_llm_fallback=True,
                 )
                 if intent_result.static_answer is not None:
-                    await service.add_message(
+                    meta_user = await service.add_message(
                         conversation_id=conversation.id, role="user", content=message,
                     )
                     await service.add_message(
                         conversation_id=conversation.id, role="assistant",
                         content=intent_result.static_answer,
                     )
+                    if intent_result.security_event is not None:
+                        # Tous les visiteurs partagent le même user technique :
+                        # le limiteur Redis agrège donc les alertes de la démo et
+                        # empêche d'utiliser cet endpoint pour spammer la boîte.
+                        send_security_alert_bg(
+                            event_type=intent_result.security_event,
+                            query=message,
+                            user_id=str(demo_user_id),
+                            user_email=settings.demo_user_email,
+                            user_name="Visiteur démo publique",
+                            user_role="public_demo",
+                            organisation_id=str(demo_org_id),
+                            organisation_name="Démo publique",
+                            conversation_id=str(conversation.id),
+                            message_id=str(meta_user.id),
+                            detected_via=intent_result.via,
+                        )
                     yield _sse_event("chat_delta", {"content": intent_result.static_answer})
                     yield _sse_event("chat_done", {"upsell": _DEMO_UPSELL})
                     return

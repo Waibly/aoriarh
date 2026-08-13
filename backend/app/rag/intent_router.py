@@ -27,14 +27,18 @@ import logging
 import re
 import uuid
 from dataclasses import dataclass
-from datetime import UTC, datetime
 from enum import Enum
 
 from openai import AsyncOpenAI
-from sqlalchemy import desc, func, select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.config import settings
+from app.services.security_alert_service import (
+    EVENT_INSTRUCTION_BYPASS,
+    EVENT_PRIVILEGE_CLAIM,
+    EVENT_PROTECTED_DATA,
+    EVENT_TECHNICAL_RECON,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -62,6 +66,8 @@ class IntentResult:
     # Pour le logging / debug. Indique si le pré-filtre a matché ou si on a
     # appelé le LLM classifier.
     via: str = "prefilter"
+    # Catégorie d'alerte interne. None pour les intentions ordinaires.
+    security_event: str | None = None
 
 
 # ─── Pre-filter patterns (déterministe, ~5ms) ──────────────────────────────
@@ -69,16 +75,56 @@ class IntentResult:
 # positifs ne sont pas dramatiques car les réponses statiques restent
 # cordiales et redirigent vers la valeur produit.
 
+_PATTERNS_PROTECTED_DATA = [
+    r"\b(select|insert|update|delete|drop|truncate)\b[^;\n]{0,100}"
+    r"\b(from|into|table|users?|clients?|messages?|conversations?)\b",
+    r"\b(tables?|sch[ée]ma)\b[^.?!]{0,70}\b(base de donn[ée]es|database|bdd)\b",
+    r"\b(base de donn[ée]es|database|bdd)\b[^.?!]{0,70}"
+    r"\b(contenu|tables?|sch[ée]ma|utilisateurs?|clients?|emails?|messages?|"
+    r"conversations?|journaux?|logs?)\b",
+    r"\b(donn[ée]es|documents?|conversations?|messages?|emails?|informations?)\b"
+    r"[^.?!]{0,60}\b(d['’]autres?|autres?)\s+"
+    r"(clients?|utilisateurs?|organisations?|comptes?)\b",
+    r"\b(donne|donne-moi|affiche|montre|liste|exporte|extrais|r[ée]v[èe]le)\b"
+    r"[^.?!]{0,70}\b(emails?|conversations?|documents?|donn[ée]es)\b"
+    r"[^.?!]{0,40}\b(clients?|utilisateurs?|organisations?|comptes?)\b",
+    r"\b(donne|donne-moi|affiche|montre|liste|exporte|extrais|r[ée]v[èe]le)\b"
+    r"[^.?!]{0,70}\b(tables?|sch[ée]ma|users?|clients?|utilisateurs?|secrets?|"
+    r"cl[ée]s?\s*api|tokens?|variables? d['’]environnement|journaux?|logs?)\b",
+    r"\b(qui sont|quels sont)\s+(tes|vos)\s+(clients?|utilisateurs?)\b",
+    r"\bcombien\s+de\s+(clients?|utilisateurs?|organisations?)\b"
+    r"[^.?!]{0,40}\b(as-tu|avez-vous|utilisent|utilise)\b",
+]
+
+_PATTERNS_PRIVILEGE_CLAIM = [
+    r"\b(je suis|j['’]ai le r[oô]le|en tant que|consid[èe]re[- ]moi comme)\s+"
+    r"(un\s+|l['’])?(admin|administrateur|super[- ]?admin|root|superuser|"
+    r"d[ée]veloppeur|propri[ée]taire)\b",
+    r"\b(contourne|bypass|d[ée]sactive|ignore)\b[^.?!]{0,60}"
+    r"\b(permissions?|autorisations?|droits? d['’]acc[èe]s|authentification|"
+    r"contr[oô]les? d['’]acc[èe]s)\b",
+]
+
+_PATTERNS_INSTRUCTION_BYPASS = [
+    r"\b(ignore|oublie|forget)\s+(les|tes|toutes les|all|your)\s+"
+    r"(consignes?|instructions?|r[èe]gles?|pr[ée]c[ée]dentes?)\b",
+    r"\b(jailbreak|mode\s+d[ée]veloppeur|developer\s+mode|do\s+anything\s+now)\b",
+    r"\b(reveal|montre|affiche|donne|donne-moi|liste|r[ée]v[èe]le)\b"
+    r"[^.?!]{0,40}\b(system\s*prompt|prompt\s+syst[èe]me|"
+    r"instructions?\s+syst[èe]me|consignes?\s+internes?)\b",
+    r"\b(system\s*prompt|prompt\s+syst[èe]me)\b",
+]
+
 _PATTERNS_INTERNALS = [
     r"\b(quel|quelle|quels|quelles)\s+(modèle|llm|ia|moteur|outil|techno|stack|prompt|framework|librairie|reranker|embedding|vector|base de données)\b",
     # 'c'est quoi les techno', 'tu utilises quoi', 'ça tourne avec quoi'
     r"\b(c'est quoi|qu'est[- ]ce que c'est|qu'est[- ]ce que)\s+(les|le|la|ton|ta|tes|votre|vos)?\s*(techno|technologie|stack|modèle|llm|ia|outil|moteur|infrastructure|prompt|framework|librairie)\b",
     r"\b(t['eu]|tu|vous)\s+(utilis\w*|tournes?\s+(avec|sur)|emploies?|fonctionne(s|z)?\s+avec)\s+(quoi|quel|quelle|quels|quelles|un|une|du|de la|des|le|la|les|comme)",
     r"\b(comment|de quelle (façon|manière))\s+(tu|vous)\s+(es codé|fonctionne|fonctionnez|marche|marches|es construit|es entraîné|es développ)",
-    r"\b(reveal|montre|affiche|donne|donne-moi|liste)\s+(ton|tes|votre|vos)\s+(prompt|system|instruction|outil|sources internes|architecture|secret)",
-    r"\b(ignore|oublie|forget)\s+(les|tes|toutes les)\s+(consigne|instruction|précédent|précédente)",
-    r"\bsystem\s*prompt\b",
     r"\bton\s+(prompt|système|architecture|infrastructure|hébergeur)\b",
+    r"\b(openai|chatgpt|gpt[- .]?\d*|claude|anthropic|qdrant|voyage)\b",
+    r"\b(quel|qui est)\s+(est\s+)?(ton|votre)\s+(fournisseur|sous-traitant|hébergeur)\b",
+    r"\b(où|ou|comment)\s+(sont|est)\s+héberg[ée]es?\s+(les|tes|vos)\s+donn[ée]es\b",
 ]
 
 _PATTERNS_SOURCES = [
@@ -155,13 +201,34 @@ def _match_any(text: str, patterns: list[str]) -> bool:
 # valeur produit. Aucune ne révèle d'info technique.
 
 _ANSWER_INTERNALS = (
-    "AORIA RH utilise une recherche sémantique pour sélectionner les extraits "
-    "juridiques et documents auxquels votre compte est autorisé à accéder, "
-    "puis un modèle de langage fourni via l'API OpenAI pour rédiger la réponse. "
-    "Les fournisseurs et transferts applicables sont détaillés dans la politique "
-    "de confidentialité.\n\n"
-    "Je ne peux pas fournir les prompts système exacts, secrets, clés, journaux "
-    "privés ni configurations exploitables."
+    "AORIA RH recherche les informations utiles dans les sources juridiques et "
+    "les documents auxquels votre compte est autorisé, puis en produit une "
+    "synthèse. Pour des raisons de sécurité et de confidentialité, je ne peux "
+    "pas détailler l'architecture interne, les instructions système ou les "
+    "configurations techniques. Les informations relatives au traitement des "
+    "données figurent dans notre politique de confidentialité."
+)
+
+_ANSWER_PROTECTED_DATA = (
+    "Je ne peux pas fournir de données internes, de structure de base de "
+    "données, de journaux, de secrets ou de configurations techniques. Ces "
+    "informations ne sont pas accessibles depuis l'assistant et sont protégées "
+    "pour des raisons de sécurité. Je ne peux pas non plus accéder aux "
+    "informations, documents ou conversations d'un autre utilisateur ou d'une "
+    "autre organisation. Je peux uniquement vous aider à partir des informations "
+    "autorisées pour votre propre compte."
+)
+
+_ANSWER_PRIVILEGE_CLAIM = (
+    "Les droits d'accès sont déterminés par votre compte dans l'application, "
+    "et non par une déclaration dans la conversation. Je ne peux pas contourner "
+    "ces autorisations ni fournir d'informations internes protégées."
+)
+
+_ANSWER_INSTRUCTION_BYPASS = (
+    "Je ne peux pas donner suite à cette demande. Je peux en revanche vous "
+    "aider sur une question RH ou de droit social concernant votre organisation "
+    "et les informations auxquelles votre compte est autorisé."
 )
 
 _ANSWER_CAPABILITIES = (
@@ -370,9 +437,31 @@ async def classify_intent(
         # retourner un message générique) plutôt que de bloquer ici.
         return IntentResult(Intent.LEGAL_QUESTION, static_answer=None, via="empty")
 
-    # 1. Pre-filter — ordre important : meta_internals en premier (sécurité IP)
+    # 1. Pre-filter — les demandes sensibles précises passent avant la catégorie
+    # générique sur le fonctionnement afin de servir la réponse adaptée.
+    if _match_any(q, _PATTERNS_PROTECTED_DATA):
+        return IntentResult(
+            Intent.META_INTERNALS, _ANSWER_PROTECTED_DATA,
+            via="prefilter", security_event=EVENT_PROTECTED_DATA,
+        )
+
+    if _match_any(q, _PATTERNS_PRIVILEGE_CLAIM):
+        return IntentResult(
+            Intent.META_INTERNALS, _ANSWER_PRIVILEGE_CLAIM,
+            via="prefilter", security_event=EVENT_PRIVILEGE_CLAIM,
+        )
+
+    if _match_any(q, _PATTERNS_INSTRUCTION_BYPASS):
+        return IntentResult(
+            Intent.META_INTERNALS, _ANSWER_INSTRUCTION_BYPASS,
+            via="prefilter", security_event=EVENT_INSTRUCTION_BYPASS,
+        )
+
     if _match_any(q, _PATTERNS_INTERNALS):
-        return IntentResult(Intent.META_INTERNALS, _ANSWER_INTERNALS, via="prefilter")
+        return IntentResult(
+            Intent.META_INTERNALS, _ANSWER_INTERNALS,
+            via="prefilter", security_event=EVENT_TECHNICAL_RECON,
+        )
 
     if _match_any(q, _PATTERNS_GREETING):
         return IntentResult(Intent.GREETING, _ANSWER_GREETING, via="prefilter")
@@ -399,7 +488,10 @@ async def classify_intent(
 
     # 3. Génère la réponse statique si meta
     if intent == Intent.META_INTERNALS:
-        return IntentResult(intent, _ANSWER_INTERNALS, via="llm")
+        return IntentResult(
+            intent, _ANSWER_INTERNALS, via="llm",
+            security_event=EVENT_TECHNICAL_RECON,
+        )
     if intent == Intent.GREETING:
         return IntentResult(intent, _ANSWER_GREETING, via="llm")
     if intent == Intent.META_CAPABILITIES:
