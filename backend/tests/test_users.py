@@ -54,6 +54,6 @@ async def test_change_password_wrong_current(
     res = await client.post(
         "/api/v1/users/me/password",
         headers=auth_header(regular_user["token"]),
-        json={"current_password": "wrongpass", "new_password": "newpass456"},
+        json={"current_password": "wrongpass", "new_password": "NewPass456!xyz"},
     )
     assert res.status_code == 400

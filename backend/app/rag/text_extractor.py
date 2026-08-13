@@ -24,8 +24,7 @@ def is_scanned_pdf(file_bytes: bytes) -> bool:
     2. Sum the extracted text length.
     3. If avg text per page < 80 chars AND total text < 200 chars,
        the PDF has effectively no selectable text → it's a scan.
-    Falls back to False (i.e. accept the document) on any error so a
-    detection bug never blocks a legitimate upload.
+    Fails closed on parsing errors: malformed PDFs must not reach ingestion.
     """
     try:
         import pymupdf
@@ -46,8 +45,8 @@ def is_scanned_pdf(file_bytes: bytes) -> bool:
         finally:
             doc.close()
     except Exception:
-        logger.exception("is_scanned_pdf: detection failed, accepting document")
-        return False
+        logger.exception("is_scanned_pdf: detection failed, rejecting document")
+        return True
 
 
 class TextExtractor:

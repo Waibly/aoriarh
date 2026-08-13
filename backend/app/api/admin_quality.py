@@ -132,6 +132,7 @@ def _get_assistant_with_question_subquery():
 @router.get("/metrics", response_model=QualityKpis)
 async def get_quality_metrics(
     days: int = Query(7, ge=1, le=90),
+    account_id: uuid.UUID | None = None,
     user: User = Depends(require_role(["admin"])),
     db: AsyncSession = Depends(get_db),
 ) -> QualityKpis:
@@ -144,7 +145,14 @@ async def get_quality_metrics(
     async def _compute(start: datetime, end: datetime) -> dict:
         """Compute raw aggregates over a period."""
         # Only assistant messages count as "questions answered"
-        base_q = select(Message).where(
+        base_q = select(Message)
+        if account_id:
+            base_q = (
+                base_q.join(Conversation, Message.conversation_id == Conversation.id)
+                .join(Organisation, Conversation.organisation_id == Organisation.id)
+                .where(Organisation.account_id == account_id)
+            )
+        base_q = base_q.where(
             Message.role == "assistant",
             Message.created_at >= start,
             Message.created_at < end,
@@ -189,8 +197,13 @@ async def get_quality_metrics(
         latencies = [m.latency_ms for m in rows if m.latency_ms is not None]
         # Cost is computed live from api_usage_logs (single source of truth,
         # same formula as /admin/costs). Sandbox calls are excluded.
+        cost_stmt = select(func.coalesce(func.sum(ApiUsageLog.cost_usd), 0))
+        if account_id:
+            cost_stmt = cost_stmt.join(
+                Organisation, Organisation.id == ApiUsageLog.organisation_id
+            ).where(Organisation.account_id == account_id)
         cost_q = await db.execute(
-            select(func.coalesce(func.sum(ApiUsageLog.cost_usd), 0)).where(
+            cost_stmt.where(
                 ApiUsageLog.context_type == "question",
                 ApiUsageLog.is_replay.is_(False),
                 ApiUsageLog.created_at >= start,
@@ -198,8 +211,13 @@ async def get_quality_metrics(
             )
         )
         cost_total = float(cost_q.scalar() or 0.0)
+        nbq_stmt = select(func.count(func.distinct(ApiUsageLog.context_id)))
+        if account_id:
+            nbq_stmt = nbq_stmt.join(
+                Organisation, Organisation.id == ApiUsageLog.organisation_id
+            ).where(Organisation.account_id == account_id)
         nbq_q = await db.execute(
-            select(func.count(func.distinct(ApiUsageLog.context_id))).where(
+            nbq_stmt.where(
                 ApiUsageLog.context_type == "question",
                 ApiUsageLog.is_replay.is_(False),
                 ApiUsageLog.created_at >= start,
@@ -281,11 +299,13 @@ async def get_quality_metrics(
 @router.get("/conversations", response_model=ConversationListResponse)
 async def list_conversations(
     q: str | None = Query(None, description="Recherche full-text français"),
+    account_id: uuid.UUID | None = None,
     organisation_id: uuid.UUID | None = None,
     user_id: uuid.UUID | None = None,
     feedback: str | None = Query(None, pattern="^(up|down|none|any)$"),
     date_from: datetime | None = None,
     date_to: datetime | None = None,
+    days: int | None = Query(None, ge=1, le=90),
     min_latency_ms: int | None = Query(None, ge=0),
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=200),
@@ -308,6 +328,8 @@ async def list_conversations(
     )
 
     filters = []
+    if account_id:
+        filters.append(Organisation.account_id == account_id)
     if organisation_id:
         filters.append(Conversation.organisation_id == organisation_id)
     if user_id:
@@ -316,6 +338,8 @@ async def list_conversations(
         filters.append(Message.created_at >= date_from)
     if date_to:
         filters.append(Message.created_at < date_to)
+    if days is not None:
+        filters.append(Message.created_at >= datetime.now(UTC) - timedelta(days=days))
     if min_latency_ms is not None:
         filters.append(Message.latency_ms >= min_latency_ms)
     if feedback == "up":

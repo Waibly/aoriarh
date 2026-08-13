@@ -4,6 +4,12 @@
 # Site marketing (apex + www → apex)
 aoriarh.fr, www.aoriarh.fr {
 	encode zstd gzip
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		Permissions-Policy "camera=(), microphone=(), geolocation=()"
+	}
 	@www host www.aoriarh.fr
 	redir @www https://aoriarh.fr{uri} permanent
 	reverse_proxy site:80
@@ -11,14 +17,19 @@ aoriarh.fr, www.aoriarh.fr {
 
 app.aoriarh.fr {
 	header X-Robots-Tag "noindex, nofollow"
+	header Strict-Transport-Security "max-age=31536000; includeSubDomains"
 	reverse_proxy frontend:3000
 }
 
 api.aoriarh.fr {
 	header X-Robots-Tag "noindex, nofollow"
+	header Strict-Transport-Security "max-age=31536000; includeSubDomains"
+	@internal path /metrics /docs /openapi.json /redoc
+	respond @internal 404
 	reverse_proxy backend:8000
 }
 
 monitoring.aoriarh.fr {
+	header Strict-Transport-Security "max-age=31536000; includeSubDomains"
 	reverse_proxy grafana:3000
 }

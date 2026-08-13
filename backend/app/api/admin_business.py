@@ -27,7 +27,7 @@ from app.core.dependencies import require_role
 from app.core.plans import PRICE_MONTHLY_CENTS, PRICE_YEARLY_CENTS
 from app.models.account import Account
 from app.models.api_usage import ApiUsageLog
-from app.models.conversation import Message
+from app.models.conversation import Conversation, Message
 from app.models.organisation import Organisation
 from app.models.plan_invitation import PlanInvitationRedemption
 from app.models.subscription import Subscription
@@ -139,18 +139,20 @@ class SignupsBySourceResponse(BaseModel):
 async def _usage_by_account(
     db: AsyncSession, since: datetime
 ) -> dict[Any, dict[str, Any]]:
-    """Per-account usage since ``since``: question count, cost (USD), last activity.
+    """Per-account usage since ``since``: answered questions, cost and activity.
 
     Joins ApiUsageLog → Organisation → Account via ``Organisation.account_id``.
-    Sandbox/replay calls are excluded, matching the cost dashboard.
+    Sandbox/replay calls are excluded from costs, matching the cost dashboard.
+
+    The question count deliberately comes from persisted assistant messages, which
+    is also the source used by ``/admin/quality``.  Counting usage-log contexts here
+    used to make the Clients total impossible to reconcile with the inspectable
+    question/answer pairs when a log or a message was missing.
     """
-    stmt = (
+    cost_stmt = (
         select(
             Organisation.account_id.label("account_id"),
             func.coalesce(func.sum(ApiUsageLog.cost_usd), 0).label("cost_usd"),
-            func.count(distinct(ApiUsageLog.context_id))
-            .filter(ApiUsageLog.context_type == "question")
-            .label("questions"),
             func.max(ApiUsageLog.created_at).label("last_activity"),
         )
         .select_from(ApiUsageLog)
@@ -162,15 +164,46 @@ async def _usage_by_account(
         )
         .group_by(Organisation.account_id)
     )
-    rows = (await db.execute(stmt)).all()
-    return {
-        r.account_id: {
-            "cost_usd": float(r.cost_usd or 0.0),
-            "questions": int(r.questions or 0),
-            "last_activity": r.last_activity,
+    cost_rows = (await db.execute(cost_stmt)).all()
+    result: dict[Any, dict[str, Any]] = {
+        row.account_id: {
+            "cost_usd": float(row.cost_usd or 0.0),
+            "questions": 0,
+            "last_activity": row.last_activity,
         }
-        for r in rows
+        for row in cost_rows
     }
+
+    question_stmt = (
+        select(
+            Organisation.account_id.label("account_id"),
+            func.count(Message.id).label("questions"),
+            func.max(Message.created_at).label("last_activity"),
+        )
+        .select_from(Message)
+        .join(Conversation, Conversation.id == Message.conversation_id)
+        .join(Organisation, Organisation.id == Conversation.organisation_id)
+        .where(
+            Message.role == "assistant",
+            Message.created_at >= since,
+            Organisation.account_id.isnot(None),
+        )
+        .group_by(Organisation.account_id)
+    )
+    question_rows = (await db.execute(question_stmt)).all()
+    for row in question_rows:
+        current = result.setdefault(
+            row.account_id,
+            {"cost_usd": 0.0, "questions": 0, "last_activity": None},
+        )
+        current["questions"] = int(row.questions or 0)
+        if current["last_activity"] is None or (
+            row.last_activity is not None
+            and row.last_activity > current["last_activity"]
+        ):
+            current["last_activity"] = row.last_activity
+
+    return result
 
 
 async def _mrr_by_account(db: AsyncSession) -> dict[Any, int]:

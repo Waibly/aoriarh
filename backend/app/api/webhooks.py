@@ -1,7 +1,8 @@
 import logging
+import secrets
 from datetime import UTC, datetime, timedelta
 
-from fastapi import APIRouter, Depends, Query, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -49,8 +50,14 @@ async def brevo_webhook(
     # Authentification : si un secret est configuré, Brevo doit appeler l'URL
     # avec ?token=<secret>. Tout appel sans le bon token est rejeté (empêche un
     # tiers de forger des ouvertures ou de désinscrire des contacts).
-    if settings.brevo_webhook_secret and token != settings.brevo_webhook_secret:
-        return {"status": "ignored", "reason": "unauthorized"}
+    provided_secret = request.headers.get("x-aoria-webhook-secret") or token or ""
+    if not settings.brevo_webhook_secret or not secrets.compare_digest(
+        provided_secret, settings.brevo_webhook_secret
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Webhook non autorisé",
+        )
 
     try:
         payload = await request.json()
@@ -118,6 +125,11 @@ async def brevo_webhook(
                 .limit(1)
             )
         ).scalar_one_or_none()
+        if sent_at is not None and sent_at.tzinfo is None:
+            # SQLite (tests/local) restitue parfois les DateTime timezone=True
+            # sans tzinfo. Normaliser évite une erreur et garde le même calcul
+            # que PostgreSQL en production.
+            sent_at = sent_at.replace(tzinfo=UTC)
         if sent_at is not None and datetime.now(UTC) - sent_at < MACHINE_CLICK_WINDOW:
             event_type = "clicked_machine"
             logger.info(

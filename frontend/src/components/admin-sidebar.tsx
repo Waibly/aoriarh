@@ -96,13 +96,12 @@ export function AdminSidebar({
   const fullName = session?.user?.full_name ?? "Utilisateur";
   const staffRole = session?.user?.staff_role ?? null;
 
-  // Tech staff lead with Exploitation; everyone else leads with Pilotage.
   const orderedGroups =
     staffRole === "tech"
-      ? [...GROUPS].sort((a, b) =>
-          a.key === "exploitation" ? -1 : b.key === "exploitation" ? 1 : 0
-        )
-      : GROUPS;
+      ? GROUPS.filter((group) => group.key === "exploitation")
+      : staffRole === "business"
+        ? GROUPS.filter((group) => group.key !== "exploitation")
+        : GROUPS;
 
   return (
     <aside

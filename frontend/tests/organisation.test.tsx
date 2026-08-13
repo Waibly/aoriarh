@@ -1,5 +1,12 @@
 import { render, screen } from "@testing-library/react";
 
+jest.mock("next/navigation", () => ({
+  useRouter: () => ({
+    push: jest.fn(),
+    refresh: jest.fn(),
+  }),
+}));
+
 jest.mock("next-auth/react", () => ({
   useSession: () => ({
     data: {
@@ -25,9 +32,7 @@ jest.mock("@/lib/org-context", () => ({
     loading: false,
     refetchOrgs: jest.fn(),
   }),
-  OrgProvider: ({ children }: { children: React.ReactNode }) => (
-    <>{children}</>
-  ),
+  OrgProvider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
 }));
 
 jest.mock("@/lib/api", () => ({
@@ -39,9 +44,11 @@ import OrganisationPage from "@/app/(dashboard)/organisation/page";
 describe("OrganisationPage", () => {
   it("renders empty state when no org selected", () => {
     render(<OrganisationPage />);
-    expect(screen.getByText("Organisation")).toBeInTheDocument();
     expect(
-      screen.getByText(/Aucune organisation sélectionnée/)
+      screen.getByRole("heading", { name: "Organisations" })
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/Aucune organisation pour l'instant/)
     ).toBeInTheDocument();
   });
 });

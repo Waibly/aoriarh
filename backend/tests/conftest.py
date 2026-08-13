@@ -109,6 +109,15 @@ async def regular_user(client: AsyncClient) -> dict[str, str]:
         json={"email": "user@test.com", "password": "SecurePass123!", "full_name": "Regular User"},
     )
     token = res.json()["access_token"]
+    from sqlalchemy import update
+
+    from app.models.user import User
+
+    async with test_session_factory() as session:
+        await session.execute(
+            update(User).where(User.email == "user@test.com").values(role="user")
+        )
+        await session.commit()
     return {"email": "user@test.com", "token": token}
 
 
@@ -120,4 +129,13 @@ async def second_user(client: AsyncClient) -> dict[str, str]:
         json={"email": "user2@test.com", "password": "SecurePass123!", "full_name": "Second User"},
     )
     token = res.json()["access_token"]
+    from sqlalchemy import update
+
+    from app.models.user import User
+
+    async with test_session_factory() as session:
+        await session.execute(
+            update(User).where(User.email == "user2@test.com").values(role="user")
+        )
+        await session.commit()
     return {"email": "user2@test.com", "token": token}

@@ -4,6 +4,7 @@ from datetime import UTC, datetime, timedelta
 import pytest
 from fastapi import HTTPException
 
+from app.core.config import settings
 from app.models.emailing import (
     EmailCampaign,
     EmailCampaignEvent,
@@ -282,7 +283,7 @@ async def test_cron_respects_wave_schedule(monkeypatch):
 
     async def fake_send(to_email, to_name, subject, html_content, preview_text=None):
         sent_to.append(to_email)
-        return True
+        return "ok"
 
     monkeypatch.setattr(
         "app.services.emailing_service._send_via_brevo", fake_send
@@ -579,7 +580,7 @@ async def test_get_stats_excludes_machine_clicks():
 
 
 @pytest.mark.asyncio
-async def test_webhook_tags_fast_click_as_machine():
+async def test_webhook_tags_fast_click_as_machine(monkeypatch):
     """Un clic qui arrive juste après l'envoi est requalifié en clic machine ;
     un clic tardif reste un vrai clic."""
     from sqlalchemy import select
@@ -589,9 +590,12 @@ async def test_webhook_tags_fast_click_as_machine():
     class _FakeRequest:
         def __init__(self, payload):
             self._payload = payload
+            self.headers = {"x-aoria-webhook-secret": "test-webhook-secret"}
 
         async def json(self):
             return self._payload
+
+    monkeypatch.setattr(settings, "brevo_webhook_secret", "test-webhook-secret")
 
     async with test_session_factory() as session:
         tpl = EmailTemplate(name="T", subject="x", html_body="y")

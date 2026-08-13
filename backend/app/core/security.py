@@ -1,7 +1,8 @@
 from datetime import UTC, datetime, timedelta
 
 import bcrypt
-from jose import JWTError, jwt
+import jwt
+from jwt import InvalidTokenError
 
 from app.core.config import settings
 
@@ -16,11 +17,18 @@ def hash_password(password: str) -> str:
     return bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
 
 
-def create_access_token(subject: str, expires_delta: timedelta | None = None) -> str:
+def create_access_token(
+    subject: str,
+    expires_delta: timedelta | None = None,
+    *,
+    session_id: str | None = None,
+) -> str:
     expire = datetime.now(UTC) + (
         expires_delta or timedelta(minutes=settings.access_token_expire_minutes)
     )
     to_encode = {"sub": subject, "exp": expire, "type": "access"}
+    if session_id is not None:
+        to_encode["sid"] = session_id
     return jwt.encode(to_encode, settings.secret_key, algorithm=settings.algorithm)
 
 
@@ -33,12 +41,12 @@ def create_refresh_token(subject: str) -> str:
 def decode_access_token(token: str) -> dict:
     payload = jwt.decode(token, settings.secret_key, algorithms=[settings.algorithm])
     if payload.get("type") != "access":
-        raise JWTError("Invalid token type: expected 'access'")
+        raise InvalidTokenError("Invalid token type: expected 'access'")
     return payload
 
 
 def decode_refresh_token(token: str) -> dict:
     payload = jwt.decode(token, settings.secret_key, algorithms=[settings.algorithm])
     if payload.get("type") != "refresh":
-        raise JWTError("Invalid token type")
+        raise InvalidTokenError("Invalid token type")
     return payload

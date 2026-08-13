@@ -12,14 +12,14 @@ async def test_create_organisation_as_manager(
 ) -> None:
     response = await client.post(
         "/api/v1/organisations/",
-        json={"name": "Test Corp", "forme_juridique": "SAS", "taille": "11-50"},
+        json={"name": "Test Corp", "forme_juridique": "SAS", "taille": "11-19"},
         headers=auth_header(manager_user["token"]),
     )
     assert response.status_code == 201
     data = response.json()
     assert data["name"] == "Test Corp"
     assert data["forme_juridique"] == "SAS"
-    assert data["taille"] == "11-50"
+    assert data["taille"] == "11-19"
     assert "id" in data
 
 

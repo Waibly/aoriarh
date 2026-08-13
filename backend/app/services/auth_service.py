@@ -1,4 +1,5 @@
 import logging
+import uuid
 from datetime import UTC, datetime, timedelta
 
 from fastapi import HTTPException, status
@@ -8,8 +9,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.core.plans import TRIAL_DURATION_DAYS
 from app.core.security import (
-    create_access_token,
-    create_refresh_token,
     hash_password,
     verify_password,
 )
@@ -24,6 +23,7 @@ from app.schemas.auth import (
     TokenResponse,
 )
 from app.schemas.stripe_billing import BillingCycle, CommercialPlanCode
+from app.services.auth_session_service import create_auth_session
 from app.services.email.sender import is_test_email, send_email, sync_contact_to_brevo
 from app.services.email.templates import render_admin_new_signup_email
 from app.services.stripe_service import StripeService
@@ -97,10 +97,14 @@ def apply_attribution(user: User, attribution: SignupAttribution | None) -> None
     user.attributed_at = attribution.attributed_at or datetime.now(UTC)
 
 
-def _build_token_response(user_id: str, checkout_url: str | None = None) -> TokenResponse:
+async def _build_token_response(
+    db: AsyncSession, user_id: uuid.UUID, checkout_url: str | None = None
+) -> TokenResponse:
+    access_token, refresh_token = await create_auth_session(db, user_id)
+    await db.commit()
     return TokenResponse(
-        access_token=create_access_token(subject=user_id),
-        refresh_token=create_refresh_token(subject=user_id),
+        access_token=access_token,
+        refresh_token=refresh_token,
         expires_in=settings.access_token_expire_minutes * 60,
         checkout_url=checkout_url,
     )
@@ -127,7 +131,8 @@ class AuthService:
             return None
         if not StripeService.is_configured():
             logger.warning(
-                "Paid plan %s/%s requested at signup but Stripe is not configured — falling back to trial",
+                "Paid plan %s/%s requested at signup but Stripe is not configured "
+                "— falling back to trial",
                 requested_plan, requested_cycle,
             )
             return None
@@ -168,7 +173,7 @@ class AuthService:
             self.db.add(user)
             await self.db.commit()
             await self.db.refresh(user)
-            return _build_token_response(str(user.id))
+            return await _build_token_response(self.db, user.id)
 
         # Self-registration: create Account + role=manager
         user = User(
@@ -207,39 +212,88 @@ class AuthService:
             requested_plan=data.requested_plan,
             requested_cycle=data.requested_cycle,
         )
-        return _build_token_response(str(user.id), checkout_url=checkout_url)
+        return await _build_token_response(self.db, user.id, checkout_url=checkout_url)
 
     async def login(self, data: LoginRequest) -> TokenResponse | None:
         email = data.email.lower().strip()
         result = await self.db.execute(select(User).where(User.email == email))
         user = result.scalar_one_or_none()
-        if not user or not user.hashed_password or not verify_password(data.password, user.hashed_password):
+        if (
+            not user
+            or not user.hashed_password
+            or not verify_password(data.password, user.hashed_password)
+        ):
             return None
         if not user.is_active:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Compte désactivé",
             )
-        return _build_token_response(str(user.id))
+        return await _build_token_response(self.db, user.id)
 
     async def google_auth(self, data: GoogleAuthRequest) -> TokenResponse:
-        """Login or register a user via Google OAuth."""
-        email = data.email.lower().strip()
-        result = await self.db.execute(select(User).where(User.email == email))
-        user = result.scalar_one_or_none()
+        """Login/register only after server-side verification of Google's ID token."""
+        if not settings.google_client_id:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Connexion Google temporairement indisponible",
+            )
+
+        try:
+            import anyio
+            from google.auth.transport import requests as google_requests
+            from google.oauth2 import id_token as google_id_token
+
+            claims = await anyio.to_thread.run_sync(
+                lambda: google_id_token.verify_oauth2_token(
+                    data.id_token,
+                    google_requests.Request(),
+                    settings.google_client_id,
+                )
+            )
+        except Exception:
+            logger.warning("Rejected invalid Google ID token")
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Jeton Google invalide",
+            )
+
+        issuer = claims.get("iss")
+        if issuer not in {"accounts.google.com", "https://accounts.google.com"}:
+            raise HTTPException(status_code=401, detail="Émetteur Google invalide")
+        if claims.get("email_verified") is not True:
+            raise HTTPException(status_code=401, detail="Email Google non vérifié")
+
+        email = str(claims.get("email", "")).lower().strip()
+        google_sub = str(claims.get("sub", "")).strip()
+        full_name = str(claims.get("name") or email.split("@", 1)[0])[:255]
+        if not email or not google_sub:
+            raise HTTPException(status_code=401, detail="Identité Google incomplète")
+
+        by_sub = await self.db.execute(select(User).where(User.google_sub == google_sub))
+        user = by_sub.scalar_one_or_none()
+        if user is not None and user.email.lower() != email:
+            raise HTTPException(status_code=409, detail="Identité Google déjà liée")
+
+        if user is None:
+            result = await self.db.execute(select(User).where(User.email == email))
+            user = result.scalar_one_or_none()
 
         if user:
-            # Existing user — update provider if needed and return tokens
             if not user.is_active:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
                     detail="Compte désactivé",
                 )
-            if user.auth_provider == "credentials":
-                # Link Google to existing credentials account
-                user.auth_provider = "google"
-                await self.db.commit()
-            return _build_token_response(str(user.id))
+            if user.google_sub and user.google_sub != google_sub:
+                raise HTTPException(
+                    status_code=409,
+                    detail="Compte lié à une autre identité Google",
+                )
+            user.google_sub = google_sub
+            user.auth_provider = "google"
+            await self.db.commit()
+            return await _build_token_response(self.db, user.id)
 
         # Check if there's a pending invitation for this email
         inv_result = await self.db.execute(
@@ -255,22 +309,24 @@ class AuthService:
             user = User(
                 email=email,
                 hashed_password=None,
-                full_name=data.full_name,
+                full_name=full_name,
                 auth_provider="google",
+                google_sub=google_sub,
                 role="user",
             )
             apply_attribution(user, data.attribution)
             self.db.add(user)
             await self.db.commit()
             await self.db.refresh(user)
-            return _build_token_response(str(user.id))
+            return await _build_token_response(self.db, user.id)
 
         # Self-registration via Google — create Account + role=manager
         user = User(
             email=email,
             hashed_password=None,
-            full_name=data.full_name,
+            full_name=full_name,
             auth_provider="google",
+            google_sub=google_sub,
             role="manager",
         )
         apply_attribution(user, data.attribution)
@@ -303,4 +359,4 @@ class AuthService:
             requested_plan=data.requested_plan,
             requested_cycle=data.requested_cycle,
         )
-        return _build_token_response(str(user.id), checkout_url=checkout_url)
+        return await _build_token_response(self.db, user.id, checkout_url=checkout_url)

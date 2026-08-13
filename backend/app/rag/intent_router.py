@@ -6,8 +6,9 @@ sources, scope, fonctionnement interne) qui doivent être répondues par
 des templates Python — pas par le LLM principal.
 
 Avantages :
-- **Sécurité IP** : les questions sur le fonctionnement interne ne touchent
-  jamais le LLM, donc impossible de fuiter le pipeline / modèle / stack.
+- **Sécurité** : les demandes de secrets ou de prompts sont traitées par un
+  template déterministe, tandis que les questions légitimes de transparence
+  reçoivent une description de haut niveau cohérente avec la politique publiée.
 - **Latence** : économise condense + expand + Qdrant + reranker pour ~30%
   des requêtes (greetings, meta).
 - **Qualité** : pas d'hallucination sur "quelles CCN tu connais ?" — la
@@ -76,8 +77,6 @@ _PATTERNS_INTERNALS = [
     r"\b(comment|de quelle (façon|manière))\s+(tu|vous)\s+(es codé|fonctionne|fonctionnez|marche|marches|es construit|es entraîné|es développ)",
     r"\b(reveal|montre|affiche|donne|donne-moi|liste)\s+(ton|tes|votre|vos)\s+(prompt|system|instruction|outil|sources internes|architecture|secret)",
     r"\b(ignore|oublie|forget)\s+(les|tes|toutes les)\s+(consigne|instruction|précédent|précédente)",
-    # Mots-clés de fournisseurs / techno (catch-all même sans contexte)
-    r"\b(open\s*ai|chatgpt|gpt[- ]?\d|claude|anthropic|gemini|mistral|llama|qdrant|pinecone|weaviate|voyage|cohere|elasticsearch|llamaindex|langchain)\b",
     r"\bsystem\s*prompt\b",
     r"\bton\s+(prompt|système|architecture|infrastructure|hébergeur)\b",
 ]
@@ -91,6 +90,17 @@ _PATTERNS_SOURCES = [
     r"\b(à\s+quand|de\s+quand)\s+(date|datent)\s+(tes|vos|les)?\s*(sources|données|infos)?",
     r"\b(de\s+quand|à\s+quelle\s+date|quand)\s+(date|datent)",
     r"\bcorpus\s+(à jour|mis à jour|actualisé|récent)",
+]
+
+# Les demandes d'actualité doivent impérativement interroger le corpus : elles
+# ne demandent pas l'état technique des synchronisations. Cette règle évite
+# qu'une question comme « dernières actualités en droit social » reçoive une
+# simple date de mise à jour sans répondre au fond.
+_PATTERNS_LEGAL_NEWS = [
+    r"\b(dernières?|récentes?|nouvelles?)\s+(actualités?|évolutions?|nouveautés?)\b"
+    r"[^.?!]{0,80}\b(droit social|travail|rh|jurisprudence|sociale?)\b",
+    r"\b(actualités?|évolutions?|nouveautés?)\b[^.?!]{0,80}"
+    r"\b(droit social|travail|rh|jurisprudence|sociale?)\b",
 ]
 
 _PATTERNS_SCOPE = [
@@ -145,12 +155,13 @@ def _match_any(text: str, patterns: list[str]) -> bool:
 # valeur produit. Aucune ne révèle d'info technique.
 
 _ANSWER_INTERNALS = (
-    "Je m'appuie exclusivement sur les sources officielles du droit social "
-    "français (Code du travail, jurisprudence, conventions collectives) et "
-    "sur vos documents internes. Je cite chaque référence pour que vous "
-    "puissiez la vérifier.\n\n"
-    "Sur le reste, je préfère me concentrer sur votre question juridique RH "
-    "— qu'est-ce que je peux faire pour vous ?"
+    "AORIA RH utilise une recherche sémantique pour sélectionner les extraits "
+    "juridiques et documents auxquels votre compte est autorisé à accéder, "
+    "puis un modèle de langage fourni via l'API OpenAI pour rédiger la réponse. "
+    "Les fournisseurs et transferts applicables sont détaillés dans la politique "
+    "de confidentialité.\n\n"
+    "Je ne peux pas fournir les prompts système exacts, secrets, clés, journaux "
+    "privés ni configurations exploitables."
 )
 
 _ANSWER_CAPABILITIES = (
@@ -206,10 +217,10 @@ async def _answer_sources_status(db: AsyncSession) -> str:
         )
 
     return (
-        f"Mes sources juridiques sont à jour au **{last_sync.strftime('%d/%m/%Y')}**. "
-        "Le Code du travail, la jurisprudence et les conventions collectives "
-        "sont actualisés régulièrement. Chaque réponse cite la date de la "
-        "version utilisée si pertinent."
+        "La dernière synchronisation enregistrée comme réussie date du "
+        f"**{last_sync.strftime('%d/%m/%Y')}**. Cette date globale ne prouve pas "
+        "que chacune des sources a été mise à jour ce jour-là. Pour une question "
+        "juridique, vérifiez les références et dates citées dans la réponse."
     )
 
 
@@ -365,6 +376,9 @@ async def classify_intent(
 
     if _match_any(q, _PATTERNS_GREETING):
         return IntentResult(Intent.GREETING, _ANSWER_GREETING, via="prefilter")
+
+    if _match_any(q, _PATTERNS_LEGAL_NEWS):
+        return IntentResult(Intent.LEGAL_QUESTION, static_answer=None, via="prefilter")
 
     if _match_any(q, _PATTERNS_SOURCES):
         ans = await _answer_sources_status(db)

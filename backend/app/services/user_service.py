@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.security import hash_password, verify_password
 from app.models.account import Account
 from app.models.account_member import AccountMember
+from app.models.auth_session import AuthSession
 from app.models.audit_log import AuditLog
 from app.models.conversation import Conversation, Message
 from app.models.document import Document
@@ -15,6 +16,7 @@ from app.models.invitation import Invitation
 from app.models.membership import Membership
 from app.models.user import User
 from app.schemas.user import PasswordChange, UserUpdate
+from app.services.auth_session_service import revoke_all_user_sessions
 
 logger = logging.getLogger(__name__)
 
@@ -56,10 +58,14 @@ class UserService:
             )
 
         user.hashed_password = hash_password(data.new_password)
+        await revoke_all_user_sessions(self.db, user.id)
         await self.db.commit()
 
     async def delete_user_data(self, user_id: uuid.UUID) -> None:
         """Delete all data associated with a user. Preserves API cost logs (SET NULL)."""
+        # Revoke/delete authentication material before removing the identity.
+        await self.db.execute(delete(AuthSession).where(AuthSession.user_id == user_id))
+
         # 1. Detach documents (keep them, clear uploader reference)
         await self.db.execute(
             Document.__table__.update()

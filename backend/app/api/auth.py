@@ -1,31 +1,23 @@
 import logging
-import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
-
-logger = logging.getLogger(__name__)
-from jose import JWTError
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.database import get_db
-from app.core.security import (
-    create_access_token,
-    create_refresh_token,
-    decode_refresh_token,
-)
 from app.core.limiter import limiter
-from app.models.user import User
 from app.schemas.auth import (
     GoogleAuthRequest,
     LoginRequest,
+    LogoutRequest,
     RefreshRequest,
     RegisterRequest,
     TokenResponse,
 )
 from app.services.auth_service import AuthService
+from app.services.auth_session_service import revoke_auth_session, rotate_auth_session
 
+logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
@@ -48,7 +40,10 @@ async def login(
     if not token:
         client_ip = request.client.host if request.client else "unknown"
         logger.warning("Login failed for %s from %s", data.email, client_ip)
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Email ou mot de passe incorrect")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Email ou mot de passe incorrect",
+        )
     return token
 
 
@@ -66,26 +61,27 @@ async def google_auth(
 async def refresh(
     request: Request, data: RefreshRequest, db: AsyncSession = Depends(get_db)
 ) -> TokenResponse:
-    try:
-        payload = decode_refresh_token(data.refresh_token)
-    except JWTError:
-        logger.warning("Refresh token failed from %s", request.client.host if request.client else "unknown")
+    rotated = await rotate_auth_session(db, data.refresh_token)
+    if rotated is None:
+        logger.warning(
+            "Refresh token rejected from %s",
+            request.client.host if request.client else "unknown",
+        )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Session expirée, veuillez vous reconnecter",
         )
-
-    user_id = payload.get("sub")
-    if not user_id:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token invalide")
-
-    result = await db.execute(select(User).where(User.id == uuid.UUID(user_id)))
-    user = result.scalar_one_or_none()
-    if not user or not user.is_active:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Utilisateur inactif")
-
+    _old_session, access_token, refresh_token = rotated
     return TokenResponse(
-        access_token=create_access_token(subject=str(user.id)),
-        refresh_token=create_refresh_token(subject=str(user.id)),
+        access_token=access_token,
+        refresh_token=refresh_token,
         expires_in=settings.access_token_expire_minutes * 60,
     )
+
+
+@router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
+@limiter.limit("20/minute")
+async def logout(
+    request: Request, data: LogoutRequest, db: AsyncSession = Depends(get_db)
+) -> None:
+    await revoke_auth_session(db, data.refresh_token)

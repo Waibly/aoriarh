@@ -17,6 +17,9 @@ class User(TimestampMixin, Base):
     role: Mapped[str] = mapped_column(String(20), nullable=False, default="user")
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     auth_provider: Mapped[str] = mapped_column(String(20), nullable=False, default="credentials", server_default="credentials")
+    google_sub: Mapped[str | None] = mapped_column(
+        String(255), unique=True, index=True, nullable=True
+    )
     profil_metier: Mapped[str | None] = mapped_column(String(30), nullable=True)
     # Internal back-office staff segmentation: "business" | "tech" | None.
     # None = sees everything and lands on the business cockpit. Only meaningful

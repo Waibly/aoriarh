@@ -47,7 +47,9 @@ const CYCLE_LABEL: Record<BillingCycle, string> = {
 function readCookie(name: string): string | null {
   if (typeof document === "undefined") return null;
   const match = document.cookie.match(
-    new RegExp("(?:^|; )" + name.replace(/[.$?*|{}()[\]\\/+^]/g, "\\$&") + "=([^;]*)"),
+    new RegExp(
+      "(?:^|; )" + name.replace(/[.$?*|{}()[\]\\/+^]/g, "\\$&") + "=([^;]*)"
+    )
   );
   return match ? decodeURIComponent(match[1]) : null;
 }
@@ -79,8 +81,7 @@ function RegisterForm() {
   // no organisation yet. We only show the org step — no account creation, no
   // Google button. Triggered by /post-signup after the OAuth round-trip.
   const isOnboardingOnly =
-    searchParams.get("onboard") === "1" &&
-    session.status === "authenticated";
+    searchParams.get("onboard") === "1" && session.status === "authenticated";
 
   const rawPlan = searchParams.get("plan");
   const rawCycle = searchParams.get("cycle");
@@ -127,9 +128,8 @@ function RegisterForm() {
   const [profilMetier, setProfilMetier] = useState("");
 
   // --- Step 2 : Organisation ---
-  const [orgValues, setOrgValues] = useState<OrgFormFieldsValues>(
-    emptyOrgFormFields(),
-  );
+  const [orgValues, setOrgValues] =
+    useState<OrgFormFieldsValues>(emptyOrgFormFields());
 
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -147,8 +147,20 @@ function RegisterForm() {
 
   function validateStep1(): boolean {
     setError(null);
-    if (password.length < 8) {
-      setError("Le mot de passe doit contenir au moins 8 caractères");
+    if (password.length < 12) {
+      setError("Le mot de passe doit contenir au moins 12 caractères");
+      return false;
+    }
+    if (!/[A-Z]/.test(password)) {
+      setError("Le mot de passe doit contenir au moins une majuscule");
+      return false;
+    }
+    if (!/\d/.test(password)) {
+      setError("Le mot de passe doit contenir au moins un chiffre");
+      return false;
+    }
+    if (!/[^A-Za-z0-9]/.test(password)) {
+      setError("Le mot de passe doit contenir au moins un caractère spécial");
       return false;
     }
     if (password !== confirmPassword) {
@@ -220,7 +232,7 @@ function RegisterForm() {
 
       if (!orgRes.ok) {
         setError(
-          "Impossible de créer votre organisation. Vérifiez vos informations puis réessayez.",
+          "Impossible de créer votre organisation. Vérifiez vos informations puis réessayez."
         );
         return;
       }
@@ -244,12 +256,15 @@ function RegisterForm() {
       if (planInviteToken) {
         clearCookie("aoria_plan_invite_token");
         try {
-          await fetch(`${API_BASE_URL}/plan-invitations/${planInviteToken}/redeem`, {
-            method: "POST",
-            headers: {
-              Authorization: `Bearer ${token}`,
-            },
-          });
+          await fetch(
+            `${API_BASE_URL}/plan-invitations/${planInviteToken}/redeem`,
+            {
+              method: "POST",
+              headers: {
+                Authorization: `Bearer ${token}`,
+              },
+            }
+          );
         } catch {
           // Non-blocking
         }
@@ -407,7 +422,7 @@ function RegisterForm() {
                       Authorization: `Bearer ${accessToken}`,
                     },
                     body: JSON.stringify({ idcc: c.idcc }),
-                  },
+                  }
                 );
                 if (!r.ok) {
                   const data = await r.json().catch(() => null);
@@ -419,7 +434,7 @@ function RegisterForm() {
                 }
               } catch (err) {
                 ccnInstallErrors.push(
-                  `IDCC ${c.idcc} : ${err instanceof Error ? err.message : "erreur réseau"}`,
+                  `IDCC ${c.idcc} : ${err instanceof Error ? err.message : "erreur réseau"}`
                 );
               }
             }
@@ -439,7 +454,7 @@ function RegisterForm() {
         router.push(
           callbackUrl
             ? `/login?callbackUrl=${encodeURIComponent(callbackUrl)}`
-            : "/login",
+            : "/login"
         );
         return;
       }
@@ -454,10 +469,13 @@ function RegisterForm() {
       if (planInviteToken && accessToken) {
         clearCookie("aoria_plan_invite_token");
         try {
-          await fetch(`${API_BASE_URL}/plan-invitations/${planInviteToken}/redeem`, {
-            method: "POST",
-            headers: { Authorization: `Bearer ${accessToken}` },
-          });
+          await fetch(
+            `${API_BASE_URL}/plan-invitations/${planInviteToken}/redeem`,
+            {
+              method: "POST",
+              headers: { Authorization: `Bearer ${accessToken}` },
+            }
+          );
         } catch {
           // Non-blocking — user can redeem later via the link
         }
@@ -487,15 +505,15 @@ function RegisterForm() {
     return (
       <>
         <div className="flex flex-col items-center gap-2 text-center">
-          <div className="rounded-full bg-primary/10 p-2.5">
-            <Building2 className="h-5 w-5 text-primary" />
+          <div className="bg-primary/10 rounded-full p-2.5">
+            <Building2 className="text-primary h-5 w-5" />
           </div>
           <h1 className="text-2xl font-semibold tracking-tight">
             Votre organisation
           </h1>
           <p className="text-muted-foreground text-sm">
-            Pour personnaliser vos réponses juridiques, dites-nous quelques
-            mots sur votre organisation.
+            Pour personnaliser vos réponses juridiques, dites-nous quelques mots
+            sur votre organisation.
           </p>
         </div>
 
@@ -541,9 +559,7 @@ function RegisterForm() {
           <Button
             type="submit"
             disabled={
-              !isOrgFormFieldsValid(orgValues) ||
-              !profilMetier ||
-              isLoading
+              !isOrgFormFieldsValid(orgValues) || !profilMetier || isLoading
             }
           >
             {isLoading ? "Création en cours..." : "Continuer"}
@@ -570,16 +586,21 @@ function RegisterForm() {
         </p>
       </div>
 
-      {!isInvitation && hasPaidPlanRequested && requestedPlan && requestedCycle && (
-        <div className="bg-primary/5 border border-primary/20 text-primary rounded-md px-4 py-3 text-sm">
-          <p className="font-medium">
-            Vous souscrivez à l&apos;offre {PLAN_LABEL[requestedPlan]} ({CYCLE_LABEL[requestedCycle]})
-          </p>
-          <p className="text-primary/80 text-xs mt-1">
-            Le paiement par carte sera demandé après la création de votre compte.
-          </p>
-        </div>
-      )}
+      {!isInvitation &&
+        hasPaidPlanRequested &&
+        requestedPlan &&
+        requestedCycle && (
+          <div className="bg-primary/5 border-primary/20 text-primary rounded-md border px-4 py-3 text-sm">
+            <p className="font-medium">
+              Vous souscrivez à l&apos;offre {PLAN_LABEL[requestedPlan]} (
+              {CYCLE_LABEL[requestedCycle]})
+            </p>
+            <p className="text-primary/80 mt-1 text-xs">
+              Le paiement par carte sera demandé après la création de votre
+              compte.
+            </p>
+          </div>
+        )}
 
       {totalSteps > 1 && (
         <div className="flex items-center justify-center gap-2 py-2">
@@ -589,7 +610,7 @@ function RegisterForm() {
             icon={<User className="h-3.5 w-3.5" />}
             label="Vous"
           />
-          <div className="h-px w-6 bg-border shrink-0" />
+          <div className="bg-border h-px w-6 shrink-0" />
           <StepBadge
             step={2}
             current={step}
@@ -655,11 +676,11 @@ function RegisterForm() {
                 </Label>
                 <PasswordInput
                   id="password"
-                  placeholder="8 caractères minimum"
+                  placeholder="12 caractères, majuscule, chiffre et symbole"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   required
-                  minLength={8}
+                  minLength={12}
                 />
               </div>
               <div className="grid gap-2">
@@ -692,7 +713,7 @@ function RegisterForm() {
                     ))}
                   </SelectContent>
                 </Select>
-                <p className="text-xs text-muted-foreground">
+                <p className="text-muted-foreground text-xs">
                   Permet d&apos;adapter les réponses à votre perspective métier.
                 </p>
               </div>
@@ -830,7 +851,7 @@ function StepBadge({
 
   return (
     <div
-      className={`flex items-center gap-1.5 rounded-full px-2 sm:px-3 py-1.5 text-xs font-semibold transition-all ${
+      className={`flex items-center gap-1.5 rounded-full px-2 py-1.5 text-xs font-semibold transition-all sm:px-3 ${
         isActive || isDone
           ? "bg-primary/10 text-primary"
           : "bg-muted text-muted-foreground"

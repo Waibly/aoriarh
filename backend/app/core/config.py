@@ -5,6 +5,9 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
+    # Runtime
+    app_env: str = "development"
+
     # PostgreSQL
     postgres_host: str = "localhost"
     postgres_port: int = 5432
@@ -53,6 +56,7 @@ class Settings(BaseSettings):
     access_token_expire_minutes: int = 30
     refresh_token_expire_days: int = 3
     algorithm: str = "HS256"
+    google_client_id: str = ""
 
     # Brevo (email + contacts)
     brevo_api_key: str  # OBLIGATOIRE — pas de défaut
@@ -173,6 +177,13 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def validate_admin_seed(self) -> "Settings":
+        if self.app_env.lower() in {"production", "prod"}:
+            if not self.brevo_webhook_secret:
+                raise ValueError("BREVO_WEBHOOK_SECRET est obligatoire en production")
+            if self.demo_enabled and not self.turnstile_secret:
+                raise ValueError(
+                    "TURNSTILE_SECRET est obligatoire quand la démo est active en production"
+                )
         if not self.seed_admin:
             return self
         if not self.admin_password or self.admin_password in ("admin123", "password", "changeme"):
@@ -186,6 +197,10 @@ class Settings(BaseSettings):
         if not self.admin_email:
             raise ValueError("SEED_ADMIN=true mais ADMIN_EMAIL non défini")
         return self
+
+    @property
+    def is_production(self) -> bool:
+        return self.app_env.lower() in {"production", "prod"}
 
     @property
     def database_url(self) -> str:

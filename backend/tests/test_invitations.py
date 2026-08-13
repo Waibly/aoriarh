@@ -16,10 +16,29 @@ async def create_org(client: AsyncClient, token: str) -> str:
     """Create an org and return its id."""
     res = await client.post(
         "/api/v1/organisations/",
-        json={"name": "Test Corp", "forme_juridique": "SAS", "taille": "11-50"},
+        json={"name": "Test Corp", "forme_juridique": "SAS", "taille": "11-19"},
         headers=auth_header(token),
     )
     assert res.status_code == 201
+    # Les invitations ne sont pas incluses dans l'essai gratuit (1 utilisateur).
+    # Cette suite porte sur le workflow d'invitation, donc elle utilise le plan
+    # technique « invite » qui autorise plusieurs utilisateurs.
+    from sqlalchemy import select
+
+    from app.models.account import Account
+    from app.models.user import User
+
+    async with test_session_factory() as session:
+        account = (
+            await session.execute(
+                select(Account)
+                .join(User, Account.owner_id == User.id)
+                .where(User.email == "manager@test.com")
+            )
+        ).scalar_one()
+        account.plan = "invite"
+        account.status = "active"
+        await session.commit()
     return res.json()["id"]
 
 

@@ -10,7 +10,6 @@ const nextConfig: NextConfig = {
       headers: [
         { key: "X-Content-Type-Options", value: "nosniff" },
         { key: "X-Frame-Options", value: "DENY" },
-        { key: "X-XSS-Protection", value: "1; mode=block" },
         { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
         {
           key: "Content-Security-Policy",
@@ -19,9 +18,9 @@ const nextConfig: NextConfig = {
             // challenges.cloudflare.com : widget Turnstile de la démo publique (/demo).
             // googletagmanager.com : gtag.js (GA4 + Google Ads), chargé uniquement
             // après consentement (bandeau du site vitrine, cookie .aoriarh.fr).
-            "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://challenges.cloudflare.com https://www.googletagmanager.com",
+            "script-src 'self' 'unsafe-inline' https://challenges.cloudflare.com https://www.googletagmanager.com",
             "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
-            "img-src 'self' data: https:",
+            "img-src 'self' data:",
             "font-src 'self' data: https://fonts.gstatic.com",
             "connect-src 'self' " + new URL(process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000").origin + " https://api.stripe.com https://challenges.cloudflare.com https://www.googletagmanager.com https://*.google-analytics.com https://*.analytics.google.com https://stats.g.doubleclick.net https://www.google.com https://www.google.fr https://googleads.g.doubleclick.net",
             "frame-src https://js.stripe.com https://challenges.cloudflare.com https://td.doubleclick.net https://www.googletagmanager.com",

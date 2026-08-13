@@ -1,7 +1,12 @@
 import hashlib
 import logging
+import re
+import unicodedata
 import uuid
+import zipfile
 from datetime import date
+from io import BytesIO
+from pathlib import PurePath
 
 from fastapi import HTTPException, UploadFile, status
 from qdrant_client.models import FieldCondition, Filter, FilterSelector, MatchValue
@@ -25,6 +30,88 @@ MAX_FILE_SIZE = 10 * 1024 * 1024  # 10 Mo
 MAX_FILE_SIZE_ADMIN = 20 * 1024 * 1024  # 20 Mo
 
 storage = StorageService()
+
+_MAX_ARCHIVE_UNCOMPRESSED = 100 * 1024 * 1024
+_MAX_ARCHIVE_RATIO = 100
+_MAX_PDF_PAGES = 2_000
+
+
+def _safe_storage_filename(filename: str | None, file_format: str) -> str:
+    raw_name = PurePath(filename or f"document.{file_format}").name
+    normalized = unicodedata.normalize("NFKC", raw_name)
+    safe = re.sub(r"[^A-Za-z0-9._-]+", "_", normalized).strip("._")
+    return (safe[:180] or f"document.{file_format}")
+
+
+def _invalid_file(detail: str) -> HTTPException:
+    return HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=detail)
+
+
+def _validate_file_bytes(contents: bytes, file_format: str) -> None:
+    if not contents:
+        raise _invalid_file("Le fichier est vide")
+
+    if file_format == "pdf":
+        if not contents.startswith(b"%PDF-"):
+            raise _invalid_file("Le contenu du fichier ne correspond pas à un PDF")
+        try:
+            import pymupdf
+
+            with pymupdf.open(stream=contents, filetype="pdf") as document:
+                if document.needs_pass:
+                    raise _invalid_file("Les PDF protégés par mot de passe ne sont pas acceptés")
+                if document.page_count == 0 or document.page_count > _MAX_PDF_PAGES:
+                    raise _invalid_file("Nombre de pages PDF invalide ou excessif")
+        except HTTPException:
+            raise
+        except Exception as exc:
+            raise _invalid_file("Le PDF est invalide ou endommagé") from exc
+        return
+
+    if file_format == "docx":
+        if not contents.startswith(b"PK"):
+            raise _invalid_file("Le contenu du fichier ne correspond pas à un document Word")
+        try:
+            with zipfile.ZipFile(BytesIO(contents)) as archive:
+                infos = archive.infolist()
+                names = {info.filename for info in infos}
+                if "word/document.xml" not in names:
+                    raise _invalid_file("Le document Word est incomplet")
+                if any(
+                    name.lower().endswith("vbaproject.bin") or "embeddings/" in name.lower()
+                    for name in names
+                ):
+                    raise _invalid_file("Les macros et objets embarqués ne sont pas acceptés")
+                total_uncompressed = sum(info.file_size for info in infos)
+                total_compressed = max(1, sum(info.compress_size for info in infos))
+                if (
+                    total_uncompressed > _MAX_ARCHIVE_UNCOMPRESSED
+                    or total_uncompressed / total_compressed > _MAX_ARCHIVE_RATIO
+                ):
+                    raise _invalid_file("Archive Word anormalement compressée")
+                for name in names:
+                    if name.endswith(".rels"):
+                        rels = archive.read(name).lower()
+                        if b'targetmode="external"' in rels:
+                            raise _invalid_file(
+                                "Les liens externes intégrés au document sont interdits"
+                            )
+                bad_member = archive.testzip()
+                if bad_member is not None:
+                    raise _invalid_file("Le document Word est endommagé")
+        except HTTPException:
+            raise
+        except (zipfile.BadZipFile, RuntimeError) as exc:
+            raise _invalid_file("Le document Word est invalide ou endommagé") from exc
+        return
+
+    if file_format == "txt":
+        if b"\x00" in contents:
+            raise _invalid_file("Le fichier texte contient des données binaires")
+        try:
+            contents.decode("utf-8")
+        except UnicodeDecodeError as exc:
+            raise _invalid_file("Le fichier texte doit être encodé en UTF-8") from exc
 
 
 class DocumentService:
@@ -97,6 +184,7 @@ class DocumentService:
                 detail=f"Fichier trop volumineux ({file_size / (1024 * 1024):.1f} Mo). "
                 f"Taille maximale : {max_file_size // (1024 * 1024)} Mo",
             )
+        _validate_file_bytes(contents, file_format)
 
         # Reject scanned PDFs (image-only, no text layer) — they cannot be
         # ingested reliably and would degrade RAG quality.
@@ -121,7 +209,8 @@ class DocumentService:
         await file.seek(0)
         file_id = uuid.uuid4()
         prefix = str(org_id) if org_id else "common"
-        path = f"{prefix}/{file_id}_{file.filename}"
+        safe_filename = _safe_storage_filename(file.filename, file_format)
+        path = f"{prefix}/{file_id}_{safe_filename}"
         await storage.upload_file(file, path)
 
         # Create DB record
@@ -306,6 +395,7 @@ class DocumentService:
                 detail=f"Fichier trop volumineux ({file_size / (1024 * 1024):.1f} Mo). "
                 f"Taille maximale : {max_file_size // (1024 * 1024)} Mo",
             )
+        _validate_file_bytes(contents, file_format)
 
         # Reject scanned PDFs (same rule as create_document)
         if file_format == "pdf":
@@ -337,7 +427,8 @@ class DocumentService:
         await file.seek(0)
         file_id = uuid.uuid4()
         prefix = str(org_id) if org_id else "common"
-        new_path = f"{prefix}/{file_id}_{file.filename}"
+        safe_filename = _safe_storage_filename(file.filename, file_format)
+        new_path = f"{prefix}/{file_id}_{safe_filename}"
         await storage.upload_file(file, new_path)
 
         # Update DB record (same document ID)

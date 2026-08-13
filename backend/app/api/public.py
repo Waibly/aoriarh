@@ -24,10 +24,11 @@ Trois garde-fous anti-abus / anti-coût :
 import asyncio
 import dataclasses
 import hashlib
+import ipaddress
 import logging
 import time
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from decimal import Decimal
 
 import httpx
@@ -46,15 +47,15 @@ from app.api.conversations import (
     _stream_with_idle_guard,
 )
 from app.core.config import settings
-from app.core.database import async_session_factory, get_db
+from app.core.database import async_session_factory
 from app.models.api_usage import ApiUsageLog
 from app.models.conversation import Conversation
 from app.models.organisation import Organisation
 from app.models.user import User
 from app.rag.agent import (
-    RAGAgent,
     _OUT_OF_SCOPE_ANSWER,
     _OUT_OF_SCOPE_MARKER,
+    RAGAgent,
 )
 from app.rag.config import (
     RAG_SLOW_NOTICE,
@@ -86,12 +87,21 @@ def _client_ip(request: Request) -> str:
     `request.client.host` = IP interne de Caddy (réseau Docker). Caddy renseigne
     l'IP d'origine dans X-Forwarded-For (le 1er maillon est le client réel).
     """
-    xff = request.headers.get("x-forwarded-for")
-    if xff:
-        first = xff.split(",")[0].strip()
-        if first:
-            return first
-    return get_remote_address(request)
+    peer = get_remote_address(request)
+    try:
+        peer_ip = ipaddress.ip_address(peer)
+        trusted_proxy = peer_ip.is_loopback or peer_ip.is_private
+    except ValueError:
+        trusted_proxy = False
+    if trusted_proxy:
+        xff = request.headers.get("x-forwarded-for")
+        if xff:
+            for candidate in reversed([part.strip() for part in xff.split(",")]):
+                try:
+                    return str(ipaddress.ip_address(candidate))
+                except ValueError:
+                    continue
+    return peer
 
 
 async def _demo_rate_limit_ok(request: Request) -> bool:
@@ -101,7 +111,7 @@ async def _demo_rate_limit_ok(request: Request) -> bool:
     try:
         ip = _client_ip(request)
         h = hashlib.sha256(ip.encode("utf-8")).hexdigest()[:16]  # IP hashée (RGPD)
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         minute = now.strftime("%Y%m%d%H%M")
         day = now.strftime("%Y%m%d")
         k_ip_min = f"demo:rl:ipmin:{minute}:{h}"
@@ -110,9 +120,12 @@ async def _demo_rate_limit_ok(request: Request) -> bool:
 
         r = _get_redis()
         pipe = r.pipeline()
-        pipe.incr(k_ip_min); pipe.expire(k_ip_min, 120)
-        pipe.incr(k_ip_day); pipe.expire(k_ip_day, 90_000)
-        pipe.incr(k_glob_min); pipe.expire(k_glob_min, 120)
+        pipe.incr(k_ip_min)
+        pipe.expire(k_ip_min, 120)
+        pipe.incr(k_ip_day)
+        pipe.expire(k_ip_day, 90_000)
+        pipe.incr(k_glob_min)
+        pipe.expire(k_glob_min, 120)
         ip_min, _, ip_day, _, glob_min, _ = await pipe.execute()
 
         if int(ip_min) > settings.demo_max_questions_per_ip_per_minute:
@@ -123,8 +136,8 @@ async def _demo_rate_limit_ok(request: Request) -> bool:
             return False
         return True
     except Exception:
-        logger.warning("Démo: rate-limit Redis indisponible — fail-open")
-        return True
+        logger.warning("Démo: rate-limit Redis indisponible")
+        return not settings.is_production
 
 # CTA affiché en fin de réponse pour pousser à l'inscription. Neutre côté
 # contenu (pas de superlatif), cohérent avec le ton du site.
@@ -139,11 +152,11 @@ _demo_ids: dict[str, uuid.UUID] = {}
 
 
 class PublicAskRequest(BaseModel):
+    model_config = {"extra": "forbid"}
+
     message: str = Field(..., min_length=1)
     # Jeton Turnstile (ignoré si la vérification est désactivée côté serveur).
     turnstile_token: str | None = None
-    # Permet les relances dans la même conversation démo (sinon nouvelle convo).
-    conversation_id: uuid.UUID | None = None
 
 
 async def _resolve_demo_ids(db: AsyncSession) -> tuple[uuid.UUID, uuid.UUID]:
@@ -179,7 +192,7 @@ async def _demo_spend_today_usd(db: AsyncSession, demo_org_id: uuid.UUID) -> Dec
     organisation_id = org démo, donc cette somme capture le coût total de la
     démo pour la journée.
     """
-    today_start = datetime.now(timezone.utc).replace(
+    today_start = datetime.now(UTC).replace(
         hour=0, minute=0, second=0, microsecond=0
     )
     total = (await db.execute(
@@ -283,25 +296,16 @@ async def public_ask(
             service = ConversationService(db)
             agent = RAGAgent()
 
-            # 3a. Conversation démo : réutilise celle passée si elle appartient
-            # bien à l'org démo (relances), sinon en crée une neuve.
-            conversation = None
-            if data.conversation_id is not None:
-                conversation = (await db.execute(
-                    select(Conversation).where(
-                        Conversation.id == data.conversation_id,
-                        Conversation.organisation_id == demo_org_id,
-                    )
-                )).scalar_one_or_none()
-            if conversation is None:
-                conversation = Conversation(
-                    organisation_id=demo_org_id,
-                    user_id=demo_user_id,
-                    title=message[:100].strip() or None,
-                )
-                db.add(conversation)
-                await db.commit()
-                await db.refresh(conversation)
+            # Une conversation neuve par requête empêche un visiteur de reprendre
+            # le contexte d'un autre visiteur à partir d'un UUID divulgué.
+            conversation = Conversation(
+                organisation_id=demo_org_id,
+                user_id=demo_user_id,
+                title=message[:100].strip() or None,
+            )
+            db.add(conversation)
+            await db.commit()
+            await db.refresh(conversation)
 
             # Contexte org démo (sans CCN → corpus commun uniquement). On retire
             # le NOM de l'org : sinon le prompt de génération écrit « chez <Nom> »

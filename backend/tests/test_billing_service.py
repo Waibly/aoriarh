@@ -13,7 +13,7 @@ import pytest
 from httpx import AsyncClient
 from sqlalchemy import update
 
-from app.core.plans import LIMITS_SOLO, LIMITS_EQUIPE
+from app.core.plans import LIMITS_GRATUIT, LIMITS_INVITE, LIMITS_SOLO
 from app.models.account import Account
 from app.models.account_member import AccountMember
 from app.models.booster_purchase import BoosterPurchase
@@ -206,7 +206,7 @@ async def test_check_organisation_limit_solo_blocks_second(
         headers=auth_header(manager_user["token"]),
     )
     assert res2.status_code == 403
-    assert "Limite d'organisations" in res2.json()["detail"]
+    assert "organisation maximum" in res2.json()["detail"]
 
 
 @pytest.mark.asyncio
@@ -234,8 +234,8 @@ async def test_admin_bypasses_organisation_limit(
 async def test_assign_plan_rejects_downgrade_with_too_many_orgs(
     client: AsyncClient, manager_user: dict[str, str]
 ) -> None:
-    """On Équipe we create 3 orgs then try to downgrade to Solo (max 1)."""
-    await _force_plan(manager_user["email"], "equipe")
+    """On Invite we create 3 orgs then try to downgrade to Gratuit (max 1)."""
+    await _force_plan(manager_user["email"], "invite")
 
     for i in range(3):
         await client.post(
@@ -247,7 +247,7 @@ async def test_assign_plan_rejects_downgrade_with_too_many_orgs(
     account = await _get_account_for_email(manager_user["email"])
     async with test_session_factory() as session:
         with pytest.raises(PlanOverflowError) as exc_info:
-            await assign_plan(session, account.id, "solo")
+            await assign_plan(session, account.id, "gratuit")
         reasons = exc_info.value.reasons
         assert any("organisations" in r for r in reasons)
 
@@ -257,18 +257,21 @@ async def test_assign_plan_recalculates_quota_on_upgrade(
     client: AsyncClient, manager_user: dict[str, str]
 ) -> None:
     """Upgrading mid-period must bump the current MonthlyQuestionUsage quota."""
-    await _force_plan(manager_user["email"], "solo")
+    # Use admin-assignable technical plans here. Commercial plans must go
+    # through Stripe and are covered by the Stripe service tests.
+    await _force_plan(manager_user["email"], "gratuit")
     account = await _get_account_for_email(manager_user["email"])
 
     async with test_session_factory() as session:
         billing = BillingService(session)
         usage = await billing.get_or_create_usage(account)
-        assert usage.quota_for_period == LIMITS_SOLO.questions_per_month
+        assert usage.quota_for_period == LIMITS_GRATUIT.questions_per_month
+        await session.commit()
 
     async with test_session_factory() as session:
-        await assign_plan(session, account.id, "equipe")
+        await assign_plan(session, account.id, "invite")
 
     async with test_session_factory() as session:
         billing = BillingService(session)
         usage = await billing.get_or_create_usage(account)
-        assert usage.quota_for_period == LIMITS_EQUIPE.questions_per_month
+        assert usage.quota_for_period == LIMITS_INVITE.questions_per_month

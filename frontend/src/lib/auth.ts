@@ -43,45 +43,52 @@ declare module "@auth/core/jwt" {
   }
 }
 
+// Plusieurs requêtes Next.js peuvent constater simultanément l'expiration du
+// même access token. Sans déduplication, elles réutiliseraient toutes le même
+// refresh token à usage unique et la protection anti-rejeu révoquerait la
+// session entière. Le cache ne vit que dans le processus et quelques secondes.
+const refreshInFlight = new Map<string, Promise<Record<string, unknown>>>();
+
 async function refreshAccessToken(token: {
   refresh_token: string;
   [key: string]: unknown;
 }) {
-  try {
-    const res = await fetch(`${API_BASE_URL}/auth/refresh`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ refresh_token: token.refresh_token }),
-    });
+  const existing = refreshInFlight.get(token.refresh_token);
+  if (existing) return existing;
 
-    if (!res.ok) throw new Error("Refresh failed");
+  const refreshPromise = (async (): Promise<Record<string, unknown>> => {
+    try {
+      const res = await fetch(`${API_BASE_URL}/auth/refresh`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ refresh_token: token.refresh_token }),
+      });
 
-    const data = await res.json();
+      if (!res.ok) throw new Error("Refresh failed");
 
-    return {
-      ...token,
-      access_token: data.access_token as string,
-      refresh_token: data.refresh_token as string,
-      expires_at: Math.floor(Date.now() / 1000) + (data.expires_in as number),
-    };
-  } catch {
-    return { ...token, error: "RefreshTokenExpired" };
-  }
+      const data = await res.json();
+
+      return {
+        ...token,
+        access_token: data.access_token as string,
+        refresh_token: data.refresh_token as string,
+        expires_at: Math.floor(Date.now() / 1000) + (data.expires_in as number),
+      };
+    } catch {
+      return { ...token, error: "RefreshTokenExpired" };
+    }
+  })();
+
+  refreshInFlight.set(token.refresh_token, refreshPromise);
+  setTimeout(() => refreshInFlight.delete(token.refresh_token), 5_000);
+  return refreshPromise;
 }
 
-async function getBackendTokensForGoogle(profile: {
-  email: string;
-  name: string;
-  sub: string;
-}) {
+async function getBackendTokensForGoogle(idToken: string) {
   const res = await fetch(`${API_BASE_URL}/auth/google`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      email: profile.email,
-      full_name: profile.name,
-      google_sub: profile.sub,
-    }),
+    body: JSON.stringify({ id_token: idToken }),
   });
 
   if (!res.ok) return null;
@@ -183,16 +190,9 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
 
       // Initial sign-in via Google
       if (account?.provider === "google" && profile) {
-        const googleProfile = profile as {
-          email: string;
-          name: string;
-          sub: string;
-        };
-        const backendTokens = await getBackendTokensForGoogle({
-          email: googleProfile.email ?? "",
-          name: googleProfile.name ?? "",
-          sub: googleProfile.sub ?? "",
-        });
+        const backendTokens = account.id_token
+          ? await getBackendTokensForGoogle(account.id_token)
+          : null;
 
         if (!backendTokens) {
           return { ...token, error: "GoogleAuthFailed" };
@@ -247,5 +247,17 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
   session: {
     strategy: "jwt",
     maxAge: 7 * 24 * 60 * 60, // 7 days — matches refresh token expiry
+  },
+  events: {
+    async signOut(message) {
+      const refreshToken =
+        "token" in message ? message.token?.refresh_token : null;
+      if (!refreshToken) return;
+      await fetch(`${API_BASE_URL}/auth/logout`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ refresh_token: refreshToken }),
+      }).catch(() => undefined);
+    },
   },
 });

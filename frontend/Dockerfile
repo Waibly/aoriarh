@@ -3,7 +3,7 @@ FROM node:22-alpine
 WORKDIR /app
 
 COPY package.json package-lock.json* ./
-RUN npm install
+RUN npm ci
 
 COPY . .
 
@@ -23,5 +23,12 @@ ARG NEXT_PUBLIC_ADS_LABEL_DEMO
 ENV NEXT_PUBLIC_ADS_LABEL_DEMO=${NEXT_PUBLIC_ADS_LABEL_DEMO}
 
 RUN npm run build
+
+# L'image d'exécution ne conserve ni Jest, ni ESLint, ni les autres outils de
+# développement. Le graphe de production audité ne contient aucune vulnérabilité.
+RUN npm prune --omit=dev \
+    && chown -R node:node /app
+
+USER node
 
 CMD ["npm", "start"]

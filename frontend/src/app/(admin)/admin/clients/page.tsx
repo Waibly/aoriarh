@@ -193,7 +193,24 @@ export default function AdminClientsPage() {
                       {fmtEur(r.mrr_eur)}
                     </TableCell>
                     <TableCell className="text-right tabular-nums">
-                      {r.questions_30d}
+                      {r.questions_30d > 0 ? (
+                        <Link
+                          href={{
+                            pathname: "/admin/quality",
+                            query: {
+                              account_id: r.account_id,
+                              account_name: r.account_name ?? r.owner_email ?? "Client",
+                              days: "30",
+                            },
+                          }}
+                          className="font-medium text-primary underline decoration-primary/40 underline-offset-4 hover:decoration-primary"
+                          title={`Voir les ${r.questions_30d} questions et réponses de ${r.account_name ?? r.owner_email ?? "ce client"}`}
+                        >
+                          {r.questions_30d}
+                        </Link>
+                      ) : (
+                        0
+                      )}
                     </TableCell>
                     <TableCell className="text-right tabular-nums">
                       {fmtEur(r.infra_cost_eur_30d)}

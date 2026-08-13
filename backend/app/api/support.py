@@ -1,5 +1,7 @@
 """Endpoint de support / feedback utilisateur."""
 
+from html import escape
+
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 from sqlalchemy import select
@@ -8,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.core.database import get_db
 from app.core.dependencies import get_current_user
+from app.core.limiter import limiter
 from app.models.account import Account
 from app.models.user import User
 from app.services.email.sender import send_email
@@ -30,6 +33,7 @@ class SupportRequest(BaseModel):
 
 
 @router.post("/")
+@limiter.limit("5/hour")
 async def send_support_message(
     data: SupportRequest,
     request: Request,
@@ -53,7 +57,15 @@ async def send_support_message(
             plan = acc.plan
             workspace = acc.name
 
-    type_label = _TYPE_LABELS.get(data.type, data.type)
+    type_label = escape(_TYPE_LABELS.get(data.type, data.type))
+    safe_name = escape(user.full_name)
+    safe_email = escape(user.email)
+    safe_message = escape(data.message)
+    safe_workspace = escape(workspace)
+    safe_plan = escape(plan)
+    safe_role = escape(user.role)
+    safe_page_url = escape(data.page_url[:1000]) if data.page_url else "—"
+    safe_user_agent = escape(data.user_agent[:500]) if data.user_agent else "—"
 
     # Build email
     subject = f"[AORIA RH] {type_label} — {user.email}"
@@ -61,19 +73,25 @@ async def send_support_message(
     <div style="font-family: sans-serif; max-width: 600px;">
         <h2 style="color: #9952b8; margin-bottom: 4px;">{type_label}</h2>
         <p style="color: #666; font-size: 13px; margin-top: 0;">
-            De <strong>{user.full_name}</strong> ({user.email})
+            De <strong>{safe_name}</strong> ({safe_email})
         </p>
 
-        <div style="background: #f5f5f5; border-left: 4px solid #9952b8; padding: 16px; margin: 16px 0; border-radius: 4px;">
-            <p style="margin: 0; white-space: pre-wrap;">{data.message}</p>
+        <div style="background: #f5f5f5; border-left: 4px solid #9952b8;
+                    padding: 16px; margin: 16px 0; border-radius: 4px;">
+            <p style="margin: 0; white-space: pre-wrap;">{safe_message}</p>
         </div>
 
         <table style="font-size: 13px; color: #555; border-collapse: collapse;">
-            <tr><td style="padding: 4px 12px 4px 0; font-weight: bold;">Espace de travail</td><td>{workspace}</td></tr>
-            <tr><td style="padding: 4px 12px 4px 0; font-weight: bold;">Plan</td><td>{plan}</td></tr>
-            <tr><td style="padding: 4px 12px 4px 0; font-weight: bold;">Rôle</td><td>{user.role}</td></tr>
-            <tr><td style="padding: 4px 12px 4px 0; font-weight: bold;">Page</td><td>{data.page_url or '—'}</td></tr>
-            <tr><td style="padding: 4px 12px 4px 0; font-weight: bold;">Navigateur</td><td>{data.user_agent or '—'}</td></tr>
+            <tr><td style="padding: 4px 12px 4px 0; font-weight: bold;">
+                Espace de travail</td><td>{safe_workspace}</td></tr>
+            <tr><td style="padding: 4px 12px 4px 0; font-weight: bold;">
+                Plan</td><td>{safe_plan}</td></tr>
+            <tr><td style="padding: 4px 12px 4px 0; font-weight: bold;">
+                Rôle</td><td>{safe_role}</td></tr>
+            <tr><td style="padding: 4px 12px 4px 0; font-weight: bold;">
+                Page</td><td>{safe_page_url}</td></tr>
+            <tr><td style="padding: 4px 12px 4px 0; font-weight: bold;">
+                Navigateur</td><td>{safe_user_agent}</td></tr>
         </table>
     </div>
     """
@@ -86,6 +104,9 @@ async def send_support_message(
     )
 
     if not success:
-        raise HTTPException(status_code=503, detail="Impossible d'envoyer le message. Réessayez plus tard.")
+        raise HTTPException(
+            status_code=503,
+            detail="Impossible d'envoyer le message. Réessayez plus tard.",
+        )
 
     return {"detail": "Message envoyé"}

@@ -17,15 +17,22 @@ class StorageService:
             aws_secret_access_key=settings.minio_secret_key,
             region_name="us-east-1",
         )
-        self._ensure_bucket()
+        self._bucket_ready = False
 
     def _ensure_bucket(self) -> None:
+        if self._bucket_ready:
+            return
         try:
             self.client.head_bucket(Bucket=self.bucket)
-        except ClientError:
+        except ClientError as exc:
+            code = str(exc.response.get("Error", {}).get("Code", ""))
+            if code not in {"404", "NoSuchBucket", "NotFound"}:
+                raise
             self.client.create_bucket(Bucket=self.bucket)
+        self._bucket_ready = True
 
     async def upload_file(self, file: UploadFile, path: str) -> str:
+        self._ensure_bucket()
         contents = await file.read()
         self.client.put_object(
             Bucket=self.bucket,
@@ -38,6 +45,7 @@ class StorageService:
     def put_file_bytes(
         self, path: str, data: bytes, content_type: str = "application/octet-stream"
     ) -> str:
+        self._ensure_bucket()
         self.client.put_object(
             Bucket=self.bucket,
             Key=path,
@@ -47,13 +55,16 @@ class StorageService:
         return path
 
     def delete_file(self, path: str) -> None:
+        self._ensure_bucket()
         self.client.delete_object(Bucket=self.bucket, Key=path)
 
     def get_file_bytes(self, path: str) -> bytes:
+        self._ensure_bucket()
         response = self.client.get_object(Bucket=self.bucket, Key=path)
         return response["Body"].read()
 
     def get_presigned_url(self, path: str, expires: int = 3600) -> str:
+        self._ensure_bucket()
         return self.client.generate_presigned_url(
             "get_object",
             Params={"Bucket": self.bucket, "Key": path},

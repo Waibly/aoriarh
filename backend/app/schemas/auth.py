@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from pydantic import BaseModel, EmailStr, field_validator
+from pydantic import BaseModel, EmailStr, Field, field_validator
 
 from app.schemas.stripe_billing import BillingCycle, CommercialPlanCode
 
@@ -71,8 +71,14 @@ class RegisterRequest(BaseModel):
     @field_validator("password")
     @classmethod
     def password_min_length(cls, v: str) -> str:
-        if len(v) < 8:
-            raise ValueError("Le mot de passe doit contenir au moins 8 caractères")
+        if len(v) < 12:
+            raise ValueError("Le mot de passe doit contenir au moins 12 caractères")
+        if not any(char.isupper() for char in v):
+            raise ValueError("Le mot de passe doit contenir au moins une majuscule")
+        if not any(char.isdigit() for char in v):
+            raise ValueError("Le mot de passe doit contenir au moins un chiffre")
+        if not any(not char.isalnum() for char in v):
+            raise ValueError("Le mot de passe doit contenir au moins un caractère spécial")
         return v
 
 
@@ -85,13 +91,15 @@ class TokenResponse(BaseModel):
 
 
 class RefreshRequest(BaseModel):
-    refresh_token: str
+    refresh_token: str = Field(min_length=1, max_length=512)
+
+
+class LogoutRequest(BaseModel):
+    refresh_token: str = Field(min_length=1, max_length=512)
 
 
 class GoogleAuthRequest(BaseModel):
-    email: EmailStr
-    full_name: str
-    google_sub: str
+    id_token: str = Field(min_length=100, max_length=8192)
     requested_plan: CommercialPlanCode | None = None
     requested_cycle: BillingCycle | None = None
     attribution: SignupAttribution | None = None

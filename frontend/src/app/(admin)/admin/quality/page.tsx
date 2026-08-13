@@ -1,7 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { useSession } from "next-auth/react";
+import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import {
   ThumbsUp,
   ThumbsDown,
@@ -169,11 +171,17 @@ function FeedbackBadge({ feedback }: { feedback: string | null }) {
 
 // ----------------- Page -----------------
 
-export default function QualityPage() {
+function QualityPageContent() {
   const { data: session } = useSession();
+  const searchParams = useSearchParams();
+  const accountId = searchParams.get("account_id");
+  const accountName = searchParams.get("account_name");
+  const requestedDays = Number(searchParams.get("days"));
   const [kpis, setKpis] = useState<Kpis | null>(null);
   const [kpisLoading, setKpisLoading] = useState(true);
-  const [period, setPeriod] = useState<number>(7);
+  const [period, setPeriod] = useState<number>(
+    [1, 7, 30, 90].includes(requestedDays) ? requestedDays : 7,
+  );
 
   const [conversations, setConversations] = useState<ConversationItem[]>([]);
   const [convLoading, setConvLoading] = useState(true);
@@ -193,8 +201,10 @@ export default function QualityPage() {
     if (!session?.access_token) return;
     setKpisLoading(true);
     try {
+      const params = new URLSearchParams({ days: String(period) });
+      if (accountId) params.set("account_id", accountId);
       const data = await apiFetch<Kpis>(
-        `/admin/quality/metrics?days=${period}`,
+        `/admin/quality/metrics?${params.toString()}`,
         { token: session.access_token },
       );
       setKpis(data);
@@ -204,7 +214,7 @@ export default function QualityPage() {
     } finally {
       setKpisLoading(false);
     }
-  }, [session?.access_token, period]);
+  }, [session?.access_token, period, accountId]);
 
   const fetchConversations = useCallback(async () => {
     if (!session?.access_token) return;
@@ -213,6 +223,8 @@ export default function QualityPage() {
       const params = new URLSearchParams();
       params.set("page", String(page));
       params.set("page_size", String(PAGE_SIZE));
+      params.set("days", String(period));
+      if (accountId) params.set("account_id", accountId);
       if (search.trim()) params.set("q", search.trim());
       if (feedbackFilter !== "any") params.set("feedback", feedbackFilter);
       const data = await apiFetch<ConversationListResponse>(
@@ -227,7 +239,7 @@ export default function QualityPage() {
     } finally {
       setConvLoading(false);
     }
-  }, [session?.access_token, page, search, feedbackFilter]);
+  }, [session?.access_token, page, search, feedbackFilter, period, accountId]);
 
   useEffect(() => {
     fetchKpis();
@@ -258,7 +270,9 @@ export default function QualityPage() {
         <div>
           <h1 className="text-2xl font-bold">Qualité & conversations</h1>
           <p className="text-sm text-muted-foreground">
-            Surveille la santé du RAG et inspecte chaque question posée.
+            {accountId
+              ? `Questions et réponses de ${accountName || "ce client"}.`
+              : "Surveille la santé du RAG et inspecte chaque question posée."}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -406,6 +420,18 @@ export default function QualityPage() {
 
         <TabsContent value="conversations">
       {/* ----------------- Filters ----------------- */}
+      {accountId && (
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-muted/30 px-4 py-3">
+          <div className="text-sm">
+            <span className="text-muted-foreground">Client filtré : </span>
+            <span className="font-medium">{accountName || accountId}</span>
+            <span className="text-muted-foreground"> · {period} derniers jours</span>
+          </div>
+          <Button variant="outline" size="sm" asChild>
+            <Link href="/admin/quality">Voir tous les clients</Link>
+          </Button>
+        </div>
+      )}
       <div className="flex flex-col md:flex-row gap-3 mb-4">
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -433,7 +459,7 @@ export default function QualityPage() {
       <Card>
         <CardHeader>
           <CardTitle className="text-base font-semibold">
-            Conversations ({total.toLocaleString("fr-FR")})
+            Questions et réponses ({total.toLocaleString("fr-FR")})
           </CardTitle>
         </CardHeader>
         <CardContent>
@@ -553,6 +579,14 @@ export default function QualityPage() {
         }}
       />
     </div>
+  );
+}
+
+export default function QualityPage() {
+  return (
+    <Suspense fallback={null}>
+      <QualityPageContent />
+    </Suspense>
   );
 }
 

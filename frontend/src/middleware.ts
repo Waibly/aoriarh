@@ -52,6 +52,35 @@ export default auth((req) => {
           : "/admin/pilotage";
       return NextResponse.redirect(new URL(dest, req.nextUrl.origin));
     }
+
+    const businessOnly = [
+      "/admin/pilotage",
+      "/admin/clients",
+      "/admin/billing",
+      "/admin/costs",
+      "/admin/emailing",
+      "/admin/plan-invitations",
+    ];
+    const techOnly = [
+      "/admin/home",
+      "/admin/quality",
+      "/admin/corpus",
+      "/admin/qdrant",
+    ];
+    if (
+      session?.user?.staff_role === "business" &&
+      techOnly.some((prefix) => req.nextUrl.pathname.startsWith(prefix))
+    ) {
+      return NextResponse.redirect(
+        new URL("/admin/pilotage", req.nextUrl.origin)
+      );
+    }
+    if (
+      session?.user?.staff_role === "tech" &&
+      businessOnly.some((prefix) => req.nextUrl.pathname.startsWith(prefix))
+    ) {
+      return NextResponse.redirect(new URL("/admin/home", req.nextUrl.origin));
+    }
   }
 
   return NextResponse.next();

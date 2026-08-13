@@ -276,11 +276,21 @@ async def test_upload_common_document(
     admin_user: dict[str, str],
 ) -> None:
     mock_storage.upload_file = AsyncMock(return_value="common/test.pdf")
+    import pymupdf
+
+    pdf = pymupdf.open()
+    page = pdf.new_page()
+    page.insert_textbox(
+        (72, 72, 500, 300),
+        "Document juridique de test avec une couche de texte sélectionnable. " * 5,
+    )
+    pdf_bytes = pdf.tobytes()
+    pdf.close()
 
     res = await client.post(
         "/api/v1/admin/documents/",
         headers=auth_header(admin_user["token"]),
-        files={"file": ("test.pdf", BytesIO(b"fake pdf content"), "application/pdf")},
+        files={"file": ("test.pdf", BytesIO(pdf_bytes), "application/pdf")},
         data={"source_type": "code_travail"},
     )
     assert res.status_code == 201

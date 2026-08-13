@@ -1,6 +1,8 @@
 from app.models.account import Account
 from app.models.account_member import AccountMember
 from app.models.api_usage import ApiPricing, ApiUsageLog
+from app.models.auth_session import AuthSession
+from app.models.audit_log import AuditLog
 from app.models.base import Base
 from app.models.booster_purchase import BoosterPurchase
 from app.models.ccn import CcnReference, OrganisationConvention
@@ -32,6 +34,8 @@ __all__ = [
     "AccountMember",
     "ApiPricing",
     "ApiUsageLog",
+    "AuthSession",
+    "AuditLog",
     "Base",
     "BoccIssue",
     "BoosterPurchase",

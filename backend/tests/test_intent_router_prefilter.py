@@ -66,6 +66,16 @@ class TestPrefilterOthers:
         assert res.intent == Intent.LEGAL_QUESTION
         assert res.static_answer is None
 
+    async def test_actualites_droit_social_passe_en_rag(self):
+        res = await classify_intent(
+            "Quelles sont les dernières actualités en droit social ?",
+            db=None,
+            llm=None,
+            use_llm_fallback=False,
+        )
+        assert res.intent == Intent.LEGAL_QUESTION
+        assert res.static_answer is None
+
 
 @pytest.mark.asyncio
 class TestPrefilterScopeFrenchBranches:
