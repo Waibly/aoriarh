@@ -68,6 +68,17 @@ _MAX_PLAN_HYPOTHESIS_CHUNKS_PER_ARTICLE = 2
 _MAX_PLAN_HYPOTHESIS_CHUNKS_TOTAL = 6
 _PLAN_HYPOTHESIS_RERANK_FLOOR = rag_config.LOW_CONFIDENCE_RERANK
 
+# Filet d'une recherche explicitement dirigée vers une source (CCN, document
+# interne…). Si cette branche est très pauvre, on peut ajouter quelques règles
+# générales proches, mais uniquement depuis les Codes directement utiles en RH.
+_EMPLOYMENT_CODE_SOURCE_TYPES: tuple[str, ...] = (
+    "code_travail",
+    "code_travail_reglementaire",
+    "code_securite_sociale",
+    "code_securite_sociale_reglementaire",
+)
+_MAX_PLAN_SOURCE_FALLBACK_CHUNKS = 3
+
 # Types « convention collective » de l'org. Tout résultat de ce type présent
 # dans le pool a passé le filtre IDCC (cf. HybridSearch.search) : c'est donc la
 # convention installée de l'organisation. Sert au repêchage et au plancher de
@@ -1513,9 +1524,8 @@ class RAGAgent:
     ) -> tuple[list[SearchResult], list[str]]:
         """Execute a validated plan in sandbox/adaptive mode.
 
-        Guessed article numbers are intentionally excluded. They remain visible
-        in the trace for evaluation, but cannot enter retrieval until a later
-        corpus-validation stage proves that using them improves relevance.
+        Article hypotheses are not added here. A later guarded stage validates
+        medium-confidence references against the corpus and common reranker.
         """
 
         variants: list[str] = []
@@ -1557,20 +1567,37 @@ class RAGAgent:
             apply_legislation_floor=apply_legislation_floor,
         )
 
-        if source_type_filter and len(pool) < 3:
+        if (
+            source_type_filter
+            and len(pool) < 3
+            and plan.legislation
+            in {SourceRequirement.REQUIRED, SourceRequirement.SAFETY_FLOOR}
+        ):
             logger.warning(
                 "[PLAN] Filtered search returned %d candidate(s) — "
-                "retrying without source-type filter",
+                "adding a bounded employment-Code fallback",
                 len(pool),
             )
-            pool = await self._run_variant_searches(
-                variants,
-                legal_anchor,
-                organisation_id,
-                org_idcc_list=org_idcc_list,
-                source_type_filter=None,
-                apply_legislation_floor=True,
+            fallback = await self._step_with_timeout(
+                self.search_engine.search(
+                    legal_anchor or variants[0],
+                    organisation_id,
+                    top_k=_MAX_PLAN_SOURCE_FALLBACK_CHUNKS,
+                    org_idcc_list=org_idcc_list,
+                    source_type_filter=list(_EMPLOYMENT_CODE_SOURCE_TYPES),
+                    cost_ctx=self._cost_ctx,
+                ),
+                fallback=[],
             )
+            seen_pool = {(result.document_id, result.chunk_index) for result in pool}
+            for candidate in fallback:
+                key = (candidate.document_id, candidate.chunk_index)
+                if key in seen_pool:
+                    continue
+                seen_pool.add(key)
+                pool.append(candidate)
+                if len(pool) >= 3:
+                    break
 
         return pool, variants
 

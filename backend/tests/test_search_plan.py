@@ -456,6 +456,90 @@ async def test_adaptive_search_uses_queries_but_never_guessed_article_identifier
 
 
 @pytest.mark.asyncio
+async def test_source_directed_plan_preserves_filtered_results_and_bounds_fallback():
+    plan = build_deterministic_search_plan(
+        "Selon ma convention collective, quel préavis pour un cadre ?",
+        org_idcc_list=["1486"],
+    )
+    ccn_1 = _search_result(
+        "ccn-1",
+        0,
+        source_type="convention_collective_nationale",
+    )
+    ccn_2 = _search_result("ccn-1", 1, source_type="accord_branche")
+    duplicate = _search_result(
+        "ccn-1",
+        1,
+        source_type="code_travail",
+    )
+    code_1 = _search_result("code-1", 0, source_type="code_travail")
+    code_2 = _search_result("code-2", 0, source_type="code_securite_sociale")
+
+    agent = RAGAgent.__new__(RAGAgent)
+    agent._run_variant_searches = AsyncMock(return_value=[ccn_1, ccn_2])
+    agent.search_engine = MagicMock()
+    agent.search_engine.search = AsyncMock(
+        return_value=[duplicate, code_1, code_2]
+    )
+    agent._org_id = "org-1"
+    agent._user_id = None
+    agent._conversation_id = None
+    agent._is_replay = True
+
+    pool, _variants = await agent._search_with_plan(
+        plan,
+        plan.standalone_question,
+        "org-1",
+        org_idcc_list=["1486"],
+    )
+
+    assert [(result.document_id, result.chunk_index) for result in pool] == [
+        ("ccn-1", 0),
+        ("ccn-1", 1),
+        ("code-1", 0),
+    ]
+    agent._run_variant_searches.assert_awaited_once()
+    fallback_call = agent.search_engine.search.await_args
+    assert fallback_call.kwargs["top_k"] == 3
+    assert fallback_call.kwargs["source_type_filter"] == [
+        "code_travail",
+        "code_travail_reglementaire",
+        "code_securite_sociale",
+        "code_securite_sociale_reglementaire",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_source_directed_plan_does_not_pay_for_fallback_when_pool_is_sufficient():
+    plan = build_deterministic_search_plan(
+        "Selon ma convention collective, quel préavis pour un cadre ?",
+        org_idcc_list=["1486"],
+    )
+    primary = [
+        _search_result(
+            "ccn-1",
+            index,
+            source_type="convention_collective_nationale",
+        )
+        for index in range(3)
+    ]
+    agent = RAGAgent.__new__(RAGAgent)
+    agent._run_variant_searches = AsyncMock(return_value=primary)
+    agent.search_engine = MagicMock()
+    agent.search_engine.search = AsyncMock()
+
+    pool, _variants = await agent._search_with_plan(
+        plan,
+        plan.standalone_question,
+        "org-1",
+        org_idcc_list=["1486"],
+    )
+
+    assert pool == primary
+    agent.search_engine.search.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_adaptive_article_hypotheses_are_tenant_filtered_bounded_candidates():
     plan = build_deterministic_search_plan(
         "Combien de jours de congés l'employeur peut-il imposer ?",
