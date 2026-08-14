@@ -497,8 +497,13 @@ async def test_source_directed_plan_preserves_filtered_results_and_bounds_fallba
         ("ccn-1", 0),
         ("ccn-1", 1),
         ("code-1", 0),
+        ("code-2", 0),
     ]
     agent._run_variant_searches.assert_awaited_once()
+    assert (
+        agent._run_variant_searches.await_args.kwargs["apply_legislation_floor"]
+        is False
+    )
     fallback_call = agent.search_engine.search.await_args
     assert fallback_call.kwargs["top_k"] == 3
     assert fallback_call.kwargs["source_type_filter"] == [
@@ -510,16 +515,24 @@ async def test_source_directed_plan_preserves_filtered_results_and_bounds_fallba
 
 
 @pytest.mark.asyncio
-async def test_source_directed_plan_does_not_pay_for_fallback_when_pool_is_sufficient():
+async def test_employment_code_directed_plan_does_not_duplicate_its_code_floor():
     plan = build_deterministic_search_plan(
-        "Selon ma convention collective, quel préavis pour un cadre ?",
+        "Selon le Code du travail, quel préavis pour un cadre ?",
         org_idcc_list=["1486"],
+    )
+    assert set(plan.requested_source_types).issubset(
+        {
+            "code_travail",
+            "code_travail_reglementaire",
+            "code_securite_sociale",
+            "code_securite_sociale_reglementaire",
+        }
     )
     primary = [
         _search_result(
-            "ccn-1",
+            "code-1",
             index,
-            source_type="convention_collective_nationale",
+            source_type="code_travail",
         )
         for index in range(3)
     ]
@@ -537,6 +550,10 @@ async def test_source_directed_plan_does_not_pay_for_fallback_when_pool_is_suffi
 
     assert pool == primary
     agent.search_engine.search.assert_not_awaited()
+    assert (
+        agent._run_variant_searches.await_args.kwargs["apply_legislation_floor"]
+        is False
+    )
 
 
 @pytest.mark.asyncio

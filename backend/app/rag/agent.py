@@ -1554,6 +1554,11 @@ class RAGAgent:
             SourceRequirement.REQUIRED,
             SourceRequirement.SAFETY_FLOOR,
         }
+        directed_code_floor = bool(
+            source_type_filter
+            and apply_legislation_floor
+            and not set(source_type_filter).issubset(_EMPLOYMENT_CODE_SOURCE_TYPES)
+        )
         # Semantic legislative vocabulary only. Unverified article candidates
         # are never appended to this string, so _run_variant_searches cannot
         # inject them by identifier.
@@ -1564,18 +1569,16 @@ class RAGAgent:
             organisation_id,
             org_idcc_list=org_idcc_list,
             source_type_filter=source_type_filter,
-            apply_legislation_floor=apply_legislation_floor,
+            # A directed branch receives its own narrow Code floor below. The
+            # broad written-law floor would reintroduce unrelated domains such
+            # as BOSS, OIT or another Code despite the user's source request.
+            apply_legislation_floor=apply_legislation_floor and not source_type_filter,
         )
 
-        if (
-            source_type_filter
-            and len(pool) < 3
-            and plan.legislation
-            in {SourceRequirement.REQUIRED, SourceRequirement.SAFETY_FLOOR}
-        ):
-            logger.warning(
-                "[PLAN] Filtered search returned %d candidate(s) — "
-                "adding a bounded employment-Code fallback",
+        if directed_code_floor:
+            logger.info(
+                "[PLAN] Directed search returned %d candidate(s) — "
+                "adding the bounded employment-Code safety floor",
                 len(pool),
             )
             fallback = await self._step_with_timeout(
@@ -1590,13 +1593,15 @@ class RAGAgent:
                 fallback=[],
             )
             seen_pool = {(result.document_id, result.chunk_index) for result in pool}
-            for candidate in fallback:
+            added = 0
+            for candidate in fallback[:_MAX_PLAN_SOURCE_FALLBACK_CHUNKS]:
                 key = (candidate.document_id, candidate.chunk_index)
                 if key in seen_pool:
                     continue
                 seen_pool.add(key)
                 pool.append(candidate)
-                if len(pool) >= 3:
+                added += 1
+                if added >= _MAX_PLAN_SOURCE_FALLBACK_CHUNKS:
                     break
 
         return pool, variants
