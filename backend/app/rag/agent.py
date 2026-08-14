@@ -74,6 +74,7 @@ _PLAN_HYPOTHESIS_RERANK_FLOOR = rag_config.LOW_CONFIDENCE_RERANK
 # être sacrifiée pour obtenir un panneau de sources artificiellement homogène.
 _MAX_PLAN_LEGISLATION_COMPLEMENT_CHUNKS = 5
 _MAX_PLAN_JURISPRUDENCE_COMPLEMENT_CHUNKS = 3
+_MAX_PLAN_CCN_PRIORITY_CHUNKS = 8
 
 # Types « convention collective » de l'org. Tout résultat de ce type présent
 # dans le pool a passé le filtre IDCC (cf. HybridSearch.search) : c'est donc la
@@ -1641,6 +1642,44 @@ class RAGAgent:
             # as BOSS, OIT or another Code despite the user's source request.
             apply_legislation_floor=apply_legislation_floor and not source_type_filter,
         )
+
+        # A broad search must stay broad, but an applicable CCN explicitly
+        # identified by the planner deserves a small guaranteed candidate
+        # window. This adds recall without filtering out Code, case law or
+        # internal documents, and costs one embedding/search (no extra LLM).
+        if (
+            not source_type_filter
+            and plan.ccn is not SourceRequirement.DISABLED
+            and "ccn" in plan.planner_source_hints
+            and org_idcc_list
+        ):
+            ccn_candidates = await self._step_with_timeout(
+                self.search_engine.search(
+                    query,
+                    organisation_id,
+                    top_k=_MAX_PLAN_CCN_PRIORITY_CHUNKS,
+                    org_idcc_list=org_idcc_list,
+                    source_type_filter=sorted(_CCN_SOURCE_TYPES),
+                    cost_ctx=self._cost_ctx,
+                ),
+                fallback=[],
+            )
+            seen_pool = {(result.document_id, result.chunk_index) for result in pool}
+            added = 0
+            for candidate in ccn_candidates[:_MAX_PLAN_CCN_PRIORITY_CHUNKS]:
+                key = (candidate.document_id, candidate.chunk_index)
+                if key in seen_pool:
+                    continue
+                seen_pool.add(key)
+                pool.append(candidate)
+                added += 1
+            self._plan_search_diagnostics["priority_branches"] = [{
+                "kind": "ccn",
+                "candidate_chunks": len(
+                    ccn_candidates[:_MAX_PLAN_CCN_PRIORITY_CHUNKS]
+                ),
+                "added_chunks": added,
+            }]
 
         if source_type_filter:
             complement_query = _build_plan_complement_query(plan, legal_anchor)

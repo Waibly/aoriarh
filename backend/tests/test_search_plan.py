@@ -471,6 +471,7 @@ async def test_adaptive_search_uses_queries_but_never_guessed_article_identifier
             legal_topics=["préavis de démission", "cadres"],
             search_queries=["préavis démission cadre Syntec"],
             hypothesized_articles=[{"reference": "L.1237-19", "confidence": "low"}],
+            source_hints=["legislation"],
         ),
     )
     agent = RAGAgent.__new__(RAGAgent)
@@ -578,6 +579,64 @@ async def test_source_directed_plan_preserves_filtered_results_and_bounds_fallba
                 "added_chunks": 2,
             }
         ],
+    }
+
+
+@pytest.mark.asyncio
+async def test_standard_plan_adds_ccn_priority_candidates_without_narrowing_main_search():
+    plan = build_deterministic_search_plan(
+        "Quelle garantie d'emploi s'applique pendant une absence maladie ?",
+        org_idcc_list=["1486"],
+    )
+    plan = apply_compact_planner_payload(
+        plan,
+        _valid_payload(
+            legal_topics=["garantie d'emploi", "absence maladie"],
+            search_queries=["absence maladie suspension contrat"],
+            hypothesized_articles=[],
+            source_hints=["ccn", "legislation", "jurisprudence"],
+            jurisprudence="required",
+        ),
+    )
+    code = _search_result("code-1", 0, source_type="code_travail")
+    ccn = _search_result(
+        "ccn-1",
+        9,
+        article_nums=["9.1"],
+        source_type="convention_collective_nationale",
+    )
+    agent = RAGAgent.__new__(RAGAgent)
+    agent._run_variant_searches = AsyncMock(return_value=[code])
+    agent.search_engine = MagicMock()
+    agent.search_engine.search = AsyncMock(return_value=[ccn])
+    agent._org_id = "org-1"
+    agent._user_id = None
+    agent._conversation_id = None
+    agent._is_replay = True
+
+    pool, _variants = await agent._search_with_plan(
+        plan,
+        plan.standalone_question,
+        "org-1",
+        org_idcc_list=["1486"],
+    )
+
+    assert [(result.document_id, result.chunk_index) for result in pool] == [
+        ("code-1", 0),
+        ("ccn-1", 9),
+    ]
+    agent._run_variant_searches.assert_awaited_once()
+    assert agent._run_variant_searches.await_args.kwargs["source_type_filter"] is None
+    priority_call = agent.search_engine.search.await_args
+    assert priority_call.kwargs["top_k"] == 8
+    assert set(priority_call.kwargs["source_type_filter"]) == {
+        "convention_collective_nationale",
+        "accord_branche",
+    }
+    assert agent._plan_search_diagnostics == {
+        "priority_branches": [
+            {"kind": "ccn", "candidate_chunks": 1, "added_chunks": 1}
+        ]
     }
 
 
