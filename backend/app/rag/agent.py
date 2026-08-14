@@ -55,6 +55,18 @@ _LEGISLATION_SOURCE_TYPES: list[str] = sorted(
     if isinstance(meta.get("niveau"), int) and meta["niveau"] <= 5 and meta["niveau"] != 4
 )
 
+# Les articles proposés par le plan compact ne sont jamais des autorités en
+# eux-mêmes. On ne les autorise à rejoindre le pool que s'ils existent dans un
+# Code du corpus accessible, avec un nombre de chunks strictement borné. Ils
+# passent ensuite dans le reranker commun avec tous les autres candidats.
+_CODE_SOURCE_TYPES: frozenset[str] = frozenset(
+    source_type
+    for source_type in _LEGISLATION_SOURCE_TYPES
+    if source_type.startswith("code_")
+)
+_MAX_PLAN_HYPOTHESIS_CHUNKS_PER_ARTICLE = 2
+_MAX_PLAN_HYPOTHESIS_CHUNKS_TOTAL = 6
+
 # Types « convention collective » de l'org. Tout résultat de ce type présent
 # dans le pool a passé le filtre IDCC (cf. HybridSearch.search) : c'est donc la
 # convention installée de l'organisation. Sert au repêchage et au plancher de
@@ -198,9 +210,10 @@ class RagTrace:
     # "faible pertinence" qui déclenche une consigne de rigueur à la génération.
     max_rerank_score: float | None = None
     low_confidence: bool = False
-    # Plan adaptatif en observation uniquement : aucun effet sur le retrieval.
+    # Plan adaptatif : observé en production, exécutable dans le sandbox qualité.
     search_plan: dict | None = None
     search_plan_usage: dict[str, int | float | str] = field(default_factory=dict)
+    search_plan_validation: dict = field(default_factory=dict)
     error: str | None = None
 
     def to_dict(self) -> dict:
@@ -223,6 +236,7 @@ class RagTrace:
             "low_confidence": self.low_confidence,
             "search_plan": self.search_plan,
             "search_plan_usage": self.search_plan_usage,
+            "search_plan_validation": self.search_plan_validation,
             "error": self.error,
         }
 
@@ -691,17 +705,45 @@ class RAGAgent:
                 trace.identifiers_detected,
             )
 
+        # Step 1.6 (adaptive only): validate article hypotheses against the
+        # tenant-filtered corpus, append a tiny candidate set, then let the
+        # normal reranker decide whether any of them is relevant. A guessed
+        # reference is never presented as a source merely because it exists.
+        hypothesis_refs_by_key: dict[tuple[str, int], set[str]] = {}
+        if search_plan is not None and search_plan.hypothesized_articles:
+            (
+                results,
+                trace.search_plan_validation,
+                hypothesis_refs_by_key,
+            ) = await self._inject_plan_hypothesis_candidates(
+                search_plan,
+                results,
+                organisation_id,
+                org_idcc_list,
+            )
+
         # Snapshot the candidate pool right before rerank
         trace.hybrid_results = _serialize_chunks(results, limit=30)
         t2 = time.perf_counter()
 
         # Step 3: Reranking
         _pool_pre_rerank = results
+        hypothesis_candidate_keys = set(hypothesis_refs_by_key)
+        rerank_fallback = [
+            result
+            for result in results
+            if (result.document_id, result.chunk_index)
+            not in hypothesis_candidate_keys
+        ][:RERANK_TOP_K]
         results = await self._step_with_timeout(
             self.reranker.rerank(
-                query, results, top_k=RERANK_TOP_K, cost_ctx=self._cost_ctx,
+                query,
+                results,
+                top_k=RERANK_TOP_K,
+                cost_ctx=self._cost_ctx,
+                fallback_results=rerank_fallback,
             ),
-            fallback=results[:RERANK_TOP_K],
+            fallback=rerank_fallback,
         )
         results = self._ensure_ccn_represented(
             _pool_pre_rerank, results, org_idcc_list,
@@ -709,6 +751,10 @@ class RAGAgent:
 
         trace.perf_ms["rerank"] = (time.perf_counter() - t2) * 1000
         trace.rerank_results = _serialize_chunks(results, limit=RERANK_TOP_K)
+        if trace.search_plan_validation:
+            trace.search_plan_validation["retained_after_rerank"] = (
+                self._retained_hypothesis_refs(results, hypothesis_refs_by_key)
+            )
         # C1 — Confiance du retrieval : si même le meilleur document reste sous
         # le seuil, la recherche est faible -> on signalera à la génération de
         # ne rien inventer. Calculé ici sur les scores de rerank propres, avec
@@ -757,6 +803,10 @@ class RAGAgent:
         # Step 4.5: hiérarchie des normes — la règle applicable ne doit pas être
         # noyée sous la jurisprudence ou la CCN en tête de liste.
         results = self._balance_source_types(results)
+        if trace.search_plan_validation:
+            trace.search_plan_validation["retained_in_final_sources"] = (
+                self._retained_hypothesis_refs(results, hypothesis_refs_by_key)
+            )
         logger.info(
             "[PERF] Step 4 — Cross-ref %.0fms",
             (time.perf_counter() - t3) * 1000,
@@ -1192,6 +1242,139 @@ class RAGAgent:
             injected, len(results),
         )
         return results
+
+    @staticmethod
+    def _retained_hypothesis_refs(
+        results: list[SearchResult],
+        hypothesis_refs_by_key: dict[tuple[str, int], set[str]],
+    ) -> list[str]:
+        """Return hypotheses carried by the supplied result list."""
+
+        retained: set[str] = set()
+        tracked_refs = {
+            reference
+            for references in hypothesis_refs_by_key.values()
+            for reference in references
+        }
+        for result in results:
+            retained.update(
+                hypothesis_refs_by_key.get(
+                    (result.document_id, result.chunk_index),
+                    set(),
+                )
+            )
+            if result.source_type in _CODE_SOURCE_TYPES:
+                retained.update(
+                    tracked_refs.intersection(
+                        _normalize_article_num(article)
+                        for article in (result.article_nums or [])
+                    )
+                )
+        return sorted(retained)
+
+    async def _inject_plan_hypothesis_candidates(
+        self,
+        plan: SearchPlan,
+        results: list[SearchResult],
+        organisation_id: str,
+        org_idcc_list: list[str] | None,
+    ) -> tuple[
+        list[SearchResult],
+        dict,
+        dict[tuple[str, int], set[str]],
+    ]:
+        """Validate and append bounded Code article candidates from a plan.
+
+        The lookup uses the same organisation/IDCC access filter as explicit
+        identifier retrieval. Only Code sources are accepted, at most two
+        chunks per article and six total. Candidates are appended (never
+        promoted) so only the normal reranker can move them into the answer.
+        """
+
+        requested: list[str] = []
+        for hypothesis in plan.hypothesized_articles:
+            reference = _normalize_article_num(hypothesis.reference)
+            if reference and reference not in requested:
+                requested.append(reference)
+
+        validation: dict = {
+            "status": "ok",
+            "hypotheses_requested": requested,
+            "corpus_matches": [],
+            "candidate_chunks_fetched": 0,
+            "candidate_chunks_added": 0,
+            "retained_after_rerank": [],
+            "retained_in_final_sources": [],
+        }
+        if not requested:
+            return results, validation, {}
+
+        try:
+            fetched = await fetch_by_identifiers(
+                self.search_engine.qdrant,
+                {"numero_pourvoi": [], "article_nums": requested},
+                organisation_id=organisation_id,
+                org_idcc_list=org_idcc_list,
+            )
+        except Exception:
+            logger.exception("[PLAN] Article hypothesis validation failed")
+            validation["status"] = "lookup_failed"
+            return results, validation, {}
+
+        selected: list[SearchResult] = []
+        refs_by_key: dict[tuple[str, int], set[str]] = {}
+        per_article: dict[str, int] = {reference: 0 for reference in requested}
+
+        for candidate in fetched:
+            if candidate.source_type not in _CODE_SOURCE_TYPES:
+                continue
+            candidate_articles = {
+                _normalize_article_num(article)
+                for article in (candidate.article_nums or [])
+            }
+            matching = [ref for ref in requested if ref in candidate_articles]
+            if not matching:
+                continue
+            eligible = [
+                ref
+                for ref in matching
+                if per_article[ref] < _MAX_PLAN_HYPOTHESIS_CHUNKS_PER_ARTICLE
+            ]
+            if not eligible:
+                continue
+
+            key = (candidate.document_id, candidate.chunk_index)
+            refs_by_key.setdefault(key, set()).update(eligible)
+            for ref in eligible:
+                per_article[ref] += 1
+            selected.append(candidate)
+            if len(selected) >= _MAX_PLAN_HYPOTHESIS_CHUNKS_TOTAL:
+                break
+
+        validation["corpus_matches"] = sorted(
+            {reference for refs in refs_by_key.values() for reference in refs}
+        )
+        validation["candidate_chunks_fetched"] = len(selected)
+
+        seen = {(result.document_id, result.chunk_index) for result in results}
+        added = 0
+        for candidate in selected:
+            key = (candidate.document_id, candidate.chunk_index)
+            if key in seen:
+                continue
+            seen.add(key)
+            results.append(candidate)
+            added += 1
+        validation["candidate_chunks_added"] = added
+
+        logger.info(
+            "[PLAN] Article hypotheses: %d requested, %d corpus match(es), "
+            "%d bounded chunk(s) added",
+            len(requested),
+            len(validation["corpus_matches"]),
+            added,
+        )
+        return results, validation, refs_by_key
 
     async def _search_with_expansion(
         self,

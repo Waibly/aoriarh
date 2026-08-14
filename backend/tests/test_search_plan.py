@@ -8,6 +8,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from app.rag.agent import RAGAgent
+from app.rag.search import SearchResult
 from app.rag.search_plan import (
     AnswerIntent,
     PlannerStatus,
@@ -17,6 +18,26 @@ from app.rag.search_plan import (
     build_deterministic_search_plan,
     run_compact_search_planner,
 )
+
+
+def _search_result(
+    document_id: str,
+    chunk_index: int,
+    *,
+    article_nums: list[str] | None = None,
+    source_type: str = "code_travail",
+) -> SearchResult:
+    return SearchResult(
+        text=f"Texte {document_id} {chunk_index}",
+        doc_name="Document test",
+        document_id=document_id,
+        source_type=source_type,
+        norme_niveau=2,
+        norme_poids=0.9,
+        chunk_index=chunk_index,
+        score=0.5,
+        article_nums=article_nums,
+    )
 
 
 def test_explicit_article_uses_direct_reference_route_without_llm():
@@ -432,6 +453,149 @@ async def test_adaptive_search_uses_queries_but_never_guessed_article_identifier
     assert call.args[1] == "préavis de démission cadres"
     assert "L1237-19" not in call.args[1]
     assert call.kwargs["apply_legislation_floor"] is True
+
+
+@pytest.mark.asyncio
+async def test_adaptive_article_hypotheses_are_tenant_filtered_bounded_candidates():
+    plan = build_deterministic_search_plan(
+        "Combien de jours de congés l'employeur peut-il imposer ?",
+        org_idcc_list=["1486"],
+    )
+    plan = apply_compact_planner_payload(
+        plan,
+        _valid_payload(
+            hypothesized_articles=[
+                {"reference": "L.3141-16", "confidence": "medium"},
+                {"reference": "L3141-15", "confidence": "low"},
+            ]
+        ),
+    )
+    fetched = [
+        _search_result("code-1", 0, article_nums=["L3141-16"]),
+        _search_result("code-1", 1, article_nums=["L3141-16"]),
+        _search_result("code-1", 2, article_nums=["L3141-16"]),
+        _search_result("code-2", 0, article_nums=["L3141-15"]),
+        _search_result(
+            "ccn-1",
+            0,
+            article_nums=["L3141-15"],
+            source_type="convention_collective_nationale",
+        ),
+    ]
+    baseline = [_search_result("semantic", 0, article_nums=["L3141-16"])]
+
+    with patch(
+        "app.rag.agent.fetch_by_identifiers",
+        new=AsyncMock(return_value=fetched),
+    ) as fetch_mock:
+        agent = RAGAgent.__new__(RAGAgent)
+        agent.search_engine = MagicMock()
+        agent.search_engine.qdrant = MagicMock()
+        results, validation, refs_by_key = (
+            await agent._inject_plan_hypothesis_candidates(
+                plan,
+                baseline,
+                "org-1",
+                ["1486"],
+            )
+        )
+
+    fetch_mock.assert_awaited_once_with(
+        agent.search_engine.qdrant,
+        {
+            "numero_pourvoi": [],
+            "article_nums": ["L3141-16", "L3141-15"],
+        },
+        organisation_id="org-1",
+        org_idcc_list=["1486"],
+    )
+    assert [(result.document_id, result.chunk_index) for result in results] == [
+        ("semantic", 0),
+        ("code-1", 0),
+        ("code-1", 1),
+        ("code-2", 0),
+    ]
+    assert validation == {
+        "status": "ok",
+        "hypotheses_requested": ["L3141-16", "L3141-15"],
+        "corpus_matches": ["L3141-15", "L3141-16"],
+        "candidate_chunks_fetched": 3,
+        "candidate_chunks_added": 3,
+        "retained_after_rerank": [],
+        "retained_in_final_sources": [],
+    }
+    assert refs_by_key[("code-1", 0)] == {"L3141-16"}
+    assert ("ccn-1", 0) not in refs_by_key
+
+
+@pytest.mark.asyncio
+async def test_adaptive_trace_distinguishes_found_and_reranker_retained_hypotheses():
+    plan = build_deterministic_search_plan(
+        "Combien de jours de congés l'employeur peut-il imposer ?"
+    )
+    plan = apply_compact_planner_payload(
+        plan,
+        _valid_payload(
+            hypothesized_articles=[
+                {"reference": "L3141-16", "confidence": "medium"},
+                {"reference": "L9999-1", "confidence": "low"},
+            ]
+        ),
+    )
+    relevant = _search_result("code-1", 0, article_nums=["L3141-16"])
+    irrelevant = _search_result("code-2", 0, article_nums=["L9999-1"])
+
+    with patch("app.rag.agent._search_engine"), patch(
+        "app.rag.agent.get_reranker"
+    ):
+        agent = RAGAgent()
+    agent._search_with_plan = AsyncMock(return_value=([], [plan.standalone_question]))
+    agent.reranker = MagicMock()
+    agent.reranker.rerank = AsyncMock(return_value=[relevant])
+
+    with patch(
+        "app.rag.agent.fetch_by_identifiers",
+        new=AsyncMock(return_value=[relevant, irrelevant]),
+    ), patch(
+        "app.rag.agent.expand_to_parents",
+        new=AsyncMock(return_value=[relevant]),
+    ):
+        _results, _reformulated, trace = await agent.prepare_context(
+            plan.query_original,
+            "org-1",
+            search_plan=plan,
+        )
+
+    assert trace.search_plan_validation["corpus_matches"] == [
+        "L3141-16",
+        "L9999-1",
+    ]
+    assert trace.search_plan_validation["retained_after_rerank"] == ["L3141-16"]
+    assert trace.search_plan_validation["retained_in_final_sources"] == [
+        "L3141-16"
+    ]
+
+
+@pytest.mark.asyncio
+async def test_baseline_never_fetches_plan_article_hypotheses():
+    with patch("app.rag.agent._search_engine"), patch(
+        "app.rag.agent.get_reranker"
+    ):
+        agent = RAGAgent()
+    agent._search_with_expansion = AsyncMock(return_value=([], ["question"]))
+    agent.reranker = MagicMock()
+    agent.reranker.rerank = AsyncMock(return_value=[])
+
+    with patch(
+        "app.rag.agent.fetch_by_identifiers",
+        new=AsyncMock(return_value=[]),
+    ) as fetch_mock, patch(
+        "app.rag.agent.expand_to_parents",
+        new=AsyncMock(return_value=[]),
+    ):
+        await agent.prepare_context("question", "org-1")
+
+    fetch_mock.assert_not_awaited()
 
 
 @pytest.mark.asyncio

@@ -27,6 +27,7 @@ class VoyageReranker:
         results: list[SearchResult],
         top_k: int = 5,
         cost_ctx: CostContext | None = None,
+        fallback_results: list[SearchResult] | None = None,
     ) -> list[SearchResult]:
         """Rerank search results using Voyage AI cross-encoder.
 
@@ -34,9 +35,12 @@ class VoyageReranker:
 
         cost_ctx: attribution du coût (org/user/question) — passé par appel
         car cette instance est un singleton partagé.
+        fallback_results: sous-ensemble sûr à retourner si le service externe
+        échoue. Permet notamment d'exclure les hypothèses non encore validées.
         """
+        safe_fallback = results if fallback_results is None else fallback_results
         if len(results) <= 1:
-            return results[:top_k]
+            return safe_fallback[:top_k]
 
         documents = [r.text for r in results]
         t0 = time.perf_counter()
@@ -45,7 +49,7 @@ class VoyageReranker:
             rerank_response = await self._call_api(query, documents)
         except Exception:
             logger.exception("Reranker API failed, returning original results")
-            return results[:top_k]
+            return safe_fallback[:top_k]
 
         elapsed = (time.perf_counter() - t0) * 1000
         tokens = rerank_response.get("usage", {}).get("total_tokens", 0)

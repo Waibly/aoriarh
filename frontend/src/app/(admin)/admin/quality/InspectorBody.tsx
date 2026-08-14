@@ -98,6 +98,15 @@ export interface RagTrace {
     execution?: "observation_only" | "adaptive_shadow";
     fallback_to_baseline?: boolean;
   };
+  search_plan_validation?: {
+    status?: "ok" | "lookup_failed";
+    hypotheses_requested?: string[];
+    corpus_matches?: string[];
+    candidate_chunks_fetched?: number;
+    candidate_chunks_added?: number;
+    retained_after_rerank?: string[];
+    retained_in_final_sources?: string[];
+  };
   error: string | null;
 }
 
@@ -216,9 +225,11 @@ function PerfBar({ perf }: { perf: { [key: string]: number } }) {
 function SearchPlanPanel({
   plan,
   usage,
+  validation,
 }: {
   plan: SearchPlanTrace;
   usage?: RagTrace["search_plan_usage"];
+  validation?: RagTrace["search_plan_validation"];
 }) {
   const modeLabels: Record<SearchPlanTrace["mode"], string> = {
     exact_reference: "Référence exacte",
@@ -248,6 +259,20 @@ function SearchPlanPanel({
     ),
   ];
   const adaptiveExecuted = usage?.execution === "adaptive_shadow";
+  const normalizedCorpusMatches = new Set(validation?.corpus_matches ?? []);
+  const normalizedRerankRetained = new Set(
+    validation?.retained_after_rerank ?? []
+  );
+  const normalizedFinalRetained = new Set(
+    validation?.retained_in_final_sources ?? []
+  );
+  const normalizeArticle = (reference: string) =>
+    reference
+      .toUpperCase()
+      .replaceAll(".", "")
+      .replaceAll(" ", "")
+      .replaceAll("‑", "-")
+      .replaceAll("–", "-");
 
   return (
     <Section
@@ -347,14 +372,48 @@ function SearchPlanPanel({
 
         {plan.hypothesized_articles.length > 0 && (
           <div className="rounded border border-amber-200 bg-amber-50 p-2 text-amber-900 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-200">
-            <div className="font-medium">Articles supposés — non utilisés</div>
-            <div>
-              {plan.hypothesized_articles
-                .map(
-                  (article) => `${article.reference} (${article.confidence})`
-                )
-                .join(" · ")}
+            <div className="font-medium">
+              {adaptiveExecuted
+                ? "Articles suggérés — validation dans le corpus"
+                : "Articles supposés — non utilisés"}
             </div>
+            {adaptiveExecuted ? (
+              <div className="mt-1 space-y-0.5">
+                {plan.hypothesized_articles.map((article) => {
+                  const reference = normalizeArticle(article.reference);
+                  let status = validation
+                    ? "introuvable dans le corpus autorisé"
+                    : "non évalué lors de cette exécution";
+                  if (normalizedFinalRetained.has(reference)) {
+                    status = "retenu dans les sources finales";
+                  } else if (normalizedRerankRetained.has(reference)) {
+                    status = "retenu au reranking, écarté ensuite";
+                  } else if (normalizedCorpusMatches.has(reference)) {
+                    status = "trouvé, non retenu par le reranking";
+                  } else if (validation?.status === "lookup_failed") {
+                    status = "validation indisponible";
+                  }
+                  return (
+                    <div key={`${article.reference}-${article.confidence}`}>
+                      {article.reference} ({article.confidence}) — {status}
+                    </div>
+                  );
+                })}
+                <div className="pt-1 text-[11px] opacity-80">
+                  La présence de l’article est vérifiée, puis sa pertinence est
+                  décidée par le reranking commun. Une suggestion n’est jamais
+                  une citation en elle-même.
+                </div>
+              </div>
+            ) : (
+              <div>
+                {plan.hypothesized_articles
+                  .map(
+                    (article) => `${article.reference} (${article.confidence})`
+                  )
+                  .join(" · ")}
+              </div>
+            )}
           </div>
         )}
 
@@ -740,6 +799,7 @@ export function InspectorBody({ data }: { data: InspectorPayload }) {
         <SearchPlanPanel
           plan={data.rag_trace.search_plan}
           usage={data.rag_trace.search_plan_usage}
+          validation={data.rag_trace.search_plan_validation}
         />
       )}
 

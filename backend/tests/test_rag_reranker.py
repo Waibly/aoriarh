@@ -120,6 +120,21 @@ class TestVoyageReranker:
         assert reranked[1].text == "chunk B"
 
     @pytest.mark.asyncio
+    async def test_api_failure_can_exclude_unvalidated_candidates(self, reranker):
+        safe = _make_result("semantic chunk", 0.4, "doc-safe", 0)
+        hypothesis = _make_result("guessed article", 1.0, "doc-guess", 0)
+        reranker._call_api = AsyncMock(side_effect=httpx.ConnectError("failed"))
+
+        reranked = await reranker.rerank(
+            "test query",
+            [safe, hypothesis],
+            top_k=2,
+            fallback_results=[safe],
+        )
+
+        assert reranked == [safe]
+
+    @pytest.mark.asyncio
     async def test_empty_results(self, reranker):
         reranked = await reranker.rerank("test query", [], top_k=5)
         assert reranked == []

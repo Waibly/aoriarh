@@ -99,6 +99,17 @@ describe("Quality search plan", () => {
     if (data.rag_trace?.search_plan) {
       data.rag_trace.search_plan.query_budget = 1;
     }
+    if (data.rag_trace) {
+      data.rag_trace.search_plan_validation = {
+        status: "ok",
+        hypotheses_requested: ["L1234-1"],
+        corpus_matches: ["L1234-1"],
+        candidate_chunks_fetched: 2,
+        candidate_chunks_added: 2,
+        retained_after_rerank: ["L1234-1"],
+        retained_in_final_sources: ["L1234-1"],
+      };
+    }
 
     render(<InspectorBody data={data} />);
 
@@ -107,5 +118,11 @@ describe("Quality search plan", () => {
     ).toBeInTheDocument();
     expect(screen.getByText("Exécuté dans ce sandbox")).toBeInTheDocument();
     expect(screen.getByText("1 requête enrichie")).toBeInTheDocument();
+    expect(
+      screen.getByText("Articles suggérés — validation dans le corpus")
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/L1234-1 \(medium\) — retenu dans les sources finales/)
+    ).toBeInTheDocument();
   });
 });
