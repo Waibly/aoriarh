@@ -8,6 +8,8 @@ tiers. Un régression ici = fuite de données → à ne jamais casser.
 """
 from __future__ import annotations
 
+from datetime import date
+
 from qdrant_client.models import FieldCondition, Filter
 
 from app.rag.search import HybridSearch
@@ -83,3 +85,21 @@ class TestCloisonnementDemo:
         assert idcc_values == {"1234"}
         # Toujours pas d'autre organisation accessible.
         assert _OTHER_ORG not in _allowed_org_values(f)
+
+    def test_chronological_filter_keeps_tenant_filter_and_both_date_fields(self):
+        f = _builder()._build_org_filter(
+            _DEMO_ORG,
+            org_idcc_list=["1234"],
+            date_from=date(2026, 7, 1),
+            date_to=date(2026, 7, 31),
+        )
+
+        assert _OTHER_ORG not in _allowed_org_values(f)
+        dated = {
+            condition.key: condition.range
+            for condition in _field_conditions(f)
+            if condition.range is not None
+        }
+        assert set(dated) == {"content_date", "date_decision"}
+        assert all(value.gte == date(2026, 7, 1) for value in dated.values())
+        assert all(value.lte == date(2026, 7, 31) for value in dated.values())

@@ -118,6 +118,7 @@ async def test_sandbox_generation_receives_same_context_as_chat(monkeypatch):
     assert generation_kwargs["low_confidence"] is True
     assert generation_kwargs["condensed_query"] == "Question autonome condensée"
     assert generation_kwargs["carried_sources"] == [prior_source]
+    assert generation_kwargs["answer_format"] == plan.answer_format
     assert response.answer == "Réponse"
     assert response.rag_trace["perf_ms"]["generate"] >= 0
     assert response.rag_trace["search_plan_usage"]["execution"] == "adaptive_shadow"

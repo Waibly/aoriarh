@@ -476,6 +476,7 @@ def apply_compact_planner_payload(
         planner_source_hints=raw_hints,
         planner_jurisprudence=planner_jurisprudence,
         planner_answer_intent=planner_answer_intent,
+        answer_format=_answer_format(planner_answer_intent),
         warnings=warnings,
     )
 

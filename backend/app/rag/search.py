@@ -7,6 +7,7 @@ from dataclasses import dataclass
 
 import httpx
 from qdrant_client.models import (
+    DatetimeRange,
     FieldCondition,
     Filter,
     FusionQuery,
@@ -110,6 +111,8 @@ class HybridSearch:
         organisation_id: str,
         org_idcc_list: list[str] | None = None,
         source_type_filter: list[str] | None = None,
+        date_from: datetime.date | None = None,
+        date_to: datetime.date | None = None,
     ) -> Filter:
         """Construit le filtre Qdrant de cloisonnement multi-tenant.
 
@@ -195,6 +198,23 @@ class HybridSearch:
                 ],
             )
 
+        # Dedicated chronological branches use this range. Both fields are
+        # accepted because legislation/CCN generally expose ``content_date``
+        # while case law and JORF documents expose ``date_decision``.
+        if date_from or date_to:
+            date_range = DatetimeRange(gte=date_from, lte=date_to)
+            org_filter = Filter(
+                must=[
+                    org_filter,
+                    Filter(
+                        should=[
+                            FieldCondition(key="content_date", range=date_range),
+                            FieldCondition(key="date_decision", range=date_range),
+                        ],
+                    ),
+                ],
+            )
+
         return org_filter
 
     async def search(
@@ -204,6 +224,8 @@ class HybridSearch:
         top_k: int = TOP_K,
         org_idcc_list: list[str] | None = None,
         source_type_filter: list[str] | None = None,
+        date_from: datetime.date | None = None,
+        date_to: datetime.date | None = None,
         cost_ctx: CostContext | None = None,
     ) -> list[SearchResult]:
         """Execute a hybrid search combining dense and sparse vectors.
@@ -233,7 +255,11 @@ class HybridSearch:
         # 2. Build organisation filter (cloisonnement multi-tenant). Extrait en
         # _build_org_filter pour être testé isolément.
         org_filter = self._build_org_filter(
-            organisation_id, org_idcc_list, source_type_filter
+            organisation_id,
+            org_idcc_list,
+            source_type_filter,
+            date_from,
+            date_to,
         )
 
         # 3. Hybrid query with RRF fusion via prefetch

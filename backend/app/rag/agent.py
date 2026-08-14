@@ -28,6 +28,7 @@ from app.rag.parent_expansion import (
 from app.rag.reranker import get_reranker
 from app.rag.search import HybridSearch, SearchResult
 from app.rag.search_plan import (
+    SearchMode,
     SearchPlan,
     SourceRequirement,
     build_deterministic_search_plan,
@@ -75,6 +76,8 @@ _PLAN_HYPOTHESIS_RERANK_FLOOR = rag_config.LOW_CONFIDENCE_RERANK
 _MAX_PLAN_LEGISLATION_COMPLEMENT_CHUNKS = 5
 _MAX_PLAN_JURISPRUDENCE_COMPLEMENT_CHUNKS = 3
 _MAX_PLAN_CCN_PRIORITY_CHUNKS = 8
+_MAX_PLAN_CHRONOLOGY_PRIORITY_CHUNKS = 8
+_MAX_PLAN_INTERNAL_PRIORITY_CHUNKS = 4
 
 # Types « convention collective » de l'org. Tout résultat de ce type présent
 # dans le pool a passé le filtre IDCC (cf. HybridSearch.search) : c'est donc la
@@ -83,6 +86,14 @@ _MAX_PLAN_CCN_PRIORITY_CHUNKS = 8
 _CCN_SOURCE_TYPES: frozenset[str] = frozenset(
     {"convention_collective_nationale", "accord_branche"}
 )
+_INTERNAL_SOURCE_TYPES: frozenset[str] = frozenset({
+    "accord_entreprise",
+    "accord_performance_collective",
+    "contrat_travail",
+    "engagement_unilateral",
+    "reglement_interieur",
+    "usage_entreprise",
+})
 
 # Jurisprudence source types (hierarchy level 4). Used by the source-type balance
 # to cap how many rulings may sit at the top of the final list, so the applicable
@@ -199,6 +210,24 @@ def _build_plan_complement_query(plan: SearchPlan, fallback: str) -> str:
             return query.strip()
 
     return fallback
+
+
+def _plan_time_bounds(
+    plan: SearchPlan,
+    *,
+    today: datetime.date | None = None,
+) -> tuple[datetime.date | None, datetime.date | None]:
+    """Translate the validated plan period into inclusive date bounds."""
+
+    scope = plan.time_scope or {}
+    kind = scope.get("kind")
+    if kind == "rolling_days":
+        end = today or datetime.date.today()
+        return end - datetime.timedelta(days=int(scope["days"])), end
+    if kind == "calendar_year":
+        year = int(scope["year"])
+        return datetime.date(year, 1, 1), datetime.date(year, 12, 31)
+    return None, None
 
 
 def _assess_confidence(
@@ -782,11 +811,18 @@ class RAGAgent:
             or trace.identifiers_detected.get("article_nums")
         )
         if has_identifiers and trace.boost_injected == 0:
-            trace.identifier_no_match = True
-            logger.warning(
-                "[QUALITY] identifier_no_match: %s — search relies on semantic guess",
-                trace.identifiers_detected,
+            direct_count = int(
+                trace.search_plan_validation.get(
+                    "direct_reference_candidate_chunks", 0
+                )
+                or 0
             )
+            if direct_count == 0:
+                trace.identifier_no_match = True
+                logger.warning(
+                    "[QUALITY] identifier_no_match: %s — search relies on semantic guess",
+                    trace.identifiers_detected,
+                )
 
         # Step 1.6 (adaptive only): validate article hypotheses against the
         # tenant-filtered corpus, append a tiny candidate set, then let the
@@ -935,6 +971,7 @@ class RAGAgent:
         condensed_query: str | None = None,
         model_override: str | None = None,
         carried_sources: list[dict] | None = None,
+        answer_format: str | None = None,
     ) -> AsyncGenerator[str, None]:
         """Stream the LLM generation token by token (buffered).
 
@@ -953,6 +990,7 @@ class RAGAgent:
         user_content = self._build_user_message(
             query, context, org_context, history, low_confidence=low_confidence,
             condensed_query=condensed_query, carried_sources=carried_sources,
+            answer_format=answer_format,
         )
         logger.info(
             "[RAG] stream org_context injected: %s",
@@ -1612,15 +1650,47 @@ class RAGAgent:
             if len(variants) >= 3:
                 break
 
-        if plan.time_scope and plan.time_scope.get("kind") == "rolling_days":
-            today = datetime.date.today()
-            start = today - datetime.timedelta(days=int(plan.time_scope["days"]))
+        date_from, date_to = _plan_time_bounds(plan)
+        if date_from and date_to and plan.time_scope.get("kind") == "rolling_days":
             news_query = (
                 f"droit social publication entrée en vigueur "
-                f"{start.isoformat()} {today.isoformat()}"
+                f"{date_from.isoformat()} {date_to.isoformat()}"
             )
             if _normalize_question(news_query) not in seen:
                 variants.append(news_query)
+
+        # Exact references bypass semantic planning and go straight to the
+        # indexed identifier lookup. One broad semantic query remains as a
+        # bounded completeness floor for related rules and exceptions.
+        if plan.mode is SearchMode.EXACT_REFERENCE:
+            direct = await fetch_by_identifiers(
+                self.search_engine.qdrant,
+                plan.explicit_identifiers,
+                organisation_id=organisation_id,
+                org_idcc_list=org_idcc_list,
+            )
+            safety = await self._step_with_timeout(
+                self.search_engine.search(
+                    query,
+                    organisation_id,
+                    top_k=TOP_K,
+                    org_idcc_list=org_idcc_list,
+                    cost_ctx=self._cost_ctx,
+                ),
+                fallback=[],
+            )
+            pool = list(direct)
+            seen_direct = {(result.document_id, result.chunk_index) for result in pool}
+            for candidate in safety:
+                key = (candidate.document_id, candidate.chunk_index)
+                if key not in seen_direct:
+                    seen_direct.add(key)
+                    pool.append(candidate)
+            self._plan_search_diagnostics = {
+                "direct_reference_candidate_chunks": len(direct),
+                "general_safety_candidate_chunks": len(safety),
+            }
+            return pool, variants
 
         source_type_filter = plan.requested_source_types or None
         apply_legislation_floor = plan.legislation in {
@@ -1643,43 +1713,102 @@ class RAGAgent:
             apply_legislation_floor=apply_legislation_floor and not source_type_filter,
         )
 
-        # A broad search must stay broad, but an applicable CCN explicitly
-        # identified by the planner deserves a small guaranteed candidate
-        # window. This adds recall without filtering out Code, case law or
-        # internal documents, and costs one embedding/search (no extra LLM).
-        if (
-            not source_type_filter
-            and plan.ccn is not SourceRequirement.DISABLED
-            and "ccn" in plan.planner_source_hints
-            and org_idcc_list
-        ):
-            ccn_candidates = await self._step_with_timeout(
-                self.search_engine.search(
-                    query,
-                    organisation_id,
-                    top_k=_MAX_PLAN_CCN_PRIORITY_CHUNKS,
-                    org_idcc_list=org_idcc_list,
-                    source_type_filter=sorted(_CCN_SOURCE_TYPES),
-                    cost_ctx=self._cost_ctx,
-                ),
-                fallback=[],
+        # Priority branches add candidates to the broad pool; they never
+        # replace it. Run them together to keep their latency bounded.
+        priority_tasks = []
+        if not source_type_filter:
+            if (
+                plan.ccn is not SourceRequirement.DISABLED
+                and "ccn" in plan.planner_source_hints
+                and org_idcc_list
+            ):
+                priority_tasks.append((
+                    "ccn",
+                    _MAX_PLAN_CCN_PRIORITY_CHUNKS,
+                    self.search_engine.search(
+                        query,
+                        organisation_id,
+                        top_k=_MAX_PLAN_CCN_PRIORITY_CHUNKS,
+                        org_idcc_list=org_idcc_list,
+                        source_type_filter=sorted(_CCN_SOURCE_TYPES),
+                        cost_ctx=self._cost_ctx,
+                    ),
+                ))
+            if date_from or date_to:
+                priority_tasks.append((
+                    "chronology",
+                    _MAX_PLAN_CHRONOLOGY_PRIORITY_CHUNKS,
+                    self.search_engine.search(
+                        query,
+                        organisation_id,
+                        top_k=_MAX_PLAN_CHRONOLOGY_PRIORITY_CHUNKS,
+                        org_idcc_list=org_idcc_list,
+                        date_from=date_from,
+                        date_to=date_to,
+                        cost_ctx=self._cost_ctx,
+                    ),
+                ))
+            if (
+                plan.jurisprudence is SourceRequirement.REQUIRED
+                or plan.planner_jurisprudence is SourceRequirement.REQUIRED
+            ):
+                priority_tasks.append((
+                    "jurisprudence",
+                    _MAX_PLAN_JURISPRUDENCE_COMPLEMENT_CHUNKS,
+                    self.search_engine.search(
+                        query,
+                        organisation_id,
+                        top_k=_MAX_PLAN_JURISPRUDENCE_COMPLEMENT_CHUNKS,
+                        org_idcc_list=org_idcc_list,
+                        source_type_filter=sorted(_JURIS_SOURCE_TYPES),
+                        date_from=date_from,
+                        date_to=date_to,
+                        cost_ctx=self._cost_ctx,
+                    ),
+                ))
+            if "internal" in plan.planner_source_hints:
+                priority_tasks.append((
+                    "internal",
+                    _MAX_PLAN_INTERNAL_PRIORITY_CHUNKS,
+                    self.search_engine.search(
+                        query,
+                        organisation_id,
+                        top_k=_MAX_PLAN_INTERNAL_PRIORITY_CHUNKS,
+                        org_idcc_list=org_idcc_list,
+                        source_type_filter=sorted(_INTERNAL_SOURCE_TYPES),
+                        cost_ctx=self._cost_ctx,
+                    ),
+                ))
+
+        if priority_tasks:
+            priority_results = await asyncio.gather(
+                *[
+                    self._step_with_timeout(task, fallback=[])
+                    for _label, _cap, task in priority_tasks
+                ]
             )
             seen_pool = {(result.document_id, result.chunk_index) for result in pool}
-            added = 0
-            for candidate in ccn_candidates[:_MAX_PLAN_CCN_PRIORITY_CHUNKS]:
-                key = (candidate.document_id, candidate.chunk_index)
-                if key in seen_pool:
-                    continue
-                seen_pool.add(key)
-                pool.append(candidate)
-                added += 1
-            self._plan_search_diagnostics["priority_branches"] = [{
-                "kind": "ccn",
-                "candidate_chunks": len(
-                    ccn_candidates[:_MAX_PLAN_CCN_PRIORITY_CHUNKS]
-                ),
-                "added_chunks": added,
-            }]
+            diagnostics = self._plan_search_diagnostics.setdefault(
+                "priority_branches", []
+            )
+            for (label, cap, _task), candidates in zip(
+                priority_tasks,
+                priority_results,
+                strict=True,
+            ):
+                added = 0
+                for candidate in candidates[:cap]:
+                    key = (candidate.document_id, candidate.chunk_index)
+                    if key in seen_pool:
+                        continue
+                    seen_pool.add(key)
+                    pool.append(candidate)
+                    added += 1
+                diagnostics.append({
+                    "kind": label,
+                    "candidate_chunks": len(candidates[:cap]),
+                    "added_chunks": added,
+                })
 
         if source_type_filter:
             complement_query = _build_plan_complement_query(plan, legal_anchor)
@@ -2338,6 +2467,7 @@ class RAGAgent:
         low_confidence: bool = False,
         condensed_query: str | None = None,
         carried_sources: list[dict] | None = None,
+        answer_format: str | None = None,
     ) -> str:
         """Build the user message with sources, optional org context, history, and question."""
         parts = [
@@ -2395,6 +2525,24 @@ class RAGAgent:
             f"Date du jour : {_today_fr()}. Apprécie les délais, entrées en "
             "vigueur et notions de récence par rapport à cette date."
         )
+        if answer_format:
+            format_guidance = {
+                "direct_then_cases": "réponse directe, puis cas applicables",
+                "verdict_then_conditions": "verdict, puis conditions et exceptions",
+                "numbered_steps": "procédure en étapes numérotées avec délais",
+                "comparison_table": "comparaison structurée, en tableau si utile",
+                "formula_then_application": "formule, puis application chiffrée",
+                "main_risk_then_secondary_risks": (
+                    "risque principal, puis risques secondaires"
+                ),
+                "chronological_digest": "synthèse chronologique datée",
+            }.get(answer_format)
+            if format_guidance:
+                parts.append(
+                    "Format de réponse déterminé par le plan : "
+                    f"{format_guidance}. Adapte sa longueur à la question et "
+                    "n'ajoute aucune section vide."
+                )
         parts.append(f"Question : {query}")
         # Alignement retrieval/génération : les sources ont été cherchées avec
         # la question condensée (relance replacée dans son contexte). On la

@@ -313,6 +313,17 @@ def test_compact_payload_can_only_rewrite_an_anaphoric_follow_up():
     assert autonomous_enriched.standalone_question == autonomous.query_original
 
 
+def test_planner_answer_intent_updates_generation_format():
+    plan = build_deterministic_search_plan("Comment gérer cette situation ?")
+    enriched = apply_compact_planner_payload(
+        plan,
+        _valid_payload(answer_intent="comparison"),
+    )
+
+    assert enriched.planner_answer_intent is AnswerIntent.COMPARISON
+    assert enriched.answer_format == "comparison_table"
+
+
 def test_hypothesized_articles_are_canonical_limited_and_separate_from_explicit():
     plan = build_deterministic_search_plan("Comment gérer cette rupture ?")
     payload = _valid_payload(
@@ -495,6 +506,88 @@ async def test_adaptive_search_uses_queries_but_never_guessed_article_identifier
 
 
 @pytest.mark.asyncio
+async def test_exact_reference_uses_direct_lookup_plus_one_general_safety_search():
+    plan = build_deterministic_search_plan(
+        "Que prévoit l'article L.1234-9 du Code du travail ?",
+        org_idcc_list=["1486"],
+    )
+    direct = _search_result(
+        "code-direct",
+        0,
+        article_nums=["L1234-9"],
+    )
+    safety = _search_result("related", 1, source_type="arret_cour_cassation")
+    agent = RAGAgent.__new__(RAGAgent)
+    agent.search_engine = MagicMock()
+    agent.search_engine.qdrant = MagicMock()
+    agent.search_engine.search = AsyncMock(return_value=[direct, safety])
+    agent._org_id = "org-1"
+    agent._user_id = None
+    agent._conversation_id = None
+    agent._is_replay = True
+
+    with patch(
+        "app.rag.agent.fetch_by_identifiers",
+        AsyncMock(return_value=[direct]),
+    ) as fetch:
+        pool, variants = await agent._search_with_plan(
+            plan,
+            plan.standalone_question,
+            "org-1",
+            org_idcc_list=["1486"],
+        )
+
+    fetch.assert_awaited_once()
+    agent.search_engine.search.assert_awaited_once()
+    assert variants == [plan.query_original]
+    assert [(result.document_id, result.chunk_index) for result in pool] == [
+        ("code-direct", 0),
+        ("related", 1),
+    ]
+    assert agent._plan_search_diagnostics == {
+        "direct_reference_candidate_chunks": 1,
+        "general_safety_candidate_chunks": 2,
+    }
+
+
+@pytest.mark.asyncio
+async def test_legal_news_adds_dated_candidates_without_dropping_broad_fallback():
+    plan = build_deterministic_search_plan(
+        "Quelles sont les dernières actualités en droit social ?"
+    )
+    broad = _search_result("broad", 0, source_type="code_travail")
+    dated = _search_result("dated", 0, source_type="loi")
+    agent = RAGAgent.__new__(RAGAgent)
+    agent._run_variant_searches = AsyncMock(return_value=[broad])
+    agent.search_engine = MagicMock()
+    agent.search_engine.search = AsyncMock(return_value=[dated])
+    agent._org_id = "org-1"
+    agent._user_id = None
+    agent._conversation_id = None
+    agent._is_replay = True
+
+    pool, _variants = await agent._search_with_plan(
+        plan,
+        plan.standalone_question,
+        "org-1",
+    )
+
+    assert [(result.document_id, result.chunk_index) for result in pool] == [
+        ("broad", 0),
+        ("dated", 0),
+    ]
+    chronology_call = agent.search_engine.search.await_args
+    assert chronology_call.kwargs["date_from"] is not None
+    assert chronology_call.kwargs["date_to"] is not None
+    assert (
+        chronology_call.kwargs["date_to"] - chronology_call.kwargs["date_from"]
+    ).days == 30
+    assert agent._plan_search_diagnostics["priority_branches"] == [
+        {"kind": "chronology", "candidate_chunks": 1, "added_chunks": 1}
+    ]
+
+
+@pytest.mark.asyncio
 async def test_source_directed_plan_preserves_filtered_results_and_bounds_fallback():
     plan = build_deterministic_search_plan(
         "Selon ma convention collective, quel préavis pour un cadre ?",
@@ -585,17 +678,17 @@ async def test_source_directed_plan_preserves_filtered_results_and_bounds_fallba
 @pytest.mark.asyncio
 async def test_standard_plan_adds_ccn_priority_candidates_without_narrowing_main_search():
     plan = build_deterministic_search_plan(
-        "Quelle garantie d'emploi s'applique pendant une absence maladie ?",
+        "Quel préavis s'applique à un cadre ?",
         org_idcc_list=["1486"],
     )
     plan = apply_compact_planner_payload(
         plan,
         _valid_payload(
-            legal_topics=["garantie d'emploi", "absence maladie"],
-            search_queries=["absence maladie suspension contrat"],
+            legal_topics=["préavis", "cadres"],
+            search_queries=["durée préavis cadre"],
             hypothesized_articles=[],
             source_hints=["ccn", "legislation", "jurisprudence"],
-            jurisprudence="required",
+            jurisprudence="optional",
         ),
     )
     code = _search_result("code-1", 0, source_type="code_travail")

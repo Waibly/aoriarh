@@ -705,6 +705,9 @@ async def _run_sandbox_pipeline(
             low_confidence=rag_trace.low_confidence,
             condensed_query=reformulated,
             carried_sources=carried_for_generation or None,
+            answer_format=(
+                planner_result.plan.answer_format if use_adaptive_plan else None
+            ),
         ):
             full_answer += chunk
         answer = full_answer
