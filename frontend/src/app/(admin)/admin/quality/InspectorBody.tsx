@@ -100,10 +100,13 @@ export interface RagTrace {
   };
   search_plan_validation?: {
     status?: "ok" | "lookup_failed";
+    hypotheses_proposed?: string[];
     hypotheses_requested?: string[];
+    hypotheses_skipped_low_confidence?: string[];
     corpus_matches?: string[];
     candidate_chunks_fetched?: number;
     candidate_chunks_added?: number;
+    rejected_below_confidence_floor?: string[];
     retained_after_rerank?: string[];
     retained_in_final_sources?: string[];
   };
@@ -260,6 +263,12 @@ function SearchPlanPanel({
   ];
   const adaptiveExecuted = usage?.execution === "adaptive_shadow";
   const normalizedCorpusMatches = new Set(validation?.corpus_matches ?? []);
+  const normalizedSkippedLowConfidence = new Set(
+    validation?.hypotheses_skipped_low_confidence ?? []
+  );
+  const normalizedRejectedBelowFloor = new Set(
+    validation?.rejected_below_confidence_floor ?? []
+  );
   const normalizedRerankRetained = new Set(
     validation?.retained_after_rerank ?? []
   );
@@ -384,7 +393,11 @@ function SearchPlanPanel({
                   let status = validation
                     ? "introuvable dans le corpus autorisé"
                     : "non évalué lors de cette exécution";
-                  if (normalizedFinalRetained.has(reference)) {
+                  if (normalizedSkippedLowConfidence.has(reference)) {
+                    status = "écarté avant recherche (confiance faible)";
+                  } else if (normalizedRejectedBelowFloor.has(reference)) {
+                    status = "trouvé, rejeté (pertinence insuffisante)";
+                  } else if (normalizedFinalRetained.has(reference)) {
                     status = "retenu dans les sources finales";
                   } else if (normalizedRerankRetained.has(reference)) {
                     status = "retenu au reranking, écarté ensuite";

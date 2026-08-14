@@ -102,10 +102,13 @@ describe("Quality search plan", () => {
     if (data.rag_trace) {
       data.rag_trace.search_plan_validation = {
         status: "ok",
+        hypotheses_proposed: ["L1234-1"],
         hypotheses_requested: ["L1234-1"],
+        hypotheses_skipped_low_confidence: [],
         corpus_matches: ["L1234-1"],
         candidate_chunks_fetched: 2,
         candidate_chunks_added: 2,
+        rejected_below_confidence_floor: [],
         retained_after_rerank: ["L1234-1"],
         retained_in_final_sources: ["L1234-1"],
       };
@@ -123,6 +126,40 @@ describe("Quality search plan", () => {
     ).toBeInTheDocument();
     expect(
       screen.getByText(/L1234-1 \(medium\) — retenu dans les sources finales/)
+    ).toBeInTheDocument();
+  });
+
+  it("shows that low-confidence articles were not searched", () => {
+    const data = payload();
+    if (data.rag_trace?.search_plan_usage) {
+      data.rag_trace.search_plan_usage.execution = "adaptive_shadow";
+    }
+    if (data.rag_trace?.search_plan) {
+      data.rag_trace.search_plan.hypothesized_articles = [
+        { reference: "L1226-9", confidence: "low" },
+      ];
+    }
+    if (data.rag_trace) {
+      data.rag_trace.search_plan_validation = {
+        status: "ok",
+        hypotheses_proposed: ["L1226-9"],
+        hypotheses_requested: [],
+        hypotheses_skipped_low_confidence: ["L1226-9"],
+        corpus_matches: [],
+        candidate_chunks_fetched: 0,
+        candidate_chunks_added: 0,
+        rejected_below_confidence_floor: [],
+        retained_after_rerank: [],
+        retained_in_final_sources: [],
+      };
+    }
+
+    render(<InspectorBody data={data} />);
+
+    expect(
+      screen.getByText(
+        /L1226-9 \(low\) — écarté avant recherche \(confiance faible\)/
+      )
     ).toBeInTheDocument();
   });
 });

@@ -466,7 +466,7 @@ async def test_adaptive_article_hypotheses_are_tenant_filtered_bounded_candidate
         _valid_payload(
             hypothesized_articles=[
                 {"reference": "L.3141-16", "confidence": "medium"},
-                {"reference": "L3141-15", "confidence": "low"},
+                {"reference": "L3141-15", "confidence": "medium"},
             ]
         ),
     )
@@ -491,7 +491,7 @@ async def test_adaptive_article_hypotheses_are_tenant_filtered_bounded_candidate
         agent = RAGAgent.__new__(RAGAgent)
         agent.search_engine = MagicMock()
         agent.search_engine.qdrant = MagicMock()
-        results, validation, refs_by_key = (
+        results, validation, refs_by_key, added_keys = (
             await agent._inject_plan_hypothesis_candidates(
                 plan,
                 baseline,
@@ -517,15 +517,55 @@ async def test_adaptive_article_hypotheses_are_tenant_filtered_bounded_candidate
     ]
     assert validation == {
         "status": "ok",
+        "hypotheses_proposed": ["L3141-16", "L3141-15"],
         "hypotheses_requested": ["L3141-16", "L3141-15"],
+        "hypotheses_skipped_low_confidence": [],
         "corpus_matches": ["L3141-15", "L3141-16"],
         "candidate_chunks_fetched": 3,
         "candidate_chunks_added": 3,
+        "rejected_below_confidence_floor": [],
         "retained_after_rerank": [],
         "retained_in_final_sources": [],
     }
     assert refs_by_key[("code-1", 0)] == {"L3141-16"}
     assert ("ccn-1", 0) not in refs_by_key
+    assert added_keys == {("code-1", 0), ("code-1", 1), ("code-2", 0)}
+
+
+@pytest.mark.asyncio
+async def test_low_confidence_article_hypotheses_never_reach_the_corpus_lookup():
+    plan = build_deterministic_search_plan("Un licenciement pendant une maladie ?")
+    plan = apply_compact_planner_payload(
+        plan,
+        _valid_payload(
+            hypothesized_articles=[
+                {"reference": "L1226-9", "confidence": "low"},
+            ]
+        ),
+    )
+    agent = RAGAgent.__new__(RAGAgent)
+    agent.search_engine = MagicMock()
+
+    with patch(
+        "app.rag.agent.fetch_by_identifiers",
+        new=AsyncMock(return_value=[]),
+    ) as fetch_mock:
+        results, validation, refs_by_key, added_keys = (
+            await agent._inject_plan_hypothesis_candidates(
+                plan,
+                [],
+                "org-1",
+                ["1486"],
+            )
+        )
+
+    fetch_mock.assert_not_awaited()
+    assert results == []
+    assert refs_by_key == {}
+    assert added_keys == set()
+    assert validation["hypotheses_proposed"] == ["L1226-9"]
+    assert validation["hypotheses_requested"] == []
+    assert validation["hypotheses_skipped_low_confidence"] == ["L1226-9"]
 
 
 @pytest.mark.asyncio
@@ -538,12 +578,14 @@ async def test_adaptive_trace_distinguishes_found_and_reranker_retained_hypothes
         _valid_payload(
             hypothesized_articles=[
                 {"reference": "L3141-16", "confidence": "medium"},
-                {"reference": "L9999-1", "confidence": "low"},
+                {"reference": "L9999-1", "confidence": "medium"},
             ]
         ),
     )
     relevant = _search_result("code-1", 0, article_nums=["L3141-16"])
     irrelevant = _search_result("code-2", 0, article_nums=["L9999-1"])
+    relevant.score = 0.7
+    irrelevant.score = 0.4
 
     with patch("app.rag.agent._search_engine"), patch(
         "app.rag.agent.get_reranker"
@@ -551,7 +593,7 @@ async def test_adaptive_trace_distinguishes_found_and_reranker_retained_hypothes
         agent = RAGAgent()
     agent._search_with_plan = AsyncMock(return_value=([], [plan.standalone_question]))
     agent.reranker = MagicMock()
-    agent.reranker.rerank = AsyncMock(return_value=[relevant])
+    agent.reranker.rerank = AsyncMock(return_value=[relevant, irrelevant])
 
     with patch(
         "app.rag.agent.fetch_by_identifiers",
@@ -569,6 +611,9 @@ async def test_adaptive_trace_distinguishes_found_and_reranker_retained_hypothes
     assert trace.search_plan_validation["corpus_matches"] == [
         "L3141-16",
         "L9999-1",
+    ]
+    assert trace.search_plan_validation["rejected_below_confidence_floor"] == [
+        "L9999-1"
     ]
     assert trace.search_plan_validation["retained_after_rerank"] == ["L3141-16"]
     assert trace.search_plan_validation["retained_in_final_sources"] == [

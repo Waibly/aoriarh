@@ -66,6 +66,7 @@ _CODE_SOURCE_TYPES: frozenset[str] = frozenset(
 )
 _MAX_PLAN_HYPOTHESIS_CHUNKS_PER_ARTICLE = 2
 _MAX_PLAN_HYPOTHESIS_CHUNKS_TOTAL = 6
+_PLAN_HYPOTHESIS_RERANK_FLOOR = rag_config.LOW_CONFIDENCE_RERANK
 
 # Types « convention collective » de l'org. Tout résultat de ce type présent
 # dans le pool a passé le filtre IDCC (cf. HybridSearch.search) : c'est donc la
@@ -710,11 +711,13 @@ class RAGAgent:
         # normal reranker decide whether any of them is relevant. A guessed
         # reference is never presented as a source merely because it exists.
         hypothesis_refs_by_key: dict[tuple[str, int], set[str]] = {}
+        hypothesis_added_keys: set[tuple[str, int]] = set()
         if search_plan is not None and search_plan.hypothesized_articles:
             (
                 results,
                 trace.search_plan_validation,
                 hypothesis_refs_by_key,
+                hypothesis_added_keys,
             ) = await self._inject_plan_hypothesis_candidates(
                 search_plan,
                 results,
@@ -728,12 +731,11 @@ class RAGAgent:
 
         # Step 3: Reranking
         _pool_pre_rerank = results
-        hypothesis_candidate_keys = set(hypothesis_refs_by_key)
         rerank_fallback = [
             result
             for result in results
             if (result.document_id, result.chunk_index)
-            not in hypothesis_candidate_keys
+            not in hypothesis_added_keys
         ][:RERANK_TOP_K]
         results = await self._step_with_timeout(
             self.reranker.rerank(
@@ -745,6 +747,22 @@ class RAGAgent:
             ),
             fallback=rerank_fallback,
         )
+        if trace.search_plan_validation:
+            retained_results: list[SearchResult] = []
+            rejected_refs: set[str] = set()
+            for result in results:
+                key = (result.document_id, result.chunk_index)
+                if (
+                    key in hypothesis_added_keys
+                    and result.score < _PLAN_HYPOTHESIS_RERANK_FLOOR
+                ):
+                    rejected_refs.update(hypothesis_refs_by_key.get(key, set()))
+                    continue
+                retained_results.append(result)
+            results = retained_results
+            trace.search_plan_validation["rejected_below_confidence_floor"] = (
+                sorted(rejected_refs)
+            )
         results = self._ensure_ccn_represented(
             _pool_pre_rerank, results, org_idcc_list,
         )
@@ -1282,32 +1300,45 @@ class RAGAgent:
         list[SearchResult],
         dict,
         dict[tuple[str, int], set[str]],
+        set[tuple[str, int]],
     ]:
         """Validate and append bounded Code article candidates from a plan.
 
-        The lookup uses the same organisation/IDCC access filter as explicit
-        identifier retrieval. Only Code sources are accepted, at most two
-        chunks per article and six total. Candidates are appended (never
-        promoted) so only the normal reranker can move them into the answer.
+        Only medium-confidence proposals are looked up. The lookup uses the
+        same organisation/IDCC access filter as explicit identifier retrieval.
+        Only Code sources are accepted, at most two chunks per article and six
+        total. Candidates are appended (never promoted), then must reach the
+        normal retrieval confidence floor in the common reranker.
         """
 
+        proposed: list[str] = []
         requested: list[str] = []
+        skipped_low_confidence: list[str] = []
         for hypothesis in plan.hypothesized_articles:
             reference = _normalize_article_num(hypothesis.reference)
-            if reference and reference not in requested:
+            if reference and reference not in proposed:
+                proposed.append(reference)
+            if not reference or reference in requested:
+                continue
+            if hypothesis.confidence != "medium":
+                skipped_low_confidence.append(reference)
+            else:
                 requested.append(reference)
 
         validation: dict = {
             "status": "ok",
+            "hypotheses_proposed": proposed,
             "hypotheses_requested": requested,
+            "hypotheses_skipped_low_confidence": skipped_low_confidence,
             "corpus_matches": [],
             "candidate_chunks_fetched": 0,
             "candidate_chunks_added": 0,
+            "rejected_below_confidence_floor": [],
             "retained_after_rerank": [],
             "retained_in_final_sources": [],
         }
         if not requested:
-            return results, validation, {}
+            return results, validation, {}, set()
 
         try:
             fetched = await fetch_by_identifiers(
@@ -1319,7 +1350,7 @@ class RAGAgent:
         except Exception:
             logger.exception("[PLAN] Article hypothesis validation failed")
             validation["status"] = "lookup_failed"
-            return results, validation, {}
+            return results, validation, {}, set()
 
         selected: list[SearchResult] = []
         refs_by_key: dict[tuple[str, int], set[str]] = {}
@@ -1358,12 +1389,14 @@ class RAGAgent:
 
         seen = {(result.document_id, result.chunk_index) for result in results}
         added = 0
+        added_keys: set[tuple[str, int]] = set()
         for candidate in selected:
             key = (candidate.document_id, candidate.chunk_index)
             if key in seen:
                 continue
             seen.add(key)
             results.append(candidate)
+            added_keys.add(key)
             added += 1
         validation["candidate_chunks_added"] = added
 
@@ -1374,7 +1407,7 @@ class RAGAgent:
             len(validation["corpus_matches"]),
             added,
         )
-        return results, validation, refs_by_key
+        return results, validation, refs_by_key, added_keys
 
     async def _search_with_expansion(
         self,
