@@ -1,12 +1,14 @@
 """Tests for the RagTrace dataclass and serialization helpers."""
+
 from __future__ import annotations
 
 from app.rag.agent import RagTrace, _serialize_chunks
 from app.rag.search import SearchResult
 
 
-def _mk(text: str = "", chunk_idx: int = 0, score: float = 0.5,
-        doc_id: str = "doc-1") -> SearchResult:
+def _mk(
+    text: str = "", chunk_idx: int = 0, score: float = 0.5, doc_id: str = "doc-1"
+) -> SearchResult:
     return SearchResult(
         text=text,
         doc_name="My Doc",
@@ -30,6 +32,8 @@ class TestRagTrace:
         assert t.hybrid_results == []
         assert t.rerank_results == []
         assert t.parent_groups == []
+        assert t.search_plan is None
+        assert t.search_plan_usage == {}
         assert t.perf_ms == {}
         assert t.out_of_scope is False
         assert t.no_results is False
@@ -37,6 +41,7 @@ class TestRagTrace:
 
     def test_to_dict_serializable(self):
         import json
+
         t = RagTrace(
             query_original="q",
             query_condensed="qc",
@@ -52,6 +57,8 @@ class TestRagTrace:
         assert d["query_condensed"] == "qc"
         assert d["out_of_scope"] is True
         assert d["perf_ms"]["total"] == 1234.5
+        assert d["search_plan"] is None
+        assert d["search_plan_usage"] == {}
 
 
 class TestSerializeChunks:

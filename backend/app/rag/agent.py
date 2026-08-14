@@ -9,8 +9,8 @@ from dataclasses import dataclass, field
 import httpx
 from openai import AsyncOpenAI
 
-from app.core.config import settings
 import app.rag.config as rag_config
+from app.core.config import settings
 from app.rag.config import (
     CCN_FLOOR_TOP,
     CONDENSE_HISTORY_LIMIT,
@@ -26,8 +26,13 @@ from app.rag.parent_expansion import (
     fetch_by_identifiers,
 )
 from app.rag.reranker import get_reranker
-from app.rag.source_intent import detect_source_intent
 from app.rag.search import HybridSearch, SearchResult
+from app.rag.search_plan import (
+    SearchPlan,
+    SourceRequirement,
+    build_deterministic_search_plan,
+)
+from app.rag.source_intent import detect_source_intent
 from app.services.cost_tracker import CostContext, cost_tracker
 
 logger = logging.getLogger(__name__)
@@ -193,6 +198,9 @@ class RagTrace:
     # "faible pertinence" qui déclenche une consigne de rigueur à la génération.
     max_rerank_score: float | None = None
     low_confidence: bool = False
+    # Plan adaptatif en observation uniquement : aucun effet sur le retrieval.
+    search_plan: dict | None = None
+    search_plan_usage: dict[str, int | float | str] = field(default_factory=dict)
     error: str | None = None
 
     def to_dict(self) -> dict:
@@ -213,6 +221,8 @@ class RagTrace:
             "no_results": self.no_results,
             "max_rerank_score": self.max_rerank_score,
             "low_confidence": self.low_confidence,
+            "search_plan": self.search_plan,
+            "search_plan_usage": self.search_plan_usage,
             "error": self.error,
         }
 
@@ -582,6 +592,7 @@ class RAGAgent:
         user_id: str | None = None,
         conversation_id: str | None = None,
         is_replay: bool = False,
+        search_plan: SearchPlan | None = None,
     ) -> tuple[list[SearchResult], str, RagTrace]:
         """Run steps 0-5 (non-streaming) and return results + reformulated query + trace."""
         self._org_id = organisation_id
@@ -591,9 +602,25 @@ class RAGAgent:
         t0 = time.perf_counter()
 
         trace = RagTrace(query_original=query, model=rag_config.LLM_MODEL)
+        if search_plan is None:
+            search_plan_trace = build_deterministic_search_plan(
+                query,
+                has_history=bool(history),
+                org_idcc_list=org_idcc_list,
+                not_subject_to_ccn=bool(
+                    org_context and org_context.get("not_subject_to_ccn")
+                ),
+            )
+        else:
+            search_plan_trace = search_plan
+        trace.search_plan = search_plan_trace.to_dict()
 
         # Step 0: Condensation (multi-turn)
-        if history:
+        if search_plan is not None and search_plan.needs_condensation:
+            query = search_plan.standalone_question
+            trace.query_condensed = query
+            trace.perf_ms["condense"] = 0.0
+        elif history and search_plan is None:
             t_cond = time.perf_counter()
             query = await self._step_with_timeout(
                 self._condense_question(
@@ -617,7 +644,20 @@ class RAGAgent:
 
         # Step 1-2: Query expansion + parallel search + RRF
         t_exp_q = time.perf_counter()
-        results, variants = await self._search_with_expansion(query, organisation_id, org_idcc_list=org_idcc_list, org_context=org_context)
+        if search_plan is None:
+            results, variants = await self._search_with_expansion(
+                query,
+                organisation_id,
+                org_idcc_list=org_idcc_list,
+                org_context=org_context,
+            )
+        else:
+            results, variants = await self._search_with_plan(
+                search_plan,
+                query,
+                organisation_id,
+                org_idcc_list=org_idcc_list,
+            )
         trace.perf_ms["expand_search"] = (time.perf_counter() - t_exp_q) * 1000
         trace.variants = list(variants) if variants else []
         if variants and variants[0] == _OUT_OF_SCOPE_MARKER:
@@ -1241,6 +1281,76 @@ class RAGAgent:
             )
             pool = await self._run_variant_searches(
                 variants, legal_anchor, organisation_id,
+                org_idcc_list=org_idcc_list,
+                source_type_filter=None,
+                apply_legislation_floor=True,
+            )
+
+        return pool, variants
+
+    async def _search_with_plan(
+        self,
+        plan: SearchPlan,
+        query: str,
+        organisation_id: str,
+        org_idcc_list: list[str] | None = None,
+    ) -> tuple[list[SearchResult], list[str]]:
+        """Execute a validated plan in sandbox/adaptive mode.
+
+        Guessed article numbers are intentionally excluded. They remain visible
+        in the trace for evaluation, but cannot enter retrieval until a later
+        corpus-validation stage proves that using them improves relevance.
+        """
+
+        variants: list[str] = []
+        seen: set[str] = set()
+        for candidate in [query, *plan.search_queries]:
+            normalized = _normalize_question(candidate)
+            if not normalized or normalized in seen:
+                continue
+            seen.add(normalized)
+            variants.append(candidate)
+            if len(variants) >= 3:
+                break
+
+        if plan.time_scope and plan.time_scope.get("kind") == "rolling_days":
+            today = datetime.date.today()
+            start = today - datetime.timedelta(days=int(plan.time_scope["days"]))
+            news_query = (
+                f"droit social publication entrée en vigueur "
+                f"{start.isoformat()} {today.isoformat()}"
+            )
+            if _normalize_question(news_query) not in seen:
+                variants.append(news_query)
+
+        source_type_filter = plan.requested_source_types or None
+        apply_legislation_floor = plan.legislation in {
+            SourceRequirement.REQUIRED,
+            SourceRequirement.SAFETY_FLOOR,
+        }
+        # Semantic legislative vocabulary only. Unverified article candidates
+        # are never appended to this string, so _run_variant_searches cannot
+        # inject them by identifier.
+        legal_anchor = " ".join(plan.legal_topics) or variants[0]
+        pool = await self._run_variant_searches(
+            variants,
+            legal_anchor,
+            organisation_id,
+            org_idcc_list=org_idcc_list,
+            source_type_filter=source_type_filter,
+            apply_legislation_floor=apply_legislation_floor,
+        )
+
+        if source_type_filter and len(pool) < 3:
+            logger.warning(
+                "[PLAN] Filtered search returned %d candidate(s) — "
+                "retrying without source-type filter",
+                len(pool),
+            )
+            pool = await self._run_variant_searches(
+                variants,
+                legal_anchor,
+                organisation_id,
                 org_idcc_list=org_idcc_list,
                 source_type_filter=None,
                 apply_legislation_floor=True,

@@ -8,12 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Select,
@@ -23,7 +18,12 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Play, FlaskConical, Search } from "lucide-react";
-import { InspectorBody, type InspectorPayload, type RagTrace, type CitedSource } from "./InspectorBody";
+import {
+  InspectorBody,
+  type InspectorPayload,
+  type RagTrace,
+  type CitedSource,
+} from "./InspectorBody";
 
 interface OrgItem {
   id: string;
@@ -37,6 +37,8 @@ interface SandboxResponse {
   cost_usd: number;
   duration_ms: number;
 }
+
+type SearchStrategy = "baseline" | "adaptive_shadow";
 
 export interface SandboxRunnerHandle {
   prefillAndRun: (messageId: string) => void;
@@ -60,6 +62,8 @@ export function SandboxRunner({
   const [selectedOrgId, setSelectedOrgId] = useState<string>("");
   const [query, setQuery] = useState("");
   const [skipGen, setSkipGen] = useState(false);
+  const [searchStrategy, setSearchStrategy] =
+    useState<SearchStrategy>("baseline");
   const [running, setRunning] = useState(false);
   const [result, setResult] = useState<SandboxResponse | null>(null);
 
@@ -85,15 +89,16 @@ export function SandboxRunner({
       setResult(null);
       try {
         const data = await apiFetch<SandboxResponse>(
-          `/admin/quality/sandbox/replay/${messageId}`,
+          `/admin/quality/sandbox/replay/${messageId}?search_strategy=${searchStrategy}`,
           {
             method: "POST",
             token: session.access_token,
-          },
+          }
         );
         setResult(data);
         // Try to populate the form for further iteration
-        if (data.rag_trace.query_original) setQuery(data.rag_trace.query_original);
+        if (data.rag_trace.query_original)
+          setQuery(data.rag_trace.query_original);
       } catch (err) {
         console.error(err);
         toast.error("Échec du replay");
@@ -101,7 +106,7 @@ export function SandboxRunner({
         setRunning(false);
       }
     },
-    [session?.access_token],
+    [searchStrategy, session?.access_token]
   );
 
   useEffect(() => {
@@ -131,16 +136,20 @@ export function SandboxRunner({
     setRunning(true);
     setResult(null);
     try {
-      const data = await apiFetch<SandboxResponse>("/admin/quality/sandbox/run", {
-        method: "POST",
-        token: session.access_token,
-        body: JSON.stringify({
-          query: query.trim(),
-          organisation_id: selectedOrgId,
-          skip_generation: skipGen,
-        }),
-        headers: { "Content-Type": "application/json" },
-      });
+      const data = await apiFetch<SandboxResponse>(
+        "/admin/quality/sandbox/run",
+        {
+          method: "POST",
+          token: session.access_token,
+          body: JSON.stringify({
+            query: query.trim(),
+            organisation_id: selectedOrgId,
+            skip_generation: skipGen,
+            search_strategy: searchStrategy,
+          }),
+          headers: { "Content-Type": "application/json" },
+        }
+      );
       setResult(data);
     } catch (err) {
       console.error(err);
@@ -152,7 +161,8 @@ export function SandboxRunner({
 
   const filteredOrgs = orgs.filter(
     (o) =>
-      !orgFilter.trim() || o.name.toLowerCase().includes(orgFilter.toLowerCase()),
+      !orgFilter.trim() ||
+      o.name.toLowerCase().includes(orgFilter.toLowerCase())
   );
 
   // Build payload for InspectorBody
@@ -171,26 +181,26 @@ export function SandboxRunner({
     <div className="space-y-4">
       <Card>
         <CardHeader>
-          <CardTitle className="text-base font-semibold flex items-center gap-2">
+          <CardTitle className="flex items-center gap-2 text-base font-semibold">
             <FlaskConical className="h-4 w-4" />
             Bac à sable
           </CardTitle>
-          <p className="text-xs text-muted-foreground">
+          <p className="text-muted-foreground text-xs">
             Teste une question avec le pipeline RAG actuel sans facturer le
             client ni laisser de trace dans son historique.
           </p>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
             <div>
               <Label className="text-xs">Organisation</Label>
               <div className="relative mt-1">
-                <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground" />
+                <Search className="text-muted-foreground absolute top-1/2 left-2 h-3 w-3 -translate-y-1/2" />
                 <Input
                   placeholder="Filtrer par nom..."
                   value={orgFilter}
                   onChange={(e) => setOrgFilter(e.target.value)}
-                  className="pl-7 h-8 text-xs mb-1"
+                  className="mb-1 h-8 pl-7 text-xs"
                 />
               </div>
               <Select
@@ -199,11 +209,15 @@ export function SandboxRunner({
                 disabled={orgsLoading}
               >
                 <SelectTrigger>
-                  <SelectValue placeholder={orgsLoading ? "Chargement..." : "Sélectionne une org"} />
+                  <SelectValue
+                    placeholder={
+                      orgsLoading ? "Chargement..." : "Sélectionne une org"
+                    }
+                  />
                 </SelectTrigger>
                 <SelectContent>
                   {filteredOrgs.length === 0 ? (
-                    <div className="px-2 py-1.5 text-xs text-muted-foreground">
+                    <div className="text-muted-foreground px-2 py-1.5 text-xs">
                       Aucune org
                     </div>
                   ) : (
@@ -216,8 +230,30 @@ export function SandboxRunner({
                 </SelectContent>
               </Select>
             </div>
+            <div>
+              <Label className="text-xs">Stratégie de recherche</Label>
+              <Select
+                value={searchStrategy}
+                onValueChange={(value) =>
+                  setSearchStrategy(value as SearchStrategy)
+                }
+              >
+                <SelectTrigger className="mt-1">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="baseline">Pipeline actuel</SelectItem>
+                  <SelectItem value="adaptive_shadow">
+                    Plan adaptatif (sandbox)
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-muted-foreground mt-1 text-[11px]">
+                Le mode adaptatif n&apos;est pas utilisé dans le chat client.
+              </p>
+            </div>
             <div className="flex items-end">
-              <label className="flex items-center gap-2 text-xs cursor-pointer">
+              <label className="flex cursor-pointer items-center gap-2 text-xs">
                 <input
                   type="checkbox"
                   checked={skipGen}
@@ -242,7 +278,7 @@ export function SandboxRunner({
 
           <div className="flex justify-end">
             <Button onClick={handleRun} disabled={running}>
-              <Play className="h-4 w-4 mr-2" />
+              <Play className="mr-2 h-4 w-4" />
               {running ? "Exécution..." : "Lancer le test"}
             </Button>
           </div>
@@ -251,7 +287,7 @@ export function SandboxRunner({
 
       {running && (
         <Card>
-          <CardContent className="p-4 space-y-3">
+          <CardContent className="space-y-3 p-4">
             <Skeleton className="h-20 w-full" />
             <Skeleton className="h-32 w-full" />
             <Skeleton className="h-40 w-full" />
