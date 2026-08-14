@@ -525,6 +525,7 @@ async def test_source_directed_plan_preserves_filtered_results_and_bounds_fallba
     assert "code_travail" in complement_call.kwargs["source_type_filter"]
     assert "loi" in complement_call.kwargs["source_type_filter"]
     assert "convention_oit" in complement_call.kwargs["source_type_filter"]
+    assert "boss" not in complement_call.kwargs["source_type_filter"]
     assert "arret_cour_cassation" not in complement_call.kwargs["source_type_filter"]
     assert agent._plan_search_diagnostics == {
         "directed_primary_source_types": [
@@ -554,7 +555,7 @@ async def test_source_directed_plan_adds_jurisprudence_only_when_plan_requires_i
             legal_topics=["validité du préavis", "rupture du contrat"],
             search_queries=["validité préavis rupture contrat"],
             hypothesized_articles=[],
-            source_hints=["legislation", "jurisprudence"],
+            source_hints=["legislation", "jurisprudence", "boss"],
             jurisprudence="required",
         ),
     )
@@ -597,6 +598,7 @@ async def test_source_directed_plan_adds_jurisprudence_only_when_plan_requires_i
     legislation_call, jurisprudence_call = agent.search_engine.search.await_args_list
     assert legislation_call.args[0] == "validité du préavis rupture du contrat"
     assert "loi" in legislation_call.kwargs["source_type_filter"]
+    assert "boss" in legislation_call.kwargs["source_type_filter"]
     assert jurisprudence_call.kwargs["top_k"] == 3
     assert set(jurisprudence_call.kwargs["source_type_filter"]) == {
         "arret_cour_cassation",

@@ -203,12 +203,15 @@ question originale ni les noms/identifiants de la source demandée.
 le rapprochement est plausible. Ce sont des candidats incertains à vérifier \
 dans le corpus, jamais des autorités ; confidence vaut "low" ou "medium".
 - source_hints : sous-ensemble de ["legislation", "ccn", "jurisprudence", \
-"internal"]. Ce sont des priorités, jamais des exclusions.
+"internal", "boss"]. Utilise "boss" pour les cotisations/contributions, \
+l'assiette sociale, les exonérations, avantages en nature ou frais \
+professionnels. Ce sont des priorités, jamais des droits d'accès.
 - jurisprudence : "required" si la question porte sur une validité, une \
 interprétation contestable, une exception, une sanction, une discrimination, \
 un licenciement, une garantie/protection de l'emploi ou la position des \
-juridictions ; "optional" pour une donnée \
-directement fixée par le texte demandé (montant, durée ou délai explicite).
+juridictions. Ces cas priment sur la forme de la réponse. Utilise "optional" \
+seulement pour une donnée directement fixée par le texte demandé (montant, \
+durée ou délai explicite) qui ne relève d'aucun des cas précédents.
 - answer_intent : factual_rule, yes_no, procedure, comparison, calculation, \
 case_analysis ou legal_news.
 - missing_facts : 0 à 3 faits absents qui modifieraient la requête, les sources \
@@ -395,7 +398,7 @@ def apply_compact_planner_payload(
     missing_facts = _string_list(payload, "missing_facts", limit=3, max_chars=180)
 
     raw_hints = _string_list(payload, "source_hints", limit=4, max_chars=30)
-    allowed_hints = {"legislation", "ccn", "jurisprudence", "internal"}
+    allowed_hints = {"legislation", "ccn", "jurisprudence", "internal", "boss"}
     if any(hint not in allowed_hints for hint in raw_hints):
         raise ValueError("invalid_source_hints")
 

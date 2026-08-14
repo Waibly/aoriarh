@@ -1650,6 +1650,11 @@ class RAGAgent:
             }
             complement_tasks = []
             if apply_legislation_floor:
+                legislation_source_types = [
+                    source_type
+                    for source_type in _LEGISLATION_SOURCE_TYPES
+                    if source_type != "boss" or "boss" in plan.planner_source_hints
+                ]
                 complement_tasks.append((
                     "legislation",
                     _MAX_PLAN_LEGISLATION_COMPLEMENT_CHUNKS,
@@ -1658,7 +1663,7 @@ class RAGAgent:
                         organisation_id,
                         top_k=_MAX_PLAN_LEGISLATION_COMPLEMENT_CHUNKS,
                         org_idcc_list=org_idcc_list,
-                        source_type_filter=_LEGISLATION_SOURCE_TYPES,
+                        source_type_filter=legislation_source_types,
                         cost_ctx=self._cost_ctx,
                     ),
                 ))
