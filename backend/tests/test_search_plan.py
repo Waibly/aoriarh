@@ -178,6 +178,10 @@ def test_interpretive_legal_family_gets_jurisprudence_and_two_distinct_angles():
     )
 
     assert needs_interpretive_sources(plan.query_original) is True
+    # A passive source mention must not narrow retrieval. Full-corpus recall is
+    # safer here; explicit wording such as "selon ma CCN" remains directed.
+    assert plan.mode is SearchMode.STANDARD
+    assert plan.requested_source_types == []
     assert plan.jurisprudence is SourceRequirement.REQUIRED
     assert plan.query_budget == 2
     assert len(enriched.search_queries) == 2
@@ -582,8 +586,8 @@ async def test_source_directed_plan_preserves_filtered_results_and_bounds_fallba
     [
         ("Selon le Code du travail, quel préavis pour un cadre ?", "required"),
         (
-            "Quelle garantie d'emploi en cas d'absence maladie est prévue "
-            "par le Code du travail ?",
+            "Selon le Code du travail, quelle garantie d'emploi s'applique "
+            "en cas d'absence maladie ?",
             "optional",
         ),
     ],

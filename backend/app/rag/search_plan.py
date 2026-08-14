@@ -159,7 +159,6 @@ _INTERNAL_TYPES = {
     "usage_entreprise",
 }
 
-
 @dataclass(frozen=True)
 class SearchPlan:
     """Serializable shadow plan produced without external calls."""

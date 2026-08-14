@@ -87,16 +87,6 @@ class TestDirectedTriggers:
             "prévoit une indemnité"
         )
 
-    def test_rule_provided_by_named_collective_agreement(self):
-        assert "convention_collective_nationale" in _types(
-            "Quelle durée de garantie d'emploi est prévue par la convention collective Syntec ?"
-        )
-
-    def test_rule_fixed_by_code_du_travail(self):
-        assert "code_travail" in _types(
-            "Quel délai est fixé par le Code du travail ?"
-        )
-
     def test_que_dit_le_code_du_travail(self):
         assert "code_travail" in _types(
             "Que dit le code du travail sur le préavis de démission ?"
