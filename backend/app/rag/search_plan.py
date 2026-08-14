@@ -108,6 +108,40 @@ _FOLLOW_UP_PATTERNS = [
     re.compile(r"\bqu['’]en est-il\b", re.IGNORECASE),
 ]
 
+# Questions for which the wording of a text alone is often insufficient.  This
+# is deliberately topic-family based (not tied to any article, CCN or test
+# question): case law commonly defines the conditions, limits or consequences
+# of these rules.  The signal is used as a safety floor; the compact planner may
+# still request jurisprudence for other ambiguous questions.
+_INTERPRETIVE_SOURCE_PATTERNS = [
+    re.compile(
+        r"\b(?:validit[ée]|interpr[ée]tation|exception|d[ée]rogation|"
+        r"contestation|contentieux|litige|prud['’]?hom)\w*\b",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"\b(?:sanction|discrimination|harc[èe]lement|repr[ée]sailles?)\w*\b",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"\b(?:garantie|protection)\s+(?:(?:de\s+l|d)['’])?"
+        r"(?:emploi|poste|licenciement)\b",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"\b(?:licenciement|rupture)\b[^.?!]{0,80}\b"
+        r"(?:maladie|absence|grossesse|maternit[ée]|accident|inaptitude|"
+        r"mandat|salari[ée]\s+prot[ée]g[ée])\b",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"\b(?:maladie|absence|grossesse|maternit[ée]|accident|inaptitude|"
+        r"mandat|salari[ée]\s+prot[ée]g[ée])\b[^.?!]{0,80}\b"
+        r"(?:licenciement|rupture)\b",
+        re.IGNORECASE,
+    ),
+]
+
 _JURISPRUDENCE_TYPES = {
     "arret_cour_cassation",
     "arret_cour_appel",
@@ -198,7 +232,10 @@ répète pas « CCN », le nom de la convention, l'IDCC, « Code du travail », 
 « jurisprudence » ou le nom du document, déjà présents dans constraints.
 - search_queries : respecte strictement constraints.query_budget (1 ou 2) et \
 produis des requêtes courtes en vocabulaire juridique, sans dupliquer la \
-question originale ni les noms/identifiants de la source demandée.
+question originale ni les noms/identifiants de la source demandée. Si le \
+budget vaut 2, les deux requêtes doivent être complémentaires : la première \
+couvre la règle ou le droit demandé, la seconde ses conditions, exceptions, \
+limites ou son interprétation. Ne reformule pas deux fois le même angle.
 - hypothesized_articles : 0 à 3 articles de Code seulement. N'en propose que si \
 le rapprochement est plausible. Ce sont des candidats incertains à vérifier \
 dans le corpus, jamais des autorités ; confidence vaut "low" ou "medium".
@@ -249,6 +286,12 @@ def needs_conversation_condensation(query: str, *, has_history: bool) -> bool:
     if not has_history:
         return False
     return any(pattern.search(query or "") for pattern in _FOLLOW_UP_PATTERNS)
+
+
+def needs_interpretive_sources(query: str) -> bool:
+    """Return whether complementary interpretive sources are a safety need."""
+
+    return any(pattern.search(query or "") for pattern in _INTERPRETIVE_SOURCE_PATTERNS)
 
 
 def _answer_intent(query: str, *, legal_news: bool) -> AnswerIntent:
@@ -568,6 +611,7 @@ def build_deterministic_search_plan(
     )
     requested_set = set(requested_types)
     legal_news = is_legal_news_query(query)
+    interpretive_sources = needs_interpretive_sources(query)
     needs_condensation = needs_conversation_condensation(query, has_history=has_history)
 
     reasons: list[str] = []
@@ -615,8 +659,11 @@ def build_deterministic_search_plan(
         identifiers["numero_pourvoi"]
         or requested_set & _JURISPRUDENCE_TYPES
         or (legal_news and re.search(r"\bjurisprudence\b", query, re.IGNORECASE))
+        or interpretive_sources
     ):
         jurisprudence = SourceRequirement.REQUIRED
+        if interpretive_sources:
+            reasons.append("interpretive_sources_required")
     else:
         jurisprudence = SourceRequirement.OPTIONAL
 
@@ -648,6 +695,7 @@ def build_deterministic_search_plan(
             AnswerIntent.CASE_ANALYSIS,
         }
         or has_multiple_issues
+        or interpretive_sources
         else 1
     )
     return SearchPlan(

@@ -51,6 +51,16 @@ def _directed(noun: str, allow_dans: bool = False) -> str:
     )
 
 
+def _passive_directed(noun: str) -> str:
+    """Match a rule described as being fixed/provided by a named source."""
+
+    participles = (
+        r"(?:pr[ée]vu|fix[ée]|stipul[ée]|mentionn[ée]|indiqu[ée]|"
+        r"impos[ée]|interdit|autoris[ée]|encadr[ée])(?:e|es|s)?"
+    )
+    return rf"\b{participles}\s+par\s+(?:{_DET}\s+)?{noun}"
+
+
 # Each entry: (compiled regex, list of source_types, needs_org_filter)
 # needs_org_filter: True = org-specific docs, False = common docs
 _INTENT_PATTERNS: list[tuple[re.Pattern, list[str], bool]] = [
@@ -58,6 +68,8 @@ _INTENT_PATTERNS: list[tuple[re.Pattern, list[str], bool]] = [
     (
         re.compile(
             _directed(r"(?:ccn|convention\s+collective)", allow_dans=True)
+            + r"|"
+            + _passive_directed(r"(?:ccn|convention\s+collective)")
             + r"|\b(?:ma|notre|votre)\s+convention\b",
             re.IGNORECASE,
         ),
@@ -68,6 +80,8 @@ _INTENT_PATTERNS: list[tuple[re.Pattern, list[str], bool]] = [
     (
         re.compile(
             _directed(r"accords?\s+(?:collectifs?\s+)?d['’]entreprise", allow_dans=True)
+            + r"|"
+            + _passive_directed(r"accords?\s+(?:collectifs?\s+)?d['’]entreprise")
             + r"|\bnos\s+accords\b|\bnotre\s+accord\b",
             re.IGNORECASE,
         ),
@@ -78,6 +92,8 @@ _INTENT_PATTERNS: list[tuple[re.Pattern, list[str], bool]] = [
     (
         re.compile(
             _directed(r"r[eè]glement\s+int[eé]rieur", allow_dans=True)
+            + r"|"
+            + _passive_directed(r"r[eè]glement\s+int[eé]rieur")
             + r"|\b(?:notre|mon|votre)\s+(?:ri\b|r[eè]glement\s+int[eé]rieur)",
             re.IGNORECASE,
         ),
@@ -100,7 +116,9 @@ _INTENT_PATTERNS: list[tuple[re.Pattern, list[str], bool]] = [
     # Code du travail
     (
         re.compile(
-            _directed(r"code\s+du\s+travail", allow_dans=True),
+            _directed(r"code\s+du\s+travail", allow_dans=True)
+            + r"|"
+            + _passive_directed(r"code\s+du\s+travail"),
             re.IGNORECASE,
         ),
         ["code_travail", "code_travail_reglementaire"],

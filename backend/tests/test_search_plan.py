@@ -16,6 +16,7 @@ from app.rag.search_plan import (
     SourceRequirement,
     apply_compact_planner_payload,
     build_deterministic_search_plan,
+    needs_interpretive_sources,
     run_compact_search_planner,
 )
 
@@ -158,6 +159,39 @@ def test_simple_question_limits_planner_to_one_additional_query():
 
     assert plan.query_budget == 1
     assert enriched.search_queries == ["refus congés payés fixation dates employeur"]
+
+
+def test_interpretive_legal_family_gets_jurisprudence_and_two_distinct_angles():
+    plan = build_deterministic_search_plan(
+        "Quelle durée de garantie d'emploi est prévue par la convention collective ?",
+        org_idcc_list=["1486"],
+    )
+    enriched = apply_compact_planner_payload(
+        plan,
+        _valid_payload(
+            search_queries=[
+                "garantie emploi absence maladie",
+                "conditions rupture désorganisation remplacement définitif",
+            ],
+            jurisprudence="optional",
+        ),
+    )
+
+    assert needs_interpretive_sources(plan.query_original) is True
+    assert plan.jurisprudence is SourceRequirement.REQUIRED
+    assert plan.query_budget == 2
+    assert len(enriched.search_queries) == 2
+    # The LLM cannot weaken the deterministic safety floor.
+    assert enriched.jurisprudence is SourceRequirement.REQUIRED
+    assert enriched.planner_jurisprudence is SourceRequirement.OPTIONAL
+
+
+def test_simple_numeric_rule_does_not_pay_for_interpretive_branch():
+    plan = build_deterministic_search_plan("Quel est le montant actuel du SMIC ?")
+
+    assert needs_interpretive_sources(plan.query_original) is False
+    assert plan.jurisprudence is SourceRequirement.OPTIONAL
+    assert plan.query_budget == 1
 
 
 def test_bare_legal_source_mentions_do_not_create_source_directed_routes():
@@ -543,10 +577,24 @@ async def test_source_directed_plan_preserves_filtered_results_and_bounds_fallba
     }
 
 
+@pytest.mark.parametrize(
+    ("question", "planner_jurisprudence"),
+    [
+        ("Selon le Code du travail, quel préavis pour un cadre ?", "required"),
+        (
+            "Quelle garantie d'emploi en cas d'absence maladie est prévue "
+            "par le Code du travail ?",
+            "optional",
+        ),
+    ],
+)
 @pytest.mark.asyncio
-async def test_source_directed_plan_adds_jurisprudence_only_when_plan_requires_it():
+async def test_source_directed_plan_adds_jurisprudence_when_either_layer_requires_it(
+    question,
+    planner_jurisprudence,
+):
     plan = build_deterministic_search_plan(
-        "Selon le Code du travail, quel préavis pour un cadre ?",
+        question,
         org_idcc_list=["1486"],
     )
     plan = apply_compact_planner_payload(
@@ -556,7 +604,7 @@ async def test_source_directed_plan_adds_jurisprudence_only_when_plan_requires_i
             search_queries=["validité préavis rupture contrat"],
             hypothesized_articles=[],
             source_hints=["legislation", "jurisprudence", "boss"],
-            jurisprudence="required",
+            jurisprudence=planner_jurisprudence,
         ),
     )
     primary = [
