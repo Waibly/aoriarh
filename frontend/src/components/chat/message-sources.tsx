@@ -1,6 +1,9 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import ReactMarkdown from "react-markdown";
+import rehypeSanitize from "rehype-sanitize";
+import remarkGfm from "remark-gfm";
 import {
   CalendarDays,
   CheckCircle2,
@@ -40,7 +43,7 @@ export function MessageSources({ sources, answer = "" }: MessageSourcesProps) {
   const [isHelpOpen, setIsHelpOpen] = useState(false);
   const { foundations, consulted } = useMemo(
     () => partitionSources(answer, sources),
-    [answer, sources],
+    [answer, sources]
   );
   const consultedGroups = groupSources(consulted);
 
@@ -96,11 +99,20 @@ export function MessageSources({ sources, answer = "" }: MessageSourcesProps) {
               </Badge>
             </div>
             {source.excerpt && (
-              <div className="border-border/70 bg-background/80 mt-3 flex gap-2 rounded-lg border px-3 py-2.5">
+              <div className="border-border/70 mt-3 flex gap-2 rounded-lg border bg-white px-3 py-2.5">
                 <Quote className="mt-0.5 size-3.5 shrink-0 text-[#652bb0]" />
-                <p className="text-muted-foreground line-clamp-3 text-xs leading-relaxed">
-                  {source.excerpt}
-                </p>
+                <div className="prose prose-sm max-h-[4.5rem] max-w-none min-w-0 flex-1 overflow-hidden text-xs leading-6 text-slate-600 [&_h1]:m-0 [&_h1]:text-xs [&_h1]:leading-6 [&_h1]:font-semibold [&_h2]:m-0 [&_h2]:text-xs [&_h2]:leading-6 [&_h2]:font-semibold [&_h3]:m-0 [&_h3]:text-xs [&_h3]:leading-6 [&_h3]:font-semibold [&_li]:my-0 [&_li]:leading-6 [&_ol]:my-0 [&_ol]:pl-4 [&_p]:my-0 [&_p]:leading-6 [&_strong]:font-semibold [&_ul]:my-0 [&_ul]:pl-4">
+                  <ReactMarkdown
+                    remarkPlugins={[remarkGfm]}
+                    rehypePlugins={[rehypeSanitize]}
+                    skipHtml
+                    components={{
+                      a: ({ children }) => <span>{children}</span>,
+                    }}
+                  >
+                    {source.excerpt}
+                  </ReactMarkdown>
+                </div>
               </div>
             )}
             <p className="mt-2 flex items-center gap-1 text-xs font-medium text-[#652bb0]">
@@ -131,7 +143,7 @@ export function MessageSources({ sources, answer = "" }: MessageSourcesProps) {
           {foundations.length > 0 && (
             <section>
               <div className="mb-3 px-1">
-                <h4 className="text-foreground flex items-center gap-1.5 text-xs font-semibold tracking-wide uppercase">
+                <h4 className="text-foreground flex items-center gap-1.5 text-sm font-semibold">
                   <CheckCircle2 className="size-3.5 text-[#652bb0]" />
                   Fondements utilisés dans la réponse ({foundations.length})
                 </h4>
@@ -148,7 +160,7 @@ export function MessageSources({ sources, answer = "" }: MessageSourcesProps) {
           {consulted.length > 0 && (
             <section>
               <div className="mb-3 px-1">
-                <h4 className="text-muted-foreground flex items-center gap-1.5 text-xs font-semibold tracking-wide uppercase">
+                <h4 className="text-muted-foreground flex items-center gap-1.5 text-sm font-semibold">
                   <Search className="size-3.5" />
                   {foundations.length > 0
                     ? `Autres documents consultés (${consulted.length})`
