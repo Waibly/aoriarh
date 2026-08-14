@@ -231,6 +231,36 @@ _ANSWER_INSTRUCTION_BYPASS = (
     "et les informations auxquelles votre compte est autorisé."
 )
 
+_SECURITY_ANSWERS_TO_EVENTS = {
+    _ANSWER_INTERNALS.strip(): EVENT_TECHNICAL_RECON,
+    _ANSWER_PROTECTED_DATA.strip(): EVENT_PROTECTED_DATA,
+    _ANSWER_PRIVILEGE_CLAIM.strip(): EVENT_PRIVILEGE_CLAIM,
+    _ANSWER_INSTRUCTION_BYPASS.strip(): EVENT_INSTRUCTION_BYPASS,
+}
+_SECURITY_EVENTS = frozenset(_SECURITY_ANSWERS_TO_EVENTS.values())
+
+
+def security_event_from_message(
+    content: str | None,
+    rag_trace: dict | None = None,
+) -> str | None:
+    """Retrouve le motif de sécurité d'une réponse persistée.
+
+    La trace couvre les nouvelles réponses. La comparaison exacte des templates
+    maintient le blocage pour celles enregistrées avant la persistance du signal.
+    """
+    if isinstance(rag_trace, dict):
+        event = rag_trace.get("security_event")
+        if isinstance(event, str) and event in _SECURITY_EVENTS:
+            return event
+    return _SECURITY_ANSWERS_TO_EVENTS.get((content or "").strip())
+
+
+def is_security_response(content: str | None, rag_trace: dict | None = None) -> bool:
+    """Indique si une réponse relève d'un refus de sécurité déterministe."""
+    return security_event_from_message(content, rag_trace) is not None
+
+
 _ANSWER_CAPABILITIES = (
     "Je suis votre **assistant juridique RH**. Concrètement, je peux :\n\n"
     "- Répondre à vos questions de droit social français (contrat, durée du "

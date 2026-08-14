@@ -8,7 +8,12 @@ from __future__ import annotations
 
 import pytest
 
-from app.rag.intent_router import Intent, classify_intent
+from app.rag.intent_router import (
+    Intent,
+    classify_intent,
+    is_security_response,
+    security_event_from_message,
+)
 from app.services.security_alert_service import (
     EVENT_INSTRUCTION_BYPASS,
     EVENT_PRIVILEGE_CLAIM,
@@ -60,6 +65,15 @@ class TestPrefilterOthers:
         assert res.security_event == EVENT_TECHNICAL_RECON
         assert "OpenAI" not in res.static_answer
         assert "recherche sémantique" not in res.static_answer
+        # Compatibilité avec les réponses créées avant la trace security_event.
+        assert is_security_response(res.static_answer, None) is True
+        assert (
+            security_event_from_message(
+                "Texte différent",
+                {"security_event": EVENT_TECHNICAL_RECON},
+            )
+            == EVENT_TECHNICAL_RECON
+        )
 
     @pytest.mark.parametrize(
         ("query", "event"),

@@ -135,7 +135,11 @@ export interface StreamCallbacks {
   onStatus?: (step: string) => void;
   onSources: (sources: MessageSource[]) => void;
   onDelta: (content: string) => void;
-  onDone: (ids: { message_id: string; answer_id: string }) => void;
+  onDone: (ids: {
+    message_id: string;
+    answer_id: string;
+    fiche_eligible?: boolean;
+  }) => void;
   onError: (message: string) => void;
 }
 

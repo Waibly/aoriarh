@@ -120,6 +120,7 @@ export default function ConversationPage() {
                     sources: accumulatedSources,
                     feedback: null,
                     feedback_comment: null,
+                    fiche_eligible: ids.fiche_eligible,
                     created_at: new Date().toISOString(),
                   },
                 ];

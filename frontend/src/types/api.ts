@@ -118,6 +118,7 @@ export interface Message {
   sources: MessageSource[] | null;
   feedback: string | null;
   feedback_comment: string | null;
+  fiche_eligible?: boolean;
   created_at: string;
 }
 

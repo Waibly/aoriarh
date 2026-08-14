@@ -30,7 +30,7 @@ from app.rag.config import (
     RAG_TIMEOUT_CONTEXT,
     RAG_TIMEOUT_STREAM_IDLE,
 )
-from app.rag.intent_router import classify_intent
+from app.rag.intent_router import classify_intent, is_security_response
 from app.schemas.conversation import (
     ChatRequest,
     ConversationCreate,
@@ -277,6 +277,14 @@ async def generate_fiche(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Seule une réponse de l'assistant peut être transformée en fiche.",
+        )
+
+    # Contrôle serveur avant tout appel LLM : masquer le bouton dans le front
+    # ne suffit pas, l'endpoint doit rester sûr s'il est appelé directement.
+    if is_security_response(message.content, message.rag_trace):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Cette réponse de sécurité ne peut pas être transformée en fiche pratique.",
         )
 
     # Retrouve la question (dernier message utilisateur avant cette réponse).
@@ -718,6 +726,10 @@ async def chat_stream(
                     content=intent_result.static_answer,
                 )
                 try:
+                    meta_assistant.rag_trace = {
+                        "static_intent": intent_result.intent.value,
+                        "security_event": intent_result.security_event,
+                    }
                     meta_assistant.latency_ms = int((time.perf_counter() - t_total) * 1000)
                     # Pas d'incrément de quota pour les meta : elles ne
                     # consomment pas le RAG, cohérent côté facturation.
@@ -746,10 +758,14 @@ async def chat_stream(
                         title = title.rsplit(" ", 1)[0] + "…"
                     await service.update_title(conversation_id, title)
                 yield _sse_event("chat_delta", {"content": intent_result.static_answer})
-                yield _sse_event("chat_done", {
-                    "message_id": str(meta_user.id),
-                    "answer_id": str(meta_assistant.id),
-                })
+                yield _sse_event(
+                    "chat_done",
+                    {
+                        "message_id": str(meta_user.id),
+                        "answer_id": str(meta_assistant.id),
+                        "fiche_eligible": intent_result.security_event is None,
+                    },
+                )
                 return
 
             # 2b. Load org's CCN IDCC list for search filtering
@@ -1063,10 +1079,14 @@ async def chat_stream(
             )
 
             # 7. Send done event with IDs
-            yield _sse_event("chat_done", {
-                "message_id": user_message_id,
-                "answer_id": assistant_message_id,
-            })
+            yield _sse_event(
+                "chat_done",
+                {
+                    "message_id": user_message_id,
+                    "answer_id": assistant_message_id,
+                    "fiche_eligible": True,
+                },
+            )
 
             logger.info(
                 "[PERF] ══ TOTAL request %.0fms (context %.0fms + streaming %.0fms + db %.0fms)",

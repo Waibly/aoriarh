@@ -1,8 +1,19 @@
-from unittest.mock import patch
+import json
+from unittest.mock import AsyncMock, patch
 
 from httpx import AsyncClient
 
 from tests.conftest import auth_header
+
+
+def _event_payload(body: str, event_name: str) -> dict:
+    event = ""
+    for line in body.splitlines():
+        if line.startswith("event: "):
+            event = line.removeprefix("event: ")
+        elif line.startswith("data: ") and event == event_name:
+            return json.loads(line.removeprefix("data: "))
+    raise AssertionError(f"Événement {event_name!r} absent du flux")
 
 
 async def test_sensitive_chat_is_blocked_and_schedules_alert(
@@ -36,9 +47,34 @@ async def test_sensitive_chat_is_blocked_and_schedules_alert(
     assert "Je ne peux pas fournir de données internes" in response.text
     assert "chat_done" in response.text
     assert "OpenAI" not in response.text
+    done = _event_payload(response.text, "chat_done")
+    assert done["fiche_eligible"] is False
     alert_bg.assert_called_once()
     call = alert_bg.call_args.kwargs
     assert call["user_email"] == manager_user["email"]
     assert call["organisation_id"] == organisation_id
     assert call["conversation_id"] == conversation_id
     assert call["message_id"]
+
+    conversation = await client.get(
+        f"/api/v1/conversations/{conversation_id}",
+        headers=auth_header(manager_user["token"]),
+    )
+    assert conversation.status_code == 200
+    assistant = conversation.json()["messages"][-1]
+    assert assistant["id"] == done["answer_id"]
+    assert assistant["fiche_eligible"] is False
+    assert "rag_trace" not in assistant
+
+    with patch(
+        "app.services.fiche_service.generate_fiche_content",
+        new=AsyncMock(),
+    ) as generate:
+        fiche = await client.post(
+            f"/api/v1/conversations/messages/{done['answer_id']}/fiche",
+            headers=auth_header(manager_user["token"]),
+        )
+
+    assert fiche.status_code == 422
+    assert "réponse de sécurité" in fiche.json()["detail"]
+    generate.assert_not_awaited()

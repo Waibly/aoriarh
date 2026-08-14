@@ -1,7 +1,9 @@
 import uuid
 from datetime import datetime
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, computed_field
+
+from app.rag.intent_router import is_security_response
 
 
 class ConversationCreate(BaseModel):
@@ -31,6 +33,17 @@ class MessageRead(BaseModel):
     feedback: str | None
     feedback_comment: str | None
     created_at: datetime
+    # Nécessaire au calcul mais jamais exposée telle quelle au client.
+    rag_trace: dict | None = Field(default=None, exclude=True)
+
+    @computed_field
+    @property
+    def fiche_eligible(self) -> bool:
+        """Les réponses de sécurité ne peuvent pas devenir des fiches PDF."""
+        return self.role == "assistant" and not is_security_response(
+            self.content,
+            self.rag_trace,
+        )
 
 
 class ConversationReadWithMessages(ConversationRead):
@@ -44,4 +57,3 @@ class MessageFeedback(BaseModel):
 
 class ChatRequest(BaseModel):
     message: str = Field(..., min_length=1, max_length=5000)
-

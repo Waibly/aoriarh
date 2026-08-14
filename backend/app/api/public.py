@@ -332,10 +332,18 @@ async def public_ask(
                     meta_user = await service.add_message(
                         conversation_id=conversation.id, role="user", content=message,
                     )
-                    await service.add_message(
+                    meta_assistant = await service.add_message(
                         conversation_id=conversation.id, role="assistant",
                         content=intent_result.static_answer,
                     )
+                    # La démo ne propose pas la fiche, mais on persiste le même
+                    # signal que le chat authentifié pour garder un historique
+                    # cohérent et auditable.
+                    meta_assistant.rag_trace = {
+                        "static_intent": intent_result.intent.value,
+                        "security_event": intent_result.security_event,
+                    }
+                    await db.commit()
                     if intent_result.security_event is not None:
                         # Tous les visiteurs partagent le même user technique :
                         # le limiteur Redis agrège donc les alertes de la démo et

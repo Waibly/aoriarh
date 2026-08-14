@@ -270,21 +270,23 @@ export function MessageBubble({ message, onFeedback }: MessageBubbleProps) {
               </>
             )}
 
-            {/* Création de la fiche pratique, à droite */}
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleFiche}
-              disabled={ficheLoading}
-              className="border-primary/40 text-primary hover:bg-primary/10 hover:text-primary dark:border-primary/40 dark:bg-card dark:text-primary dark:hover:bg-primary/15 ml-auto gap-1.5 bg-white"
-            >
-              {ficheLoading ? (
-                <Loader2 className="size-4 animate-spin" />
-              ) : (
-                <ClipboardList className="size-4" />
-              )}
-              {ficheLoading ? "Génération…" : "Créer une fiche pratique"}
-            </Button>
+            {/* Une réponse de sécurité ne doit jamais devenir un document. */}
+            {message.fiche_eligible !== false && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleFiche}
+                disabled={ficheLoading}
+                className="border-primary/40 text-primary hover:bg-primary/10 hover:text-primary dark:border-primary/40 dark:bg-card dark:text-primary dark:hover:bg-primary/15 ml-auto gap-1.5 bg-white"
+              >
+                {ficheLoading ? (
+                  <Loader2 className="size-4 animate-spin" />
+                ) : (
+                  <ClipboardList className="size-4" />
+                )}
+                {ficheLoading ? "Génération…" : "Créer une fiche pratique"}
+              </Button>
+            )}
           </div>
         )}
         {showCommentInput && (
