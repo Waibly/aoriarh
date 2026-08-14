@@ -192,16 +192,22 @@ servent seulement à résoudre une référence comme « cet article ».
 dans missing_facts.
 - standalone_question : question autonome fidèle, 1 à 2 phrases. Si la question \
 est déjà autonome, recopie-la exactement.
-- legal_topics : 1 à 4 notions juridiques précises qui changent la recherche.
+- legal_topics : 1 à 4 notions juridiques précises qui changent la recherche. \
+Elles décrivent le problème de droit indépendamment de la source demandée : ne \
+répète pas « CCN », le nom de la convention, l'IDCC, « Code du travail », \
+« jurisprudence » ou le nom du document, déjà présents dans constraints.
 - search_queries : respecte strictement constraints.query_budget (1 ou 2) et \
 produis des requêtes courtes en vocabulaire juridique, sans dupliquer la \
-question originale.
+question originale ni les noms/identifiants de la source demandée.
 - hypothesized_articles : 0 à 3 articles de Code seulement. N'en propose que si \
 le rapprochement est plausible. Ce sont des candidats incertains à vérifier \
 dans le corpus, jamais des autorités ; confidence vaut "low" ou "medium".
 - source_hints : sous-ensemble de ["legislation", "ccn", "jurisprudence", \
 "internal"]. Ce sont des priorités, jamais des exclusions.
-- jurisprudence : "required" ou "optional".
+- jurisprudence : "required" si la question porte sur une validité, une \
+interprétation contestable, une exception, une sanction, une discrimination, \
+un licenciement ou la position des juridictions ; "optional" pour une donnée \
+directement fixée par le texte demandé (montant, durée ou délai explicite).
 - answer_intent : factual_rule, yes_no, procedure, comparison, calculation, \
 case_analysis ou legal_news.
 - missing_facts : 0 à 3 faits absents qui modifieraient la requête, les sources \

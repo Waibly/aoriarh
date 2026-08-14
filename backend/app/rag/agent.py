@@ -68,16 +68,12 @@ _MAX_PLAN_HYPOTHESIS_CHUNKS_PER_ARTICLE = 2
 _MAX_PLAN_HYPOTHESIS_CHUNKS_TOTAL = 6
 _PLAN_HYPOTHESIS_RERANK_FLOOR = rag_config.LOW_CONFIDENCE_RERANK
 
-# Filet d'une recherche explicitement dirigée vers une source (CCN, document
-# interne…). Si cette branche est très pauvre, on peut ajouter quelques règles
-# générales proches, mais uniquement depuis les Codes directement utiles en RH.
-_EMPLOYMENT_CODE_SOURCE_TYPES: tuple[str, ...] = (
-    "code_travail",
-    "code_travail_reglementaire",
-    "code_securite_sociale",
-    "code_securite_sociale_reglementaire",
-)
-_MAX_PLAN_SOURCE_FALLBACK_CHUNKS = 3
+# Compléments d'une recherche explicitement dirigée vers une source (CCN,
+# document interne, Code…). Ils restent bornés mais couvrent les normes écrites
+# et, quand le plan le demande, la jurisprudence : la complétude ne doit pas
+# être sacrifiée pour obtenir un panneau de sources artificiellement homogène.
+_MAX_PLAN_LEGISLATION_COMPLEMENT_CHUNKS = 5
+_MAX_PLAN_JURISPRUDENCE_COMPLEMENT_CHUNKS = 3
 
 # Types « convention collective » de l'org. Tout résultat de ce type présent
 # dans le pool a passé le filtre IDCC (cf. HybridSearch.search) : c'est donc la
@@ -94,6 +90,43 @@ _JURIS_SOURCE_TYPES: frozenset[str] = frozenset(
     st
     for st, meta in DOCUMENT_TYPE_HIERARCHY.items()
     if isinstance(meta.get("niveau"), int) and meta["niveau"] == 4
+)
+
+_SOURCE_TOPIC_MARKERS: tuple[tuple[frozenset[str], re.Pattern[str]], ...] = (
+    (
+        _CCN_SOURCE_TYPES,
+        re.compile(r"\b(?:ccn|convention\s+collective|idcc)\b", re.IGNORECASE),
+    ),
+    (
+        frozenset({"accord_entreprise", "accord_performance_collective"}),
+        re.compile(r"\baccords?\s+(?:collectifs?\s+)?d['’]entreprise\b", re.IGNORECASE),
+    ),
+    (
+        frozenset({"reglement_interieur"}),
+        re.compile(r"\br[èe]glement\s+int[ée]rieur\b", re.IGNORECASE),
+    ),
+    (
+        frozenset({"contrat_travail"}),
+        re.compile(r"\b(?:mon|notre|votre|son)\s+contrat\b", re.IGNORECASE),
+    ),
+    (
+        frozenset({"code_travail", "code_travail_reglementaire"}),
+        re.compile(r"\bcode\s+du\s+travail\b", re.IGNORECASE),
+    ),
+    (
+        _JURIS_SOURCE_TYPES,
+        re.compile(
+            r"\b(?:jurisprudence|cour\s+de\s+cassation|arr[eê]ts?)\b",
+            re.IGNORECASE,
+        ),
+    ),
+    (
+        frozenset({"boss"}),
+        re.compile(
+            r"\b(?:boss|bulletin\s+officiel\s+de\s+la\s+s[ée]curit[ée]\s+sociale)\b",
+            re.IGNORECASE,
+        ),
+    ),
 )
 
 # Balance "hiérarchie des normes" : plafonds de sièges en tête de la liste finale.
@@ -132,6 +165,39 @@ def _extract_modified_articles(text: str) -> set[str]:
         for m in rx.finditer(text or ""):
             out.add(_normalize_article_num(m.group(1)))
     return out
+
+
+def _build_plan_complement_query(plan: SearchPlan, fallback: str) -> str:
+    """Build a source-neutral query for legal complements.
+
+    A source-directed query such as « selon la CCN Syntec » must keep those
+    words for the primary CCN search, but not for the legislation branch: they
+    otherwise attract provisions about collective agreements themselves. The
+    planner's legal topics are retained unless they repeat the requested source
+    family. No legal topic is hard-coded here.
+    """
+
+    requested_types = set(plan.requested_source_types)
+
+    def is_source_label(text: str) -> bool:
+        return any(
+            requested_types.intersection(source_types) and pattern.search(text)
+            for source_types, pattern in _SOURCE_TOPIC_MARKERS
+        )
+
+    neutral_topics = [
+        topic.strip()
+        for topic in plan.legal_topics
+        if topic.strip() and not is_source_label(topic)
+    ]
+    if neutral_topics:
+        return " ".join(neutral_topics)
+
+    for query in plan.search_queries:
+        if query.strip() and not is_source_label(query):
+            return query.strip()
+
+    return fallback
 
 
 def _assess_confidence(
@@ -684,6 +750,9 @@ class RAGAgent:
                 organisation_id,
                 org_idcc_list=org_idcc_list,
             )
+            trace.search_plan_validation.update(
+                getattr(self, "_plan_search_diagnostics", {})
+            )
         trace.perf_ms["expand_search"] = (time.perf_counter() - t_exp_q) * 1000
         trace.variants = list(variants) if variants else []
         if variants and variants[0] == _OUT_OF_SCOPE_MARKER:
@@ -726,7 +795,7 @@ class RAGAgent:
         if search_plan is not None and search_plan.hypothesized_articles:
             (
                 results,
-                trace.search_plan_validation,
+                hypothesis_validation,
                 hypothesis_refs_by_key,
                 hypothesis_added_keys,
             ) = await self._inject_plan_hypothesis_candidates(
@@ -735,6 +804,7 @@ class RAGAgent:
                 organisation_id,
                 org_idcc_list,
             )
+            trace.search_plan_validation.update(hypothesis_validation)
 
         # Snapshot the candidate pool right before rerank
         trace.hybrid_results = _serialize_chunks(results, limit=30)
@@ -1528,6 +1598,7 @@ class RAGAgent:
         medium-confidence references against the corpus and common reranker.
         """
 
+        self._plan_search_diagnostics: dict = {}
         variants: list[str] = []
         seen: set[str] = set()
         for candidate in [query, *plan.search_queries]:
@@ -1554,11 +1625,6 @@ class RAGAgent:
             SourceRequirement.REQUIRED,
             SourceRequirement.SAFETY_FLOOR,
         }
-        directed_code_floor = bool(
-            source_type_filter
-            and apply_legislation_floor
-            and not set(source_type_filter).issubset(_EMPLOYMENT_CODE_SOURCE_TYPES)
-        )
         # Semantic legislative vocabulary only. Unverified article candidates
         # are never appended to this string, so _run_variant_searches cannot
         # inject them by identifier.
@@ -1575,34 +1641,88 @@ class RAGAgent:
             apply_legislation_floor=apply_legislation_floor and not source_type_filter,
         )
 
-        if directed_code_floor:
+        if source_type_filter:
+            complement_query = _build_plan_complement_query(plan, legal_anchor)
+            self._plan_search_diagnostics = {
+                "directed_primary_source_types": list(source_type_filter),
+                "complement_query": complement_query,
+                "complement_branches": [],
+            }
+            complement_tasks = []
+            if apply_legislation_floor:
+                complement_tasks.append((
+                    "legislation",
+                    _MAX_PLAN_LEGISLATION_COMPLEMENT_CHUNKS,
+                    self.search_engine.search(
+                        complement_query,
+                        organisation_id,
+                        top_k=_MAX_PLAN_LEGISLATION_COMPLEMENT_CHUNKS,
+                        org_idcc_list=org_idcc_list,
+                        source_type_filter=_LEGISLATION_SOURCE_TYPES,
+                        cost_ctx=self._cost_ctx,
+                    ),
+                ))
+
+            jurisprudence_required = (
+                plan.jurisprudence is SourceRequirement.REQUIRED
+                or plan.planner_jurisprudence is SourceRequirement.REQUIRED
+                or "jurisprudence" in plan.planner_source_hints
+            )
+            jurisprudence_already_requested = bool(
+                set(source_type_filter).intersection(_JURIS_SOURCE_TYPES)
+            )
+            if jurisprudence_required and not jurisprudence_already_requested:
+                complement_tasks.append((
+                    "jurisprudence",
+                    _MAX_PLAN_JURISPRUDENCE_COMPLEMENT_CHUNKS,
+                    self.search_engine.search(
+                        complement_query,
+                        organisation_id,
+                        top_k=_MAX_PLAN_JURISPRUDENCE_COMPLEMENT_CHUNKS,
+                        org_idcc_list=org_idcc_list,
+                        source_type_filter=sorted(_JURIS_SOURCE_TYPES),
+                        cost_ctx=self._cost_ctx,
+                    ),
+                ))
+
             logger.info(
                 "[PLAN] Directed search returned %d candidate(s) — "
-                "adding the bounded employment-Code safety floor",
+                "running %d source-neutral complement(s): %s",
                 len(pool),
+                len(complement_tasks),
+                complement_query[:120],
             )
-            fallback = await self._step_with_timeout(
-                self.search_engine.search(
-                    legal_anchor or variants[0],
-                    organisation_id,
-                    top_k=_MAX_PLAN_SOURCE_FALLBACK_CHUNKS,
-                    org_idcc_list=org_idcc_list,
-                    source_type_filter=list(_EMPLOYMENT_CODE_SOURCE_TYPES),
-                    cost_ctx=self._cost_ctx,
-                ),
-                fallback=[],
+            complement_results = await asyncio.gather(
+                *[
+                    self._step_with_timeout(task, fallback=[])
+                    for _label, _cap, task in complement_tasks
+                ]
             )
             seen_pool = {(result.document_id, result.chunk_index) for result in pool}
-            added = 0
-            for candidate in fallback[:_MAX_PLAN_SOURCE_FALLBACK_CHUNKS]:
-                key = (candidate.document_id, candidate.chunk_index)
-                if key in seen_pool:
-                    continue
-                seen_pool.add(key)
-                pool.append(candidate)
-                added += 1
-                if added >= _MAX_PLAN_SOURCE_FALLBACK_CHUNKS:
-                    break
+            for (label, cap, _task), candidates in zip(
+                complement_tasks,
+                complement_results,
+                strict=True,
+            ):
+                added = 0
+                for candidate in candidates[:cap]:
+                    key = (candidate.document_id, candidate.chunk_index)
+                    if key in seen_pool:
+                        continue
+                    seen_pool.add(key)
+                    pool.append(candidate)
+                    added += 1
+                if added:
+                    logger.info(
+                        "[PLAN] Added %d %s complement candidate(s)",
+                        added,
+                        label,
+                    )
+                self._plan_search_diagnostics["complement_branches"].append({
+                    "kind": label,
+                    "candidate_chunks": len(candidates[:cap]),
+                    "added_chunks": added,
+                })
 
         return pool, variants
 

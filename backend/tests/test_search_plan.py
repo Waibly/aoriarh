@@ -461,6 +461,19 @@ async def test_source_directed_plan_preserves_filtered_results_and_bounds_fallba
         "Selon ma convention collective, quel préavis pour un cadre ?",
         org_idcc_list=["1486"],
     )
+    plan = apply_compact_planner_payload(
+        plan,
+        _valid_payload(
+            legal_topics=[
+                "préavis de démission",
+                "cadres",
+                "convention collective Syntec (IDCC 1486)",
+            ],
+            search_queries=["préavis démission cadre Syntec IDCC 1486"],
+            hypothesized_articles=[],
+            jurisprudence="optional",
+        ),
+    )
     ccn_1 = _search_result(
         "ccn-1",
         0,
@@ -504,29 +517,44 @@ async def test_source_directed_plan_preserves_filtered_results_and_bounds_fallba
         agent._run_variant_searches.await_args.kwargs["apply_legislation_floor"]
         is False
     )
-    fallback_call = agent.search_engine.search.await_args
-    assert fallback_call.kwargs["top_k"] == 3
-    assert fallback_call.kwargs["source_type_filter"] == [
-        "code_travail",
-        "code_travail_reglementaire",
-        "code_securite_sociale",
-        "code_securite_sociale_reglementaire",
-    ]
+    complement_call = agent.search_engine.search.await_args
+    assert complement_call.args[0] == "préavis de démission cadres"
+    assert complement_call.kwargs["top_k"] == 5
+    assert "code_travail" in complement_call.kwargs["source_type_filter"]
+    assert "loi" in complement_call.kwargs["source_type_filter"]
+    assert "convention_oit" in complement_call.kwargs["source_type_filter"]
+    assert "arret_cour_cassation" not in complement_call.kwargs["source_type_filter"]
+    assert agent._plan_search_diagnostics == {
+        "directed_primary_source_types": [
+            "convention_collective_nationale",
+            "accord_branche",
+        ],
+        "complement_query": "préavis de démission cadres",
+        "complement_branches": [
+            {
+                "kind": "legislation",
+                "candidate_chunks": 3,
+                "added_chunks": 2,
+            }
+        ],
+    }
 
 
 @pytest.mark.asyncio
-async def test_employment_code_directed_plan_does_not_duplicate_its_code_floor():
+async def test_source_directed_plan_adds_jurisprudence_only_when_plan_requires_it():
     plan = build_deterministic_search_plan(
         "Selon le Code du travail, quel préavis pour un cadre ?",
         org_idcc_list=["1486"],
     )
-    assert set(plan.requested_source_types).issubset(
-        {
-            "code_travail",
-            "code_travail_reglementaire",
-            "code_securite_sociale",
-            "code_securite_sociale_reglementaire",
-        }
+    plan = apply_compact_planner_payload(
+        plan,
+        _valid_payload(
+            legal_topics=["validité du préavis", "rupture du contrat"],
+            search_queries=["validité préavis rupture contrat"],
+            hypothesized_articles=[],
+            source_hints=["legislation", "jurisprudence"],
+            jurisprudence="required",
+        ),
     )
     primary = [
         _search_result(
@@ -539,7 +567,15 @@ async def test_employment_code_directed_plan_does_not_duplicate_its_code_floor()
     agent = RAGAgent.__new__(RAGAgent)
     agent._run_variant_searches = AsyncMock(return_value=primary)
     agent.search_engine = MagicMock()
-    agent.search_engine.search = AsyncMock()
+    legislation = _search_result("law-1", 0, source_type="loi")
+    ruling = _search_result("case-1", 0, source_type="arret_cour_cassation")
+    agent.search_engine.search = AsyncMock(
+        side_effect=[[primary[0], legislation], [ruling]]
+    )
+    agent._org_id = "org-1"
+    agent._user_id = None
+    agent._conversation_id = None
+    agent._is_replay = True
 
     pool, _variants = await agent._search_with_plan(
         plan,
@@ -548,8 +584,24 @@ async def test_employment_code_directed_plan_does_not_duplicate_its_code_floor()
         org_idcc_list=["1486"],
     )
 
-    assert pool == primary
-    agent.search_engine.search.assert_not_awaited()
+    assert [(result.document_id, result.chunk_index) for result in pool] == [
+        ("code-1", 0),
+        ("code-1", 1),
+        ("code-1", 2),
+        ("law-1", 0),
+        ("case-1", 0),
+    ]
+    assert agent.search_engine.search.await_count == 2
+    legislation_call, jurisprudence_call = agent.search_engine.search.await_args_list
+    assert legislation_call.args[0] == "validité du préavis rupture du contrat"
+    assert "loi" in legislation_call.kwargs["source_type_filter"]
+    assert jurisprudence_call.kwargs["top_k"] == 3
+    assert set(jurisprudence_call.kwargs["source_type_filter"]) == {
+        "arret_cour_cassation",
+        "arret_cour_appel",
+        "arret_conseil_etat",
+        "decision_conseil_constitutionnel",
+    }
     assert (
         agent._run_variant_searches.await_args.kwargs["apply_legislation_floor"]
         is False
