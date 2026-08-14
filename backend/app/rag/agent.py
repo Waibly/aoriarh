@@ -152,6 +152,12 @@ class RAGSource:
     # Structural metadata (optional, from ArticleChunker)
     article_nums: list[str] | None = None
     section_path: str | None = None
+    # Source presentation metadata. `corpus_status` describes availability at
+    # answer time; it must not be confused with the legal status of the text.
+    content_date: str | None = None
+    idcc: str | None = None
+    legal_status: str | None = None
+    corpus_status: str = "available_at_answer_time"
 
 
 @dataclass
@@ -369,7 +375,7 @@ Choisis le format AVANT d'écrire, selon ce que la question appelle :
   - un sigle / dispositif à sa première occurrence : **DUERP**, **CSE**, **PSE**, **AT/MP**
   - les articles de loi clés : **art. L.1234-1** Code du travail, **art. R.4121-1**
   N'utilise PAS le gras sur : les phrases entières, les articulations logiques ("en outre", "par ailleurs"), les descriptions narratives. Le gras doit aider l'œil à scanner, pas saturer la lecture.
-- **Cite les références légales dans le texte** : articles de loi (art. L.1234-1), articles de CCN (art. 33 CCNT66), jurisprudence (Cass. soc., date, n° pourvoi). Le RH doit pouvoir copier-coller ta réponse avec ses fondements juridiques. Ne cite PAS les noms des documents sources (affichés séparément dans l'UI). Français uniquement.
+- **Cite les références légales dans le texte** : articles de loi (art. L.1234-1), articles de CCN (art. 33 CCNT66), jurisprudence (Cass. soc., date, n° pourvoi). Le RH doit pouvoir copier-coller ta réponse avec ses fondements juridiques. Pour une source interne ou conventionnelle sans numéro d'article ni référence juridique stable, nomme UNE FOIS le document exact lorsque tu t'appuies réellement dessus : l'interface pourra ainsi relier l'affirmation au passage source. Quand une référence juridique stable existe, utilise-la sans répéter le nom technique du document. Français uniquement.
 - **Ne renvoie JAMAIS à un numéro de source** (« Source 3 », « Sources 8, 9 ») : cette numérotation est interne et invisible pour le RH. Réfère-toi toujours à la référence juridique elle-même (l'article, le n° de pourvoi, la date de l'arrêt).
 - **N'affirme qu'une référence figure « dans vos sources » que si elle y est réellement.** Si tu cites un article ou un arrêt qui n'apparaît pas dans les sources fournies (parce que tu le connais par ailleurs), présente-le comme la règle générale applicable, sans laisser entendre qu'il provient des sources. Ne fabrique jamais le rattachement d'une référence à une source.
 - **Continuité de la conversation — n'inverse jamais la provenance.** Les références qui apparaissent dans TES réponses précédentes (bloc « Historique », tours « Toi (assistant) ») sont les tiennes : tu les as fournies à partir de sources mobilisées à ce moment-là. Ne les présente JAMAIS comme des arrêts ou des textes « mentionnés » ou « listés » par l'utilisateur, et ne les rejette pas au seul motif que « Sources documentaires » du tour courant ne les resortit pas (chaque question relance une recherche distincte ; une source citée un tour plus tôt reste valable). Ne consacre donc aucune section à énumérer ce que « l'utilisateur cite et qui ne figure pas dans les sources » — ce cas ne vaut que si l'utilisateur a lui-même écrit ces références dans SON dernier message. Si tu repères une vraie erreur dans une de tes citations passées, corrige-la explicitement comme ta propre correction, jamais en la reprochant à l'utilisateur. Quand le contexte fournit un bloc « Sources déjà mobilisées plus tôt dans la conversation », il contient le texte des sources de tes tours précédents : appuie-toi dessus pour un suivi, au même titre que les sources fraîches.
@@ -1940,6 +1946,8 @@ class RAGAgent:
                     publication=meta.publication,
                     article_nums=unique_nums or None,
                     section_path="; ".join(sorted(doc_section_paths[doc_id])) or None,
+                    content_date=meta.content_date,
+                    idcc=meta.idcc,
                 )
             )
 

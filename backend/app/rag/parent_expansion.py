@@ -276,6 +276,7 @@ def _payload_to_result(payload: dict, *, score: float = 0.0) -> SearchResult:
         solution=payload.get("solution"),
         publication=payload.get("publication"),
         content_date=payload.get("content_date"),
+        idcc=payload.get("idcc"),
         article_nums=payload.get("article_nums"),
         section_path=payload.get("section_path"),
     )

@@ -100,6 +100,10 @@ export interface MessageSource {
   // Structure (législation / conventionnel)
   article_nums?: string[] | null;
   section_path?: string | null;
+  content_date?: string | null;
+  idcc?: string | null;
+  legal_status?: string | null;
+  corpus_status?: "available_at_answer_time" | string | null;
   // Jurisprudence metadata
   juridiction?: string | null;
   chambre?: string | null;

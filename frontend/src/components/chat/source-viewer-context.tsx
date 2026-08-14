@@ -24,6 +24,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { getSourceFullContent } from "@/lib/chat-api";
+import { sourceDate, sourceIdcc } from "@/lib/source-evidence";
 import type { MessageSource } from "@/types/api";
 
 export function formatJurisprudenceRef(source: MessageSource): string | null {
@@ -103,6 +104,8 @@ export function SourceViewerProvider({
 
   const displayedText =
     fullContent ?? selectedSource?.full_text ?? selectedSource?.excerpt ?? "";
+  const selectedIdcc = selectedSource ? sourceIdcc(selectedSource) : null;
+  const selectedDate = selectedSource ? sourceDate(selectedSource) : null;
   const isTruncated =
     fullContent === null &&
     typeof selectedSource?.full_text === "string" &&
@@ -158,6 +161,27 @@ export function SourceViewerProvider({
                   <span className="text-muted-foreground text-xs">
                     Niveau {selectedSource?.norme_niveau}
                   </span>
+                  {selectedIdcc && (
+                    <Badge variant="outline" className="rounded-full text-xs">
+                      IDCC {selectedIdcc}
+                    </Badge>
+                  )}
+                  {selectedDate && (
+                    <Badge variant="outline" className="rounded-full text-xs">
+                      {selectedDate}
+                    </Badge>
+                  )}
+                  {selectedSource?.corpus_status ===
+                    "available_at_answer_time" && (
+                    <Badge variant="outline" className="rounded-full text-xs">
+                      Disponible lors de la réponse
+                    </Badge>
+                  )}
+                  {selectedSource?.legal_status && (
+                    <Badge variant="outline" className="rounded-full text-xs">
+                      {selectedSource.legal_status}
+                    </Badge>
+                  )}
                   {selectedSource?.solution && (
                     <Badge variant="outline" className="rounded-full text-xs">
                       {selectedSource.solution}
@@ -173,6 +197,19 @@ export function SourceViewerProvider({
             </div>
           </DialogHeader>
           <div className="min-h-0 flex-1 overflow-y-auto">
+            {selectedSource?.excerpt && (
+              <div className="mb-4 rounded-lg border border-[#652bb0]/20 bg-[#652bb0]/5 px-4 py-3">
+                <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-[#652bb0]">
+                  Passage sélectionné par la recherche
+                </p>
+                <p className="text-sm leading-6 text-foreground">
+                  {selectedSource.excerpt}
+                </p>
+              </div>
+            )}
+            <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              Contexte documentaire
+            </p>
             <div className="prose prose-sm dark:prose-invert max-w-none pr-4 text-[0.9375rem] leading-7 text-foreground [&_h1]:mt-6 [&_h1]:mb-3 [&_h1]:text-lg [&_h1]:font-semibold [&_h2]:mt-5 [&_h2]:mb-2 [&_h2]:text-base [&_h2]:font-semibold [&_h3]:mt-4 [&_h3]:mb-2 [&_h3]:text-[0.9375rem] [&_h3]:font-semibold [&_p]:my-3 [&_p]:leading-7 [&_ul]:my-3 [&_ul]:pl-5 [&_ul]:list-disc [&_ol]:my-3 [&_ol]:pl-5 [&_ol]:list-decimal [&_li]:my-0.5 [&_li]:leading-7 [&_li::marker]:text-foreground/70 [&>*:first-child]:mt-0 [&>*:last-child]:mb-0 [&_table]:my-3 [&_table]:border-collapse [&_table]:text-xs [&_table]:w-full [&_th]:border [&_th]:border-border [&_th]:bg-muted [&_th]:px-2 [&_th]:py-1 [&_th]:text-left [&_th]:font-semibold [&_td]:border [&_td]:border-border [&_td]:px-2 [&_td]:py-1 [&_td]:align-top">
               <ReactMarkdown
                 remarkPlugins={[remarkGfm]}
@@ -239,6 +276,7 @@ export function LegalRefAnchor(
         <a
           href={href}
           className="cursor-pointer"
+          title="Ouvrir le passage source"
           onClick={(e) => {
             e.preventDefault();
             ctx.openSource(source);

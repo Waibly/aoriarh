@@ -90,6 +90,7 @@ class SearchResult:
     publication: str | None = None
     # Recency metadata (optional, for CCN/code du travail)
     content_date: str | None = None
+    idcc: str | None = None
     # Structural metadata (optional, from ArticleChunker)
     article_nums: list[str] | None = None
     section_path: str | None = None
@@ -299,6 +300,7 @@ class HybridSearch:
                     solution=payload.get("solution"),
                     publication=payload.get("publication"),
                     content_date=payload.get("content_date"),
+                    idcc=payload.get("idcc"),
                     article_nums=payload.get("article_nums"),
                     section_path=payload.get("section_path"),
                 )

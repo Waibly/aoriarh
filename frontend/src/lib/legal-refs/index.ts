@@ -15,11 +15,13 @@ import type { MessageSource } from "@/types/api";
 
 export interface RefIndex {
   byArticle: Map<string, MessageSource>;
+  byConventionalArticle: Map<string, MessageSource>;
   byPourvoi: Map<string, MessageSource>;
   byDocNumber: Map<string, MessageSource>;
   // Textes cités par DATE (arrêtés surtout, mais aussi décrets/lois/ordonnances
   // quand aucun n° n'est donné). Clé : "<type>:<AAAA-MM-JJ>", ex. "arrete:2026-05-22".
   byTypeDate: Map<string, MessageSource>;
+  byDocumentName: Map<string, MessageSource>;
 }
 
 /** Clé canonique d'un article : "R. 4463-3" / "art. R.4463-3" → "R4463-3". */
@@ -46,8 +48,17 @@ function stripAccents(s: string): string {
 }
 
 const MONTHS_FR: Record<string, string> = {
-  janvier: "01", fevrier: "02", mars: "03", avril: "04", mai: "05", juin: "06",
-  juillet: "07", aout: "08", septembre: "09", octobre: "10", novembre: "11",
+  janvier: "01",
+  fevrier: "02",
+  mars: "03",
+  avril: "04",
+  mai: "05",
+  juin: "06",
+  juillet: "07",
+  aout: "08",
+  septembre: "09",
+  octobre: "10",
+  novembre: "11",
   decembre: "12",
 };
 
@@ -65,7 +76,8 @@ function extractCanonicalDate(raw: string): string | null {
     if (mm) return `${fr[3]}-${mm}-${fr[1].padStart(2, "0")}`;
   }
   const num = raw.match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/);
-  if (num) return `${num[3]}-${num[2].padStart(2, "0")}-${num[1].padStart(2, "0")}`;
+  if (num)
+    return `${num[3]}-${num[2].padStart(2, "0")}-${num[1].padStart(2, "0")}`;
   return null;
 }
 
@@ -87,9 +99,11 @@ const DOC_NAME_NUMBER_RE = /n[°ºo]\s?(\d{4}-\d+)/i;
  */
 export function buildRefIndex(sources: MessageSource[]): RefIndex {
   const byArticle = new Map<string, MessageSource>();
+  const conventionalCandidates = new Map<string, MessageSource[]>();
   const byPourvoi = new Map<string, MessageSource>();
   const byDocNumber = new Map<string, MessageSource>();
   const byTypeDate = new Map<string, MessageSource>();
+  const byDocumentName = new Map<string, MessageSource>();
 
   for (const source of sources) {
     if (source.numero_pourvoi) {
@@ -100,6 +114,24 @@ export function buildRefIndex(sources: MessageSource[]): RefIndex {
       for (const art of source.article_nums) {
         const key = normalizeArticleKey(art);
         if (key && !byArticle.has(key)) byArticle.set(key, source);
+      }
+    }
+    if (
+      getSourceGroup(source.source_type) === "conventional" &&
+      source.article_nums
+    ) {
+      for (const art of source.article_nums) {
+        const key = normalizeArticleKey(art);
+        if (!key) continue;
+        const candidates = conventionalCandidates.get(key) ?? [];
+        if (
+          !candidates.some(
+            (candidate) => candidate.document_id === source.document_id
+          )
+        ) {
+          candidates.push(source);
+        }
+        conventionalCandidates.set(key, candidates);
       }
     }
     // Numéro de décret/loi/ordonnance extrait du nom du document (ex.
@@ -121,22 +153,47 @@ export function buildRefIndex(sources: MessageSource[]): RefIndex {
         if (!byTypeDate.has(key)) byTypeDate.set(key, source);
       }
     }
+    const documentName = source.document_name?.trim();
+    if (documentName && documentName.length >= 8) {
+      const key = documentName.toLocaleLowerCase("fr-FR");
+      if (!byDocumentName.has(key)) byDocumentName.set(key, source);
+    }
   }
 
-  return { byArticle, byPourvoi, byDocNumber, byTypeDate };
+  const byConventionalArticle = new Map<string, MessageSource>();
+  for (const [key, candidates] of conventionalCandidates) {
+    // Un numéro comme « article 12 » n'est sûr que s'il ne désigne qu'un seul
+    // document conventionnel parmi les sources de cette réponse.
+    if (candidates.length === 1) byConventionalArticle.set(key, candidates[0]);
+  }
+
+  return {
+    byArticle,
+    byConventionalArticle,
+    byPourvoi,
+    byDocNumber,
+    byTypeDate,
+    byDocumentName,
+  };
 }
 
 // Référence d'article : "art. R.4463-3", "article L1234-1", "R. 4624-31"…
 // Le préfixe "art."/"article" est optionnel et inclus dans le lien quand présent.
 // Lettre en MAJUSCULE uniquement (pas de flag `i`) pour éviter de matcher des
 // lettres au fil du texte ("or 5", "down 3"…) ; le préfixe accepte les 2 casses.
-const ARTICLE_RE = /(?:[Aa]rt(?:icle)?s?\.?\s*)?([LRD])\.?\s?(\d+(?:[-–]\d+)*)/g;
+const ARTICLE_RE =
+  /(?:[Aa]rt(?:icle)?s?\.?\s*)?([LRD])\.?\s?(\d+(?:[-–]\d+)*)/g;
+// Articles de CCN/accord sans préfixe L/R/D. La résolution reste stricte : le
+// numéro doit être unique parmi les documents conventionnels récupérés.
+const CONVENTIONAL_ARTICLE_RE =
+  /(?:[Aa]rt(?:icle)?s?\.?\s+)(\d+(?:[.\-–]\w+)*)/g;
 // Numéro de pourvoi / RG : "n° 25-10.127" (cassation) ou "n° 23/03765" (appel).
 const POURVOI_RE = /n[°ºo]\s?(\d[\d./-]{4,})/gi;
 // Numéro de texte réglementaire : "décret n° 2025-887", "loi n° 2025-1403".
 // Le mot (décret/loi/…) précède, ce qui le distingue d'un pourvoi et lui donne
 // la priorité (le hit démarre plus tôt et absorbe le "n° …" à l'intérieur).
-const DOC_NUMBER_RE = /(décrets?|lois?|ordonnances?|arrêtés?)\s+n[°ºo]\s?(\d{4}-\d+)/gi;
+const DOC_NUMBER_RE =
+  /(décrets?|lois?|ordonnances?|arrêtés?)\s+n[°ºo]\s?(\d{4}-\d+)/gi;
 // Texte cité par DATE, sans numéro : "Arrêté du 22/05/2026", "Arrêté du 22 mai
 // 2026", "Décret du 17 décembre 2025". Le mot du type précède directement "du".
 const DATE_REF_RE =
@@ -155,19 +212,45 @@ function collectHits(value: string, index: RefIndex): Hit[] {
   for (const m of value.matchAll(ARTICLE_RE)) {
     const source = index.byArticle.get(normalizeArticleKey(m[1] + m[2]));
     if (source && m.index !== undefined) {
-      hits.push({ start: m.index, end: m.index + m[0].length, text: m[0], source });
+      hits.push({
+        start: m.index,
+        end: m.index + m[0].length,
+        text: m[0],
+        source,
+      });
+    }
+  }
+  for (const m of value.matchAll(CONVENTIONAL_ARTICLE_RE)) {
+    const source = index.byConventionalArticle.get(normalizeArticleKey(m[1]));
+    if (source && m.index !== undefined) {
+      hits.push({
+        start: m.index,
+        end: m.index + m[0].length,
+        text: m[0],
+        source,
+      });
     }
   }
   for (const m of value.matchAll(POURVOI_RE)) {
     const source = index.byPourvoi.get(normalizePourvoi(m[1]));
     if (source && m.index !== undefined) {
-      hits.push({ start: m.index, end: m.index + m[0].length, text: m[0], source });
+      hits.push({
+        start: m.index,
+        end: m.index + m[0].length,
+        text: m[0],
+        source,
+      });
     }
   }
   for (const m of value.matchAll(DOC_NUMBER_RE)) {
     const source = index.byDocNumber.get(normalizeDocNumber(m[2]));
     if (source && m.index !== undefined) {
-      hits.push({ start: m.index, end: m.index + m[0].length, text: m[0], source });
+      hits.push({
+        start: m.index,
+        end: m.index + m[0].length,
+        text: m[0],
+        source,
+      });
     }
   }
   for (const m of value.matchAll(DATE_REF_RE)) {
@@ -175,7 +258,25 @@ function collectHits(value: string, index: RefIndex): Hit[] {
     if (!date) continue;
     const source = index.byTypeDate.get(`${normalizeTypeWord(m[1])}:${date}`);
     if (source && m.index !== undefined) {
-      hits.push({ start: m.index, end: m.index + m[0].length, text: m[0], source });
+      hits.push({
+        start: m.index,
+        end: m.index + m[0].length,
+        text: m[0],
+        source,
+      });
+    }
+  }
+  const lowerValue = value.toLocaleLowerCase("fr-FR");
+  for (const [documentName, source] of index.byDocumentName) {
+    let start = lowerValue.indexOf(documentName);
+    while (start !== -1) {
+      hits.push({
+        start,
+        end: start + documentName.length,
+        text: value.slice(start, start + documentName.length),
+        source,
+      });
+      start = lowerValue.indexOf(documentName, start + documentName.length);
     }
   }
 
@@ -192,11 +293,41 @@ function collectHits(value: string, index: RefIndex): Hit[] {
   return kept;
 }
 
+export interface ResolvedSourceReference {
+  source: MessageSource;
+  texts: string[];
+}
+
+/**
+ * Retourne les sources explicitement reliées à la réponse, avec les références
+ * exactes qui ont permis la résolution. Le lookup est le même que celui qui
+ * crée les liens dans le markdown : aucune source n'est promue sur une simple
+ * similarité lexicale.
+ */
+export function resolveSourceReferences(
+  value: string,
+  sources: MessageSource[]
+): ResolvedSourceReference[] {
+  const byDocument = new Map<string, ResolvedSourceReference>();
+  for (const hit of collectHits(value, buildRefIndex(sources))) {
+    const current = byDocument.get(hit.source.document_id) ?? {
+      source: hit.source,
+      texts: [],
+    };
+    if (!current.texts.includes(hit.text)) current.texts.push(hit.text);
+    byDocument.set(hit.source.document_id, current);
+  }
+  return [...byDocument.values()];
+}
+
 function refLink(text: string, source: MessageSource): Element {
   return {
     type: "element",
     tagName: "a",
-    properties: { href: `#src-${source.document_id}`, className: ["legal-ref"] },
+    properties: {
+      href: `#src-${source.document_id}`,
+      className: ["legal-ref"],
+    },
     children: [{ type: "text", value: text }],
   };
 }
@@ -207,7 +338,7 @@ function refLink(text: string, source: MessageSource): Element {
  */
 export function buildReplacements(
   value: string,
-  index: RefIndex,
+  index: RefIndex
 ): (Text | Element)[] | null {
   const hits = collectHits(value, index);
   if (hits.length === 0) return null;

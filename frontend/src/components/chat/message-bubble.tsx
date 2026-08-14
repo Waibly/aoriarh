@@ -319,7 +319,7 @@ export function MessageBubble({ message, onFeedback }: MessageBubbleProps) {
           </div>
         )}
         {messageSources.length > 0 && (
-          <MessageSources sources={messageSources} />
+          <MessageSources sources={messageSources} answer={message.content} />
         )}
       </div>
       </SourceViewerProvider>

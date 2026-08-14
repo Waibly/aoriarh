@@ -55,7 +55,12 @@ export function StreamingBubble({
               <span className="ml-0.5 inline-block h-4 w-1.5 animate-pulse rounded-sm bg-[#652bb0]" />
             )}
           </div>
-          {safeSources.length > 0 && <MessageSources sources={safeSources} />}
+          {safeSources.length > 0 && (
+            <MessageSources
+              sources={safeSources}
+              answer={streaming ? "" : content}
+            />
+          )}
         </div>
       </div>
     </SourceViewerProvider>
