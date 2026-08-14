@@ -1666,7 +1666,6 @@ class RAGAgent:
             jurisprudence_required = (
                 plan.jurisprudence is SourceRequirement.REQUIRED
                 or plan.planner_jurisprudence is SourceRequirement.REQUIRED
-                or "jurisprudence" in plan.planner_source_hints
             )
             jurisprudence_already_requested = bool(
                 set(source_type_filter).intersection(_JURIS_SOURCE_TYPES)

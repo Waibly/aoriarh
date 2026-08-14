@@ -206,7 +206,8 @@ dans le corpus, jamais des autorités ; confidence vaut "low" ou "medium".
 "internal"]. Ce sont des priorités, jamais des exclusions.
 - jurisprudence : "required" si la question porte sur une validité, une \
 interprétation contestable, une exception, une sanction, une discrimination, \
-un licenciement ou la position des juridictions ; "optional" pour une donnée \
+un licenciement, une garantie/protection de l'emploi ou la position des \
+juridictions ; "optional" pour une donnée \
 directement fixée par le texte demandé (montant, durée ou délai explicite).
 - answer_intent : factual_rule, yes_no, procedure, comparison, calculation, \
 case_analysis ou legal_news.

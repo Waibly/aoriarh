@@ -471,6 +471,7 @@ async def test_source_directed_plan_preserves_filtered_results_and_bounds_fallba
             ],
             search_queries=["préavis démission cadre Syntec IDCC 1486"],
             hypothesized_articles=[],
+            source_hints=["ccn", "legislation", "jurisprudence"],
             jurisprudence="optional",
         ),
     )
@@ -518,6 +519,7 @@ async def test_source_directed_plan_preserves_filtered_results_and_bounds_fallba
         is False
     )
     complement_call = agent.search_engine.search.await_args
+    assert agent.search_engine.search.await_count == 1
     assert complement_call.args[0] == "préavis de démission cadres"
     assert complement_call.kwargs["top_k"] == 5
     assert "code_travail" in complement_call.kwargs["source_type_filter"]
