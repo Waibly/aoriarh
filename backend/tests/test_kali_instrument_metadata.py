@@ -36,3 +36,22 @@ def test_formatted_kali_articles_round_trip_parent_metadata():
     assert chunk.effective_from == "2025-01-01"
     assert chunk.instrument_status == "VIGUEUR_ETEN"
     assert chunk.section_path == "Salaires minimaux"
+
+
+def test_generated_kali_document_detection_excludes_bocc_documents():
+    generated_ccn = SimpleNamespace(
+        name="CCN Syntec (IDCC 1486)",
+        source_type="convention_collective_nationale",
+    )
+    generated_accords = SimpleNamespace(
+        name="Accords de branche — Syntec (IDCC 1486)",
+        source_type="accord_branche",
+    )
+    bocc = SimpleNamespace(
+        name="Avenant du 12 mars 2026 (IDCC 1486)",
+        source_type="convention_collective_nationale",
+    )
+
+    assert KaliService._is_generated_kali_document(generated_ccn) is True
+    assert KaliService._is_generated_kali_document(generated_accords) is True
+    assert KaliService._is_generated_kali_document(bocc) is False

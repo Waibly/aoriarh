@@ -271,15 +271,20 @@ class KaliService:
             existing_common = await self._find_common_ccn_docs(db, org_conv.idcc)
 
             if existing_common and force_refetch:
-                # Force re-fetch: delete old common docs first
-                old_ids = [str(d.id) for d in existing_common]
+                # Force re-fetch only the generated KALI snapshot. BOCC
+                # documents for the same IDCC are separate legal sources and
+                # must survive a KALI rebuild.
+                old_kali_docs = [
+                    doc for doc in existing_common if self._is_generated_kali_document(doc)
+                ]
+                old_ids = [str(d.id) for d in old_kali_docs]
                 logger.info(
                     "KALI IDCC %s: force_refetch — deleting %d existing common docs",
                     org_conv.idcc,
-                    len(existing_common),
+                    len(old_ids),
                 )
                 await self._cleanup_old_ccn_docs(db, old_ids)
-                existing_common = []
+                existing_common = [doc for doc in existing_common if doc not in old_kali_docs]
 
             if existing_common:
                 # Only shortcut if we have REAL KALI docs (name starts with
@@ -288,7 +293,7 @@ class KaliService:
                 kali_docs = [
                     d
                     for d in existing_common
-                    if d.name.startswith("CCN ")
+                    if self._is_generated_kali_document(d)
                     and d.indexation_status == "indexed"
                     and d.chunk_count
                 ]
@@ -456,6 +461,14 @@ class KaliService:
             logger.exception("KALI install failed for IDCC %s", org_conv.idcc)
 
         return result
+
+    @staticmethod
+    def _is_generated_kali_document(doc: Document) -> bool:
+        """Distinguish generated KALI snapshots from BOCC branch documents."""
+        return doc.source_type in {
+            "convention_collective_nationale",
+            "accord_branche",
+        } and (doc.name.startswith("CCN ") or doc.name.startswith("Accords de branche — "))
 
     async def sync_convention_content(
         self,

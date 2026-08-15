@@ -248,9 +248,9 @@ async def run_kali_install(
             result.articles_count, result.documents_created, result.errors,
         )
 
-        # Post-install health check: verify KALI docs exist for this IDCC.
-        # If any docs are stuck in error/pending (e.g. DNS failure during
-        # embedding), re-enqueue them.
+        # Post-install health check: retry only jobs that have already failed.
+        # Fresh documents are legitimately pending while the queued ingestion
+        # jobs start; re-enqueueing them here indexes every CCN twice.
         if result.documents_created > 0:
             from app.rag.tasks import enqueue_ingestion as _enqueue
             async with session_factory() as db2:
@@ -261,7 +261,7 @@ async def run_kali_install(
                             Document.organisation_id.is_(None),
                             Document.name.like("CCN %"),
                             Document.name.ilike(f"%IDCC {org_conv2.idcc}%"),
-                            Document.indexation_status.in_(["error", "pending"]),
+                            Document.indexation_status == "error",
                         )
                     )
                     broken = list(broken_q.scalars().all())
