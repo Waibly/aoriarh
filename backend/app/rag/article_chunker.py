@@ -20,16 +20,11 @@ import tiktoken
 from app.rag.chunker import contains_markdown_table
 from app.rag.config import CHUNK_OVERLAP
 
-
 # Detect article boundaries in markdown: ### Article L1234-5
-_ARTICLE_HEADING = re.compile(
-    r"(?m)^###\s+Article\s+.*$"
-)
+_ARTICLE_HEADING = re.compile(r"(?m)^###\s+Article\s+.*$")
 
 # Detect section headings: ## Partie législative > Livre I > ...
-_SECTION_HEADING = re.compile(
-    r"(?m)^##\s+(.+)$"
-)
+_SECTION_HEADING = re.compile(r"(?m)^##\s+(.+)$")
 
 _ARTICLE_CHUNK_SIZE = 450  # Smaller than generic (1024) for more precise embeddings
 _ARTICLE_CHUNK_OVERLAP = CHUNK_OVERLAP  # Reused when falling back to LegalChunker
@@ -39,9 +34,15 @@ _MIN_CHUNK_TOKENS = 15  # Discard chunks below this threshold (title-only ghosts
 @dataclass
 class ChunkWithMeta:
     """A chunk with its structural metadata."""
+
     text: str
     article_nums: list[str] = field(default_factory=list)
     section_path: str = ""
+    instrument_id: str = ""
+    instrument_title: str = ""
+    effective_from: str = ""
+    effective_to: str = ""
+    instrument_status: str = ""
 
 
 class ArticleChunker:
@@ -78,6 +79,7 @@ class ArticleChunker:
         if not articles:
             # Fallback: no articles detected, use simple paragraph split
             from app.rag.chunker import LegalChunker
+
             plain = LegalChunker(self.chunk_size, self.chunk_overlap).chunk(text)
             return [ChunkWithMeta(text=t) for t in plain]
 
@@ -91,6 +93,7 @@ class ArticleChunker:
         """Parse markdown into a list of {section, num, content, tokens}."""
         articles: list[dict] = []
         current_section = ""
+        current_instrument: dict[str, str] = {}
         current_num = ""
         current_lines: list[str] = []
 
@@ -100,22 +103,60 @@ class ArticleChunker:
             if section_match:
                 # Flush current article
                 if current_lines and current_num:
-                    articles.append(self._make_article(
-                        current_section, current_num, current_lines
-                    ))
+                    articles.append(
+                        self._make_article(
+                            current_section,
+                            current_num,
+                            current_lines,
+                            current_instrument,
+                        )
+                    )
                     current_lines = []
-                current_section = section_match.group(1).strip()
+                heading = section_match.group(1).strip()
+                if heading.startswith("Source juridique :"):
+                    current_instrument = {
+                        "instrument_title": heading.split(":", 1)[1].strip(),
+                    }
+                    current_section = ""
+                else:
+                    current_instrument = {}
+                    current_section = heading
                 current_num = ""
                 continue
+
+            # Structured KALI parent metadata is deliberately part of the
+            # readable markdown. Parse it before the first article so it can
+            # also be copied to the Qdrant payload.
+            if not current_num and current_instrument:
+                if line.startswith("Référence :"):
+                    current_instrument["instrument_id"] = line.split(":", 1)[1].strip()
+                    continue
+                if line.startswith("Entrée en vigueur :"):
+                    current_instrument["effective_from"] = line.split(":", 1)[1].strip()
+                    continue
+                if line.startswith("Fin d'effet :"):
+                    current_instrument["effective_to"] = line.split(":", 1)[1].strip()
+                    continue
+                if line.startswith("Statut :"):
+                    current_instrument["instrument_status"] = line.split(":", 1)[1].strip()
+                    continue
+                if line.startswith("Section :"):
+                    current_section = line.split(":", 1)[1].strip()
+                    continue
 
             # Check for article heading
             article_match = _ARTICLE_HEADING.match(line)
             if article_match:
                 # Flush previous article
                 if current_lines and current_num:
-                    articles.append(self._make_article(
-                        current_section, current_num, current_lines
-                    ))
+                    articles.append(
+                        self._make_article(
+                            current_section,
+                            current_num,
+                            current_lines,
+                            current_instrument,
+                        )
+                    )
                 current_num = line.lstrip("#").strip()
                 current_lines = [line]
                 continue
@@ -124,9 +165,14 @@ class ArticleChunker:
 
         # Flush last article
         if current_lines and current_num:
-            articles.append(self._make_article(
-                current_section, current_num, current_lines
-            ))
+            articles.append(
+                self._make_article(
+                    current_section,
+                    current_num,
+                    current_lines,
+                    current_instrument,
+                )
+            )
 
         # Merge orphan titles: if an article has no real content (just the heading),
         # prepend it to the next article in the same section
@@ -134,8 +180,13 @@ class ArticleChunker:
         for i, art in enumerate(articles):
             # Check if this article is content-less (only the heading line)
             first_nl = art["content"].find("\n")
-            content_after_heading = art["content"][first_nl + 1:].strip() if first_nl >= 0 else ""
-            if not content_after_heading and i + 1 < len(articles) and articles[i + 1]["section"] == art["section"]:
+            content_after_heading = art["content"][first_nl + 1 :].strip() if first_nl >= 0 else ""
+            same_parent = (
+                i + 1 < len(articles)
+                and articles[i + 1]["section"] == art["section"]
+                and articles[i + 1].get("instrument_id", "") == art.get("instrument_id", "")
+            )
+            if not content_after_heading and same_parent:
                 # Prepend this heading to next article's content
                 articles[i + 1]["content"] = art["content"] + "\n\n" + articles[i + 1]["content"]
                 articles[i + 1]["tokens"] = self._token_count(articles[i + 1]["content"])
@@ -145,17 +196,24 @@ class ArticleChunker:
         return merged
 
     def _make_article(
-        self, section: str, num: str, lines: list[str]
+        self,
+        section: str,
+        num: str,
+        lines: list[str],
+        instrument: dict[str, str] | None = None,
     ) -> dict:
         content = "\n".join(lines).strip()
         # num is e.g. "Article 33" or "Article L1332-4" (### already stripped)
-        article_num = num.replace("Article ", "").strip() if num.startswith("Article") else num.strip()
+        article_num = (
+            num.replace("Article ", "").strip() if num.startswith("Article") else num.strip()
+        )
         return {
             "section": section,
             "num": num,
             "article_num": article_num,
             "content": content,
             "tokens": self._token_count(content),
+            **(instrument or {}),
         }
 
     def _group_articles(self, articles: list[dict]) -> list[ChunkWithMeta]:
@@ -165,30 +223,46 @@ class ArticleChunker:
         current_nums: list[str] = []
         current_tokens = 0
         current_section = ""
+        current_instrument: dict[str, str] = {}
 
         def _flush():
             nonlocal current_parts, current_nums, current_tokens
             if current_parts:
-                chunks.append(ChunkWithMeta(
-                    text="\n\n".join(current_parts),
-                    article_nums=list(current_nums),
-                    section_path=current_section,
-                ))
+                chunks.append(
+                    ChunkWithMeta(
+                        text="\n\n".join(current_parts),
+                        article_nums=list(current_nums),
+                        section_path=current_section,
+                        **current_instrument,
+                    )
+                )
                 current_parts = []
                 current_nums = []
                 current_tokens = 0
 
         for article in articles:
-            # Section change → always flush (never mix sections)
-            if article["section"] != current_section:
+            article_instrument = {
+                "instrument_id": article.get("instrument_id", ""),
+                "instrument_title": article.get("instrument_title", ""),
+                "effective_from": article.get("effective_from", ""),
+                "effective_to": article.get("effective_to", ""),
+                "instrument_status": article.get("instrument_status", ""),
+            }
+            # Section or legal instrument change → always flush. Successive
+            # salary agreements must never be merged into the same chunk.
+            if article["section"] != current_section or article_instrument != current_instrument:
                 _flush()
                 current_section = article["section"]
+                current_instrument = article_instrument
 
             # Build the text for this article
             section_prefix = ""
             if not current_parts:
                 # First article in this chunk: add section header
-                section_prefix = f"## {current_section}\n\n" if current_section else ""
+                section_prefix = self._context_prefix(
+                    current_section,
+                    current_instrument,
+                )
 
             article_text = section_prefix + article["content"]
             article_tokens = self._token_count(article_text)
@@ -197,7 +271,10 @@ class ArticleChunker:
             if article_tokens > self.chunk_size:
                 _flush()
                 sub_chunks = self._split_large_article(
-                    article_text, current_section, article["article_num"]
+                    article_text,
+                    current_section,
+                    article["article_num"],
+                    current_instrument,
                 )
                 chunks.extend(sub_chunks)
                 continue
@@ -206,7 +283,13 @@ class ArticleChunker:
             if current_tokens + article_tokens > self.chunk_size:
                 _flush()
                 # Re-add section prefix since we're starting a new chunk
-                article_text = (f"## {current_section}\n\n" if current_section else "") + article["content"]
+                article_text = (
+                    self._context_prefix(
+                        current_section,
+                        current_instrument,
+                    )
+                    + article["content"]
+                )
                 article_tokens = self._token_count(article_text)
 
             current_parts.append(article_text)
@@ -217,7 +300,11 @@ class ArticleChunker:
         return chunks
 
     def _split_large_article(
-        self, text: str, section: str, article_num: str
+        self,
+        text: str,
+        section: str,
+        article_num: str,
+        instrument: dict[str, str] | None = None,
     ) -> list[ChunkWithMeta]:
         """Split an oversized article into chunks by paragraphs.
 
@@ -231,9 +318,8 @@ class ArticleChunker:
         is_first_chunk = True
 
         # Context prefix for continuation chunks
-        cont_prefix = ""
-        if section:
-            cont_prefix += f"## {section}\n\n"
+        instrument = instrument or {}
+        cont_prefix = self._context_prefix(section, instrument)
         cont_prefix += f"### Article {article_num} (suite)\n\n"
         cont_prefix_tokens = self._token_count(cont_prefix)
 
@@ -243,11 +329,14 @@ class ArticleChunker:
             # Single paragraph exceeds chunk_size — force-split by characters
             if para_tokens > self.chunk_size:
                 if current_parts:
-                    chunks.append(ChunkWithMeta(
-                        text="\n\n".join(current_parts),
-                        article_nums=[article_num],
-                        section_path=section,
-                    ))
+                    chunks.append(
+                        ChunkWithMeta(
+                            text="\n\n".join(current_parts),
+                            article_nums=[article_num],
+                            section_path=section,
+                            **instrument,
+                        )
+                    )
                     current_parts = []
                     current_tokens = 0
                     is_first_chunk = False
@@ -255,11 +344,14 @@ class ArticleChunker:
                 # destroys both readability and embedding quality.
                 if contains_markdown_table(para):
                     piece = para if is_first_chunk else cont_prefix + para
-                    chunks.append(ChunkWithMeta(
-                        text=piece,
-                        article_nums=[article_num],
-                        section_path=section,
-                    ))
+                    chunks.append(
+                        ChunkWithMeta(
+                            text=piece,
+                            article_nums=[article_num],
+                            section_path=section,
+                            **instrument,
+                        )
+                    )
                     is_first_chunk = False
                     continue
                 max_chars = self.chunk_size * 4
@@ -267,11 +359,14 @@ class ArticleChunker:
                     piece = para[i : i + max_chars]
                     if not is_first_chunk:
                         piece = cont_prefix + piece
-                    chunks.append(ChunkWithMeta(
-                        text=piece,
-                        article_nums=[article_num],
-                        section_path=section,
-                    ))
+                    chunks.append(
+                        ChunkWithMeta(
+                            text=piece,
+                            article_nums=[article_num],
+                            section_path=section,
+                            **instrument,
+                        )
+                    )
                     is_first_chunk = False
                 continue
 
@@ -281,11 +376,14 @@ class ArticleChunker:
                 effective_limit = self.chunk_size - cont_prefix_tokens
 
             if current_tokens + para_tokens > effective_limit and current_parts:
-                chunks.append(ChunkWithMeta(
-                    text="\n\n".join(current_parts),
-                    article_nums=[article_num],
-                    section_path=section,
-                ))
+                chunks.append(
+                    ChunkWithMeta(
+                        text="\n\n".join(current_parts),
+                        article_nums=[article_num],
+                        section_path=section,
+                        **instrument,
+                    )
+                )
                 current_parts = []
                 current_tokens = 0
                 is_first_chunk = False
@@ -299,13 +397,37 @@ class ArticleChunker:
             current_tokens += para_tokens
 
         if current_parts:
-            chunks.append(ChunkWithMeta(
-                text="\n\n".join(current_parts),
-                article_nums=[article_num],
-                section_path=section,
-            ))
+            chunks.append(
+                ChunkWithMeta(
+                    text="\n\n".join(current_parts),
+                    article_nums=[article_num],
+                    section_path=section,
+                    **instrument,
+                )
+            )
 
         return chunks
+
+    @staticmethod
+    def _context_prefix(section: str, instrument: dict[str, str]) -> str:
+        """Readable parent context prepended to every indexed article chunk."""
+        lines: list[str] = []
+        title = instrument.get("instrument_title", "")
+        if title:
+            lines.append(f"## Source juridique : {title}")
+            if instrument.get("instrument_id"):
+                lines.append(f"Référence : {instrument['instrument_id']}")
+            if instrument.get("effective_from"):
+                lines.append(f"Entrée en vigueur : {instrument['effective_from']}")
+            if instrument.get("effective_to"):
+                lines.append(f"Fin d'effet : {instrument['effective_to']}")
+            if instrument.get("instrument_status"):
+                lines.append(f"Statut : {instrument['instrument_status']}")
+            if section:
+                lines.append(f"Section : {section}")
+        elif section:
+            lines.append(f"## {section}")
+        return "\n".join(lines) + "\n\n" if lines else ""
 
     def _token_count(self, text: str) -> int:
         return len(self._enc.encode(text))

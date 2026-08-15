@@ -16,6 +16,7 @@ in the user query (numéros de pourvoi, articles de code) and pulls the
 matching chunks directly via Qdrant filters, bypassing the semantic search
 which fails on identifier-only queries (e.g. "que dit l'article L.4121-1").
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -42,6 +43,7 @@ def _is_legislation(source_type: str) -> bool:
     niveau = DOCUMENT_TYPE_HIERARCHY.get(source_type, {}).get("niveau")
     return isinstance(niveau, int) and niveau <= 5 and niveau != 4
 
+
 # --- Tunables -----------------------------------------------------------------
 
 # Max chunks fetched per parent group (cap on Qdrant scroll cost).
@@ -56,9 +58,7 @@ MAX_IDENTIFIER_CHUNKS = 30
 # --- Identifier patterns ------------------------------------------------------
 
 # Numéro de pourvoi : "22-18.875", "22-18875", "n° W 22-18.875"
-_PATTERN_NUM_POURVOI = re.compile(
-    r"\b(\d{2})[-\s](\d{2})[\.\s]?(\d{3})\b"
-)
+_PATTERN_NUM_POURVOI = re.compile(r"\b(\d{2})[-\s](\d{2})[\.\s]?(\d{3})\b")
 
 # Article de code : "L4121-1", "L. 4121-1", "art. L.4121-1", "R1234-2", etc.
 _PATTERN_ARTICLE_CODE = re.compile(
@@ -219,9 +219,7 @@ async def fetch_by_identifiers(
                 with_vectors=False,
             )
         except Exception as exc:
-            logger.warning(
-                "[BOOST] Identifier scroll failed (%s): %s", extra_must, exc
-            )
+            logger.warning("[BOOST] Identifier scroll failed (%s): %s", extra_must, exc)
             return []
         return [_payload_to_result(p.payload or {}, score=1.0) for p in pts]
 
@@ -232,9 +230,7 @@ async def fetch_by_identifiers(
         [FieldCondition(key="article_nums", match=MatchAny(any=[article]))]
         for article in identifiers.get("article_nums", [])
     ]
-    batches = await asyncio.gather(
-        *[asyncio.to_thread(_scroll, cond) for cond in conditions]
-    )
+    batches = await asyncio.gather(*[asyncio.to_thread(_scroll, cond) for cond in conditions])
 
     found: list[SearchResult] = []
     seen: set[tuple[str, int]] = set()
@@ -249,7 +245,8 @@ async def fetch_by_identifiers(
     if found:
         logger.info(
             "[BOOST] Identifier retrieval: %d chunks for %s",
-            len(found), identifiers,
+            len(found),
+            identifiers,
         )
     return found
 
@@ -279,6 +276,11 @@ def _payload_to_result(payload: dict, *, score: float = 0.0) -> SearchResult:
         idcc=payload.get("idcc"),
         article_nums=payload.get("article_nums"),
         section_path=payload.get("section_path"),
+        instrument_id=payload.get("instrument_id"),
+        instrument_title=payload.get("instrument_title"),
+        effective_from=payload.get("effective_from"),
+        effective_to=payload.get("effective_to"),
+        instrument_status=payload.get("instrument_status"),
     )
 
 
@@ -295,7 +297,14 @@ def _parent_key_for(r: SearchResult) -> tuple:
     if src in _JURISPRUDENCE_SOURCE_TYPES or src.startswith("arret_"):
         return ("doc", r.document_id)
     if r.article_nums:
-        return ("article", r.document_id, r.article_nums[0])
+        # Article numbers are frequently reused across successive CCN
+        # agreements. Include KALITEXT identity to avoid merging two versions.
+        return (
+            "article",
+            r.document_id,
+            r.instrument_id or "",
+            r.article_nums[0],
+        )
     return ("window", r.document_id, r.chunk_index)
 
 
@@ -307,9 +316,9 @@ def _fetch_siblings(qdrant, key: tuple) -> list[SearchResult]:
             doc_id = key[1]
             pts, _ = qdrant.scroll(
                 collection_name=COLLECTION_NAME,
-                scroll_filter=Filter(must=[
-                    FieldCondition(key="document_id", match=MatchValue(value=doc_id))
-                ]),
+                scroll_filter=Filter(
+                    must=[FieldCondition(key="document_id", match=MatchValue(value=doc_id))]
+                ),
                 limit=MAX_CHUNKS_PER_GROUP,
                 with_payload=True,
                 with_vectors=False,
@@ -317,13 +326,21 @@ def _fetch_siblings(qdrant, key: tuple) -> list[SearchResult]:
             return [_payload_to_result(p.payload or {}) for p in pts]
 
         if kind == "article":
-            doc_id, article = key[1], key[2]
+            doc_id, instrument_id, article = key[1], key[2], key[3]
+            must = [
+                FieldCondition(key="document_id", match=MatchValue(value=doc_id)),
+                FieldCondition(key="article_nums", match=MatchAny(any=[article])),
+            ]
+            if instrument_id:
+                must.append(
+                    FieldCondition(
+                        key="instrument_id",
+                        match=MatchValue(value=instrument_id),
+                    )
+                )
             pts, _ = qdrant.scroll(
                 collection_name=COLLECTION_NAME,
-                scroll_filter=Filter(must=[
-                    FieldCondition(key="document_id", match=MatchValue(value=doc_id)),
-                    FieldCondition(key="article_nums", match=MatchAny(any=[article])),
-                ]),
+                scroll_filter=Filter(must=must),
                 limit=MAX_CHUNKS_PER_GROUP,
                 with_payload=True,
                 with_vectors=False,
@@ -334,9 +351,9 @@ def _fetch_siblings(qdrant, key: tuple) -> list[SearchResult]:
             doc_id, center_idx = key[1], key[2]
             pts, _ = qdrant.scroll(
                 collection_name=COLLECTION_NAME,
-                scroll_filter=Filter(must=[
-                    FieldCondition(key="document_id", match=MatchValue(value=doc_id))
-                ]),
+                scroll_filter=Filter(
+                    must=[FieldCondition(key="document_id", match=MatchValue(value=doc_id))]
+                ),
                 limit=MAX_CHUNKS_PER_GROUP * 4,
                 with_payload=True,
                 with_vectors=False,
@@ -624,8 +641,7 @@ async def expand_to_parents(
         present = sum(1 for r in kept if _is_legislation(r.source_type))
         if present < min_legislation:
             dropped_leg = [
-                r for r in expanded[MAX_PARENT_GROUPS:]
-                if _is_legislation(r.source_type)
+                r for r in expanded[MAX_PARENT_GROUPS:] if _is_legislation(r.source_type)
             ]
             need = min_legislation - present
             for r in dropped_leg[:need]:
@@ -634,7 +650,8 @@ async def expand_to_parents(
                     if not _is_legislation(kept[j].source_type):
                         logger.info(
                             "[LEGFLOOR] Preserved %s through parent cap (score %.3f)",
-                            r.source_type, r.score,
+                            r.source_type,
+                            r.score,
                         )
                         kept[j] = r
                         break

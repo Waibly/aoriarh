@@ -126,9 +126,7 @@ class KaliService:
 
             KaliService._cached_token = token_data["access_token"]
             expires_in = token_data.get("expires_in", 3600)
-            KaliService._token_expires_at = (
-                time.monotonic() + expires_in - _TOKEN_REFRESH_MARGIN
-            )
+            KaliService._token_expires_at = time.monotonic() + expires_in - _TOKEN_REFRESH_MARGIN
             logger.info("PISTE/Légifrance OAuth2 token obtained (expires in %ds)", expires_in)
             return KaliService._cached_token
 
@@ -151,14 +149,16 @@ class KaliService:
                 existing.titre_court = titre_court or None
                 existing.kali_id = kali_id
             else:
-                db.add(CcnReference(
-                    idcc=idcc,
-                    titre=titre,
-                    titre_court=titre_court or None,
-                    kali_id=kali_id,
-                    etat="VIGUEUR_ETEN",
-                    last_api_check=datetime.now(UTC),
-                ))
+                db.add(
+                    CcnReference(
+                        idcc=idcc,
+                        titre=titre,
+                        titre_court=titre_court or None,
+                        kali_id=kali_id,
+                        etat="VIGUEUR_ETEN",
+                        last_api_check=datetime.now(UTC),
+                    )
+                )
             count += 1
 
         await db.commit()
@@ -182,11 +182,15 @@ class KaliService:
         try:
             async with httpx.AsyncClient(timeout=_REQUEST_TIMEOUT) as client:
                 while True:
-                    data = await self._api_post(client, "/list/conventions", json_body={
-                        "pageNumber": page,
-                        "pageSize": page_size,
-                        "legalStatus": ["VIGUEUR_ETEN", "VIGUEUR_NON_ETEN", "VIGUEUR"],
-                    })
+                    data = await self._api_post(
+                        client,
+                        "/list/conventions",
+                        json_body={
+                            "pageNumber": page,
+                            "pageSize": page_size,
+                            "legalStatus": ["VIGUEUR_ETEN", "VIGUEUR_NON_ETEN", "VIGUEUR"],
+                        },
+                    )
                     if data is None:
                         break
 
@@ -223,14 +227,16 @@ class KaliService:
                 existing.etat = etat
                 existing.last_api_check = datetime.now(UTC)
             else:
-                db.add(CcnReference(
-                    idcc=idcc,
-                    titre=titre,
-                    titre_court=self._make_titre_court(titre),
-                    kali_id=kali_id,
-                    etat=etat,
-                    last_api_check=datetime.now(UTC),
-                ))
+                db.add(
+                    CcnReference(
+                        idcc=idcc,
+                        titre=titre,
+                        titre_court=self._make_titre_court(titre),
+                        kali_id=kali_id,
+                        etat=etat,
+                        last_api_check=datetime.now(UTC),
+                    )
+                )
             count += 1
 
         await db.commit()
@@ -269,7 +275,8 @@ class KaliService:
                 old_ids = [str(d.id) for d in existing_common]
                 logger.info(
                     "KALI IDCC %s: force_refetch — deleting %d existing common docs",
-                    org_conv.idcc, len(existing_common),
+                    org_conv.idcc,
+                    len(existing_common),
                 )
                 await self._cleanup_old_ccn_docs(db, old_ids)
                 existing_common = []
@@ -279,7 +286,8 @@ class KaliService:
                 # "CCN ") that are properly indexed — not just BOCC avenants
                 # which happen to match the IDCC in their name.
                 kali_docs = [
-                    d for d in existing_common
+                    d
+                    for d in existing_common
                     if d.name.startswith("CCN ")
                     and d.indexation_status == "indexed"
                     and d.chunk_count
@@ -287,7 +295,8 @@ class KaliService:
                 if kali_docs:
                     logger.info(
                         "KALI IDCC %s: KALI docs already exist (%d indexed), linking only",
-                        org_conv.idcc, len(kali_docs),
+                        org_conv.idcc,
+                        len(kali_docs),
                     )
                     total_chunks = sum(d.chunk_count or 0 for d in kali_docs)
                     org_conv.status = "ready"
@@ -300,15 +309,22 @@ class KaliService:
                     # Also ingest any pending BOCC docs for this IDCC
                     try:
                         from app.services.bocc_service import BoccService
+
                         await BoccService().ingest_bocc_for_idcc(db, org_conv.idcc)
                     except Exception:
-                        logger.warning("KALI IDCC %s: BOCC ingest failed in shortcut path", org_conv.idcc, exc_info=True)
+                        logger.warning(
+                            "KALI IDCC %s: BOCC ingest failed in shortcut path",
+                            org_conv.idcc,
+                            exc_info=True,
+                        )
 
                     return result
                 else:
                     logger.info(
-                        "KALI IDCC %s: only BOCC docs found (%d), no indexed KALI docs — proceeding with KALI fetch",
-                        org_conv.idcc, len(existing_common),
+                        "KALI IDCC %s: only BOCC docs found (%d), no indexed "
+                        "KALI docs — proceeding with KALI fetch",
+                        org_conv.idcc,
+                        len(existing_common),
                     )
 
             # No common docs — fetch from KALI and create
@@ -318,16 +334,20 @@ class KaliService:
             result.articles_count = len(all_articles)
 
             base_articles = [a for a in all_articles if a.get("category") == "base"]
-            annexe_articles = [a for a in all_articles if a.get("category") in ("annexe", "avenant")]
+            annexe_articles = [
+                a for a in all_articles if a.get("category") in ("annexe", "avenant")
+            ]
             salaire_articles = [a for a in all_articles if a.get("category") == "salaire"]
             accord_articles = [a for a in all_articles if a.get("category") == "accord"]
 
             logger.info(
-                "KALI IDCC %s: %d articles "
-                "(base=%d, accords=%d, annexes=%d, salaires=%d)",
-                org_conv.idcc, len(all_articles),
-                len(base_articles), len(accord_articles),
-                len(annexe_articles), len(salaire_articles),
+                "KALI IDCC %s: %d articles (base=%d, accords=%d, annexes=%d, salaires=%d)",
+                org_conv.idcc,
+                len(all_articles),
+                len(base_articles),
+                len(accord_articles),
+                len(annexe_articles),
+                len(salaire_articles),
             )
 
             # CCN parts (base, annexes, salaires)
@@ -335,9 +355,19 @@ class KaliService:
             if base_articles:
                 ccn_parts.append(("", self._format_articles_as_markdown(base_articles, ccn_ref)))
             if annexe_articles:
-                ccn_parts.append((" — Avenants et annexes", self._format_articles_as_markdown(annexe_articles, ccn_ref)))
+                ccn_parts.append(
+                    (
+                        " — Avenants et annexes",
+                        self._format_articles_as_markdown(annexe_articles, ccn_ref),
+                    )
+                )
             if salaire_articles:
-                ccn_parts.append((" — Grilles de salaires", self._format_articles_as_markdown(salaire_articles, ccn_ref)))
+                ccn_parts.append(
+                    (
+                        " — Grilles de salaires",
+                        self._format_articles_as_markdown(salaire_articles, ccn_ref),
+                    )
+                )
 
             combined = "".join(text for _, text in ccn_parts)
             new_hash = hashlib.sha256(combined.encode("utf-8")).hexdigest()
@@ -346,11 +376,14 @@ class KaliService:
             await db.commit()
 
             from app.services.storage_service import StorageService
+
             storage = StorageService()
 
             for suffix, text_content in ccn_parts:
                 doc = await self._create_common_ccn_document(
-                    db, ccn_ref, text_content,
+                    db,
+                    ccn_ref,
+                    text_content,
                     user_id=user_id,
                     storage=storage,
                     name_suffix=suffix,
@@ -361,10 +394,13 @@ class KaliService:
             # Accords de branche — stored as separate documents
             if accord_articles:
                 accord_text = self._format_accords_as_markdown(
-                    accord_articles, ccn_ref,
+                    accord_articles,
+                    ccn_ref,
                 )
                 doc = await self._create_common_ccn_document(
-                    db, ccn_ref, accord_text,
+                    db,
+                    ccn_ref,
+                    accord_text,
                     user_id=user_id,
                     storage=storage,
                     name_suffix=" — Accords de branche",
@@ -372,9 +408,9 @@ class KaliService:
                 )
                 await enqueue_ingestion(str(doc.id))
                 logger.info(
-                    "KALI IDCC %s: created accord_branche document "
-                    "(%d articles)",
-                    org_conv.idcc, len(accord_articles),
+                    "KALI IDCC %s: created accord_branche document (%d articles)",
+                    org_conv.idcc,
+                    len(accord_articles),
                 )
 
             result.documents_created = len(ccn_parts) + (1 if accord_articles else 0)
@@ -390,11 +426,18 @@ class KaliService:
             # Ingest any pending BOCC avenants for this IDCC
             try:
                 from app.services.bocc_service import BoccService
+
                 bocc_count = await BoccService().ingest_bocc_for_idcc(db, org_conv.idcc)
                 if bocc_count:
-                    logger.info("KALI install IDCC %s: also enqueued %d BOCC docs", org_conv.idcc, bocc_count)
+                    logger.info(
+                        "KALI install IDCC %s: also enqueued %d BOCC docs",
+                        org_conv.idcc,
+                        bocc_count,
+                    )
             except Exception:
-                logger.warning("KALI install IDCC %s: failed to ingest BOCC docs", org_conv.idcc, exc_info=True)
+                logger.warning(
+                    "KALI install IDCC %s: failed to ingest BOCC docs", org_conv.idcc, exc_info=True
+                )
 
         except Exception as exc:
             org_conv.status = "error"
@@ -455,7 +498,8 @@ class KaliService:
                 await db.commit()
                 logger.info(
                     "sync_convention_content IDCC %s org %s: unchanged",
-                    org_conv.idcc, org_conv.organisation_id,
+                    org_conv.idcc,
+                    org_conv.organisation_id,
                 )
                 return sync_result
 
@@ -468,10 +512,14 @@ class KaliService:
             await db.commit()
 
             from app.services.storage_service import StorageService
+
             storage = StorageService()
 
             doc = await self._create_document(
-                db, org_conv, ccn_ref, text_content,
+                db,
+                org_conv,
+                ccn_ref,
+                text_content,
                 user_id=user_id,
                 storage=storage,
             )
@@ -492,7 +540,9 @@ class KaliService:
 
             logger.info(
                 "sync_convention_content IDCC %s org %s: update needed, new doc %s",
-                org_conv.idcc, org_conv.organisation_id, doc.id,
+                org_conv.idcc,
+                org_conv.organisation_id,
+                doc.id,
             )
 
         except Exception as exc:
@@ -502,7 +552,8 @@ class KaliService:
             await db.commit()
             logger.exception(
                 "sync_convention_content failed for IDCC %s org %s",
-                org_conv.idcc, org_conv.organisation_id,
+                org_conv.idcc,
+                org_conv.organisation_id,
             )
 
         return sync_result
@@ -532,7 +583,8 @@ class KaliService:
                 if fetch_errors:
                     logger.warning(
                         "bulk_sync_ccn: fetch errors for IDCC %s: %s",
-                        idcc, "; ".join(fetch_errors),
+                        idcc,
+                        "; ".join(fetch_errors),
                     )
 
                 text_content = self._format_articles_as_markdown(all_articles, ccn_ref)
@@ -552,6 +604,7 @@ class KaliService:
                     continue
 
                 from app.services.storage_service import StorageService
+
                 storage = StorageService()
 
                 for org_conv in org_convs:
@@ -586,7 +639,10 @@ class KaliService:
                         await db.commit()
 
                         doc = await self._create_document(
-                            db, org_conv, ccn_ref, text_content,
+                            db,
+                            org_conv,
+                            ccn_ref,
+                            text_content,
                             user_id=user_id,
                             storage=storage,
                         )
@@ -613,7 +669,8 @@ class KaliService:
                         bulk_result.errors += 1
                         logger.exception(
                             "bulk_sync_ccn: failed for IDCC %s org %s",
-                            idcc, org_conv.organisation_id,
+                            idcc,
+                            org_conv.organisation_id,
                         )
 
                     bulk_result.details.append(sync_result)
@@ -642,10 +699,21 @@ class KaliService:
 
     _ANI_SEARCH_VALUE = "accord national interprofessionnel"
     _ANI_MONTHS = {
-        "janvier": 1, "février": 2, "fevrier": 2, "mars": 3, "avril": 4,
-        "mai": 5, "juin": 6, "juillet": 7, "août": 8, "aout": 8,
-        "septembre": 9, "octobre": 10, "novembre": 11,
-        "décembre": 12, "decembre": 12,
+        "janvier": 1,
+        "février": 2,
+        "fevrier": 2,
+        "mars": 3,
+        "avril": 4,
+        "mai": 5,
+        "juin": 6,
+        "juillet": 7,
+        "août": 8,
+        "aout": 8,
+        "septembre": 9,
+        "octobre": 10,
+        "novembre": 11,
+        "décembre": 12,
+        "decembre": 12,
     }
 
     async def sync_ani(
@@ -699,7 +767,11 @@ class KaliService:
 
                     text_content = self._format_ani_as_markdown(articles, cand["title"])
                     doc = await self._create_ani_document(
-                        db, cand, text_content, user_id=user_id, storage=storage,
+                        db,
+                        cand,
+                        text_content,
+                        user_id=user_id,
+                        storage=storage,
                     )
                     await enqueue_ingestion(str(doc.id))
                     existing.add(cand["id"])
@@ -713,7 +785,10 @@ class KaliService:
 
         logger.info(
             "ANI sync: %d listés, %d créés, %d sautés, %d erreurs",
-            result.fetched, result.created, result.skipped, result.errors,
+            result.fetched,
+            result.created,
+            result.skipped,
+            result.errors,
         )
         return result
 
@@ -725,9 +800,7 @@ class KaliService:
         rows: list[dict] = []
         page = 1
         while True:
-            data = await self._api_post(
-                client, "/search", json_body=self._ani_search_payload(page)
-            )
+            data = await self._api_post(client, "/search", json_body=self._ani_search_payload(page))
             if not data:
                 break
             results = data.get("results", [])
@@ -738,13 +811,15 @@ class KaliService:
                 t = titles[0]
                 title = re.sub(r"</?mark>", "", t.get("title", "")).strip()
                 sig_date = self._parse_ani_date(title)
-                rows.append({
-                    "id": t.get("id"),
-                    "title": title,
-                    "etat": res.get("etat") or "",
-                    "year": sig_date.year if sig_date else self._parse_ani_year(title),
-                    "signature_date": sig_date,
-                })
+                rows.append(
+                    {
+                        "id": t.get("id"),
+                        "title": title,
+                        "etat": res.get("etat") or "",
+                        "year": sig_date.year if sig_date else self._parse_ani_year(title),
+                        "signature_date": sig_date,
+                    }
+                )
             total = data.get("totalResultNumber", 0)
             if page * 100 >= total:
                 break
@@ -757,15 +832,19 @@ class KaliService:
         return {
             "fond": "KALI",
             "recherche": {
-                "champs": [{
-                    "typeChamp": "TITLE",
-                    "criteres": [{
-                        "typeRecherche": "TOUS_LES_MOTS_DANS_UN_CHAMP",
-                        "valeur": cls._ANI_SEARCH_VALUE,
+                "champs": [
+                    {
+                        "typeChamp": "TITLE",
+                        "criteres": [
+                            {
+                                "typeRecherche": "TOUS_LES_MOTS_DANS_UN_CHAMP",
+                                "valeur": cls._ANI_SEARCH_VALUE,
+                                "operateur": "ET",
+                            }
+                        ],
                         "operateur": "ET",
-                    }],
-                    "operateur": "ET",
-                }],
+                    }
+                ],
                 "pageNumber": page,
                 "pageSize": 100,
                 "operateur": "ET",
@@ -891,7 +970,8 @@ class KaliService:
 
             # Categorize text IDs by section type
             sections = container.get("sections", [])
-            categorized_ids: list[tuple[str, str]] = []  # (text_id, category)
+            categorized_ids: list[tuple[str, str, str, str]] = []
+            # (text_id, category, title, status)
 
             for section in sections:
                 title = (section.get("title") or section.get("titre") or "").lower()
@@ -905,7 +985,7 @@ class KaliService:
                     section_category = "base"
 
                 # Collect KALITEXT IDs from this section
-                section_ids: list[tuple[str, str]] = []  # (id, child_title)
+                section_ids: list[tuple[str, str, str]] = []  # (id, title, status)
 
                 def _walk(items: list[dict]) -> None:
                     for item in items:
@@ -913,7 +993,7 @@ class KaliService:
                         ie = item.get("etat") or ""
                         child_title = item.get("title") or item.get("titre") or ""
                         if tid.startswith("KALITEXT") and ie.startswith("VIGUEUR"):
-                            section_ids.append((tid, child_title))
+                            section_ids.append((tid, child_title, ie))
                         children = item.get("sections", [])
                         if children:
                             _walk(children)
@@ -921,10 +1001,10 @@ class KaliService:
                 sid = section.get("id") or ""
                 section_title_orig = section.get("title") or section.get("titre") or ""
                 if sid.startswith("KALITEXT") and etat.startswith("VIGUEUR"):
-                    section_ids.append((sid, section_title_orig))
+                    section_ids.append((sid, section_title_orig, etat))
                 _walk(section.get("sections", []))
 
-                for tid, child_title in section_ids:
+                for tid, child_title, text_status in section_ids:
                     if section_category == "attaché":
                         # Within "Textes Attachés", distinguish accords from annexes
                         child_lower = child_title.lower()
@@ -936,7 +1016,7 @@ class KaliService:
                             category = "annexe"
                     else:
                         category = section_category
-                    categorized_ids.append((tid, category))
+                    categorized_ids.append((tid, category, child_title, text_status))
 
             if not categorized_ids:
                 raise ValueError(
@@ -949,15 +1029,15 @@ class KaliService:
                 "(base=%d, accords=%d, avenants=%d, annexes=%d, salaires=%d)",
                 ccn_ref.idcc,
                 len(categorized_ids),
-                sum(1 for _, c in categorized_ids if c == "base"),
-                sum(1 for _, c in categorized_ids if c == "accord"),
-                sum(1 for _, c in categorized_ids if c == "avenant"),
-                sum(1 for _, c in categorized_ids if c == "annexe"),
-                sum(1 for _, c in categorized_ids if c == "salaire"),
+                sum(1 for _, c, _, _ in categorized_ids if c == "base"),
+                sum(1 for _, c, _, _ in categorized_ids if c == "accord"),
+                sum(1 for _, c, _, _ in categorized_ids if c == "avenant"),
+                sum(1 for _, c, _, _ in categorized_ids if c == "annexe"),
+                sum(1 for _, c, _, _ in categorized_ids if c == "salaire"),
             )
 
             all_articles: list[dict] = []
-            for text_id, category in categorized_ids:
+            for text_id, category, child_title, container_status in categorized_ids:
                 await asyncio.sleep(_API_THROTTLE)
                 text_data = await self._api_post(
                     client, "/consult/kaliText", json_body={"id": text_id}
@@ -976,8 +1056,17 @@ class KaliService:
                     most_recent_date = modif_date
 
                 articles = self._extract_articles_from_text(text_data)
+                instrument_title = (
+                    text_data.get("title") or text_data.get("titre") or child_title or text_id
+                )
                 for art in articles:
                     art["category"] = category
+                    # Keep the KALITEXT parent on every article.  Without it,
+                    # salary grids from several successive agreements become
+                    # indistinguishable once combined into one CCN document.
+                    art["instrument_id"] = text_id
+                    art["instrument_title"] = instrument_title
+                    art["instrument_status"] = text_etat or container_status
                 all_articles.extend(articles)
 
         return all_articles, errors, most_recent_date
@@ -988,30 +1077,32 @@ class KaliService:
     ) -> list[Document]:
         """Find existing CCN documents for an org+idcc pair (legacy, per-org)."""
         result = await db.execute(
-            select(Document).where(
+            select(Document)
+            .where(
                 Document.organisation_id == organisation_id,
                 Document.source_type == "convention_collective_nationale",
                 Document.name.ilike(f"%IDCC {idcc}%"),
-            ).order_by(Document.created_at.desc())
+            )
+            .order_by(Document.created_at.desc())
         )
         return list(result.scalars().all())
 
     @staticmethod
-    async def _find_common_ccn_docs(
-        db: AsyncSession, idcc: str
-    ) -> list[Document]:
+    async def _find_common_ccn_docs(db: AsyncSession, idcc: str) -> list[Document]:
         """Find common (shared) CCN documents for an IDCC (CCN + accords de branche)."""
         from sqlalchemy import or_
 
         result = await db.execute(
-            select(Document).where(
+            select(Document)
+            .where(
                 Document.organisation_id.is_(None),
                 or_(
                     Document.source_type == "convention_collective_nationale",
                     Document.source_type == "accord_branche",
                 ),
                 Document.name.ilike(f"%IDCC {idcc}%"),
-            ).order_by(Document.created_at.desc())
+            )
+            .order_by(Document.created_at.desc())
         )
         return list(result.scalars().all())
 
@@ -1062,9 +1153,7 @@ class KaliService:
         return doc
 
     @staticmethod
-    async def _cleanup_old_ccn_docs(
-        db: AsyncSession, old_doc_ids: list[str]
-    ) -> int:
+    async def _cleanup_old_ccn_docs(db: AsyncSession, old_doc_ids: list[str]) -> int:
         """Delete old CCN documents and their Qdrant vectors (blue-green cleanup).
 
         Call this after the new document has been successfully indexed.
@@ -1134,7 +1223,8 @@ class KaliService:
         )
         logger.info(
             "Blue-green cleanup enqueued for %d old doc(s): %s",
-            len(old_doc_ids), old_doc_ids,
+            len(old_doc_ids),
+            old_doc_ids,
         )
 
     def _extract_articles_from_text(self, text_data: dict) -> list[dict]:
@@ -1160,7 +1250,9 @@ class KaliService:
                 excluded_count += 1
                 logger.debug(
                     "[KALI] Excluded article %s (etat=%s, section=%s)",
-                    num, etat, section_path,
+                    num,
+                    etat,
+                    section_path,
                 )
                 return
             content = art.get("content", art.get("texte", art.get("texteHtml", "")))
@@ -1168,16 +1260,21 @@ class KaliService:
                 excluded_count += 1
                 logger.warning(
                     "[KALI] Article %s has no content (etat=%s, section=%s)",
-                    num, etat, section_path,
+                    num,
+                    etat,
+                    section_path,
                 )
                 return
-            articles.append({
-                "num": num,
-                "content": self._clean_html(content),
-                "section": section_path,
-                "etat": etat or "",
-                "date_debut": art.get("dateDebut", ""),
-            })
+            articles.append(
+                {
+                    "num": num,
+                    "content": self._clean_html(content),
+                    "section": section_path,
+                    "etat": etat or "",
+                    "date_debut": self._normalise_kali_date(art.get("dateDebut")),
+                    "date_fin": self._normalise_kali_date(art.get("dateFin")),
+                }
+            )
 
         def _walk_sections(sections: list[dict], path: str = "") -> None:
             for section in sections:
@@ -1202,9 +1299,28 @@ class KaliService:
 
         logger.info(
             "[KALI] Extracted %d in-force articles, excluded %d",
-            len(articles), excluded_count,
+            len(articles),
+            excluded_count,
         )
         return articles
+
+    @staticmethod
+    def _normalise_kali_date(value) -> str:
+        """Return a KALI date as ISO-8601, ignoring open-ended year 2999."""
+        if value in (None, ""):
+            return ""
+        if isinstance(value, (int, float)):
+            try:
+                parsed = datetime.fromtimestamp(value / 1000, tz=UTC).date()
+            except (OverflowError, OSError, ValueError):
+                return ""
+            return "" if parsed.year >= 2999 else parsed.isoformat()
+        raw = str(value).strip()
+        if not raw:
+            return ""
+        if raw[:4].isdigit() and int(raw[:4]) >= 2999:
+            return ""
+        return raw[:10]
 
     @staticmethod
     def _clean_html(html: str) -> str:
@@ -1216,22 +1332,53 @@ class KaliService:
         et empêche le RAG de les retrouver correctement.
         """
         from app.services.html_to_markdown import html_to_markdown
+
         return html_to_markdown(html)
 
     @staticmethod
     def _format_articles_as_markdown(articles: list[dict], ccn_ref: CcnReference) -> str:
         """Format articles as a Markdown document for ingestion."""
-        lines = [
+        return KaliService._format_instrumented_articles(
+            articles,
             f"# Convention collective — {ccn_ref.titre} (IDCC {ccn_ref.idcc})",
-            "",
-        ]
-        current_section = ""
+        )
+
+    @staticmethod
+    def _format_instrumented_articles(
+        articles: list[dict],
+        document_heading: str,
+    ) -> str:
+        """Format articles while retaining their parent KALITEXT identity."""
+        lines = [document_heading, ""]
+        current_source: tuple[str, str, str, str, str, str] | None = None
         unnamed_counter = 0
         for art in articles:
             section = art.get("section", "")
-            if section and section != current_section:
-                current_section = section
-                lines.append(f"\n## {section}\n")
+            source = (
+                art.get("instrument_id", ""),
+                art.get("instrument_title", ""),
+                art.get("instrument_status", ""),
+                art.get("date_debut", ""),
+                art.get("date_fin", ""),
+                section,
+            )
+            if source != current_source:
+                current_source = source
+                instrument_id, title, status, date_debut, date_fin, section = source
+                if instrument_id:
+                    lines.append(f"\n## Source juridique : {title or instrument_id}\n")
+                    lines.append(f"Référence : {instrument_id}")
+                    if date_debut:
+                        lines.append(f"Entrée en vigueur : {date_debut}")
+                    if date_fin:
+                        lines.append(f"Fin d'effet : {date_fin}")
+                    if status:
+                        lines.append(f"Statut : {status}")
+                    if section:
+                        lines.append(f"Section : {section}")
+                    lines.append("")
+                elif section:
+                    lines.append(f"\n## {section}\n")
 
             num = art.get("num", "")
             if num:
@@ -1247,32 +1394,15 @@ class KaliService:
 
     @staticmethod
     def _format_accords_as_markdown(
-        articles: list[dict], ccn_ref: CcnReference,
+        articles: list[dict],
+        ccn_ref: CcnReference,
     ) -> str:
         """Format accord de branche articles as Markdown for ingestion."""
         titre = ccn_ref.titre_court or ccn_ref.titre
-        lines = [
+        return KaliService._format_instrumented_articles(
+            articles,
             f"# Accords de branche — {titre} (IDCC {ccn_ref.idcc})",
-            "",
-        ]
-        current_section = ""
-        unnamed_counter = 0
-        for art in articles:
-            section = art.get("section", "")
-            if section and section != current_section:
-                current_section = section
-                lines.append(f"\n## {section}\n")
-
-            num = art.get("num", "")
-            if num:
-                lines.append(f"### Article {num}\n")
-            else:
-                unnamed_counter += 1
-                lines.append(f"### Article (sans numéro {unnamed_counter})\n")
-            lines.append(art["content"])
-            lines.append("")
-
-        return "\n".join(lines)
+        )
 
     async def _create_document(
         self,
@@ -1293,9 +1423,7 @@ class KaliService:
         name = f"CCN {titre} (IDCC {ccn_ref.idcc}){name_suffix}"
 
         file_id = uuid.uuid4()
-        storage_path = (
-            f"{org_conv.organisation_id}/ccn/{ccn_ref.idcc}/{file_id}.txt"
-        )
+        storage_path = f"{org_conv.organisation_id}/ccn/{ccn_ref.idcc}/{file_id}.txt"
         text_bytes = text_content.encode("utf-8")
         storage.put_file_bytes(storage_path, text_bytes, content_type="text/plain")
 
@@ -1383,7 +1511,7 @@ class KaliService:
                     continue
 
                 if response.status_code == 429 and attempt < _MAX_RETRIES - 1:
-                    delay = _RETRY_DELAY * (2 ** attempt)
+                    delay = _RETRY_DELAY * (2**attempt)
                     logger.warning("KALI rate limit (429), retry in %.1fs", delay)
                     await asyncio.sleep(delay)
                     continue

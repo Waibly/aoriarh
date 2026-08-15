@@ -1,7 +1,6 @@
 """Tests for the ArticleChunker — section isolation, metadata, ghost filtering."""
 
-from app.rag.article_chunker import ArticleChunker, ChunkWithMeta
-
+from app.rag.article_chunker import ArticleChunker
 
 # Simplified CCNT66-like markdown (articles 32, 33, 34, 35 across 3 sections)
 CCNT66_SAMPLE = """\
@@ -52,10 +51,9 @@ def test_sections_never_mixed():
         assert c.section_path, f"Chunk missing section_path: {c.text[:80]}"
         # The text should NOT contain ## headers from multiple sections
         import re
+
         sections_in_text = re.findall(r"^## (.+)$", c.text, re.MULTILINE)
-        assert len(set(sections_in_text)) <= 1, (
-            f"Chunk mixes sections: {sections_in_text}"
-        )
+        assert len(set(sections_in_text)) <= 1, f"Chunk mixes sections: {sections_in_text}"
 
 
 def test_article_33_isolated_from_32():
@@ -146,7 +144,9 @@ Texte de l'article 11 qui est le vrai contenu à indexer dans le vector store.
     # Should be in the same chunk (merged)
     for c in chunks:
         if "Article 11" in c.text:
-            assert "Article 10" in c.text, "Article 10 heading should be merged into Article 11 chunk"
+            assert "Article 10" in c.text, (
+                "Article 10 heading should be merged into Article 11 chunk"
+            )
 
 
 def test_backward_compatible_chunk_method():
@@ -207,3 +207,41 @@ def test_split_continuation_has_context():
         assert "Discipline" in c.text or "Section" in c.text or "##" in c.text, (
             f"Continuation chunk has no section context: {c.text[:100]}"
         )
+
+
+def test_successive_kali_instruments_keep_distinct_metadata():
+    """Two agreements reusing an article number must remain distinct parents."""
+    md = """\
+# Convention collective — Syntec (IDCC 1486)
+
+## Source juridique : Avenant du 31 mars 2022 relatif aux salaires
+Référence : KALITEXT000046033597
+Entrée en vigueur : 2023-09-15
+Statut : VIGUEUR_ETEN
+Section : Salaires minimaux
+
+### Article 1er
+
+Position 2.2, coefficient 130 : 2 774 euros.
+
+## Source juridique : Accord du 26 juin 2024 relatif aux salaires minimaux
+Référence : KALITEXT000050228699
+Entrée en vigueur : 2025-01-01
+Statut : VIGUEUR_ETEN
+Section : Salaires minimaux
+
+### Article 1er
+
+Position 2.2, coefficient 130 : 2 850 euros.
+"""
+    chunks = ArticleChunker().chunk_with_meta(md)
+
+    assert len(chunks) == 2
+    by_id = {chunk.instrument_id: chunk for chunk in chunks}
+    assert set(by_id) == {"KALITEXT000046033597", "KALITEXT000050228699"}
+    assert by_id["KALITEXT000046033597"].effective_from == "2023-09-15"
+    assert by_id["KALITEXT000050228699"].effective_from == "2025-01-01"
+    assert "2 774 euros" in by_id["KALITEXT000046033597"].text
+    assert "2 850 euros" in by_id["KALITEXT000050228699"].text
+    assert "2 774 euros" not in by_id["KALITEXT000050228699"].text
+    assert "Entrée en vigueur : 2025-01-01" in by_id["KALITEXT000050228699"].text

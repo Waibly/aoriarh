@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import math
+import re
 import time
 import uuid
 
@@ -19,9 +20,13 @@ from app.models.document import Document
 from app.rag.article_chunker import ArticleChunker, ChunkWithMeta
 from app.rag.chunker import LegalChunker
 from app.rag.config import EMBEDDING_MODEL
-from app.services.cost_tracker import cost_tracker
 from app.rag.jurisprudence_chunker import JurisprudenceChunker
 from app.rag.norme_hierarchy import JURISPRUDENCE_SOURCE_TYPES
+from app.rag.qdrant_store import COLLECTION_NAME, ensure_collection, get_qdrant_client
+from app.rag.text_cleaner import clean_text
+from app.rag.text_extractor import TextExtractor
+from app.services.cost_tracker import cost_tracker
+from app.services.storage_service import StorageService
 
 # Source types that use article-aware chunking (Code du travail, CCN)
 ARTICLE_AWARE_SOURCE_TYPES = {
@@ -46,10 +51,6 @@ ARTICLE_AWARE_SOURCE_TYPES = {
     "accord_branche",
     "accord_national_interprofessionnel",
 }
-from app.rag.qdrant_store import COLLECTION_NAME, ensure_collection, get_qdrant_client
-from app.rag.text_cleaner import clean_text
-from app.rag.text_extractor import TextExtractor
-from app.services.storage_service import StorageService
 
 logger = logging.getLogger(__name__)
 
@@ -59,12 +60,19 @@ RETRY_BASE_DELAY = 2.0
 EMBEDDING_BATCH_SIZE = 32  # Reduced from 64 to handle large legal code chunks
 
 # --- Date extraction for recency boosting ---
-import re
-
 _FRENCH_MONTHS = {
-    "janvier": "01", "février": "02", "mars": "03", "avril": "04",
-    "mai": "05", "juin": "06", "juillet": "07", "août": "08",
-    "septembre": "09", "octobre": "10", "novembre": "11", "décembre": "12",
+    "janvier": "01",
+    "février": "02",
+    "mars": "03",
+    "avril": "04",
+    "mai": "05",
+    "juin": "06",
+    "juillet": "07",
+    "août": "08",
+    "septembre": "09",
+    "octobre": "10",
+    "novembre": "11",
+    "décembre": "12",
 }
 _DATE_PATTERN = re.compile(
     r"(?:1er|(\d{1,2}))\s+(janvier|février|mars|avril|mai|juin|juillet|août|septembre|octobre|novembre|décembre)\s+(\d{4})",
@@ -161,7 +169,9 @@ async def _get_embeddings(
             batch = texts[i : i + EMBEDDING_BATCH_SIZE]
             all_embeddings.extend(
                 await _get_embeddings_batch(
-                    batch, api_key, client,
+                    batch,
+                    api_key,
+                    client,
                     organisation_id=organisation_id,
                     document_id=document_id,
                 )
@@ -189,15 +199,15 @@ async def _get_embeddings_with_progress(
     doc_id_str = str(doc.id)
     user_id_str = str(doc.uploaded_by) if doc.uploaded_by else None
 
-    async def _process_batch(
-        batch_idx: int, client: httpx.AsyncClient
-    ) -> None:
+    async def _process_batch(batch_idx: int, client: httpx.AsyncClient) -> None:
         nonlocal done_count
         start = batch_idx * EMBEDDING_BATCH_SIZE
         batch = texts[start : start + EMBEDDING_BATCH_SIZE]
         async with semaphore:
             results[batch_idx] = await _get_embeddings_batch(
-                batch, api_key, client,
+                batch,
+                api_key,
+                client,
                 organisation_id=org_id_str,
                 document_id=doc_id_str,
                 user_id=user_id_str,
@@ -210,9 +220,7 @@ async def _get_embeddings_with_progress(
             await db.commit()
 
     async with httpx.AsyncClient() as client:
-        await asyncio.gather(
-            *[_process_batch(i, client) for i in range(total_batches)]
-        )
+        await asyncio.gather(*[_process_batch(i, client) for i in range(total_batches)])
 
     # Flatten results in order
     all_embeddings: list[list[float]] = []
@@ -229,10 +237,12 @@ def _get_sparse_vectors(texts: list[str]) -> list[dict]:
     results = list(model.embed(texts))
     sparse_vectors = []
     for embedding in results:
-        sparse_vectors.append({
-            "indices": embedding.indices.tolist(),
-            "values": embedding.values.tolist(),
-        })
+        sparse_vectors.append(
+            {
+                "indices": embedding.indices.tolist(),
+                "values": embedding.values.tolist(),
+            }
+        )
     return sparse_vectors
 
 
@@ -248,17 +258,13 @@ class IngestionPipeline:
         self.qdrant = get_qdrant_client()
         ensure_collection(self.qdrant)
 
-    async def _update_progress(
-        self, doc: Document, db: AsyncSession, progress: int
-    ) -> None:
+    async def _update_progress(self, doc: Document, db: AsyncSession, progress: int) -> None:
         doc.indexation_progress = progress
         await db.commit()
 
     async def ingest(self, document_id: uuid.UUID, db: AsyncSession) -> None:
         # 1. Load document from PostgreSQL
-        result = await db.execute(
-            select(Document).where(Document.id == document_id)
-        )
+        result = await db.execute(select(Document).where(Document.id == document_id))
         doc = result.scalar_one_or_none()
         if not doc:
             logger.error("Document %s not found in DB", document_id)
@@ -296,7 +302,8 @@ class IngestionPipeline:
             if doc.source_type in JURISPRUDENCE_SOURCE_TYPES:
                 metadata_header = self._build_jurisprudence_header(doc)
                 chunks = self.jurisprudence_chunker.chunk(
-                    cleaned_text, metadata_header=metadata_header,
+                    cleaned_text,
+                    metadata_header=metadata_header,
                 )
             elif doc.source_type in ARTICLE_AWARE_SOURCE_TYPES:
                 chunks_meta = self.article_chunker.chunk_with_meta(cleaned_text)
@@ -314,8 +321,7 @@ class IngestionPipeline:
             chunk_char_lengths = [len(c) for c in chunks]
             total_chars = sum(chunk_char_lengths)
             logger.info(
-                "Document %s: %d chunks produced — "
-                "total_chars=%d, min=%d, max=%d, avg=%d",
+                "Document %s: %d chunks produced — total_chars=%d, min=%d, max=%d, avg=%d",
                 document_id,
                 len(chunks),
                 total_chars,
@@ -342,6 +348,7 @@ class IngestionPipeline:
                 point_id = str(uuid.uuid4())
                 new_point_ids.append(point_id)
                 from app.rag.chunker import contains_markdown_table
+
                 payload = {
                     "text": chunk_text,
                     "organisation_id": org_id_str,
@@ -369,6 +376,19 @@ class IngestionPipeline:
                             payload["article_nums"] = meta.article_nums
                         if meta.section_path:
                             payload["section_path"] = meta.section_path
+                        if meta.instrument_id:
+                            payload["instrument_id"] = meta.instrument_id
+                        if meta.instrument_title:
+                            payload["instrument_title"] = meta.instrument_title
+                        if meta.effective_from:
+                            payload["effective_from"] = meta.effective_from
+                            # A reliable parent date is preferable to a date
+                            # guessed from the body of a salary table.
+                            payload["content_date"] = meta.effective_from
+                        if meta.effective_to:
+                            payload["effective_to"] = meta.effective_to
+                        if meta.instrument_status:
+                            payload["instrument_status"] = meta.instrument_status
 
                 # Propagate jurisprudence metadata into Qdrant payload
                 if doc.source_type in JURISPRUDENCE_SOURCE_TYPES:
@@ -428,9 +448,7 @@ class IngestionPipeline:
             doc.indexation_progress = None
             await db.commit()
 
-    def _cleanup_old_chunks(
-        self, document_id: str, new_point_ids: set[str]
-    ) -> None:
+    def _cleanup_old_chunks(self, document_id: str, new_point_ids: set[str]) -> None:
         """Delete old Qdrant points for a document, keeping only new_point_ids."""
         try:
             old_point_ids: list[str] = []
@@ -478,7 +496,7 @@ class IngestionPipeline:
 
     @staticmethod
     def _build_jurisprudence_header(doc: Document) -> str:
-        """Build a citation header for a court decision (e.g. 'Cass. soc., 15 mars 2023, n° 21-14.490')."""
+        """Build the citation header displayed for a court decision."""
         parts: list[str] = []
         if doc.juridiction:
             label = doc.juridiction

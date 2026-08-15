@@ -102,6 +102,7 @@ def ensure_collection(client: QdrantClient) -> None:
     # (~1,3 s / article sur 400k points, mesuré en prod le 27/07/2026).
     _ensure_payload_index(client, "article_nums", PayloadSchemaType.KEYWORD)
     _ensure_payload_index(client, "numero_pourvoi", PayloadSchemaType.KEYWORD)
+    _ensure_payload_index(client, "instrument_id", PayloadSchemaType.KEYWORD)
     _ensure_payload_index(client, "content_date", PayloadSchemaType.DATETIME)
     _ensure_payload_index(client, "date_decision", PayloadSchemaType.DATETIME)
 

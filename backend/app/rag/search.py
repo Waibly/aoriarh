@@ -95,6 +95,12 @@ class SearchResult:
     # Structural metadata (optional, from ArticleChunker)
     article_nums: list[str] | None = None
     section_path: str | None = None
+    # KALI parent instrument metadata (agreement/avenant containing the chunk)
+    instrument_id: str | None = None
+    instrument_title: str | None = None
+    effective_from: str | None = None
+    effective_to: str | None = None
+    instrument_status: str | None = None
     # Best-matched chunk body, carried through parent expansion so the source
     # card excerpt shows the relevant passage instead of the document header.
     seed_text: str | None = None
@@ -246,7 +252,8 @@ class HybridSearch:
         dense_task = self._encode_dense(query, cost_ctx)
         sparse_task = asyncio.to_thread(self._encode_sparse_sync, query)
         dense_embedding, sparse_vector = await asyncio.gather(
-            dense_task, sparse_task,
+            dense_task,
+            sparse_task,
         )
 
         t1 = time.perf_counter()
@@ -329,6 +336,11 @@ class HybridSearch:
                     idcc=payload.get("idcc"),
                     article_nums=payload.get("article_nums"),
                     section_path=payload.get("section_path"),
+                    instrument_id=payload.get("instrument_id"),
+                    instrument_title=payload.get("instrument_title"),
+                    effective_from=payload.get("effective_from"),
+                    effective_to=payload.get("effective_to"),
+                    instrument_status=payload.get("instrument_status"),
                 )
             )
 
@@ -337,7 +349,9 @@ class HybridSearch:
         return search_results[:top_k]
 
     async def _encode_dense(
-        self, text: str, cost_ctx: CostContext | None = None,
+        self,
+        text: str,
+        cost_ctx: CostContext | None = None,
     ) -> list[float]:
         """Encode text to dense vector using Voyage AI API with retry."""
         t_start = time.perf_counter()
@@ -361,9 +375,10 @@ class HybridSearch:
                     },
                 )
                 if response.status_code == 429 and attempt < _MAX_RETRIES - 1:
-                    delay = _RETRY_BASE_DELAY * (2 ** attempt)
+                    delay = _RETRY_BASE_DELAY * (2**attempt)
                     logger.warning(
-                        "[PERF] Voyage AI rate limit (429), retrying in %.1fs...", delay,
+                        "[PERF] Voyage AI rate limit (429), retrying in %.1fs...",
+                        delay,
                     )
                     await asyncio.sleep(delay)
                     continue
@@ -387,15 +402,17 @@ class HybridSearch:
                     )
                 logger.info(
                     "[PERF]   ├─ Dense embedding (Voyage AI) %.0fms (attempt %d)",
-                    (time.perf_counter() - t_start) * 1000, attempt + 1,
+                    (time.perf_counter() - t_start) * 1000,
+                    attempt + 1,
                 )
                 return data["data"][0]["embedding"]
             except httpx.TimeoutException as e:
                 last_error = e
                 if attempt < _MAX_RETRIES - 1:
-                    delay = _RETRY_BASE_DELAY * (2 ** attempt)
+                    delay = _RETRY_BASE_DELAY * (2**attempt)
                     logger.warning(
-                        "[PERF] Voyage AI timeout, retrying in %.1fs...", delay,
+                        "[PERF] Voyage AI timeout, retrying in %.1fs...",
+                        delay,
                     )
                     await asyncio.sleep(delay)
                     continue
