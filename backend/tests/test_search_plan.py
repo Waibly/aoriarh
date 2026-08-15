@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import datetime
 import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -585,6 +586,59 @@ async def test_legal_news_adds_dated_candidates_without_dropping_broad_fallback(
     assert agent._plan_search_diagnostics["priority_branches"] == [
         {"kind": "chronology", "candidate_chunks": 1, "added_chunks": 1}
     ]
+
+
+def test_legal_news_time_guard_keeps_current_sources_and_undated_context():
+    plan = build_deterministic_search_plan(
+        "Quelles sont les dernières actualités en droit social ?"
+    )
+    today = datetime.date.today()
+    recent = _search_result("recent", 0, source_type="arret_cour_appel")
+    recent.date_decision = today.isoformat()
+    older_recent = _search_result("older-recent", 0, source_type="loi")
+    older_recent.content_date = f"{today - datetime.timedelta(days=20)}T00:00:00Z"
+    old = _search_result("old", 0, source_type="arret_cour_cassation")
+    old.date_decision = (today - datetime.timedelta(days=365)).isoformat()
+    undated = [_search_result(f"context-{index}", 0) for index in range(3)]
+
+    kept, diagnostics = RAGAgent._apply_news_time_scope(
+        [old, *undated, older_recent, recent],
+        plan,
+    )
+
+    assert [result.document_id for result in kept] == [
+        "older-recent",
+        "recent",
+        "context-0",
+        "context-1",
+    ]
+    assert diagnostics == {
+        "in_period": 2,
+        "undated": 3,
+        "out_of_period": 1,
+        "status": "applied",
+        "undated_context_kept": 2,
+    }
+    assert [
+        result.document_id
+        for result in RAGAgent._sort_news_results(kept, plan)
+    ] == ["recent", "older-recent", "context-0", "context-1"]
+
+
+def test_legal_news_time_guard_preserves_broad_fallback_on_corpus_gap():
+    plan = build_deterministic_search_plan(
+        "Quelles sont les dernières actualités en droit social ?"
+    )
+    old = _search_result("old", 0, source_type="arret_cour_cassation")
+    old.date_decision = (
+        datetime.date.today() - datetime.timedelta(days=365)
+    ).isoformat()
+    undated = _search_result("context", 0)
+
+    kept, diagnostics = RAGAgent._apply_news_time_scope([old, undated], plan)
+
+    assert kept == [old, undated]
+    assert diagnostics["status"] == "broad_fallback_no_in_period_match"
 
 
 @pytest.mark.asyncio

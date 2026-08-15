@@ -230,6 +230,18 @@ def _plan_time_bounds(
     return None, None
 
 
+def _result_effective_date(result: "SearchResult") -> datetime.date | None:
+    """Read the normalized date carried by legislation or case-law chunks."""
+
+    raw = result.date_decision or result.content_date
+    if not raw:
+        return None
+    try:
+        return datetime.date.fromisoformat(str(raw)[:10])
+    except (TypeError, ValueError):
+        return None
+
+
 def _assess_confidence(
     results: list["SearchResult"],
 ) -> tuple[float | None, bool]:
@@ -856,11 +868,22 @@ class RAGAgent:
             if (result.document_id, result.chunk_index)
             not in hypothesis_added_keys
         ][:RERANK_TOP_K]
+        rerank_top_k = RERANK_TOP_K
+        if (
+            search_plan is not None
+            and search_plan.mode is SearchMode.LEGAL_NEWS
+            and any(_plan_time_bounds(search_plan))
+        ):
+            # The API already scores the whole pool: asking it to return a
+            # wider shortlist does not add another call.  The dated guard
+            # below can then select enough in-period documents instead of
+            # being forced to keep an old broad-search result from the top 5.
+            rerank_top_k += _MAX_PLAN_CHRONOLOGY_PRIORITY_CHUNKS
         results = await self._step_with_timeout(
             self.reranker.rerank(
                 query,
                 results,
-                top_k=RERANK_TOP_K,
+                top_k=rerank_top_k,
                 cost_ctx=self._cost_ctx,
                 fallback_results=rerank_fallback,
             ),
@@ -917,6 +940,18 @@ class RAGAgent:
             trace.perf_ms["parent_expansion"], len(results),
         )
 
+        # A chronological digest must not quietly present an old dated source
+        # as a current development.  This guard is deliberately limited to
+        # LEGAL_NEWS plans.  It activates only when the corpus contains at
+        # least one in-period result and retains a small undated legal-context
+        # tail, so the broad completeness search remains useful.  If the dated
+        # branch found nothing, the broad fallback is left untouched.
+        if search_plan is not None and search_plan.mode is SearchMode.LEGAL_NEWS:
+            results, time_diagnostics = self._apply_news_time_scope(
+                results, search_plan
+            )
+            trace.search_plan_validation["time_scope_guard"] = time_diagnostics
+
         # Step 3.6: Relevance floor — drop weak groups (noise) before they
         # reach the source panel and the generation context.
         results, dropped = self._apply_score_floor(results)
@@ -940,6 +975,8 @@ class RAGAgent:
         # Step 4.5: hiérarchie des normes — la règle applicable ne doit pas être
         # noyée sous la jurisprudence ou la CCN en tête de liste.
         results = self._balance_source_types(results)
+        if search_plan is not None and search_plan.mode is SearchMode.LEGAL_NEWS:
+            results = self._sort_news_results(results, search_plan)
         if trace.search_plan_validation:
             trace.search_plan_validation["retained_in_final_sources"] = (
                 self._retained_hypothesis_refs(results, hypothesis_refs_by_key)
@@ -2138,6 +2175,68 @@ class RAGAgent:
                 )
                 dropped = rest
         return kept, dropped
+
+    @staticmethod
+    def _apply_news_time_scope(
+        results: list[SearchResult],
+        plan: SearchPlan,
+    ) -> tuple[list[SearchResult], dict[str, int | str]]:
+        """Keep a news digest inside its planned period without starving it.
+
+        Dated documents outside the period are removed only when at least one
+        dated in-period document exists.  Up to two undated results survive as
+        legal background.  With no in-period match, all results remain as the
+        completeness fallback and generation can report the corpus gap.
+        """
+
+        date_from, date_to = _plan_time_bounds(plan)
+        if not results or not date_from or not date_to:
+            return results, {"status": "not_applicable"}
+
+        in_period: list[SearchResult] = []
+        undated: list[SearchResult] = []
+        out_of_period: list[SearchResult] = []
+        for result in results:
+            result_date = _result_effective_date(result)
+            if result_date is None:
+                undated.append(result)
+            elif date_from <= result_date <= date_to:
+                in_period.append(result)
+            else:
+                out_of_period.append(result)
+
+        diagnostics: dict[str, int | str] = {
+            "in_period": len(in_period),
+            "undated": len(undated),
+            "out_of_period": len(out_of_period),
+        }
+        if not in_period:
+            diagnostics["status"] = "broad_fallback_no_in_period_match"
+            return results, diagnostics
+
+        diagnostics["status"] = "applied"
+        diagnostics["undated_context_kept"] = min(2, len(undated))
+        return in_period + undated[:2], diagnostics
+
+    @staticmethod
+    def _sort_news_results(
+        results: list[SearchResult],
+        plan: SearchPlan,
+    ) -> list[SearchResult]:
+        """Present dated news newest-first, followed by undated background."""
+
+        date_from, date_to = _plan_time_bounds(plan)
+        if not date_from or not date_to:
+            return results
+        return sorted(
+            results,
+            key=lambda result: (
+                _result_effective_date(result) is not None,
+                _result_effective_date(result) or datetime.date.min,
+                result.score,
+            ),
+            reverse=True,
+        )
 
     @staticmethod
     def _ensure_ccn_represented(
