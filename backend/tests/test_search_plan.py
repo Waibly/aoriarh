@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import datetime
 import json
+from dataclasses import replace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -12,6 +13,7 @@ from app.rag.agent import RAGAgent
 from app.rag.search import SearchResult
 from app.rag.search_plan import (
     AnswerIntent,
+    PlannerCallResult,
     PlannerStatus,
     SearchMode,
     SourceRequirement,
@@ -1140,3 +1142,73 @@ async def test_adaptive_prepare_reuses_follow_up_plan_without_condense_or_expans
     assert reformulated == plan.standalone_question
     assert trace.query_condensed == plan.standalone_question
     assert trace.search_plan["planner_status"] == "ok"
+
+
+@pytest.mark.asyncio
+async def test_production_adaptive_search_executes_deterministic_plan_without_llm():
+    """Exact routes become adaptive without paying for a planning LLM call."""
+
+    with patch("app.rag.agent._search_engine"), patch("app.rag.agent.get_reranker"):
+        agent = RAGAgent()
+    agent._search_with_plan = AsyncMock(return_value=([], ["question"]))
+    agent._search_with_expansion = AsyncMock()
+    agent.reranker = MagicMock()
+    agent.reranker.rerank = AsyncMock(return_value=[])
+
+    with patch(
+        "app.rag.agent.run_compact_search_planner",
+        wraps=run_compact_search_planner,
+    ) as planner, patch(
+        "app.rag.agent.expand_to_parents",
+        new=AsyncMock(return_value=[]),
+    ):
+        _results, _reformulated, trace = await agent.prepare_context(
+            "Quelles sont les dernières actualités en droit social ?",
+            "org-1",
+            adaptive_search=True,
+        )
+
+    planner.assert_awaited_once()
+    agent._search_with_plan.assert_awaited_once()
+    agent._search_with_expansion.assert_not_awaited()
+    assert trace.search_plan_usage["execution"] == "adaptive"
+    assert trace.search_plan_usage["prompt_tokens"] == 0
+
+
+@pytest.mark.asyncio
+async def test_production_adaptive_search_falls_back_to_complete_baseline():
+    """An unavailable compact planner must not prevent the historical search."""
+
+    query = "Un employeur peut-il licencier un salarié pendant un arrêt maladie ?"
+    deterministic = build_deterministic_search_plan(query)
+    fallback = replace(
+        deterministic,
+        planner_status=PlannerStatus.FALLBACK,
+        warnings=[*deterministic.warnings, "planner_timeout"],
+    )
+
+    with patch("app.rag.agent._search_engine"), patch("app.rag.agent.get_reranker"):
+        agent = RAGAgent()
+    agent._search_with_plan = AsyncMock()
+    agent._search_with_expansion = AsyncMock(return_value=([], [query]))
+    agent.reranker = MagicMock()
+    agent.reranker.rerank = AsyncMock(return_value=[])
+
+    with patch(
+        "app.rag.agent.run_compact_search_planner",
+        new=AsyncMock(return_value=PlannerCallResult(plan=fallback)),
+    ), patch(
+        "app.rag.agent.expand_to_parents",
+        new=AsyncMock(return_value=[]),
+    ):
+        _results, _reformulated, trace = await agent.prepare_context(
+            query,
+            "org-1",
+            adaptive_search=True,
+        )
+
+    agent._search_with_expansion.assert_awaited_once()
+    agent._search_with_plan.assert_not_awaited()
+    assert trace.search_plan_usage["execution"] == "baseline_fallback"
+    assert trace.search_plan_usage["fallback_to_baseline"] is True
+    assert trace.search_plan["planner_status"] == "fallback"

@@ -32,9 +32,10 @@ from app.rag.search_plan import (
     SearchPlan,
     SourceRequirement,
     build_deterministic_search_plan,
+    run_compact_search_planner,
 )
 from app.rag.source_intent import detect_source_intent
-from app.services.cost_tracker import CostContext, cost_tracker
+from app.services.cost_tracker import CostContext, compute_cost, cost_tracker
 
 logger = logging.getLogger(__name__)
 
@@ -832,6 +833,7 @@ class RAGAgent:
         conversation_id: str | None = None,
         is_replay: bool = False,
         search_plan: SearchPlan | None = None,
+        adaptive_search: bool = False,
     ) -> tuple[list[SearchResult], str, RagTrace]:
         """Run steps 0-5 (non-streaming) and return results + reformulated query + trace."""
         self._org_id = organisation_id
@@ -841,7 +843,67 @@ class RAGAgent:
         t0 = time.perf_counter()
 
         trace = RagTrace(query_original=query, model=rag_config.LLM_MODEL)
-        if search_plan is None:
+        search_plan_trace: SearchPlan
+        if adaptive_search and search_plan is None:
+            deterministic_plan = build_deterministic_search_plan(
+                query,
+                has_history=bool(history),
+                org_idcc_list=org_idcc_list,
+                not_subject_to_ccn=bool(
+                    org_context and org_context.get("not_subject_to_ccn")
+                ),
+            )
+            planner_t0 = time.perf_counter()
+            planner_result = await run_compact_search_planner(
+                deterministic_plan,
+                llm=self.llm,
+                model=rag_config.EXPAND_MODEL,
+                history=history,
+                org_context=org_context,
+                # The planner is optional: do not let it consume the full
+                # retrieval-step timeout before falling back to the baseline.
+                timeout_seconds=min(RAG_TIMEOUT_PER_STEP, 15.0),
+            )
+            planner_ms = (time.perf_counter() - planner_t0) * 1000
+            search_plan_trace = planner_result.plan
+            use_adaptive_plan = (
+                not deterministic_plan.needs_llm_planner
+                or planner_result.plan.planner_status.value == "ok"
+            )
+            if use_adaptive_plan:
+                search_plan = planner_result.plan
+
+            planner_cost = float(
+                compute_cost(
+                    "openai",
+                    rag_config.EXPAND_MODEL,
+                    planner_result.prompt_tokens,
+                    planner_result.completion_tokens,
+                )
+            )
+            trace.search_plan_usage = {
+                "model": rag_config.EXPAND_MODEL,
+                "prompt_tokens": planner_result.prompt_tokens,
+                "completion_tokens": planner_result.completion_tokens,
+                "cost_usd": planner_cost,
+                "latency_ms": round(planner_ms),
+                "execution": "adaptive" if use_adaptive_plan else "baseline_fallback",
+                "fallback_to_baseline": not use_adaptive_plan,
+            }
+            if planner_result.prompt_tokens or planner_result.completion_tokens:
+                cost_tracker.log_bg(
+                    provider="openai",
+                    model=rag_config.EXPAND_MODEL,
+                    operation_type="search_plan",
+                    tokens_input=planner_result.prompt_tokens,
+                    tokens_output=planner_result.completion_tokens,
+                    organisation_id=self._org_id,
+                    user_id=self._user_id,
+                    context_type="question",
+                    context_id=self._conversation_id,
+                    is_replay=self._is_replay,
+                )
+        elif search_plan is None:
             search_plan_trace = build_deterministic_search_plan(
                 query,
                 has_history=bool(history),

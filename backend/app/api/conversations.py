@@ -577,6 +577,7 @@ async def search_documents(
         org_idcc_list=org_idcc_list,
         user_id=str(user.id),
         conversation_id=str(question_id),
+        adaptive_search=True,
     )
 
     if reformulated == _OUT_OF_SCOPE_MARKER:
@@ -800,6 +801,7 @@ async def chat_stream(
                 org_idcc_list=org_idcc_list,
                 user_id=str(user.id),
                 conversation_id=str(question_id),
+                adaptive_search=True,
             ))
             try:
                 try:
@@ -946,6 +948,12 @@ async def chat_stream(
                         low_confidence=rag_trace.low_confidence,
                         condensed_query=reformulated,
                         carried_sources=carried_sources or None,
+                        answer_format=(
+                            rag_trace.search_plan.get("answer_format")
+                            if rag_trace.search_plan
+                            and rag_trace.search_plan_usage.get("execution") == "adaptive"
+                            else None
+                        ),
                     ),
                     idle_timeout=RAG_TIMEOUT_STREAM_IDLE,
                     slow_notice=RAG_SLOW_NOTICE,

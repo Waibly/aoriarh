@@ -192,6 +192,7 @@ async def test_retrieval(
         user_id=None,
         conversation_id=None,
         is_replay=True,
+        adaptive_search=True,
     )
 
     sources_dicts: list[dict] = []

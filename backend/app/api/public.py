@@ -379,6 +379,7 @@ async def public_ask(
                     org_idcc_list=None,
                     user_id=str(demo_user_id),
                     conversation_id=str(question_id),
+                    adaptive_search=True,
                 ))
                 try:
                     try:
@@ -456,6 +457,12 @@ async def public_ask(
                             low_confidence=rag_trace.low_confidence,
                             condensed_query=reformulated,
                             model_override=settings.demo_llm_model,
+                            answer_format=(
+                                rag_trace.search_plan.get("answer_format")
+                                if rag_trace.search_plan
+                                and rag_trace.search_plan_usage.get("execution") == "adaptive"
+                                else None
+                            ),
                         ),
                         idle_timeout=RAG_TIMEOUT_STREAM_IDLE,
                         slow_notice=RAG_SLOW_NOTICE,
