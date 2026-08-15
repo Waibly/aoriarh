@@ -641,6 +641,57 @@ def test_legal_news_time_guard_preserves_broad_fallback_on_corpus_gap():
     assert diagnostics["status"] == "broad_fallback_no_in_period_match"
 
 
+def test_temporal_rule_priority_prefers_applicable_regime_without_deleting_history():
+    current = _search_result("boss", 69, source_type="boss")
+    current.text = (
+        "Evaluation applicable à compter du 1er février 2025 : "
+        "le forfait est fixé par le tableau suivant."
+    )
+    current.score = 0.72
+    expired = _search_result("boss", 68, source_type="boss")
+    expired.text = (
+        "Evaluation applicable jusqu'au 31 janvier 2025 : "
+        "ancien tableau récapitulatif."
+    )
+    expired.score = 0.79
+    neutral = _search_result("boss", 30, source_type="boss")
+    neutral.text = "La valeur réelle comprend l'assurance et l'entretien."
+    neutral.score = 0.80
+
+    ranked, diagnostics = RAGAgent._apply_temporal_rule_priority(
+        [neutral, expired, current],
+        target_date=datetime.date(2026, 8, 15),
+    )
+
+    assert [result.chunk_index for result in ranked] == [69, 30, 68]
+    assert expired in ranked
+    assert diagnostics == {
+        "classified": 2,
+        "applicable": 1,
+        "expired": 1,
+        "future": 0,
+    }
+
+
+def test_temporal_rule_priority_does_not_reclassify_case_law_facts():
+    ruling = _search_result(
+        "ruling",
+        0,
+        source_type="arret_cour_cassation",
+    )
+    ruling.text = "Le contrat avait été conclu avant le 1er février 2025."
+    ruling.score = 0.76
+
+    ranked, diagnostics = RAGAgent._apply_temporal_rule_priority(
+        [ruling],
+        target_date=datetime.date(2026, 8, 15),
+    )
+
+    assert ranked == [ruling]
+    assert ruling.score == 0.76
+    assert diagnostics["classified"] == 0
+
+
 @pytest.mark.asyncio
 async def test_source_directed_plan_preserves_filtered_results_and_bounds_fallback():
     plan = build_deterministic_search_plan(

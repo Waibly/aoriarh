@@ -79,6 +79,54 @@ _MAX_PLAN_CCN_PRIORITY_CHUNKS = 8
 _MAX_PLAN_CHRONOLOGY_PRIORITY_CHUNKS = 8
 _MAX_PLAN_INTERNAL_PRIORITY_CHUNKS = 4
 
+# Règles portant leur propre période d'application.  Ce signal ne s'applique
+# qu'aux sources normatives : une date rencontrée dans les faits d'un arrêt ne
+# doit jamais modifier le score de la décision.
+_TEMPORAL_RULE_SOURCE_TYPES: frozenset[str] = frozenset(
+    set(_LEGISLATION_SOURCE_TYPES)
+    | {
+        "boss",
+        "convention_collective_nationale",
+        "accord_branche",
+        "accord_entreprise",
+        "engagement_unilateral",
+        "reglement_interieur",
+    }
+)
+_FRENCH_MONTH_NUMBERS = {
+    "janvier": 1,
+    "fevrier": 2,
+    "février": 2,
+    "mars": 3,
+    "avril": 4,
+    "mai": 5,
+    "juin": 6,
+    "juillet": 7,
+    "aout": 8,
+    "août": 8,
+    "septembre": 9,
+    "octobre": 10,
+    "novembre": 11,
+    "decembre": 12,
+    "décembre": 12,
+}
+_FRENCH_DATE_PATTERN = (
+    r"(?P<day>1er|[0-3]?\d)\s+"
+    r"(?P<month>janvier|f[ée]vrier|mars|avril|mai|juin|juillet|ao[uû]t|"
+    r"septembre|octobre|novembre|d[ée]cembre)\s+"
+    r"(?P<year>20\d{2})"
+)
+_TEMPORAL_FROM_RE = re.compile(
+    rf"(?:à|a)\s+(?:compter|partir)\s+du\s+{_FRENCH_DATE_PATTERN}",
+    re.IGNORECASE,
+)
+_TEMPORAL_UNTIL_RE = re.compile(
+    rf"jusqu['’]au\s+{_FRENCH_DATE_PATTERN}", re.IGNORECASE
+)
+_TEMPORAL_BEFORE_RE = re.compile(
+    rf"avant\s+le\s+{_FRENCH_DATE_PATTERN}", re.IGNORECASE
+)
+
 # Types « convention collective » de l'org. Tout résultat de ce type présent
 # dans le pool a passé le filtre IDCC (cf. HybridSearch.search) : c'est donc la
 # convention installée de l'organisation. Sert au repêchage et au plancher de
@@ -240,6 +288,62 @@ def _result_effective_date(result: "SearchResult") -> datetime.date | None:
         return datetime.date.fromisoformat(str(raw)[:10])
     except (TypeError, ValueError):
         return None
+
+
+def _date_from_french_match(match: re.Match[str]) -> datetime.date | None:
+    """Convert a matched French legal date into a date value."""
+
+    try:
+        day = 1 if match.group("day").casefold() == "1er" else int(match.group("day"))
+        month = _FRENCH_MONTH_NUMBERS[match.group("month").casefold()]
+        return datetime.date(int(match.group("year")), month, day)
+    except (KeyError, TypeError, ValueError):
+        return None
+
+
+def _rule_temporal_status(
+    text: str,
+    *,
+    target_date: datetime.date,
+) -> str:
+    """Classify an explicit rule period as applicable, expired or neutral.
+
+    Only unambiguous legal boundary phrases are considered.  Other dates stay
+    neutral, avoiding guesses from publication dates or examples.
+    """
+
+    sample = text[:5000]
+    starts = [
+        parsed
+        for match in _TEMPORAL_FROM_RE.finditer(sample)
+        if (parsed := _date_from_french_match(match)) is not None
+    ]
+    ends = [
+        parsed
+        for pattern in (_TEMPORAL_UNTIL_RE, _TEMPORAL_BEFORE_RE)
+        for match in pattern.finditer(sample)
+        if (parsed := _date_from_french_match(match)) is not None
+    ]
+    if not starts and not ends:
+        return "neutral"
+
+    # A passage may restate several successive regimes.  If at least one is
+    # applicable today, it remains eligible; otherwise its explicit period is
+    # either expired or not yet applicable.
+    if any(start <= target_date for start in starts) and not ends:
+        return "applicable"
+    if any(target_date <= end for end in ends) and not starts:
+        return "applicable"
+    if starts and ends:
+        if any(start <= target_date for start in starts) and any(
+            target_date <= end for end in ends
+        ):
+            return "applicable"
+    if ends and all(target_date > end for end in ends):
+        return "expired"
+    if starts and all(target_date < start for start in starts):
+        return "future"
+    return "neutral"
 
 
 def _assess_confidence(
@@ -905,6 +1009,15 @@ class RAGAgent:
             trace.search_plan_validation["rejected_below_confidence_floor"] = (
                 sorted(rejected_refs)
             )
+        if search_plan is not None and not search_plan.time_scope:
+            results, temporal_diagnostics = self._apply_temporal_rule_priority(
+                results,
+                target_date=datetime.date.today(),
+            )
+            if temporal_diagnostics["classified"]:
+                trace.search_plan_validation["temporal_rule_priority"] = (
+                    temporal_diagnostics
+                )
         results = self._ensure_ccn_represented(
             _pool_pre_rerank, results, org_idcc_list,
         )
@@ -2217,6 +2330,50 @@ class RAGAgent:
         diagnostics["status"] = "applied"
         diagnostics["undated_context_kept"] = min(2, len(undated))
         return in_period + undated[:2], diagnostics
+
+    @staticmethod
+    def _apply_temporal_rule_priority(
+        results: list[SearchResult],
+        *,
+        target_date: datetime.date,
+    ) -> tuple[list[SearchResult], dict[str, int]]:
+        """Prefer the applicable version of explicitly time-bounded rules.
+
+        The reranker remains the relevance judge.  This bounded adjustment is
+        applied afterwards only to normative passages that state an explicit
+        applicability boundary.  Neutral passages and case-law facts are left
+        untouched; expired passages remain available as historical context.
+        """
+
+        diagnostics = {
+            "classified": 0,
+            "applicable": 0,
+            "expired": 0,
+            "future": 0,
+        }
+        for result in results:
+            if result.source_type not in _TEMPORAL_RULE_SOURCE_TYPES:
+                continue
+            status = _rule_temporal_status(result.text, target_date=target_date)
+            if status == "neutral":
+                continue
+            diagnostics["classified"] += 1
+            diagnostics[status] += 1
+            if status == "applicable":
+                result.score = min(1.0, result.score * 1.18)
+            elif status == "expired":
+                result.score *= 0.55
+            else:  # future
+                result.score *= 0.65
+
+        if diagnostics["classified"]:
+            results = sorted(results, key=lambda result: result.score, reverse=True)
+            logger.info(
+                "[TEMPORAL] Prioritized explicit rule periods for %s: %s",
+                target_date.isoformat(),
+                diagnostics,
+            )
+        return results, diagnostics
 
     @staticmethod
     def _sort_news_results(
