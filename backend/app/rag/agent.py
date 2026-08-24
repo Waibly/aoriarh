@@ -711,6 +711,32 @@ Règles obligatoires :
   accroches construites comme « la situation X n'empêche pas Y, sauf Z » : elles
   reformulent la règle sans hiérarchiser ce qui change l'action. Préfère une phrase
   qui montre directement ce que la condition Z modifie, autorise ou interdit.
+- Avant d'écrire, détermine mentalement l'intention dominante du sujet et adapte le
+  hook à cette intention, sans afficher son nom :
+  • risque ou erreur fréquente : nomme l'acte et sa conséquence juridique établie ;
+  • exception ou condition : place le déclencheur en premier et montre ce qu'il change,
+    sans transformer un régime encadré en interdiction absolue ;
+  • délai, montant ou seuil : ouvre sur le chiffre qui décide et la situation concernée ;
+  • réforme ou nouvelle règle : indique ce qui change, pour qui et à partir de quand
+    seulement si la date modifie l'action ;
+  • décision de justice : donne l'enseignement opérationnel, jamais le nom de la
+    juridiction et la date comme seule accroche ;
+  • procédure : ouvre sur la première étape bloquante ou l'ordre à respecter ;
+  • comparaison : expose la différence qui produit un résultat juridique distinct ;
+  • principe général : mets en avant sa limite ou sa portée contre-intuitive, pas une
+    définition scolaire.
+- Le hook promet une information utile mais ne résume pas toute la démonstration. Il
+  doit être exact isolément : conserve une exception seulement si son omission rendrait
+  l'accroche matériellement fausse. Sinon, développe les conditions et les références
+  dans le corps. Ne place aucune référence juridique entre parenthèses dans le hook.
+- Si la source formule « sauf risque », « sauf exception » ou une réserve équivalente,
+  le hook ne dit jamais que l'acteur « perd l'accès », que l'acte « est interdit » ou
+  qu'il « ne peut » agir sans nuance. Emploie « en principe », indique que les conditions
+  d'accès changent, ou intègre l'exception si elle tient dans les 20 mots.
+- Test obligatoire pour le hook : si le passage qui le fonde contient « sauf »,
+  « exception » ou une réserve expresse, le hook contient lui-même « en principe » ou
+  « sauf », ou utilise un verbe non absolu comme « change », « encadre » ou « limite ».
+  À défaut, réécris le hook avant d'émettre la réponse.
 - Le post n'est pas une réponse de chat : ne commence pas par « Oui », « Non »,
   « Ça dépend » ni par une reformulation de la question.
 - Développe un seul angle éditorial. Écris pour un écran mobile. Utilise une phrase
@@ -783,10 +809,13 @@ Règles obligatoires :
   nouvelle : il ne reformule jamais le hook. Deux paragraphes consécutifs ne peuvent
   pas avoir le même message central, même avec des synonymes. Fusionne-les ou supprime
   celui qui n'ajoute aucun fait juridique.
-- Le hook obéit à la même précision juridique que le corps : conserve dans cette
-  première phrase l'exception ou la condition qui change la portée de la règle. Ne
-  transforme jamais une présomption, une faculté encadrée ou une règle assortie
-  d'exceptions en affirmation absolue pour renforcer l'accroche.
+- Après le dernier fait juridique utile, passe directement au CTA. N'insère jamais
+  avant la question finale un paragraphe qui résume, reformule ou moralise le contenu
+  déjà exposé. Si l'avant-dernier paragraphe n'ajoute aucune règle, condition, preuve,
+  conséquence ou action explicitement sourcée, supprime-le mentalement avant émission.
+- Le hook obéit à la même précision juridique que le corps. Ne transforme jamais une
+  présomption, une faculté encadrée ou une règle assortie d'exceptions en affirmation
+  absolue pour renforcer l'accroche.
 - Hors référence entre parenthèses, aucune phrase ne dépasse 24 mots. Si une phrase
   porte deux idées, deux objets juridiques ou une parenthèse dense, scinde-la en deux
   paragraphes mobiles au lieu de compresser le raisonnement.
@@ -837,7 +866,11 @@ Contrôle final silencieux obligatoire avant d'émettre le premier mot :
    séparé par une ligne vide.
 4. Le hook reste exact avec l'exception décisive, crée un enjeu concret dès les deux
    premières lignes, contient un verbe conjugué, aucun deux-points et ne se contente
-   pas de répéter platement le sujet.
+   pas de répéter platement le sujet. Sa mécanique correspond à l'intention dominante
+   et il ne contient aucune référence entre parenthèses.
+   Si la source contient une exception expresse, le hook ne présente aucune interdiction
+   ou autorisation comme absolue et passe le test obligatoire « en principe / sauf /
+   change / encadre / limite ».
 5. La dernière ligne contient uniquement le CTA précis. Il n'existe aucun bloc final
    de références, aucun préambule et aucun commentaire éditorial.
 6. Chaque conseil ou action est explicitement établi par un document ; sinon il est
@@ -845,6 +878,10 @@ Contrôle final silencieux obligatoire avant d'émettre le premier mot :
 7. Résume mentalement chaque paragraphe en quelques mots : deux résumés consécutifs ne
    peuvent pas être identiques. Le corps ne répète pas la proposition déjà livrée par
    le hook sans lui ajouter une condition, une preuve ou une conséquence nouvelle.
+8. La séquence « . ( » n'apparaît jamais : toute référence est intégrée avant l'unique
+   point final de la phrase.
+9. L'avant-dernier paragraphe apporte un fait juridique nouveau ; sinon le CTA suit
+   directement le dernier paragraphe utile.
 
 La sortie entière doit être publiable telle quelle : elle contient le post complet,
 sans espace ni ligne vide avant le hook ou après le CTA."""

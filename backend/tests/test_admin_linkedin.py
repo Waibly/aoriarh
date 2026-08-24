@@ -177,9 +177,23 @@ def test_linkedin_prompt_requires_exact_claim_to_source_alignment():
     assert "N'utilise pas la structure « Sujet : règle »" in prompt
     assert "Place l'élément décisif au début du hook" in prompt
     assert "la situation X n'empêche pas Y, sauf Z" in prompt
+    assert "détermine mentalement l'intention dominante du sujet" in prompt
+    assert "risque ou erreur fréquente" in prompt
+    assert "délai, montant ou seuil" in prompt
+    assert "décision de justice" in prompt
+    assert "procédure : ouvre sur la première étape bloquante" in prompt
+    assert "comparaison : expose la différence" in prompt
+    assert "Le hook promet une information utile mais ne résume pas toute" in prompt
+    assert "Ne place aucune référence juridique entre parenthèses dans le hook" in prompt
+    assert "le hook ne dit jamais que l'acteur « perd l'accès »" in prompt
+    assert "Test obligatoire pour le hook" in prompt
+    assert "en principe / sauf /\n   change / encadre / limite" in prompt
+    assert "La séquence « . ( » n'apparaît jamais" in prompt
     assert "Deux paragraphes consécutifs ne peuvent\n  pas avoir le même message central" in prompt
     assert "Résume mentalement chaque paragraphe en quelques mots" in prompt
-    assert "Ne\n  transforme jamais une présomption" in prompt
+    assert "Après le dernier fait juridique utile, passe directement au CTA" in prompt
+    assert "L'avant-dernier paragraphe apporte un fait juridique nouveau" in prompt
+    assert "Ne transforme jamais une\n  présomption" in prompt
     assert "aucune phrase ne dépasse 24 mots" in prompt
     assert "Contrôle final silencieux obligatoire avant d'émettre le premier mot" in prompt
 
