@@ -146,6 +146,16 @@ def test_explicit_calculation_is_not_confused_with_a_factual_amount():
     assert plan.query_budget == 2
 
 
+def test_payroll_recovery_searches_operational_rule_and_its_limits():
+    plan = build_deterministic_search_plan(
+        "Récupérer huit mois de trop-perçu d'un coup sur la prochaine paie"
+    )
+
+    assert plan.answer_intent is AnswerIntent.PROCEDURE
+    assert plan.answer_format == "numbered_steps"
+    assert plan.query_budget == 2
+
+
 def test_simple_question_limits_planner_to_one_additional_query():
     plan = build_deterministic_search_plan(
         "Un employeur peut-il refuser une demande de congés payés ?"

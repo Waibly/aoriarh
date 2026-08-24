@@ -233,6 +233,15 @@ question originale ni les noms/identifiants de la source demandée. Si le \
 budget vaut 2, les deux requêtes doivent être complémentaires : la première \
 couvre la règle ou le droit demandé, la seconde ses conditions, exceptions, \
 limites ou son interprétation. Ne reformule pas deux fois le même angle.
+- Si la question porte sur une modalité d'exécution, une récupération, une \
+retenue, un échéancier, un plafond ou une action en paie, la première requête \
+cherche la règle opérationnelle et sa limite chiffrée ; la seconde couvre la \
+preuve, la contestation ou la jurisprudence seulement si le budget le permet.
+- Une durée décrivant la période d'un paiement, d'une absence ou d'une erreur \
+ne constitue pas une demande sur la prescription. Ne cherche la prescription \
+que si la question porte sur le délai pour agir, l'ancienneté de la créance ou \
+la recevabilité temporelle. Les articles hypothétiques doivent régir directement \
+le mécanisme demandé, pas seulement le paiement du salaire en général.
 - hypothesized_articles : 0 à 3 articles de Code seulement. N'en propose que si \
 le rapprochement est plausible. Ce sont des candidats incertains à vérifier \
 dans le corpus, jamais des autorités ; confidence vaut "low" ou "medium".
@@ -299,7 +308,11 @@ def _answer_intent(query: str, *, legal_news: bool) -> AnswerIntent:
         return AnswerIntent.CALCULATION
     if re.search(r"\b(diff[ée]rence|compare|comparaison|versus|vs\.?|plus favorable)\b", q):
         return AnswerIntent.COMPARISON
-    if re.search(r"\b(comment|proc[ée]dure|d[ée]marche|[ée]tapes?|que faire)\b", q):
+    if re.search(
+        r"\b(comment|proc[ée]dure|d[ée]marche|[ée]tapes?|que faire|modalit[ée]s?|"
+        r"r[ée]cup[ée]r\w*|retenue|[ée]chelonn\w*|[ée]ch[ée]ancier|plafond)\b",
+        q,
+    ):
         return AnswerIntent.PROCEDURE
     if re.search(r"\b(risque|prud['’]?hom|contentieux|litige|sanction)\b", q):
         return AnswerIntent.CASE_ANALYSIS

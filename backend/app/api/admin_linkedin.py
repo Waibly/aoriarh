@@ -7,6 +7,7 @@ import dataclasses
 import re
 import time
 import uuid
+from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, Field
@@ -21,6 +22,7 @@ from app.models.user import User
 from app.rag.agent import _OUT_OF_SCOPE_MARKER, RAGAgent
 from app.rag.config import RAG_TIMEOUT_CONTEXT, RAG_TIMEOUT_STREAM_IDLE
 from app.rag.pipeline import prepare_rag_context
+from app.rag.search import SearchResult
 from app.services.cost_tracker import cost_tracker
 
 router = APIRouter()
@@ -30,6 +32,9 @@ _LINKEDIN_MAX_CHARS = 3000
 _LINKEDIN_BODY_MAX_CHARS = 2500
 _LINKEDIN_MIN_WORDS = 200
 _LINKEDIN_MAX_WORDS = 300
+_LINKEDIN_MAX_REFERENCES = 4
+_LINKEDIN_MAX_REVISIONS = 2
+_REFERENCE_LINE_MAX_CHARS = 480
 _HASHTAG_RE = re.compile(r"(?<!\w)#[\wÀ-ÿ-]+")
 _EMOJI_RE = re.compile(
     "[\U0001f1e6-\U0001f1ff\U0001f300-\U0001faff\U00002600-\U000027bf]+",
@@ -43,7 +48,10 @@ _STYLE_BLOAT_RE = re.compile(
     r"\b(?:très|vraiment|extrêmement|absolument|totalement|parfaitement|"
     r"incroyablement|clairement|concrètement|effectivement|évidemment|"
     r"indéniablement|incontestablement|incontournable|révolutionnaire|"
-    r"globalement|finalement|ensuite|enfin|aussi|d['’]abord|ultime|"
+    r"globalement|finalement|ensuite|enfin|aussi|souvent|strictement|réellement|"
+    r"simplement|directement|précisément|potentiellement|juridiquement|"
+    r"automatiquement|systématiquement|cependant|ainsi|donc|par ailleurs|"
+    r"en effet|assez|d['’]abord|ultime|"
     r"exceptionnel(?:le|les|s)?|meilleur(?:e|es|s)?)\b",
     re.IGNORECASE,
 )
@@ -56,6 +64,62 @@ _SUBJECT_VERB_INVERSION_RE = re.compile(
     r"\b(?!rendez[-‑–]vous\b)[a-zà-ÿ]+(?:[-‑–]t)?[-‑–]"
     r"(?:je|tu|il|elle|on|nous|vous|ils|elles)\b",
     re.IGNORECASE,
+)
+_EDITORIAL_AUTOMATISM_RE = re.compile(
+    r"(?m)^\s*(?:(?:autre|dernier)\s+[^:\n]{1,40}|sur le terrain RH|"
+    r"à retenir|en conclusion|pour résumer|ce qu['’]il faut retenir)\s*[:：]",
+    re.IGNORECASE,
+)
+_META_DISCOURSE_RE = re.compile(
+    r"(?:^|(?<=[.!?]))[ \t]*(?:autrement dit|en d['’]autres termes|en pratique|"
+    r"la question devient(?: donc)?)\s*[: ,]",
+    re.IGNORECASE | re.MULTILINE,
+)
+_PROMOTIONAL_WORDING_RE = re.compile(
+    r"\b(?:angle contentieux|calcul robuste|calcul incontestable|accord solide|"
+    r"levier stratégique|point d['’]attaque|bon réflexe|traduction opérationnelle|"
+    r"n['’]est pas un automatisme|mérite une vigilance|"
+    r"chiffrage doit rester net|cohérents? et traçables?|"
+    r"traçables? et cohérents?|exigence simple|"
+    r"expose (?:l['’]employeur|le salarié)(?=[.!])|"
+    r"plus qu['’]un simple|logique posée par le texte|"
+    r"optimis(?:er|ation)|stratégique)\b",
+    re.IGNORECASE,
+)
+_ARTICLE_CITATION_RE = re.compile(
+    r"\bart(?:icle)?s?\.?\s+((?:[A-Z]\.?\s*)?\d+(?:-\d+)*)",
+    re.IGNORECASE,
+)
+_DIRECT_CODE_CITATION_RE = re.compile(r"\b[LRD]\.?\s*\d+(?:-\d+)+\b", re.IGNORECASE)
+_POURVOI_CITATION_RE = re.compile(r"\b\d{2}-\d{2}\.\d{3}\b")
+_JURISPRUDENCE_SOURCE_TYPES = {
+    "arret_cour_cassation",
+    "arret_cour_appel",
+    "arret_conseil_etat",
+    "decision_conseil_constitutionnel",
+}
+_CODE_REFERENCE_LABELS = {
+    "code_travail": "C. trav.",
+    "code_travail_reglementaire": "C. trav.",
+    "code_civil": "C. civ.",
+    "code_civil_reglementaire": "C. civ.",
+    "code_securite_sociale": "CSS",
+    "code_securite_sociale_reglementaire": "CSS",
+    "code_procedures_civiles_execution": "CPCE",
+}
+_FRENCH_MONTHS = (
+    "janvier",
+    "février",
+    "mars",
+    "avril",
+    "mai",
+    "juin",
+    "juillet",
+    "août",
+    "septembre",
+    "octobre",
+    "novembre",
+    "décembre",
 )
 
 
@@ -74,30 +138,82 @@ class LinkedinGenerateResponse(BaseModel):
     duration_ms: int
 
 
-def _sanitize_linkedin_post(post: str) -> str:
-    """Supprime uniquement les marqueurs éditoriaux interdits, sans réécrire le fond."""
-
-    cleaned = post.strip()
-    cleaned = re.sub(r"^```(?:text)?\s*|\s*```$", "", cleaned, flags=re.IGNORECASE)
-    cleaned = re.sub(r"\[([^]]+)]\([^)]+\)", r"\1", cleaned)
-    cleaned = re.sub(r"(?m)^\s{0,3}#{1,6}\s+", "", cleaned)
-    cleaned = re.sub(r"(?m)^\s*[-*+]\s+", "", cleaned)
-    cleaned = cleaned.replace("**", "").replace("__", "").replace("`", "")
-    cleaned = _HASHTAG_RE.sub("", cleaned)
-    cleaned = _EMOJI_RE.sub("", cleaned)
-    cleaned = re.sub(r"[ \t]+\n", "\n", cleaned)
-    cleaned = re.sub(r"[ \t]{2,}", " ", cleaned)
-    return re.sub(r"\n{3,}", "\n\n", cleaned).strip()
+def _normalize_stable_reference(reference: str) -> str:
+    return re.sub(r"[^a-z0-9]", "", reference.casefold())
 
 
-def _linkedin_draft_issues(post: str) -> list[str]:
+def _select_linkedin_editorial_results(
+    results: list[SearchResult],
+    *,
+    max_documents: int = 5,
+) -> list[SearchResult]:
+    """Resserre le contexte sans changer les passages issus du RAG commun."""
+
+    grouped: dict[str, list[SearchResult]] = {}
+    representatives: list[SearchResult] = []
+    for result in results:
+        document_id = result.document_id
+        if document_id not in grouped:
+            grouped[document_id] = []
+            representatives.append(result)
+        grouped[document_id].append(result)
+
+    written_law = [
+        result
+        for result in representatives
+        if result.source_type not in _JURISPRUDENCE_SOURCE_TYPES
+    ]
+    jurisprudence = [
+        result for result in representatives if result.source_type in _JURISPRUDENCE_SOURCE_TYPES
+    ]
+
+    selected_ids: list[str] = []
+    for result in written_law[:3] + jurisprudence[:2] + representatives:
+        if result.document_id not in selected_ids:
+            selected_ids.append(result.document_id)
+        if len(selected_ids) == max_documents:
+            break
+
+    return [chunk for document_id in selected_ids for chunk in grouped[document_id]]
+
+
+def _stable_references_in_post(post: str) -> set[str]:
+    references = {
+        _normalize_stable_reference(match.group(1)) for match in _ARTICLE_CITATION_RE.finditer(post)
+    }
+    references.update(
+        _normalize_stable_reference(match.group(0))
+        for match in _DIRECT_CODE_CITATION_RE.finditer(post)
+    )
+    references.update(
+        _normalize_stable_reference(match.group(0)) for match in _POURVOI_CITATION_RE.finditer(post)
+    )
+    return {reference for reference in references if reference}
+
+
+def _source_stable_references(sources: list) -> set[str]:
+    references: set[str] = set()
+    for source in sources:
+        references.update(
+            _normalize_stable_reference(reference)
+            for reference in (source.article_nums or [])
+            if reference
+        )
+        if source.numero_pourvoi:
+            references.add(_normalize_stable_reference(source.numero_pourvoi))
+    return references
+
+
+def _linkedin_draft_issues(post: str, sources: list | None = None) -> list[str]:
     """Retourne les violations qui nécessitent une nouvelle rédaction."""
 
     cleaned = post.strip()
-    word_count = len(_WORD_RE.findall(_sanitize_linkedin_post(cleaned)))
+    word_count = len(_WORD_RE.findall(cleaned))
     issues: list[str] = []
     if not cleaned:
         issues.append("le corps est vide")
+    if post != cleaned:
+        issues.append("le corps contient des espaces ou lignes vides avant ou après le post")
     if len(cleaned) > _LINKEDIN_BODY_MAX_CHARS:
         issues.append(f"le corps dépasse {_LINKEDIN_BODY_MAX_CHARS} caractères")
     if not _LINKEDIN_MIN_WORDS <= word_count <= _LINKEDIN_MAX_WORDS:
@@ -117,10 +233,24 @@ def _linkedin_draft_issues(post: str) -> list[str]:
             "des superlatifs, intensificateurs ou adverbes inutiles sont présents : "
             + ", ".join(bloated_terms)
         )
-    question_count = cleaned.count("?")
-    if question_count != 1 or not cleaned.endswith("?"):
+    if _EDITORIAL_AUTOMATISM_RE.search(cleaned):
+        issues.append("un automatisme rhétorique introduit artificiellement un paragraphe")
+    if _META_DISCOURSE_RE.search(cleaned):
+        issues.append("une formule de méta-discours reformule ou annonce le contenu")
+    promotional_wording = sorted(
+        {match.casefold() for match in _PROMOTIONAL_WORDING_RE.findall(cleaned)}
+    )
+    if promotional_wording:
         issues.append(
-            "le post doit finir par une seule question ouverte et précise en guise de CTA"
+            "des formulations abstraites ou promotionnelles sont présentes : "
+            + ", ".join(promotional_wording)
+        )
+    question_count = cleaned.count("?")
+    _body, cta_separator, _cta = cleaned.rpartition("\n\n")
+    if question_count != 1 or not cleaned.endswith("?") or not cta_separator:
+        issues.append(
+            "le post doit finir par une seule question ouverte et précise, isolée dans "
+            "son propre paragraphe, en guise de CTA"
         )
     elif _GENERIC_CTA_RE.search(cleaned):
         issues.append("le CTA final est générique et n'est pas lié au sujet")
@@ -131,58 +261,128 @@ def _linkedin_draft_issues(post: str) -> list[str]:
         )
     if "références juridiques :" in cleaned.casefold():
         issues.append("la ligne de références réservée au serveur a été générée")
+    if sources is not None:
+        cited_sources = _sources_cited_in_post(cleaned, sources)
+        if not cited_sources:
+            issues.append("aucune source contrôlée n'est citée dans le corps")
+        elif len(cited_sources) > _LINKEDIN_MAX_REFERENCES:
+            issues.append(
+                f"le corps mobilise plus de {_LINKEDIN_MAX_REFERENCES} sources ; "
+                "conserve uniquement les fondements qui changent la pratique"
+            )
+        unsupported = sorted(
+            _stable_references_in_post(cleaned) - _source_stable_references(sources)
+        )
+        if unsupported:
+            issues.append(
+                "des références absentes des documents sont citées : " + ", ".join(unsupported)
+            )
+        first_two_paragraphs = "\n\n".join(cleaned.split("\n\n")[:2])
+        if sources and not _sources_cited_in_post(first_two_paragraphs, sources[:1]):
+            primary_reference = _canonical_source_reference(sources[0])
+            issues.append(
+                "la règle portée par la source prioritaire doit apparaître dans les "
+                f"deux premiers paragraphes : {primary_reference}"
+            )
     return issues
 
 
-def _fit_linkedin_limit(post: str, limit: int = _LINKEDIN_MAX_CHARS) -> str:
-    """Dernier garde-fou déterministe si le modèle dépasse encore la limite."""
-
-    cleaned = _sanitize_linkedin_post(post)
-    if len(cleaned) <= limit:
-        return cleaned
-
-    window = cleaned[: limit + 1]
-    candidates = [
-        window.rfind("\n\n", 0, limit),
-        window.rfind(". ", 0, limit),
-        window.rfind("? ", 0, limit),
-        window.rfind("! ", 0, limit),
-    ]
-    cut = max(candidates)
-    if cut < int(limit * 0.7):
-        cut = window.rfind(" ", 0, limit - 1)
-    if cut <= 0:
-        cut = limit - 1
-    return cleaned[:cut].rstrip(" .,;:") + "…"
+def _canonical_article(reference: str) -> str:
+    compact = re.sub(r"\s+", "", reference.strip())
+    return re.sub(r"^([A-Z]+)\.?(?=\d)", r"\1.", compact)
 
 
-def _build_reference_line(sources: list) -> str:
-    """Construit des références publiques depuis les métadonnées contrôlées."""
+def _format_decision_date(value: str | None) -> str:
+    if not value:
+        return ""
+    for date_format in ("%Y-%m-%d", "%d/%m/%Y"):
+        try:
+            parsed = datetime.strptime(value, date_format)
+            return f"{parsed.day} {_FRENCH_MONTHS[parsed.month - 1]} {parsed.year}"
+        except ValueError:
+            continue
+    return value.strip()
 
+
+def _court_reference_label(source) -> str:
+    if source.source_type == "arret_cour_cassation":
+        chamber = (source.chambre or "").casefold()
+        if "social" in chamber:
+            return "Cass. soc."
+        if "crimin" in chamber:
+            return "Cass. crim."
+        if "commercial" in chamber:
+            return "Cass. com."
+        civil_match = re.search(r"(?:civile?|civ\.?)[^1-3]*([1-3])", chamber)
+        if civil_match:
+            return f"Cass. {civil_match.group(1)}e civ."
+        return "Cass."
+    if source.source_type == "arret_conseil_etat":
+        return "CE"
+    if source.source_type == "decision_conseil_constitutionnel":
+        return "Cons. const."
+    if source.source_type == "arret_cour_appel":
+        return "CA"
+    return (source.juridiction or source.source_type_label or "Décision").strip()
+
+
+def _canonical_source_reference(source, *, cited_post: str | None = None) -> str:
+    if source.article_nums:
+        label = _CODE_REFERENCE_LABELS.get(source.source_type)
+        if not label:
+            label = re.sub(r"\s*[—-]\s*Partie\s+.*$", "", source.document_name).strip()
+        article_nums = source.article_nums
+        if cited_post is not None:
+            normalized_post = _normalize_stable_reference(cited_post)
+            article_nums = [
+                article
+                for article in article_nums
+                if _normalize_stable_reference(article) in normalized_post
+            ]
+        articles = [_canonical_article(article) for article in article_nums[:3]]
+        if not articles:
+            return ""
+        article_text = " et ".join(articles)
+        return f"{label}, art. {article_text}"
+
+    if source.numero_pourvoi:
+        parts = [_court_reference_label(source)]
+        decision_date = _format_decision_date(source.date_decision)
+        if decision_date:
+            parts.append(decision_date)
+        parts.append(f"n° {source.numero_pourvoi}")
+        return ", ".join(parts)
+
+    document_name = " ".join(source.document_name.split())
+    if len(document_name) > 100:
+        document_name = document_name[:99].rsplit(" ", 1)[0].rstrip(" ,;:") + "…"
+    return document_name
+
+
+def _build_reference_line(sources: list, *, cited_post: str | None = None) -> str:
+    """Construit une ligne canonique sans recopier les titres documentaires."""
+
+    prefix = "Références juridiques : "
     references: list[str] = []
     for source in sources:
-        if source.article_nums:
-            articles = ", ".join(f"art. {article}" for article in source.article_nums[:3])
-            reference = f"{source.document_name}, {articles}"
-        elif source.numero_pourvoi:
-            decision_date = f", {source.date_decision}" if source.date_decision else ""
-            reference = f"{source.document_name}{decision_date}, n° {source.numero_pourvoi}"
-        else:
-            reference = source.document_name
-        reference = reference.strip()
-        if len(reference) > 140:
-            reference = reference[:139].rsplit(" ", 1)[0].rstrip(" ,;:") + "…"
-        if reference and reference not in references:
-            references.append(reference)
-        if len(references) == 3:
+        reference = _canonical_source_reference(source, cited_post=cited_post).strip()
+        if not reference or reference.casefold() in {
+            existing.casefold() for existing in references
+        }:
+            continue
+        candidate = prefix + " ; ".join([*references, reference])
+        if len(candidate) > _REFERENCE_LINE_MAX_CHARS:
             break
-    return "Références juridiques : " + " ; ".join(references) if references else ""
+        references.append(reference)
+        if len(references) == _LINKEDIN_MAX_REFERENCES:
+            break
+    return prefix + " ; ".join(references) if references else ""
 
 
 def _sources_cited_in_post(post: str, sources: list) -> list:
     """Évite d'ajouter en bibliographie une source que le corps ne mobilise pas."""
 
-    normalized_post = re.sub(r"[^a-z0-9]", "", post.casefold())
+    normalized_post = _normalize_stable_reference(post)
     cited = []
     for source in sources:
         stable_refs = list(source.article_nums or [])
@@ -190,29 +390,28 @@ def _sources_cited_in_post(post: str, sources: list) -> list:
             stable_refs.append(source.numero_pourvoi)
         if not stable_refs:
             stable_refs.append(source.document_name)
-        if any(
-            ref and re.sub(r"[^a-z0-9]", "", ref.casefold()) in normalized_post
-            for ref in stable_refs
-        ):
+        if any(ref and _normalize_stable_reference(ref) in normalized_post for ref in stable_refs):
             cited.append(source)
-    return cited or sources[:1]
+    return cited
 
 
 def _append_references(post: str, sources: list) -> str:
-    reference_line = _build_reference_line(_sources_cited_in_post(post, sources))
+    reference_line = _build_reference_line(
+        _sources_cited_in_post(post, sources),
+        cited_post=post,
+    )
     if not reference_line:
-        return _fit_linkedin_limit(post)
+        raise ValueError("linkedin_post_without_cited_reference")
 
-    # Le CTA reste la dernière phrase visible. Les références contrôlées sont
-    # insérées juste avant son paragraphe au lieu de repousser l'appel à l'échange.
-    body, separator, cta = post.rstrip().rpartition("\n\n")
-    if separator and cta.endswith("?"):
-        body_limit = _LINKEDIN_MAX_CHARS - len(reference_line) - len(cta) - 4
-        fitted_body = _fit_linkedin_limit(body, body_limit)
-        return f"{fitted_body}\n\n{reference_line}\n\n{cta}"
-
-    body_limit = _LINKEDIN_MAX_CHARS - len(reference_line) - 2
-    return f"{_fit_linkedin_limit(post, body_limit)}\n\n{reference_line}"
+    # Le corps accepté est conservé octet pour octet. La ligne issue des
+    # métadonnées est seulement insérée avant le paragraphe CTA.
+    body, separator, cta = post.rpartition("\n\n")
+    if not separator or not cta.endswith("?"):
+        raise ValueError("linkedin_post_without_isolated_cta")
+    final_post = f"{body}\n\n{reference_line}\n\n{cta}"
+    if len(final_post) > _LINKEDIN_MAX_CHARS:
+        raise ValueError("linkedin_post_exceeds_platform_limit")
+    return final_post
 
 
 async def _draft_post(
@@ -248,7 +447,7 @@ async def _draft_post(
             chunks.append(chunk)
     finally:
         await stream.aclose()
-    return "".join(chunks).strip()
+    return "".join(chunks)
 
 
 @router.post("/generate", response_model=LinkedinGenerateResponse)
@@ -299,11 +498,15 @@ async def generate_linkedin_post(
             detail="Aucune source suffisamment pertinente n'a été trouvée pour ce sujet.",
         )
 
+    editorial_results = _select_linkedin_editorial_results(results)
+    formatted_sources = agent.format_sources(editorial_results)
+    rag_trace.search_plan_usage["linkedin_editorial_documents"] = len(formatted_sources)
+
     try:
         post = await _draft_post(
             agent,
             topic,
-            results,
+            editorial_results,
             reformulated=reformulated,
             low_confidence=rag_trace.low_confidence,
         )
@@ -318,9 +521,12 @@ async def generate_linkedin_post(
             detail="La rédaction du post n'a pas pu aboutir. Veuillez réessayer.",
         )
 
-    # Une seule révision maximum, avec les mêmes sources et sans relancer le RAG.
-    issues = _linkedin_draft_issues(post)
-    if issues:
+    # Révisions LLM bornées, avec les mêmes sources et sans relancer le RAG.
+    # Le serveur ne réécrit jamais le corps lui-même.
+    issues = _linkedin_draft_issues(post, formatted_sources)
+    revision_count = 0
+    while issues and revision_count < _LINKEDIN_MAX_REVISIONS:
+        revision_count += 1
         revision_request = (
             f"Sujet original : {topic}\n\n"
             "Réécris intégralement le brouillon ci-dessous. Corrige tous les "
@@ -332,7 +538,7 @@ async def generate_linkedin_post(
             post = await _draft_post(
                 agent,
                 revision_request,
-                results,
+                editorial_results,
                 reformulated=reformulated,
                 low_confidence=rag_trace.low_confidence,
                 revision=True,
@@ -342,9 +548,10 @@ async def generate_linkedin_post(
                 status_code=status.HTTP_504_GATEWAY_TIMEOUT,
                 detail="La révision du post a expiré. Veuillez réessayer.",
             ) from exc
+        issues = _linkedin_draft_issues(post, formatted_sources)
 
-    post = _sanitize_linkedin_post(post)
-    remaining_issues = _linkedin_draft_issues(post)
+    rag_trace.search_plan_usage["linkedin_revision_count"] = revision_count
+    remaining_issues = issues
     if remaining_issues:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -353,8 +560,13 @@ async def generate_linkedin_post(
             ),
         )
 
-    formatted_sources = agent.format_sources(results)
-    post = _append_references(post, formatted_sources)
+    try:
+        post = _append_references(post, formatted_sources)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Le post ou ses références dépassent le format LinkedIn. Veuillez réessayer.",
+        ) from exc
     sources = [dataclasses.asdict(source) for source in formatted_sources]
     duration_ms = int((time.perf_counter() - started_at) * 1000)
     rag_trace.perf_ms["total"] = float(duration_ms)
