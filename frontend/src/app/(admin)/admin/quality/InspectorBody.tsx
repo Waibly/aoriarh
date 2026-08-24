@@ -95,8 +95,8 @@ export interface RagTrace {
     completion_tokens?: number;
     cost_usd?: number;
     latency_ms?: number;
-    execution?: "observation_only" | "adaptive_shadow";
-    fallback_to_baseline?: boolean;
+    execution?: "adaptive" | "deterministic_fallback";
+    fallback_to_deterministic?: boolean;
   };
   search_plan_validation?: {
     status?: "ok" | "lookup_failed";
@@ -261,7 +261,7 @@ function SearchPlanPanel({
       (ref) => `Pourvoi ${ref}`
     ),
   ];
-  const adaptiveExecuted = usage?.execution === "adaptive_shadow";
+  const adaptiveExecuted = usage?.execution === "adaptive";
   const normalizedCorpusMatches = new Set(validation?.corpus_matches ?? []);
   const normalizedSkippedLowConfidence = new Set(
     validation?.hypotheses_skipped_low_confidence ?? []
@@ -287,15 +287,15 @@ function SearchPlanPanel({
     <Section
       title={
         adaptiveExecuted
-          ? "Plan de recherche (exécuté dans le sandbox)"
-          : "Plan de recherche (observation)"
+          ? "Plan de recherche adaptatif"
+          : "Plan de recherche déterministe"
       }
       icon={<FileSearch className="h-4 w-4" />}
       help={
         <>
           {adaptiveExecuted
-            ? "Ce plan a piloté cette exécution du sandbox uniquement. Le chat client utilise toujours le pipeline actuel."
-            : "Ce plan est comparé au pipeline actuel mais ne pilote pas cette recherche. En production, seuls les signaux déterministes sont enregistrés."}
+            ? "Ce plan a piloté la recherche avec le même pipeline que le chat de production."
+            : "Le plan compact n'a pas pu être appliqué ; le plan déterministe sécurisé a piloté la recherche."}
         </>
       }
     >
@@ -310,9 +310,9 @@ function SearchPlanPanel({
               enrichie
             </Badge>
           )}
-          {adaptiveExecuted && <Badge>Exécuté dans ce sandbox</Badge>}
-          {usage?.fallback_to_baseline && (
-            <Badge variant="destructive">Repli sur le pipeline actuel</Badge>
+          {adaptiveExecuted && <Badge>Exécuté</Badge>}
+          {usage?.fallback_to_deterministic && (
+            <Badge variant="destructive">Repli déterministe</Badge>
           )}
           {plan.needs_condensation && (
             <Badge variant="outline">Condensation nécessaire</Badge>

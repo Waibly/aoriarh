@@ -9,6 +9,7 @@ For now, only one endpoint :
 The Corpus page reuses existing endpoints from admin_documents, admin_ccn,
 admin_judilibre, admin_syncs for everything else (no breaking change).
 """
+
 from __future__ import annotations
 
 import dataclasses
@@ -39,6 +40,7 @@ class CorpusHealthResponse(BaseModel):
     and for the daily health card. Single endpoint so the frontend can
     poll one URL on a 3s interval without hammering the API.
     """
+
     docs_by_status: dict[str, int]
     docs_by_source_type: dict[str, int]
     common_total: int
@@ -64,30 +66,40 @@ async def get_corpus_health(
     poll (~ms thanks to indexes on indexation_status and source_type).
     """
     # 1. Documents by status (common docs only)
-    status_rows = (await db.execute(
-        select(Document.indexation_status, func.count(Document.id))
-        .where(Document.organisation_id.is_(None))
-        .group_by(Document.indexation_status)
-    )).all()
+    status_rows = (
+        await db.execute(
+            select(Document.indexation_status, func.count(Document.id))
+            .where(Document.organisation_id.is_(None))
+            .group_by(Document.indexation_status)
+        )
+    ).all()
     docs_by_status = {row[0]: row[1] for row in status_rows}
 
     # 2. Documents by source_type (common only)
-    type_rows = (await db.execute(
-        select(Document.source_type, func.count(Document.id))
-        .where(Document.organisation_id.is_(None))
-        .group_by(Document.source_type)
-        .order_by(desc(func.count(Document.id)))
-    )).all()
+    type_rows = (
+        await db.execute(
+            select(Document.source_type, func.count(Document.id))
+            .where(Document.organisation_id.is_(None))
+            .group_by(Document.source_type)
+            .order_by(desc(func.count(Document.id)))
+        )
+    ).all()
     docs_by_source_type = {row[0]: row[1] for row in type_rows}
 
     # 3. Sync errors in the last 24h
     cutoff = datetime.now(UTC) - timedelta(hours=24)
-    error_logs = (await db.execute(
-        select(SyncLog)
-        .where(SyncLog.status == "error", SyncLog.started_at >= cutoff)
-        .order_by(desc(SyncLog.started_at))
-        .limit(20)
-    )).scalars().all()
+    error_logs = (
+        (
+            await db.execute(
+                select(SyncLog)
+                .where(SyncLog.status == "error", SyncLog.started_at >= cutoff)
+                .order_by(desc(SyncLog.started_at))
+                .limit(20)
+            )
+        )
+        .scalars()
+        .all()
+    )
     recent_sync_errors = [
         {
             "id": str(log.id),
@@ -102,12 +114,14 @@ async def get_corpus_health(
     # 4. Last sync per known type
     last_per_type: dict[str, dict | None] = {}
     for sync_type in ("kali", "ccn", "jurisprudence", "codes", "code_travail", "bocc"):
-        row = (await db.execute(
-            select(SyncLog)
-            .where(SyncLog.sync_type == sync_type)
-            .order_by(desc(SyncLog.started_at))
-            .limit(1)
-        )).scalar_one_or_none()
+        row = (
+            await db.execute(
+                select(SyncLog)
+                .where(SyncLog.sync_type == sync_type)
+                .order_by(desc(SyncLog.started_at))
+                .limit(1)
+            )
+        ).scalar_one_or_none()
         last_per_type[sync_type] = (
             {
                 "status": row.status,
@@ -116,7 +130,8 @@ async def get_corpus_health(
                 "items_fetched": row.items_fetched,
                 "errors": row.errors,
             }
-            if row else None
+            if row
+            else None
         )
 
     pending = docs_by_status.get("pending", 0)
@@ -144,6 +159,7 @@ class TestRetrievalRequest(BaseModel):
 
 class TestRetrievalResponse(BaseModel):
     """Same shape as SandboxRunResponse so the frontend can use InspectorBody."""
+
     answer: str | None
     sources: list[dict]
     rag_trace: dict
@@ -173,6 +189,7 @@ async def test_retrieval(
         )
 
     from app.rag.agent import RAGAgent
+    from app.rag.pipeline import prepare_rag_context
 
     agent = RAGAgent()
     t_start = time.perf_counter()
@@ -183,16 +200,16 @@ async def test_retrieval(
     # in HybridSearch doesn't blow up.
     fake_org_id = "00000000-0000-0000-0000-000000000000"
 
-    results, reformulated, rag_trace = await agent.prepare_context(
+    results, reformulated, rag_trace = await prepare_rag_context(
+        agent,
         query=body.query.strip(),
         organisation_id=fake_org_id,
         org_context=None,
         history=None,
         org_idcc_list=None,
         user_id=None,
-        conversation_id=None,
+        context_id=None,
         is_replay=True,
-        adaptive_search=True,
     )
 
     sources_dicts: list[dict] = []
@@ -204,15 +221,15 @@ async def test_retrieval(
     rag_trace.perf_ms["total"] = float(duration_ms)
 
     # Sum costs for this run (will be 0 unless embeddings ran)
-    from app.models.api_usage import ApiUsageLog
     from sqlalchemy import func, select
+
+    from app.models.api_usage import ApiUsageLog
 
     cost_q = await db.execute(
         select(func.coalesce(func.sum(ApiUsageLog.cost_usd), 0)).where(
             ApiUsageLog.is_replay.is_(True),
-            ApiUsageLog.created_at >= __import__("datetime").datetime.now(
-                __import__("datetime").UTC
-            )
+            ApiUsageLog.created_at
+            >= __import__("datetime").datetime.now(__import__("datetime").UTC)
             - __import__("datetime").timedelta(seconds=duration_ms / 1000 + 5),
         )
     )

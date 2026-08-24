@@ -13,7 +13,6 @@ from __future__ import annotations
 import logging
 import uuid
 from datetime import UTC, datetime, timedelta
-from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel
@@ -549,7 +548,6 @@ class SandboxRunRequest(BaseModel):
     organisation_id: uuid.UUID
     history: list[dict] | None = None
     skip_generation: bool = False  # if True, skip the LLM call (retrieval-only)
-    search_strategy: Literal["baseline", "adaptive_shadow"] = "baseline"
 
 
 class SandboxRunResponse(BaseModel):
@@ -570,20 +568,14 @@ async def _run_sandbox_pipeline(
     cited_sources: list[str] | None = None,
     carried_sources: list[dict] | None = None,
     user_profile: str | None = None,
-    search_strategy: Literal["baseline", "adaptive_shadow"] = "baseline",
 ) -> SandboxRunResponse:
-    """Execute the RAG pipeline in sandbox mode (no message persistence)."""
+    """Execute le même pipeline RAG que la production, sans persistance."""
     import dataclasses
     import time as _time
 
-    import app.rag.config as rag_config
     from app.models.api_usage import ApiUsageLog as _ApiUsageLog
     from app.rag.agent import RAGAgent
-    from app.rag.search_plan import (
-        build_deterministic_search_plan,
-        run_compact_search_planner,
-    )
-    from app.services.cost_tracker import compute_cost
+    from app.rag.pipeline import prepare_rag_context
 
     # Verify the organisation exists
     org_q = await db.execute(select(Organisation).where(Organisation.id == organisation_id))
@@ -595,7 +587,7 @@ async def _run_sandbox_pipeline(
         )
 
     # Load the same organisation context as the chat endpoint. Installed CCNs
-    # are the source of truth; the legacy free-text field is only a fallback.
+    # are the source of truth; the historical free-text field is only a fallback.
     ccn_result = await db.execute(
         select(OrganisationConvention.idcc, CcnReference.titre)
         .join(CcnReference, CcnReference.idcc == OrganisationConvention.idcc)
@@ -633,35 +625,8 @@ async def _run_sandbox_pipeline(
     agent = RAGAgent()
     t_start = _time.perf_counter()
 
-    shadow_t0 = _time.perf_counter()
-    deterministic_plan = build_deterministic_search_plan(
-        query,
-        has_history=bool(history),
-        org_idcc_list=org_idcc_list,
-        not_subject_to_ccn=not_subject_to_ccn,
-    )
-    planner_result = await run_compact_search_planner(
-        deterministic_plan,
-        llm=agent.llm,
-        model=rag_config.EXPAND_MODEL,
-        history=history,
-        org_context=org_context,
-        timeout_seconds=rag_config.RAG_TIMEOUT_PER_STEP,
-    )
-    planner_ms = int((_time.perf_counter() - shadow_t0) * 1000)
-    planner_cost = float(
-        compute_cost(
-            "openai",
-            rag_config.EXPAND_MODEL,
-            planner_result.prompt_tokens,
-            planner_result.completion_tokens,
-        )
-    )
-    use_adaptive_plan = search_strategy == "adaptive_shadow" and (
-        not deterministic_plan.needs_llm_planner or planner_result.plan.planner_status.value == "ok"
-    )
-
-    results, reformulated, rag_trace = await agent.prepare_context(
+    results, reformulated, rag_trace = await prepare_rag_context(
+        agent,
         query=query,
         organisation_id=str(organisation_id),
         org_context=org_context,
@@ -669,21 +634,9 @@ async def _run_sandbox_pipeline(
         cited_sources=cited_sources,
         org_idcc_list=org_idcc_list,
         user_id=None,
-        conversation_id=str(sandbox_id),
+        context_id=str(sandbox_id),
         is_replay=True,
-        search_plan=planner_result.plan if use_adaptive_plan else None,
     )
-
-    rag_trace.search_plan = planner_result.plan.to_dict()
-    rag_trace.search_plan_usage = {
-        "model": rag_config.EXPAND_MODEL,
-        "prompt_tokens": planner_result.prompt_tokens,
-        "completion_tokens": planner_result.completion_tokens,
-        "cost_usd": planner_cost,
-        "latency_ms": planner_ms,
-        "execution": "adaptive_shadow" if use_adaptive_plan else "observation_only",
-        "fallback_to_baseline": (search_strategy == "adaptive_shadow" and not use_adaptive_plan),
-    }
 
     answer: str | None = None
     sources_dicts: list[dict] = []
@@ -705,9 +658,7 @@ async def _run_sandbox_pipeline(
             low_confidence=rag_trace.low_confidence,
             condensed_query=reformulated,
             carried_sources=carried_for_generation or None,
-            answer_format=(
-                planner_result.plan.answer_format if use_adaptive_plan else None
-            ),
+            answer_format=(rag_trace.search_plan or {}).get("answer_format"),
         ):
             full_answer += chunk
         answer = full_answer
@@ -720,12 +671,15 @@ async def _run_sandbox_pipeline(
     rag_trace.perf_ms["total"] = float(duration_ms)
 
     # Sum costs for this sandbox run
+    from app.services.cost_tracker import cost_tracker
+
+    await cost_tracker.flush()
     cost_q = await db.execute(
         select(func.coalesce(func.sum(_ApiUsageLog.cost_usd), 0)).where(
             _ApiUsageLog.context_id == sandbox_id,
         )
     )
-    cost_usd = float(cost_q.scalar() or 0.0) + planner_cost
+    cost_usd = float(cost_q.scalar() or 0.0)
 
     return SandboxRunResponse(
         answer=answer,
@@ -750,14 +704,12 @@ async def sandbox_run(
         history=body.history,
         skip_generation=body.skip_generation,
         user_profile=user.profil_metier,
-        search_strategy=body.search_strategy,
     )
 
 
 @router.post("/sandbox/replay/{message_id}", response_model=SandboxRunResponse)
 async def sandbox_replay(
     message_id: uuid.UUID,
-    search_strategy: Literal["baseline", "adaptive_shadow"] = Query("baseline"),
     user: User = Depends(require_role(["admin"])),
     db: AsyncSession = Depends(get_db),
 ) -> SandboxRunResponse:
@@ -849,5 +801,4 @@ async def sandbox_replay(
         cited_sources=cited_sources or None,
         carried_sources=carried_sources or None,
         user_profile=user_profile,
-        search_strategy=search_strategy,
     )

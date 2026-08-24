@@ -1,4 +1,4 @@
-"""Tests for the deterministic shadow search plan."""
+"""Tests for the adaptive search plan."""
 
 from __future__ import annotations
 
@@ -274,7 +274,7 @@ def test_plan_is_json_serializable():
     )
 
     encoded = json.dumps(plan.to_dict())
-    assert "deterministic-shadow-v1" in encoded
+    assert "adaptive-v1" in encoded
     assert plan.answer_intent is AnswerIntent.CALCULATION
 
 
@@ -582,9 +582,7 @@ async def test_legal_news_adds_dated_candidates_without_dropping_broad_fallback(
     chronology_call = agent.search_engine.search.await_args
     assert chronology_call.kwargs["date_from"] is not None
     assert chronology_call.kwargs["date_to"] is not None
-    assert (
-        chronology_call.kwargs["date_to"] - chronology_call.kwargs["date_from"]
-    ).days == 30
+    assert (chronology_call.kwargs["date_to"] - chronology_call.kwargs["date_from"]).days == 30
     assert agent._plan_search_diagnostics["priority_branches"] == [
         {"kind": "chronology", "candidate_chunks": 1, "added_chunks": 1}
     ]
@@ -621,10 +619,12 @@ def test_legal_news_time_guard_keeps_current_sources_and_undated_context():
         "status": "applied",
         "undated_context_kept": 2,
     }
-    assert [
-        result.document_id
-        for result in RAGAgent._sort_news_results(kept, plan)
-    ] == ["recent", "older-recent", "context-0", "context-1"]
+    assert [result.document_id for result in RAGAgent._sort_news_results(kept, plan)] == [
+        "recent",
+        "older-recent",
+        "context-0",
+        "context-1",
+    ]
 
 
 def test_legal_news_time_guard_preserves_broad_fallback_on_corpus_gap():
@@ -632,9 +632,7 @@ def test_legal_news_time_guard_preserves_broad_fallback_on_corpus_gap():
         "Quelles sont les dernières actualités en droit social ?"
     )
     old = _search_result("old", 0, source_type="arret_cour_cassation")
-    old.date_decision = (
-        datetime.date.today() - datetime.timedelta(days=365)
-    ).isoformat()
+    old.date_decision = (datetime.date.today() - datetime.timedelta(days=365)).isoformat()
     undated = _search_result("context", 0)
 
     kept, diagnostics = RAGAgent._apply_news_time_scope([old, undated], plan)
@@ -651,10 +649,7 @@ def test_temporal_rule_priority_prefers_applicable_regime_without_deleting_histo
     )
     current.score = 0.72
     expired = _search_result("boss", 68, source_type="boss")
-    expired.text = (
-        "Evaluation applicable jusqu'au 31 janvier 2025 : "
-        "ancien tableau récapitulatif."
-    )
+    expired.text = "Evaluation applicable jusqu'au 31 janvier 2025 : ancien tableau récapitulatif."
     expired.score = 0.79
     neutral = _search_result("boss", 30, source_type="boss")
     neutral.text = "La valeur réelle comprend l'assurance et l'entretien."
@@ -731,9 +726,7 @@ async def test_source_directed_plan_preserves_filtered_results_and_bounds_fallba
     agent = RAGAgent.__new__(RAGAgent)
     agent._run_variant_searches = AsyncMock(return_value=[ccn_1, ccn_2])
     agent.search_engine = MagicMock()
-    agent.search_engine.search = AsyncMock(
-        return_value=[duplicate, code_1, code_2]
-    )
+    agent.search_engine.search = AsyncMock(return_value=[duplicate, code_1, code_2])
     agent._org_id = "org-1"
     agent._user_id = None
     agent._conversation_id = None
@@ -753,10 +746,7 @@ async def test_source_directed_plan_preserves_filtered_results_and_bounds_fallba
         ("code-2", 0),
     ]
     agent._run_variant_searches.assert_awaited_once()
-    assert (
-        agent._run_variant_searches.await_args.kwargs["apply_legislation_floor"]
-        is False
-    )
+    assert agent._run_variant_searches.await_args.kwargs["apply_legislation_floor"] is False
     complement_call = agent.search_engine.search.await_args
     assert agent.search_engine.search.await_count == 1
     assert complement_call.args[0] == "préavis de démission cadres"
@@ -834,9 +824,7 @@ async def test_standard_plan_adds_ccn_priority_candidates_without_narrowing_main
         "accord_branche",
     }
     assert agent._plan_search_diagnostics == {
-        "priority_branches": [
-            {"kind": "ccn", "candidate_chunks": 1, "added_chunks": 1}
-        ]
+        "priority_branches": [{"kind": "ccn", "candidate_chunks": 1, "added_chunks": 1}]
     }
 
 
@@ -883,9 +871,7 @@ async def test_source_directed_plan_adds_jurisprudence_when_either_layer_require
     agent.search_engine = MagicMock()
     legislation = _search_result("law-1", 0, source_type="loi")
     ruling = _search_result("case-1", 0, source_type="arret_cour_cassation")
-    agent.search_engine.search = AsyncMock(
-        side_effect=[[primary[0], legislation], [ruling]]
-    )
+    agent.search_engine.search = AsyncMock(side_effect=[[primary[0], legislation], [ruling]])
     agent._org_id = "org-1"
     agent._user_id = None
     agent._conversation_id = None
@@ -917,10 +903,7 @@ async def test_source_directed_plan_adds_jurisprudence_when_either_layer_require
         "arret_conseil_etat",
         "decision_conseil_constitutionnel",
     }
-    assert (
-        agent._run_variant_searches.await_args.kwargs["apply_legislation_floor"]
-        is False
-    )
+    assert agent._run_variant_searches.await_args.kwargs["apply_legislation_floor"] is False
 
 
 @pytest.mark.asyncio
@@ -959,13 +942,16 @@ async def test_adaptive_article_hypotheses_are_tenant_filtered_bounded_candidate
         agent = RAGAgent.__new__(RAGAgent)
         agent.search_engine = MagicMock()
         agent.search_engine.qdrant = MagicMock()
-        results, validation, refs_by_key, added_keys = (
-            await agent._inject_plan_hypothesis_candidates(
-                plan,
-                baseline,
-                "org-1",
-                ["1486"],
-            )
+        (
+            results,
+            validation,
+            refs_by_key,
+            added_keys,
+        ) = await agent._inject_plan_hypothesis_candidates(
+            plan,
+            baseline,
+            "org-1",
+            ["1486"],
         )
 
     fetch_mock.assert_awaited_once_with(
@@ -1018,13 +1004,16 @@ async def test_low_confidence_article_hypotheses_never_reach_the_corpus_lookup()
         "app.rag.agent.fetch_by_identifiers",
         new=AsyncMock(return_value=[]),
     ) as fetch_mock:
-        results, validation, refs_by_key, added_keys = (
-            await agent._inject_plan_hypothesis_candidates(
-                plan,
-                [],
-                "org-1",
-                ["1486"],
-            )
+        (
+            results,
+            validation,
+            refs_by_key,
+            added_keys,
+        ) = await agent._inject_plan_hypothesis_candidates(
+            plan,
+            [],
+            "org-1",
+            ["1486"],
         )
 
     fetch_mock.assert_not_awaited()
@@ -1055,20 +1044,21 @@ async def test_adaptive_trace_distinguishes_found_and_reranker_retained_hypothes
     relevant.score = 0.7
     irrelevant.score = 0.4
 
-    with patch("app.rag.agent._search_engine"), patch(
-        "app.rag.agent.get_reranker"
-    ):
+    with patch("app.rag.agent._search_engine"), patch("app.rag.agent.get_reranker"):
         agent = RAGAgent()
     agent._search_with_plan = AsyncMock(return_value=([], [plan.standalone_question]))
     agent.reranker = MagicMock()
     agent.reranker.rerank = AsyncMock(return_value=[relevant, irrelevant])
 
-    with patch(
-        "app.rag.agent.fetch_by_identifiers",
-        new=AsyncMock(return_value=[relevant, irrelevant]),
-    ), patch(
-        "app.rag.agent.expand_to_parents",
-        new=AsyncMock(return_value=[relevant]),
+    with (
+        patch(
+            "app.rag.agent.fetch_by_identifiers",
+            new=AsyncMock(return_value=[relevant, irrelevant]),
+        ),
+        patch(
+            "app.rag.agent.expand_to_parents",
+            new=AsyncMock(return_value=[relevant]),
+        ),
     ):
         _results, _reformulated, trace = await agent.prepare_context(
             plan.query_original,
@@ -1080,31 +1070,28 @@ async def test_adaptive_trace_distinguishes_found_and_reranker_retained_hypothes
         "L3141-16",
         "L9999-1",
     ]
-    assert trace.search_plan_validation["rejected_below_confidence_floor"] == [
-        "L9999-1"
-    ]
+    assert trace.search_plan_validation["rejected_below_confidence_floor"] == ["L9999-1"]
     assert trace.search_plan_validation["retained_after_rerank"] == ["L3141-16"]
-    assert trace.search_plan_validation["retained_in_final_sources"] == [
-        "L3141-16"
-    ]
+    assert trace.search_plan_validation["retained_in_final_sources"] == ["L3141-16"]
 
 
 @pytest.mark.asyncio
 async def test_baseline_never_fetches_plan_article_hypotheses():
-    with patch("app.rag.agent._search_engine"), patch(
-        "app.rag.agent.get_reranker"
-    ):
+    with patch("app.rag.agent._search_engine"), patch("app.rag.agent.get_reranker"):
         agent = RAGAgent()
     agent._search_with_expansion = AsyncMock(return_value=([], ["question"]))
     agent.reranker = MagicMock()
     agent.reranker.rerank = AsyncMock(return_value=[])
 
-    with patch(
-        "app.rag.agent.fetch_by_identifiers",
-        new=AsyncMock(return_value=[]),
-    ) as fetch_mock, patch(
-        "app.rag.agent.expand_to_parents",
-        new=AsyncMock(return_value=[]),
+    with (
+        patch(
+            "app.rag.agent.fetch_by_identifiers",
+            new=AsyncMock(return_value=[]),
+        ) as fetch_mock,
+        patch(
+            "app.rag.agent.expand_to_parents",
+            new=AsyncMock(return_value=[]),
+        ),
     ):
         await agent.prepare_context("question", "org-1")
 
@@ -1155,12 +1142,15 @@ async def test_production_adaptive_search_executes_deterministic_plan_without_ll
     agent.reranker = MagicMock()
     agent.reranker.rerank = AsyncMock(return_value=[])
 
-    with patch(
-        "app.rag.agent.run_compact_search_planner",
-        wraps=run_compact_search_planner,
-    ) as planner, patch(
-        "app.rag.agent.expand_to_parents",
-        new=AsyncMock(return_value=[]),
+    with (
+        patch(
+            "app.rag.agent.run_compact_search_planner",
+            wraps=run_compact_search_planner,
+        ) as planner,
+        patch(
+            "app.rag.agent.expand_to_parents",
+            new=AsyncMock(return_value=[]),
+        ),
     ):
         _results, _reformulated, trace = await agent.prepare_context(
             "Quelles sont les dernières actualités en droit social ?",
@@ -1176,8 +1166,8 @@ async def test_production_adaptive_search_executes_deterministic_plan_without_ll
 
 
 @pytest.mark.asyncio
-async def test_production_adaptive_search_falls_back_to_complete_baseline():
-    """An unavailable compact planner must not prevent the historical search."""
+async def test_production_adaptive_search_falls_back_to_deterministic_search():
+    """An unavailable compact planner must not prevent deterministic retrieval."""
 
     query = "Un employeur peut-il licencier un salarié pendant un arrêt maladie ?"
     deterministic = build_deterministic_search_plan(query)
@@ -1194,12 +1184,15 @@ async def test_production_adaptive_search_falls_back_to_complete_baseline():
     agent.reranker = MagicMock()
     agent.reranker.rerank = AsyncMock(return_value=[])
 
-    with patch(
-        "app.rag.agent.run_compact_search_planner",
-        new=AsyncMock(return_value=PlannerCallResult(plan=fallback)),
-    ), patch(
-        "app.rag.agent.expand_to_parents",
-        new=AsyncMock(return_value=[]),
+    with (
+        patch(
+            "app.rag.agent.run_compact_search_planner",
+            new=AsyncMock(return_value=PlannerCallResult(plan=fallback)),
+        ),
+        patch(
+            "app.rag.agent.expand_to_parents",
+            new=AsyncMock(return_value=[]),
+        ),
     ):
         _results, _reformulated, trace = await agent.prepare_context(
             query,
@@ -1209,6 +1202,6 @@ async def test_production_adaptive_search_falls_back_to_complete_baseline():
 
     agent._search_with_expansion.assert_awaited_once()
     agent._search_with_plan.assert_not_awaited()
-    assert trace.search_plan_usage["execution"] == "baseline_fallback"
-    assert trace.search_plan_usage["fallback_to_baseline"] is True
+    assert trace.search_plan_usage["execution"] == "deterministic_fallback"
+    assert trace.search_plan_usage["fallback_to_deterministic"] is True
     assert trace.search_plan["planner_status"] == "fallback"

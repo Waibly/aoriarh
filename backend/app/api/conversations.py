@@ -7,23 +7,22 @@ import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import Response, StreamingResponse
-from sqlalchemy.ext.asyncio import AsyncSession
-
-from sqlalchemy import select
-
 from pydantic import BaseModel
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.dependencies import get_current_user
+from app.core.limiter import limiter
 from app.models.conversation import Message
 from app.models.document import Document
 from app.models.organisation import Organisation
 from app.models.user import User
 from app.rag.agent import (
-    RAGAgent,
-    _OUT_OF_SCOPE_MARKER,
     _OUT_OF_SCOPE_ANSWER,
+    _OUT_OF_SCOPE_MARKER,
     _SOURCE_TYPE_LABELS,
+    RAGAgent,
 )
 from app.rag.config import (
     RAG_SLOW_NOTICE,
@@ -31,6 +30,7 @@ from app.rag.config import (
     RAG_TIMEOUT_STREAM_IDLE,
 )
 from app.rag.intent_router import classify_intent, is_security_response
+from app.rag.pipeline import prepare_rag_context
 from app.schemas.conversation import (
     ChatRequest,
     ConversationCreate,
@@ -39,7 +39,6 @@ from app.schemas.conversation import (
     MessageFeedback,
     MessageRead,
 )
-from app.core.limiter import limiter
 from app.services.billing_service import BillingService
 from app.services.conversation_service import ConversationService
 from app.services.security_alert_service import send_security_alert_bg
@@ -152,9 +151,9 @@ async def get_source_full_content(
       authenticated user (the whole legal corpus is common).
     - Org documents : user must be a member of the owning org.
     """
-    doc = (await db.execute(
-        select(Document).where(Document.id == document_id)
-    )).scalar_one_or_none()
+    doc = (
+        await db.execute(select(Document).where(Document.id == document_id))
+    ).scalar_one_or_none()
 
     if doc is None:
         raise HTTPException(
@@ -164,6 +163,7 @@ async def get_source_full_content(
 
     if doc.organisation_id is not None and user.role != "admin":
         from app.core.dependencies import verify_org_membership
+
         membership = await verify_org_membership(doc.organisation_id, user, db)
         if membership is None:
             raise HTTPException(
@@ -178,6 +178,7 @@ async def get_source_full_content(
         )
 
     from app.services.storage_service import StorageService
+
     storage = StorageService()
     try:
         file_bytes = storage.get_file_bytes(doc.storage_path)
@@ -195,8 +196,7 @@ async def get_source_full_content(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=(
-                f"Format '{fmt}' non affichable inline. "
-                "Utilisez le téléchargement du document."
+                f"Format '{fmt}' non affichable inline. Utilisez le téléchargement du document."
             ),
         )
 
@@ -256,9 +256,9 @@ async def generate_fiche(
         render_fiche_pdf,
     )
 
-    message = (await db.execute(
-        select(Message).where(Message.id == message_id)
-    )).scalar_one_or_none()
+    message = (
+        await db.execute(select(Message).where(Message.id == message_id))
+    ).scalar_one_or_none()
 
     if message is None:
         raise HTTPException(
@@ -295,9 +295,11 @@ async def generate_fiche(
         if m.role == "user":
             question = m.content
 
-    org = (await db.execute(
-        select(Organisation.name).where(Organisation.id == conversation.organisation_id)
-    )).scalar_one_or_none()
+    org = (
+        await db.execute(
+            select(Organisation.name).where(Organisation.id == conversation.organisation_id)
+        )
+    ).scalar_one_or_none()
 
     sources = message.sources if isinstance(message.sources, list) else []
 
@@ -324,30 +326,32 @@ async def generate_fiche(
     # Persiste (ou met à jour) la fiche : une seule par message source, pour
     # éviter les doublons quand l'utilisateur reclique sur le bouton.
     content_dict = _dc.asdict(gen.content)
-    existing = (await db.execute(
-        select(Fiche).where(
-            Fiche.user_id == user.id,
-            Fiche.message_id == message.id,
+    existing = (
+        await db.execute(
+            select(Fiche).where(
+                Fiche.user_id == user.id,
+                Fiche.message_id == message.id,
+            )
         )
-    )).scalar_one_or_none()
+    ).scalar_one_or_none()
     if existing is not None:
         existing.title = gen.content.titre[:200]
         existing.content = content_dict
         existing.sources = sources
     else:
-        db.add(Fiche(
-            organisation_id=conversation.organisation_id,
-            user_id=user.id,
-            message_id=message.id,
-            title=gen.content.titre[:200],
-            content=content_dict,
-            sources=sources,
-        ))
+        db.add(
+            Fiche(
+                organisation_id=conversation.organisation_id,
+                user_id=user.id,
+                message_id=message.id,
+                title=gen.content.titre[:200],
+                content=content_dict,
+                sources=sources,
+            )
+        )
     await db.commit()
 
-    pdf_bytes = render_fiche_pdf(
-        gen.content, sources, generated_at=datetime.now(), org_name=org
-    )
+    pdf_bytes = render_fiche_pdf(gen.content, sources, generated_at=datetime.now(), org_name=org)
 
     return Response(
         content=pdf_bytes,
@@ -364,9 +368,7 @@ async def _load_org_context(
     """Load organisation profile for RAG context injection."""
     from app.models.ccn import CcnReference, OrganisationConvention
 
-    result = await db.execute(
-        select(Organisation).where(Organisation.id == organisation_id)
-    )
+    result = await db.execute(select(Organisation).where(Organisation.id == organisation_id))
     org = result.scalar_one_or_none()
     if org is None:
         return None
@@ -391,9 +393,7 @@ async def _load_org_context(
     # toujours depuis les conventions installées dès qu'il y en a, et on ne
     # retombe sur le champ libre que pour les orgs sans CCN installée.
     if installed_ccns:
-        convention_str = "; ".join(
-            f"{row.titre} (IDCC {row.idcc})" for row in installed_ccns
-        )
+        convention_str = "; ".join(f"{row.titre} (IDCC {row.idcc})" for row in installed_ccns)
     else:
         convention_str = org.convention_collective
 
@@ -413,13 +413,8 @@ def _sse_event(event: str, data: dict) -> str:
     return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
 
 
-_SLOW_GENERATION_NOTICE = (
-    "La rédaction prend plus de temps que d'habitude, "
-    "désolé pour l'attente…"
-)
-_SLOW_CONTEXT_NOTICE = (
-    "L'analyse prend plus de temps que d'habitude, merci de patienter…"
-)
+_SLOW_GENERATION_NOTICE = "La rédaction prend plus de temps que d'habitude, désolé pour l'attente…"
+_SLOW_CONTEXT_NOTICE = "L'analyse prend plus de temps que d'habitude, merci de patienter…"
 
 
 async def _stream_with_idle_guard(agen, idle_timeout: float, slow_notice: float):
@@ -448,18 +443,21 @@ async def _stream_with_idle_guard(agen, idle_timeout: float, slow_notice: float)
                 # on veut pouvoir continuer à l'attendre après l'avoir signalé.
                 if notice_sent:
                     chunk = await asyncio.wait_for(
-                        asyncio.shield(task), idle_timeout,
+                        asyncio.shield(task),
+                        idle_timeout,
                     )
                 else:
                     try:
                         chunk = await asyncio.wait_for(
-                            asyncio.shield(task), slow_notice,
+                            asyncio.shield(task),
+                            slow_notice,
                         )
                     except TimeoutError:
                         notice_sent = True
                         yield ("slow", None)
                         chunk = await asyncio.wait_for(
-                            asyncio.shield(task), remainder,
+                            asyncio.shield(task),
+                            remainder,
                         )
             except TimeoutError:
                 yield ("dead", None)
@@ -558,6 +556,7 @@ async def search_documents(
         org_idcc_list = None
     else:
         from app.models.ccn import OrganisationConvention
+
         idcc_result = await db.execute(
             select(OrganisationConvention.idcc).where(
                 OrganisationConvention.organisation_id == data.organisation_id,
@@ -568,7 +567,8 @@ async def search_documents(
 
     agent = RAGAgent()
     question_id = uuid.uuid4()  # contexte de coût (embeddings + rerank + expansion)
-    results, reformulated, rag_trace = await agent.prepare_context(
+    results, reformulated, rag_trace = await prepare_rag_context(
+        agent,
         query=data.query,
         organisation_id=str(data.organisation_id),
         org_context=org_context,
@@ -576,13 +576,15 @@ async def search_documents(
         cited_sources=None,
         org_idcc_list=org_idcc_list,
         user_id=str(user.id),
-        conversation_id=str(question_id),
-        adaptive_search=True,
+        context_id=str(question_id),
     )
 
     if reformulated == _OUT_OF_SCOPE_MARKER:
         return DocumentSearchResponse(
-            query_used=data.query, variants=[], out_of_scope=True, results=[],
+            query_used=data.query,
+            variants=[],
+            out_of_scope=True,
+            results=[],
         )
 
     cards: list[DocumentSearchCard] = []
@@ -655,10 +657,7 @@ async def chat_stream(
         t_total = time.perf_counter()
         agent = RAGAgent()
         recent_messages = conversation.messages[-6:]
-        history = [
-            {"role": m.role, "content": m.content}
-            for m in recent_messages
-        ]
+        history = [{"role": m.role, "content": m.content} for m in recent_messages]
         # Extract source names from recent assistant messages for condensation
         cited_sources: list[str] = []
         for m in recent_messages:
@@ -711,7 +710,8 @@ async def chat_stream(
             if intent_result.static_answer is not None:
                 logger.info(
                     "[INTENT] %s via %s — court-circuit RAG",
-                    intent_result.intent.value, intent_result.via,
+                    intent_result.intent.value,
+                    intent_result.via,
                 )
                 # Persist d'abord pour récupérer les ids — le frontend attend
                 # {message_id, answer_id} dans chat_done pour reconstituer la
@@ -775,6 +775,7 @@ async def chat_stream(
                 org_idcc_list = None
             else:
                 from app.models.ccn import OrganisationConvention
+
                 idcc_result = await db.execute(
                     select(OrganisationConvention.idcc).where(
                         OrganisationConvention.organisation_id == conversation.organisation_id,
@@ -792,28 +793,32 @@ async def chat_stream(
             # the whole conversation as before). The agent's `conversation_id`
             # parameter is in fact used as the cost context id.
             question_id = uuid.uuid4()
-            ctx_task = asyncio.ensure_future(agent.prepare_context(
-                query=data.message,
-                organisation_id=str(conversation.organisation_id),
-                org_context=org_context,
-                history=history if history else None,
-                cited_sources=cited_sources if cited_sources else None,
-                org_idcc_list=org_idcc_list,
-                user_id=str(user.id),
-                conversation_id=str(question_id),
-                adaptive_search=True,
-            ))
+            ctx_task = asyncio.ensure_future(
+                prepare_rag_context(
+                    agent,
+                    query=data.message,
+                    organisation_id=str(conversation.organisation_id),
+                    org_context=org_context,
+                    history=history if history else None,
+                    cited_sources=cited_sources if cited_sources else None,
+                    org_idcc_list=org_idcc_list,
+                    user_id=str(user.id),
+                    context_id=str(question_id),
+                )
+            )
             try:
                 try:
                     # Attente en deux temps : au-delà de RAG_SLOW_NOTICE on
                     # prévient l'utilisateur (écran jamais figé sans info),
                     # puis on continue d'attendre jusqu'à la borne globale.
                     results, reformulated, rag_trace = await asyncio.wait_for(
-                        asyncio.shield(ctx_task), timeout=RAG_SLOW_NOTICE,
+                        asyncio.shield(ctx_task),
+                        timeout=RAG_SLOW_NOTICE,
                     )
                 except TimeoutError:
                     yield _sse_event(
-                        "chat_status", {"step": _SLOW_CONTEXT_NOTICE},
+                        "chat_status",
+                        {"step": _SLOW_CONTEXT_NOTICE},
                     )
                     # Le reste de la borne globale (le seuil de patience est
                     # déjà écoulé) : durée totale max = RAG_TIMEOUT_CONTEXT.
@@ -824,15 +829,19 @@ async def chat_stream(
             except TimeoutError:
                 logger.warning(
                     "[PERF] prepare_context timed out (%.0fs) for: %s",
-                    RAG_TIMEOUT_CONTEXT, data.message[:100],
+                    RAG_TIMEOUT_CONTEXT,
+                    data.message[:100],
                 )
-                yield _sse_event("chat_error", {
-                    "error": "timeout",
-                    "message": (
-                        "Le traitement de votre question a pris trop de temps. "
-                        "Veuillez réessayer dans quelques instants."
-                    ),
-                })
+                yield _sse_event(
+                    "chat_error",
+                    {
+                        "error": "timeout",
+                        "message": (
+                            "Le traitement de votre question a pris trop de temps. "
+                            "Veuillez réessayer dans quelques instants."
+                        ),
+                    },
+                )
                 return
 
             # --- Hors-scope: send refusal as a normal answer, save to history ---
@@ -851,10 +860,13 @@ async def chat_stream(
                     content=_OUT_OF_SCOPE_ANSWER,
                 )
                 yield _sse_event("chat_delta", {"content": _OUT_OF_SCOPE_ANSWER})
-                yield _sse_event("chat_done", {
-                    "message_id": str(oos_user.id),
-                    "answer_id": str(oos_assistant.id),
-                })
+                yield _sse_event(
+                    "chat_done",
+                    {
+                        "message_id": str(oos_user.id),
+                        "answer_id": str(oos_assistant.id),
+                    },
+                )
                 # Persist minimal trace for the Quality page (trace et quota
                 # commités séparément — cf. bloc principal plus bas).
                 oos_needs_title = conversation.title is None
@@ -890,13 +902,16 @@ async def chat_stream(
                 return
 
             if not results:
-                yield _sse_event("chat_error", {
-                    "error": "no_results",
-                    "message": (
-                        "Je n'ai pas trouvé de documents pertinents dans "
-                        "votre base documentaire pour répondre à cette question."
-                    ),
-                })
+                yield _sse_event(
+                    "chat_error",
+                    {
+                        "error": "no_results",
+                        "message": (
+                            "Je n'ai pas trouvé de documents pertinents dans "
+                            "votre base documentaire pour répondre à cette question."
+                        ),
+                    },
+                )
                 return
 
             # 3. Send status: searching done, preparing response
@@ -912,9 +927,7 @@ async def chat_stream(
             # panneau UI reste = sources fraîches ; les portées ne nourrissent que
             # la génération.
             _fresh_keys = {_source_key(s) for s in sources_dicts}
-            carried_sources = [
-                s for s in carried_raw if _source_key(s) not in _fresh_keys
-            ]
+            carried_sources = [s for s in carried_raw if _source_key(s) not in _fresh_keys]
             if carried_sources:
                 logger.info(
                     "[RAG] Couche 2 — %d source(s) portée(s) injectée(s) en génération",
@@ -942,7 +955,8 @@ async def chat_stream(
                 # considéré mort et le déjà-émis est conservé.
                 async for kind, chunk in _stream_with_idle_guard(
                     agent.stream_generate(
-                        data.message, results,
+                        data.message,
+                        results,
                         org_context=org_context,
                         history=history,
                         low_confidence=rag_trace.low_confidence,
@@ -963,7 +977,8 @@ async def chat_stream(
                         return
                     if kind == "slow":
                         yield _sse_event(
-                            "chat_status", {"step": _SLOW_GENERATION_NOTICE},
+                            "chat_status",
+                            {"step": _SLOW_GENERATION_NOTICE},
                         )
                         continue
                     if kind == "dead":
@@ -974,33 +989,41 @@ async def chat_stream(
             except Exception as stream_exc:
                 logger.warning(
                     "Stream generation interrupted after %d chars: %s",
-                    len(full_answer), stream_exc,
+                    len(full_answer),
+                    stream_exc,
                 )
                 if not full_answer:
                     # Nothing generated — send error
-                    yield _sse_event("chat_error", {
-                        "error": "server_error",
-                        "message": (
-                            "Une erreur est survenue lors de la génération "
-                            "de la réponse. Veuillez réessayer."
-                        ),
-                    })
+                    yield _sse_event(
+                        "chat_error",
+                        {
+                            "error": "server_error",
+                            "message": (
+                                "Une erreur est survenue lors de la génération "
+                                "de la réponse. Veuillez réessayer."
+                            ),
+                        },
+                    )
                     return
                 # Partial content exists — continue to save what we have
 
             if stream_dead:
                 logger.warning(
                     "[PERF] Stream silent for %.0fs — abandoned after %d chars",
-                    RAG_TIMEOUT_STREAM_IDLE, len(full_answer),
+                    RAG_TIMEOUT_STREAM_IDLE,
+                    len(full_answer),
                 )
                 if not full_answer:
-                    yield _sse_event("chat_error", {
-                        "error": "timeout",
-                        "message": (
-                            "La génération de la réponse n'a pas pu démarrer. "
-                            "Veuillez réessayer dans quelques instants."
-                        ),
-                    })
+                    yield _sse_event(
+                        "chat_error",
+                        {
+                            "error": "timeout",
+                            "message": (
+                                "La génération de la réponse n'a pas pu démarrer. "
+                                "Veuillez réessayer dans quelques instants."
+                            ),
+                        },
+                    )
                     return
                 # Flux mort avec du contenu déjà émis : on le signale dans la
                 # réponse elle-même, pour l'écran ET pour le message persisté.
@@ -1083,7 +1106,8 @@ async def chat_stream(
 
             t_db = time.perf_counter()
             logger.info(
-                "[PERF] DB save %.0fms", (t_db - t_stream_done) * 1000,
+                "[PERF] DB save %.0fms",
+                (t_db - t_stream_done) * 1000,
             )
 
             # 7. Send done event with IDs
@@ -1104,19 +1128,22 @@ async def chat_stream(
                 (t_db - t_stream_done) * 1000,
             )
 
-        except Exception as exc:
+        except Exception:
             logger.exception(
-                "SSE streaming error for conversation %s", conversation_id,
+                "SSE streaming error for conversation %s",
+                conversation_id,
             )
             # Generic user-facing message — never expose internal service names
             error_msg = (
-                "Une erreur est survenue lors du traitement "
-                "de votre question. Veuillez réessayer."
+                "Une erreur est survenue lors du traitement de votre question. Veuillez réessayer."
             )
-            yield _sse_event("chat_error", {
-                "error": "server_error",
-                "message": error_msg,
-            })
+            yield _sse_event(
+                "chat_error",
+                {
+                    "error": "server_error",
+                    "message": error_msg,
+                },
+            )
 
     return StreamingResponse(
         sse_generator(),

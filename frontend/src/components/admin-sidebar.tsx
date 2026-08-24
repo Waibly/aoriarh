@@ -19,6 +19,7 @@ import {
   ChevronsUpDown,
   User,
   LogOut,
+  Linkedin,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
@@ -55,6 +56,7 @@ const GROUPS: NavGroup[] = [
       { name: "Séquences", href: "/admin/emailing/sequences", icon: Mail },
       { name: "Templates", href: "/admin/emailing/templates", icon: Mail },
       { name: "Listes Brevo", href: "/admin/emailing/lists", icon: Mail },
+      { name: "Posts LinkedIn", href: "/admin/linkedin", icon: Linkedin },
     ],
   },
   {

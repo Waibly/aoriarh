@@ -1,12 +1,9 @@
-"""Deterministic, side-effect-free search planning signals.
+"""Planification adaptative de la recherche documentaire juridique.
 
-Phase 1 deliberately does not execute this plan.  It describes what a future
-adaptive retrieval pipeline *would* do, using only facts that the application
-can establish without an LLM: explicit identifiers, source-directed wording,
-conversation anaphora, the organisation's installed IDCCs and time expressions.
-
-Keeping this layer pure makes it suitable for shadow evaluation before any
-retrieval behaviour changes.
+La base déterministe s'appuie uniquement sur les faits établis par
+l'application : identifiants explicites, type de source demandé, historique,
+IDCC installés et expressions temporelles. Un planificateur compact peut
+ensuite la compléter avant l'exécution du retrieval.
 """
 
 from __future__ import annotations
@@ -159,9 +156,10 @@ _INTERNAL_TYPES = {
     "usage_entreprise",
 }
 
+
 @dataclass(frozen=True)
 class SearchPlan:
-    """Serializable shadow plan produced without external calls."""
+    """Plan de recherche sérialisable et validé avant exécution."""
 
     version: str
     query_original: str
@@ -596,7 +594,7 @@ def build_deterministic_search_plan(
     org_idcc_list: list[str] | None = None,
     not_subject_to_ccn: bool = False,
 ) -> SearchPlan:
-    """Build the shadow plan without changing or executing retrieval."""
+    """Construit la base déterministe du plan adaptatif."""
 
     query = (query or "").strip()
     identifiers = detect_identifiers(query)
@@ -674,7 +672,7 @@ def build_deterministic_search_plan(
     )
 
     # Deterministic routes need no semantic planner. Other questions will use
-    # one compact planner call in a later phase; for now this is observation.
+    # one compact planner call before retrieval.
     needs_llm_planner = mode not in {
         SearchMode.EXACT_REFERENCE,
         SearchMode.LEGAL_NEWS,
@@ -699,7 +697,7 @@ def build_deterministic_search_plan(
         else 1
     )
     return SearchPlan(
-        version="deterministic-shadow-v1",
+        version="adaptive-v1",
         query_original=query,
         standalone_question=query,
         mode=mode,

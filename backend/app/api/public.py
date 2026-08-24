@@ -63,6 +63,7 @@ from app.rag.config import (
     RAG_TIMEOUT_STREAM_IDLE,
 )
 from app.rag.intent_router import classify_intent
+from app.rag.pipeline import prepare_rag_context
 from app.services.conversation_service import ConversationService
 from app.services.security_alert_service import send_security_alert_bg
 
@@ -78,6 +79,7 @@ def _get_redis():
     global _redis_client
     if _redis_client is None:
         import redis.asyncio as aioredis
+
         _redis_client = aioredis.from_url(settings.redis_url, decode_responses=True)
     return _redis_client
 
@@ -140,6 +142,7 @@ async def _demo_rate_limit_ok(request: Request) -> bool:
         logger.warning("Démo: rate-limit Redis indisponible")
         return not settings.is_production
 
+
 # CTA affiché en fin de réponse pour pousser à l'inscription. Neutre côté
 # contenu (pas de superlatif), cohérent avec le ton du site.
 _DEMO_UPSELL = (
@@ -168,12 +171,12 @@ async def _resolve_demo_ids(db: AsyncSession) -> tuple[uuid.UUID, uuid.UUID]:
     if "org" in _demo_ids and "user" in _demo_ids:
         return _demo_ids["org"], _demo_ids["user"]
 
-    org_id = (await db.execute(
-        select(Organisation.id).where(Organisation.name == settings.demo_org_name)
-    )).scalar_one_or_none()
-    user_id = (await db.execute(
-        select(User.id).where(User.email == settings.demo_user_email)
-    )).scalar_one_or_none()
+    org_id = (
+        await db.execute(select(Organisation.id).where(Organisation.name == settings.demo_org_name))
+    ).scalar_one_or_none()
+    user_id = (
+        await db.execute(select(User.id).where(User.email == settings.demo_user_email))
+    ).scalar_one_or_none()
 
     if org_id is None or user_id is None:
         logger.error("Démo non initialisée (org=%s user=%s)", org_id, user_id)
@@ -193,15 +196,15 @@ async def _demo_spend_today_usd(db: AsyncSession, demo_org_id: uuid.UUID) -> Dec
     organisation_id = org démo, donc cette somme capture le coût total de la
     démo pour la journée.
     """
-    today_start = datetime.now(UTC).replace(
-        hour=0, minute=0, second=0, microsecond=0
-    )
-    total = (await db.execute(
-        select(func.coalesce(func.sum(ApiUsageLog.cost_usd), 0)).where(
-            ApiUsageLog.organisation_id == demo_org_id,
-            ApiUsageLog.created_at >= today_start,
+    today_start = datetime.now(UTC).replace(hour=0, minute=0, second=0, microsecond=0)
+    total = (
+        await db.execute(
+            select(func.coalesce(func.sum(ApiUsageLog.cost_usd), 0)).where(
+                ApiUsageLog.organisation_id == demo_org_id,
+                ApiUsageLog.created_at >= today_start,
+            )
         )
-    )).scalar_one()
+    ).scalar_one()
     return Decimal(str(total))
 
 
@@ -330,10 +333,13 @@ async def public_ask(
                 )
                 if intent_result.static_answer is not None:
                     meta_user = await service.add_message(
-                        conversation_id=conversation.id, role="user", content=message,
+                        conversation_id=conversation.id,
+                        role="user",
+                        content=message,
                     )
                     meta_assistant = await service.add_message(
-                        conversation_id=conversation.id, role="assistant",
+                        conversation_id=conversation.id,
+                        role="assistant",
                         content=intent_result.static_answer,
                     )
                     # La démo ne propose pas la fiche, mais on persiste le même
@@ -370,27 +376,31 @@ async def public_ask(
                 # 4. Préparation du contexte. org_idcc_list=None → corpus commun
                 # strict (aucune CCN). question_id = contexte de coût.
                 question_id = uuid.uuid4()
-                ctx_task = asyncio.ensure_future(agent.prepare_context(
-                    query=message,
-                    organisation_id=str(demo_org_id),
-                    org_context=org_context,
-                    history=None,
-                    cited_sources=None,
-                    org_idcc_list=None,
-                    user_id=str(demo_user_id),
-                    conversation_id=str(question_id),
-                    adaptive_search=True,
-                ))
+                ctx_task = asyncio.ensure_future(
+                    prepare_rag_context(
+                        agent,
+                        query=message,
+                        organisation_id=str(demo_org_id),
+                        org_context=org_context,
+                        history=None,
+                        cited_sources=None,
+                        org_idcc_list=None,
+                        user_id=str(demo_user_id),
+                        context_id=str(question_id),
+                    )
+                )
                 try:
                     try:
                         # Deux temps : message de patience à RAG_SLOW_NOTICE,
                         # borne globale ensuite (cf. conversations.py).
                         results, reformulated, rag_trace = await asyncio.wait_for(
-                            asyncio.shield(ctx_task), timeout=RAG_SLOW_NOTICE,
+                            asyncio.shield(ctx_task),
+                            timeout=RAG_SLOW_NOTICE,
                         )
                     except TimeoutError:
                         yield _sse_event(
-                            "chat_status", {"step": _SLOW_CONTEXT_NOTICE},
+                            "chat_status",
+                            {"step": _SLOW_CONTEXT_NOTICE},
                         )
                         results, reformulated, rag_trace = await asyncio.wait_for(
                             ctx_task,
@@ -398,21 +408,27 @@ async def public_ask(
                         )
                 except TimeoutError:
                     logger.warning("Démo: prepare_context timeout (%.0fs)", RAG_TIMEOUT_CONTEXT)
-                    yield _sse_event("chat_error", {
-                        "error": "timeout",
-                        "message": (
-                            "Le traitement a pris trop de temps. "
-                            "Veuillez réessayer dans quelques instants."
-                        ),
-                    })
+                    yield _sse_event(
+                        "chat_error",
+                        {
+                            "error": "timeout",
+                            "message": (
+                                "Le traitement a pris trop de temps. "
+                                "Veuillez réessayer dans quelques instants."
+                            ),
+                        },
+                    )
                     return
 
                 if reformulated == _OUT_OF_SCOPE_MARKER:
                     await service.add_message(
-                        conversation_id=conversation.id, role="user", content=message,
+                        conversation_id=conversation.id,
+                        role="user",
+                        content=message,
                     )
                     await service.add_message(
-                        conversation_id=conversation.id, role="assistant",
+                        conversation_id=conversation.id,
+                        role="assistant",
                         content=_OUT_OF_SCOPE_ANSWER,
                     )
                     yield _sse_event("chat_delta", {"content": _OUT_OF_SCOPE_ANSWER})
@@ -420,14 +436,17 @@ async def public_ask(
                     return
 
                 if not results:
-                    yield _sse_event("chat_error", {
-                        "error": "no_results",
-                        "message": (
-                            "Je n'ai pas trouvé de source pertinente dans le socle "
-                            "légal commun pour cette question. Créez un compte et "
-                            "importez votre convention collective pour aller plus loin."
-                        ),
-                    })
+                    yield _sse_event(
+                        "chat_error",
+                        {
+                            "error": "no_results",
+                            "message": (
+                                "Je n'ai pas trouvé de source pertinente dans le socle "
+                                "légal commun pour cette question. Créez un compte et "
+                                "importez votre convention collective pour aller plus loin."
+                            ),
+                        },
+                    )
                     return
 
                 # 5. Sources
@@ -449,7 +468,8 @@ async def public_ask(
                     # RAG_SLOW_NOTICE, abandon du seul flux réellement mort.
                     async for kind, chunk in _stream_with_idle_guard(
                         agent.stream_generate(
-                            message, results,
+                            message,
+                            results,
                             # Pas de bloc « Entreprise de l'utilisateur » en démo :
                             # réponse générique, jamais « chez <une entreprise> ».
                             org_context=None,
@@ -471,7 +491,8 @@ async def public_ask(
                             return
                         if kind == "slow":
                             yield _sse_event(
-                                "chat_status", {"step": _SLOW_GENERATION_NOTICE},
+                                "chat_status",
+                                {"step": _SLOW_GENERATION_NOTICE},
                             )
                             continue
                         if kind == "dead":
@@ -480,38 +501,47 @@ async def public_ask(
                         full_answer += chunk
                         yield _sse_event("chat_delta", {"content": chunk})
                 except Exception as stream_exc:
-                    logger.warning("Démo: streaming interrompu (%d car.): %s",
-                                   len(full_answer), stream_exc)
+                    logger.warning(
+                        "Démo: streaming interrompu (%d car.): %s", len(full_answer), stream_exc
+                    )
                     if not full_answer:
-                        yield _sse_event("chat_error", {
-                            "error": "server_error",
-                            "message": "Une erreur est survenue. Veuillez réessayer.",
-                        })
+                        yield _sse_event(
+                            "chat_error",
+                            {
+                                "error": "server_error",
+                                "message": "Une erreur est survenue. Veuillez réessayer.",
+                            },
+                        )
                         return
 
                 if stream_dead:
                     logger.warning(
                         "Démo: flux muet %.0fs — abandonné (%d car.)",
-                        RAG_TIMEOUT_STREAM_IDLE, len(full_answer),
+                        RAG_TIMEOUT_STREAM_IDLE,
+                        len(full_answer),
                     )
                     if not full_answer:
-                        yield _sse_event("chat_error", {
-                            "error": "timeout",
-                            "message": "La génération n'a pas pu démarrer. Réessayez.",
-                        })
+                        yield _sse_event(
+                            "chat_error",
+                            {
+                                "error": "timeout",
+                                "message": "La génération n'a pas pu démarrer. Réessayez.",
+                            },
+                        )
                         return
-                    cut_notice = (
-                        "\n\n*La génération s'est interrompue en cours de route.*"
-                    )
+                    cut_notice = "\n\n*La génération s'est interrompue en cours de route.*"
                     full_answer += cut_notice
                     yield _sse_event("chat_delta", {"content": cut_notice})
 
                 # 7. Persistance (pour analytics prospect + claim futur au signup).
                 await service.add_message(
-                    conversation_id=conversation.id, role="user", content=message,
+                    conversation_id=conversation.id,
+                    role="user",
+                    content=message,
                 )
                 assistant_message = await service.add_message(
-                    conversation_id=conversation.id, role="assistant",
+                    conversation_id=conversation.id,
+                    role="assistant",
                     content=full_answer,
                     sources=sources_dicts if sources_dicts else None,
                 )
@@ -533,10 +563,13 @@ async def public_ask(
 
             except Exception:
                 logger.exception("Démo: erreur SSE")
-                yield _sse_event("chat_error", {
-                    "error": "server_error",
-                    "message": "Une erreur est survenue lors du traitement. Réessayez.",
-                })
+                yield _sse_event(
+                    "chat_error",
+                    {
+                        "error": "server_error",
+                        "message": "Une erreur est survenue lors du traitement. Réessayez.",
+                    },
+                )
 
     return StreamingResponse(
         sse_generator(),

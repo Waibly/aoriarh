@@ -38,8 +38,6 @@ interface SandboxResponse {
   duration_ms: number;
 }
 
-type SearchStrategy = "baseline" | "adaptive_shadow";
-
 export interface SandboxRunnerHandle {
   prefillAndRun: (messageId: string) => void;
 }
@@ -62,8 +60,6 @@ export function SandboxRunner({
   const [selectedOrgId, setSelectedOrgId] = useState<string>("");
   const [query, setQuery] = useState("");
   const [skipGen, setSkipGen] = useState(false);
-  const [searchStrategy, setSearchStrategy] =
-    useState<SearchStrategy>("baseline");
   const [running, setRunning] = useState(false);
   const [result, setResult] = useState<SandboxResponse | null>(null);
 
@@ -89,7 +85,7 @@ export function SandboxRunner({
       setResult(null);
       try {
         const data = await apiFetch<SandboxResponse>(
-          `/admin/quality/sandbox/replay/${messageId}?search_strategy=${searchStrategy}`,
+          `/admin/quality/sandbox/replay/${messageId}`,
           {
             method: "POST",
             token: session.access_token,
@@ -106,7 +102,7 @@ export function SandboxRunner({
         setRunning(false);
       }
     },
-    [searchStrategy, session?.access_token]
+    [session?.access_token]
   );
 
   useEffect(() => {
@@ -145,7 +141,6 @@ export function SandboxRunner({
             query: query.trim(),
             organisation_id: selectedOrgId,
             skip_generation: skipGen,
-            search_strategy: searchStrategy,
           }),
           headers: { "Content-Type": "application/json" },
         }
@@ -186,12 +181,12 @@ export function SandboxRunner({
             Bac à sable
           </CardTitle>
           <p className="text-muted-foreground text-xs">
-            Teste une question avec le pipeline RAG actuel sans facturer le
-            client ni laisser de trace dans son historique.
+            Teste une question avec exactement le pipeline RAG de production,
+            sans facturer le client ni laisser de trace dans son historique.
           </p>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
             <div>
               <Label className="text-xs">Organisation</Label>
               <div className="relative mt-1">
@@ -229,28 +224,6 @@ export function SandboxRunner({
                   )}
                 </SelectContent>
               </Select>
-            </div>
-            <div>
-              <Label className="text-xs">Stratégie de recherche</Label>
-              <Select
-                value={searchStrategy}
-                onValueChange={(value) =>
-                  setSearchStrategy(value as SearchStrategy)
-                }
-              >
-                <SelectTrigger className="mt-1">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="baseline">Pipeline actuel</SelectItem>
-                  <SelectItem value="adaptive_shadow">
-                    Plan adaptatif (sandbox)
-                  </SelectItem>
-                </SelectContent>
-              </Select>
-              <p className="text-muted-foreground mt-1 text-[11px]">
-                Le mode adaptatif n&apos;est pas utilisé dans le chat client.
-              </p>
             </div>
             <div className="flex items-end">
               <label className="flex cursor-pointer items-center gap-2 text-xs">

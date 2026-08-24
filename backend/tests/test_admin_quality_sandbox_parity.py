@@ -1,4 +1,3 @@
-from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock
 
@@ -10,17 +9,11 @@ from app.models.conversation import Conversation, Message
 from app.models.organisation import Organisation
 from app.models.user import User
 from app.rag.agent import RAGSource, RagTrace
-from app.rag.search_plan import (
-    PlannerCallResult,
-    PlannerStatus,
-    build_deterministic_search_plan,
-)
 from tests.conftest import test_session_factory as _test_session_factory
 
 
 async def test_sandbox_generation_receives_same_context_as_chat(monkeypatch):
     import app.rag.agent as agent_module
-    import app.rag.search_plan as search_plan_module
 
     async with _test_session_factory() as session:
         org = Organisation(
@@ -43,7 +36,12 @@ async def test_sandbox_generation_receives_same_context_as_chat(monkeypatch):
         await session.commit()
         organisation_id = org.id
 
-    trace = RagTrace(query_original="Et pour un cadre ?", low_confidence=True)
+    trace = RagTrace(
+        query_original="Et pour un cadre ?",
+        low_confidence=True,
+        search_plan={"answer_format": "direct_then_cases"},
+        search_plan_usage={"execution": "adaptive"},
+    )
     result = MagicMock()
     source = RAGSource(
         document_id="fresh",
@@ -65,18 +63,6 @@ async def test_sandbox_generation_receives_same_context_as_chat(monkeypatch):
 
     agent.stream_generate = MagicMock(side_effect=stream_generate)
     monkeypatch.setattr(agent_module, "RAGAgent", lambda: agent)
-
-    plan = build_deterministic_search_plan("Et pour un cadre ?", has_history=True)
-    plan = replace(
-        plan,
-        standalone_question="Quel est le préavis pour un cadre ?",
-        planner_status=PlannerStatus.OK,
-    )
-    monkeypatch.setattr(
-        search_plan_module,
-        "run_compact_search_planner",
-        AsyncMock(return_value=PlannerCallResult(plan=plan)),
-    )
 
     history = [{"role": "assistant", "content": "Réponse précédente"}]
     fresh_duplicate = {
@@ -100,7 +86,6 @@ async def test_sandbox_generation_receives_same_context_as_chat(monkeypatch):
             cited_sources=["Convention collective"],
             carried_sources=[fresh_duplicate, prior_source],
             user_profile="responsable_rh",
-            search_strategy="adaptive_shadow",
         )
 
     prepare_kwargs = agent.prepare_context.await_args.kwargs
@@ -111,18 +96,17 @@ async def test_sandbox_generation_receives_same_context_as_chat(monkeypatch):
         "Bureaux d'études techniques (IDCC 1486)"
     )
     assert prepare_kwargs["org_context"]["profil_metier"] == "responsable_rh"
-    assert prepare_kwargs["search_plan"] == plan
+    assert prepare_kwargs["adaptive_search"] is True
 
     generation_kwargs = agent.stream_generate.call_args.kwargs
     assert generation_kwargs["history"] == history
     assert generation_kwargs["low_confidence"] is True
     assert generation_kwargs["condensed_query"] == "Question autonome condensée"
     assert generation_kwargs["carried_sources"] == [prior_source]
-    assert generation_kwargs["answer_format"] == plan.answer_format
+    assert generation_kwargs["answer_format"] == "direct_then_cases"
     assert response.answer == "Réponse"
     assert response.rag_trace["perf_ms"]["generate"] >= 0
-    assert response.rag_trace["search_plan_usage"]["execution"] == "adaptive_shadow"
-    assert response.rag_trace["search_plan_usage"]["fallback_to_baseline"] is False
+    assert response.rag_trace["search_plan_usage"]["execution"] == "adaptive"
 
 
 async def test_sandbox_replay_rebuilds_production_history_and_carried_sources(

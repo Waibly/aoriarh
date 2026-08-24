@@ -18,16 +18,17 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api import (
     admin_billing,
     admin_business,
+    admin_ccn,
     admin_corpus,
     admin_costs,
     admin_dashboard,
     admin_documents,
     admin_emailing,
     admin_judilibre,
+    admin_linkedin,
     admin_plan_invitations,
     admin_qdrant,
     admin_quality,
-    admin_ccn,
     admin_syncs,
     admin_users,
     admin_workspaces,
@@ -75,7 +76,9 @@ async def _rate_limit_handler(request: Request, exc: RateLimitExceeded) -> JSONR
     # Check pattern matches for dynamic routes
     if message is None:
         if "/chat" in path:
-            message = "Vous envoyez trop de messages. Attendez quelques secondes avant de réessayer."
+            message = (
+                "Vous envoyez trop de messages. Attendez quelques secondes avant de réessayer."
+            )
         elif request.method in ("POST", "PUT") and "/documents" in path:
             message = "Trop de documents uploadés. Limite : 30 par heure."
         else:
@@ -94,9 +97,7 @@ async def _rate_limit_handler(request: Request, exc: RateLimitExceeded) -> JSONR
 
 async def seed_admin() -> None:
     async with async_session_factory() as session:
-        result = await session.execute(
-            select(User).where(User.email == settings.admin_email)
-        )
+        result = await session.execute(select(User).where(User.email == settings.admin_email))
         if result.scalar_one_or_none():
             logger.info("Admin account already exists: %s", settings.admin_email)
             return
@@ -127,17 +128,21 @@ async def seed_demo() -> None:
     from app.models.user import User as UserModel
 
     async with async_session_factory() as session:
-        org = (await session.execute(
-            select(Organisation).where(Organisation.name == settings.demo_org_name)
-        )).scalar_one_or_none()
+        org = (
+            await session.execute(
+                select(Organisation).where(Organisation.name == settings.demo_org_name)
+            )
+        ).scalar_one_or_none()
         if org is None:
             org = Organisation(name=settings.demo_org_name)
             session.add(org)
             logger.info("Demo organisation created: %s", settings.demo_org_name)
 
-        user = (await session.execute(
-            select(UserModel).where(UserModel.email == settings.demo_user_email)
-        )).scalar_one_or_none()
+        user = (
+            await session.execute(
+                select(UserModel).where(UserModel.email == settings.demo_user_email)
+            )
+        ).scalar_one_or_none()
         if user is None:
             user = UserModel(
                 email=settings.demo_user_email,
@@ -164,8 +169,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
             logger.exception("Demo seeding failed — public demo may be unavailable")
     # Sync LLM model from Redis (persisted by admin switch)
     try:
-        from app.api.admin_costs import _get_active_model
         import app.rag.config as rag_config
+        from app.api.admin_costs import _get_active_model
+
         model = await _get_active_model()
         rag_config.LLM_MODEL = model
         logger.info("LLM model loaded from Redis: %s", model)
@@ -176,6 +182,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     # empêcher l'API de démarrer.
     try:
         from app.rag.qdrant_store import ensure_collection, get_qdrant_client
+
         ensure_collection(get_qdrant_client())
     except Exception:
         logger.exception("Qdrant index check failed at startup (non-blocking)")
@@ -262,42 +269,25 @@ app.include_router(documents.router, prefix="/api/v1/documents", tags=["document
 app.include_router(
     admin_documents.router, prefix="/api/v1/admin/documents", tags=["admin-documents"]
 )
-app.include_router(
-    admin_qdrant.router, prefix="/api/v1/admin/qdrant", tags=["admin-qdrant"]
-)
+app.include_router(admin_qdrant.router, prefix="/api/v1/admin/qdrant", tags=["admin-qdrant"])
 app.include_router(
     admin_judilibre.router, prefix="/api/v1/admin/jurisprudence", tags=["admin-jurisprudence"]
 )
-app.include_router(
-    admin_users.router, prefix="/api/v1/admin/users", tags=["admin-users"]
-)
-app.include_router(
-    admin_syncs.router, prefix="/api/v1/admin/syncs", tags=["admin-syncs"]
-)
+app.include_router(admin_users.router, prefix="/api/v1/admin/users", tags=["admin-users"])
+app.include_router(admin_syncs.router, prefix="/api/v1/admin/syncs", tags=["admin-syncs"])
 app.include_router(
     admin_workspaces.router, prefix="/api/v1/admin/workspaces", tags=["admin-workspaces"]
 )
-app.include_router(
-    admin_ccn.router, prefix="/api/v1/admin/ccn", tags=["admin-ccn"]
-)
+app.include_router(admin_ccn.router, prefix="/api/v1/admin/ccn", tags=["admin-ccn"])
 app.include_router(
     admin_dashboard.router, prefix="/api/v1/admin/dashboard", tags=["admin-dashboard"]
 )
-app.include_router(
-    admin_business.router, prefix="/api/v1/admin/business", tags=["admin-business"]
-)
-app.include_router(
-    admin_costs.router, prefix="/api/v1/admin/costs", tags=["admin-costs"]
-)
-app.include_router(
-    admin_quality.router, prefix="/api/v1/admin/quality", tags=["admin-quality"]
-)
-app.include_router(
-    admin_corpus.router, prefix="/api/v1/admin/corpus", tags=["admin-corpus"]
-)
-app.include_router(
-    conventions.router, prefix="/api/v1/conventions", tags=["conventions"]
-)
+app.include_router(admin_business.router, prefix="/api/v1/admin/business", tags=["admin-business"])
+app.include_router(admin_costs.router, prefix="/api/v1/admin/costs", tags=["admin-costs"])
+app.include_router(admin_quality.router, prefix="/api/v1/admin/quality", tags=["admin-quality"])
+app.include_router(admin_linkedin.router, prefix="/api/v1/admin/linkedin", tags=["admin-linkedin"])
+app.include_router(admin_corpus.router, prefix="/api/v1/admin/corpus", tags=["admin-corpus"])
+app.include_router(conventions.router, prefix="/api/v1/conventions", tags=["conventions"])
 app.include_router(invitations.router, prefix="/api/v1", tags=["invitations"])
 app.include_router(team.router, prefix="/api/v1/team", tags=["team"])
 app.include_router(conversations.router, prefix="/api/v1/conversations", tags=["conversations"])

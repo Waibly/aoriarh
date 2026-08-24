@@ -22,6 +22,7 @@ _ADMIN_BUSINESS_PREFIXES = (
     "/api/v1/admin/business",
     "/api/v1/admin/billing",
     "/api/v1/admin/emailing",
+    "/api/v1/admin/linkedin",
     "/api/v1/admin/plan-invitations",
     "/api/v1/admin/users",
     "/api/v1/admin/workspaces",
@@ -157,9 +158,7 @@ def require_role(allowed_roles: list[str]):
             )
         if user.role == "admin" and user.staff_role in {"business", "tech"}:
             forbidden = (
-                _ADMIN_TECH_PREFIXES
-                if user.staff_role == "business"
-                else _ADMIN_BUSINESS_PREFIXES
+                _ADMIN_TECH_PREFIXES if user.staff_role == "business" else _ADMIN_BUSINESS_PREFIXES
             )
             if request.url.path.startswith(forbidden):
                 await audit("denied")
@@ -184,9 +183,7 @@ async def require_account_owner(
         # For now, admins without owned_account are rejected
         pass
 
-    result = await db.execute(
-        select(Account).where(Account.owner_id == user.id)
-    )
+    result = await db.execute(select(Account).where(Account.owner_id == user.id))
     account = result.scalar_one_or_none()
     if not account:
         raise HTTPException(

@@ -44,7 +44,7 @@ function payload(): InspectorPayload {
         cost_usd: 0.0002,
       },
       search_plan: {
-        version: "deterministic-shadow-v1",
+        version: "adaptive-v1",
         query_original: "Et pour un cadre ?",
         standalone_question: "Quel est le préavis applicable à un cadre ?",
         mode: "follow_up",
@@ -76,11 +76,11 @@ function payload(): InspectorPayload {
 }
 
 describe("Quality search plan", () => {
-  it("renders the shadow plan without presenting guessed articles as used", () => {
+  it("renders the deterministic plan without presenting guessed articles as used", () => {
     render(<InspectorBody data={payload()} />);
 
     expect(
-      screen.getByText("Plan de recherche (observation)")
+      screen.getByText("Plan de recherche déterministe")
     ).toBeInTheDocument();
     expect(screen.getByText("Relance conversationnelle")).toBeInTheDocument();
     expect(screen.getByText("Simulation compacte réussie")).toBeInTheDocument();
@@ -94,7 +94,7 @@ describe("Quality search plan", () => {
   it("clearly identifies a plan that actually drove a sandbox run", () => {
     const data = payload();
     if (data.rag_trace?.search_plan_usage) {
-      data.rag_trace.search_plan_usage.execution = "adaptive_shadow";
+      data.rag_trace.search_plan_usage.execution = "adaptive";
     }
     if (data.rag_trace?.search_plan) {
       data.rag_trace.search_plan.query_budget = 1;
@@ -116,10 +116,8 @@ describe("Quality search plan", () => {
 
     render(<InspectorBody data={data} />);
 
-    expect(
-      screen.getByText("Plan de recherche (exécuté dans le sandbox)")
-    ).toBeInTheDocument();
-    expect(screen.getByText("Exécuté dans ce sandbox")).toBeInTheDocument();
+    expect(screen.getByText("Plan de recherche adaptatif")).toBeInTheDocument();
+    expect(screen.getByText("Exécuté")).toBeInTheDocument();
     expect(screen.getByText("1 requête enrichie")).toBeInTheDocument();
     expect(
       screen.getByText("Articles suggérés — validation dans le corpus")
@@ -132,7 +130,7 @@ describe("Quality search plan", () => {
   it("shows that low-confidence articles were not searched", () => {
     const data = payload();
     if (data.rag_trace?.search_plan_usage) {
-      data.rag_trace.search_plan_usage.execution = "adaptive_shadow";
+      data.rag_trace.search_plan_usage.execution = "adaptive";
     }
     if (data.rag_trace?.search_plan) {
       data.rag_trace.search_plan.hypothesized_articles = [
