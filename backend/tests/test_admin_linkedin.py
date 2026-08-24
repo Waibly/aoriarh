@@ -173,6 +173,12 @@ def test_linkedin_prompt_requires_exact_claim_to_source_alignment():
     assert "N'invente aucun conseil opérationnel, checklist, procédure" in prompt
     assert "N'élargis jamais une formulation juridique par des mots totalisants" in prompt
     assert "Le CTA ne doit pas pouvoir recevoir seulement « oui » ou « non »" in prompt
+    assert "Le hook est une phrase complète avec un verbe conjugué" in prompt
+    assert "N'utilise pas la structure « Sujet : règle »" in prompt
+    assert "Place l'élément décisif au début du hook" in prompt
+    assert "la situation X n'empêche pas Y, sauf Z" in prompt
+    assert "Deux paragraphes consécutifs ne peuvent\n  pas avoir le même message central" in prompt
+    assert "Résume mentalement chaque paragraphe en quelques mots" in prompt
     assert "Ne\n  transforme jamais une présomption" in prompt
     assert "aucune phrase ne dépasse 24 mots" in prompt
     assert "Contrôle final silencieux obligatoire avant d'émettre le premier mot" in prompt

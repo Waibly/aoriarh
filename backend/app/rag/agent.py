@@ -701,6 +701,16 @@ Règles obligatoires :
   contradiction ou la conséquence concrète qui mérite la lecture. Utilise les mots-clés
   métier du sujet. Suscite l'intérêt par un enjeu précis, jamais par du suspense vague,
   une question rhétorique, une fausse surprise ou du clickbait.
+- Le hook est une phrase complète avec un verbe conjugué, jamais un titre descriptif.
+  N'utilise pas la structure « Sujet : règle » ni une étiquette suivie de deux-points.
+  Fais apparaître la bascule qui change la décision du lecteur : une exception, une
+  conséquence, une condition décisive ou un contraste exact entre deux situations.
+  Le hook ne se contente jamais de résumer le thème avec « est possible », « est
+  obligatoire », « est interdit » ou une formule équivalente.
+- Place l'élément décisif au début du hook, avant le contexte général. Évite les
+  accroches construites comme « la situation X n'empêche pas Y, sauf Z » : elles
+  reformulent la règle sans hiérarchiser ce qui change l'action. Préfère une phrase
+  qui montre directement ce que la condition Z modifie, autorise ou interdit.
 - Le post n'est pas une réponse de chat : ne commence pas par « Oui », « Non »,
   « Ça dépend » ni par une reformulation de la question.
 - Développe un seul angle éditorial. Écris pour un écran mobile. Utilise une phrase
@@ -768,6 +778,11 @@ Règles obligatoires :
 - N'expose aucune organisation, convention ou information privée. Le contenu doit
   rester publiable publiquement et de portée générale.
 - Va droit au fait et arrête-toi lorsque l'information utile est donnée.
+- Une règle, une exception ou une conséquence n'est expliquée qu'une fois. Le paragraphe
+  qui suit le hook apporte immédiatement une preuve, une condition ou une précision
+  nouvelle : il ne reformule jamais le hook. Deux paragraphes consécutifs ne peuvent
+  pas avoir le même message central, même avec des synonymes. Fusionne-les ou supprime
+  celui qui n'ajoute aucun fait juridique.
 - Le hook obéit à la même précision juridique que le corps : conserve dans cette
   première phrase l'exception ou la condition qui change la portée de la règle. Ne
   transforme jamais une présomption, une faculté encadrée ou une règle assortie
@@ -821,11 +836,15 @@ Contrôle final silencieux obligatoire avant d'émettre le premier mot :
    son paragraphe, aucun paragraphe ne dépasse deux phrases et chaque paragraphe est
    séparé par une ligne vide.
 4. Le hook reste exact avec l'exception décisive, crée un enjeu concret dès les deux
-   premières lignes et ne se contente pas de répéter platement le sujet.
+   premières lignes, contient un verbe conjugué, aucun deux-points et ne se contente
+   pas de répéter platement le sujet.
 5. La dernière ligne contient uniquement le CTA précis. Il n'existe aucun bloc final
    de références, aucun préambule et aucun commentaire éditorial.
 6. Chaque conseil ou action est explicitement établi par un document ; sinon il est
    supprimé avant émission.
+7. Résume mentalement chaque paragraphe en quelques mots : deux résumés consécutifs ne
+   peuvent pas être identiques. Le corps ne répète pas la proposition déjà livrée par
+   le hook sans lui ajouter une condition, une preuve ou une conséquence nouvelle.
 
 La sortie entière doit être publiable telle quelle : elle contient le post complet,
 sans espace ni ligne vide avant le hook ou après le CTA."""
