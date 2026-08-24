@@ -5,10 +5,12 @@ from app.rag.agent import RAGSource, RagTrace
 
 def _valid_linkedin_body() -> str:
     sentence = (
-        "Le refus du télétravail reste possible lorsque l'employeur respecte le cadre "
-        "applicable et motive sa décision dans les situations prévues."
+        "Selon l'art. L1222-9 du Code du travail, le refus du télétravail reste "
+        "possible lorsque l'employeur respecte le cadre applicable et motive sa "
+        "décision dans les situations prévues."
     )
-    return "\n\n".join(" ".join([sentence] * 2) for _ in range(5))
+    body = "\n\n".join(" ".join([sentence] * 2) for _ in range(5))
+    return body + "\n\nQuelle méthode votre équipe utilise pour tracer la motivation des refus ?"
 
 
 async def test_linkedin_generation_uses_common_production_pipeline(client, admin_user, monkeypatch):
@@ -37,7 +39,7 @@ async def test_linkedin_generation_uses_common_production_pipeline(client, admin
     agent.format_sources.return_value = [source]
 
     async def stream_generate(*args, **kwargs):
-        yield _valid_linkedin_body() + " art. L1222-9."
+        yield _valid_linkedin_body()
 
     agent.stream_generate = MagicMock(side_effect=stream_generate)
     monkeypatch.setattr(admin_linkedin, "RAGAgent", lambda: agent)
@@ -56,7 +58,7 @@ async def test_linkedin_generation_uses_common_production_pipeline(client, admin
     assert "Références juridiques : Code du travail, art. L1222-9" in payload["post"]
     assert "#" not in payload["post"]
     assert "**" not in payload["post"]
-    assert "?" not in payload["post"]
+    assert payload["post"].count("?") == 1
     assert payload["sources"][0]["article_nums"] == ["L1222-9"]
 
     prepare_kwargs = prepare.await_args.kwargs
@@ -96,6 +98,9 @@ def test_linkedin_prompt_never_contains_chat_instructions():
     assert "MODE DE SORTIE — POST LINKEDIN" in prompt
     assert "Questions complémentaires" not in prompt
     assert "Tu es l'expert juridique RH intégré à l'organisation" not in prompt
+    assert "une question ouverte, précise" in prompt
+    assert "puces de texte brut" in prompt
+    assert "Aucun superlatif" in prompt
     assert max_tokens == 1200
 
 
@@ -108,12 +113,63 @@ def test_linkedin_validator_rejects_chat_format_and_sanitizer_removes_markers():
     cleaned = _sanitize_linkedin_post(draft)
 
     assert any("Markdown" in issue for issue in issues)
-    assert any("question" in issue for issue in issues)
+    assert any("CTA" in issue for issue in issues)
     assert any("hashtags" in issue for issue in issues)
     assert any("emojis" in issue for issue in issues)
     assert "**" not in cleaned
     assert "#" not in cleaned
     assert "🚀" not in cleaned
+
+
+def test_linkedin_plain_text_bullets_and_numbered_steps_are_allowed():
+    from app.api.admin_linkedin import _linkedin_draft_issues
+
+    draft = "Points de contrôle :\n\n• Vérifier la règle.\n• Tracer la décision.\n\n1. Lire le texte.\n2. Appliquer la règle."
+
+    issues = _linkedin_draft_issues(draft)
+
+    assert not any("Markdown" in issue for issue in issues)
+
+
+def test_linkedin_validator_rejects_hype_and_empty_adverbs():
+    from app.api.admin_linkedin import _linkedin_draft_issues
+
+    issues = _linkedin_draft_issues(
+        "D'abord, une règle absolument incontournable, clairement meilleure et vraiment utile."
+    )
+
+    assert any("superlatifs" in issue for issue in issues)
+
+
+def test_linkedin_validator_accepts_one_precise_final_cta():
+    from app.api.admin_linkedin import _linkedin_draft_issues
+
+    issues = _linkedin_draft_issues(_valid_linkedin_body())
+
+    assert not any("CTA" in issue for issue in issues)
+
+
+def test_linkedin_validator_rejects_generic_or_missing_cta():
+    from app.api.admin_linkedin import _linkedin_draft_issues
+
+    generic_issues = _linkedin_draft_issues(
+        _valid_linkedin_body().rsplit("\n\n", 1)[0] + "\n\nQu'en pensez-vous ?"
+    )
+    missing_issues = _linkedin_draft_issues(_valid_linkedin_body().rsplit("\n\n", 1)[0])
+
+    assert any("générique" in issue for issue in generic_issues)
+    assert any("CTA" in issue for issue in missing_issues)
+
+
+def test_linkedin_validator_rejects_subject_verb_inversion():
+    from app.api.admin_linkedin import _linkedin_draft_issues
+
+    issues = _linkedin_draft_issues(
+        _valid_linkedin_body().rsplit("\n\n", 1)[0]
+        + "\n\nQuels critères utilisez-vous pour motiver un refus ?"
+    )
+
+    assert any("inversion sujet-verbe" in issue for issue in issues)
 
 
 def test_references_only_include_stable_refs_cited_in_post():
@@ -149,6 +205,30 @@ def test_references_only_include_stable_refs_cited_in_post():
     assert "L1234-1" not in post
 
 
+def test_references_are_inserted_before_the_final_cta():
+    from app.api.admin_linkedin import _append_references
+
+    source = RAGSource(
+        document_id="article-1",
+        document_name="Code du travail",
+        source_type="code_travail",
+        source_type_label="Code du travail",
+        norme_niveau=2,
+        excerpt="Télétravail.",
+        full_text="Télétravail.",
+        article_nums=["L1222-9"],
+    )
+    cta = "Quelle méthode votre équipe utilise pour tracer ses refus ?"
+
+    post = _append_references(
+        f"La règle figure à l'art. L1222-9 du Code du travail.\n\n{cta}",
+        [source],
+    )
+
+    assert post.endswith(cta)
+    assert post.index("Références juridiques") < post.index(cta)
+
+
 async def test_linkedin_generation_revises_one_invalid_draft(client, admin_user, monkeypatch):
     from app.api import admin_linkedin
 
@@ -171,7 +251,7 @@ async def test_linkedin_generation_revises_one_invalid_draft(client, admin_user,
     )
     agent = MagicMock()
     agent.format_sources.return_value = [source]
-    drafts = iter(["**Réponse courte** ? #RH 🚀", _valid_linkedin_body() + " art. L1222-9."])
+    drafts = iter(["**Réponse courte** ? #RH 🚀", _valid_linkedin_body()])
 
     async def stream_generate(*args, **kwargs):
         yield next(drafts)
@@ -190,7 +270,7 @@ async def test_linkedin_generation_revises_one_invalid_draft(client, admin_user,
     assert agent.stream_generate.call_count == 2
     assert agent.stream_generate.call_args.kwargs["linkedin_revision"] is True
     assert "**" not in response.json()["post"]
-    assert "?" not in response.json()["post"]
+    assert response.json()["post"].count("?") == 1
 
 
 async def test_linkedin_generation_returns_clean_timeout(client, admin_user, monkeypatch):

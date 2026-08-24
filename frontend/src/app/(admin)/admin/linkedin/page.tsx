@@ -2,11 +2,12 @@
 
 import { useState } from "react";
 import { useSession } from "next-auth/react";
-import { Check, Copy, Linkedin, Loader2, Sparkles } from "lucide-react";
+import { Check, Copy, Loader2, Sparkles } from "lucide-react";
 import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { LinkedInFilledIcon } from "@/components/icons/linkedin-filled-icon";
 import {
   Card,
   CardContent,
@@ -98,7 +99,7 @@ export default function LinkedinPostPage() {
     <div className="mx-auto flex w-full max-w-5xl flex-col gap-6">
       <div>
         <div className="flex items-center gap-2">
-          <Linkedin className="h-6 w-6" />
+          <LinkedInFilledIcon className="h-6 w-6" />
           <h1 className="text-2xl font-semibold tracking-tight">
             Générateur LinkedIn
           </h1>

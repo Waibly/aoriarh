@@ -35,10 +35,28 @@ _EMOJI_RE = re.compile(
     "[\U0001f1e6-\U0001f1ff\U0001f300-\U0001faff\U00002600-\U000027bf]+",
 )
 _MARKDOWN_RE = re.compile(
-    r"(?:\*\*|__|```|`[^`]+`|^\s{0,3}#{1,6}\s|^\s*[-*+•]\s+|\[[^]]+]\([^)]+\))",
+    r"(?:\*\*|__|```|`[^`]+`|^\s{0,3}#{1,6}\s|^\s*[-*+]\s+|\[[^]]+]\([^)]+\))",
     re.MULTILINE,
 )
 _WORD_RE = re.compile(r"\b[\wÀ-ÿ]+(?:[’'-][\wÀ-ÿ]+)*\b")
+_STYLE_BLOAT_RE = re.compile(
+    r"\b(?:très|vraiment|extrêmement|absolument|totalement|parfaitement|"
+    r"incroyablement|clairement|concrètement|effectivement|évidemment|"
+    r"indéniablement|incontestablement|incontournable|révolutionnaire|"
+    r"globalement|finalement|ensuite|enfin|aussi|d['’]abord|ultime|"
+    r"exceptionnel(?:le|les|s)?|meilleur(?:e|es|s)?)\b",
+    re.IGNORECASE,
+)
+_GENERIC_CTA_RE = re.compile(
+    r"(?:qu['’]en pensez-vous|et vous|des avis|votre avis|ça vous parle|"
+    r"qu['’]est-ce que vous en pensez)\s*\?\s*$",
+    re.IGNORECASE,
+)
+_SUBJECT_VERB_INVERSION_RE = re.compile(
+    r"\b(?!rendez[-‑–]vous\b)[a-zà-ÿ]+(?:[-‑–]t)?[-‑–]"
+    r"(?:je|tu|il|elle|on|nous|vous|ils|elles)\b",
+    re.IGNORECASE,
+)
 
 
 class LinkedinGenerateRequest(BaseModel):
@@ -63,7 +81,7 @@ def _sanitize_linkedin_post(post: str) -> str:
     cleaned = re.sub(r"^```(?:text)?\s*|\s*```$", "", cleaned, flags=re.IGNORECASE)
     cleaned = re.sub(r"\[([^]]+)]\([^)]+\)", r"\1", cleaned)
     cleaned = re.sub(r"(?m)^\s{0,3}#{1,6}\s+", "", cleaned)
-    cleaned = re.sub(r"(?m)^\s*[-*+•]\s+", "", cleaned)
+    cleaned = re.sub(r"(?m)^\s*[-*+]\s+", "", cleaned)
     cleaned = cleaned.replace("**", "").replace("__", "").replace("`", "")
     cleaned = _HASHTAG_RE.sub("", cleaned)
     cleaned = _EMOJI_RE.sub("", cleaned)
@@ -92,9 +110,25 @@ def _linkedin_draft_issues(post: str) -> list[str]:
     if _EMOJI_RE.search(cleaned):
         issues.append("des emojis sont présents")
     if _MARKDOWN_RE.search(cleaned):
-        issues.append("des marqueurs Markdown ou des listes à puces sont présents")
-    if "?" in cleaned:
-        issues.append("une question est adressée au lecteur")
+        issues.append("des marqueurs Markdown sont présents")
+    bloated_terms = sorted({match.casefold() for match in _STYLE_BLOAT_RE.findall(cleaned)})
+    if bloated_terms:
+        issues.append(
+            "des superlatifs, intensificateurs ou adverbes inutiles sont présents : "
+            + ", ".join(bloated_terms)
+        )
+    question_count = cleaned.count("?")
+    if question_count != 1 or not cleaned.endswith("?"):
+        issues.append(
+            "le post doit finir par une seule question ouverte et précise en guise de CTA"
+        )
+    elif _GENERIC_CTA_RE.search(cleaned):
+        issues.append("le CTA final est générique et n'est pas lié au sujet")
+    if _SUBJECT_VERB_INVERSION_RE.search(cleaned):
+        issues.append(
+            "une inversion sujet-verbe est présente ; toutes les questions doivent "
+            "garder l'ordre sujet-verbe"
+        )
     if "références juridiques :" in cleaned.casefold():
         issues.append("la ligne de références réservée au serveur a été générée")
     return issues
@@ -168,6 +202,15 @@ def _append_references(post: str, sources: list) -> str:
     reference_line = _build_reference_line(_sources_cited_in_post(post, sources))
     if not reference_line:
         return _fit_linkedin_limit(post)
+
+    # Le CTA reste la dernière phrase visible. Les références contrôlées sont
+    # insérées juste avant son paragraphe au lieu de repousser l'appel à l'échange.
+    body, separator, cta = post.rstrip().rpartition("\n\n")
+    if separator and cta.endswith("?"):
+        body_limit = _LINKEDIN_MAX_CHARS - len(reference_line) - len(cta) - 4
+        fitted_body = _fit_linkedin_limit(body, body_limit)
+        return f"{fitted_body}\n\n{reference_line}\n\n{cta}"
+
     body_limit = _LINKEDIN_MAX_CHARS - len(reference_line) - 2
     return f"{_fit_linkedin_limit(post, body_limit)}\n\n{reference_line}"
 

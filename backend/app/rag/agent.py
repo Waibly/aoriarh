@@ -675,21 +675,36 @@ Règles obligatoires :
   serveur ajoutera ensuite une ligne de références sous la limite LinkedIn de 3 000 caractères.
 - Commence par une phrase courte, directe et riche en mots-clés métier qui expose
   immédiatement l'enjeu. Aucun clickbait, aucune accroche vague.
-- Développe un seul angle éditorial, avec des paragraphes courts lisibles sur mobile.
+- Développe un seul angle éditorial. Optimise la lecture sur mobile : un paragraphe
+  contient une à trois phrases courtes et chaque idée est séparée par une ligne vide.
+- Si le fond appelle une liste, utilise des puces de texte brut « • ». Si le fond
+  décrit une procédure, utilise des étapes « 1. », « 2. », « 3. ». Chaque item tient
+  en une phrase. N'ajoute aucune liste si des paragraphes suffisent.
 - Donne la règle, ses conditions déterminantes et une conséquence pratique.
 - Cite dans le texte les références juridiques stables réellement présentes dans
   les documents récupérés. Ne mentionne jamais « les sources fournies ».
-- Ne transforme pas le sujet en consultation personnalisée et ne pose aucune
-  question au lecteur. Termine sur la conséquence pratique, avec une phrase déclarative.
+- Ne transforme pas le sujet en consultation personnalisée.
 - N'invente aucune expérience personnelle, anecdote, client, résultat, chiffre ou opinion.
 - N'expose aucune organisation, convention ou information privée. Le contenu doit
   rester publiable publiquement et de portée générale.
-- Va droit au fait et arrête-toi lorsque l'information utile est donnée. Aucun
-  appel à commenter, partager, s'abonner, cliquer ou contacter AORIA RH.
+- Va droit au fait et arrête-toi lorsque l'information utile est donnée.
+- Termine par un seul CTA d'une phrase : une question ouverte, précise et directement
+  liée au sujet, qui invite les professionnels à partager une pratique ou un retour
+  d'expérience. Proscris les fins génériques comme « Qu'en pensez-vous ? », « Et vous ? »
+  ou « Des avis ? ». Ne demande jamais de commenter, partager, s'abonner, cliquer ou
+  contacter AORIA RH et ne sollicite aucune donnée confidentielle ni consultation personnelle.
+- Dans toutes les questions, conserve l'ordre sujet-verbe : « Comment votre équipe
+  trace cette décision ? ». N'utilise aucune inversion comme « utilisez-vous »,
+  « est-il », « peut-on » ou « faut-il ».
+- Écris avec des verbes actifs et des mots concrets. Aucun superlatif, aucun
+  intensificateur, aucune transition creuse. Évite les adverbes : si la phrase
+  reste idiomatique sans un mot, supprime-le. Écarte notamment « concrètement »,
+  « clairement », « d'abord », « ensuite », « enfin » et « aussi » lorsque la
+  structure porte déjà leur sens. Le résultat reste naturel, jamais télégraphique.
 - N'utilise AUCUN hashtag.
 - Utilise exclusivement du texte brut : aucun marqueur Markdown (`**`, `__`, `#`,
-  listes à puces, liens balisés), aucun tableau, aucun gras Unicode, aucune
-  bibliographie, aucun préambule et aucun commentaire après le post.
+  listes avec `-`, `*` ou `+`, liens balisés), aucun tableau, aucun gras Unicode,
+  aucune bibliographie, aucun préambule et aucun commentaire après le post.
 - N'utilise aucun emoji.
 
 Le serveur ajoutera une ligne compacte « Références juridiques » construite
