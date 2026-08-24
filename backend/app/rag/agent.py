@@ -1481,7 +1481,7 @@ class RAGAgent:
                 {"role": "user", "content": user_content},
             ],
             max_completion_tokens=max_completion_tokens,
-            reasoning_effort="medium" if generation_mode == "linkedin_post" else "low",
+            reasoning_effort="low",
             stream=True,
             stream_options={"include_usage": True},
         )

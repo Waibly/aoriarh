@@ -1,3 +1,4 @@
+import json
 from unittest.mock import AsyncMock, MagicMock
 
 from app.rag.agent import RAGSource, RagTrace
@@ -26,7 +27,23 @@ def _source() -> RAGSource:
     )
 
 
-def _mock_generation(monkeypatch, admin_linkedin, drafts: list[str]):
+def _sse_events(response) -> list[tuple[str, dict]]:
+    events: list[tuple[str, dict]] = []
+    event_type = ""
+    data = ""
+    for line in response.text.splitlines() + [""]:
+        if line.startswith("event: "):
+            event_type = line[7:]
+        elif line.startswith("data: "):
+            data = line[6:]
+        elif not line and event_type and data:
+            events.append((event_type, json.loads(data)))
+            event_type = ""
+            data = ""
+    return events
+
+
+def _mock_generation(monkeypatch, admin_linkedin, drafts: list[str | list[str]]):
     result = MagicMock()
     trace = RagTrace(
         query_original="Peut-on refuser le télétravail ?",
@@ -41,7 +58,9 @@ def _mock_generation(monkeypatch, admin_linkedin, drafts: list[str]):
     outputs = iter(drafts)
 
     async def stream_generate(*args, **kwargs):
-        yield next(outputs)
+        output = next(outputs)
+        for chunk in output if isinstance(output, list) else [output]:
+            yield chunk
 
     agent.stream_generate = MagicMock(side_effect=stream_generate)
     monkeypatch.setattr(admin_linkedin, "RAGAgent", lambda: agent)
@@ -62,7 +81,13 @@ async def test_linkedin_generation_uses_common_production_pipeline(client, admin
     )
 
     assert response.status_code == 200
-    payload = response.json()
+    assert response.headers["content-type"].startswith("text/event-stream")
+    events = _sse_events(response)
+    payload = next(data for event, data in events if event == "linkedin_done")
+    streamed = "".join(
+        data["content"] for event, data in events if event == "linkedin_delta"
+    )
+    assert streamed == expected
     assert payload["post"] == expected
     assert payload["character_count"] == len(expected)
     assert payload["sources"][0]["article_nums"] == ["L1222-9"]
@@ -73,6 +98,7 @@ async def test_linkedin_generation_uses_common_production_pipeline(client, admin
     assert prepare_kwargs["is_replay"] is True
     generation_kwargs = agent.stream_generate.call_args.kwargs
     assert generation_kwargs["generation_mode"] == "linkedin_post"
+    assert generation_kwargs["buffer_size"] == 1
     assert "linkedin_revision" not in generation_kwargs
     assert payload["rag_trace"]["search_plan_usage"]["linkedin_empty_retry_count"] == 0
 
@@ -84,8 +110,9 @@ async def test_linkedin_generation_returns_non_empty_model_output_byte_for_byte(
 
     from app.api import admin_linkedin
 
-    raw_output = "  **Brouillon brut** #RH 🚀\n\nQu'en pensez-vous ?\n"
-    agent, _prepare = _mock_generation(monkeypatch, admin_linkedin, [raw_output])
+    raw_chunks = ["  **Brouillon", " brut** #RH 🚀\n\n", "Qu'en pensez-vous ?\n"]
+    raw_output = "".join(raw_chunks)
+    agent, _prepare = _mock_generation(monkeypatch, admin_linkedin, [raw_chunks])
 
     response = await client.post(
         "/api/v1/admin/linkedin/generate",
@@ -94,9 +121,14 @@ async def test_linkedin_generation_returns_non_empty_model_output_byte_for_byte(
     )
 
     assert response.status_code == 200
-    assert response.json()["post"] == raw_output
+    events = _sse_events(response)
+    assert [
+        data["content"] for event, data in events if event == "linkedin_delta"
+    ] == raw_chunks
+    done = next(data for event, data in events if event == "linkedin_done")
+    assert done["post"] == raw_output
     assert agent.stream_generate.call_count == 1
-    assert "linkedin_revision_count" not in response.json()["rag_trace"]["search_plan_usage"]
+    assert "linkedin_revision_count" not in done["rag_trace"]["search_plan_usage"]
 
 
 async def test_linkedin_generation_retries_one_empty_initial_response(
@@ -114,7 +146,41 @@ async def test_linkedin_generation_retries_one_empty_initial_response(
 
     assert response.status_code == 200
     assert agent.stream_generate.call_count == 2
-    assert response.json()["rag_trace"]["search_plan_usage"]["linkedin_empty_retry_count"] == 1
+    events = _sse_events(response)
+    assert "".join(
+        data["content"] for event, data in events if event == "linkedin_delta"
+    ) == _linkedin_post()
+    done = next(data for event, data in events if event == "linkedin_done")
+    assert done["rag_trace"]["search_plan_usage"]["linkedin_empty_retry_count"] == 1
+
+
+async def test_linkedin_generation_keeps_partial_output_when_stream_fails(
+    client, admin_user, monkeypatch
+):
+    from app.api import admin_linkedin
+
+    agent, _prepare = _mock_generation(monkeypatch, admin_linkedin, ["unused"])
+
+    async def interrupted_stream(*args, **kwargs):
+        yield "Texte partiel exact."
+        raise TimeoutError
+
+    agent.stream_generate = MagicMock(side_effect=interrupted_stream)
+
+    response = await client.post(
+        "/api/v1/admin/linkedin/generate",
+        json={"topic": "Le télétravail"},
+        headers={"Authorization": f"Bearer {admin_user['token']}"},
+    )
+
+    assert response.status_code == 200
+    events = _sse_events(response)
+    assert [
+        data["content"] for event, data in events if event == "linkedin_delta"
+    ] == ["Texte partiel exact."]
+    assert not any(event == "linkedin_done" for event, _data in events)
+    error = next(data for event, data in events if event == "linkedin_error")
+    assert "reste visible" in error["message"]
 
 
 async def test_linkedin_generation_is_admin_only(client, regular_user):

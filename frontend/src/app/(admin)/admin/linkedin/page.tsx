@@ -17,46 +17,8 @@ import {
 } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { authFetch } from "@/lib/api";
+import { type LinkedinResult, streamLinkedinPost } from "@/lib/linkedin-api";
 import { cn } from "@/lib/utils";
-
-interface LinkedinSource {
-  document_id: string;
-  document_name: string;
-  source_type_label: string;
-  excerpt: string;
-  article_nums?: string[] | null;
-  numero_pourvoi?: string | null;
-}
-
-interface LinkedinResult {
-  post: string;
-  character_count: number;
-  sources: LinkedinSource[];
-  cost_usd: number;
-  duration_ms: number;
-}
-
-async function requestPost(
-  topic: string,
-  token: string
-): Promise<LinkedinResult> {
-  const response = await authFetch("/admin/linkedin/generate", {
-    method: "POST",
-    token,
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ topic }),
-  });
-  if (!response.ok) {
-    const payload = await response.json().catch(() => null);
-    throw new Error(
-      typeof payload?.detail === "string"
-        ? payload.detail
-        : "La génération du post a échoué. Veuillez réessayer."
-    );
-  }
-  return response.json() as Promise<LinkedinResult>;
-}
 
 export default function LinkedinPostPage() {
   const { data: session } = useSession();
@@ -76,8 +38,31 @@ export default function LinkedinPostPage() {
     setGenerating(true);
     setResult(null);
     setCopied(false);
+    let streamedPost = "";
     try {
-      setResult(await requestPost(cleanTopic, session.access_token));
+      await streamLinkedinPost(cleanTopic, session.access_token, {
+        onStart: (sources) => {
+          setResult({
+            post: "",
+            character_count: 0,
+            sources,
+            cost_usd: 0,
+            duration_ms: 0,
+          });
+        },
+        onDelta: (content) => {
+          streamedPost += content;
+          setResult((current) => ({
+            post: streamedPost,
+            character_count: streamedPost.length,
+            sources: current?.sources ?? [],
+            cost_usd: current?.cost_usd ?? 0,
+            duration_ms: current?.duration_ms ?? 0,
+          }));
+        },
+        onDone: (completedResult) => setResult(completedResult),
+        onError: (message) => toast.error(message),
+      });
     } catch (error) {
       toast.error(
         error instanceof Error ? error.message : "La génération a échoué"
@@ -144,7 +129,7 @@ export default function LinkedinPostPage() {
         </CardContent>
       </Card>
 
-      {generating && (
+      {generating && !result && (
         <Card>
           <CardContent className="text-muted-foreground flex items-center gap-3 text-sm">
             <Loader2 className="h-5 w-5 animate-spin" />
@@ -159,12 +144,20 @@ export default function LinkedinPostPage() {
             <CardHeader className="border-b">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
-                  <CardTitle>Post prêt à relire</CardTitle>
+                  <CardTitle>
+                    {generating ? "Rédaction en cours…" : "Post prêt à relire"}
+                  </CardTitle>
                   <CardDescription className="mt-1">
-                    Une validation humaine reste nécessaire avant publication.
+                    {generating
+                      ? "Le texte brut du modèle apparaît au fil de la génération."
+                      : "Une validation humaine reste nécessaire avant publication."}
                   </CardDescription>
                 </div>
-                <Button variant="outline" onClick={copyPost}>
+                <Button
+                  variant="outline"
+                  onClick={copyPost}
+                  disabled={generating || !result.post}
+                >
                   {copied ? (
                     <Check className="mr-2 h-4 w-4" />
                   ) : (
@@ -191,8 +184,17 @@ export default function LinkedinPostPage() {
                   caractères
                 </span>
                 <span className="text-muted-foreground">
-                  Généré en {(result.duration_ms / 1000).toFixed(1)} s · coût{" "}
-                  {result.cost_usd.toFixed(4)} $
+                  {generating ? (
+                    <span className="flex items-center gap-1.5">
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      Rédaction en cours…
+                    </span>
+                  ) : (
+                    <>
+                      Généré en {(result.duration_ms / 1000).toFixed(1)} s ·
+                      coût {result.cost_usd.toFixed(4)} $
+                    </>
+                  )}
                 </span>
               </div>
             </CardContent>
