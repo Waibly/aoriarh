@@ -25,4 +25,4 @@ def test_editorial_discipline_is_shared_by_chat_and_linkedin():
     assert "MODE DE SORTIE — POST LINKEDIN" in linkedin_prompt
     assert "Questions complémentaires" not in linkedin_prompt
     assert chat_max_tokens == 16000
-    assert linkedin_max_tokens == 1200
+    assert linkedin_max_tokens == 6000

@@ -790,7 +790,11 @@ def _generation_system_prompt(
         mode_prompt = _LINKEDIN_MODE_PROMPT
         if linkedin_revision:
             mode_prompt = f"{mode_prompt}\n\n{_LINKEDIN_REVISION_PROMPT}"
-        max_completion_tokens = 1200
+        # Ce plafond couvre à la fois les tokens de raisonnement invisibles et
+        # le texte visible.  Le corps reste borné séparément à 2 500 caractères
+        # par le validateur LinkedIn : garder une marge large ici évite qu'un
+        # raisonnement `medium` consomme tout le budget avant le premier mot.
+        max_completion_tokens = 6000
     else:
         raise ValueError(f"Unsupported generation mode: {generation_mode}")
     return (

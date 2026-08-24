@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import dataclasses
+import logging
 import re
 import time
 import uuid
@@ -26,6 +27,7 @@ from app.rag.search import SearchResult
 from app.services.cost_tracker import cost_tracker
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 _COMMON_CORPUS_ORG_ID = "00000000-0000-0000-0000-000000000000"
 _LINKEDIN_MAX_CHARS = 3000
@@ -34,6 +36,7 @@ _LINKEDIN_MIN_WORDS = 200
 _LINKEDIN_MAX_WORDS = 300
 _LINKEDIN_MAX_REFERENCES = 4
 _LINKEDIN_MAX_REVISIONS = 2
+_LINKEDIN_MAX_EMPTY_RETRIES = 1
 _REFERENCE_LINE_MAX_CHARS = 480
 _HASHTAG_RE = re.compile(r"(?<!\w)#[\wÀ-ÿ-]+")
 _EMOJI_RE = re.compile(
@@ -450,6 +453,31 @@ async def _draft_post(
     return "".join(chunks)
 
 
+async def _draft_post_with_empty_retry(
+    agent: RAGAgent,
+    topic: str,
+    results: list,
+    *,
+    reformulated: str,
+    low_confidence: bool,
+) -> tuple[str, int]:
+    """Retente une fois une génération initiale vide, sans relancer le RAG."""
+
+    empty_retry_count = 0
+    while True:
+        post = await _draft_post(
+            agent,
+            topic,
+            results,
+            reformulated=reformulated,
+            low_confidence=low_confidence,
+        )
+        if post or empty_retry_count >= _LINKEDIN_MAX_EMPTY_RETRIES:
+            return post, empty_retry_count
+        empty_retry_count += 1
+        logger.warning("LinkedIn generation returned an empty body; retrying with the same sources")
+
+
 @router.post("/generate", response_model=LinkedinGenerateResponse)
 @limiter.limit("10/minute")
 async def generate_linkedin_post(
@@ -503,7 +531,7 @@ async def generate_linkedin_post(
     rag_trace.search_plan_usage["linkedin_editorial_documents"] = len(formatted_sources)
 
     try:
-        post = await _draft_post(
+        post, empty_retry_count = await _draft_post_with_empty_retry(
             agent,
             topic,
             editorial_results,
@@ -515,10 +543,14 @@ async def generate_linkedin_post(
             status_code=status.HTTP_504_GATEWAY_TIMEOUT,
             detail="La rédaction du post a expiré. Veuillez réessayer.",
         ) from exc
+    rag_trace.search_plan_usage["linkedin_empty_retry_count"] = empty_retry_count
     if not post:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="La rédaction du post n'a pas pu aboutir. Veuillez réessayer.",
+            detail=(
+                "La rédaction n'a produit aucun texte après une nouvelle tentative. "
+                "Veuillez réessayer."
+            ),
         )
 
     # Révisions LLM bornées, avec les mêmes sources et sans relancer le RAG.

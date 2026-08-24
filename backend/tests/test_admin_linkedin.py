@@ -68,6 +68,51 @@ async def test_linkedin_generation_uses_common_production_pipeline(client, admin
     assert prepare_kwargs["is_replay"] is True
     generation_kwargs = agent.stream_generate.call_args.kwargs
     assert generation_kwargs["generation_mode"] == "linkedin_post"
+    assert payload["rag_trace"]["search_plan_usage"]["linkedin_empty_retry_count"] == 0
+
+
+async def test_linkedin_generation_retries_one_empty_initial_response(
+    client, admin_user, monkeypatch
+):
+    from app.api import admin_linkedin
+
+    result = MagicMock()
+    trace = RagTrace(query_original="Le télétravail")
+    monkeypatch.setattr(
+        admin_linkedin,
+        "prepare_rag_context",
+        AsyncMock(return_value=([result], "Télétravail", trace)),
+    )
+    source = RAGSource(
+        document_id="code-travail",
+        document_name="Code du travail",
+        source_type="code_travail",
+        source_type_label="Code du travail",
+        norme_niveau=2,
+        excerpt="L'employeur motive son refus.",
+        full_text="Texte complet",
+        article_nums=["L1222-9"],
+    )
+    agent = MagicMock()
+    agent.format_sources.return_value = [source]
+    drafts = iter(["", _valid_linkedin_body()])
+
+    async def stream_generate(*args, **kwargs):
+        yield next(drafts)
+
+    agent.stream_generate = MagicMock(side_effect=stream_generate)
+    monkeypatch.setattr(admin_linkedin, "RAGAgent", lambda: agent)
+    monkeypatch.setattr(admin_linkedin.cost_tracker, "flush", AsyncMock())
+
+    response = await client.post(
+        "/api/v1/admin/linkedin/generate",
+        json={"topic": "Le télétravail"},
+        headers={"Authorization": f"Bearer {admin_user['token']}"},
+    )
+
+    assert response.status_code == 200
+    assert agent.stream_generate.call_count == 2
+    assert response.json()["rag_trace"]["search_plan_usage"]["linkedin_empty_retry_count"] == 1
 
 
 async def test_linkedin_generation_is_admin_only(client, regular_user):
@@ -105,7 +150,7 @@ def test_linkedin_prompt_never_contains_chat_instructions():
     assert "Le post n'est pas une réponse de chat" in prompt
     assert "au maximum quatre sources centrales" in prompt
     assert "sans modifier ton texte" in prompt
-    assert max_tokens == 1200
+    assert max_tokens == 6000
 
 
 def test_linkedin_validator_rejects_chat_format_without_sanitizing_it():
