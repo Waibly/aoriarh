@@ -152,6 +152,32 @@ def test_linkedin_prompt_requests_the_complete_publishable_output():
     assert max_tokens == 6000
 
 
+def test_linkedin_prompt_requires_exact_claim_to_source_alignment():
+    from app.rag.agent import _generation_system_prompt
+
+    prompt, _max_tokens = _generation_system_prompt("linkedin_post")
+
+    assert "Un rapprochement de\n  mots-clés ne suffit jamais" in prompt
+    assert "moyens du pourvoi, visas et simples rappels de\n  textes" in prompt
+    assert (
+        "l'accès d'un salarié à ses propres courriels ne\n  fonde pas l'accès de l'employeur"
+    ) in prompt
+    assert (
+        "des documents papier trouvés dans\n"
+        "  un bureau ne fondent pas à eux seuls la règle applicable aux courriels"
+    ) in prompt
+    assert "Une même parenthèse contient une seule autorité" in prompt
+    assert "Une référence exacte apparaît au maximum une fois dans tout le" in prompt
+    assert "Il n'est jamais obligatoire\n  d'utiliser tous les documents récupérés" in prompt
+    assert "Une référence ne forme jamais une phrase autonome après un point" in prompt
+    assert "N'invente aucun conseil opérationnel, checklist, procédure" in prompt
+    assert "N'élargis jamais une formulation juridique par des mots totalisants" in prompt
+    assert "Le CTA ne doit pas pouvoir recevoir seulement « oui » ou « non »" in prompt
+    assert "Ne\n  transforme jamais une présomption" in prompt
+    assert "aucune phrase ne dépasse 24 mots" in prompt
+    assert "Contrôle final silencieux obligatoire avant d'émettre le premier mot" in prompt
+
+
 def test_linkedin_editorial_selection_prioritizes_written_law_and_caps_case_law():
     from app.api.admin_linkedin import _select_linkedin_editorial_results
 

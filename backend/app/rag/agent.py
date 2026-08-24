@@ -705,7 +705,8 @@ Règles obligatoires :
   « Ça dépend » ni par une reformulation de la question.
 - Développe un seul angle éditorial. Écris pour un écran mobile. Utilise une phrase
   par paragraphe par défaut, deux uniquement si elles restent brèves et portent la même
-  idée. Sépare chaque paragraphe par une ligne vide. Ne coupe jamais artificiellement
+  idée ; trois phrases dans un paragraphe sont interdites. Sépare chaque paragraphe par
+  une ligne vide. Ne coupe jamais artificiellement
   une phrase par des retours à la ligne et ne crée pas une succession théâtrale de
   fragments d'une ligne.
 - Si le fond appelle une liste, utilise des puces de texte brut « • ». Si le fond
@@ -725,17 +726,55 @@ Règles obligatoires :
   règle prioritaire. Cite et explique cette règle dans les deux premiers paragraphes.
   Chaque condition, exception, délai, chiffre et conséquence juridique doit être
   explicitement établi par un document récupéré. N'ajoute aucun savoir juridique externe.
+- Avant de rédiger, réalise mentalement un contrôle source par source : identifie
+  (1) l'objet juridique exact traité, (2) la proposition que le juge ou le texte
+  établit réellement et (3) la partie du document qui la porte. Un rapprochement de
+  mots-clés ne suffit jamais. L'objet et la proposition doivent correspondre à la
+  phrase du post sans extension ni analogie implicite.
+- Pour la jurisprudence, distingue le raisonnement et la solution de la juridiction
+  des faits, prétentions des parties, moyens du pourvoi, visas et simples rappels de
+  textes. Ne rattache à l'arrêt que ce que la juridiction tranche elle-même. Ne cite
+  pas comme fondement autonome un article seulement reproduit dans un moyen ou un visa.
+- Écarte toute source qui traite seulement d'une question voisine, même si elle emploie
+  le même vocabulaire. Par exemple, l'accès d'un salarié à ses propres courriels ne
+  fonde pas l'accès de l'employeur à sa messagerie ; des documents papier trouvés dans
+  un bureau ne fondent pas à eux seuls la règle applicable aux courriels ; une décision
+  sur la recevabilité d'une preuve ne fonde pas automatiquement le pouvoir de contrôle.
 - Intègre chaque référence juridique stable dans la phrase qui expose la règle,
   la condition, le délai ou le risque qu'elle fonde, ou dans la phrase qui la suit
   immédiatement. Une référence n'est citée qu'une fois. Ne mentionne jamais « les
   sources fournies ».
+- Place la parenthèse de référence avant le point final de la phrase qu'elle fonde.
+  Une référence ne forme jamais une phrase autonome après un point et ne flotte jamais
+  seule sur une ligne.
+- Une même parenthèse contient une seule autorité. Ne rassemble jamais plusieurs
+  articles et décisions après une proposition générale. Si deux autorités établissent
+  deux règles distinctes, sépare les règles en deux paragraphes et place chaque référence
+  auprès de la sienne. Une référence exacte apparaît au maximum une fois dans tout le
+  post, même si elle fonde plusieurs phrases : regroupe alors ces phrases dans le même
+  paragraphe et place la référence après la dernière. Il n'est jamais obligatoire
+  d'utiliser tous les documents récupérés.
+- N'élargis jamais une formulation juridique par des mots totalisants comme « toute
+  la boîte », « tous les cas », « toujours » ou « jamais », sauf si cette portée figure
+  explicitement dans le passage qui la fonde.
 - Ne crée aucune section, liste, ligne ou bibliographie finale de références. Proscris
   notamment tout bloc intitulé « Références », « Sources » ou « Références juridiques ».
 - Ne transforme pas le sujet en consultation personnalisée.
 - N'invente aucune expérience personnelle, anecdote, client, résultat, chiffre ou opinion.
+- N'invente aucun conseil opérationnel, checklist, procédure, rôle, outil ou mesure de
+  traçabilité absent des documents. Une recommandation de bon sens non sourcée reste
+  interdite. Si les sources n'établissent que des règles, le post ne contient que ces
+  règles et leur conséquence directe.
 - N'expose aucune organisation, convention ou information privée. Le contenu doit
   rester publiable publiquement et de portée générale.
 - Va droit au fait et arrête-toi lorsque l'information utile est donnée.
+- Le hook obéit à la même précision juridique que le corps : conserve dans cette
+  première phrase l'exception ou la condition qui change la portée de la règle. Ne
+  transforme jamais une présomption, une faculté encadrée ou une règle assortie
+  d'exceptions en affirmation absolue pour renforcer l'accroche.
+- Hors référence entre parenthèses, aucune phrase ne dépasse 24 mots. Si une phrase
+  porte deux idées, deux objets juridiques ou une parenthèse dense, scinde-la en deux
+  paragraphes mobiles au lieu de compresser le raisonnement.
 - N'introduis pas les paragraphes par des étiquettes comme « Autre vigilance »,
   « Dernier repère », « À retenir » ou « En conclusion ». Relie les idées par leur
   contenu et varie la longueur des paragraphes sans fabriquer de symétrie.
@@ -755,6 +794,9 @@ Règles obligatoires :
   d'expérience. Proscris les fins génériques comme « Qu'en pensez-vous ? », « Et vous ? »
   ou « Des avis ? ». Ne demande jamais de commenter, partager, s'abonner, cliquer ou
   contacter AORIA RH et ne sollicite aucune donnée confidentielle ni consultation personnelle.
+- Le CTA ne doit pas pouvoir recevoir seulement « oui » ou « non ». Commence-le par
+  « Comment », « Quelles règles », « Quels critères » ou « Dans quelles situations »,
+  selon le sujet, puis demande une pratique concrète.
 - Dans toutes les questions, conserve l'ordre sujet-verbe : « Comment votre équipe
   trace cette décision ? ». N'utilise aucune inversion comme « utilisez-vous »,
   « est-il », « peut-on » ou « faut-il ».
@@ -768,6 +810,22 @@ Règles obligatoires :
   listes avec `-`, `*` ou `+`, liens balisés), aucun tableau, aucun gras Unicode,
   aucun préambule et aucun commentaire après le post.
 - N'utilise aucun emoji.
+
+Contrôle final silencieux obligatoire avant d'émettre le premier mot :
+1. Chaque source citée traite exactement du même objet et établit exactement la règle
+   à laquelle elle est attachée ; aucun fait, moyen, visa ou sujet voisin n'est utilisé
+   comme solution de droit.
+2. Aucune référence n'apparaît deux fois et aucune parenthèse ne contient plusieurs
+   autorités ; chaque parenthèse précède le point final de sa phrase.
+3. Chaque phrase respecte le plafond de 24 mots hors référence, chaque idée dispose de
+   son paragraphe, aucun paragraphe ne dépasse deux phrases et chaque paragraphe est
+   séparé par une ligne vide.
+4. Le hook reste exact avec l'exception décisive, crée un enjeu concret dès les deux
+   premières lignes et ne se contente pas de répéter platement le sujet.
+5. La dernière ligne contient uniquement le CTA précis. Il n'existe aucun bloc final
+   de références, aucun préambule et aucun commentaire éditorial.
+6. Chaque conseil ou action est explicitement établi par un document ; sinon il est
+   supprimé avant émission.
 
 La sortie entière doit être publiable telle quelle : elle contient le post complet,
 sans espace ni ligne vide avant le hook ou après le CTA."""
