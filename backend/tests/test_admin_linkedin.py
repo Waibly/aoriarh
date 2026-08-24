@@ -9,7 +9,6 @@ def _linkedin_post() -> str:
         "Le refus du télétravail doit respecter le cadre applicable.\n\n"
         "L'article L.1222-9 du Code du travail impose de motiver le refus dans "
         "les situations prévues.\n\n"
-        "Références juridiques : C. trav., art. L.1222-9\n\n"
         "Quelle méthode votre équipe utilise pour tracer la motivation des refus ?"
     )
 
@@ -142,7 +141,11 @@ def test_linkedin_prompt_requests_the_complete_publishable_output():
     assert "Aucun superlatif" in prompt
     assert "Le post n'est pas une réponse de chat" in prompt
     assert "au maximum quatre sources centrales" in prompt
-    assert "Références juridiques :" in prompt
+    assert "Les deux premières lignes visibles sont décisives" in prompt
+    assert "par paragraphe par défaut" in prompt
+    assert "Intègre chaque référence juridique stable dans la phrase" in prompt
+    assert "Ne crée aucune section, liste, ligne ou bibliographie finale de références" in prompt
+    assert "Références juridiques : C. trav." not in prompt
     assert "La sortie entière doit être publiable telle quelle" in prompt
     assert "Le serveur insérera" not in prompt
     assert "RÉVISION CONTRÔLÉE" not in prompt

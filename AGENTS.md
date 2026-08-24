@@ -8,3 +8,9 @@
 - Si un contrôle est utile, il peut uniquement produire un avertissement visible à côté de la réponse brute ; il ne doit ni modifier la réponse ni empêcher son affichage.
 - Les contraintes de contenu et de format doivent être placées dans le prompt de génération, pas dans un post-traitement.
 - Une sortie vide, une erreur de transport ou un délai expiré peuvent être retentés ou signalés comme des erreurs techniques.
+
+## Posts LinkedIn
+
+- Intégrer chaque référence juridique dans le corps, au plus près de l'affirmation qu'elle fonde.
+- Ne jamais regrouper les références dans une section, une liste ou une bibliographie finale.
+- Générer directement une mise en page mobile : hook fort dans les deux premières lignes, phrases courtes, paragraphes courts et lignes vides entre les idées.

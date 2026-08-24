@@ -694,14 +694,20 @@ une idée juridique utile, exacte et immédiatement compréhensible — pas rép
 comme un chatbot ni produire une consultation personnalisée.
 
 Règles obligatoires :
-- Vise 200 à 300 mots et JAMAIS plus de 3 000 caractères, espaces compris,
+- Vise 160 à 220 mots et JAMAIS plus de 3 000 caractères, espaces compris,
   références incluses.
-- Commence par une phrase courte, directe et riche en mots-clés métier qui expose
-  immédiatement la thèse utile. Le post n'est pas une réponse de chat : ne commence
-  pas par « Oui », « Non », « Ça dépend » ni par une reformulation de la question.
-  Aucun clickbait, aucune accroche vague.
-- Développe un seul angle éditorial. Optimise la lecture sur mobile : un paragraphe
-  contient une à trois phrases courtes et chaque idée est séparée par une ligne vide.
+- Les deux premières lignes visibles sont décisives. Ouvre par un hook autonome d'une
+  seule phrase, de 12 à 20 mots, qui donne immédiatement la règle, le risque, la
+  contradiction ou la conséquence concrète qui mérite la lecture. Utilise les mots-clés
+  métier du sujet. Suscite l'intérêt par un enjeu précis, jamais par du suspense vague,
+  une question rhétorique, une fausse surprise ou du clickbait.
+- Le post n'est pas une réponse de chat : ne commence pas par « Oui », « Non »,
+  « Ça dépend » ni par une reformulation de la question.
+- Développe un seul angle éditorial. Écris pour un écran mobile. Utilise une phrase
+  par paragraphe par défaut, deux uniquement si elles restent brèves et portent la même
+  idée. Sépare chaque paragraphe par une ligne vide. Ne coupe jamais artificiellement
+  une phrase par des retours à la ligne et ne crée pas une succession théâtrale de
+  fragments d'une ligne.
 - Si le fond appelle une liste, utilise des puces de texte brut « • ». Si le fond
   décrit une procédure, utilise des étapes « 1. », « 2. », « 3. ». Chaque item tient
   en une phrase. N'ajoute aucune liste si des paragraphes suffisent.
@@ -719,8 +725,12 @@ Règles obligatoires :
   règle prioritaire. Cite et explique cette règle dans les deux premiers paragraphes.
   Chaque condition, exception, délai, chiffre et conséquence juridique doit être
   explicitement établi par un document récupéré. N'ajoute aucun savoir juridique externe.
-- Cite dans le texte les références juridiques stables réellement présentes dans
-  les documents récupérés. Ne mentionne jamais « les sources fournies ».
+- Intègre chaque référence juridique stable dans la phrase qui expose la règle,
+  la condition, le délai ou le risque qu'elle fonde, ou dans la phrase qui la suit
+  immédiatement. Une référence n'est citée qu'une fois. Ne mentionne jamais « les
+  sources fournies ».
+- Ne crée aucune section, liste, ligne ou bibliographie finale de références. Proscris
+  notamment tout bloc intitulé « Références », « Sources » ou « Références juridiques ».
 - Ne transforme pas le sujet en consultation personnalisée.
 - N'invente aucune expérience personnelle, anecdote, client, résultat, chiffre ou opinion.
 - N'expose aucune organisation, convention ou information privée. Le contenu doit
@@ -759,12 +769,8 @@ Règles obligatoires :
   aucun préambule et aucun commentaire après le post.
 - N'utilise aucun emoji.
 
-Juste avant le CTA, ajoute un paragraphe compact commençant exactement par
-« Références juridiques : ». Il reprend uniquement les références stables réellement
-citées dans le post, au maximum quatre, séparées par « ; ». Utilise une forme courte,
-par exemple « C. trav., art. L.1222-9 » ou « Cass. soc., 11 octobre 2023,
-n° 22-14.682 ». La sortie entière doit être publiable telle quelle : elle contient le
-post complet, sans espace ni ligne vide avant la première phrase ou après le CTA."""
+La sortie entière doit être publiable telle quelle : elle contient le post complet,
+sans espace ni ligne vide avant le hook ou après le CTA."""
 
 
 def _generation_system_prompt(
