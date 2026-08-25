@@ -1,11 +1,8 @@
-from unittest.mock import AsyncMock, MagicMock
-
 from app.rag.agent import _generation_system_prompt
 
 
-def test_editorial_discipline_is_shared_by_chat_and_linkedin():
-    chat_prompt, chat_max_tokens = _generation_system_prompt("legal_answer")
-    linkedin_prompt, linkedin_max_tokens = _generation_system_prompt("linkedin_post")
+def test_legal_generation_prompt_contains_each_editorial_rule_once():
+    prompt, max_tokens = _generation_system_prompt()
 
     shared_rules = (
         "DISCIPLINE ÉDITORIALE COMMUNE",
@@ -19,38 +16,7 @@ def test_editorial_discipline_is_shared_by_chat_and_linkedin():
         "Varie naturellement la syntaxe",
     )
     for rule in shared_rules:
-        assert chat_prompt.count(rule) == 1
-        assert linkedin_prompt.count(rule) == 1
+        assert prompt.count(rule) == 1
 
-    assert "RÔLE" in chat_prompt
-    assert "MODE DE SORTIE — POST LINKEDIN" not in chat_prompt
-    assert "MODE DE SORTIE — POST LINKEDIN" in linkedin_prompt
-    assert "Questions complémentaires" not in linkedin_prompt
-    assert chat_max_tokens == 16000
-    assert linkedin_max_tokens == 6000
-
-
-async def test_linkedin_generation_uses_low_reasoning_effort(monkeypatch):
-    from app.rag.agent import RAGAgent
-
-    agent = RAGAgent()
-    agent.llm = MagicMock()
-
-    async def empty_response():
-        if False:
-            yield None
-
-    create = AsyncMock(return_value=empty_response())
-    agent.llm.chat.completions.create = create
-
-    chunks = [
-        chunk
-        async for chunk in agent.stream_generate(
-            "Le refus du télétravail",
-            [],
-            generation_mode="linkedin_post",
-        )
-    ]
-
-    assert chunks == []
-    assert create.await_args.kwargs["reasoning_effort"] == "low"
+    assert "RÔLE" in prompt
+    assert max_tokens == 16000

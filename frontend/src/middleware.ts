@@ -59,7 +59,6 @@ export default auth((req) => {
       "/admin/billing",
       "/admin/costs",
       "/admin/emailing",
-      "/admin/linkedin",
       "/admin/plan-invitations",
     ];
     const techOnly = [

@@ -22,7 +22,6 @@ _ADMIN_BUSINESS_PREFIXES = (
     "/api/v1/admin/business",
     "/api/v1/admin/billing",
     "/api/v1/admin/emailing",
-    "/api/v1/admin/linkedin",
     "/api/v1/admin/plan-invitations",
     "/api/v1/admin/users",
     "/api/v1/admin/workspaces",

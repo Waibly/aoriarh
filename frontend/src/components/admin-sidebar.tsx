@@ -20,7 +20,6 @@ import {
   User,
   LogOut,
 } from "lucide-react";
-import { LinkedInFilledIcon } from "@/components/icons/linkedin-filled-icon";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -56,11 +55,6 @@ const GROUPS: NavGroup[] = [
       { name: "Séquences", href: "/admin/emailing/sequences", icon: Mail },
       { name: "Templates", href: "/admin/emailing/templates", icon: Mail },
       { name: "Listes Brevo", href: "/admin/emailing/lists", icon: Mail },
-      {
-        name: "Posts LinkedIn",
-        href: "/admin/linkedin",
-        icon: LinkedInFilledIcon,
-      },
     ],
   },
   {
