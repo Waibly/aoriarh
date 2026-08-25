@@ -24,7 +24,13 @@ def _llm_response(content: str | None) -> SimpleNamespace:
 
 def test_prompt_requires_hook_body_sources_cta_and_forbids_hashtags() -> None:
     assert "deux premières lignes" in LINKEDIN_POST_SYSTEM_PROMPT
-    assert "paragraphes courts" in LINKEDIN_POST_SYSTEM_PROMPT
+    assert "paragraphes d'une ou deux phrases" in LINKEDIN_POST_SYSTEM_PROMPT
+    assert "rarement 20 mots" in LINKEDIN_POST_SYSTEM_PROMPT
+    assert "tiret cadratin" in LINKEDIN_POST_SYSTEM_PROMPT
+    assert "entre 200 et 300 mots" in LINKEDIN_POST_SYSTEM_PROMPT
+    assert "étapes numérotées" in LINKEDIN_POST_SYSTEM_PROMPT
+    assert "puces pour" in LINKEDIN_POST_SYSTEM_PROMPT
+    assert "paragraphes courts pour une explication" in LINKEDIN_POST_SYSTEM_PROMPT
     assert "Sources :" in LINKEDIN_POST_SYSTEM_PROMPT
     assert "CTA final" in LINKEDIN_POST_SYSTEM_PROMPT
     assert "N'ajoute aucun hashtag" in LINKEDIN_POST_SYSTEM_PROMPT
@@ -93,7 +99,7 @@ def test_internal_reference_does_not_expose_document_name() -> None:
 
 
 def test_warnings_never_transform_content() -> None:
-    content = f"Texte #RH\n{'x' * 3000}"
+    content = f"Texte #RH — précision\n{'x' * 3000}"
     warnings = build_linkedin_warnings(
         content,
         ["Code du travail, art. L.1234-1"],
@@ -102,6 +108,8 @@ def test_warnings_never_transform_content() -> None:
     assert len(content) > 3000
     assert any("3 000 caractères" in warning for warning in warnings)
     assert any("hashtag" in warning for warning in warnings)
+    assert any("tiret cadratin" in warning for warning in warnings)
+    assert any("CTA" in warning for warning in warnings)
     assert any("références autorisées" in warning for warning in warnings)
 
 

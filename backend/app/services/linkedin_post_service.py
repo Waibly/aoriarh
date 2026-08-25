@@ -60,19 +60,38 @@ Règles absolues :
 - Utilise uniquement les références autorisées fournies. Recopie leur libellé
   à l'identique dans un bloc « Sources : ». Si la liste est vide, n'invente pas
   de source et omets ce bloc.
-- Vise 1 500 à 2 800 caractères, espaces, sources et ponctuation compris.
+- Écris entre 200 et 300 mots. Privilégie la clarté à l'exhaustivité : retiens
+  les informations les plus utiles sans supprimer une réserve indispensable.
+- N'utilise jamais de tiret cadratin « — » ni de tiret demi-cadratin « – ».
+  Utilise un point, deux-points, une virgule ou des parenthèses à la place.
+- Écris des phrases courtes. Une phrase porte une seule idée et dépasse
+  rarement 20 mots, hors libellé exact d'une référence juridique.
+- Aère fortement le texte avec une ligne vide entre chaque paragraphe.
+- Évite les transitions scolaires ou mécaniques comme « par ailleurs »,
+  « enfin » et « en conclusion » lorsqu'une phrase directe suffit.
+- Ne reprends pas mécaniquement le plan ni les longs paragraphes de la réponse
+  source. Réécris réellement pour une lecture rapide dans le fil LinkedIn.
+- Adapte la mise en forme à l'intention du contenu, sans appliquer un modèle
+  unique : étapes numérotées pour une procédure ou une chronologie, puces pour
+  une checklist ou une énumération, paragraphes courts pour une explication,
+  et oppositions clairement séparées pour une comparaison. N'utilise une liste
+  que si elle améliore réellement la lecture.
 
 Structure éditoriale :
-1. Une accroche forte mais honnête dans les deux premières lignes : enjeu
-   concret, idée clé ou question utile, sans sensationnalisme.
-2. Un corps lisible en paragraphes courts d'une à trois phrases : idée
-   principale, fondement, explication, conséquences pratiques et points de
-   vigilance utiles.
+1. Une accroche forte mais honnête dans les deux premières lignes. La première
+   ligne compte au maximum 12 mots. La seconde est facultative et tout aussi
+   courte. Va droit à l'enjeu, sans sensationnalisme.
+2. Un corps très lisible en paragraphes d'une ou deux phrases. Utilise une
+   liste à puces courtes lorsqu'elle rend une énumération ou des étapes plus
+   faciles à parcourir. Présente l'idée principale, le fondement, les
+   conséquences pratiques et les vigilances réellement utiles.
 3. Le bloc « Sources : », avec une référence par ligne précédée de « • », juste
    avant le CTA, uniquement si des références autorisées sont fournies.
 4. Un CTA final composé d'une seule question professionnelle, précise et
-   naturelle. Il doit ouvrir une discussion utile, sans demander artificiellement
-   des likes, commentaires, partages ou abonnements.
+   naturelle, idéalement en moins de 20 mots. Il doit ouvrir une discussion
+   utile, sans demander artificiellement des likes, commentaires, partages ou
+   abonnements. Ce CTA est obligatoirement le dernier paragraphe du post : le
+   post se termine par son point d'interrogation et aucun texte ne vient après.
 
 Le texte sera affiché et copié exactement tel que tu le produis.
 """
@@ -267,6 +286,16 @@ def build_linkedin_warnings(content: str, references: list[str]) -> list[str]:
         warnings.append(
             "Le post contient au moins un hashtag malgré la consigne. "
             "La génération brute est affichée sans modification."
+        )
+    if "—" in content or "–" in content:
+        warnings.append(
+            "Le post contient un tiret cadratin ou demi-cadratin malgré la "
+            "consigne. La génération brute est affichée sans modification."
+        )
+    if not content.rstrip().endswith("?"):
+        warnings.append(
+            "Le CTA ne semble pas être la dernière ligne du post. La génération "
+            "brute est affichée sans modification."
         )
     if not references:
         warnings.append(

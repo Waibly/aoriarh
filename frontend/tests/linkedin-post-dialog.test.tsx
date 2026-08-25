@@ -43,6 +43,7 @@ describe("LinkedInPostDialog", () => {
     const textArea = await screen.findByRole("textbox", {
       name: "Post LinkedIn généré",
     });
+    expect(screen.getByRole("dialog")).toHaveClass("h-[92dvh]");
     expect(textArea).toHaveValue(raw);
     expect(
       screen.getByText("Avertissement visible sans modification.")
