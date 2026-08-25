@@ -205,6 +205,13 @@ def test_render_html_contains_charte_and_blocks():
     assert "À jour au" not in html
 
 
+def test_render_html_places_clickable_website_at_footer_bottom_right():
+    html = render_fiche_html(_content(), [], generated_at=GEN_AT)
+    assert '<a class="site-link" href="https://aoriarh.fr">aoriarh.fr</a>' in html
+    assert "position:absolute; right:0; bottom:2px" in html
+    assert ".footer .site-link" in html
+
+
 def test_render_html_uses_compact_single_line_header():
     html = render_fiche_html(_content(), [], generated_at=GEN_AT)
     assert 'class="logo"' in html

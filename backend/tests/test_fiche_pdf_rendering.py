@@ -51,3 +51,20 @@ def test_external_resource_is_ignored_without_hiding_generation():
     assert "Le texte doit rester visible." in text
     assert "Avertissement de mise en page" in text
     assert "balise <img> non prévue" in text
+
+
+def test_footer_contains_clickable_aoria_website_link():
+    fragment = (
+        '<article class="fiche-content"><h1>Une fiche</h1>'
+        '<aside class="essential"><p>La réponse directe.</p></aside></article>'
+    )
+    pdf = render_fiche_pdf(
+        parse_fiche_content(fragment),
+        [],
+        generated_at=datetime(2026, 8, 25),
+    )
+    document = fitz.open(stream=pdf, filetype="pdf")
+
+    links = [link.get("uri") for page in document for link in page.get_links()]
+    assert "https://aoriarh.fr" in links
+    assert "aoriarh.fr" in document[0].get_text()

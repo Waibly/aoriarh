@@ -648,9 +648,11 @@ def render_fiche_html(
   .generation-warning ul {{ margin:4px 0 0; }}
   .footer {{ position:fixed; left:32px; right:32px; bottom:-17mm;
             border-top:1px solid #ede9fe; padding:7px 0 0; font-size:9.5px;
-            line-height:1.35; color:#5f6b6a; }}
+            padding-right:80px; line-height:1.35; color:#5f6b6a; }}
   .footer p {{ margin:0 0 2px; }}
   .footer .validite {{ color:{_VIOLET}; font-weight:600; margin:0 0 4px; }}
+  .footer .site-link {{ color:{_VIOLET}; font-weight:700; text-decoration:none;
+                        white-space:nowrap; position:absolute; right:0; bottom:2px; }}
 </style></head>
 <body>
   <div class="header">
@@ -663,8 +665,9 @@ def render_fiche_html(
   <div class="footer">
     <p class="validite">Contenu généré le {date_str}.
       Vérifiez l'actualité de ces règles avant application.</p>
-    <p>Fiche générée par AORIA RH à partir de votre question{org_line}.
+    <p class="credit">Fiche générée par AORIA RH à partir de votre question{org_line}.
       &copy; {generated_at.year} AORIA RH.</p>
+    <a class="site-link" href="https://aoriarh.fr">aoriarh.fr</a>
   </div>
 </body></html>"""
 
