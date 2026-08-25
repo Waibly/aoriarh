@@ -142,6 +142,23 @@ Règles absolues de contenu :
   paragraphe entier en gras.
 - N'ajoute un encadré de vigilance que s'il existe un vrai risque, une exception ou une condition.
 
+Choix de la représentation la plus visuelle :
+- Avant de rédiger, repère les informations parallèles qui se lisent selon les mêmes critères.
+- Utilise OBLIGATOIREMENT un tableau dès que le contenu fournit au moins deux cas comparables :
+  barème, tranches ou seuils, délais selon une situation, montants selon un critère, obligations
+  selon l'effectif, comparaison d'options, conséquences selon un cas ou calendrier de dates clés.
+- Cette règle s'applique même si ces données sont présentées en prose ou en liste dans la réponse
+  fournie : transforme leur présentation en tableau sans changer, déduire ni compléter leur contenu.
+  Ne laisse jamais un barème ou une série « critère : valeur » sous forme de puces.
+- Si la réponse fournie contient déjà un tableau, reproduis-le en HTML en conservant toutes ses
+  colonnes, toutes ses lignes, tous ses intitulés et toutes ses cellules.
+- Donne à chaque colonne un intitulé court et explicite, et consacre une ligne à chaque cas. N'ajoute
+  aucune colonne qui exigerait d'inférer une information absente.
+- Conserve une liste numérotée pour une procédure ou une chronologie d'actions. Utilise des puces
+  pour des idées indépendantes qui ne partagent pas de dimensions de comparaison.
+- Ne répète pas toutes les lignes d'un tableau dans une liste ou un paragraphe. Une synthèse utile
+  peut rester dans les points clés, mais le détail comparable n'apparaît qu'une fois.
+
 Règles absolues de sortie :
 - Renvoie UNIQUEMENT le fragment HTML final, sans JSON, Markdown, commentaire ni balises ```.
 - Le fragment commence par <article class="fiche-content"> et finit par </article>.
@@ -160,7 +177,11 @@ Catalogue de composants autorisés — choisis uniquement ceux utiles au contenu
 - Procédure : <section class="procedure"><h2>...</h2><ol>...</ol></section>
 - Vigilance : <aside class="warning"><h2>À surveiller</h2>...</aside>
 - Information complémentaire : <aside class="info"><h2>...</h2>...</aside>
-- Tableau : <div class="table-wrapper"><table class="data-table">...</table></div>
+- Tableau : utilise toujours cette structure complète :
+  <div class="table-wrapper"><table class="data-table"><thead><tr><th scope="col">Critère</th>
+  <th scope="col">Conséquence</th></tr></thead><tbody><tr><td>...</td><td>...</td></tr></tbody>
+  </table></div>. « Critère » et « Conséquence » illustrent uniquement la structure : remplace-les
+  toujours par des intitulés spécifiques au contenu.
 - Définitions : <dl class="definitions"><dt>...</dt><dd>...</dd></dl>
 - Références, uniquement si elles existent :
   <section class="legal-references"><h2>Références juridiques</h2><ul>...</ul></section>

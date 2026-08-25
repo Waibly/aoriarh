@@ -89,6 +89,15 @@ def test_prompt_requires_highlighted_direct_answer_and_targeted_bold():
     assert "paragraphe entier en gras" in FICHE_SYSTEM_PROMPT
 
 
+def test_prompt_requires_tables_for_comparable_cases_even_from_prose():
+    assert "Utilise OBLIGATOIREMENT un tableau" in FICHE_SYSTEM_PROMPT
+    assert "au moins deux cas comparables" in FICHE_SYSTEM_PROMPT
+    assert "même si ces données sont présentées en prose ou en liste" in FICHE_SYSTEM_PROMPT
+    assert "Ne laisse jamais un barème" in FICHE_SYSTEM_PROMPT
+    assert "contient déjà un tableau, reproduis-le en HTML" in FICHE_SYSTEM_PROMPT
+    assert '<table class="data-table"><thead>' in FICHE_SYSTEM_PROMPT
+
+
 def test_inspection_warns_without_rewriting_unsupported_html():
     raw = '<article class="fiche-content"><h1>Titre</h1><img src="https://example.com/x"></article>'
     content = parse_fiche_content(raw)
