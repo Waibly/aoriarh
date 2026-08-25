@@ -703,8 +703,13 @@ Règles obligatoires :
   une question rhétorique, une fausse surprise ou du clickbait.
 - Le hook est une phrase complète avec un verbe conjugué, jamais un titre descriptif.
   N'utilise pas la structure « Sujet : règle » ni une étiquette suivie de deux-points.
-  Fais apparaître la bascule qui change la décision du lecteur : une exception, une
-  conséquence, une condition décisive ou un contraste exact entre deux situations.
+  Utilise la construction la plus simple possible : une proposition principale,
+  dans l'ordre sujet-verbe-complément. N'ajoute au maximum qu'une subordonnée si elle
+  est indispensable à l'exactitude juridique. N'accumule jamais plusieurs conditions,
+  catégories de salariés ou étapes de procédure dans le hook.
+  Exprime une seule idée décisive : une exception, une conséquence, une condition ou
+  un contraste exact. Pour une procédure, nomme simplement le préalable qui conditionne
+  sa validité ; ne cherche pas à fabriquer un contraste avec « change de régime ».
   Le hook ne se contente jamais de résumer le thème avec « est possible », « est
   obligatoire », « est interdit » ou une formule équivalente.
 - Place l'élément décisif au début du hook, avant le contexte général. Évite les
@@ -721,7 +726,8 @@ Règles obligatoires :
     seulement si la date modifie l'action ;
   • décision de justice : donne l'enseignement opérationnel, jamais le nom de la
     juridiction et la date comme seule accroche ;
-  • procédure : ouvre sur la première étape bloquante ou l'ordre à respecter ;
+  • procédure : ouvre sur la première étape bloquante ou l'ordre à respecter, sans
+    annoncer plusieurs actes successifs dans le hook ;
   • comparaison : expose la différence qui produit un résultat juridique distinct ;
   • principe général : mets en avant sa limite ou sa portée contre-intuitive, pas une
     définition scolaire.
@@ -748,10 +754,10 @@ Règles obligatoires :
   le hook ne dit jamais que l'acteur « perd l'accès », que l'acte « est interdit » ou
   qu'il « ne peut » agir sans nuance. Emploie « en principe », indique que les conditions
   d'accès changent, ou intègre l'exception si elle tient dans les 20 mots.
-- Test obligatoire pour le hook : si le passage qui le fonde contient « sauf »,
-  « exception » ou une réserve expresse, le hook contient lui-même « en principe » ou
-  « sauf », ou utilise un verbe non absolu comme « change », « encadre » ou « limite ».
-  À défaut, réécris le hook avant d'émettre la réponse.
+- Test obligatoire pour le hook : si une exception ou une réserve limite exactement
+  la proposition formulée dans le hook, celui-ci contient « en principe » ou « sauf »,
+  ou emploie un verbe non absolu comme « encadre » ou « limite ». Une exception qui
+  porte sur une autre étape ou une autre règle ne doit pas alourdir le hook.
 - Le post n'est pas une réponse de chat : ne commence pas par « Oui », « Non »,
   « Ça dépend » ni par une reformulation de la question.
 - Développe un seul angle éditorial. Écris pour un écran mobile. Utilise une phrase
@@ -769,9 +775,17 @@ Règles obligatoires :
   accomplir dans l'ordre : une alternative, une faculté, une exception, un refus ou la
   conséquence d'une décision n'est jamais une étape autonome. Rattache-la à l'étape
   qu'elle modifie ou place-la après la séquence dans un court paragraphe. Chaque étape
-  commence par l'action à accomplir et tient en une phrase. Si un même article fonde
-  plusieurs étapes consécutives, cite-le une seule fois dans la phrase qui introduit la
-  séquence, puis ne le répète dans aucun item. Si les documents ne couvrent pas toute la
+  commence par l'action à accomplir et tient en une phrase. Après le hook, commence
+  directement par « 1. » : n'insère aucun chapeau qui annonce, résume ou énumère les
+  étapes avant de les détailler. Une phrase de cadrage n'est admise que si elle apporte
+  une règle autonome qui ne sera reprise dans aucun item. Si un même article fonde
+  plusieurs étapes consécutives, cite-le une seule fois dans l'item auquel il se rattache
+  le plus directement, sans le répéter dans les autres. Avant de rédiger la liste,
+  dresse mentalement l'inventaire des actions requises : chaque action n'apparaît que
+  dans un seul numéro. Deux items ne commencent jamais par la même action ni ne décrivent
+  le même acte avec des synonymes. Les facultés, alternatives, exceptions et conséquences
+  restent hors de la numérotation, dans un paragraphe placé après les étapes requises.
+  Si les documents ne couvrent pas toute la
   procédure, donne seulement les étapes établies et signale précisément la limite sans
   compléter de mémoire. Pour les autres intentions, choisis entre paragraphes, puces ou
   tirets selon le nombre et la nature des éléments.
@@ -867,7 +881,9 @@ Règles obligatoires :
   contacter AORIA RH et ne sollicite aucune donnée confidentielle ni consultation personnelle.
 - Le CTA ne doit pas pouvoir recevoir seulement « oui » ou « non ». Commence-le par
   « Comment », « Quelles règles », « Quels critères » ou « Dans quelles situations »,
-  selon le sujet, puis demande une pratique concrète.
+  selon le sujet, puis demande une pratique concrète. Il porte sur l'enjeu central du
+  post ou sur l'ensemble de la démarche. Ne le centre pas sur un délai, une exception
+  ou le dernier détail cité, sauf si cet élément constitue précisément l'angle du post.
 - Dans toutes les questions, conserve l'ordre sujet-verbe : « Comment votre équipe
   trace cette décision ? ». N'utilise aucune inversion comme « utilisez-vous »,
   « est-il », « peut-on » ou « faut-il ».
@@ -892,13 +908,14 @@ Contrôle final silencieux obligatoire avant d'émettre le premier mot :
 3. Chaque idée dispose de son paragraphe, aucun paragraphe ne dépasse deux phrases et
    chaque paragraphe est séparé par une ligne vide. Les phrases restent fluides et
    lisibles sur mobile, sans plafond artificiel de mots.
-4. Le hook reste exact avec l'exception décisive, crée un enjeu concret dès les deux
-   premières lignes, contient un verbe conjugué, aucun deux-points et ne se contente
-   pas de répéter platement le sujet. Sa mécanique correspond à l'intention dominante
+4. Le hook reste simple et exact avec l'exception décisive, crée un enjeu concret dès
+   les deux premières lignes, contient une seule proposition principale, un verbe
+   conjugué, aucun deux-points et ne se contente pas de répéter platement le sujet.
+   Sa mécanique correspond à l'intention dominante
    et il ne contient aucune référence entre parenthèses.
-   Si la source contient une exception expresse, le hook ne présente aucune interdiction
-   ou autorisation comme absolue et passe le test obligatoire « en principe / sauf /
-   change / encadre / limite ».
+   Si une exception limite exactement sa proposition, le hook ne présente aucune
+   interdiction ou autorisation comme absolue et passe le test obligatoire « en
+   principe / sauf / encadre / limite ».
 5. La dernière ligne contient uniquement le CTA précis. Il n'existe aucun bloc final
    de références, aucun préambule et aucun commentaire éditorial.
 6. Chaque conseil ou action est explicitement établi par un document ; sinon il est
@@ -915,7 +932,9 @@ Contrôle final silencieux obligatoire avant d'émettre le premier mot :
     le corps contient obligatoirement une liste numérotée dans leur ordre juridique ;
     une suite de paragraphes non numérotés est alors une sortie invalide à réécrire.
     Vérifie que chaque numéro correspond à une action requise, jamais à une variante ou
-    une conséquence, et qu'une autorité commune à plusieurs étapes n'est citée qu'une fois.
+    une conséquence, qu'aucun paragraphe ne résume les étapes avant la liste et qu'une
+    autorité commune à plusieurs étapes n'est citée qu'une fois. Réduis mentalement chaque
+    item à son verbe et son objet : aucun couple action-objet ne doit apparaître deux fois.
     Pour toute autre intention, vérifie que paragraphes, puces, comparaison, calcul ou
     chronologie constituent réellement la forme la plus claire pour ce contenu.
 
@@ -3141,9 +3160,11 @@ class RAGAgent:
                     "procédure : après le hook, étapes chronologiques numérotées "
                     "« 1. », « 2. », « 3. » ; plusieurs actes successifs ne sont "
                     "jamais présentés en simples paragraphes. Seules les actions "
-                    "requises sont numérotées ; variantes et conséquences ne sont "
-                    "pas de fausses étapes. Une référence commune à plusieurs étapes "
-                    "est citée une seule fois dans la phrase qui introduit la séquence"
+                    "requises sont numérotées et chacune apparaît exactement une fois. "
+                    "Commence directement par « 1. » sans paragraphe qui annonce les "
+                    "étapes. Variantes, facultés, exceptions et conséquences restent "
+                    "hors de la numérotation. Une référence commune à plusieurs étapes "
+                    "est citée une seule fois dans l'item le plus directement concerné"
                 ),
                 "comparison_table": (
                     "comparaison structurée par différences décisives, avec des puces "

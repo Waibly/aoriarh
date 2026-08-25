@@ -274,6 +274,8 @@ def test_linkedin_prompt_requires_exact_claim_to_source_alignment():
     assert "N'élargis jamais une formulation juridique par des mots totalisants" in prompt
     assert "Le CTA ne doit pas pouvoir recevoir seulement « oui » ou « non »" in prompt
     assert "Le hook est une phrase complète avec un verbe conjugué" in prompt
+    assert "Utilise la construction la plus simple possible" in prompt
+    assert "N'accumule jamais plusieurs conditions" in prompt
     assert "N'utilise pas la structure « Sujet : règle »" in prompt
     assert "Place l'élément décisif au début du hook" in prompt
     assert "la situation X n'empêche pas Y, sauf Z" in prompt
@@ -287,7 +289,11 @@ def test_linkedin_prompt_requires_exact_claim_to_source_alignment():
     assert "le corps contient obligatoirement une liste numérotée" in prompt
     assert "Numérote uniquement les actes à\n  accomplir dans l'ordre" in prompt
     assert "conséquence d'une décision n'est jamais une étape autonome" in prompt
-    assert "cite-le une seule fois dans la phrase qui introduit" in prompt
+    assert "commence\n  directement par « 1. »" in prompt
+    assert "n'insère aucun chapeau qui annonce, résume ou énumère" in prompt
+    assert "cite-le une seule fois dans l'item auquel il se rattache" in prompt
+    assert "chaque action n'apparaît que\n  dans un seul numéro" in prompt
+    assert "aucun couple action-objet ne doit apparaître deux fois" in prompt
     assert "comparaison : expose la différence" in prompt
     assert "L'intention détermine aussi la forme complète du corps" in prompt
     assert "plusieurs conditions, critères, erreurs ou cas autonomes" in prompt
@@ -297,7 +303,7 @@ def test_linkedin_prompt_requires_exact_claim_to_source_alignment():
     assert "Ne place aucune référence juridique entre parenthèses dans le hook" in prompt
     assert "le hook ne dit jamais que l'acteur « perd l'accès »" in prompt
     assert "Test obligatoire pour le hook" in prompt
-    assert "en principe / sauf /\n   change / encadre / limite" in prompt
+    assert "en\n   principe / sauf / encadre / limite" in prompt
     assert "La séquence « . ( » n'apparaît jamais" in prompt
     assert "Deux paragraphes consécutifs ne peuvent\n  pas avoir le même message central" in prompt
     assert "Résume mentalement chaque paragraphe en quelques mots" in prompt
@@ -306,6 +312,8 @@ def test_linkedin_prompt_requires_exact_claim_to_source_alignment():
     assert "Ne transforme jamais une\n  présomption" in prompt
     assert "aucune phrase ne dépasse 24 mots" not in prompt
     assert "sans plafond artificiel de mots" in prompt
+    assert "Il porte sur l'enjeu central du\n  post ou sur l'ensemble de la démarche" in prompt
+    assert "Ne le centre pas sur un délai, une exception" in prompt
     assert "Contrôle final silencieux obligatoire avant d'émettre le premier mot" in prompt
 
 
@@ -325,6 +333,9 @@ def test_linkedin_user_message_enforces_the_planned_procedure_format():
     assert "étapes chronologiques numérotées" in message
     assert "jamais présentés en simples paragraphes" in message
     assert "Seules les actions requises sont numérotées" in message
+    assert "chacune apparaît exactement une fois" in message
+    assert "Commence directement par « 1. »" in message
+    assert "Variantes, facultés, exceptions et conséquences" in message
     assert "référence commune à plusieurs étapes" in message
     assert "pas seulement sur le hook" in message
 
