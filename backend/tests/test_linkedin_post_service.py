@@ -1,0 +1,179 @@
+"""Tests du générateur LinkedIn autonome, sans appel réseau."""
+
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, patch
+
+import pytest
+
+from app.services.linkedin_post_service import (
+    LINKEDIN_POST_SYSTEM_PROMPT,
+    build_linkedin_user_prompt,
+    build_linkedin_warnings,
+    format_linkedin_reference,
+    generate_linkedin_post,
+    select_linkedin_references,
+)
+
+
+def _llm_response(content: str | None) -> SimpleNamespace:
+    return SimpleNamespace(
+        choices=[SimpleNamespace(message=SimpleNamespace(content=content))],
+        usage=None,
+    )
+
+
+def test_prompt_requires_hook_body_sources_cta_and_forbids_hashtags() -> None:
+    assert "deux premières lignes" in LINKEDIN_POST_SYSTEM_PROMPT
+    assert "paragraphes courts" in LINKEDIN_POST_SYSTEM_PROMPT
+    assert "Sources :" in LINKEDIN_POST_SYSTEM_PROMPT
+    assert "CTA final" in LINKEDIN_POST_SYSTEM_PROMPT
+    assert "N'ajoute aucun hashtag" in LINKEDIN_POST_SYSTEM_PROMPT
+
+
+def test_user_prompt_delimits_inputs_and_authorized_references() -> None:
+    prompt = build_linkedin_user_prompt(
+        question="Quel préavis ?",
+        answer_markdown="Selon l'article L. 1234-1...",
+        references=["Code du travail, art. L.1234-1"],
+    )
+
+    assert "<question_source>\nQuel préavis ?\n</question_source>" in prompt
+    assert "<reponse_source>\nSelon l'article L. 1234-1..." in prompt
+    assert "- Code du travail, art. L.1234-1" in prompt
+
+
+def test_selects_and_formats_only_references_cited_by_answer() -> None:
+    sources = [
+        {
+            "source_type": "code_travail",
+            "source_type_label": "Code du travail",
+            "document_name": "Code du travail",
+            "article_nums": ["L.1234-1", "L.1234-2"],
+        },
+        {
+            "source_type": "arret_cour_cassation",
+            "source_type_label": "Arrêt Cour de cassation",
+            "document_name": "Décision 21-12.345",
+            "numero_pourvoi": "21-12.345",
+            "date_decision": "2023-05-10",
+        },
+        {
+            "source_type": "arret_cour_cassation",
+            "source_type_label": "Arrêt Cour de cassation",
+            "document_name": "Décision 22-99.999",
+            "numero_pourvoi": "22-99.999",
+        },
+    ]
+
+    selected = select_linkedin_references(
+        "Le principe vient de l'article L. 1234-1 et de l'arrêt n° 21-12.345.",
+        sources,
+    )
+
+    assert len(selected) == 2
+    assert selected[0]["article_nums"] == ["L.1234-1"]
+    assert format_linkedin_reference(selected[0]) == "Code du travail, art. L.1234-1"
+    assert (
+        format_linkedin_reference(selected[1])
+        == "Cour de cassation, 10/05/2023, n° 21-12.345"
+    )
+
+
+def test_internal_reference_does_not_expose_document_name() -> None:
+    reference = format_linkedin_reference(
+        {
+            "source_type": "reglement_interieur",
+            "source_type_label": "Règlement intérieur",
+            "document_name": "Règlement intérieur confidentiel ACME 2026",
+        }
+    )
+
+    assert reference == "Règlement intérieur"
+    assert "ACME" not in reference
+
+
+def test_warnings_never_transform_content() -> None:
+    content = f"Texte #RH\n{'x' * 3000}"
+    warnings = build_linkedin_warnings(
+        content,
+        ["Code du travail, art. L.1234-1"],
+    )
+
+    assert len(content) > 3000
+    assert any("3 000 caractères" in warning for warning in warnings)
+    assert any("hashtag" in warning for warning in warnings)
+    assert any("références autorisées" in warning for warning in warnings)
+
+
+@pytest.mark.asyncio
+async def test_generation_returns_non_empty_llm_output_byte_for_byte() -> None:
+    raw = (
+        "  Accroche conservée\n\nCorps.\n\nSources :\n"
+        "• Code du travail, art. L.1234-1\n\nVotre pratique ?  \n"
+    )
+    source = {
+        "source_type": "code_travail",
+        "source_type_label": "Code du travail",
+        "document_name": "Code du travail",
+        "article_nums": ["L.1234-1"],
+    }
+
+    with patch(
+        "app.services.linkedin_post_service._llm.chat.completions.create",
+        new=AsyncMock(return_value=_llm_response(raw)),
+    ) as create:
+        generation = await generate_linkedin_post(
+            question="Quel préavis ?",
+            answer_markdown="L'article L. 1234-1 fixe la règle.",
+            sources=[source],
+            organisation_id="00000000-0000-0000-0000-000000000001",
+            user_id="00000000-0000-0000-0000-000000000002",
+            message_id="00000000-0000-0000-0000-000000000003",
+        )
+
+    assert generation.content == raw
+    assert generation.references == ["Code du travail, art. L.1234-1"]
+    assert generation.warnings == []
+    create.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_generation_retries_only_empty_output() -> None:
+    create = AsyncMock(
+        side_effect=[
+            _llm_response("   \n"),
+            _llm_response("Post finalement produit"),
+        ]
+    )
+    with patch(
+        "app.services.linkedin_post_service._llm.chat.completions.create",
+        new=create,
+    ):
+        generation = await generate_linkedin_post(
+            question="Question",
+            answer_markdown="Réponse sans référence explicite.",
+            sources=[],
+        )
+
+    assert generation.content == "Post finalement produit"
+    assert create.await_count == 2
+    assert any("Aucun fondement" in warning for warning in generation.warnings)
+
+
+@pytest.mark.asyncio
+async def test_generation_fails_after_two_empty_outputs() -> None:
+    create = AsyncMock(return_value=_llm_response(""))
+    with (
+        patch(
+            "app.services.linkedin_post_service._llm.chat.completions.create",
+            new=create,
+        ),
+        pytest.raises(RuntimeError, match="sortie vide"),
+    ):
+        await generate_linkedin_post(
+            question="Question",
+            answer_markdown="Réponse",
+            sources=[],
+        )
+
+    assert create.await_count == 2

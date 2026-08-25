@@ -1,6 +1,12 @@
 "use client";
 
-import { useState, useCallback, useRef, useMemo, type ComponentProps } from "react";
+import {
+  useState,
+  useCallback,
+  useRef,
+  useMemo,
+  type ComponentProps,
+} from "react";
 import { useSession } from "next-auth/react";
 import { toast } from "sonner";
 import ReactMarkdown from "react-markdown";
@@ -19,6 +25,7 @@ import {
   ThumbsDown,
   Send,
   ClipboardList,
+  Linkedin,
   Loader2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -34,6 +41,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { MessageSources } from "./message-sources";
+import { LinkedInPostDialog } from "./linkedin-post-dialog";
 import { downloadFiche } from "@/lib/chat-api";
 import { cn } from "@/lib/utils";
 import type { Message } from "@/types/api";
@@ -63,6 +71,7 @@ export function MessageBubble({ message, onFeedback }: MessageBubbleProps) {
   const [showCommentInput, setShowCommentInput] = useState(false);
   const [comment, setComment] = useState("");
   const [ficheLoading, setFicheLoading] = useState(false);
+  const [linkedinOpen, setLinkedinOpen] = useState(false);
   const commentRef = useRef<HTMLInputElement>(null);
   const proseRef = useRef<HTMLDivElement>(null);
 
@@ -135,10 +144,11 @@ export function MessageBubble({ message, onFeedback }: MessageBubbleProps) {
 
   const isTemp =
     message.id.startsWith("temp-") || message.id.startsWith("partial-");
+  const isAdmin = session?.user.role === "admin";
 
   const messageSources = useMemo(
     () => message.sources ?? [],
-    [message.sources],
+    [message.sources]
   );
   const rehypePlugins = useMemo<
     ComponentProps<typeof ReactMarkdown>["rehypePlugins"]
@@ -147,7 +157,7 @@ export function MessageBubble({ message, onFeedback }: MessageBubbleProps) {
       [rehypeLegalRefs, { index: buildRefIndex(messageSources) }],
       rehypeSanitize,
     ],
-    [messageSources],
+    [messageSources]
   );
 
   if (isUser) {
@@ -170,158 +180,178 @@ export function MessageBubble({ message, onFeedback }: MessageBubbleProps) {
   return (
     <div className="group/message flex w-full min-w-0 flex-col items-start">
       <SourceViewerProvider sources={messageSources}>
-      <div className="w-full min-w-0">
-        <div
-          ref={proseRef}
-          className="prose prose-sm dark:prose-invert text-foreground [&_h1]:text-foreground [&_h2]:text-foreground [&_h3]:text-foreground [&_a]:text-primary [&_strong]:text-foreground [&_li::marker]:text-foreground/70 max-w-none text-[0.9375rem] leading-7 break-words [&_a]:underline-offset-2 [&_h1]:mt-6 [&_h1]:mb-3 [&_h1]:text-lg [&_h1]:font-bold [&_h2]:mt-6 [&_h2]:mb-3 [&_h2]:text-[1.0625rem] [&_h2]:font-bold [&_h3]:mt-5 [&_h3]:mb-2 [&_h3]:text-base [&_h3]:font-bold [&_li]:my-0.5 [&_li]:leading-7 [&_ol]:my-3 [&_ol]:list-decimal [&_ol]:pl-5 [&_p]:my-3 [&_p]:leading-7 [&_pre]:overflow-x-auto [&_strong]:font-semibold [&_table]:block [&_table]:overflow-x-auto [&_ul]:my-3 [&_ul]:list-disc [&_ul]:pl-5 [&>*:first-child]:mt-0 [&>*:last-child]:mb-0"
-        >
-          <ReactMarkdown
-            remarkPlugins={[remarkGfm]}
-            rehypePlugins={rehypePlugins}
-            components={MD_COMPONENTS}
+        <div className="w-full min-w-0">
+          <div
+            ref={proseRef}
+            className="prose prose-sm dark:prose-invert text-foreground [&_h1]:text-foreground [&_h2]:text-foreground [&_h3]:text-foreground [&_a]:text-primary [&_strong]:text-foreground [&_li::marker]:text-foreground/70 max-w-none text-[0.9375rem] leading-7 break-words [&_a]:underline-offset-2 [&_h1]:mt-6 [&_h1]:mb-3 [&_h1]:text-lg [&_h1]:font-bold [&_h2]:mt-6 [&_h2]:mb-3 [&_h2]:text-[1.0625rem] [&_h2]:font-bold [&_h3]:mt-5 [&_h3]:mb-2 [&_h3]:text-base [&_h3]:font-bold [&_li]:my-0.5 [&_li]:leading-7 [&_ol]:my-3 [&_ol]:list-decimal [&_ol]:pl-5 [&_p]:my-3 [&_p]:leading-7 [&_pre]:overflow-x-auto [&_strong]:font-semibold [&_table]:block [&_table]:overflow-x-auto [&_ul]:my-3 [&_ul]:list-disc [&_ul]:pl-5 [&>*:first-child]:mt-0 [&>*:last-child]:mb-0"
           >
-            {message.content}
-          </ReactMarkdown>
-        </div>
-        {!isTemp && (
-          <div className="border-primary/15 bg-primary/5 my-8 flex flex-wrap items-center gap-1.5 rounded-xl border px-2.5 py-2">
-            {/* Copier la réponse — choix du format */}
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
-                  className="text-primary/70 hover:text-primary"
-                  aria-label={copied ? "Copié" : "Copier la réponse"}
-                >
-                  {copied ? (
-                    <Check className="size-4" />
-                  ) : (
-                    <Copy className="size-4" />
-                  )}
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="start" className="w-72">
-                <DropdownMenuItem
-                  onSelect={() => handleCopy("text")}
-                  className="flex-col items-start gap-0.5"
-                >
-                  <span className="font-medium">Texte simple</span>
-                  <span className="text-muted-foreground text-xs">
-                    Sans symboles de mise en forme — idéal pour un e-mail ou
-                    Word
-                  </span>
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  onSelect={() => handleCopy("markdown")}
-                  className="flex-col items-start gap-0.5"
-                >
-                  <span className="font-medium">Texte mis en forme</span>
-                  <span className="text-muted-foreground text-xs">
-                    Conserve titres, listes et gras — pour Notion, Obsidian…
-                    (Markdown)
-                  </span>
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-
-            {/* Notation de la réponse */}
-            {onFeedback && (
-              <>
-                <span className="text-foreground ml-1 hidden text-xs sm:inline">
-                  Est-ce que la réponse vous convient&nbsp;?
-                </span>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      variant="ghost"
-                      size="icon-sm"
-                      className={cn(
-                        "text-primary/70 hover:text-primary",
-                        message.feedback === "up" &&
-                          "bg-primary/10 text-primary hover:text-primary"
-                      )}
-                      onClick={() => handleFeedback("up")}
-                      aria-label="Bonne réponse"
-                    >
-                      <ThumbsUp className="size-4" />
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>Bonne réponse</TooltipContent>
-                </Tooltip>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      variant="ghost"
-                      size="icon-sm"
-                      className={cn(
-                        "text-primary/70 hover:text-destructive",
-                        message.feedback === "down" &&
-                          "bg-destructive/10 text-destructive hover:text-destructive"
-                      )}
-                      onClick={() => handleFeedback("down")}
-                      aria-label="Réponse à améliorer"
-                    >
-                      <ThumbsDown className="size-4" />
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>Réponse à améliorer</TooltipContent>
-                </Tooltip>
-              </>
-            )}
-
-            {/* Une réponse de sécurité ne doit jamais devenir un document. */}
-            {message.fiche_eligible !== false && (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleFiche}
-                disabled={ficheLoading}
-                className="border-primary/40 text-primary hover:bg-primary/10 hover:text-primary dark:border-primary/40 dark:bg-card dark:text-primary dark:hover:bg-primary/15 ml-auto gap-1.5 bg-white"
-              >
-                {ficheLoading ? (
-                  <Loader2 className="size-4 animate-spin" />
-                ) : (
-                  <ClipboardList className="size-4" />
-                )}
-                {ficheLoading ? "Génération…" : "Créer une fiche pratique"}
-              </Button>
-            )}
-          </div>
-        )}
-        {showCommentInput && (
-          <div className="mt-2 flex items-center gap-2">
-            <input
-              ref={commentRef}
-              type="text"
-              value={comment}
-              onChange={(e) => setComment(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") handleSubmitComment();
-                if (e.key === "Escape") {
-                  setShowCommentInput(false);
-                  setComment("");
-                }
-              }}
-              placeholder="Qu'est-ce qui n'allait pas ?"
-              className="border-input bg-background placeholder:text-muted-foreground focus:ring-ring flex-1 rounded-md border px-3 py-1.5 text-sm focus:ring-1 focus:outline-none"
-              maxLength={1000}
-            />
-            <Button
-              size="icon-xs"
-              variant="ghost"
-              onClick={handleSubmitComment}
-              disabled={!comment.trim()}
-              className="text-muted-foreground hover:text-foreground"
+            <ReactMarkdown
+              remarkPlugins={[remarkGfm]}
+              rehypePlugins={rehypePlugins}
+              components={MD_COMPONENTS}
             >
-              <Send className="size-3.5" />
-            </Button>
+              {message.content}
+            </ReactMarkdown>
           </div>
-        )}
-        {messageSources.length > 0 && (
-          <MessageSources sources={messageSources} answer={message.content} />
-        )}
-      </div>
+          {!isTemp && (
+            <div className="border-primary/15 bg-primary/5 my-8 flex flex-wrap items-center gap-1.5 rounded-xl border px-2.5 py-2">
+              {/* Copier la réponse — choix du format */}
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    className="text-primary/70 hover:text-primary"
+                    aria-label={copied ? "Copié" : "Copier la réponse"}
+                  >
+                    {copied ? (
+                      <Check className="size-4" />
+                    ) : (
+                      <Copy className="size-4" />
+                    )}
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start" className="w-72">
+                  <DropdownMenuItem
+                    onSelect={() => handleCopy("text")}
+                    className="flex-col items-start gap-0.5"
+                  >
+                    <span className="font-medium">Texte simple</span>
+                    <span className="text-muted-foreground text-xs">
+                      Sans symboles de mise en forme — idéal pour un e-mail ou
+                      Word
+                    </span>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onSelect={() => handleCopy("markdown")}
+                    className="flex-col items-start gap-0.5"
+                  >
+                    <span className="font-medium">Texte mis en forme</span>
+                    <span className="text-muted-foreground text-xs">
+                      Conserve titres, listes et gras — pour Notion, Obsidian…
+                      (Markdown)
+                    </span>
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+
+              {/* Notation de la réponse */}
+              {onFeedback && (
+                <>
+                  <span className="text-foreground ml-1 hidden text-xs sm:inline">
+                    Est-ce que la réponse vous convient&nbsp;?
+                  </span>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        className={cn(
+                          "text-primary/70 hover:text-primary",
+                          message.feedback === "up" &&
+                            "bg-primary/10 text-primary hover:text-primary"
+                        )}
+                        onClick={() => handleFeedback("up")}
+                        aria-label="Bonne réponse"
+                      >
+                        <ThumbsUp className="size-4" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>Bonne réponse</TooltipContent>
+                  </Tooltip>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        className={cn(
+                          "text-primary/70 hover:text-destructive",
+                          message.feedback === "down" &&
+                            "bg-destructive/10 text-destructive hover:text-destructive"
+                        )}
+                        onClick={() => handleFeedback("down")}
+                        aria-label="Réponse à améliorer"
+                      >
+                        <ThumbsDown className="size-4" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>Réponse à améliorer</TooltipContent>
+                  </Tooltip>
+                </>
+              )}
+
+              {/* Une réponse de sécurité ne doit jamais devenir un document. */}
+              {message.fiche_eligible !== false && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleFiche}
+                  disabled={ficheLoading}
+                  className="border-primary/40 text-primary hover:bg-primary/10 hover:text-primary dark:border-primary/40 dark:bg-card dark:text-primary dark:hover:bg-primary/15 ml-auto gap-1.5 bg-white"
+                >
+                  {ficheLoading ? (
+                    <Loader2 className="size-4 animate-spin" />
+                  ) : (
+                    <ClipboardList className="size-4" />
+                  )}
+                  {ficheLoading ? "Génération…" : "Créer une fiche pratique"}
+                </Button>
+              )}
+              {isAdmin && message.fiche_eligible !== false && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setLinkedinOpen(true)}
+                  disabled={!session?.access_token}
+                  className="border-primary/40 text-primary hover:bg-primary/10 hover:text-primary dark:border-primary/40 dark:bg-card dark:text-primary dark:hover:bg-primary/15 gap-1.5 bg-white"
+                >
+                  <Linkedin className="size-4" />
+                  Générer le post LinkedIn
+                </Button>
+              )}
+            </div>
+          )}
+          {isAdmin && !isTemp && message.fiche_eligible !== false && (
+            <LinkedInPostDialog
+              messageId={message.id}
+              token={session?.access_token}
+              open={linkedinOpen}
+              onOpenChange={setLinkedinOpen}
+            />
+          )}
+          {showCommentInput && (
+            <div className="mt-2 flex items-center gap-2">
+              <input
+                ref={commentRef}
+                type="text"
+                value={comment}
+                onChange={(e) => setComment(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") handleSubmitComment();
+                  if (e.key === "Escape") {
+                    setShowCommentInput(false);
+                    setComment("");
+                  }
+                }}
+                placeholder="Qu'est-ce qui n'allait pas ?"
+                className="border-input bg-background placeholder:text-muted-foreground focus:ring-ring flex-1 rounded-md border px-3 py-1.5 text-sm focus:ring-1 focus:outline-none"
+                maxLength={1000}
+              />
+              <Button
+                size="icon-xs"
+                variant="ghost"
+                onClick={handleSubmitComment}
+                disabled={!comment.trim()}
+                className="text-muted-foreground hover:text-foreground"
+              >
+                <Send className="size-3.5" />
+              </Button>
+            </div>
+          )}
+          {messageSources.length > 0 && (
+            <MessageSources sources={messageSources} answer={message.content} />
+          )}
+        </div>
       </SourceViewerProvider>
     </div>
   );

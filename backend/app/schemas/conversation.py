@@ -55,5 +55,14 @@ class MessageFeedback(BaseModel):
     comment: str | None = Field(None, max_length=1000)
 
 
+class LinkedInPostResponse(BaseModel):
+    """Post brut et contrôles informatifs, sans post-traitement du contenu."""
+
+    content: str
+    character_count: int
+    references: list[str]
+    warnings: list[str]
+
+
 class ChatRequest(BaseModel):
     message: str = Field(..., min_length=1, max_length=5000)

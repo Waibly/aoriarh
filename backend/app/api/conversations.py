@@ -12,7 +12,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.core.dependencies import get_current_user
+from app.core.dependencies import get_current_user, require_role
 from app.core.limiter import limiter
 from app.models.conversation import Message
 from app.models.document import Document
@@ -36,6 +36,7 @@ from app.schemas.conversation import (
     ConversationCreate,
     ConversationRead,
     ConversationReadWithMessages,
+    LinkedInPostResponse,
     MessageFeedback,
     MessageRead,
 )
@@ -366,6 +367,92 @@ async def generate_fiche(
         headers={
             "Content-Disposition": f'attachment; filename="{fiche_filename(gen.content)}"',
         },
+    )
+
+
+@router.post(
+    "/messages/{message_id}/linkedin-post",
+    response_model=LinkedInPostResponse,
+)
+@limiter.limit("10/minute")
+async def generate_message_linkedin_post(
+    message_id: uuid.UUID,
+    request: Request,
+    user: User = Depends(require_role(["admin"])),
+    db: AsyncSession = Depends(get_db),
+) -> LinkedInPostResponse:
+    """Génère un brouillon LinkedIn autonome depuis une réponse du chat.
+
+    Le message, la conversation et les fiches ne sont jamais modifiés. La
+    sortie non vide du LLM est renvoyée telle quelle, accompagnée seulement de
+    métadonnées et d'éventuels avertissements non bloquants.
+    """
+    from app.services.linkedin_post_service import generate_linkedin_post
+
+    message = (
+        await db.execute(select(Message).where(Message.id == message_id))
+    ).scalar_one_or_none()
+    if message is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Message non trouvé",
+        )
+
+    service = ConversationService(db)
+    conversation = await service.get_conversation(
+        conversation_id=message.conversation_id,
+        user=user,
+    )
+
+    # Cette fonctionnalité éditoriale ne doit pas transformer une conversation
+    # client consultable par un admin depuis les outils de contrôle qualité.
+    if conversation.user_id != user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Le post LinkedIn ne peut être généré que depuis votre propre conversation.",
+        )
+
+    if message.role != "assistant" or not (message.content or "").strip():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Seule une réponse de l'assistant peut devenir un post LinkedIn.",
+        )
+
+    if is_security_response(message.content, message.rag_trace):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Cette réponse de sécurité ne peut pas devenir un post LinkedIn.",
+        )
+
+    question = ""
+    for conversation_message in conversation.messages:
+        if conversation_message.created_at >= message.created_at:
+            break
+        if conversation_message.role == "user":
+            question = conversation_message.content
+
+    sources = message.sources if isinstance(message.sources, list) else []
+    try:
+        generation = await generate_linkedin_post(
+            question=question,
+            answer_markdown=message.content,
+            sources=sources,
+            organisation_id=str(conversation.organisation_id),
+            user_id=str(user.id),
+            message_id=str(message.id),
+        )
+    except Exception:
+        logger.exception("Échec de génération LinkedIn pour le message %s", message_id)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="La génération du post LinkedIn a échoué. Veuillez réessayer.",
+        )
+
+    return LinkedInPostResponse(
+        content=generation.content,
+        character_count=len(generation.content),
+        references=generation.references,
+        warnings=generation.warnings,
     )
 
 

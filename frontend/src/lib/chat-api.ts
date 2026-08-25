@@ -118,6 +118,45 @@ export async function downloadFiche(
   window.URL.revokeObjectURL(url);
 }
 
+export interface LinkedInPostResult {
+  content: string;
+  character_count: number;
+  references: string[];
+  warnings: string[];
+}
+
+/**
+ * Génère un brouillon LinkedIn depuis une réponse assistant.
+ * Le contenu reçu est renvoyé tel quel : aucun nettoyage, découpage ou
+ * complément n'est appliqué côté navigateur.
+ */
+export async function generateLinkedInPost(
+  messageId: string,
+  token: string
+): Promise<LinkedInPostResult> {
+  const response = await authFetch(
+    `/conversations/messages/${messageId}/linkedin-post`,
+    {
+      method: "POST",
+      token,
+    }
+  );
+
+  if (!response.ok) {
+    let message =
+      "La génération du post LinkedIn a échoué. Veuillez réessayer.";
+    try {
+      const data = await response.json();
+      if (typeof data?.detail === "string") message = data.detail;
+    } catch {
+      // Corps non JSON : conserve le message technique générique.
+    }
+    throw new Error(message);
+  }
+
+  return response.json() as Promise<LinkedInPostResult>;
+}
+
 export async function updateMessageFeedback(
   messageId: string,
   feedback: "up" | "down" | null,
