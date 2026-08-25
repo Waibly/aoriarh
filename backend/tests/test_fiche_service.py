@@ -13,6 +13,7 @@ from app.services.fiche_service import (
     _md_table_to_html,
     parse_fiche_content,
     render_fiche_html,
+    select_fiche_references,
 )
 
 GEN_AT = datetime(2026, 6, 15, 10, 30)
@@ -90,7 +91,7 @@ def test_format_source_with_articles():
     }
     line = _format_source(src)
     assert "Code du travail" in line
-    assert "L.1237-1, L.1234-1" in line
+    assert "art. L.1237-1, L.1234-1" in line
 
 
 def test_format_source_jurisprudence_with_date():
@@ -102,7 +103,53 @@ def test_format_source_jurisprudence_with_date():
     line = _format_source(src)
     assert "Cass. soc." in line
     assert "n° 21-12.345" in line
-    assert "(2023-05-10)" in line
+    assert "10/05/2023" in line
+
+
+def test_select_fiche_references_keeps_only_cited_legal_foundations():
+    sources = [
+        {
+            "source_type": "code_travail",
+            "source_type_label": "Code du travail",
+            "document_name": "Code du travail",
+            "article_nums": ["L.2421-3", "R.2421-10"],
+        },
+        {
+            "source_type": "arret_cour_cassation",
+            "source_type_label": "Arrêt Cour de cassation",
+            "document_name": "Décision 21-12.345",
+            "numero_pourvoi": "21-12.345",
+            "date_decision": "2023-05-10",
+        },
+        {
+            "source_type": "arret_cour_cassation",
+            "source_type_label": "Arrêt Cour de cassation",
+            "document_name": "Décision 22-99.999",
+            "numero_pourvoi": "22-99.999",
+        },
+    ]
+
+    selected = select_fiche_references(
+        "La consultation est requise (C. trav., art. L. 2421-3). "
+        "La Cour de cassation le confirme (Cass. soc., 10 mai 2023, n° 21-12.345).",
+        sources,
+    )
+
+    assert len(selected) == 2
+    assert selected[0]["article_nums"] == ["L.2421-3"]
+    assert selected[1]["numero_pourvoi"] == "21-12.345"
+
+
+def test_select_fiche_references_omits_uncited_sources_without_identifiers():
+    sources = [
+        {
+            "source_type": "reglement_interieur",
+            "source_type_label": "Règlement intérieur",
+            "document_name": "Règlement intérieur ACME",
+        }
+    ]
+
+    assert select_fiche_references("Le Code du travail fixe la règle.", sources) == []
 
 
 # --- render_fiche_html ----------------------------------------------------
@@ -128,8 +175,9 @@ def test_render_html_escapes_user_content():
 def test_render_html_includes_sources_block():
     sources = [{"source_type_label": "Code du travail", "article_nums": ["L.1237-1"]}]
     html = render_fiche_html(_content(), sources, generated_at=GEN_AT)
-    assert "Sources" in html
+    assert "Références juridiques" in html
     assert "L.1237-1" in html
+    assert "document_id" not in html
 
 
 def test_render_html_optional_blocks_omitted():

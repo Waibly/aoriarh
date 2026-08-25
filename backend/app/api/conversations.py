@@ -254,6 +254,7 @@ async def generate_fiche(
         fiche_filename,
         generate_fiche_content,
         render_fiche_pdf,
+        select_fiche_references,
     )
 
     message = (
@@ -302,6 +303,7 @@ async def generate_fiche(
     ).scalar_one_or_none()
 
     sources = message.sources if isinstance(message.sources, list) else []
+    references = select_fiche_references(message.content, sources)
 
     try:
         gen = await generate_fiche_content(
@@ -337,7 +339,7 @@ async def generate_fiche(
     if existing is not None:
         existing.title = gen.content.titre[:200]
         existing.content = content_dict
-        existing.sources = sources
+        existing.sources = references
     else:
         db.add(
             Fiche(
@@ -346,12 +348,17 @@ async def generate_fiche(
                 message_id=message.id,
                 title=gen.content.titre[:200],
                 content=content_dict,
-                sources=sources,
+                sources=references,
             )
         )
     await db.commit()
 
-    pdf_bytes = render_fiche_pdf(gen.content, sources, generated_at=datetime.now(), org_name=org)
+    pdf_bytes = render_fiche_pdf(
+        gen.content,
+        references,
+        generated_at=datetime.now(),
+        org_name=org,
+    )
 
     return Response(
         content=pdf_bytes,

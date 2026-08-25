@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.dependencies import get_current_user
+from app.models.conversation import Message
 from app.models.fiche import Fiche
 from app.models.organisation import Organisation
 from app.models.user import User
@@ -16,6 +17,7 @@ from app.services.fiche_service import (
     FicheContent,
     fiche_filename,
     render_fiche_pdf,
+    select_fiche_references,
 )
 
 router = APIRouter()
@@ -87,6 +89,12 @@ async def download_fiche(
 
     content = FicheContent(**fiche.content)
     sources = fiche.sources if isinstance(fiche.sources, list) else []
+    if fiche.message_id:
+        answer_markdown = (await db.execute(
+            select(Message.content).where(Message.id == fiche.message_id)
+        )).scalar_one_or_none()
+        if answer_markdown:
+            sources = select_fiche_references(answer_markdown, sources)
     pdf_bytes = render_fiche_pdf(
         content, sources, generated_at=datetime.now(), org_name=org
     )

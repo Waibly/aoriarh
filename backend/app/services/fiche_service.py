@@ -19,6 +19,7 @@ import html
 import json
 import logging
 import re
+import unicodedata
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -235,23 +236,141 @@ def _md_table_to_html(md: str) -> str:
     return f"<table><thead><tr>{thead}</tr></thead><tbody>{body}</tbody></table>"
 
 
+def _reference_key(value: object) -> str:
+    """Normalise une référence pour la comparaison et la déduplication."""
+    text = unicodedata.normalize("NFKD", str(value or ""))
+    text = "".join(char for char in text if not unicodedata.combining(char))
+    return re.sub(r"[^a-z0-9]+", "", text.casefold())
+
+
+def _article_is_cited(article: str, answer_markdown: str) -> bool:
+    """Vérifie qu'un numéro d'article de la source figure dans la réponse."""
+    article_key = _reference_key(article)
+    if not article_key:
+        return False
+
+    # Les articles de code comportent une lettre : la normalisation permet de
+    # rapprocher L. 2421-3, L2421-3 et L 2421 3 sans faux positif L. 2421-30.
+    compact_answer = _reference_key(answer_markdown)
+    if article_key[0].isalpha():
+        return re.search(rf"{re.escape(article_key)}(?!\d)", compact_answer) is not None
+
+    # Pour un article conventionnel purement numérique, exige le mot article/art.
+    # afin qu'un délai ou un montant identique ne soit pas pris pour une citation.
+    flexible = r"[.\s\-]*".join(re.escape(char) for char in str(article).strip())
+    return (
+        re.search(
+            rf"\b(?:art(?:icle)?\.?\s*)(?:n[o°]\s*)?{flexible}(?!\d)",
+            answer_markdown,
+            flags=re.IGNORECASE,
+        )
+        is not None
+    )
+
+
+def select_fiche_references(answer_markdown: str, sources: list[dict]) -> list[dict]:
+    """Conserve uniquement les fondements explicitement cités dans la réponse.
+
+    La sélection est déterministe et ne modifie jamais le texte produit par le
+    LLM. Pour chaque source, seuls les articles ou le numéro de décision visibles
+    dans la réponse sont conservés. Un document sans identifiant stable n'est
+    retenu que si son nom exact ou son IDCC apparaît dans la réponse.
+    """
+    answer_key = _reference_key(answer_markdown)
+    selected: list[dict] = []
+    seen: set[tuple] = set()
+
+    for source in sources:
+        if not isinstance(source, dict):
+            continue
+
+        source_copy = dict(source)
+        pourvoi = str(source.get("numero_pourvoi") or "").strip()
+        article_nums = [
+            str(article).strip()
+            for article in (source.get("article_nums") or [])
+            if str(article).strip()
+        ]
+
+        # Une décision se cite par son numéro, pas par les articles reproduits
+        # dans son texte ou ses visas.
+        if pourvoi:
+            if _reference_key(pourvoi) not in answer_key:
+                continue
+            source_copy["article_nums"] = None
+        elif article_nums:
+            cited_articles = [
+                article
+                for article in article_nums
+                if _article_is_cited(article, answer_markdown)
+            ]
+            if not cited_articles:
+                continue
+            source_copy["article_nums"] = cited_articles
+        else:
+            document_name = str(source.get("document_name") or "").strip()
+            idcc = str(source.get("idcc") or "").strip()
+            name_cited = bool(document_name) and _reference_key(document_name) in answer_key
+            idcc_cited = bool(idcc) and _reference_key(idcc) in answer_key
+            if not name_cited and not idcc_cited:
+                continue
+
+        key = (
+            source_copy.get("source_type"),
+            source_copy.get("document_name"),
+            tuple(source_copy.get("article_nums") or []),
+            source_copy.get("numero_pourvoi"),
+        )
+        if key in seen:
+            continue
+        seen.add(key)
+        selected.append(source_copy)
+
+    return selected
+
+
 def _format_source(src: dict) -> str:
-    """Construit une ligne de source 'Label — réf (date)' depuis un RAGSource."""
-    label = src.get("source_type_label") or src.get("document_name") or "Source"
-    ref_parts: list[str] = []
-    article_nums = src.get("article_nums")
-    if article_nums:
-        ref_parts.append(", ".join(str(a) for a in article_nums))
-    if src.get("numero_pourvoi"):
-        ref_parts.append(f"n° {src['numero_pourvoi']}")
-    ref = " — ".join(ref_parts) if ref_parts else (src.get("document_name") or "")
-    date = src.get("date_decision")
-    line = html.escape(str(label))
-    if ref:
-        line += f" — {html.escape(str(ref))}"
-    if date:
-        line += f" ({html.escape(str(date))})"
-    return line
+    """Construit un fondement juridique, sans métadonnée documentaire."""
+    label = str(src.get("source_type_label") or src.get("document_name") or "").strip()
+    articles = [str(article).strip() for article in (src.get("article_nums") or [])]
+    pourvoi = str(src.get("numero_pourvoi") or "").strip()
+
+    if pourvoi:
+        label = re.sub(r"^Arrêt\s+", "", label, flags=re.IGNORECASE)
+        parts = [label] if label else []
+        if src.get("date_decision"):
+            try:
+                date = datetime.fromisoformat(str(src["date_decision"])).strftime("%d/%m/%Y")
+            except ValueError:
+                date = str(src["date_decision"])
+            parts.append(date)
+        parts.append(f"n° {pourvoi}")
+        return html.escape(", ".join(parts))
+
+    if articles:
+        article_label = "art." if len(articles) == 1 else "art."
+        citation = f"{article_label} {', '.join(articles)}"
+        return html.escape(f"{label}, {citation}" if label else citation)
+
+    # Pour une CCN, un accord ou un document interne sans article stable, le
+    # titre exact du document constitue lui-même le fondement utile.
+    return html.escape(str(src.get("document_name") or label).strip())
+
+
+def _format_reference_lines(sources: list[dict]) -> list[str]:
+    """Formate et déduplique les fondements affichables."""
+    lines: list[str] = []
+    seen: set[str] = set()
+    for source in sources:
+        if not isinstance(source, dict):
+            continue
+        line = _format_source(source)
+        key = _reference_key(line)
+        if not line or not key or key in seen:
+            continue
+        seen.add(key)
+        lines.append(line)
+    return lines
 
 
 def render_fiche_html(
@@ -289,10 +408,12 @@ def render_fiche_html(
         items = "".join(f"<li>{_inline(s)}</li>" for s in content.etapes)
         blocks.append(f"<h2>{_ICON_STEPS}Étapes</h2><ol>{items}</ol>")
 
-    if sources:
-        src_items = "".join(f"<li>{_format_source(s)}</li>" for s in sources)
+    reference_lines = _format_reference_lines(sources)
+    if reference_lines:
+        src_items = "".join(f"<li>{line}</li>" for line in reference_lines)
         blocks.append(
-            f'<h2>{_ICON_SOURCES}Sources</h2><ul class="sources">{src_items}</ul>'
+            f'<h2>{_ICON_SOURCES}Références juridiques</h2>'
+            f'<ul class="sources">{src_items}</ul>'
         )
 
     org_line = f" — {html.escape(org_name)}" if org_name else ""
