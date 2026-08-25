@@ -1,5 +1,21 @@
 import { authFetch } from "@/lib/api";
 
+const GENERIC_LINKEDIN_ERROR =
+  "La génération du post a échoué. Veuillez réessayer.";
+
+export class LinkedinGenerationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "LinkedinGenerationError";
+  }
+}
+
+export function getLinkedinErrorMessage(error: unknown): string {
+  return error instanceof LinkedinGenerationError
+    ? error.message
+    : GENERIC_LINKEDIN_ERROR;
+}
+
 export interface LinkedinSource {
   document_id: string;
   document_name: string;
@@ -29,19 +45,32 @@ export async function streamLinkedinPost(
   token: string,
   callbacks: LinkedinStreamCallbacks
 ): Promise<void> {
-  const response = await authFetch("/admin/linkedin/generate", {
-    method: "POST",
-    token,
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ topic }),
-  });
+  let response: Response;
+  try {
+    response = await authFetch("/admin/linkedin/generate", {
+      method: "POST",
+      token,
+      headers: {
+        Accept: "text/event-stream",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ topic }),
+    });
+  } catch {
+    throw new LinkedinGenerationError(
+      "Connexion impossible. Vérifiez votre réseau et réessayez."
+    );
+  }
 
   if (!response.ok) {
     const payload = await response.json().catch(() => null);
-    throw new Error(
-      typeof payload?.detail === "string"
+    const canExposeDetail = [401, 403, 422, 429, 503, 504].includes(
+      response.status
+    );
+    throw new LinkedinGenerationError(
+      canExposeDetail && typeof payload?.detail === "string"
         ? payload.detail
-        : "La génération du post a échoué. Veuillez réessayer."
+        : GENERIC_LINKEDIN_ERROR
     );
   }
 

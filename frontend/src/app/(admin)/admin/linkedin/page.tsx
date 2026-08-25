@@ -3,6 +3,9 @@
 import { useState } from "react";
 import { useSession } from "next-auth/react";
 import { Check, Copy, Loader2, Sparkles } from "lucide-react";
+import ReactMarkdown from "react-markdown";
+import rehypeSanitize from "rehype-sanitize";
+import remarkGfm from "remark-gfm";
 import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
@@ -17,7 +20,11 @@ import {
 } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { type LinkedinResult, streamLinkedinPost } from "@/lib/linkedin-api";
+import {
+  getLinkedinErrorMessage,
+  type LinkedinResult,
+  streamLinkedinPost,
+} from "@/lib/linkedin-api";
 import { cn } from "@/lib/utils";
 
 export default function LinkedinPostPage() {
@@ -64,9 +71,7 @@ export default function LinkedinPostPage() {
         onError: (message) => toast.error(message),
       });
     } catch (error) {
-      toast.error(
-        error instanceof Error ? error.message : "La génération a échoué"
-      );
+      toast.error(getLinkedinErrorMessage(error));
     } finally {
       setGenerating(false);
     }
@@ -232,9 +237,18 @@ export default function LinkedinPostPage() {
                       </Badge>
                     )}
                   </div>
-                  <p className="text-muted-foreground mt-2 line-clamp-4 text-sm leading-6">
-                    {source.excerpt}
-                  </p>
+                  <div className="prose prose-sm text-muted-foreground mt-2 max-h-24 max-w-none overflow-hidden text-sm leading-6 [&_h1]:my-0 [&_h1]:text-sm [&_h1]:leading-6 [&_h1]:font-semibold [&_h2]:my-0 [&_h2]:text-sm [&_h2]:leading-6 [&_h2]:font-semibold [&_h3]:my-0 [&_h3]:text-sm [&_h3]:leading-6 [&_h3]:font-semibold [&_li]:my-0 [&_li]:leading-6 [&_ol]:my-0 [&_ol]:pl-5 [&_p]:my-0 [&_p]:leading-6 [&_strong]:font-semibold [&_ul]:my-0 [&_ul]:pl-5">
+                    <ReactMarkdown
+                      remarkPlugins={[remarkGfm]}
+                      rehypePlugins={[rehypeSanitize]}
+                      skipHtml
+                      components={{
+                        a: ({ children }) => <span>{children}</span>,
+                      }}
+                    >
+                      {source.excerpt}
+                    </ReactMarkdown>
+                  </div>
                 </div>
               ))}
             </CardContent>

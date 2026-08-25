@@ -77,7 +77,10 @@ async def test_linkedin_generation_uses_common_production_pipeline(client, admin
     response = await client.post(
         "/api/v1/admin/linkedin/generate",
         json={"topic": "Peut-on refuser le télétravail ?"},
-        headers={"Authorization": f"Bearer {admin_user['token']}"},
+        headers={
+            "Authorization": f"Bearer {admin_user['token']}",
+            "Accept": "text/event-stream",
+        },
     )
 
     assert response.status_code == 200
@@ -103,6 +106,25 @@ async def test_linkedin_generation_uses_common_production_pipeline(client, admin
     assert payload["rag_trace"]["search_plan_usage"]["linkedin_empty_retry_count"] == 0
 
 
+async def test_linkedin_generation_keeps_json_compatibility_for_open_tabs(
+    client, admin_user, monkeypatch
+):
+    from app.api import admin_linkedin
+
+    expected = _linkedin_post()
+    _agent, _prepare = _mock_generation(monkeypatch, admin_linkedin, [expected])
+
+    response = await client.post(
+        "/api/v1/admin/linkedin/generate",
+        json={"topic": "Peut-on refuser le télétravail ?"},
+        headers={"Authorization": f"Bearer {admin_user['token']}"},
+    )
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("application/json")
+    assert response.json()["post"] == expected
+
+
 async def test_linkedin_generation_returns_non_empty_model_output_byte_for_byte(
     client, admin_user, monkeypatch
 ):
@@ -117,7 +139,10 @@ async def test_linkedin_generation_returns_non_empty_model_output_byte_for_byte(
     response = await client.post(
         "/api/v1/admin/linkedin/generate",
         json={"topic": "Le télétravail"},
-        headers={"Authorization": f"Bearer {admin_user['token']}"},
+        headers={
+            "Authorization": f"Bearer {admin_user['token']}",
+            "Accept": "text/event-stream",
+        },
     )
 
     assert response.status_code == 200
@@ -141,7 +166,10 @@ async def test_linkedin_generation_retries_one_empty_initial_response(
     response = await client.post(
         "/api/v1/admin/linkedin/generate",
         json={"topic": "Le télétravail"},
-        headers={"Authorization": f"Bearer {admin_user['token']}"},
+        headers={
+            "Authorization": f"Bearer {admin_user['token']}",
+            "Accept": "text/event-stream",
+        },
     )
 
     assert response.status_code == 200
@@ -170,7 +198,10 @@ async def test_linkedin_generation_keeps_partial_output_when_stream_fails(
     response = await client.post(
         "/api/v1/admin/linkedin/generate",
         json={"topic": "Le télétravail"},
-        headers={"Authorization": f"Bearer {admin_user['token']}"},
+        headers={
+            "Authorization": f"Bearer {admin_user['token']}",
+            "Accept": "text/event-stream",
+        },
     )
 
     assert response.status_code == 200

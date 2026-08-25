@@ -1,11 +1,30 @@
 import { TextDecoder, TextEncoder } from "node:util";
 
 import { authFetch } from "@/lib/api";
-import { streamLinkedinPost } from "@/lib/linkedin-api";
+import {
+  getLinkedinErrorMessage,
+  LinkedinGenerationError,
+  streamLinkedinPost,
+} from "@/lib/linkedin-api";
 
 jest.mock("@/lib/api", () => ({ authFetch: jest.fn() }));
 
 describe("streamLinkedinPost", () => {
+  it("never exposes a technical parsing error in a user toaster", () => {
+    expect(
+      getLinkedinErrorMessage(
+        new SyntaxError(
+          "Unexpected token 'e', \"event: lin\" is not valid JSON"
+        )
+      )
+    ).toBe("La génération du post a échoué. Veuillez réessayer.");
+    expect(
+      getLinkedinErrorMessage(
+        new LinkedinGenerationError("La recherche documentaire a expiré.")
+      )
+    ).toBe("La recherche documentaire a expiré.");
+  });
+
   it("forwards every raw delta even when SSE events cross network chunks", async () => {
     Object.assign(globalThis, { TextDecoder, TextEncoder });
     const encoder = new TextEncoder();
@@ -58,5 +77,14 @@ describe("streamLinkedinPost", () => {
     );
     expect(onError).not.toHaveBeenCalled();
     expect(releaseLock).toHaveBeenCalled();
+    expect(authFetch).toHaveBeenCalledWith(
+      "/admin/linkedin/generate",
+      expect.objectContaining({
+        headers: {
+          Accept: "text/event-stream",
+          "Content-Type": "application/json",
+        },
+      })
+    );
   });
 });

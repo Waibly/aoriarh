@@ -10,10 +10,11 @@ import time
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi.encoders import jsonable_encoder
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from starlette.responses import StreamingResponse
+from starlette.responses import JSONResponse, Response, StreamingResponse
 
 from app.core.database import get_db
 from app.core.dependencies import require_role
@@ -93,8 +94,8 @@ async def generate_linkedin_post(
     request: Request,
     user: User = Depends(require_role(["admin"])),
     db: AsyncSession = Depends(get_db),
-) -> StreamingResponse:
-    """Recherche les sources puis diffuse la rédaction brute au fil de sa génération."""
+) -> Response:
+    """Diffuse en SSE, avec un repli JSON pour les onglets ouverts avant migration."""
 
     topic = body.topic.strip()
     run_id = uuid.uuid4()
@@ -139,8 +140,8 @@ async def generate_linkedin_post(
     rag_trace.search_plan_usage["linkedin_editorial_documents"] = len(formatted_sources)
     sources = [dataclasses.asdict(source) for source in formatted_sources]
 
-    async def event_stream():
-        yield _sse_event("linkedin_start", {"sources": sources})
+    async def generation_events():
+        yield "linkedin_start", {"sources": sources}
 
         chunks: list[str] = []
         empty_retry_count = 0
@@ -170,7 +171,7 @@ async def generate_linkedin_post(
                         if chunk:
                             emitted_text = True
                             chunks.append(chunk)
-                            yield _sse_event("linkedin_delta", {"content": chunk})
+                            yield "linkedin_delta", {"content": chunk}
                 finally:
                     await stream.aclose()
 
@@ -182,27 +183,43 @@ async def generate_linkedin_post(
                 )
         except TimeoutError:
             logger.warning("LinkedIn generation stream timed out", exc_info=True)
-            yield _sse_event(
+            post = "".join(chunks)
+            yield (
                 "linkedin_error",
-                {"message": "La rédaction du post a expiré. Le texte déjà reçu reste visible."},
+                {
+                    "message": "La rédaction du post a expiré. Le texte déjà reçu reste visible.",
+                    "post": post,
+                    "character_count": len(post),
+                    "sources": sources,
+                    "rag_trace": rag_trace.to_dict(),
+                    "cost_usd": 0.0,
+                    "duration_ms": int((time.perf_counter() - started_at) * 1000),
+                },
             )
             return
         except Exception:
             logger.exception("LinkedIn generation stream failed")
-            yield _sse_event(
+            post = "".join(chunks)
+            yield (
                 "linkedin_error",
                 {
                     "message": (
                         "La connexion au modèle a été interrompue. "
                         "Le texte déjà reçu reste visible."
-                    )
+                    ),
+                    "post": post,
+                    "character_count": len(post),
+                    "sources": sources,
+                    "rag_trace": rag_trace.to_dict(),
+                    "cost_usd": 0.0,
+                    "duration_ms": int((time.perf_counter() - started_at) * 1000),
                 },
             )
             return
 
         rag_trace.search_plan_usage["linkedin_empty_retry_count"] = empty_retry_count
         if not chunks:
-            yield _sse_event(
+            yield (
                 "linkedin_error",
                 {
                     "message": (
@@ -235,7 +252,7 @@ async def generate_linkedin_post(
             # Un échec de télémétrie ne doit jamais masquer une génération LLM.
             logger.exception("Unable to calculate LinkedIn generation cost")
 
-        yield _sse_event(
+        yield (
             "linkedin_done",
             {
                 "post": post,
@@ -247,12 +264,36 @@ async def generate_linkedin_post(
             },
         )
 
-    return StreamingResponse(
-        event_stream(),
-        media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "Connection": "keep-alive",
-            "X-Accel-Buffering": "no",
-        },
+    if "text/event-stream" in request.headers.get("accept", ""):
+        async def event_stream():
+            async for event, payload in generation_events():
+                yield _sse_event(event, payload)
+
+        return StreamingResponse(
+            event_stream(),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "X-Accel-Buffering": "no",
+            },
+        )
+
+    # Compatibilité temporaire : un onglet chargé avant le passage au SSE
+    # appelle encore response.json(). Il reçoit donc la sortie LLM brute au
+    # format historique au lieu d'une erreur de parsing visible.
+    async for event, payload in generation_events():
+        if event == "linkedin_done":
+            return JSONResponse(content=jsonable_encoder(payload))
+        if event == "linkedin_error":
+            if payload.get("post"):
+                return JSONResponse(content=jsonable_encoder(payload))
+            return JSONResponse(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                content={"detail": payload["message"]},
+            )
+
+    return JSONResponse(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        content={"detail": "La génération du post a été interrompue. Veuillez réessayer."},
     )
