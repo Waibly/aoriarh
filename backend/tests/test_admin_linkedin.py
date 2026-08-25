@@ -102,6 +102,7 @@ async def test_linkedin_generation_uses_common_production_pipeline(client, admin
     generation_kwargs = agent.stream_generate.call_args.kwargs
     assert generation_kwargs["generation_mode"] == "linkedin_post"
     assert generation_kwargs["buffer_size"] == 1
+    assert generation_kwargs["answer_format"] == "verdict_then_conditions"
     assert "linkedin_revision" not in generation_kwargs
     assert payload["rag_trace"]["search_plan_usage"]["linkedin_empty_retry_count"] == 0
 
@@ -235,6 +236,8 @@ def test_linkedin_prompt_requests_the_complete_publishable_output():
     assert "Tu es l'expert juridique RH intégré à l'organisation" not in prompt
     assert "une question ouverte, précise" in prompt
     assert "puces de texte brut" in prompt
+    assert "« • » ou des tirets" in prompt
+    assert "Les listes simples avec « • » ou « - »" in prompt
     assert "Aucun superlatif" in prompt
     assert "Le post n'est pas une réponse de chat" in prompt
     assert "au maximum quatre sources centrales" in prompt
@@ -279,7 +282,17 @@ def test_linkedin_prompt_requires_exact_claim_to_source_alignment():
     assert "délai, montant ou seuil" in prompt
     assert "décision de justice" in prompt
     assert "procédure : ouvre sur la première étape bloquante" in prompt
+    assert "hook ET la structure du corps" in prompt
+    assert "ne peut jamais recevoir une simple succession de paragraphes" in prompt
+    assert "le corps contient obligatoirement une liste numérotée" in prompt
+    assert "Numérote uniquement les actes à\n  accomplir dans l'ordre" in prompt
+    assert "conséquence d'une décision n'est jamais une étape autonome" in prompt
+    assert "cite-le une seule fois dans la phrase qui introduit" in prompt
     assert "comparaison : expose la différence" in prompt
+    assert "L'intention détermine aussi la forme complète du corps" in prompt
+    assert "plusieurs conditions, critères, erreurs ou cas autonomes" in prompt
+    assert "N'applique jamais une trame identique à tous les sujets" in prompt
+    assert "Le hook, le corps et le CTA\n  répondent à la même intention" in prompt
     assert "Le hook promet une information utile mais ne résume pas toute" in prompt
     assert "Ne place aucune référence juridique entre parenthèses dans le hook" in prompt
     assert "le hook ne dit jamais que l'acteur « perd l'accès »" in prompt
@@ -293,6 +306,26 @@ def test_linkedin_prompt_requires_exact_claim_to_source_alignment():
     assert "Ne transforme jamais une\n  présomption" in prompt
     assert "aucune phrase ne dépasse 24 mots" in prompt
     assert "Contrôle final silencieux obligatoire avant d'émettre le premier mot" in prompt
+
+
+def test_linkedin_user_message_enforces_the_planned_procedure_format():
+    from app.rag.agent import RAGAgent
+
+    agent = RAGAgent.__new__(RAGAgent)
+    message = agent._build_linkedin_user_message(
+        "Quelle est la procédure pour licencier un élu CSE ?",
+        "Sources juridiques",
+        low_confidence=False,
+        condensed_query=None,
+        answer_format="numbered_steps",
+    )
+
+    assert "Structure du corps imposée par l'intention détectée" in message
+    assert "étapes chronologiques numérotées" in message
+    assert "jamais présentés en simples paragraphes" in message
+    assert "Seules les actions requises sont numérotées" in message
+    assert "référence commune à plusieurs étapes" in message
+    assert "pas seulement sur le hook" in message
 
 
 def test_linkedin_editorial_selection_prioritizes_written_law_and_caps_case_law():

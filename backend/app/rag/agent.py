@@ -712,7 +712,7 @@ Règles obligatoires :
   reformulent la règle sans hiérarchiser ce qui change l'action. Préfère une phrase
   qui montre directement ce que la condition Z modifie, autorise ou interdit.
 - Avant d'écrire, détermine mentalement l'intention dominante du sujet et adapte le
-  hook à cette intention, sans afficher son nom :
+  hook ET la structure du corps à cette intention, sans afficher son nom :
   • risque ou erreur fréquente : nomme l'acte et sa conséquence juridique établie ;
   • exception ou condition : place le déclencheur en premier et montre ce qu'il change,
     sans transformer un régime encadré en interdiction absolue ;
@@ -725,6 +725,21 @@ Règles obligatoires :
   • comparaison : expose la différence qui produit un résultat juridique distinct ;
   • principe général : mets en avant sa limite ou sa portée contre-intuitive, pas une
     définition scolaire.
+- L'intention détermine aussi la forme complète du corps :
+  • règle simple ou principe : paragraphes courts, sans liste artificielle ;
+  • plusieurs conditions, critères, erreurs ou cas autonomes : puces « • » ou « - » ;
+  • procédure, démarche ou ordre d'actes : étapes numérotées dans l'ordre juridique ;
+  • comparaison : blocs ou puces parallèles qui rendent chaque différence visible ;
+  • délai, montant, seuil ou calcul : chiffre décisif d'abord, puis formule ou séquence
+    de calcul seulement si elle aide à vérifier le résultat ;
+  • décision de justice : solution, portée opérationnelle, puis limite utile ;
+  • réforme ou évolution : chronologie courte lorsque plusieurs dates commandent
+    l'action, sinon paragraphes ;
+  • risque : risque principal d'abord, puis puces uniquement s'il existe plusieurs
+    risques ou mesures distincts établis par les sources.
+  N'applique jamais une trame identique à tous les sujets. Le hook, le corps et le CTA
+  répondent à la même intention. Choisis la structure la plus lisible sur mobile et la
+  plus rapide à comprendre, sans inventer d'élément pour remplir un format.
 - Le hook promet une information utile mais ne résume pas toute la démonstration. Il
   doit être exact isolément : conserve une exception seulement si son omission rendrait
   l'accroche matériellement fausse. Sinon, développe les conditions et les références
@@ -745,9 +760,21 @@ Règles obligatoires :
   une ligne vide. Ne coupe jamais artificiellement
   une phrase par des retours à la ligne et ne crée pas une succession théâtrale de
   fragments d'une ligne.
-- Si le fond appelle une liste, utilise des puces de texte brut « • ». Si le fond
-  décrit une procédure, utilise des étapes « 1. », « 2. », « 3. ». Chaque item tient
-  en une phrase. N'ajoute aucune liste si des paragraphes suffisent.
+- Si le fond appelle une liste, utilise des puces de texte brut « • » ou des tirets
+  « - », en conservant le même marqueur dans tout le post. Une question
+  formulée avec « procédure », « étapes », « démarche », « comment faire » ou demandant
+  un ordre d'actes ne peut jamais recevoir une simple succession de paragraphes : dès
+  que les documents établissent au moins deux actions successives, déroule le corps en
+  étapes chronologiques « 1. », « 2. », « 3. ». Numérote uniquement les actes à
+  accomplir dans l'ordre : une alternative, une faculté, une exception, un refus ou la
+  conséquence d'une décision n'est jamais une étape autonome. Rattache-la à l'étape
+  qu'elle modifie ou place-la après la séquence dans un court paragraphe. Chaque étape
+  commence par l'action à accomplir et tient en une phrase. Si un même article fonde
+  plusieurs étapes consécutives, cite-le une seule fois dans la phrase qui introduit la
+  séquence, puis ne le répète dans aucun item. Si les documents ne couvrent pas toute la
+  procédure, donne seulement les étapes établies et signale précisément la limite sans
+  compléter de mémoire. Pour les autres intentions, choisis entre paragraphes, puces ou
+  tirets selon le nombre et la nature des éléments.
 - Construis le post dans cet ordre naturel : thèse, règle applicable, conditions ou
   actions utiles, risque établi si une décision l'illustre, puis CTA. Ne transforme
   pas cet ordre en titres et n'ajoute aucune rubrique vide.
@@ -850,9 +877,10 @@ Règles obligatoires :
   « clairement », « d'abord », « ensuite », « enfin » et « aussi » lorsque la
   structure porte déjà leur sens. Le résultat reste naturel, jamais télégraphique.
 - N'utilise AUCUN hashtag.
-- Utilise exclusivement du texte brut : aucun marqueur Markdown (`**`, `__`, `#`,
-  listes avec `-`, `*` ou `+`, liens balisés), aucun tableau, aucun gras Unicode,
-  aucun préambule et aucun commentaire après le post.
+- Utilise exclusivement du texte brut : aucun gras Markdown (`**`, `__`), titre `#`,
+  lien balisé, tableau ou gras Unicode. Les listes simples avec « • » ou « - » et les
+  étapes « 1. », « 2. », « 3. » sont autorisées lorsqu'elles servent l'intention du
+  sujet. Aucun préambule et aucun commentaire après le post.
 - N'utilise aucun emoji.
 
 Contrôle final silencieux obligatoire avant d'émettre le premier mot :
@@ -882,6 +910,14 @@ Contrôle final silencieux obligatoire avant d'émettre le premier mot :
    point final de la phrase.
 9. L'avant-dernier paragraphe apporte un fait juridique nouveau ; sinon le CTA suit
    directement le dernier paragraphe utile.
+10. La structure du corps correspond à l'intention dominante, pas seulement le hook.
+    Si le sujet demande une procédure et que les sources établissent plusieurs actes,
+    le corps contient obligatoirement une liste numérotée dans leur ordre juridique ;
+    une suite de paragraphes non numérotés est alors une sortie invalide à réécrire.
+    Vérifie que chaque numéro correspond à une action requise, jamais à une variante ou
+    une conséquence, et qu'une autorité commune à plusieurs étapes n'est citée qu'une fois.
+    Pour toute autre intention, vérifie que paragraphes, puces, comparaison, calcul ou
+    chronologie constituent réellement la forme la plus claire pour ce contenu.
 
 La sortie entière doit être publiable telle quelle : elle contient le post complet,
 sans espace ni ligne vide avant le hook ou après le CTA."""
@@ -1454,6 +1490,7 @@ class RAGAgent:
                 context,
                 low_confidence=low_confidence,
                 condensed_query=condensed_query,
+                answer_format=answer_format,
             )
         else:
             user_content = self._build_user_message(
@@ -3073,6 +3110,7 @@ class RAGAgent:
         *,
         low_confidence: bool,
         condensed_query: str | None,
+        answer_format: str | None,
     ) -> str:
         """Construit une demande éditoriale sans aucune consigne propre au chat."""
 
@@ -3093,6 +3131,36 @@ class RAGAgent:
             f"Date du jour : {_today_fr()}. Apprécie la récence et les dates "
             "d'entrée en vigueur par rapport à cette date."
         )
+        if answer_format:
+            format_guidance = {
+                "direct_then_cases": (
+                    "règle directe, puis uniquement les cas qui en modifient l'application"
+                ),
+                "verdict_then_conditions": "règle, puis conditions et exceptions",
+                "numbered_steps": (
+                    "procédure : après le hook, étapes chronologiques numérotées "
+                    "« 1. », « 2. », « 3. » ; plusieurs actes successifs ne sont "
+                    "jamais présentés en simples paragraphes. Seules les actions "
+                    "requises sont numérotées ; variantes et conséquences ne sont "
+                    "pas de fausses étapes. Une référence commune à plusieurs étapes "
+                    "est citée une seule fois dans la phrase qui introduit la séquence"
+                ),
+                "comparison_table": (
+                    "comparaison structurée par différences décisives, avec des puces "
+                    "de texte brut si elles facilitent la lecture, jamais de tableau"
+                ),
+                "formula_then_application": "formule ou chiffre décisif, puis conditions",
+                "main_risk_then_secondary_risks": (
+                    "risque principal, puis seulement les risques secondaires établis"
+                ),
+                "chronological_digest": "chronologie datée des changements utiles",
+            }.get(answer_format)
+            if format_guidance:
+                parts.append(
+                    "Structure du corps imposée par l'intention détectée : "
+                    f"{format_guidance}. Cette consigne porte sur tout le post, "
+                    "pas seulement sur le hook."
+                )
         parts.append(f"Sujet éditorial : {topic}")
         if condensed_query and _normalize_question(condensed_query) != _normalize_question(topic):
             parts.append(f"Angle juridique utilisé pour la recherche : {condensed_query}")

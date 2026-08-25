@@ -156,7 +156,11 @@ async def generate_linkedin_post(
                     history=None,
                     low_confidence=rag_trace.low_confidence,
                     condensed_query=reformulated,
-                    answer_format=None,
+                    answer_format=(
+                        rag_trace.search_plan.get("answer_format")
+                        if rag_trace.search_plan
+                        else None
+                    ),
                     generation_mode="linkedin_post",
                 )
                 try:
