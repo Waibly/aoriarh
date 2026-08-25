@@ -25,7 +25,6 @@ import {
   ThumbsDown,
   Send,
   ClipboardList,
-  Linkedin,
   Loader2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -63,6 +62,19 @@ function formatTime(dateString: string): string {
 }
 
 const MD_COMPONENTS = { a: LegalRefAnchor };
+
+function LinkedInFilledIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="currentColor"
+      aria-hidden="true"
+      className={className}
+    >
+      <path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433a2.062 2.062 0 1 1 0-4.124 2.062 2.062 0 0 1 0 4.124zM7.119 20.452H3.555V9h3.564v11.452z" />
+    </svg>
+  );
+}
 
 export function MessageBubble({ message, onFeedback }: MessageBubbleProps) {
   const isUser = message.role === "user";
@@ -305,7 +317,7 @@ export function MessageBubble({ message, onFeedback }: MessageBubbleProps) {
                   disabled={!session?.access_token}
                   className="border-primary/40 text-primary hover:bg-primary/10 hover:text-primary dark:border-primary/40 dark:bg-card dark:text-primary dark:hover:bg-primary/15 gap-1.5 bg-white"
                 >
-                  <Linkedin className="size-4" />
+                  <LinkedInFilledIcon className="size-4" />
                   Générer le post LinkedIn
                 </Button>
               )}
