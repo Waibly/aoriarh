@@ -8,9 +8,11 @@ d'un appel réseau OpenAI.
 from datetime import datetime
 
 from app.services.fiche_service import (
+    FICHE_SYSTEM_PROMPT,
     FicheContent,
     _format_source,
     _md_table_to_html,
+    fiche_filename,
     parse_fiche_content,
     render_fiche_html,
     select_fiche_references,
@@ -37,7 +39,10 @@ def _content(**overrides) -> FicheContent:
 
 
 def test_parse_minimal_json():
-    raw = '{"eligible": true, "titre": "Test", "essentiel": "Une phrase.", "points_cles": ["a", "b"]}'
+    raw = (
+        '{"eligible": true, "titre": "Test", "essentiel": "Une phrase.", '
+        '"points_cles": ["a", "b"]}'
+    )
     content = parse_fiche_content(raw)
     assert content.eligible is True
     assert content.titre == "Test"
@@ -56,6 +61,33 @@ def test_parse_filters_empty_list_items():
 def test_parse_eligible_false():
     content = parse_fiche_content('{"eligible": false, "titre": "X"}')
     assert content.eligible is False
+
+
+def test_parse_html_keeps_raw_generation_unchanged():
+    raw = (
+        '<article class="fiche-content"><h1>Procédure disciplinaire</h1>'
+        '<section class="procedure"><h2>Étapes</h2><ol>'
+        + "".join(f"<li>Étape {index}</li>" for index in range(1, 11))
+        + "</ol></section></article>"
+    )
+    content = parse_fiche_content(raw)
+    assert content.body_html == raw
+    assert content.titre == "Procédure disciplinaire"
+    assert content.body_html.count("<li>") == 10
+    assert content.warnings == []
+
+
+def test_prompt_forbids_arbitrary_step_limit():
+    assert "10 étapes utiles conserve" in FICHE_SYSTEM_PROMPT
+    assert "aucune limite arbitraire" in FICHE_SYSTEM_PROMPT
+
+
+def test_inspection_warns_without_rewriting_unsupported_html():
+    raw = '<article class="fiche-content"><h1>Titre</h1><img src="https://example.com/x"></article>'
+    content = parse_fiche_content(raw)
+    assert content.body_html == raw
+    assert "balise <img> non prévue" in content.warnings
+    assert "attribut src non prévu" in content.warnings
 
 
 # --- _md_table_to_html ----------------------------------------------------
@@ -161,8 +193,9 @@ def test_render_html_contains_charte_and_blocks():
     assert "#652BB0" in html  # violet de la charte
     assert "Préavis de démission" in html
     assert "Points clés" in html
-    # Mention de validité avec la date de génération.
-    assert "À jour au 15/06/2026" in html
+    # La date décrit honnêtement la génération du contenu.
+    assert "Contenu généré le 15/06/2026" in html
+    assert "À jour au" not in html
 
 
 def test_render_html_uses_compact_single_line_header():
@@ -210,3 +243,30 @@ def test_render_html_renders_table_from_markdown():
     html = render_fiche_html(content, [], generated_at=GEN_AT)
     assert "<table>" in html
     assert "<td>1</td>" in html
+
+
+def test_render_html_inserts_dynamic_body_verbatim():
+    raw = (
+        '<article class="fiche-content"><h1>Une procédure</h1>'
+        '<section class="procedure"><h2>Étapes</h2><ol>'
+        '<li>Première</li><li>Deuxième</li></ol></section></article>'
+    )
+    content = parse_fiche_content(raw)
+    final_html = render_fiche_html(content, [], generated_at=GEN_AT)
+    assert raw in final_html
+    assert "Première" in final_html
+    assert "counter-reset:fiche-step" in final_html
+
+
+def test_render_html_shows_warning_next_to_unmodified_generation():
+    raw = '<article class="fiche-content"><h1>Titre</h1><img src="x"></article>'
+    content = parse_fiche_content(raw)
+    final_html = render_fiche_html(content, [], generated_at=GEN_AT)
+    assert raw in final_html
+    assert "Avertissement de mise en page" in final_html
+    assert "balise &lt;img&gt; non prévue" in final_html
+
+
+def test_filename_preserves_accented_words_as_ascii():
+    content = FicheContent(titre="Récupération d’un trop-perçu")
+    assert fiche_filename(content) == "fiche-recuperation-d-un-trop-percu.pdf"

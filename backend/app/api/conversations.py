@@ -304,12 +304,13 @@ async def generate_fiche(
     ).scalar_one_or_none()
 
     sources = message.sources if isinstance(message.sources, list) else []
-    references = select_fiche_references(message.content, sources)
+    available_references = select_fiche_references(message.content, sources)
 
     try:
         gen = await generate_fiche_content(
             question=question,
             answer_markdown=message.content,
+            sources=available_references,
             organisation_id=str(conversation.organisation_id),
             user_id=str(user.id),
         )
@@ -325,6 +326,10 @@ async def generate_fiche(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=gen.reason or "Cette réponse ne se prête pas à une fiche pratique.",
         )
+
+    # Les métadonnées de référence suivent désormais le corps final, pas la
+    # réponse conversationnelle plus longue dont il est issu.
+    references = select_fiche_references(gen.content.body_html, sources)
 
     # Persiste (ou met à jour) la fiche : une seule par message source, pour
     # éviter les doublons quand l'utilisateur reclique sur le bouton.
@@ -354,10 +359,11 @@ async def generate_fiche(
         )
     await db.commit()
 
+    generated_at = datetime.now()
     pdf_bytes = render_fiche_pdf(
         gen.content,
         references,
-        generated_at=datetime.now(),
+        generated_at=generated_at,
         org_name=org,
     )
 

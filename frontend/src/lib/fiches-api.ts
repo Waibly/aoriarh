@@ -4,6 +4,7 @@ export interface Fiche {
   id: string;
   title: string;
   created_at: string;
+  updated_at: string;
   message_id: string | null;
 }
 
@@ -60,7 +61,7 @@ export async function viewFicheById(
 
 /**
  * Régénère le PDF d'une fiche enregistrée et déclenche son téléchargement.
- * Le PDF est régénéré côté serveur avec la date du jour (pas de version figée).
+ * La date du contenu reste sa vraie date de dernière génération.
  */
 export async function downloadFicheById(
   ficheId: string,

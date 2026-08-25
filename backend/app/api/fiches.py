@@ -27,6 +27,7 @@ class FicheRead(BaseModel):
     id: str
     title: str
     created_at: datetime
+    updated_at: datetime
     message_id: str | None
 
 
@@ -50,6 +51,7 @@ async def list_fiches(
             id=str(f.id),
             title=f.title,
             created_at=f.created_at,
+            updated_at=f.updated_at,
             message_id=str(f.message_id) if f.message_id else None,
         )
         for f in rows
@@ -80,7 +82,7 @@ async def download_fiche(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> Response:
-    """Régénère le PDF de la fiche, avec la date du jour (pas de PDF figé)."""
+    """Régénère le PDF sans faire passer son ancien contenu pour actualisé."""
     fiche = await _get_owned_fiche(fiche_id, user, db)
 
     org = (await db.execute(
@@ -89,14 +91,17 @@ async def download_fiche(
 
     content = FicheContent(**fiche.content)
     sources = fiche.sources if isinstance(fiche.sources, list) else []
-    if fiche.message_id:
+    if not content.body_html and fiche.message_id:
         answer_markdown = (await db.execute(
             select(Message.content).where(Message.id == fiche.message_id)
         )).scalar_one_or_none()
         if answer_markdown:
             sources = select_fiche_references(answer_markdown, sources)
     pdf_bytes = render_fiche_pdf(
-        content, sources, generated_at=datetime.now(), org_name=org
+        content,
+        sources,
+        generated_at=fiche.updated_at or fiche.created_at,
+        org_name=org,
     )
     return Response(
         content=pdf_bytes,

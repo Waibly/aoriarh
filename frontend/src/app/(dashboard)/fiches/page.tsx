@@ -125,8 +125,8 @@ export default function FichesPage() {
       <div className="min-w-0">
         <h1 className="text-2xl font-semibold tracking-tight">Fiches pratiques</h1>
         <p className="text-muted-foreground mt-1 text-sm">
-          Les fiches que vous avez générées depuis vos réponses. Le PDF est
-          recréé à chaque téléchargement, avec la date du jour.
+          Les fiches que vous avez générées depuis vos réponses. La date affichée
+          dans le PDF correspond à la dernière génération du contenu.
         </p>
       </div>
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl bg-white p-4 dark:bg-card">
@@ -154,9 +154,9 @@ export default function FichesPage() {
           ) : (
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
               {fiches.map((fiche) => {
-                const months = monthsSince(fiche.created_at);
+                const months = monthsSince(fiche.updated_at);
                 const stale =
-                  (Date.now() - new Date(fiche.created_at).getTime()) / 86_400_000 >
+                  (Date.now() - new Date(fiche.updated_at).getTime()) / 86_400_000 >
                   STALE_AFTER_DAYS;
                 const busy = busyId === fiche.id;
                 return (
@@ -172,7 +172,7 @@ export default function FichesPage() {
                         {fiche.title}
                       </p>
                       <p className="text-muted-foreground mt-auto text-xs">
-                        Créée le {formatDate(fiche.created_at)}
+                        Mise à jour le {formatDate(fiche.updated_at)}
                       </p>
                       {stale && (
                         <Badge

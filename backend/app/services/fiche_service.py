@@ -1,15 +1,14 @@
 """Génération de fiches pratiques imprimables (PDF) à partir d'une réponse RAG.
 
-Principe : un appel LLM dédié **met en forme** une réponse déjà produite par le
-pipeline RAG. Il ne réécrit pas le fond et n'ajoute aucune règle, chiffre ou
-source absent de la réponse source — la fidélité juridique prime. Les sources
-ne passent jamais par le LLM : elles viennent directement des `RAGSource`
-persistées sur le message, donc zéro risque d'hallucination de référence.
+Le LLM produit directement le fragment HTML du corps de la fiche. Sa structure
+reste donc libre et s'adapte à la réponse : une procédure conserve toutes ses
+étapes, un barème peut devenir un tableau et un avertissement n'apparaît que
+s'il apporte quelque chose. L'application maîtrise uniquement le design system,
+l'en-tête, le pied de page et la pagination.
 
-Le LLM remplit des champs structurés (JSON). Le gabarit HTML est fixe (charte
-AORIA RH, alignée sur les emails) et converti en PDF par WeasyPrint. WeasyPrint
-est importé paresseusement pour que le module reste testable sans les libs
-système natives (pango/cairo).
+Le fragment généré est stocké et rendu tel quel. Les contrôles de format ne le
+réécrivent jamais ; ils peuvent seulement ajouter un avertissement visible. Les
+anciennes fiches JSON restent prises en charge pendant la transition.
 """
 
 from __future__ import annotations
@@ -20,8 +19,9 @@ import json
 import logging
 import re
 import unicodedata
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
+from html.parser import HTMLParser
 from pathlib import Path
 
 import httpx
@@ -118,66 +118,183 @@ _ICON_STEPS = _icon(
 )
 _ICON_SOURCES = _icon(
     '<path d="M12 7v14"/>'
-    '<path d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"/>'
+    '<path d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 '
+    '4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 '
+    '3 3 0 0 0-3-3z"/>'
 )
 
 FICHE_SYSTEM_PROMPT = """\
-Tu mets en forme une réponse juridique RH existante en fiche pratique imprimable.
-Tu ne fais QUE reformater le contenu fourni. Règles absolues :
-- N'ajoute AUCUNE règle, chiffre, délai, seuil ou source absent de la réponse source.
-- Ne complète pas, ne corrige pas, n'extrapole pas. Si une info manque, elle reste absente.
-- Reprends les tableaux markdown de la source à l'identique dans "tableaux_markdown".
-- N'invente jamais de référence juridique. Les sources sont gérées à part, hors de ta réponse.
-- Style : phrases courtes, une idée par puce, ton concret et actionnable, vocabulaire métier clair.
-- Adapte le format à l'information, choisis le bloc le plus lisible :
-  • "tableaux_markdown" : données chiffrées, comparaisons, barèmes, seuils, montants par tranche.
-  • "etapes" : procédure ou chronologie (liste numérotée d'actions dans l'ordre).
-  • "points_cles" : règles et faits clés (puces).
-  • "exceptions" : cas particuliers, pièges, conditions.
-  N'utilise que les blocs pertinents pour cette réponse, laisse les autres vides.
-- Produis une fiche pour TOUTE réponse juridique, y compris un cas particulier propre à l'utilisateur.
-  Mets eligible=false UNIQUEMENT si la réponse ne contient aucune information exploitable
-  (simple salutation, message d'erreur, question hors droit social).
+Tu transformes une réponse juridique RH existante en corps de fiche pratique HTML.
+Tu ne fais QUE mettre en forme le contenu fourni. La fidélité est prioritaire.
 
-Réponds UNIQUEMENT en JSON valide selon ce schéma exact :
-{
-  "eligible": boolean,
-  "titre": string,            // le sujet, pas la question. Max 70 caractères.
-  "essentiel": string,        // 1 phrase : la réponse en une ligne
-  "points_cles": [string],    // 3 à 6 puces, une idée chacune
-  "tableaux_markdown": [string],  // tableaux repris tels quels (liste vide si aucun)
-  "exceptions": [string],     // cas particuliers / pièges (liste vide si aucun)
-  "etapes": [string]          // étapes si la réponse est procédurale (liste vide sinon)
-}"""
+Règles absolues de contenu :
+- N'ajoute AUCUNE règle, interprétation, chiffre, délai, seuil, exception ou source absent de la
+  réponse fournie.
+- Ne complète pas, ne corrige pas et n'extrapole pas. Si une information manque, elle reste absente.
+- Ne supprime aucune information nécessaire. Une procédure qui comporte 10 étapes utiles conserve
+  ses 10 étapes. Il n'existe aucune limite arbitraire de longueur, de sections ou de pages.
+- Conserve chaque référence juridique visible dans la réponse, mot pour mot et au plus près de
+  l'affirmation qu'elle fonde. N'invente jamais de référence.
+- Rédige un document autonome : ne parle jamais de « la réponse », « la source » ou « la question ».
+- Utilise des phrases courtes, concrètes et actionnables, sans répétition entre les sections.
+- N'ajoute un encadré de vigilance que s'il existe un vrai risque, une exception ou une condition.
+
+Règles absolues de sortie :
+- Renvoie UNIQUEMENT le fragment HTML final, sans JSON, Markdown, commentaire ni balises ```.
+- Le fragment commence par <article class="fiche-content"> et finit par </article>.
+- Il contient exactement un <h1> avec un titre autonome et précis.
+- N'utilise aucun attribut style, id, src, href ou événement, aucune balise script, style, link,
+  img, iframe ou objet externe. Le CSS est entièrement géré par l'application.
+
+Catalogue de composants autorisés — choisis uniquement ceux utiles au contenu :
+- Introduction : <section class="intro"><p>...</p></section>
+- Information essentielle : <aside class="essential"><p>...</p></aside>
+- Section libre : <section><h2>...</h2>...</section>
+- Points clés : <section class="key-points"><h2>...</h2><ul>...</ul></section>
+- Procédure : <section class="procedure"><h2>...</h2><ol>...</ol></section>
+- Vigilance : <aside class="warning"><h2>À surveiller</h2>...</aside>
+- Information complémentaire : <aside class="info"><h2>...</h2>...</aside>
+- Tableau : <div class="table-wrapper"><table class="data-table">...</table></div>
+- Définitions : <dl class="definitions"><dt>...</dt><dd>...</dd></dl>
+- Références, uniquement si elles existent :
+  <section class="legal-references"><h2>Références juridiques</h2><ul>...</ul></section>
+
+Balises autorisées : article, section, aside, div, h1, h2, h3, p, ul, ol, li, dl, dt, dd,
+table, thead, tbody, tr, th, td, strong, em, span, br et blockquote.
+"""
 
 
 @dataclass
 class FicheContent:
-    """Champs structurés produits par le LLM."""
+    """Corps HTML brut produit par le LLM, ou contenu JSON historique."""
 
-    eligible: bool
-    titre: str
-    essentiel: str
-    points_cles: list[str]
-    tableaux_markdown: list[str]
-    exceptions: list[str]
-    etapes: list[str]
+    eligible: bool = True
+    titre: str = ""
+    body_html: str = ""
+    warnings: list[str] = field(default_factory=list)
+    # Champs historiques : nécessaires pour relire les fiches déjà persistées.
+    essentiel: str = ""
+    points_cles: list[str] = field(default_factory=list)
+    tableaux_markdown: list[str] = field(default_factory=list)
+    exceptions: list[str] = field(default_factory=list)
+    etapes: list[str] = field(default_factory=list)
 
 
 @dataclass
 class FicheGeneration:
-    """Résultat de l'appel LLM : contenu structuré, ou refus motivé."""
+    """Résultat de l'appel LLM : fragment HTML brut ou erreur technique."""
 
     eligible: bool
     content: FicheContent | None
     reason: str | None = None
 
 
-# --- Parsing -------------------------------------------------------------
+# --- Lecture et contrôle non bloquant du fragment ------------------------
+
+
+_ALLOWED_BODY_TAGS = {
+    "article",
+    "section",
+    "aside",
+    "div",
+    "h1",
+    "h2",
+    "h3",
+    "p",
+    "ul",
+    "ol",
+    "li",
+    "dl",
+    "dt",
+    "dd",
+    "table",
+    "thead",
+    "tbody",
+    "tr",
+    "th",
+    "td",
+    "strong",
+    "em",
+    "span",
+    "br",
+    "blockquote",
+}
+_ALLOWED_BODY_ATTRIBUTES = {"class", "colspan", "rowspan", "scope"}
+
+
+class _FicheFragmentInspector(HTMLParser):
+    """Inspecte le HTML sans jamais le modifier."""
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.tags: list[str] = []
+        self.h1_count = 0
+        self._in_first_h1 = False
+        self._title_parts: list[str] = []
+        self.issues: list[str] = []
+
+    @property
+    def title(self) -> str:
+        return " ".join("".join(self._title_parts).split())
+
+    def handle_starttag(
+        self, tag: str, attrs: list[tuple[str, str | None]]
+    ) -> None:
+        tag = tag.casefold()
+        self.tags.append(tag)
+        if tag not in _ALLOWED_BODY_TAGS:
+            self.issues.append(f"balise <{tag}> non prévue")
+        for name, _value in attrs:
+            if name.casefold() not in _ALLOWED_BODY_ATTRIBUTES:
+                self.issues.append(f"attribut {name} non prévu")
+        if tag == "h1":
+            self.h1_count += 1
+            self._in_first_h1 = self.h1_count == 1
+
+    def handle_startendtag(
+        self, tag: str, attrs: list[tuple[str, str | None]]
+    ) -> None:
+        self.handle_starttag(tag, attrs)
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag.casefold() == "h1":
+            self._in_first_h1 = False
+
+    def handle_data(self, data: str) -> None:
+        if self._in_first_h1:
+            self._title_parts.append(data)
+
+
+def inspect_fiche_fragment(raw: str) -> tuple[str, list[str]]:
+    """Extrait le titre et retourne des avertissements purement informatifs."""
+    inspector = _FicheFragmentInspector()
+    try:
+        inspector.feed(raw)
+        inspector.close()
+    except Exception as exc:  # HTMLParser est tolérant, repli défensif.
+        return "", [f"HTML difficile à analyser ({type(exc).__name__})"]
+
+    issues = list(dict.fromkeys(inspector.issues))
+    if inspector.h1_count != 1:
+        issues.append(f"{inspector.h1_count} titre h1 détecté au lieu d'un")
+    if not inspector.tags or inspector.tags[0] != "article":
+        issues.append("le fragment ne commence pas par l'article attendu")
+    return inspector.title, issues
 
 
 def parse_fiche_content(raw: str) -> FicheContent:
-    """Parse la sortie JSON du LLM en `FicheContent`, tolérante aux écarts."""
+    """Conserve le HTML brut ; accepte aussi l'ancien JSON pour compatibilité."""
+    if not raw.strip():
+        raise ValueError("La génération de la fiche est vide")
+
+    if not raw.lstrip().startswith("{"):
+        title, warnings = inspect_fiche_fragment(raw)
+        return FicheContent(
+            titre=title or "Fiche pratique",
+            body_html=raw,
+            warnings=warnings,
+        )
+
     data = json.loads(raw)
 
     def _str_list(value: object) -> list[str]:
@@ -373,16 +490,8 @@ def _format_reference_lines(sources: list[dict]) -> list[str]:
     return lines
 
 
-def render_fiche_html(
-    content: FicheContent,
-    sources: list[dict],
-    *,
-    generated_at: datetime,
-    org_name: str | None = None,
-) -> str:
-    """Assemble le gabarit HTML final (charte AORIA RH) prêt pour WeasyPrint."""
-    date_str = generated_at.strftime("%d/%m/%Y")
-
+def _render_legacy_body(content: FicheContent, sources: list[dict]) -> str:
+    """Rend le précédent format JSON sans modifier les données historiques."""
     blocks: list[str] = []
     blocks.append(f'<h1 class="titre">{_inline(content.titre)}</h1>')
     if content.essentiel:
@@ -416,15 +525,47 @@ def render_fiche_html(
             f'<ul class="sources">{src_items}</ul>'
         )
 
+    return '<article class="fiche-content legacy-content">' + "\n".join(blocks) + "</article>"
+
+
+def _format_generation_warnings(warnings: list[str]) -> str:
+    """Affiche les contrôles sans toucher au fragment généré."""
+    if not warnings:
+        return ""
+    items = "".join(f"<li>{html.escape(warning)}</li>" for warning in warnings)
+    return (
+        '<aside class="generation-warning"><strong>Avertissement de mise en page</strong>'
+        f"<ul>{items}</ul></aside>"
+    )
+
+
+def render_fiche_html(
+    content: FicheContent,
+    sources: list[dict],
+    *,
+    generated_at: datetime,
+    org_name: str | None = None,
+) -> str:
+    """Entoure le corps LLM brut du gabarit AORIA RH et du design system."""
+    date_str = generated_at.strftime("%d/%m/%Y")
+
+    if content.body_html:
+        _title, current_warnings = inspect_fiche_fragment(content.body_html)
+        warnings = list(dict.fromkeys([*content.warnings, *current_warnings]))
+        # Le fragment est injecté strictement tel qu'il a été produit. Seul un
+        # avertissement séparé peut être ajouté, conformément aux règles projet.
+        body = content.body_html + _format_generation_warnings(warnings)
+    else:
+        body = _render_legacy_body(content, sources)
+
     org_line = f" — {html.escape(org_name)}" if org_name else ""
-    body = "\n".join(blocks)
 
     return f"""<!DOCTYPE html>
 <html lang="fr">
 <head><meta charset="utf-8"><title>{_inline(content.titre)}</title>
 <style>
   {_FONTS_CSS}
-  @page {{ size: A4; margin: 14mm 0; }}
+  @page {{ size: A4; margin: 14mm 0 22mm; }}
   @page:first {{ margin-top: 0; }}
   * {{ box-sizing: border-box; }}
   body {{ font-family: 'Inter Variable', 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
@@ -437,28 +578,70 @@ def render_fiche_html(
                             font-size:20px; font-weight:800; letter-spacing:.5px; }}
   .header .tag {{ grid-column:2; color:#ede9fe; font-size:11px; margin:0;
                  text-transform:uppercase; letter-spacing:1px; }}
-  .body {{ padding:24px 32px; }}
-  h1.titre {{ font-family:'Sora Variable','Segoe UI',sans-serif; color:{_VIOLET};
-             font-size:22px; font-weight:800; letter-spacing:-0.02em; margin:0 0 12px; }}
-  .essentiel {{ background:#f5f3ff; border-left:4px solid {_VIOLET}; padding:12px 16px;
-               font-size:14px; font-weight:600; margin-bottom:20px; }}
-  h2 {{ font-family:'Sora Variable','Segoe UI',sans-serif; color:{_VIOLET}; font-size:13px;
-       font-weight:700; text-transform:uppercase; letter-spacing:.5px;
-       margin:20px 0 8px; display:flex; align-items:center; gap:6px; }}
+  .body {{ padding:24px 32px 0; }}
+  .fiche-content > :first-child {{ margin-top:0; }}
+  .fiche-content h1, h1.titre {{ font-family:'Sora Variable','Segoe UI',sans-serif;
+             color:{_VIOLET}; font-size:22px; font-weight:800; letter-spacing:-0.02em;
+             line-height:1.25; margin:0 0 14px; }}
+  .fiche-content h2 {{ font-family:'Sora Variable','Segoe UI',sans-serif; color:{_VIOLET};
+       font-size:13px; font-weight:700; text-transform:uppercase; letter-spacing:.5px;
+       margin:20px 0 8px; break-after:avoid; }}
+  .fiche-content h3 {{ color:{_VIOLET}; font-size:13px; margin:14px 0 6px;
+                      break-after:avoid; }}
+  .fiche-content p {{ margin:0 0 10px; }}
+  .fiche-content section {{ margin:0 0 16px; }}
+  .fiche-content .intro {{ color:#52525b; font-size:14px; }}
+  .fiche-content .essential, .essentiel {{ background:#f5f3ff;
+               border-left:4px solid {_VIOLET}; padding:12px 16px; font-size:14px;
+               font-weight:600; margin:0 0 20px; break-inside:avoid; }}
+  .fiche-content .essential > :last-child {{ margin-bottom:0; }}
+  .fiche-content .key-points {{ background:#fafafa; border-radius:8px;
+                               padding:12px 16px 6px; break-inside:avoid; }}
   .section-icon {{ width:14px; height:14px; flex-shrink:0; }}
-  ul, ol {{ margin:0 0 16px; padding-left:20px; }}
-  li {{ margin-bottom:6px; }}
-  table {{ width:100%; border-collapse:collapse; margin:8px 0 16px; font-size:12.5px; }}
+  .fiche-content ul, .fiche-content ol {{ margin:0 0 16px; padding-left:20px; }}
+  .fiche-content li {{ margin-bottom:6px; break-inside:avoid; }}
+  .fiche-content li > ul, .fiche-content li > ol {{ margin:6px 0 0; }}
+  .fiche-content .procedure > ol {{ counter-reset:fiche-step; list-style:none;
+                                   padding-left:0; }}
+  .fiche-content .procedure > ol > li {{ counter-increment:fiche-step;
+       position:relative; padding:8px 10px 8px 38px; margin-bottom:6px;
+       border:1px solid #ede9fe; border-radius:7px; }}
+  .fiche-content .procedure > ol > li::before {{ content:counter(fiche-step);
+       position:absolute; left:10px; top:8px; width:20px; height:20px; border-radius:50%;
+       background:{_VIOLET}; color:#fff; text-align:center; line-height:20px;
+       font-weight:700; font-size:11px; }}
+  .table-wrapper {{ overflow:hidden; margin:8px 0 16px; break-inside:avoid; }}
+  table {{ width:100%; border-collapse:collapse; font-size:12.5px; }}
+  thead {{ display:table-header-group; }}
+  tr {{ break-inside:avoid; }}
   th, td {{ border:1px solid #ede9fe; padding:6px 10px; text-align:left; }}
   th {{ background:#f5f3ff; color:{_VIOLET}; }}
-  .exceptions {{ background:#fff7ed; border:1px solid #fed7aa; border-radius:8px;
-                padding:12px 16px; margin-bottom:16px; }}
+  .fiche-content .warning, .exceptions {{ background:#fff7ed; border:1px solid #fed7aa;
+                border-radius:8px; padding:12px 16px; margin:0 0 16px;
+                break-inside:avoid; }}
+  .fiche-content .warning h2 {{ color:#b45309; margin:0 0 6px; }}
+  .fiche-content .warning > :last-child {{ margin-bottom:0; }}
+  .fiche-content .info {{ background:#f0f9ff; border:1px solid #bae6fd;
+                         border-radius:8px; padding:12px 16px; margin:0 0 16px;
+                         break-inside:avoid; }}
+  .fiche-content .info h2 {{ color:#0369a1; margin-top:0; }}
+  .definitions {{ display:grid; grid-template-columns:max-content 1fr; gap:6px 14px;
+                  margin:0 0 16px; }}
+  .definitions dt {{ color:{_VIOLET}; font-weight:700; }}
+  .definitions dd {{ margin:0; }}
+  .legal-references {{ border-top:1px solid #ede9fe; padding-top:2px;
+                       font-size:12px; color:#5f6b6a; }}
   .exceptions strong {{ display:flex; align-items:center; gap:6px; color:#b45309; }}
   .exceptions ul {{ margin:6px 0 0; }}
   .exceptions li:last-child {{ margin-bottom:0; }}
   .sources {{ font-size:12px; color:#5f6b6a; }}
-  .footer {{ border-top:1px solid #ede9fe; margin:8px 32px 0; padding:14px 0; font-size:11px;
-            color:#5f6b6a; }}
+  .generation-warning {{ border:1px solid #f59e0b; background:#fffbeb; border-radius:6px;
+                         padding:8px 12px; margin:16px 0; font-size:10px; color:#92400e; }}
+  .generation-warning ul {{ margin:4px 0 0; }}
+  .footer {{ position:fixed; left:32px; right:32px; bottom:-17mm;
+            border-top:1px solid #ede9fe; padding:7px 0 0; font-size:9.5px;
+            line-height:1.35; color:#5f6b6a; }}
+  .footer p {{ margin:0 0 2px; }}
   .footer .validite {{ color:{_VIOLET}; font-weight:600; margin:0 0 4px; }}
 </style></head>
 <body>
@@ -470,22 +653,30 @@ def render_fiche_html(
     {body}
   </div>
   <div class="footer">
-    <p class="validite">À jour au {date_str}. Vérifiez l'actualité de ces règles avant application.</p>
-    <p>Fiche générée par AORIA RH à partir de votre question{org_line}. &copy; {generated_at.year} AORIA RH.</p>
+    <p class="validite">Contenu généré le {date_str}.
+      Vérifiez l'actualité de ces règles avant application.</p>
+    <p>Fiche générée par AORIA RH à partir de votre question{org_line}.
+      &copy; {generated_at.year} AORIA RH.</p>
   </div>
 </body></html>"""
 
 
 def _slugify(text: str) -> str:
-    slug = re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")
+    normalized = unicodedata.normalize("NFKD", text)
+    ascii_text = "".join(char for char in normalized if not unicodedata.combining(char))
+    slug = re.sub(r"[^a-z0-9]+", "-", ascii_text.lower()).strip("-")
     return slug[:60] or "fiche-pratique"
 
 
 def html_to_pdf(html_str: str) -> bytes:
-    """Convertit le HTML en PDF via WeasyPrint (import paresseux)."""
-    from weasyprint import HTML  # import différé : libs natives requises
+    """Convertit le HTML sans autoriser le fragment à charger une URL externe."""
+    from weasyprint import HTML  # import différé
+    from weasyprint.urls import URLFetcher
 
-    return HTML(string=html_str).write_pdf()
+    # Le protocole est refusé sans rendre la génération elle-même indisponible :
+    # l'avertissement de format reste visible dans le PDF, le HTML reste brut.
+    fetcher = URLFetcher(allowed_protocols={"data"}, fail_on_errors=False)
+    return HTML(string=html_str, url_fetcher=fetcher.fetch).write_pdf()
 
 
 # --- Orchestration -------------------------------------------------------
@@ -495,18 +686,21 @@ async def generate_fiche_content(
     *,
     question: str,
     answer_markdown: str,
+    sources: list[dict] | None = None,
     organisation_id: str | None = None,
     user_id: str | None = None,
 ) -> FicheGeneration:
-    """Appelle le LLM pour produire le contenu structuré de la fiche.
+    """Appelle le LLM et conserve son fragment HTML exactement tel quel."""
+    reference_lines = _format_reference_lines(sources or [])
+    references_context = "\n".join(f"- {html.unescape(line)}" for line in reference_lines)
+    if not references_context:
+        references_context = "Aucune référence structurée supplémentaire."
 
-    Ne rend pas le PDF (cf. `render_fiche_pdf`) : on stocke ce contenu et on
-    régénère le PDF à la demande avec la date du jour. Renvoie `eligible=False`
-    avec un motif quand la réponse ne se prête pas à une fiche générale.
-    """
     user_content = (
         f"Question posée : {question}\n\n"
-        f"Réponse à mettre en forme :\n{answer_markdown}"
+        f"Réponse à mettre en forme :\n{answer_markdown}\n\n"
+        "Références structurées autorisées, déjà citées dans la réponse :\n"
+        f"{references_context}"
     )
 
     response = await _llm.chat.completions.create(
@@ -515,8 +709,7 @@ async def generate_fiche_content(
             {"role": "system", "content": FICHE_SYSTEM_PROMPT},
             {"role": "user", "content": user_content},
         ],
-        response_format={"type": "json_object"},
-        max_completion_tokens=2000,
+        max_completion_tokens=5000,
         reasoning_effort="minimal",
     )
 
@@ -533,19 +726,8 @@ async def generate_fiche_content(
             context_id=None,
         )
 
-    raw = response.choices[0].message.content or "{}"
+    raw = response.choices[0].message.content or ""
     content = parse_fiche_content(raw)
-
-    if not content.eligible or not content.titre or not content.points_cles:
-        return FicheGeneration(
-            eligible=False,
-            content=None,
-            reason=(
-                "Cette réponse ne contient pas d'information juridique à mettre "
-                "en fiche."
-            ),
-        )
-
     return FicheGeneration(eligible=True, content=content)
 
 
@@ -556,7 +738,7 @@ def render_fiche_pdf(
     generated_at: datetime,
     org_name: str | None = None,
 ) -> bytes:
-    """Rend le PDF de la fiche à partir du contenu structuré + sources."""
+    """Rend le PDF à partir du corps brut (ou du format historique)."""
     html_str = render_fiche_html(
         content, sources, generated_at=generated_at, org_name=org_name
     )
