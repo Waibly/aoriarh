@@ -82,6 +82,13 @@ def test_prompt_forbids_arbitrary_step_limit():
     assert "aucune limite arbitraire" in FICHE_SYSTEM_PROMPT
 
 
+def test_prompt_requires_highlighted_direct_answer_and_targeted_bold():
+    assert 'Immédiatement après le <h1>' in FICHE_SYSTEM_PROMPT
+    assert '<aside class="essential"><p>...</p></aside>' in FICHE_SYSTEM_PROMPT
+    assert "Utilise <strong> avec parcimonie" in FICHE_SYSTEM_PROMPT
+    assert "paragraphe entier en gras" in FICHE_SYSTEM_PROMPT
+
+
 def test_inspection_warns_without_rewriting_unsupported_html():
     raw = '<article class="fiche-content"><h1>Titre</h1><img src="https://example.com/x"></article>'
     content = parse_fiche_content(raw)
@@ -256,6 +263,18 @@ def test_render_html_inserts_dynamic_body_verbatim():
     assert raw in final_html
     assert "Première" in final_html
     assert "counter-reset:fiche-step" in final_html
+
+
+def test_render_html_highlights_direct_answer_in_violet():
+    raw = (
+        '<article class="fiche-content"><h1>Une réponse</h1>'
+        '<aside class="essential"><p><strong>Oui.</strong> La règle s’applique.</p></aside>'
+        "</article>"
+    )
+    final_html = render_fiche_html(parse_fiche_content(raw), [], generated_at=GEN_AT)
+    assert "background:#f5f3ff; color:#652BB0" in final_html
+    assert "border-left:5px solid #652BB0" in final_html
+    assert ".essential strong, .essentiel strong { color:#652BB0; font-weight:800; }" in final_html
 
 
 def test_render_html_shows_warning_next_to_unmodified_generation():

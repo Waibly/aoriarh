@@ -137,12 +137,18 @@ Règles absolues de contenu :
   l'affirmation qu'elle fonde. N'invente jamais de référence.
 - Rédige un document autonome : ne parle jamais de « la réponse », « la source » ou « la question ».
 - Utilise des phrases courtes, concrètes et actionnables, sans répétition entre les sections.
+- Utilise <strong> avec parcimonie pour faire ressortir les informations les plus importantes :
+  conclusion, obligation, interdiction, délai, montant, seuil ou action décisive. Ne mets jamais un
+  paragraphe entier en gras.
 - N'ajoute un encadré de vigilance que s'il existe un vrai risque, une exception ou une condition.
 
 Règles absolues de sortie :
 - Renvoie UNIQUEMENT le fragment HTML final, sans JSON, Markdown, commentaire ni balises ```.
 - Le fragment commence par <article class="fiche-content"> et finit par </article>.
 - Il contient exactement un <h1> avec un titre autonome et précis.
+- Immédiatement après le <h1>, place toujours la réponse directe dans
+  <aside class="essential"><p>...</p></aside>. Ce bloc répond à la question en une ou deux phrases,
+  sans introduction générique et sans supprimer les précisions développées ensuite.
 - N'utilise aucun attribut style, id, src, href ou événement, aucune balise script, style, link,
   img, iframe ou objet externe. Le CSS est entièrement géré par l'application.
 
@@ -591,9 +597,11 @@ def render_fiche_html(
   .fiche-content p {{ margin:0 0 10px; }}
   .fiche-content section {{ margin:0 0 16px; }}
   .fiche-content .intro {{ color:#52525b; font-size:14px; }}
-  .fiche-content .essential, .essentiel {{ background:#f5f3ff;
-               border-left:4px solid {_VIOLET}; padding:12px 16px; font-size:14px;
+  .fiche-content strong {{ color:#27272a; font-weight:750; }}
+  .fiche-content .essential, .essentiel {{ background:#f5f3ff; color:{_VIOLET};
+               border-left:5px solid {_VIOLET}; padding:13px 16px; font-size:14px;
                font-weight:600; margin:0 0 20px; break-inside:avoid; }}
+  .fiche-content .essential strong, .essentiel strong {{ color:{_VIOLET}; font-weight:800; }}
   .fiche-content .essential > :last-child {{ margin-bottom:0; }}
   .fiche-content .key-points {{ background:#fafafa; border-radius:8px;
                                padding:12px 16px 6px; break-inside:avoid; }}
