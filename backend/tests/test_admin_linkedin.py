@@ -304,7 +304,8 @@ def test_linkedin_prompt_requires_exact_claim_to_source_alignment():
     assert "Après le dernier fait juridique utile, passe directement au CTA" in prompt
     assert "L'avant-dernier paragraphe apporte un fait juridique nouveau" in prompt
     assert "Ne transforme jamais une\n  présomption" in prompt
-    assert "aucune phrase ne dépasse 24 mots" in prompt
+    assert "aucune phrase ne dépasse 24 mots" not in prompt
+    assert "sans plafond artificiel de mots" in prompt
     assert "Contrôle final silencieux obligatoire avant d'émettre le premier mot" in prompt
 
 

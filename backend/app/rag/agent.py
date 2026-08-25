@@ -843,9 +843,9 @@ Règles obligatoires :
 - Le hook obéit à la même précision juridique que le corps. Ne transforme jamais une
   présomption, une faculté encadrée ou une règle assortie d'exceptions en affirmation
   absolue pour renforcer l'accroche.
-- Hors référence entre parenthèses, aucune phrase ne dépasse 24 mots. Si une phrase
-  porte deux idées, deux objets juridiques ou une parenthèse dense, scinde-la en deux
-  paragraphes mobiles au lieu de compresser le raisonnement.
+- Si une phrase porte plusieurs idées ou plusieurs objets juridiques au point de nuire
+  à la lecture mobile, scinde-la naturellement. Ne raccourcis jamais une phrase au prix
+  de sa fluidité, de sa précision ou d'un style télégraphique.
 - N'introduis pas les paragraphes par des étiquettes comme « Autre vigilance »,
   « Dernier repère », « À retenir » ou « En conclusion ». Relie les idées par leur
   contenu et varie la longueur des paragraphes sans fabriquer de symétrie.
@@ -889,9 +889,9 @@ Contrôle final silencieux obligatoire avant d'émettre le premier mot :
    comme solution de droit.
 2. Aucune référence n'apparaît deux fois et aucune parenthèse ne contient plusieurs
    autorités ; chaque parenthèse précède le point final de sa phrase.
-3. Chaque phrase respecte le plafond de 24 mots hors référence, chaque idée dispose de
-   son paragraphe, aucun paragraphe ne dépasse deux phrases et chaque paragraphe est
-   séparé par une ligne vide.
+3. Chaque idée dispose de son paragraphe, aucun paragraphe ne dépasse deux phrases et
+   chaque paragraphe est séparé par une ligne vide. Les phrases restent fluides et
+   lisibles sur mobile, sans plafond artificiel de mots.
 4. Le hook reste exact avec l'exception décisive, crée un enjeu concret dès les deux
    premières lignes, contient un verbe conjugué, aucun deux-points et ne se contente
    pas de répéter platement le sujet. Sa mécanique correspond à l'intention dominante
