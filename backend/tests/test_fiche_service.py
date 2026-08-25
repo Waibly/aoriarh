@@ -165,6 +165,24 @@ def test_render_html_contains_charte_and_blocks():
     assert "À jour au 15/06/2026" in html
 
 
+def test_render_html_uses_compact_single_line_header():
+    html = render_fiche_html(_content(), [], generated_at=GEN_AT)
+    assert 'class="logo"' in html
+    assert "grid-template-columns:1fr auto 1fr" in html
+    assert ".header .tag { grid-column:2" in html
+
+
+def test_render_html_balances_exceptions_vertical_spacing():
+    html = render_fiche_html(
+        _content(exceptions=["Vérifier la convention collective."]),
+        [],
+        generated_at=GEN_AT,
+    )
+    assert "padding:12px 16px" in html
+    assert ".exceptions strong { display:flex" in html
+    assert ".exceptions li:last-child { margin-bottom:0; }" in html
+
+
 def test_render_html_escapes_user_content():
     content = _content(titre="<script>alert(1)</script>")
     html = render_fiche_html(content, [], generated_at=GEN_AT)

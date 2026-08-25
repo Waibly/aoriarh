@@ -429,12 +429,14 @@ def render_fiche_html(
   * {{ box-sizing: border-box; }}
   body {{ font-family: 'Inter Variable', 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
          color:#3f3f46; margin:0; font-size:13px; line-height:1.5; }}
-  .header {{ background:{_VIOLET}; padding:20px 32px; text-align:center; }}
-  .header svg {{ height:34px; width:auto; }}
+  .header {{ background:{_VIOLET}; padding:12px 32px; display:grid;
+             grid-template-columns:1fr auto 1fr; align-items:center; }}
+  .header .logo {{ grid-column:1; justify-self:start; display:flex; align-items:center; }}
+  .header svg {{ height:28px; width:auto; }}
   .header .logo-fallback {{ font-family:'Sora Variable','Segoe UI',sans-serif; color:#fff;
                             font-size:20px; font-weight:800; letter-spacing:.5px; }}
-  .header .tag {{ color:#ede9fe; font-size:11px; margin-top:6px; text-transform:uppercase;
-                 letter-spacing:1px; }}
+  .header .tag {{ grid-column:2; color:#ede9fe; font-size:11px; margin:0;
+                 text-transform:uppercase; letter-spacing:1px; }}
   .body {{ padding:24px 32px; }}
   h1.titre {{ font-family:'Sora Variable','Segoe UI',sans-serif; color:{_VIOLET};
              font-size:22px; font-weight:800; letter-spacing:-0.02em; margin:0 0 12px; }}
@@ -450,9 +452,10 @@ def render_fiche_html(
   th, td {{ border:1px solid #ede9fe; padding:6px 10px; text-align:left; }}
   th {{ background:#f5f3ff; color:{_VIOLET}; }}
   .exceptions {{ background:#fff7ed; border:1px solid #fed7aa; border-radius:8px;
-                padding:10px 16px; margin-bottom:16px; }}
-  .exceptions strong {{ display:inline-flex; align-items:center; gap:6px; color:#b45309; }}
+                padding:12px 16px; margin-bottom:16px; }}
+  .exceptions strong {{ display:flex; align-items:center; gap:6px; color:#b45309; }}
   .exceptions ul {{ margin:6px 0 0; }}
+  .exceptions li:last-child {{ margin-bottom:0; }}
   .sources {{ font-size:12px; color:#5f6b6a; }}
   .footer {{ border-top:1px solid #ede9fe; margin:8px 32px 0; padding:14px 0; font-size:11px;
             color:#5f6b6a; }}
@@ -460,7 +463,7 @@ def render_fiche_html(
 </style></head>
 <body>
   <div class="header">
-    {_LOGO_HTML}
+    <div class="logo">{_LOGO_HTML}</div>
     <div class="tag">Fiche pratique</div>
   </div>
   <div class="body">
