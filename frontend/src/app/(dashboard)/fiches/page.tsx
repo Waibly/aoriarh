@@ -1,12 +1,14 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { useSession } from "next-auth/react";
 import {
   ClipboardList,
   Download,
   Eye,
   Loader2,
+  MessageCircle,
   Search,
   Trash2,
   TriangleAlert,
@@ -286,9 +288,14 @@ export default function FichesPage() {
                                   <div className="bg-primary/10 flex size-9 shrink-0 items-center justify-center rounded-lg">
                                     <ClipboardList className="text-primary size-5" />
                                   </div>
-                                  <span className="font-medium">
+                                  <button
+                                    type="button"
+                                    className="hover:text-primary focus-visible:ring-ring/50 cursor-pointer text-left font-medium underline-offset-4 outline-none hover:underline focus-visible:rounded-sm focus-visible:ring-[3px]"
+                                    onClick={() => handleView(fiche)}
+                                    disabled={busy}
+                                  >
                                     {fiche.title}
-                                  </span>
+                                  </button>
                                 </div>
                               </TableCell>
                               <TableCell className="text-muted-foreground">
@@ -314,6 +321,40 @@ export default function FichesPage() {
                               </TableCell>
                               <TableCell className="text-right">
                                 <div className="flex items-center justify-end gap-0.5">
+                                  <Tooltip>
+                                    <TooltipTrigger asChild>
+                                      {fiche.conversation_id ? (
+                                        <Button
+                                          variant="ghost"
+                                          size="icon-sm"
+                                          className="text-muted-foreground hover:text-primary"
+                                          asChild
+                                        >
+                                          <Link
+                                            href={`/chat/${fiche.conversation_id}`}
+                                            aria-label="Ouvrir la conversation d'origine"
+                                          >
+                                            <MessageCircle className="size-4" />
+                                          </Link>
+                                        </Button>
+                                      ) : (
+                                        <Button
+                                          variant="ghost"
+                                          size="icon-sm"
+                                          className="text-muted-foreground"
+                                          disabled
+                                          aria-label="Conversation d'origine indisponible"
+                                        >
+                                          <MessageCircle className="size-4" />
+                                        </Button>
+                                      )}
+                                    </TooltipTrigger>
+                                    <TooltipContent>
+                                      {fiche.conversation_id
+                                        ? "Ouvrir la conversation"
+                                        : "Conversation indisponible"}
+                                    </TooltipContent>
+                                  </Tooltip>
                                   <Tooltip>
                                     <TooltipTrigger asChild>
                                       <Button

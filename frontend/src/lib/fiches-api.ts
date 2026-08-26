@@ -6,6 +6,7 @@ export interface Fiche {
   created_at: string;
   updated_at: string;
   message_id: string | null;
+  conversation_id: string | null;
 }
 
 export async function listFiches(

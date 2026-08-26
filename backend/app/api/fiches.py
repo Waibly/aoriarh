@@ -29,6 +29,7 @@ class FicheRead(BaseModel):
     created_at: datetime
     updated_at: datetime
     message_id: str | None
+    conversation_id: str | None
 
 
 @router.get("/", response_model=list[FicheRead])
@@ -39,13 +40,14 @@ async def list_fiches(
 ) -> list[FicheRead]:
     """Liste les fiches de l'utilisateur courant dans cette organisation."""
     rows = (await db.execute(
-        select(Fiche)
+        select(Fiche, Message.conversation_id)
+        .outerjoin(Message, Fiche.message_id == Message.id)
         .where(
             Fiche.organisation_id == organisation_id,
             Fiche.user_id == user.id,
         )
         .order_by(Fiche.created_at.desc())
-    )).scalars().all()
+    )).all()
     return [
         FicheRead(
             id=str(f.id),
@@ -53,8 +55,9 @@ async def list_fiches(
             created_at=f.created_at,
             updated_at=f.updated_at,
             message_id=str(f.message_id) if f.message_id else None,
+            conversation_id=str(conversation_id) if conversation_id else None,
         )
-        for f in rows
+        for f, conversation_id in rows
     ]
 
 
