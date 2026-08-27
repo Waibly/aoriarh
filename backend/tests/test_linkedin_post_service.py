@@ -27,15 +27,27 @@ def _llm_response(content: str | None) -> SimpleNamespace:
 
 def test_prompt_requires_hook_body_sources_cta_and_forbids_hashtags() -> None:
     assert "deux premières lignes" in LINKEDIN_POST_SYSTEM_PROMPT
+    assert "question directe qui interpelle" in LINKEDIN_POST_SYSTEM_PROMPT
+    assert "prise de position nette" in LINKEDIN_POST_SYSTEM_PROMPT
+    assert "titre neutre" in LINKEDIN_POST_SYSTEM_PROMPT
     assert "paragraphes d'une ou deux phrases" in LINKEDIN_POST_SYSTEM_PROMPT
+    assert "directement au lecteur" in LINKEDIN_POST_SYSTEM_PROMPT
     assert "rarement 20 mots" in LINKEDIN_POST_SYSTEM_PROMPT
     assert "tiret cadratin" in LINKEDIN_POST_SYSTEM_PROMPT
     assert "entre 200 et 300 mots" in LINKEDIN_POST_SYSTEM_PROMPT
     assert "étapes numérotées" in LINKEDIN_POST_SYSTEM_PROMPT
     assert "puces pour" in LINKEDIN_POST_SYSTEM_PROMPT
     assert "paragraphes courts pour une explication" in LINKEDIN_POST_SYSTEM_PROMPT
+    assert (
+        "Rattache chaque référence à l'affirmation précise" in LINKEDIN_POST_SYSTEM_PROMPT
+    )
+    assert "juste après la phrase concernée" in LINKEDIN_POST_SYSTEM_PROMPT
     assert "Sources :" in LINKEDIN_POST_SYSTEM_PROMPT
     assert "CTA final" in LINKEDIN_POST_SYSTEM_PROMPT
+    assert "question courte, concise, naturelle" in LINKEDIN_POST_SYSTEM_PROMPT
+    assert "idiomatique" in LINKEDIN_POST_SYSTEM_PROMPT
+    assert "8 mots maximum" not in LINKEDIN_POST_SYSTEM_PROMPT
+    assert "question d'audit" in LINKEDIN_POST_SYSTEM_PROMPT
     assert "N'ajoute aucun hashtag" in LINKEDIN_POST_SYSTEM_PROMPT
 
 
