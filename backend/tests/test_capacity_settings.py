@@ -29,6 +29,14 @@ def test_capacity_defaults_bound_database_and_worker_concurrency():
     assert configured.worker_max_jobs == 3
 
 
+def test_final_generation_defaults_to_terra_with_medium_reasoning():
+    configured = _settings()
+
+    assert configured.llm_model == "gpt-5.6-terra"
+    assert configured.llm_reasoning_effort == "medium"
+    assert configured.demo_llm_model == "gpt-5.6-terra"
+
+
 @pytest.mark.parametrize(
     ("field", "value"),
     [

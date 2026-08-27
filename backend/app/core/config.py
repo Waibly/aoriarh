@@ -44,7 +44,8 @@ class Settings(BaseSettings):
     voyage_embedding_model: str = "voyage-law-2"
 
     # LLM — modèle de génération de la réponse finale
-    llm_model: str = "gpt-5.2"
+    llm_model: str = "gpt-5.6-terra"
+    llm_reasoning_effort: str = "medium"
 
     # Reporting des coûts — les fournisseurs (OpenAI, Voyage) facturent en USD.
     # Le cockpit business convertit ces coûts en EUR pour les rapprocher du MRR.
@@ -145,10 +146,10 @@ class Settings(BaseSettings):
     demo_max_questions_per_ip_per_day: int = 30
     # Plafond global (toutes IP) par minute — garde-fou anti-flood distribué.
     demo_max_questions_global_per_minute: int = 120
-    # Modèle de génération FORCÉ pour la démo. gpt-5.2 = même qualité que l'app
-    # (choix produit : la démo doit convaincre). ~6x plus cher que gpt-5-mini →
-    # le plafond demo_daily_budget_eur borne le coût quotidien.
-    demo_llm_model: str = "gpt-5.2"
+    # Modèle de génération FORCÉ pour la démo : même modèle que l'application
+    # (choix produit : la démo doit refléter la qualité réelle). Le plafond
+    # demo_daily_budget_eur borne le coût quotidien.
+    demo_llm_model: str = "gpt-5.6-terra"
     # Cloudflare Turnstile — secret serveur. Vide = vérification désactivée
     # (dev / rétro-compatible, même logique que brevo_webhook_secret).
     turnstile_secret: str = ""

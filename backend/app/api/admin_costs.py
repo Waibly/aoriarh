@@ -467,6 +467,12 @@ async def update_pricing(
 # --- LLM Model Switch ---
 
 AVAILABLE_MODELS = [
+    {
+        "id": "gpt-5.6-terra",
+        "label": "GPT-5.6 Terra",
+        "input_1m": 2.00,
+        "output_1m": 12.00,
+    },
     {"id": "gpt-5-mini", "label": "GPT-5 Mini", "input_1m": 0.25, "output_1m": 2.00},
     {"id": "gpt-5.2", "label": "GPT-5.2", "input_1m": 1.75, "output_1m": 14.00},
     {"id": "gpt-5", "label": "GPT-5", "input_1m": 1.25, "output_1m": 10.00},

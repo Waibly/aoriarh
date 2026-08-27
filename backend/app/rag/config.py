@@ -5,6 +5,7 @@ EMBEDDING_MODEL = settings.voyage_embedding_model
 # --- Modèles LLM par étape (centralisés ici pour un changement en une ligne) ---
 # Génération de la réponse finale (étape lourde) : piloté par settings.
 LLM_MODEL = settings.llm_model
+LLM_REASONING_EFFORT = settings.llm_reasoning_effort
 # Expansion de requête + ancre législative (étapes légères, transformation simple).
 EXPAND_MODEL = "gpt-5-mini"
 # Condensation des questions de suivi (étape légère et rapide, gardée volontairement
