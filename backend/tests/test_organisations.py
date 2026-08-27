@@ -1,7 +1,15 @@
+import uuid
+from unittest.mock import Mock
+
 import pytest
 from httpx import AsyncClient
+from sqlalchemy import select
 
+from app.models.fiche import Fiche
+from app.models.organisation import Organisation
+from app.models.user import User
 from tests.conftest import auth_header
+from tests.conftest import test_session_factory as session_factory
 
 # --- Organisation CRUD ---
 
@@ -110,6 +118,53 @@ async def test_update_organisation_as_manager(
     )
     assert res2.status_code == 200
     assert res2.json()["name"] == "New Name"
+
+
+@pytest.mark.asyncio
+async def test_delete_organisation_also_deletes_its_fiches(
+    client: AsyncClient,
+    manager_user: dict[str, str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    qdrant = Mock()
+    monkeypatch.setattr(
+        "app.services.organisation_service.get_qdrant_client",
+        lambda: qdrant,
+    )
+    response = await client.post(
+        "/api/v1/organisations/",
+        json={"name": "Organisation avec fiche"},
+        headers=auth_header(manager_user["token"]),
+    )
+    organisation_id = response.json()["id"]
+
+    async with session_factory() as session:
+        user_id = (
+            await session.execute(
+                select(User.id).where(User.email == manager_user["email"])
+            )
+        ).scalar_one()
+        fiche = Fiche(
+            organisation_id=uuid.UUID(organisation_id),
+            user_id=user_id,
+            title="Fiche empêchant la suppression",
+            content={},
+            sources=[],
+        )
+        session.add(fiche)
+        await session.commit()
+        fiche_id = fiche.id
+
+    delete_response = await client.delete(
+        f"/api/v1/organisations/{organisation_id}",
+        headers=auth_header(manager_user["token"]),
+    )
+
+    assert delete_response.status_code == 204
+    qdrant.delete.assert_called_once()
+    async with session_factory() as session:
+        assert await session.get(Fiche, fiche_id) is None
+        assert await session.get(Organisation, uuid.UUID(organisation_id)) is None
 
 
 # --- Member management ---

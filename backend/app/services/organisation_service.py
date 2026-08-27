@@ -9,6 +9,7 @@ from sqlalchemy.orm import selectinload
 
 from app.models.conversation import Conversation, Message
 from app.models.document import Document
+from app.models.fiche import Fiche
 from app.models.invitation import Invitation
 from app.models.ccn import OrganisationConvention
 from app.models.membership import Membership
@@ -215,7 +216,12 @@ class OrganisationService:
             except Exception:
                 logger.warning("Failed to delete file %s", doc.storage_path)
 
-        # 3. Delete messages via conversation_ids
+        # 3. Delete practical sheets before their source messages and organisation
+        await self.db.execute(
+            delete(Fiche).where(Fiche.organisation_id == org_id)
+        )
+
+        # 4. Delete messages via conversation_ids
         conv_result = await self.db.execute(
             select(Conversation.id).where(Conversation.organisation_id == org_id)
         )
@@ -225,32 +231,32 @@ class OrganisationService:
                 delete(Message).where(Message.conversation_id.in_(conv_ids))
             )
 
-        # 4. Delete conversations
+        # 5. Delete conversations
         await self.db.execute(
             delete(Conversation).where(Conversation.organisation_id == org_id)
         )
 
-        # 5. Delete documents
+        # 6. Delete documents
         await self.db.execute(
             delete(Document).where(Document.organisation_id == org_id)
         )
 
-        # 6. Delete invitations
+        # 7. Delete invitations
         await self.db.execute(
             delete(Invitation).where(Invitation.organisation_id == org_id)
         )
 
-        # 7. Delete organisation_conventions
+        # 8. Delete organisation_conventions
         await self.db.execute(
             delete(OrganisationConvention).where(OrganisationConvention.organisation_id == org_id)
         )
 
-        # 8. Delete memberships (NOT users)
+        # 9. Delete memberships (NOT users)
         await self.db.execute(
             delete(Membership).where(Membership.organisation_id == org_id)
         )
 
-        # 9. Delete organisation
+        # 10. Delete organisation
         await self.db.delete(org)
         await self.db.commit()
 
