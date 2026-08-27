@@ -288,6 +288,15 @@ def test_render_html_places_clickable_website_at_footer_bottom_right():
     assert ".footer .site-link" in html
 
 
+def test_render_html_numbers_pages_and_keeps_each_reference_together():
+    html = render_fiche_html(_content(), [], generated_at=GEN_AT)
+
+    assert "@bottom-center" in html
+    assert 'content: counter(page) "/" counter(pages)' in html
+    assert ".legal-references li, .sources li" in html
+    assert "page-break-inside:avoid" in html
+
+
 def test_render_html_uses_compact_single_line_header():
     html = render_fiche_html(_content(), [], generated_at=GEN_AT)
     assert 'class="logo"' in html

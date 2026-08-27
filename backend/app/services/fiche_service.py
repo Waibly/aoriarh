@@ -643,7 +643,17 @@ def render_fiche_html(
 <head><meta charset="utf-8"><title>{_inline(content.titre)}</title>
 <style>
   {_FONTS_CSS}
-  @page {{ size: A4; margin: 14mm 0 22mm; }}
+  @page {{
+    size: A4;
+    margin: 14mm 0 22mm;
+    @bottom-center {{
+      content: counter(page) "/" counter(pages);
+      color:{_VIOLET};
+      font-family:'Inter Variable','Segoe UI','Helvetica Neue',Arial,sans-serif;
+      font-size:9.5px;
+      font-weight:700;
+    }}
+  }}
   @page:first {{ margin-top: 0; }}
   * {{ box-sizing: border-box; }}
   body {{ font-family: 'Inter Variable', 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
@@ -718,8 +728,10 @@ def render_fiche_html(
   .definitions dd {{ margin:0; }}
   .legal-references {{ border-top:1px solid #ede9fe; padding-top:2px;
                        font-size:12px; color:#5f6b6a; }}
-  .legal-references li {{ margin-bottom:9px; }}
-  .legal-references li strong {{ color:{_VIOLET}; font-weight:700; }}
+  .legal-references li, .sources li {{ margin-bottom:9px; break-inside:avoid;
+                                      page-break-inside:avoid; }}
+  .legal-references li strong {{ color:{_VIOLET}; font-weight:700;
+                                 break-after:avoid; page-break-after:avoid; }}
   .legal-references .reference-topic {{ display:block; color:#52525b;
                                         font-size:11px; margin-top:1px; }}
   .exceptions strong {{ display:flex; align-items:center; gap:6px; color:#b45309; }}

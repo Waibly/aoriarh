@@ -30,6 +30,8 @@ def test_long_procedure_keeps_every_step_without_footer_only_page():
     assert len(page_texts) == 2
     assert sum(text.count("Étape ") for text in page_texts) == 30
     assert all("Contenu généré le 25/08/2026" in text for text in page_texts)
+    assert "1/2" in page_texts[0]
+    assert "2/2" in page_texts[1]
     assert all(len(text) > 500 for text in page_texts)
 
 
@@ -51,6 +53,38 @@ def test_external_resource_is_ignored_without_hiding_generation():
     assert "Le texte doit rester visible." in text
     assert "Avertissement de mise en page" in text
     assert "balise <img> non prévue" in text
+
+
+def test_legal_reference_and_its_topic_stay_on_the_same_page():
+    filler = "".join(
+        f"<p>Paragraphe {index} : contrôle détaillé du dossier et conservation "
+        "des justificatifs nécessaires pour sécuriser la procédure.</p>"
+        for index in range(26)
+    )
+    fragment = (
+        '<article class="fiche-content"><h1>Documents de fin de contrat</h1>'
+        f"<section><h2>Règles</h2>{filler}</section>"
+        '<section class="legal-references"><h2>Références juridiques</h2><ul>'
+        '<li><strong>Cour de cassation, 03/09/2025, n° 24-16.546</strong>'
+        '<span class="reference-topic">Remise des documents de fin de contrat</span></li>'
+        '<li><strong>Code du travail, art. L1234-19</strong>'
+        '<span class="reference-topic">Délivrance du certificat de travail</span></li>'
+        "</ul></section></article>"
+    )
+
+    pdf = render_fiche_pdf(
+        parse_fiche_content(fragment),
+        [],
+        generated_at=datetime(2026, 8, 25),
+    )
+    document = fitz.open(stream=pdf, filetype="pdf")
+    page_texts = [page.get_text() for page in document]
+
+    assert len(page_texts) == 2
+    assert "24-16.546" in page_texts[0]
+    assert "Remise des documents de fin de contrat" in page_texts[0]
+    assert "L1234-19" in page_texts[1]
+    assert "Délivrance du certificat de travail" in page_texts[1]
 
 
 def test_footer_contains_clickable_aoria_website_link():
