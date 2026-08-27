@@ -33,6 +33,9 @@ def test_prompt_requires_hook_body_sources_cta_and_forbids_hashtags() -> None:
     assert "paragraphes d'une ou deux phrases" in LINKEDIN_POST_SYSTEM_PROMPT
     assert "directement au lecteur" in LINKEDIN_POST_SYSTEM_PROMPT
     assert "rarement 20 mots" in LINKEDIN_POST_SYSTEM_PROMPT
+    assert "N'utilise jamais l'inversion du sujet et du verbe" in LINKEDIN_POST_SYSTEM_PROMPT
+    assert "Vous préférez" in LINKEDIN_POST_SYSTEM_PROMPT
+    assert "place toujours le sujet avant" in LINKEDIN_POST_SYSTEM_PROMPT
     assert "tiret cadratin" in LINKEDIN_POST_SYSTEM_PROMPT
     assert "entre 200 et 300 mots" in LINKEDIN_POST_SYSTEM_PROMPT
     assert "étapes numérotées" in LINKEDIN_POST_SYSTEM_PROMPT

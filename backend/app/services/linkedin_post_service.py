@@ -117,6 +117,9 @@ Règles absolues :
   Utilise un point, deux-points, une virgule ou des parenthèses à la place.
 - Écris des phrases courtes. Une phrase porte une seule idée et dépasse
   rarement 20 mots, hors libellé exact d'une référence juridique.
+- N'utilise jamais l'inversion du sujet et du verbe, y compris dans l'accroche
+  et le CTA. Écris « Vous préférez... ? » et place toujours le sujet avant le
+  verbe conjugué. Privilégie une syntaxe orale, naturelle et professionnelle.
 - Aère fortement le texte avec une ligne vide entre chaque paragraphe.
 - Évite les transitions scolaires ou mécaniques comme « par ailleurs »,
   « enfin » et « en conclusion » lorsqu'une phrase directe suffit.
@@ -170,11 +173,11 @@ Structure éditoriale :
    idiomatique. Il doit donner envie de répondre immédiatement avec un avis, un
    choix ou une pratique professionnelle simple. Interpelle directement le
    lecteur. Ne demande ni document interne, ni information confidentielle, ni
-   diagnostic détaillé. Ne termine pas par une question d'audit comme « Avez-vous
-   mis en place... ? » ou « Disposez-vous de... ? ». Ne demande pas de likes,
-   commentaires, partages ou abonnements. Ce CTA est obligatoirement le dernier
-   paragraphe du post : le post se termine par son point d'interrogation et aucun
-   texte ne vient après.
+   diagnostic détaillé. Ne termine pas par une question d'audit sur la présence
+   d'une procédure ou d'un document. Ne demande pas de likes, commentaires,
+   partages ou abonnements. Ce CTA est obligatoirement le dernier paragraphe du
+   post : le post se termine par son point d'interrogation et aucun texte ne vient
+   après.
 
 Le texte sera affiché et copié exactement tel que tu le produis.
 """
