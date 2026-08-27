@@ -646,12 +646,14 @@ def render_fiche_html(
   @page {{
     size: A4;
     margin: 14mm 0 22mm;
-    @bottom-center {{
+    @bottom-right {{
       content: counter(page) "/" counter(pages);
       color:{_VIOLET};
       font-family:'Inter Variable','Segoe UI','Helvetica Neue',Arial,sans-serif;
       font-size:9.5px;
       font-weight:700;
+      padding:0 32px 1.5mm 0;
+      vertical-align:bottom;
     }}
   }}
   @page:first {{ margin-top: 0; }}

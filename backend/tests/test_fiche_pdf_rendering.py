@@ -102,3 +102,7 @@ def test_footer_contains_clickable_aoria_website_link():
     links = [link.get("uri") for page in document for link in page.get_links()]
     assert "https://aoriarh.fr" in links
     assert "aoriarh.fr" in document[0].get_text()
+    site_bounds = document[0].search_for("aoriarh.fr")[0]
+    page_number_bounds = document[0].search_for("1/1")[0]
+    assert page_number_bounds.y0 > site_bounds.y1
+    assert abs(page_number_bounds.x1 - site_bounds.x1) < 3

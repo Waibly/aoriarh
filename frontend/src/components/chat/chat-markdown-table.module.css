@@ -1,0 +1,56 @@
+.wrapper {
+  max-width: 100%;
+  margin: 1.25rem 0;
+  overflow-x: auto;
+  border: 1px solid color-mix(in oklab, var(--primary) 20%, transparent);
+  border-radius: 0.625rem;
+  background: var(--card);
+}
+
+.table {
+  width: 100%;
+  min-width: 32rem;
+  margin: 0;
+  border-collapse: collapse;
+  font-size: 0.8125rem;
+  line-height: 1.4;
+}
+
+.table thead {
+  background: color-mix(in oklab, var(--primary) 10%, var(--card));
+}
+
+.table th {
+  padding: 0.625rem 0.75rem;
+  border: 0;
+  border-bottom: 1px solid color-mix(in oklab, var(--primary) 20%, transparent);
+  color: var(--primary);
+  font-weight: 700;
+  text-align: left;
+  vertical-align: top;
+}
+
+.table td {
+  padding: 0.625rem 0.75rem;
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  color: var(--foreground);
+  text-align: left;
+  vertical-align: top;
+}
+
+.table tbody tr:nth-child(even) {
+  background: color-mix(in oklab, var(--primary) 3%, transparent);
+}
+
+.table tbody tr:hover {
+  background: var(--accent);
+}
+
+.table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.table tbody td:first-child {
+  font-weight: 600;
+}
