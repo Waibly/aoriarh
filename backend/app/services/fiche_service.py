@@ -33,7 +33,8 @@ from app.services.cost_tracker import cost_tracker
 logger = logging.getLogger(__name__)
 
 # Famille gpt-5 : pas de `temperature` (rejetée), budget via max_completion_tokens.
-FICHE_MODEL = "gpt-5-mini"
+FICHE_MODEL = "gpt-5.6-terra"
+FICHE_REASONING_EFFORT = "medium"
 
 _llm = AsyncOpenAI(
     api_key=settings.openai_api_key,
@@ -199,8 +200,12 @@ Catalogue de composants autorisés — choisis uniquement ceux utiles au contenu
   Pour chaque référence autorisée, recopie son libellé exact dans <strong>, puis indique dans
   <span class="reference-topic"> ce qu'elle concerne en 3 à 8 mots, comme « Conditions
   d'attribution » ou « Détermination du montant ». Fonde ce libellé uniquement sur la réponse,
-  la rubrique documentaire ou l'extrait fournis. N'invente jamais l'objet d'un texte ; si le sujet
-  précis ne peut pas être établi, écris « Portée à vérifier ».
+  la rubrique documentaire, la solution ou l'extrait fournis. Pour une décision de justice,
+  résume la question juridique ou la règle concrète qu'elle appuie dans la réponse. Si son apport
+  précis n'est pas isolable, emploie le thème juridique le plus précis explicitement présent dans
+  la réponse, par exemple « Documents de fin de contrat ». N'écris jamais « Portée à vérifier »,
+  « Objet non précisé », « Référence à vérifier » ni un autre commentaire sur la qualité de la
+  source. Le lecteur doit comprendre le sujet de chaque référence sans avoir à l'ouvrir.
 
 Balises autorisées : article, section, aside, div, h1, h2, h3, p, ul, ol, li, dl, dt, dd,
 table, thead, tbody, tr, th, td, strong, em, span, br et blockquote.
@@ -548,9 +553,14 @@ def _format_reference_context(sources: list[dict]) -> str:
 
         lines = [f"- Référence autorisée : {reference}"]
         section_path = " ".join(str(source.get("section_path") or "").split())
+        solution = " ".join(str(source.get("solution") or "").split())
         excerpt = " ".join(str(source.get("excerpt") or "").split())
+        if not excerpt:
+            excerpt = " ".join(str(source.get("full_text") or "").split())
         if section_path:
             lines.append(f"  Rubrique documentaire : {section_path}")
+        if solution:
+            lines.append(f"  Solution de la décision : {solution[:200]}")
         if excerpt:
             lines.append(f"  Extrait de contexte : {excerpt[:500]}")
         blocks.append("\n".join(lines))
@@ -791,7 +801,7 @@ async def generate_fiche_content(
             {"role": "user", "content": user_content},
         ],
         max_completion_tokens=5000,
-        reasoning_effort="minimal",
+        reasoning_effort=FICHE_REASONING_EFFORT,
     )
 
     if response.usage:

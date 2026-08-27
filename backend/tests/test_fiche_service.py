@@ -6,14 +6,21 @@ d'un appel réseau OpenAI.
 """
 
 from datetime import datetime
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, patch
+
+import pytest
 
 from app.services.fiche_service import (
+    FICHE_MODEL,
+    FICHE_REASONING_EFFORT,
     FICHE_SYSTEM_PROMPT,
     FicheContent,
     _format_reference_context,
     _format_source,
     _md_table_to_html,
     fiche_filename,
+    generate_fiche_content,
     parse_fiche_content,
     render_fiche_html,
     select_fiche_references,
@@ -167,6 +174,7 @@ def test_reference_context_gives_the_model_grounded_topic_material():
                 "source_type_label": "Code du travail",
                 "article_nums": ["L.1237-1"],
                 "section_path": "Rupture du contrat > Démission",
+                "solution": "Rejet",
                 "excerpt": "Le salarié manifeste sa volonté claire de démissionner.",
             }
         ]
@@ -174,6 +182,7 @@ def test_reference_context_gives_the_model_grounded_topic_material():
 
     assert "Référence autorisée : Code du travail, art. L.1237-1" in context
     assert "Rubrique documentaire : Rupture du contrat > Démission" in context
+    assert "Solution de la décision : Rejet" in context
     assert "Extrait de contexte : Le salarié manifeste" in context
 
 
@@ -181,7 +190,35 @@ def test_prompt_requires_short_topics_below_legal_references():
     assert 'class="reference-topic"' in FICHE_SYSTEM_PROMPT
     assert "ce qu'elle concerne en 3 à 8 mots" in FICHE_SYSTEM_PROMPT
     assert "Fonde ce libellé uniquement" in FICHE_SYSTEM_PROMPT
-    assert "Portée à vérifier" in FICHE_SYSTEM_PROMPT
+    assert "résume la question juridique ou la règle concrète" in FICHE_SYSTEM_PROMPT
+    assert "Le lecteur doit comprendre le sujet" in FICHE_SYSTEM_PROMPT
+    assert "N'écris jamais « Portée à vérifier »" in FICHE_SYSTEM_PROMPT
+
+
+@pytest.mark.asyncio
+async def test_generation_uses_terra_with_medium_reasoning():
+    raw = '<article class="fiche-content"><h1>Documents de fin de contrat</h1></article>'
+    response = SimpleNamespace(
+        choices=[SimpleNamespace(message=SimpleNamespace(content=raw))],
+        usage=None,
+    )
+
+    with patch(
+        "app.services.fiche_service._llm.chat.completions.create",
+        new=AsyncMock(return_value=response),
+    ) as create:
+        generation = await generate_fiche_content(
+            question="quels documents remettre ?",
+            answer_markdown="Le certificat de travail doit être remis.",
+        )
+
+    assert generation.content is not None
+    assert generation.content.body_html == raw
+    assert FICHE_MODEL == "gpt-5.6-terra"
+    assert FICHE_REASONING_EFFORT == "medium"
+    request = create.await_args.kwargs
+    assert request["model"] == FICHE_MODEL
+    assert request["reasoning_effort"] == FICHE_REASONING_EFFORT
 
 
 def test_select_fiche_references_keeps_only_cited_legal_foundations():
