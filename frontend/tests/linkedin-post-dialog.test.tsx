@@ -21,6 +21,29 @@ describe("LinkedInPostDialog", () => {
     });
   });
 
+  it("garde le bouton en pied de fenêtre pendant le chargement", async () => {
+    mockGenerateLinkedInPost.mockReturnValue(new Promise(() => undefined));
+
+    render(
+      <LinkedInPostDialog
+        messageId="message-loading"
+        token="token-admin"
+        open
+        onOpenChange={jest.fn()}
+      />
+    );
+
+    const loadingStatus = await screen.findByRole("status");
+    expect(loadingStatus).toHaveClass("min-h-0", "flex-1");
+
+    const copyButton = screen.getByRole("button", { name: "Copier le post" });
+    expect(copyButton).toBeDisabled();
+    expect(copyButton.closest('[data-slot="dialog-footer"]')).toHaveClass(
+      "mt-auto",
+      "shrink-0"
+    );
+  });
+
   it("affiche et copie exactement le post brut puis le garde en cache", async () => {
     const raw =
       "  Accroche conservée\n\nCorps.\n\nSources :\n• Code du travail, art. L.1234-1\n\nVotre avis ?  ";

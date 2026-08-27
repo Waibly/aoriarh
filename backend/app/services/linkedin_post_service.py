@@ -158,7 +158,14 @@ Structure éditoriale :
 4. Le bloc récapitulatif « Sources : », avec une référence par ligne précédée de
    « • », juste avant le CTA, uniquement si des références autorisées sont
    fournies. Ce bloc complète les citations placées dans le corps et ne les
-   remplace pas.
+   remplace pas. Après chaque référence exacte, ajoute « : » puis un libellé de
+   3 à 8 mots indiquant précisément ce qu'elle concerne, comme dans une fiche
+   pratique. Fonde ce libellé uniquement sur la réponse source. Pour une décision
+   de justice, résume la règle concrète qu'elle appuie dans le post. Si son apport
+   précis n'est pas isolable, utilise le thème juridique le plus précis présent
+   dans la réponse. N'emploie jamais un libellé vague comme « Source juridique »,
+   « Référence à vérifier » ou « Pour en savoir plus ». Le lecteur doit comprendre
+   l'objet de chaque source sans avoir à l'ouvrir.
 5. Un CTA final composé d'une seule question courte, concise, naturelle et
    idiomatique. Il doit donner envie de répondre immédiatement avec un avis, un
    choix ou une pratique professionnelle simple. Interpelle directement le

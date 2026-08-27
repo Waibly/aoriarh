@@ -43,6 +43,11 @@ def test_prompt_requires_hook_body_sources_cta_and_forbids_hashtags() -> None:
     )
     assert "juste après la phrase concernée" in LINKEDIN_POST_SYSTEM_PROMPT
     assert "Sources :" in LINKEDIN_POST_SYSTEM_PROMPT
+    assert "un libellé de" in LINKEDIN_POST_SYSTEM_PROMPT
+    assert "3 à 8 mots" in LINKEDIN_POST_SYSTEM_PROMPT
+    assert "ce qu'elle concerne" in LINKEDIN_POST_SYSTEM_PROMPT
+    assert "résume la règle concrète" in LINKEDIN_POST_SYSTEM_PROMPT
+    assert "l'objet de chaque source" in LINKEDIN_POST_SYSTEM_PROMPT
     assert "CTA final" in LINKEDIN_POST_SYSTEM_PROMPT
     assert "question courte, concise, naturelle" in LINKEDIN_POST_SYSTEM_PROMPT
     assert "idiomatique" in LINKEDIN_POST_SYSTEM_PROMPT

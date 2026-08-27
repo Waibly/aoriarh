@@ -98,7 +98,7 @@ export function LinkedInPostDialog({
 
         {loading && !post && (
           <div
-            className="text-muted-foreground flex min-h-72 flex-col items-center justify-center gap-3"
+            className="text-muted-foreground flex min-h-0 flex-1 flex-col items-center justify-center gap-3"
             role="status"
           >
             <Loader2 className="text-primary size-7 animate-spin" />
@@ -107,7 +107,7 @@ export function LinkedInPostDialog({
         )}
 
         {error && !post && (
-          <div className="flex min-h-72 flex-col items-center justify-center gap-4 text-center">
+          <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-4 text-center">
             <AlertTriangle className="text-destructive size-7" />
             <p className="text-muted-foreground max-w-md text-sm">{error}</p>
             <Button variant="outline" onClick={handleRetry} disabled={loading}>
@@ -158,7 +158,7 @@ export function LinkedInPostDialog({
           </div>
         )}
 
-        <DialogFooter>
+        <DialogFooter className="mt-auto shrink-0">
           <Button onClick={handleCopy} disabled={!post || loading}>
             {copied ? (
               <Check className="size-4" />
