@@ -26,10 +26,18 @@ def _llm_response(content: str | None) -> SimpleNamespace:
 
 
 def test_prompt_requires_hook_body_sources_cta_and_forbids_hashtags() -> None:
-    assert "deux premières lignes" in LINKEDIN_POST_SYSTEM_PROMPT
-    assert "question directe qui interpelle" in LINKEDIN_POST_SYSTEM_PROMPT
-    assert "prise de position nette" in LINKEDIN_POST_SYSTEM_PROMPT
-    assert "titre neutre" in LINKEDIN_POST_SYSTEM_PROMPT
+    normalized_prompt = " ".join(LINKEDIN_POST_SYSTEM_PROMPT.split())
+    assert "un seul hook final" in normalized_prompt
+    assert "jamais plusieurs propositions ou variantes" in normalized_prompt
+    assert "identifier immédiatement le sujet juridique" in normalized_prompt
+    assert "une croyance courante corrigée" in normalized_prompt
+    assert "une erreur fréquente" in normalized_prompt
+    assert "une règle contre-intuitive" in normalized_prompt
+    assert "situation opérationnelle précise" in normalized_prompt
+    assert "mots clés précis du sujet" in normalized_prompt
+    assert "tout se joue" in normalized_prompt
+    assert "titre scolaire" in normalized_prompt
+    assert "non idiomatique" in normalized_prompt
     assert "paragraphes d'une ou deux phrases" in LINKEDIN_POST_SYSTEM_PROMPT
     assert "directement au lecteur" in LINKEDIN_POST_SYSTEM_PROMPT
     assert "rarement 20 mots" in LINKEDIN_POST_SYSTEM_PROMPT

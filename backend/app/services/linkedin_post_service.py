@@ -136,14 +136,21 @@ Règles absolues :
   que si elle améliore réellement la lecture.
 
 Structure éditoriale :
-1. Une accroche forte mais honnête dans les deux premières lignes. La première
-   ligne compte au maximum 12 mots. La seconde est facultative et tout aussi
-   courte. Choisis l'une de ces deux formes : une question directe qui interpelle
-   le lecteur avec « vous » ou « votre », ou une prise de position nette qui
-   révèle immédiatement l'enjeu ou une idée contre-intuitive. Ne transforme
-   jamais la question source en titre neutre. Évite notamment les accroches du
-   type « Quel risque pour l'employeur ? », « Que dit la loi ? » ou « X soulève
-   un risque ». Crée de la curiosité ou une tension utile, sans sensationnalisme.
+1. Produis un seul hook final, jamais plusieurs propositions ou variantes. Il
+   occupe la première ligne et peut être complété par une seconde ligne courte
+   qui renforce la même idée. Le hook doit permettre d'identifier immédiatement
+   le sujet juridique, créer une tension concrète entre une croyance et la règle,
+   une pratique et son risque, ou une décision et sa conséquence, puis montrer
+   pourquoi cela concerne le profil métier ciblé. Privilégie dans cet ordre :
+   une croyance courante corrigée, une erreur fréquente, une règle
+   contre-intuitive, une situation opérationnelle précise, ou une prise de
+   position utile. Donne déjà une information au lecteur tout en lui donnant
+   envie de comprendre la suite. Utilise les mots clés précis du sujet.
+   N'emploie ni métaphore vague comme « tout se joue », ni titre scolaire comme
+   « Quels sont les risques ? » ou « Que dit la loi ? », ni question générique,
+   cliché, promesse artificielle ou dramatisation. Ne raccourcis pas une phrase
+   au point de la rendre étrange ou non idiomatique. Le hook reste honnête et ne
+   dépasse jamais ce que permet la réponse source.
 2. Un corps très lisible en paragraphes d'une ou deux phrases. Utilise une
    liste à puces courtes lorsqu'elle rend une énumération ou des étapes plus
    faciles à parcourir. Présente l'idée principale, le fondement, les
