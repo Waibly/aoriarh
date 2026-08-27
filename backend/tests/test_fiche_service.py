@@ -10,6 +10,7 @@ from datetime import datetime
 from app.services.fiche_service import (
     FICHE_SYSTEM_PROMPT,
     FicheContent,
+    _format_reference_context,
     _format_source,
     _md_table_to_html,
     fiche_filename,
@@ -83,7 +84,12 @@ def test_prompt_forbids_arbitrary_step_limit():
 
 
 def test_prompt_requires_highlighted_direct_answer_and_targeted_bold():
-    assert 'Immédiatement après le <h1>' in FICHE_SYSTEM_PROMPT
+    assert "3 à 7 mots" in FICHE_SYSTEM_PROMPT
+    assert "60 caractères maximum" in FICHE_SYSTEM_PROMPT
+    assert 'class="user-question"' in FICHE_SYSTEM_PROMPT
+    assert "Corrige uniquement l'orthographe" in FICHE_SYSTEM_PROMPT
+    assert "Conserve strictement son sens" in FICHE_SYSTEM_PROMPT
+    assert "Immédiatement après ce bloc" in FICHE_SYSTEM_PROMPT
     assert '<aside class="essential"><p>...</p></aside>' in FICHE_SYSTEM_PROMPT
     assert "Utilise <strong> avec parcimonie" in FICHE_SYSTEM_PROMPT
     assert "paragraphe entier en gras" in FICHE_SYSTEM_PROMPT
@@ -152,6 +158,30 @@ def test_format_source_jurisprudence_with_date():
     assert "Cass. soc." in line
     assert "n° 21-12.345" in line
     assert "10/05/2023" in line
+
+
+def test_reference_context_gives_the_model_grounded_topic_material():
+    context = _format_reference_context(
+        [
+            {
+                "source_type_label": "Code du travail",
+                "article_nums": ["L.1237-1"],
+                "section_path": "Rupture du contrat > Démission",
+                "excerpt": "Le salarié manifeste sa volonté claire de démissionner.",
+            }
+        ]
+    )
+
+    assert "Référence autorisée : Code du travail, art. L.1237-1" in context
+    assert "Rubrique documentaire : Rupture du contrat > Démission" in context
+    assert "Extrait de contexte : Le salarié manifeste" in context
+
+
+def test_prompt_requires_short_topics_below_legal_references():
+    assert 'class="reference-topic"' in FICHE_SYSTEM_PROMPT
+    assert "ce qu'elle concerne en 3 à 8 mots" in FICHE_SYSTEM_PROMPT
+    assert "Fonde ce libellé uniquement" in FICHE_SYSTEM_PROMPT
+    assert "Portée à vérifier" in FICHE_SYSTEM_PROMPT
 
 
 def test_select_fiche_references_keeps_only_cited_legal_foundations():
@@ -281,6 +311,26 @@ def test_render_html_inserts_dynamic_body_verbatim():
     assert "counter-reset:fiche-step" in final_html
 
 
+def test_render_html_styles_question_before_answer_and_reference_topics():
+    raw = (
+        '<article class="fiche-content"><h1>Préavis de démission</h1>'
+        '<section class="user-question"><span class="question-label">Question posée</span>'
+        '<p>Quel est le préavis applicable ?</p></section>'
+        '<aside class="essential"><p>Le préavis dépend de la convention.</p></aside>'
+        '<section class="legal-references"><h2>Références juridiques</h2><ul><li>'
+        '<strong>Code du travail, art. L.1237-1</strong>'
+        '<span class="reference-topic">Conditions de la démission</span>'
+        "</li></ul></section></article>"
+    )
+
+    final_html = render_fiche_html(parse_fiche_content(raw), [], generated_at=GEN_AT)
+
+    assert raw in final_html
+    assert final_html.index("Question posée") < final_html.index("Le préavis dépend")
+    assert ".fiche-content .user-question" in final_html
+    assert ".legal-references .reference-topic" in final_html
+
+
 def test_render_html_highlights_direct_answer_in_violet():
     raw = (
         '<article class="fiche-content"><h1>Une réponse</h1>'
@@ -304,4 +354,4 @@ def test_render_html_shows_warning_next_to_unmodified_generation():
 
 def test_filename_preserves_accented_words_as_ascii():
     content = FicheContent(titre="Récupération d’un trop-perçu")
-    assert fiche_filename(content) == "fiche-recuperation-d-un-trop-percu.pdf"
+    assert fiche_filename(content) == "aoriarh-fiche-recuperation-d-un-trop-percu.pdf"

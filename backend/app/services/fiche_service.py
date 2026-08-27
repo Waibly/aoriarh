@@ -135,7 +135,10 @@ Règles absolues de contenu :
   ses 10 étapes. Il n'existe aucune limite arbitraire de longueur, de sections ou de pages.
 - Conserve chaque référence juridique visible dans la réponse, mot pour mot et au plus près de
   l'affirmation qu'elle fonde. N'invente jamais de référence.
-- Rédige un document autonome : ne parle jamais de « la réponse », « la source » ou « la question ».
+- Corrige uniquement l'orthographe, la grammaire et la ponctuation de la question utilisateur.
+  Conserve strictement son sens, ses faits, ses chiffres et son niveau de précision.
+- Rédige un document autonome : en dehors du bloc « Question posée », ne parle jamais de
+  « la réponse », « la source » ou « la question ».
 - Utilise des phrases courtes, concrètes et actionnables, sans répétition entre les sections.
 - Utilise <strong> avec parcimonie pour faire ressortir les informations les plus importantes :
   conclusion, obligation, interdiction, délai, montant, seuil ou action décisive. Ne mets jamais un
@@ -152,8 +155,8 @@ Choix de la représentation la plus visuelle :
   Ne laisse jamais un barème ou une série « critère : valeur » sous forme de puces.
 - Si la réponse fournie contient déjà un tableau, reproduis-le en HTML en conservant toutes ses
   colonnes, toutes ses lignes, tous ses intitulés et toutes ses cellules.
-- Donne à chaque colonne un intitulé court et explicite, et consacre une ligne à chaque cas. N'ajoute
-  aucune colonne qui exigerait d'inférer une information absente.
+- Donne à chaque colonne un intitulé court et explicite, et consacre une ligne à chaque cas.
+  N'ajoute aucune colonne qui exigerait d'inférer une information absente.
 - Conserve une liste numérotée pour une procédure ou une chronologie d'actions. Utilise des puces
   pour des idées indépendantes qui ne partagent pas de dimensions de comparaison.
 - Ne répète pas toutes les lignes d'un tableau dans une liste ou un paragraphe. Une synthèse utile
@@ -162,14 +165,20 @@ Choix de la représentation la plus visuelle :
 Règles absolues de sortie :
 - Renvoie UNIQUEMENT le fragment HTML final, sans JSON, Markdown, commentaire ni balises ```.
 - Le fragment commence par <article class="fiche-content"> et finit par </article>.
-- Il contient exactement un <h1> avec un titre autonome et précis.
-- Immédiatement après le <h1>, place toujours la réponse directe dans
+- Il contient exactement un <h1> avec un titre court, autonome et explicite : 3 à 7 mots,
+  60 caractères maximum. N'utilise pas « Fiche pratique » ni « AORIA RH » dans ce titre.
+- Immédiatement après le <h1>, reproduis la question utilisateur corrigée dans
+  <section class="user-question"><span class="question-label">Question posée</span>
+  <p>...</p></section>. N'ajoute aucune information et ne reformule pas le fond.
+- Immédiatement après ce bloc, place toujours la réponse directe dans
   <aside class="essential"><p>...</p></aside>. Ce bloc répond à la question en une ou deux phrases,
   sans introduction générique et sans supprimer les précisions développées ensuite.
 - N'utilise aucun attribut style, id, src, href ou événement, aucune balise script, style, link,
   img, iframe ou objet externe. Le CSS est entièrement géré par l'application.
 
 Catalogue de composants autorisés — choisis uniquement ceux utiles au contenu :
+- Question corrigée obligatoire : <section class="user-question"><span
+  class="question-label">Question posée</span><p>...</p></section>
 - Introduction : <section class="intro"><p>...</p></section>
 - Information essentielle : <aside class="essential"><p>...</p></aside>
 - Section libre : <section><h2>...</h2>...</section>
@@ -183,8 +192,15 @@ Catalogue de composants autorisés — choisis uniquement ceux utiles au contenu
   </table></div>. « Critère » et « Conséquence » illustrent uniquement la structure : remplace-les
   toujours par des intitulés spécifiques au contenu.
 - Définitions : <dl class="definitions"><dt>...</dt><dd>...</dd></dl>
-- Références, uniquement si elles existent :
-  <section class="legal-references"><h2>Références juridiques</h2><ul>...</ul></section>
+- Références, uniquement si elles existent, toujours dans la dernière section :
+  <section class="legal-references"><h2>Références juridiques</h2><ul><li>
+  <strong>Référence exacte</strong><span class="reference-topic">Objet en quelques mots</span>
+  </li></ul></section>
+  Pour chaque référence autorisée, recopie son libellé exact dans <strong>, puis indique dans
+  <span class="reference-topic"> ce qu'elle concerne en 3 à 8 mots, comme « Conditions
+  d'attribution » ou « Détermination du montant ». Fonde ce libellé uniquement sur la réponse,
+  la rubrique documentaire ou l'extrait fournis. N'invente jamais l'objet d'un texte ; si le sujet
+  précis ne peut pas être établi, écris « Portée à vérifier ».
 
 Balises autorisées : article, section, aside, div, h1, h2, h3, p, ul, ol, li, dl, dt, dd,
 table, thead, tbody, tr, th, td, strong, em, span, br et blockquote.
@@ -517,6 +533,31 @@ def _format_reference_lines(sources: list[dict]) -> list[str]:
     return lines
 
 
+def _format_reference_context(sources: list[dict]) -> str:
+    """Prépare les références et leur contexte factuel pour le prompt LLM."""
+    blocks: list[str] = []
+    seen: set[str] = set()
+    for source in sources:
+        if not isinstance(source, dict):
+            continue
+        reference = html.unescape(_format_source(source))
+        key = _reference_key(reference)
+        if not reference or not key or key in seen:
+            continue
+        seen.add(key)
+
+        lines = [f"- Référence autorisée : {reference}"]
+        section_path = " ".join(str(source.get("section_path") or "").split())
+        excerpt = " ".join(str(source.get("excerpt") or "").split())
+        if section_path:
+            lines.append(f"  Rubrique documentaire : {section_path}")
+        if excerpt:
+            lines.append(f"  Extrait de contexte : {excerpt[:500]}")
+        blocks.append("\n".join(lines))
+
+    return "\n".join(blocks) or "Aucune référence structurée supplémentaire."
+
+
 def _render_legacy_body(content: FicheContent, sources: list[dict]) -> str:
     """Rend le précédent format JSON sans modifier les données historiques."""
     blocks: list[str] = []
@@ -617,6 +658,13 @@ def render_fiche_html(
                       break-after:avoid; }}
   .fiche-content p {{ margin:0 0 10px; }}
   .fiche-content section {{ margin:0 0 16px; }}
+  .fiche-content .user-question {{ border-bottom:1px solid #ede9fe;
+                                   padding:0 0 11px; margin:0 0 16px; }}
+  .fiche-content .question-label {{ display:block; color:#71717a; font-size:9.5px;
+                                    font-weight:700; text-transform:uppercase;
+                                    letter-spacing:.65px; margin-bottom:3px; }}
+  .fiche-content .user-question p {{ color:#3f3f46; font-size:13px; font-weight:600;
+                                     margin:0; }}
   .fiche-content .intro {{ color:#52525b; font-size:14px; }}
   .fiche-content strong {{ color:#27272a; font-weight:750; }}
   .fiche-content .essential, .essentiel {{ background:#f5f3ff; color:{_VIOLET};
@@ -660,6 +708,10 @@ def render_fiche_html(
   .definitions dd {{ margin:0; }}
   .legal-references {{ border-top:1px solid #ede9fe; padding-top:2px;
                        font-size:12px; color:#5f6b6a; }}
+  .legal-references li {{ margin-bottom:9px; }}
+  .legal-references li strong {{ color:{_VIOLET}; font-weight:700; }}
+  .legal-references .reference-topic {{ display:block; color:#52525b;
+                                        font-size:11px; margin-top:1px; }}
   .exceptions strong {{ display:flex; align-items:center; gap:6px; color:#b45309; }}
   .exceptions ul {{ margin:6px 0 0; }}
   .exceptions li:last-child {{ margin-bottom:0; }}
@@ -723,10 +775,7 @@ async def generate_fiche_content(
     user_id: str | None = None,
 ) -> FicheGeneration:
     """Appelle le LLM et conserve son fragment HTML exactement tel quel."""
-    reference_lines = _format_reference_lines(sources or [])
-    references_context = "\n".join(f"- {html.unescape(line)}" for line in reference_lines)
-    if not references_context:
-        references_context = "Aucune référence structurée supplémentaire."
+    references_context = _format_reference_context(sources or [])
 
     user_content = (
         f"Question posée : {question}\n\n"
@@ -779,4 +828,4 @@ def render_fiche_pdf(
 
 def fiche_filename(content: FicheContent) -> str:
     """Nom de fichier PDF dérivé du titre de la fiche."""
-    return f"fiche-{_slugify(content.titre)}.pdf"
+    return f"aoriarh-fiche-{_slugify(content.titre)}.pdf"
