@@ -91,6 +91,13 @@ async def test_admin_receives_raw_post_without_mutating_chat_or_fiches(
     client: AsyncClient,
     admin_user: dict,
 ) -> None:
+    profile_response = await client.patch(
+        "/api/v1/users/me",
+        headers=auth_header(admin_user["token"]),
+        json={"profil_metier": "drh"},
+    )
+    assert profile_response.status_code == 200, profile_response.text
+
     conversation_id = await _create_conversation(client, admin_user, suffix="admin")
     message_id, sources = await _add_exchange(conversation_id)
     raw = "  Accroche\n\nCorps.\n\nSources :\n• Code du travail, art. L.1234-1\n\nVotre avis ?  "
@@ -120,6 +127,7 @@ async def test_admin_receives_raw_post_without_mutating_chat_or_fiches(
     assert call["question"] == "Quel est le principe ?"
     assert call["answer_markdown"] == "L'article L. 1234-1 fixe la règle."
     assert call["sources"] == sources
+    assert call["user_profile"] == "drh"
     assert call["message_id"] == message_id
 
     async with session_factory() as session:

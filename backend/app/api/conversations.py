@@ -443,6 +443,7 @@ async def generate_message_linkedin_post(
             question=question,
             answer_markdown=message.content,
             sources=sources,
+            user_profile=user.profil_metier,
             organisation_id=str(conversation.organisation_id),
             user_id=str(user.id),
             message_id=str(message.id),
