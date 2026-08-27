@@ -69,6 +69,14 @@ const STATUS_VARIANTS: Record<
   canceled: "outline",
 };
 
+const STATUS_LABELS: Record<string, string> = {
+  active: "Actif",
+  trialing: "Période d’essai",
+  past_due: "Paiement en retard",
+  suspended: "Suspendu",
+  canceled: "Résilié",
+};
+
 const fmtEur = (n: number) =>
   new Intl.NumberFormat("fr-FR", { style: "currency", currency: "EUR" }).format(
     n
@@ -186,7 +194,7 @@ export default function AdminClientsPage() {
                     <TableCell>{getPlanLabel(r.plan)}</TableCell>
                     <TableCell>
                       <Badge variant={STATUS_VARIANTS[r.status] ?? "outline"}>
-                        {r.status}
+                        {STATUS_LABELS[r.status] ?? r.status}
                       </Badge>
                     </TableCell>
                     <TableCell className="text-right tabular-nums">
