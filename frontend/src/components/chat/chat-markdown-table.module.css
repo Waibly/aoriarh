@@ -1,6 +1,6 @@
 .wrapper {
   max-width: 100%;
-  margin: 1.25rem 0;
+  margin: 1.75rem 0;
   overflow-x: auto;
   border: 1px solid color-mix(in oklab, var(--primary) 20%, transparent);
   border-radius: 0.625rem;
