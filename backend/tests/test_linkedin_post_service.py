@@ -6,6 +6,9 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from app.services.linkedin_post_service import (
+    LINKEDIN_POST_MAX_COMPLETION_TOKENS,
+    LINKEDIN_POST_MODEL,
+    LINKEDIN_POST_REASONING_EFFORT,
     LINKEDIN_POST_SYSTEM_PROMPT,
     build_linkedin_user_prompt,
     build_linkedin_warnings,
@@ -143,6 +146,12 @@ async def test_generation_returns_non_empty_llm_output_byte_for_byte() -> None:
     assert generation.references == ["Code du travail, art. L.1234-1"]
     assert generation.warnings == []
     create.assert_awaited_once()
+    request = create.await_args.kwargs
+    assert LINKEDIN_POST_MODEL == "gpt-5.6-terra"
+    assert LINKEDIN_POST_REASONING_EFFORT == "medium"
+    assert request["model"] == LINKEDIN_POST_MODEL
+    assert request["reasoning_effort"] == LINKEDIN_POST_REASONING_EFFORT
+    assert request["max_completion_tokens"] == LINKEDIN_POST_MAX_COMPLETION_TOKENS
 
 
 @pytest.mark.asyncio

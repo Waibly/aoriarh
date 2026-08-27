@@ -22,7 +22,9 @@ from app.services.cost_tracker import cost_tracker
 
 logger = logging.getLogger(__name__)
 
-LINKEDIN_POST_MODEL = "gpt-5-mini"
+LINKEDIN_POST_MODEL = "gpt-5.6-terra"
+LINKEDIN_POST_REASONING_EFFORT = "medium"
+LINKEDIN_POST_MAX_COMPLETION_TOKENS = 3000
 LINKEDIN_POST_MAX_CHARACTERS = 3000
 
 _llm = AsyncOpenAI(
@@ -325,8 +327,8 @@ async def _generate_once(
             {"role": "system", "content": LINKEDIN_POST_SYSTEM_PROMPT},
             {"role": "user", "content": user_prompt},
         ],
-        max_completion_tokens=1800,
-        reasoning_effort="minimal",
+        max_completion_tokens=LINKEDIN_POST_MAX_COMPLETION_TOKENS,
+        reasoning_effort=LINKEDIN_POST_REASONING_EFFORT,
     )
 
     if response.usage:
