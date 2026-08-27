@@ -223,16 +223,18 @@ servent seulement à résoudre une référence comme « cet article ».
 dans missing_facts.
 - standalone_question : question autonome fidèle, 1 à 2 phrases. Si la question \
 est déjà autonome, recopie-la exactement.
-- legal_topics : 1 à 4 notions juridiques précises qui changent la recherche. \
+- legal_topics : 1 à 6 notions juridiques précises qui changent la recherche. \
 Elles décrivent le problème de droit indépendamment de la source demandée : ne \
 répète pas « CCN », le nom de la convention, l'IDCC, « Code du travail », \
 « jurisprudence » ou le nom du document, déjà présents dans constraints.
-- search_queries : respecte strictement constraints.query_budget (1 ou 2) et \
+- search_queries : respecte strictement constraints.query_budget (1 à 4) et \
 produis des requêtes courtes en vocabulaire juridique, sans dupliquer la \
-question originale ni les noms/identifiants de la source demandée. Si le \
-budget vaut 2, les deux requêtes doivent être complémentaires : la première \
-couvre la règle ou le droit demandé, la seconde ses conditions, exceptions, \
-limites ou son interprétation. Ne reformule pas deux fois le même angle.
+question originale ni les noms/identifiants de la source demandée. Chaque \
+requête doit couvrir un point explicite différent de la question. Regroupe les \
+points étroitement liés si leur nombre dépasse le budget. Pour un budget de 2, \
+la première couvre la règle ou le droit demandé, la seconde ses conditions, \
+exceptions, limites ou son interprétation. Ne reformule jamais deux fois le \
+même angle et n'omets aucun point explicitement demandé.
 - Si la question porte sur une modalité d'exécution, une récupération, une \
 retenue, un échéancier, un plafond ou une action en paie, la première requête \
 cherche la règle opérationnelle et sa limite chiffrée ; la seconde couvre la \
@@ -437,7 +439,7 @@ def apply_compact_planner_payload(
     if not plan.needs_condensation:
         standalone = plan.query_original
 
-    topics = _string_list(payload, "legal_topics", limit=4, max_chars=120)
+    topics = _string_list(payload, "legal_topics", limit=6, max_chars=120)
     queries = _string_list(
         payload,
         "search_queries",
@@ -696,9 +698,33 @@ def build_deterministic_search_plan(
         len(query.split()) > 28
         or re.search(r"\b(?:et|mais|ainsi que)\b[^?]{8,}\b(?:et|mais|ainsi que)\b", query, re.I)
     )
-    query_budget = (
-        2
-        if intent
+    explicit_issue_markers = re.findall(
+        r"(?m)^\s*(?:[-*•–—]|\d{1,2}[.)°])\s+\S",
+        query,
+    )
+    explicit_question_markers = re.findall(
+        r"(?m)^\s*(?:[-*•–—]|\d{1,2}[.)°])\s+[^\n]*\?",
+        query,
+    )
+    requests_structured_analysis = bool(
+        re.search(
+            r"\b(?:analys\w*|examin\w*|r[ée]pond\w*|questions?|points?|"
+            r"aspects?|enjeux?|distingu\w*)\b[^\n]{0,80}:",
+            query,
+            re.IGNORECASE,
+        )
+    )
+    explicit_multi_issue = len(explicit_issue_markers) >= 3 and (
+        len(explicit_question_markers) >= 3 or requests_structured_analysis
+    )
+    if explicit_multi_issue:
+        # A clearly structured multi-issue case needs one search angle per
+        # legal family, within a small fixed ceiling. Plain long questions keep
+        # the existing budget so this does not broaden routine retrieval.
+        query_budget = 4
+        reasons.append("explicit_multi_issue_question")
+    elif (
+        intent
         in {
             AnswerIntent.PROCEDURE,
             AnswerIntent.COMPARISON,
@@ -707,8 +733,10 @@ def build_deterministic_search_plan(
         }
         or has_multiple_issues
         or interpretive_sources
-        else 1
-    )
+    ):
+        query_budget = 2
+    else:
+        query_budget = 1
     return SearchPlan(
         version="adaptive-v1",
         query_original=query,

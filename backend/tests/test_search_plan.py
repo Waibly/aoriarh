@@ -211,6 +211,63 @@ def test_simple_numeric_rule_does_not_pay_for_interpretive_branch():
     assert plan.query_budget == 1
 
 
+def test_explicit_multi_issue_case_gets_four_complementary_searches():
+    question = """Une entreprise de 180 salariés envisage deux procédures :
+- peut-elle utiliser les preuves issues de la messagerie professionnelle ?
+- quelles règles s'appliquent au licenciement du salarié protégé ?
+- quand et sur quoi faut-il consulter le CSE ?
+- le licenciement économique de 12 salariés sur 30 jours impose-t-il un PSE ?
+- quelles sont les conséquences contentieuses de ces procédures ?"""
+    plan = build_deterministic_search_plan(question)
+    enriched = apply_compact_planner_payload(
+        plan,
+        _valid_payload(
+            legal_topics=[
+                "preuve issue de la messagerie professionnelle",
+                "licenciement d'un salarié protégé",
+                "consultation du CSE",
+                "plan de sauvegarde de l'emploi",
+                "nullité et réintégration",
+            ],
+            search_queries=[
+                "preuve numérique information salariés proportionnalité",
+                "licenciement salarié protégé autorisation inspection travail",
+                "consultation CSE licenciement individuel et collectif",
+                "PSE douze licenciements entreprise 180 salariés nullité",
+            ],
+        ),
+    )
+
+    assert plan.query_budget == 4
+    assert "explicit_multi_issue_question" in plan.reasons
+    assert len(enriched.legal_topics) == 5
+    assert len(enriched.search_queries) == 4
+
+
+def test_long_unstructured_question_keeps_existing_two_query_budget():
+    plan = build_deterministic_search_plan(
+        "Une entreprise souhaite savoir comment organiser une procédure "
+        "de licenciement après plusieurs incidents successifs tout en tenant "
+        "compte du contexte de travail, des échanges déjà intervenus avec le "
+        "salarié et des éventuelles difficultés qui pourraient être soulevées."
+    )
+
+    assert plan.query_budget == 2
+    assert "explicit_multi_issue_question" not in plan.reasons
+
+
+def test_bulleted_facts_do_not_trigger_multi_issue_searches():
+    plan = build_deterministic_search_plan(
+        "Calculez l'indemnité avec ces données :\n"
+        "- salaire mensuel : 3 000 euros\n"
+        "- ancienneté : 8 ans\n"
+        "- temps de travail : temps plein"
+    )
+
+    assert plan.query_budget < 4
+    assert "explicit_multi_issue_question" not in plan.reasons
+
+
 def test_bare_legal_source_mentions_do_not_create_source_directed_routes():
     queries = [
         "La convention de forfait doit-elle être écrite ?",
@@ -516,6 +573,44 @@ async def test_adaptive_search_uses_queries_but_never_guessed_article_identifier
     assert call.args[1] == "préavis de démission cadres"
     assert "L1237-19" not in call.args[1]
     assert call.kwargs["apply_legislation_floor"] is True
+
+
+@pytest.mark.asyncio
+async def test_adaptive_search_executes_all_four_multi_issue_queries():
+    question = """Analysez les points suivants :
+- la preuve tirée de la messagerie professionnelle ;
+- le licenciement du salarié protégé ;
+- les consultations du CSE ;
+- l'obligation d'établir un PSE ;
+- les conséquences contentieuses."""
+    plan = build_deterministic_search_plan(question)
+    queries = [
+        "preuve numérique loyauté proportionnalité",
+        "licenciement salarié protégé autorisation",
+        "consultations CSE procédures concomitantes",
+        "PSE licenciement collectif nullité réintégration",
+    ]
+    plan = apply_compact_planner_payload(
+        plan,
+        _valid_payload(search_queries=queries),
+    )
+    agent = RAGAgent.__new__(RAGAgent)
+    agent._run_variant_searches = AsyncMock(return_value=[])
+    agent.search_engine = MagicMock()
+    agent.search_engine.search = AsyncMock(return_value=[])
+    agent._org_id = "org-1"
+    agent._user_id = None
+    agent._conversation_id = None
+    agent._is_replay = True
+
+    _pool, variants = await agent._search_with_plan(
+        plan,
+        plan.standalone_question,
+        "org-1",
+    )
+
+    assert variants == [question, *queries]
+    agent._run_variant_searches.assert_awaited_once()
 
 
 @pytest.mark.asyncio

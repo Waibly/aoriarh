@@ -1904,13 +1904,14 @@ class RAGAgent:
         self._plan_search_diagnostics: dict = {}
         variants: list[str] = []
         seen: set[str] = set()
+        max_variants = plan.query_budget + 1
         for candidate in [query, *plan.search_queries]:
             normalized = _normalize_question(candidate)
             if not normalized or normalized in seen:
                 continue
             seen.add(normalized)
             variants.append(candidate)
-            if len(variants) >= 3:
+            if len(variants) >= max_variants:
                 break
 
         date_from, date_to = _plan_time_bounds(plan)
