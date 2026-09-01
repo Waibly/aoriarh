@@ -489,14 +489,24 @@ async def generate_social_media(
     )
 
 
-def render_social_media_pngs(html_content: str) -> list[RenderedMediaImage]:
-    """Rend exactement le HTML reçu, sans nettoyage, correction ni fallback."""
+def render_social_media_pdf(html_content: str) -> bytes:
+    """Rend le HTML exact en PDF multipage, sans correction ni fallback."""
 
     from weasyprint import HTML
     from weasyprint.urls import URLFetcher
 
     fetcher = URLFetcher(allowed_protocols={"data"}, fail_on_errors=False)
     pdf_bytes = HTML(string=html_content, url_fetcher=fetcher.fetch).write_pdf()
+    with fitz.open(stream=pdf_bytes, filetype="pdf") as document:
+        if document.page_count == 0:
+            raise RuntimeError("Le moteur de rendu n'a produit aucune page")
+    return pdf_bytes
+
+
+def render_social_media_pngs(html_content: str) -> list[RenderedMediaImage]:
+    """Rend exactement le HTML reçu, sans nettoyage, correction ni fallback."""
+
+    pdf_bytes = render_social_media_pdf(html_content)
 
     images: list[RenderedMediaImage] = []
     with fitz.open(stream=pdf_bytes, filetype="pdf") as document:

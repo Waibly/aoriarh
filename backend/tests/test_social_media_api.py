@@ -70,9 +70,15 @@ async def test_social_media_endpoint_requires_admin(
         headers=auth_header(manager_user["token"]),
         json={"html": "<html></html>"},
     )
+    pdf_response = await client.post(
+        "/api/v1/conversations/messages/00000000-0000-0000-0000-000000000099/social-media/pdf",
+        headers=auth_header(manager_user["token"]),
+        json={"html": "<html></html>"},
+    )
 
     assert generation_response.status_code == 403
     assert render_response.status_code == 403
+    assert pdf_response.status_code == 403
 
 
 async def test_admin_receives_exact_raw_html_and_png(
@@ -188,6 +194,32 @@ async def test_render_endpoint_passes_edited_html_exactly(
     assert response.status_code == 200, response.text
     render.assert_called_once_with(edited)
     assert response.json()["images"][0]["content_base64"] == base64.b64encode(png).decode("ascii")
+
+
+async def test_pdf_endpoint_exports_the_exact_edited_html(
+    client: AsyncClient,
+    admin_user: dict,
+) -> None:
+    conversation_id = await _create_conversation(client, admin_user, suffix="pdf")
+    message_id = await _add_exchange(conversation_id)
+    edited = "  <!doctype html>\n<body><p>PDF édité</p></body>  "
+    pdf = b"%PDF-1.7\ncontenu"
+
+    with patch(
+        "app.services.social_media_service.render_social_media_pdf",
+        new=MagicMock(return_value=pdf),
+    ) as render:
+        response = await client.post(
+            f"/api/v1/conversations/messages/{message_id}/social-media/pdf",
+            headers=auth_header(admin_user["token"]),
+            json={"html": edited},
+        )
+
+    assert response.status_code == 200, response.text
+    assert response.content == pdf
+    assert response.headers["content-type"] == "application/pdf"
+    assert "aoria-media-linkedin.pdf" in response.headers["content-disposition"]
+    render.assert_called_once_with(edited)
 
 
 async def test_admin_cannot_generate_from_another_users_conversation(

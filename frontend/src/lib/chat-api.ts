@@ -244,6 +244,34 @@ export async function renderSocialMediaHtml(
   return response.json() as Promise<SocialMediaRenderResult>;
 }
 
+/** Exporte en PDF LinkedIn le HTML exact transmis par l'éditeur. */
+export async function downloadSocialMediaPdf(
+  messageId: string,
+  html: string,
+  token: string
+): Promise<Blob> {
+  const response = await authFetch(
+    `/conversations/messages/${messageId}/social-media/pdf`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ html }),
+      token,
+    }
+  );
+
+  if (!response.ok) {
+    throw new Error(
+      await socialMediaErrorMessage(
+        response,
+        "L’export PDF a échoué. Le HTML reste disponible sans modification."
+      )
+    );
+  }
+
+  return response.blob();
+}
+
 export async function updateMessageFeedback(
   messageId: string,
   feedback: "up" | "down" | null,

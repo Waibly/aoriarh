@@ -8,6 +8,7 @@ import {
   Download,
   FileArchive,
   FileCode2,
+  FileText,
   Images,
   Loader2,
   RefreshCw,
@@ -25,6 +26,7 @@ import {
 } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
+  downloadSocialMediaPdf,
   generateSocialMedia,
   renderSocialMediaHtml,
   type SocialMediaGenerationResult,
@@ -83,6 +85,7 @@ export function SocialMediaDialog({
   const [activeImage, setActiveImage] = useState(0);
   const [loading, setLoading] = useState(false);
   const [rendering, setRendering] = useState(false);
+  const [pdfDownloading, setPdfDownloading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [renderError, setRenderError] = useState<string | null>(null);
   const inFlightRef = useRef(false);
@@ -213,6 +216,24 @@ export function SocialMediaDialog({
       "aoria-media-png.zip"
     );
   }, [images, pngOutdated]);
+
+  const handleDownloadPdf = useCallback(async () => {
+    if (!token || !html || pdfDownloading) return;
+    setPdfDownloading(true);
+    setRenderError(null);
+    try {
+      const pdf = await downloadSocialMediaPdf(messageId, html, token);
+      downloadBlob(pdf, "aoria-media-linkedin.pdf");
+    } catch (requestError) {
+      setRenderError(
+        requestError instanceof Error
+          ? requestError.message
+          : "L’export PDF a échoué. Le HTML reste disponible sans modification."
+      );
+    } finally {
+      setPdfDownloading(false);
+    }
+  }, [html, messageId, pdfDownloading, token]);
 
   const warnings = useMemo(() => generation?.warnings ?? [], [generation]);
 
@@ -424,6 +445,20 @@ export function SocialMediaDialog({
           >
             <Download className="size-4" />
             Télécharger l’image
+          </Button>
+          <Button
+            variant="outline"
+            onClick={handleDownloadPdf}
+            disabled={!html || pdfDownloading}
+          >
+            {pdfDownloading ? (
+              <Loader2 className="size-4 animate-spin" />
+            ) : (
+              <FileText className="size-4" />
+            )}
+            {pdfDownloading
+              ? "Export du PDF…"
+              : "Télécharger le PDF LinkedIn"}
           </Button>
           <Button
             onClick={handleDownloadPngs}

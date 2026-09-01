@@ -1,8 +1,13 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { SocialMediaDialog } from "@/components/chat/social-media-dialog";
-import { generateSocialMedia, renderSocialMediaHtml } from "@/lib/chat-api";
+import {
+  downloadSocialMediaPdf,
+  generateSocialMedia,
+  renderSocialMediaHtml,
+} from "@/lib/chat-api";
 
 jest.mock("@/lib/chat-api", () => ({
+  downloadSocialMediaPdf: jest.fn(),
   generateSocialMedia: jest.fn(),
   renderSocialMediaHtml: jest.fn(),
 }));
@@ -13,6 +18,9 @@ const mockGenerate = generateSocialMedia as jest.MockedFunction<
 const mockRender = renderSocialMediaHtml as jest.MockedFunction<
   typeof renderSocialMediaHtml
 >;
+const mockDownloadPdf = downloadSocialMediaPdf as jest.MockedFunction<
+  typeof downloadSocialMediaPdf
+>;
 
 describe("SocialMediaDialog", () => {
   const raw =
@@ -21,6 +29,18 @@ describe("SocialMediaDialog", () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    mockDownloadPdf.mockResolvedValue(
+      new Blob(["pdf"], { type: "application/pdf" })
+    );
+    Object.defineProperty(window.URL, "createObjectURL", {
+      configurable: true,
+      value: jest.fn(() => "blob:pdf"),
+    });
+    Object.defineProperty(window.URL, "revokeObjectURL", {
+      configurable: true,
+      value: jest.fn(),
+    });
+    jest.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation();
     mockGenerate.mockResolvedValue({
       raw_content: raw,
       html: generatedHtml,
@@ -146,5 +166,38 @@ describe("SocialMediaDialog", () => {
       await screen.findByText("Rendu impossible, HTML conservé")
     ).toBeInTheDocument();
     expect(editor).toHaveValue("<body>HTML à conserver</body>");
+  });
+
+  it("exporte en PDF LinkedIn le HTML édité exact", async () => {
+    const edited = "  <!doctype html>\n<body>Version LinkedIn</body>  ";
+
+    render(
+      <SocialMediaDialog
+        messageId="message-pdf"
+        token="token-admin"
+        open
+        onOpenChange={jest.fn()}
+      />
+    );
+
+    await screen.findByText("Avertissement non bloquant");
+    fireEvent.mouseDown(screen.getByRole("tab", { name: "Modifier le HTML" }), {
+      button: 0,
+      ctrlKey: false,
+    });
+    fireEvent.change(screen.getByRole("textbox", { name: "HTML du média" }), {
+      target: { value: edited },
+    });
+    fireEvent.click(
+      screen.getByRole("button", { name: "Télécharger le PDF LinkedIn" })
+    );
+
+    await waitFor(() =>
+      expect(mockDownloadPdf).toHaveBeenCalledWith(
+        "message-pdf",
+        edited,
+        "token-admin"
+      )
+    );
   });
 });

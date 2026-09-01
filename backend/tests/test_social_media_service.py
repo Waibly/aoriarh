@@ -16,6 +16,7 @@ from app.services.social_media_service import (
     generate_social_media,
     inspect_social_media_fragment,
     render_social_media_document,
+    render_social_media_pdf,
     render_social_media_pngs,
 )
 
@@ -153,6 +154,20 @@ def test_renderer_creates_one_exact_size_png_per_slide():
         assert image.content.startswith(b"\x89PNG\r\n\x1a\n")
         pixmap = fitz.Pixmap(image.content)
         assert (pixmap.width, pixmap.height) == (1080, 1350)
+
+
+def test_renderer_creates_one_pdf_page_per_slide():
+    html = render_social_media_document(
+        RAW_FRAGMENT,
+        generated_at=datetime(2026, 9, 1),
+    )
+
+    pdf = render_social_media_pdf(html)
+
+    assert pdf.startswith(b"%PDF-")
+    with fitz.open(stream=pdf, filetype="pdf") as document:
+        assert document.page_count == 2
+        assert document[0].rect.width / document[0].rect.height == pytest.approx(0.8)
 
 
 def test_document_anchors_logo_and_footer_at_the_bottom_of_each_slide():

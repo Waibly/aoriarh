@@ -642,6 +642,72 @@ async def render_message_social_media(
     return SocialMediaRenderResponse(images=_encode_social_media_images(images))
 
 
+@router.post("/messages/{message_id}/social-media/pdf")
+@limiter.limit("10/minute")
+async def download_message_social_media_pdf(
+    message_id: uuid.UUID,
+    data: SocialMediaRenderRequest,
+    request: Request,
+    user: User = Depends(require_role(["admin"])),
+    db: AsyncSession = Depends(get_db),
+) -> Response:
+    """Convertit strictement le HTML édité par l'admin en PDF LinkedIn."""
+
+    from starlette.concurrency import run_in_threadpool
+
+    from app.services.social_media_service import render_social_media_pdf
+
+    message = (
+        await db.execute(select(Message).where(Message.id == message_id))
+    ).scalar_one_or_none()
+    if message is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Message non trouvé",
+        )
+
+    service = ConversationService(db)
+    conversation = await service.get_conversation(
+        conversation_id=message.conversation_id,
+        user=user,
+    )
+    if conversation.user_id != user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Le média ne peut être exporté que depuis votre propre conversation.",
+        )
+    if message.role != "assistant" or not (message.content or "").strip():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Seule une réponse de l'assistant peut devenir un média.",
+        )
+    if is_security_response(message.content, message.rag_trace):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Cette réponse de sécurité ne peut pas devenir un média.",
+        )
+
+    try:
+        pdf = await run_in_threadpool(render_social_media_pdf, data.html)
+    except Exception:
+        logger.exception("Échec de l'export PDF du média pour le message %s", message_id)
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=(
+                "Le HTML n'a pas pu être rendu en PDF. Il reste disponible sans "
+                "modification dans l'éditeur."
+            ),
+        )
+
+    return Response(
+        content=pdf,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": 'attachment; filename="aoria-media-linkedin.pdf"'
+        },
+    )
+
+
 async def _load_org_context(
     db: AsyncSession, organisation_id: uuid.UUID
 ) -> dict[str, str | bool | None] | None:
