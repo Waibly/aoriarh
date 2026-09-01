@@ -1,5 +1,6 @@
 """Tests du générateur HTML social et de son rendu déterministe."""
 
+import base64
 from datetime import datetime
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
@@ -9,6 +10,7 @@ import pytest
 
 from app.services.social_media_service import (
     SOCIAL_MEDIA_SYSTEM_PROMPT,
+    _load_logo_data_url,
     build_social_media_reference_context,
     build_social_media_user_prompt,
     generate_social_media,
@@ -66,6 +68,7 @@ def test_prompt_requires_sober_copy_and_explained_legal_references():
     assert "première slide est l'ouverture visuelle" in SOCIAL_MEDIA_SYSTEM_PROMPT
     assert "Aère verticalement" in SOCIAL_MEDIA_SYSTEM_PROMPT
     assert "répartis-le sur une slide supplémentaire" in SOCIAL_MEDIA_SYSTEM_PROMPT
+    assert "N'écris jamais <strong>Libellé</strong>Valeur" in SOCIAL_MEDIA_SYSTEM_PROMPT
 
 
 def test_reference_context_exposes_the_topic_without_changing_the_exact_label():
@@ -159,9 +162,20 @@ def test_document_anchors_logo_and_footer_at_the_bottom_of_each_slide():
     )
 
     assert "width:1080px; height:1350px" in html
+    assert "flex-direction:column; justify-content:center" in html
     assert "left:82px; bottom:40px; width:190px" in html
     assert "right:82px; bottom:40px; border-top" in html
     assert "padding-top:38px" in html
     assert ".slide:first-child { color:#fff" in html
     assert ".slide > * + * { margin-top:26px" in html
+    assert ".checklist li > strong:first-child {" in html
+    assert "margin-right:.28em" in html
     assert ".reference-topic { display:block" in html
+
+
+def test_brand_logo_keeps_the_official_dark_and_violet_colors():
+    data_url = _load_logo_data_url(white=False)
+    svg = base64.b64decode(data_url.split(",", 1)[1]).decode("utf-8")
+
+    assert "#313131" in svg
+    assert "#652bb0" in svg.lower()

@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import base64
 import logging
-import re
 from dataclasses import dataclass
 from datetime import datetime
 from html.parser import HTMLParser
@@ -67,16 +66,15 @@ def _load_fonts_css() -> str:
 def _load_logo_data_url(*, white: bool) -> str:
     """Renvoie le logo en data URL, sans dépendance réseau au rendu."""
 
-    raw = (_ASSETS_DIR / "logo-aoria-white.svg").read_text(encoding="utf-8")
-    if not white:
-        raw = re.sub(r"#fff\b", _VIOLET, raw, flags=re.IGNORECASE)
+    filename = "logo-aoria-white.svg" if white else "logo-aoria.svg"
+    raw = (_ASSETS_DIR / filename).read_text(encoding="utf-8")
     encoded = base64.b64encode(raw.encode("utf-8")).decode("ascii")
     return f"data:image/svg+xml;base64,{encoded}"
 
 
 _FONTS_CSS = _load_fonts_css()
 _LOGO_WHITE_URL = _load_logo_data_url(white=True)
-_LOGO_VIOLET_URL = _load_logo_data_url(white=False)
+_LOGO_BRAND_URL = _load_logo_data_url(white=False)
 
 
 SOCIAL_MEDIA_SYSTEM_PROMPT = """\
@@ -137,6 +135,9 @@ Principes éditoriaux :
   contenu devient dense, répartis-le sur une slide supplémentaire.
 - Limite chaque slide à deux à quatre blocs de contenu hors titre et pied de
   page. Un bloc peut être un paragraphe, un encadré, une liste ou une grille.
+- Préserve explicitement les espaces entre les balises HTML inline et le texte
+  qui les suit. N'écris jamais <strong>Libellé</strong>Valeur : écris
+  <strong>Libellé</strong> <span>Valeur</span>.
 - Adapte le point de vue au profil métier fourni sans transformer la règle.
 - Les contenus pratiques, décisions, étapes, délais et vigilances priment sur
   les formulations scolaires ou promotionnelles.
@@ -332,12 +333,13 @@ html, body {{ margin:0; padding:0; background:#ddd8e6; }}
 body {{ counter-reset:slide; font-family:'Inter Variable','Segoe UI',Arial,sans-serif;
   color:var(--ink); }}
 .carousel {{ margin:0; padding:0; }}
-.slide {{ counter-increment:slide; position:relative; width:1080px; height:1350px;
+.slide {{ counter-increment:slide; position:relative; display:flex;
+  flex-direction:column; justify-content:center; width:1080px; height:1350px;
   padding:110px 92px 175px; background:#fff; break-after:page;
   page-break-after:always; break-inside:avoid; page-break-inside:avoid; }}
 .slide:last-child {{ break-after:auto; page-break-after:auto; }}
 .slide::before {{ content:''; position:absolute; left:82px; bottom:40px; width:190px;
-  height:42px; background:url('{_LOGO_VIOLET_URL}') left center/contain no-repeat; }}
+  height:42px; background:url('{_LOGO_BRAND_URL}') left center/contain no-repeat; }}
 .slide::after {{ content:'aoriarh.fr  ·  ' counter(slide); position:absolute;
   left:82px; right:82px; bottom:40px; border-top:2px solid var(--line); padding-top:38px;
   color:var(--violet); font-size:23px; font-weight:700; letter-spacing:.02em;
@@ -360,7 +362,6 @@ body {{ counter-reset:slide; font-family:'Inter Variable','Segoe UI',Arial,sans-
 .slide-cover .highlight strong, .slide-cover .card strong,
 .slide:first-child .highlight strong, .slide:first-child .card strong {{
   color:var(--violet-dark); }}
-.slide-cover, .slide-cta {{ padding-top:250px; }}
 h1, h2, h3, p, ul, ol {{ margin-top:0; }}
 h1, h2, h3 {{ font-family:'Sora Variable','Segoe UI',Arial,sans-serif; }}
 h1 {{ max-width:860px; margin-bottom:32px; font-size:78px; line-height:1.08;
@@ -392,6 +393,8 @@ li {{ margin-bottom:26px; padding-left:8px; }}
 .cards, .checklist, .steps, .timeline, .sources {{ list-style:none; padding:0; }}
 .cards li, .checklist li {{ position:relative; margin-bottom:20px; border-radius:22px;
   background:var(--violet-soft); padding:25px 28px 25px 76px; }}
+.cards li > strong:first-child, .checklist li > strong:first-child {{
+  margin-right:.28em; }}
 .cards li::before, .checklist li::before {{ content:'✓'; position:absolute; left:28px;
   top:25px; color:var(--violet); font-weight:900; }}
 .steps {{ counter-reset:step; }}
