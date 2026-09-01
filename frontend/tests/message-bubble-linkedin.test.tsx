@@ -70,7 +70,11 @@ describe("bouton LinkedIn de MessageBubble", () => {
     const publicationTools = screen.getByRole("group", {
       name: "Outils de publication administrateur",
     });
-    expect(publicationTools).toHaveClass("w-full", "justify-center");
+    expect(publicationTools).toHaveClass(
+      "w-full",
+      "justify-end",
+      "bg-primary/5"
+    );
     expect(
       within(publicationTools).getByRole("button", {
         name: "Générer le post LinkedIn",

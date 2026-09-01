@@ -318,7 +318,7 @@ export function MessageBubble({ message, onFeedback }: MessageBubbleProps) {
 
               {isAdmin && message.fiche_eligible !== false && (
                 <div
-                  className="border-primary/15 bg-primary/10 flex w-full flex-wrap items-center justify-center gap-2 rounded-xl border px-2.5 py-2"
+                  className="border-primary/15 bg-primary/5 flex w-full flex-wrap items-center justify-end gap-2 rounded-xl border px-2.5 py-2"
                   role="group"
                   aria-label="Outils de publication administrateur"
                 >
