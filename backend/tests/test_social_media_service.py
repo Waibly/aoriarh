@@ -63,6 +63,9 @@ def test_prompt_requires_sober_copy_and_explained_legal_references():
     assert "adverbe d'intensité ou de surenchère" in SOCIAL_MEDIA_SYSTEM_PROMPT
     assert '<span class="reference-topic">' in SOCIAL_MEDIA_SYSTEM_PROMPT
     assert "son bloc explicatif suffit" in SOCIAL_MEDIA_SYSTEM_PROMPT
+    assert "première slide est l'ouverture visuelle" in SOCIAL_MEDIA_SYSTEM_PROMPT
+    assert "Aère verticalement" in SOCIAL_MEDIA_SYSTEM_PROMPT
+    assert "répartis-le sur une slide supplémentaire" in SOCIAL_MEDIA_SYSTEM_PROMPT
 
 
 def test_reference_context_exposes_the_topic_without_changing_the_exact_label():
@@ -156,6 +159,9 @@ def test_document_anchors_logo_and_footer_at_the_bottom_of_each_slide():
     )
 
     assert "width:1080px; height:1350px" in html
-    assert "left:82px; bottom:50px; width:190px" in html
-    assert "right:82px; bottom:48px; border-top" in html
+    assert "left:82px; bottom:40px; width:190px" in html
+    assert "right:82px; bottom:40px; border-top" in html
+    assert "padding-top:38px" in html
+    assert ".slide:first-child { color:#fff" in html
+    assert ".slide > * + * { margin-top:26px" in html
     assert ".reference-topic { display:block" in html

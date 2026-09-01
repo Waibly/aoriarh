@@ -99,6 +99,9 @@ Règles absolues :
 - Ne reproduis jamais mécaniquement un schéma couverture, règle, exception,
   synthèse et CTA. Une slide de couverture ou un CTA ne sont pas obligatoires.
 - Chaque slide porte une fonction éditoriale distincte. Évite les répétitions.
+- La première slide est l'ouverture visuelle du média et s'affiche sur fond
+  violet. Elle reste concise : un titre, une réponse ou une promesse de lecture
+  précise, puis au plus un bloc court utile à la compréhension.
 - N'invente aucune règle, statistique, date, décision, source, URL, exemple ou
   résultat absent de la réponse fournie. Ne corrige et ne complète pas le fond.
 - Conserve les conditions, exceptions, réserves, incertitudes, délais et seuils.
@@ -129,6 +132,11 @@ Principes éditoriaux :
 - Une slide développe une idée principale lisible sur téléphone.
 - Préfère des titres courts, des paragraphes brefs et au maximum trois à cinq
   éléments quand une liste améliore la compréhension.
+- Aère verticalement les titres, paragraphes, listes et encadrés. Ne compacte
+  jamais plusieurs idées pour les faire tenir sur une seule slide. Si le
+  contenu devient dense, répartis-le sur une slide supplémentaire.
+- Limite chaque slide à deux à quatre blocs de contenu hors titre et pied de
+  page. Un bloc peut être un paragraphe, un encadré, une liste ou une grille.
 - Adapte le point de vue au profil métier fourni sans transformer la règle.
 - Les contenus pratiques, décisions, étapes, délais et vigilances priment sur
   les formulations scolaires ou promotionnelles.
@@ -325,34 +333,45 @@ body {{ counter-reset:slide; font-family:'Inter Variable','Segoe UI',Arial,sans-
   color:var(--ink); }}
 .carousel {{ margin:0; padding:0; }}
 .slide {{ counter-increment:slide; position:relative; width:1080px; height:1350px;
-  padding:110px 92px 155px; background:#fff; break-after:page;
+  padding:110px 92px 175px; background:#fff; break-after:page;
   page-break-after:always; break-inside:avoid; page-break-inside:avoid; }}
 .slide:last-child {{ break-after:auto; page-break-after:auto; }}
-.slide::before {{ content:''; position:absolute; left:82px; bottom:50px; width:190px;
+.slide::before {{ content:''; position:absolute; left:82px; bottom:40px; width:190px;
   height:42px; background:url('{_LOGO_VIOLET_URL}') left center/contain no-repeat; }}
 .slide::after {{ content:'aoriarh.fr  ·  ' counter(slide); position:absolute;
-  left:82px; right:82px; bottom:48px; border-top:2px solid var(--line); padding-top:22px;
+  left:82px; right:82px; bottom:40px; border-top:2px solid var(--line); padding-top:38px;
   color:var(--violet); font-size:23px; font-weight:700; letter-spacing:.02em;
   text-align:right; }}
-.slide-cover, .slide-cta {{ color:#fff; background:linear-gradient(145deg,#4b1f86 0%,
-  #652BB0 55%,#8445ce 100%); }}
-.slide-cover::before, .slide-cta::before {{ background-image:url('{_LOGO_WHITE_URL}'); }}
-.slide-cover::after, .slide-cta::after {{ color:#fff; border-top-color:#ffffff55; }}
+.slide-cover, .slide-cta, .slide:first-child {{ color:#fff;
+  background:linear-gradient(145deg,#4b1f86 0%,#652BB0 55%,#8445ce 100%); }}
+.slide-cover::before, .slide-cta::before, .slide:first-child::before {{
+  background-image:url('{_LOGO_WHITE_URL}'); }}
+.slide-cover::after, .slide-cta::after, .slide:first-child::after {{ color:#fff;
+  border-top-color:#ffffff55; }}
 .slide-cover h1, .slide-cta h1, .slide-cover h2, .slide-cta h2,
-.slide-cover strong, .slide-cta strong {{ color:#fff; }}
-.slide-cover .lead, .slide-cta .lead {{ color:#f4edff; }}
+.slide-cover strong, .slide-cta strong, .slide:first-child h1,
+.slide:first-child h2, .slide:first-child strong {{ color:#fff; }}
+.slide-cover .lead, .slide-cta .lead, .slide:first-child .lead {{ color:#f4edff; }}
+.slide:first-child .eyebrow {{ color:#eadcff; }}
+.slide-cover .highlight, .slide-cover .card, .slide-cover .example,
+.slide-cover .warning, .slide:first-child .highlight, .slide:first-child .card,
+.slide:first-child .example, .slide:first-child .warning {{ background:#fff;
+  color:var(--violet-dark); }}
+.slide-cover .highlight strong, .slide-cover .card strong,
+.slide:first-child .highlight strong, .slide:first-child .card strong {{
+  color:var(--violet-dark); }}
 .slide-cover, .slide-cta {{ padding-top:250px; }}
 h1, h2, h3, p, ul, ol {{ margin-top:0; }}
 h1, h2, h3 {{ font-family:'Sora Variable','Segoe UI',Arial,sans-serif; }}
-h1 {{ max-width:860px; margin-bottom:22px; font-size:78px; line-height:1.08;
+h1 {{ max-width:860px; margin-bottom:32px; font-size:78px; line-height:1.08;
   letter-spacing:-.035em; font-weight:800; }}
-h2 {{ margin-bottom:18px; color:var(--violet); font-size:61px; line-height:1.12;
+h2 {{ margin-bottom:28px; color:var(--violet); font-size:61px; line-height:1.12;
   letter-spacing:-.028em; font-weight:800; }}
-h3 {{ margin-bottom:14px; color:var(--violet); font-size:34px; line-height:1.2; }}
-p, li {{ font-size:35px; line-height:1.42; }}
-p {{ margin-bottom:22px; }}
+h3 {{ margin-bottom:20px; color:var(--violet); font-size:34px; line-height:1.2; }}
+p, li {{ font-size:35px; line-height:1.5; }}
+p {{ margin-bottom:30px; }}
 strong {{ color:var(--violet-dark); font-weight:780; }}
-.eyebrow {{ margin-bottom:22px; color:#eadcff; font-size:24px; font-weight:800;
+.eyebrow {{ margin-bottom:28px; color:#eadcff; font-size:24px; font-weight:800;
   letter-spacing:.13em; text-transform:uppercase; }}
 .lead {{ color:#494950; font-size:43px; line-height:1.35; }}
 .muted {{ color:var(--muted); }}
@@ -366,7 +385,10 @@ strong {{ color:var(--violet-dark); font-weight:780; }}
 .warning {{ border:3px solid #fed7aa; background:var(--orange-soft); color:#7c3f0c; }}
 .warning strong {{ color:var(--orange); }}
 ul, ol {{ margin-bottom:0; padding-left:46px; }}
-li {{ margin-bottom:20px; padding-left:8px; }}
+li {{ margin-bottom:26px; padding-left:8px; }}
+.slide > * + * {{ margin-top:26px; }}
+.highlight > :last-child, .card > :last-child, .example > :last-child,
+.warning > :last-child {{ margin-bottom:0; }}
 .cards, .checklist, .steps, .timeline, .sources {{ list-style:none; padding:0; }}
 .cards li, .checklist li {{ position:relative; margin-bottom:20px; border-radius:22px;
   background:var(--violet-soft); padding:25px 28px 25px 76px; }}
