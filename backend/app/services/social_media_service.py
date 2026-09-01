@@ -106,6 +106,19 @@ Règles absolues :
   confidentiel. Généralise ces éléments pendant la génération.
 - Utilise uniquement les références autorisées et recopie leur libellé à
   l'identique. Si la liste est vide, n'invente aucune référence.
+- Si des références autorisées existent, consacre-leur un bloc lisible. Pour
+  chacune, recopie le libellé exact dans <strong>, puis ajoute dans
+  <span class="reference-topic"> un objet précis de 3 à 8 mots indiquant ce
+  qu'elle concerne, selon la réponse fournie. Le lecteur doit comprendre son
+  apport sans devoir l'ouvrir. N'emploie aucun libellé vague comme « Source
+  juridique », « Référence à vérifier » ou « Pour en savoir plus ».
+- Tu peux aussi intégrer une référence exacte juste après l'affirmation qu'elle
+  soutient si cela reste court et lisible. Si elle alourdit la slide, ne
+  l'intègre pas dans le corps : son bloc explicatif suffit. Ne crée jamais une
+  slide supplémentaire uniquement pour répéter les mêmes références.
+- Le contexte documentaire associé aux références sert uniquement à nommer
+  leur objet. Ne l'utilise jamais pour ajouter au média une règle ou une
+  précision absente de la réponse source.
 - N'écris aucun lien externe. Le seul domaine autorisé en texte est aoriarh.fr.
 - Le HTML produit sera affiché, édité, téléchargé et rendu exactement tel que tu
   le produis. Fais donc confiance au HTML demandé et ferme toutes les balises.
@@ -119,6 +132,13 @@ Principes éditoriaux :
 - Adapte le point de vue au profil métier fourni sans transformer la règle.
 - Les contenus pratiques, décisions, étapes, délais et vigilances priment sur
   les formulations scolaires ou promotionnelles.
+- Adopte un ton direct, factuel et professionnel. N'emploie aucun superlatif,
+  aucune exagération, aucune promesse ni dramatisation.
+- Supprime les adverbes quand une formulation factuelle suffit. N'emploie aucun
+  adverbe d'intensité ou de surenchère comme « très », « vraiment »,
+  « absolument », « totalement », « particulièrement » ou « extrêmement ».
+- Évite les adjectifs promotionnels ou vagues comme « incroyable »,
+  « révolutionnaire », « incontournable », « exceptionnel » ou « puissant ».
 - Un appel à l'action ne doit apparaître que s'il conclut naturellement le
   média. Il reste discret, unique et professionnel.
 
@@ -134,7 +154,9 @@ Bibliothèque HTML et classes disponibles :
 - slide-example : cas pratique ; h2 puis div.example.
 - slide-warning : vigilance ou exception ; h2 puis div.warning.
 - slide-recap : synthèse ; h2 puis ul.checklist.
-- slide-sources : références ; h2 puis ul.sources.
+- slide-sources : références ; h2 puis ul.sources. Chaque li contient
+  <strong>Référence exacte</strong> puis
+  <span class="reference-topic">Objet précis en 3 à 8 mots</span>.
 - slide-cta : conclusion facultative ; h2 et p.lead.
 - Les classes card, highlight, warning, example, pill, source-note, muted,
   columns et grid-2 peuvent être combinées lorsque cela sert le contenu.
@@ -185,13 +207,14 @@ def build_social_media_user_prompt(
     answer_markdown: str,
     references: list[str],
     user_profile: str | None,
+    reference_context: str | None = None,
 ) -> str:
     reference_block = "\n".join(f"- {reference}" for reference in references)
     if not reference_block:
         reference_block = "(aucune référence autorisée)"
     profile = str(user_profile or "Professionnel RH").strip() or "Professionnel RH"
 
-    return (
+    prompt = (
         "<cible_editoriale>\n"
         f"Profil métier : {profile}\n"
         "</cible_editoriale>\n\n"
@@ -205,6 +228,40 @@ def build_social_media_user_prompt(
         f"{reference_block}\n"
         "</references_autorisees>"
     )
+    if reference_context:
+        prompt += (
+            "\n\n<contexte_references_pour_les_objets>\n"
+            f"{reference_context}\n"
+            "</contexte_references_pour_les_objets>"
+        )
+    return prompt
+
+
+def build_social_media_reference_context(sources: list[dict]) -> str:
+    """Donne au LLM le contexte nécessaire pour nommer l'objet des références."""
+
+    blocks: list[str] = []
+    seen: set[str] = set()
+    for source in sources:
+        formatted = format_linkedin_references([source])
+        if not formatted or formatted[0] in seen:
+            continue
+        reference = formatted[0]
+        seen.add(reference)
+        lines = [f"- Référence autorisée : {reference}"]
+        section_path = " ".join(str(source.get("section_path") or "").split())
+        solution = " ".join(str(source.get("solution") or "").split())
+        excerpt = " ".join(str(source.get("excerpt") or "").split())
+        if not excerpt:
+            excerpt = " ".join(str(source.get("full_text") or "").split())
+        if section_path:
+            lines.append(f"  Rubrique documentaire : {section_path}")
+        if solution:
+            lines.append(f"  Solution de la décision : {solution[:200]}")
+        if excerpt:
+            lines.append(f"  Extrait de contexte : {excerpt[:500]}")
+        blocks.append("\n".join(lines))
+    return "\n".join(blocks)
 
 
 def inspect_social_media_fragment(raw_content: str, references: list[str]) -> list[str]:
@@ -230,9 +287,7 @@ def inspect_social_media_fragment(raw_content: str, references: list[str]) -> li
             "Aucune section.slide n'a été détectée. La génération brute reste inchangée."
         )
     if inspector.slide_count > 20:
-        warnings.append(
-            "Le média contient plus de 20 slides. La génération brute reste inchangée."
-        )
+        warnings.append("Le média contient plus de 20 slides. La génération brute reste inchangée.")
     if inspector.forbidden_tags:
         tags = ", ".join(dict.fromkeys(inspector.forbidden_tags))
         warnings.append(
@@ -269,14 +324,14 @@ html, body {{ margin:0; padding:0; background:#ddd8e6; }}
 body {{ counter-reset:slide; font-family:'Inter Variable','Segoe UI',Arial,sans-serif;
   color:var(--ink); }}
 .carousel {{ margin:0; padding:0; }}
-.slide {{ counter-increment:slide; position:relative; width:1080px; min-height:1350px;
-  padding:170px 92px 130px; background:#fff; break-after:page;
-  page-break-after:always; }}
+.slide {{ counter-increment:slide; position:relative; width:1080px; height:1350px;
+  padding:110px 92px 155px; background:#fff; break-after:page;
+  page-break-after:always; break-inside:avoid; page-break-inside:avoid; }}
 .slide:last-child {{ break-after:auto; page-break-after:auto; }}
-.slide::before {{ content:''; position:absolute; top:58px; left:82px; width:245px;
-  height:53px; background:url('{_LOGO_VIOLET_URL}') left center/contain no-repeat; }}
+.slide::before {{ content:''; position:absolute; left:82px; bottom:50px; width:190px;
+  height:42px; background:url('{_LOGO_VIOLET_URL}') left center/contain no-repeat; }}
 .slide::after {{ content:'aoriarh.fr  ·  ' counter(slide); position:absolute;
-  left:82px; right:82px; bottom:55px; border-top:2px solid var(--line); padding-top:22px;
+  left:82px; right:82px; bottom:48px; border-top:2px solid var(--line); padding-top:22px;
   color:var(--violet); font-size:23px; font-weight:700; letter-spacing:.02em;
   text-align:right; }}
 .slide-cover, .slide-cta {{ color:#fff; background:linear-gradient(145deg,#4b1f86 0%,
@@ -286,7 +341,7 @@ body {{ counter-reset:slide; font-family:'Inter Variable','Segoe UI',Arial,sans-
 .slide-cover h1, .slide-cta h1, .slide-cover h2, .slide-cta h2,
 .slide-cover strong, .slide-cta strong {{ color:#fff; }}
 .slide-cover .lead, .slide-cta .lead {{ color:#f4edff; }}
-.slide-cover, .slide-cta {{ padding-top:310px; }}
+.slide-cover, .slide-cta {{ padding-top:250px; }}
 h1, h2, h3, p, ul, ol {{ margin-top:0; }}
 h1, h2, h3 {{ font-family:'Sora Variable','Segoe UI',Arial,sans-serif; }}
 h1 {{ max-width:860px; margin-bottom:22px; font-size:78px; line-height:1.08;
@@ -334,6 +389,8 @@ li {{ margin-bottom:20px; padding-left:8px; }}
 .source-note {{ color:var(--muted); font-size:23px; line-height:1.35; }}
 .sources li {{ margin-bottom:22px; border-bottom:2px solid var(--line);
   padding:0 0 22px; color:var(--muted); font-size:27px; }}
+.sources strong {{ display:block; margin-bottom:7px; font-size:28px; }}
+.reference-topic {{ display:block; color:var(--muted); font-size:23px; line-height:1.35; }}
 .generated-date {{ display:none; }}
 @media screen {{
   body {{ padding:32px; }}
@@ -369,6 +426,7 @@ async def generate_social_media(
         answer_markdown=answer_markdown,
         references=references,
         user_profile=user_profile,
+        reference_context=build_social_media_reference_context(selected_sources),
     )
 
     response = await _llm.chat.completions.create(

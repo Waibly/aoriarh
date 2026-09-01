@@ -8,6 +8,8 @@ import fitz
 import pytest
 
 from app.services.social_media_service import (
+    SOCIAL_MEDIA_SYSTEM_PROMPT,
+    build_social_media_reference_context,
     build_social_media_user_prompt,
     generate_social_media,
     inspect_social_media_fragment,
@@ -54,6 +56,38 @@ def test_inspection_only_adds_warnings_and_never_changes_raw_fragment():
     assert raw == "  <p>Sortie libre non conforme</p>  "
     assert any("main.carousel" in warning for warning in warnings)
     assert any("section.slide" in warning for warning in warnings)
+
+
+def test_prompt_requires_sober_copy_and_explained_legal_references():
+    assert "N'emploie aucun superlatif" in SOCIAL_MEDIA_SYSTEM_PROMPT
+    assert "adverbe d'intensité ou de surenchère" in SOCIAL_MEDIA_SYSTEM_PROMPT
+    assert '<span class="reference-topic">' in SOCIAL_MEDIA_SYSTEM_PROMPT
+    assert "son bloc explicatif suffit" in SOCIAL_MEDIA_SYSTEM_PROMPT
+
+
+def test_reference_context_exposes_the_topic_without_changing_the_exact_label():
+    context = build_social_media_reference_context(
+        [
+            {
+                "source_type_label": "Code du travail",
+                "article_nums": ["L. 1234-1"],
+                "section_path": "Rupture du contrat > Préavis",
+                "excerpt": "Le préavis dépend des règles applicables.",
+            }
+        ]
+    )
+    prompt = build_social_media_user_prompt(
+        question="Question",
+        answer_markdown="Réponse",
+        references=["Code du travail, art. L. 1234-1"],
+        user_profile="drh",
+        reference_context=context,
+    )
+
+    assert "Référence autorisée : Code du travail, art. L. 1234-1" in prompt
+    assert "Rubrique documentaire : Rupture du contrat > Préavis" in prompt
+    assert "Extrait de contexte : Le préavis dépend" in prompt
+    assert "<contexte_references_pour_les_objets>" in prompt
 
 
 @pytest.mark.asyncio
@@ -113,3 +147,15 @@ def test_renderer_creates_one_exact_size_png_per_slide():
         assert image.content.startswith(b"\x89PNG\r\n\x1a\n")
         pixmap = fitz.Pixmap(image.content)
         assert (pixmap.width, pixmap.height) == (1080, 1350)
+
+
+def test_document_anchors_logo_and_footer_at_the_bottom_of_each_slide():
+    html = render_social_media_document(
+        RAW_FRAGMENT,
+        generated_at=datetime(2026, 9, 1),
+    )
+
+    assert "width:1080px; height:1350px" in html
+    assert "left:82px; bottom:50px; width:190px" in html
+    assert "right:82px; bottom:48px; border-top" in html
+    assert ".reference-topic { display:block" in html

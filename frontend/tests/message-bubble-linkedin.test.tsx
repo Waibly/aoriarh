@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import { useSession } from "next-auth/react";
 import { MessageBubble } from "@/components/chat/message-bubble";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -53,7 +53,7 @@ describe("bouton LinkedIn de MessageBubble", () => {
     jest.clearAllMocks();
   });
 
-  it("est visible pour un admin à côté de la fiche pratique", () => {
+  it("place les deux outils admin dans un encart séparé de la fiche", () => {
     mockUseSession.mockReturnValue({
       data: {
         access_token: "token-admin",
@@ -66,12 +66,25 @@ describe("bouton LinkedIn de MessageBubble", () => {
     expect(
       screen.getByRole("button", { name: "Créer une fiche pratique" })
     ).toBeInTheDocument();
+
+    const publicationTools = screen.getByRole("group", {
+      name: "Outils de publication administrateur",
+    });
     expect(
-      screen.getByRole("button", { name: "Générer le post LinkedIn" })
+      within(publicationTools).getByRole("button", {
+        name: "Générer le post LinkedIn",
+      })
     ).toBeInTheDocument();
     expect(
-      screen.getByRole("button", { name: "Générer un média" })
+      within(publicationTools).getByRole("button", {
+        name: "Générer un média",
+      })
     ).toBeInTheDocument();
+    expect(
+      within(publicationTools).queryByRole("button", {
+        name: "Créer une fiche pratique",
+      })
+    ).not.toBeInTheDocument();
   });
 
   it("est absent pour un compte non administrateur", () => {
@@ -89,6 +102,11 @@ describe("bouton LinkedIn de MessageBubble", () => {
     ).not.toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: "Générer un média" })
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("group", {
+        name: "Outils de publication administrateur",
+      })
     ).not.toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: "Créer une fiche pratique" })

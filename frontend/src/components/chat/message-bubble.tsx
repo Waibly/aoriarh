@@ -210,132 +210,139 @@ export function MessageBubble({ message, onFeedback }: MessageBubbleProps) {
             </ReactMarkdown>
           </div>
           {!isTemp && (
-            <div className="border-primary/15 bg-primary/5 my-8 flex flex-wrap items-center gap-1.5 rounded-xl border px-2.5 py-2">
-              {/* Copier la réponse — choix du format */}
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
+            <div className="my-8 space-y-2">
+              <div className="border-primary/15 bg-primary/5 flex flex-wrap items-center gap-1.5 rounded-xl border px-2.5 py-2">
+                {/* Copier la réponse — choix du format */}
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      className="text-primary/70 hover:text-primary"
+                      aria-label={copied ? "Copié" : "Copier la réponse"}
+                    >
+                      {copied ? (
+                        <Check className="size-4" />
+                      ) : (
+                        <Copy className="size-4" />
+                      )}
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="start" className="w-72">
+                    <DropdownMenuItem
+                      onSelect={() => handleCopy("text")}
+                      className="flex-col items-start gap-0.5"
+                    >
+                      <span className="font-medium">Texte simple</span>
+                      <span className="text-muted-foreground text-xs">
+                        Sans symboles de mise en forme — idéal pour un e-mail ou
+                        Word
+                      </span>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onSelect={() => handleCopy("markdown")}
+                      className="flex-col items-start gap-0.5"
+                    >
+                      <span className="font-medium">Texte mis en forme</span>
+                      <span className="text-muted-foreground text-xs">
+                        Conserve titres, listes et gras — pour Notion, Obsidian…
+                        (Markdown)
+                      </span>
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+
+                {/* Notation de la réponse */}
+                {onFeedback && (
+                  <>
+                    <span className="text-foreground ml-1 hidden text-xs sm:inline">
+                      Est-ce que la réponse vous convient&nbsp;?
+                    </span>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="icon-sm"
+                          className={cn(
+                            "text-primary/70 hover:text-primary",
+                            message.feedback === "up" &&
+                              "bg-primary/10 text-primary hover:text-primary"
+                          )}
+                          onClick={() => handleFeedback("up")}
+                          aria-label="Bonne réponse"
+                        >
+                          <ThumbsUp className="size-4" />
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>Bonne réponse</TooltipContent>
+                    </Tooltip>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="icon-sm"
+                          className={cn(
+                            "text-primary/70 hover:text-destructive",
+                            message.feedback === "down" &&
+                              "bg-destructive/10 text-destructive hover:text-destructive"
+                          )}
+                          onClick={() => handleFeedback("down")}
+                          aria-label="Réponse à améliorer"
+                        >
+                          <ThumbsDown className="size-4" />
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>Réponse à améliorer</TooltipContent>
+                    </Tooltip>
+                  </>
+                )}
+
+                {/* Une réponse de sécurité ne doit jamais devenir un document. */}
+                {message.fiche_eligible !== false && (
                   <Button
-                    variant="ghost"
-                    size="icon-sm"
-                    className="text-primary/70 hover:text-primary"
-                    aria-label={copied ? "Copié" : "Copier la réponse"}
+                    variant="outline"
+                    size="sm"
+                    onClick={handleFiche}
+                    disabled={ficheLoading}
+                    className="border-primary/40 text-primary hover:bg-primary/10 hover:text-primary dark:border-primary/40 dark:bg-card dark:text-primary dark:hover:bg-primary/15 ml-auto gap-1.5 bg-white"
                   >
-                    {copied ? (
-                      <Check className="size-4" />
+                    {ficheLoading ? (
+                      <Loader2 className="size-4 animate-spin" />
                     ) : (
-                      <Copy className="size-4" />
+                      <ClipboardList className="size-4" />
                     )}
+                    {ficheLoading ? "Génération…" : "Créer une fiche pratique"}
                   </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="start" className="w-72">
-                  <DropdownMenuItem
-                    onSelect={() => handleCopy("text")}
-                    className="flex-col items-start gap-0.5"
-                  >
-                    <span className="font-medium">Texte simple</span>
-                    <span className="text-muted-foreground text-xs">
-                      Sans symboles de mise en forme — idéal pour un e-mail ou
-                      Word
-                    </span>
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
-                    onSelect={() => handleCopy("markdown")}
-                    className="flex-col items-start gap-0.5"
-                  >
-                    <span className="font-medium">Texte mis en forme</span>
-                    <span className="text-muted-foreground text-xs">
-                      Conserve titres, listes et gras — pour Notion, Obsidian…
-                      (Markdown)
-                    </span>
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
+                )}
+              </div>
 
-              {/* Notation de la réponse */}
-              {onFeedback && (
-                <>
-                  <span className="text-foreground ml-1 hidden text-xs sm:inline">
-                    Est-ce que la réponse vous convient&nbsp;?
-                  </span>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Button
-                        variant="ghost"
-                        size="icon-sm"
-                        className={cn(
-                          "text-primary/70 hover:text-primary",
-                          message.feedback === "up" &&
-                            "bg-primary/10 text-primary hover:text-primary"
-                        )}
-                        onClick={() => handleFeedback("up")}
-                        aria-label="Bonne réponse"
-                      >
-                        <ThumbsUp className="size-4" />
-                      </Button>
-                    </TooltipTrigger>
-                    <TooltipContent>Bonne réponse</TooltipContent>
-                  </Tooltip>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Button
-                        variant="ghost"
-                        size="icon-sm"
-                        className={cn(
-                          "text-primary/70 hover:text-destructive",
-                          message.feedback === "down" &&
-                            "bg-destructive/10 text-destructive hover:text-destructive"
-                        )}
-                        onClick={() => handleFeedback("down")}
-                        aria-label="Réponse à améliorer"
-                      >
-                        <ThumbsDown className="size-4" />
-                      </Button>
-                    </TooltipTrigger>
-                    <TooltipContent>Réponse à améliorer</TooltipContent>
-                  </Tooltip>
-                </>
-              )}
-
-              {/* Une réponse de sécurité ne doit jamais devenir un document. */}
-              {message.fiche_eligible !== false && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={handleFiche}
-                  disabled={ficheLoading}
-                  className="border-primary/40 text-primary hover:bg-primary/10 hover:text-primary dark:border-primary/40 dark:bg-card dark:text-primary dark:hover:bg-primary/15 ml-auto gap-1.5 bg-white"
-                >
-                  {ficheLoading ? (
-                    <Loader2 className="size-4 animate-spin" />
-                  ) : (
-                    <ClipboardList className="size-4" />
-                  )}
-                  {ficheLoading ? "Génération…" : "Créer une fiche pratique"}
-                </Button>
-              )}
               {isAdmin && message.fiche_eligible !== false && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setLinkedinOpen(true)}
-                  disabled={!session?.access_token}
-                  className="border-primary/40 text-primary hover:bg-primary/10 hover:text-primary dark:border-primary/40 dark:bg-card dark:text-primary dark:hover:bg-primary/15 gap-1.5 bg-white"
+                <div
+                  className="border-primary/15 bg-primary/10 flex w-fit flex-wrap items-center gap-2 rounded-xl border px-2.5 py-2"
+                  role="group"
+                  aria-label="Outils de publication administrateur"
                 >
-                  <LinkedInFilledIcon className="size-4" />
-                  Générer le post LinkedIn
-                </Button>
-              )}
-              {isAdmin && message.fiche_eligible !== false && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setSocialMediaOpen(true)}
-                  disabled={!session?.access_token}
-                  className="border-primary/40 text-primary hover:bg-primary/10 hover:text-primary dark:border-primary/40 dark:bg-card dark:text-primary dark:hover:bg-primary/15 gap-1.5 bg-white"
-                >
-                  <Images className="size-4" />
-                  Générer un média
-                </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setLinkedinOpen(true)}
+                    disabled={!session?.access_token}
+                    className="border-primary/40 text-primary hover:bg-primary/10 hover:text-primary dark:border-primary/40 dark:bg-card dark:text-primary dark:hover:bg-primary/15 gap-1.5 bg-white"
+                  >
+                    <LinkedInFilledIcon className="size-4" />
+                    Générer le post LinkedIn
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setSocialMediaOpen(true)}
+                    disabled={!session?.access_token}
+                    className="border-primary/40 text-primary hover:bg-primary/10 hover:text-primary dark:border-primary/40 dark:bg-card dark:text-primary dark:hover:bg-primary/15 gap-1.5 bg-white"
+                  >
+                    <Images className="size-4" />
+                    Générer un média
+                  </Button>
+                </div>
               )}
             </div>
           )}
