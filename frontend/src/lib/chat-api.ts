@@ -157,6 +157,93 @@ export async function generateLinkedInPost(
   return response.json() as Promise<LinkedInPostResult>;
 }
 
+export interface SocialMediaImageResult {
+  filename: string;
+  content_base64: string;
+}
+
+export interface SocialMediaGenerationResult {
+  raw_content: string;
+  html: string;
+  images: SocialMediaImageResult[];
+  references: string[];
+  warnings: string[];
+  render_error: string | null;
+}
+
+export interface SocialMediaRenderResult {
+  images: SocialMediaImageResult[];
+}
+
+async function socialMediaErrorMessage(
+  response: Response,
+  fallback: string
+): Promise<string> {
+  try {
+    const data = await response.json();
+    if (typeof data?.detail === "string") return data.detail;
+  } catch {
+    // Corps non JSON : conserve le message technique générique.
+  }
+  return fallback;
+}
+
+/**
+ * Génère le fragment HTML brut, le document éditable et son premier rendu PNG.
+ * Aucun contenu reçu n'est nettoyé ou réécrit côté navigateur.
+ */
+export async function generateSocialMedia(
+  messageId: string,
+  token: string
+): Promise<SocialMediaGenerationResult> {
+  const response = await authFetch(
+    `/conversations/messages/${messageId}/social-media`,
+    {
+      method: "POST",
+      token,
+    }
+  );
+
+  if (!response.ok) {
+    throw new Error(
+      await socialMediaErrorMessage(
+        response,
+        "La génération du média a échoué. Veuillez réessayer."
+      )
+    );
+  }
+
+  return response.json() as Promise<SocialMediaGenerationResult>;
+}
+
+/** Rend en PNG le HTML exact transmis par l'éditeur, sans appel LLM. */
+export async function renderSocialMediaHtml(
+  messageId: string,
+  html: string,
+  token: string
+): Promise<SocialMediaRenderResult> {
+  const response = await authFetch(
+    `/conversations/messages/${messageId}/social-media/render`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ html }),
+      token,
+    }
+  );
+
+  if (!response.ok) {
+    throw new Error(
+      await socialMediaErrorMessage(
+        response,
+        "Le rendu PNG a échoué. Le HTML reste disponible sans modification."
+      )
+    );
+  }
+
+  return response.json() as Promise<SocialMediaRenderResult>;
+}
+
 export async function updateMessageFeedback(
   messageId: string,
   feedback: "up" | "down" | null,

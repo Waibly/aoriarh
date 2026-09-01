@@ -21,7 +21,9 @@ jest.mock("next-auth/react", () => ({
 jest.mock("@/lib/chat-api", () => ({
   downloadFiche: jest.fn(),
   generateLinkedInPost: jest.fn(),
+  generateSocialMedia: jest.fn(),
   getSourceFullContent: jest.fn(),
+  renderSocialMediaHtml: jest.fn(),
 }));
 
 const mockUseSession = useSession as jest.Mock;
@@ -67,6 +69,9 @@ describe("bouton LinkedIn de MessageBubble", () => {
     expect(
       screen.getByRole("button", { name: "Générer le post LinkedIn" })
     ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Générer un média" })
+    ).toBeInTheDocument();
   });
 
   it("est absent pour un compte non administrateur", () => {
@@ -81,6 +86,9 @@ describe("bouton LinkedIn de MessageBubble", () => {
 
     expect(
       screen.queryByRole("button", { name: "Générer le post LinkedIn" })
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Générer un média" })
     ).not.toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: "Créer une fiche pratique" })
@@ -99,6 +107,9 @@ describe("bouton LinkedIn de MessageBubble", () => {
 
     expect(
       screen.queryByRole("button", { name: "Générer le post LinkedIn" })
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Générer un média" })
     ).not.toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: "Créer une fiche pratique" })

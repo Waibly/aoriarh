@@ -1,4 +1,5 @@
 import asyncio
+import base64
 import dataclasses
 import json
 import logging
@@ -39,6 +40,10 @@ from app.schemas.conversation import (
     LinkedInPostResponse,
     MessageFeedback,
     MessageRead,
+    SocialMediaGenerationResponse,
+    SocialMediaImageResponse,
+    SocialMediaRenderRequest,
+    SocialMediaRenderResponse,
 )
 from app.services.billing_service import BillingService
 from app.services.conversation_service import ConversationService
@@ -461,6 +466,180 @@ async def generate_message_linkedin_post(
         references=generation.references,
         warnings=generation.warnings,
     )
+
+
+def _encode_social_media_images(images: list) -> list[SocialMediaImageResponse]:
+    return [
+        SocialMediaImageResponse(
+            filename=image.filename,
+            content_base64=base64.b64encode(image.content).decode("ascii"),
+        )
+        for image in images
+    ]
+
+
+@router.post(
+    "/messages/{message_id}/social-media",
+    response_model=SocialMediaGenerationResponse,
+)
+@limiter.limit("5/minute")
+async def generate_message_social_media(
+    message_id: uuid.UUID,
+    request: Request,
+    user: User = Depends(require_role(["admin"])),
+    db: AsyncSession = Depends(get_db),
+) -> SocialMediaGenerationResponse:
+    """Génère le HTML brut d'un média et tente de le rendre en PNG.
+
+    Toute sortie LLM non vide est renvoyée telle quelle, même si un contrôle
+    informatif ou le moteur PNG signale un problème. Aucun fallback éditorial
+    ni post-traitement correctif n'est appliqué.
+    """
+
+    from starlette.concurrency import run_in_threadpool
+
+    from app.services.social_media_service import (
+        generate_social_media,
+        render_social_media_pngs,
+    )
+
+    message = (
+        await db.execute(select(Message).where(Message.id == message_id))
+    ).scalar_one_or_none()
+    if message is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Message non trouvé",
+        )
+
+    service = ConversationService(db)
+    conversation = await service.get_conversation(
+        conversation_id=message.conversation_id,
+        user=user,
+    )
+    if conversation.user_id != user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Le média ne peut être généré que depuis votre propre conversation.",
+        )
+    if message.role != "assistant" or not (message.content or "").strip():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Seule une réponse de l'assistant peut devenir un média.",
+        )
+    if is_security_response(message.content, message.rag_trace):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Cette réponse de sécurité ne peut pas devenir un média.",
+        )
+
+    question = ""
+    for conversation_message in conversation.messages:
+        if conversation_message.created_at >= message.created_at:
+            break
+        if conversation_message.role == "user":
+            question = conversation_message.content
+
+    sources = message.sources if isinstance(message.sources, list) else []
+    try:
+        generation = await generate_social_media(
+            question=question,
+            answer_markdown=message.content,
+            sources=sources,
+            user_profile=user.profil_metier,
+            organisation_id=str(conversation.organisation_id),
+            user_id=str(user.id),
+            message_id=str(message.id),
+        )
+    except Exception:
+        logger.exception("Échec de génération du média pour le message %s", message_id)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="La génération du média a échoué. Veuillez réessayer.",
+        )
+
+    images = []
+    render_error = None
+    try:
+        images = await run_in_threadpool(render_social_media_pngs, generation.html)
+    except Exception:
+        logger.exception("Échec du rendu PNG pour le message %s", message_id)
+        render_error = (
+            "Le HTML généré est disponible sans modification, mais son rendu PNG "
+            "a échoué. Vous pouvez modifier ou télécharger le HTML."
+        )
+
+    return SocialMediaGenerationResponse(
+        raw_content=generation.raw_content,
+        html=generation.html,
+        images=_encode_social_media_images(images),
+        references=generation.references,
+        warnings=generation.warnings,
+        render_error=render_error,
+    )
+
+
+@router.post(
+    "/messages/{message_id}/social-media/render",
+    response_model=SocialMediaRenderResponse,
+)
+@limiter.limit("10/minute")
+async def render_message_social_media(
+    message_id: uuid.UUID,
+    data: SocialMediaRenderRequest,
+    request: Request,
+    user: User = Depends(require_role(["admin"])),
+    db: AsyncSession = Depends(get_db),
+) -> SocialMediaRenderResponse:
+    """Convertit strictement le HTML édité par l'admin en images PNG."""
+
+    from starlette.concurrency import run_in_threadpool
+
+    from app.services.social_media_service import render_social_media_pngs
+
+    message = (
+        await db.execute(select(Message).where(Message.id == message_id))
+    ).scalar_one_or_none()
+    if message is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Message non trouvé",
+        )
+
+    service = ConversationService(db)
+    conversation = await service.get_conversation(
+        conversation_id=message.conversation_id,
+        user=user,
+    )
+    if conversation.user_id != user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Le média ne peut être rendu que depuis votre propre conversation.",
+        )
+    if message.role != "assistant" or not (message.content or "").strip():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Seule une réponse de l'assistant peut devenir un média.",
+        )
+    if is_security_response(message.content, message.rag_trace):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Cette réponse de sécurité ne peut pas devenir un média.",
+        )
+
+    try:
+        images = await run_in_threadpool(render_social_media_pngs, data.html)
+    except Exception:
+        logger.exception("Échec du rendu du HTML édité pour le message %s", message_id)
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=(
+                "Le HTML n'a pas pu être rendu en PNG. Il reste disponible sans "
+                "modification dans l'éditeur."
+            ),
+        )
+
+    return SocialMediaRenderResponse(images=_encode_social_media_images(images))
 
 
 async def _load_org_context(

@@ -1,0 +1,150 @@
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { SocialMediaDialog } from "@/components/chat/social-media-dialog";
+import { generateSocialMedia, renderSocialMediaHtml } from "@/lib/chat-api";
+
+jest.mock("@/lib/chat-api", () => ({
+  generateSocialMedia: jest.fn(),
+  renderSocialMediaHtml: jest.fn(),
+}));
+
+const mockGenerate = generateSocialMedia as jest.MockedFunction<
+  typeof generateSocialMedia
+>;
+const mockRender = renderSocialMediaHtml as jest.MockedFunction<
+  typeof renderSocialMediaHtml
+>;
+
+describe("SocialMediaDialog", () => {
+  const raw =
+    '  <main class="carousel"><section class="slide">Texte brut</section></main>  ';
+  const generatedHtml = `<!doctype html><body>${raw}</body>`;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockGenerate.mockResolvedValue({
+      raw_content: raw,
+      html: generatedHtml,
+      images: [
+        {
+          filename: "aoria-media-01.png",
+          content_base64: "aW1hZ2U=",
+        },
+      ],
+      references: [],
+      warnings: ["Avertissement non bloquant"],
+      render_error: null,
+    });
+  });
+
+  it("affiche la sortie brute exacte et le HTML éditable", async () => {
+    render(
+      <SocialMediaDialog
+        messageId="message-1"
+        token="token-admin"
+        open
+        onOpenChange={jest.fn()}
+      />
+    );
+
+    expect(
+      await screen.findByText("Avertissement non bloquant")
+    ).toBeInTheDocument();
+
+    fireEvent.mouseDown(
+      screen.getByRole("tab", { name: "Sortie brute du LLM" }),
+      {
+        button: 0,
+        ctrlKey: false,
+      }
+    );
+    expect(
+      screen.getByRole("textbox", { name: "Sortie brute du LLM" })
+    ).toHaveValue(raw);
+
+    fireEvent.mouseDown(screen.getByRole("tab", { name: "Modifier le HTML" }), {
+      button: 0,
+      ctrlKey: false,
+    });
+    expect(screen.getByRole("textbox", { name: "HTML du média" })).toHaveValue(
+      generatedHtml
+    );
+    expect(mockGenerate).toHaveBeenCalledTimes(1);
+  });
+
+  it("transmet le HTML édité exactement au moteur PNG", async () => {
+    mockRender.mockResolvedValue({
+      images: [
+        {
+          filename: "aoria-media-01.png",
+          content_base64: "bm91dmVsbGUtaW1hZ2U=",
+        },
+      ],
+    });
+    const edited = "  <!doctype html>\n<body>Version éditée</body>  ";
+
+    render(
+      <SocialMediaDialog
+        messageId="message-2"
+        token="token-admin"
+        open
+        onOpenChange={jest.fn()}
+      />
+    );
+
+    await screen.findByText("Avertissement non bloquant");
+    fireEvent.mouseDown(screen.getByRole("tab", { name: "Modifier le HTML" }), {
+      button: 0,
+      ctrlKey: false,
+    });
+    fireEvent.change(screen.getByRole("textbox", { name: "HTML du média" }), {
+      target: { value: edited },
+    });
+
+    expect(
+      screen.getByText(/Le HTML visible ne correspond pas aux PNG actuels/)
+    ).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Rendre les PNG" }));
+
+    await waitFor(() =>
+      expect(mockRender).toHaveBeenCalledWith(
+        "message-2",
+        edited,
+        "token-admin"
+      )
+    );
+    await waitFor(() =>
+      expect(
+        screen.queryByText(/Le HTML visible ne correspond pas aux PNG actuels/)
+      ).not.toBeInTheDocument()
+    );
+  });
+
+  it("conserve le HTML quand le rendu PNG échoue", async () => {
+    mockRender.mockRejectedValue(new Error("Rendu impossible, HTML conservé"));
+
+    render(
+      <SocialMediaDialog
+        messageId="message-3"
+        token="token-admin"
+        open
+        onOpenChange={jest.fn()}
+      />
+    );
+
+    await screen.findByText("Avertissement non bloquant");
+    fireEvent.mouseDown(screen.getByRole("tab", { name: "Modifier le HTML" }), {
+      button: 0,
+      ctrlKey: false,
+    });
+    const editor = screen.getByRole("textbox", { name: "HTML du média" });
+    fireEvent.change(editor, {
+      target: { value: "<body>HTML à conserver</body>" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Rendre les PNG" }));
+
+    expect(
+      await screen.findByText("Rendu impossible, HTML conservé")
+    ).toBeInTheDocument();
+    expect(editor).toHaveValue("<body>HTML à conserver</body>");
+  });
+});

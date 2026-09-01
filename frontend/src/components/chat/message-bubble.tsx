@@ -25,6 +25,7 @@ import {
   ThumbsDown,
   Send,
   ClipboardList,
+  Images,
   Loader2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -41,6 +42,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { MessageSources } from "./message-sources";
 import { LinkedInPostDialog } from "./linkedin-post-dialog";
+import { SocialMediaDialog } from "./social-media-dialog";
 import { ChatMarkdownTable } from "./chat-markdown-table";
 import { downloadFiche } from "@/lib/chat-api";
 import { cn } from "@/lib/utils";
@@ -85,6 +87,7 @@ export function MessageBubble({ message, onFeedback }: MessageBubbleProps) {
   const [comment, setComment] = useState("");
   const [ficheLoading, setFicheLoading] = useState(false);
   const [linkedinOpen, setLinkedinOpen] = useState(false);
+  const [socialMediaOpen, setSocialMediaOpen] = useState(false);
   const commentRef = useRef<HTMLInputElement>(null);
   const proseRef = useRef<HTMLDivElement>(null);
 
@@ -322,15 +325,35 @@ export function MessageBubble({ message, onFeedback }: MessageBubbleProps) {
                   Générer le post LinkedIn
                 </Button>
               )}
+              {isAdmin && message.fiche_eligible !== false && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setSocialMediaOpen(true)}
+                  disabled={!session?.access_token}
+                  className="border-primary/40 text-primary hover:bg-primary/10 hover:text-primary dark:border-primary/40 dark:bg-card dark:text-primary dark:hover:bg-primary/15 gap-1.5 bg-white"
+                >
+                  <Images className="size-4" />
+                  Générer un média
+                </Button>
+              )}
             </div>
           )}
           {isAdmin && !isTemp && message.fiche_eligible !== false && (
-            <LinkedInPostDialog
-              messageId={message.id}
-              token={session?.access_token}
-              open={linkedinOpen}
-              onOpenChange={setLinkedinOpen}
-            />
+            <>
+              <LinkedInPostDialog
+                messageId={message.id}
+                token={session?.access_token}
+                open={linkedinOpen}
+                onOpenChange={setLinkedinOpen}
+              />
+              <SocialMediaDialog
+                messageId={message.id}
+                token={session?.access_token}
+                open={socialMediaOpen}
+                onOpenChange={setSocialMediaOpen}
+              />
+            </>
           )}
           {showCommentInput && (
             <div className="mt-2 flex items-center gap-2">

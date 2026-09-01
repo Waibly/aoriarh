@@ -64,5 +64,33 @@ class LinkedInPostResponse(BaseModel):
     warnings: list[str]
 
 
+class SocialMediaImageResponse(BaseModel):
+    """Image PNG rendue depuis le HTML exact."""
+
+    filename: str
+    content_base64: str
+
+
+class SocialMediaGenerationResponse(BaseModel):
+    """Sortie LLM brute, HTML éditable et rendu optionnel associé."""
+
+    raw_content: str
+    html: str
+    images: list[SocialMediaImageResponse]
+    references: list[str]
+    warnings: list[str]
+    render_error: str | None = None
+
+
+class SocialMediaRenderRequest(BaseModel):
+    """HTML explicitement édité par l'administrateur, jamais réécrit."""
+
+    html: str = Field(..., min_length=1, max_length=2_000_000)
+
+
+class SocialMediaRenderResponse(BaseModel):
+    images: list[SocialMediaImageResponse]
+
+
 class ChatRequest(BaseModel):
     message: str = Field(..., min_length=1, max_length=5000)
