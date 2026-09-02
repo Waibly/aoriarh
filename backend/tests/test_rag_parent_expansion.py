@@ -1,9 +1,6 @@
-"""Tests for small-to-big retrieval and identifier detection."""
 from __future__ import annotations
 
 from unittest.mock import MagicMock
-
-import pytest
 
 from app.rag.parent_expansion import (
     MAX_CHARS_PER_GROUP,
@@ -14,7 +11,6 @@ from app.rag.parent_expansion import (
 )
 from app.rag.search import SearchResult
 
-
 # --- detect_identifiers -------------------------------------------------------
 
 
@@ -24,7 +20,7 @@ class TestDetectIdentifiers:
         assert ids["numero_pourvoi"] == ["22-18.875"]
         assert ids["article_nums"] == []
 
-    def test_detects_pourvoi_with_W_prefix(self):
+    def test_detects_pourvoi_with_w_prefix(self):
         ids = detect_identifiers("Pourvoi n° W 22-18.875 contre l'arrêt")
         assert "22-18.875" in ids["numero_pourvoi"]
 
@@ -132,9 +128,11 @@ class TestExpandToParents:
             }
             for i in range(5)
         ]
-        qdrant = _make_qdrant_mock({
-            (("document_id", "doc-1"),): sibling_payloads,
-        })
+        qdrant = _make_qdrant_mock(
+            {
+                (("document_id", "doc-1"),): sibling_payloads,
+            }
+        )
         out = await expand_to_parents([seed], qdrant)
         assert len(out) == 1
         merged = out[0]
@@ -174,9 +172,11 @@ class TestExpandToParents:
             }
             for i in (3, 4, 5)
         ]
-        qdrant = _make_qdrant_mock({
-            (("article_nums", ("L4121-1",)), ("document_id", "doc-2")): sibling_payloads,
-        })
+        qdrant = _make_qdrant_mock(
+            {
+                (("article_nums", ("L4121-1",)), ("document_id", "doc-2")): sibling_payloads,
+            }
+        )
         out = await expand_to_parents([s1, s2], qdrant)
         assert len(out) == 1
         merged = out[0]
@@ -184,6 +184,60 @@ class TestExpandToParents:
         assert merged.score == 0.6
         assert "art chunk 3" in merged.text
         assert "art chunk 5" in merged.text
+
+    async def test_long_article_keeps_best_matching_clause_at_the_end(self):
+        """Regression: CCN 66 article 20.10 must survive the 9,000-char budget."""
+        doc_id = "ccn-66"
+        common_header = (
+            "## Source juridique : CCN 66\n"
+            "Référence : KALITEXT000022192697\n"
+            "Section : Décompte et répartition du temps de travail\n\n"
+            "### Article 20 (suite)"
+        )
+        payloads = []
+        for index in range(85, 93):
+            if index == 92:
+                body = (
+                    "Les femmes enceintes bénéficient d'une réduction de "
+                    "l'horaire hebdomadaire de travail de 10 % sans réduction "
+                    "de leur salaire. REGLE_20_10"
+                )
+            else:
+                body = f"PASSAGE_{index} " + ("texte antérieur. " * 130)
+            payloads.append(
+                {
+                    "text": f"{common_header}\n\n{body}",
+                    "doc_name": "CCN 66",
+                    "document_id": doc_id,
+                    "source_type": "convention_collective_nationale",
+                    "norme_niveau": 5,
+                    "norme_poids": 0.6,
+                    "chunk_index": index,
+                    "article_nums": ["20"],
+                }
+            )
+
+        seed = _make_chunk(
+            doc_id=doc_id,
+            chunk_index=92,
+            text=payloads[-1]["text"],
+            source_type="convention_collective_nationale",
+            article_nums=["20"],
+            score=0.84,
+            doc_name="CCN 66",
+        )
+        qdrant = _make_qdrant_mock(
+            {
+                (("article_nums", ("20",)), ("document_id", doc_id)): payloads,
+            }
+        )
+
+        merged = (await expand_to_parents([seed], qdrant))[0]
+
+        assert "REGLE_20_10" in merged.text
+        assert "REGLE_20_10" in (merged.seed_text or "")
+        assert merged.text.count("## Source juridique : CCN 66") == 1
+        assert len(merged.text) <= MAX_CHARS_PER_GROUP
 
     async def test_caps_to_max_parent_groups(self):
         # Build MAX_PARENT_GROUPS + 5 distinct doc seeds
@@ -372,15 +426,23 @@ class TestFetchByIdentifiers:
 
 def _jur(i: int, score: float) -> SearchResult:
     return _make_chunk(
-        doc_id=f"jur{i}", chunk_index=0, text=f"arret {i}",
-        source_type="arret_cour_cassation", score=score, doc_name=f"Cass {i}",
+        doc_id=f"jur{i}",
+        chunk_index=0,
+        text=f"arret {i}",
+        source_type="arret_cour_cassation",
+        score=score,
+        doc_name=f"Cass {i}",
     )
 
 
 def _code(i: int, art: str, score: float) -> SearchResult:
     return _make_chunk(
-        doc_id=f"code{i}", chunk_index=0, text=f"article {art}",
-        source_type="code_travail", article_nums=[art], score=score,
+        doc_id=f"code{i}",
+        chunk_index=0,
+        text=f"article {art}",
+        source_type="code_travail",
+        article_nums=[art],
+        score=score,
         doc_name="Code du travail",
     )
 
@@ -404,7 +466,9 @@ class TestLegislationFloorPreservation:
 
     async def test_min_legislation_preserves_articles(self):
         out = await expand_to_parents(
-            self._results(), _make_qdrant_mock({}), min_legislation=2,
+            self._results(),
+            _make_qdrant_mock({}),
+            min_legislation=2,
         )
         assert len(out) == MAX_PARENT_GROUPS
         assert _n_legislation(out) == 2
@@ -419,8 +483,6 @@ class TestLegislationFloorPreservation:
 
     async def test_legislation_already_kept_is_not_duplicated(self):
         # One code article already in the top-10 → no spurious swapping.
-        mixed = [_code(1, "L1111-1", 0.95)] + [
-            _jur(i, 0.90 - i * 0.02) for i in range(11)
-        ]
+        mixed = [_code(1, "L1111-1", 0.95)] + [_jur(i, 0.90 - i * 0.02) for i in range(11)]
         out = await expand_to_parents(mixed, _make_qdrant_mock({}), min_legislation=2)
         assert _n_legislation(out) == 1

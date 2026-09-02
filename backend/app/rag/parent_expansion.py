@@ -529,10 +529,116 @@ def _merge_jurisprudence(
     return merged
 
 
+def _decompose_article_chunk(text: str) -> tuple[str, str]:
+    """Split an indexed legal-article chunk into its repeated header and body.
+
+    ``ArticleChunker`` prefixes every continuation chunk with the instrument,
+    section and article heading.  Keeping that prefix eight times can consume
+    several thousand characters without adding legal information.
+    """
+    lines = text.splitlines()
+    for index, line in enumerate(lines):
+        if line.strip().startswith("### Article "):
+            header = "\n".join(lines[: index + 1]).strip()
+            body = "\n".join(lines[index + 1 :]).strip()
+            return header, body
+    return "", text.strip()
+
+
+def _merge_relevance_first(
+    ordered: list[SearchResult],
+    seed_priority: tuple[int, ...],
+    *,
+    article_based: bool,
+) -> str:
+    """Merge a bounded parent while always retaining its best-matched chunk.
+
+    The old implementation concatenated from the start and then sliced the
+    first 9,000 characters.  A relevant clause near the end of a long article
+    was therefore discarded even when the reranker had selected that exact
+    chunk.  This merger first tries the complete parent, then reserves the
+    budget for seeds and fills the remaining space with their closest siblings.
+    """
+    if not ordered:
+        return ""
+
+    bodies: dict[int, str] = {}
+    header = ""
+    for chunk in ordered:
+        if article_based:
+            chunk_header, body = _decompose_article_chunk(chunk.text)
+            if not header and chunk_header:
+                header = chunk_header
+            bodies[chunk.chunk_index] = body
+        else:
+            bodies[chunk.chunk_index] = chunk.text.strip()
+
+    def render(selected: set[int]) -> str:
+        parts: list[str] = []
+        if header:
+            parts.append(header)
+        previous: int | None = None
+        for chunk in ordered:
+            index = chunk.chunk_index
+            if index not in selected:
+                continue
+            if previous is not None and index != previous + 1:
+                parts.append("[…]")
+            body = bodies[index]
+            if body:
+                parts.append(body)
+            previous = index
+        return "\n\n".join(parts).strip()
+
+    all_indices = {chunk.chunk_index for chunk in ordered}
+    complete = render(all_indices)
+    if len(complete) <= MAX_CHARS_PER_GROUP:
+        return complete
+
+    available = all_indices
+    priorities = tuple(index for index in seed_priority if index in available)
+    if not priorities:
+        priorities = (ordered[0].chunk_index,)
+
+    selected: set[int] = set()
+    for index in priorities:
+        candidate = selected | {index}
+        if len(render(candidate)) <= MAX_CHARS_PER_GROUP:
+            selected = candidate
+
+    # A normally chunked seed is far below the group budget.  Keep a bounded
+    # head+tail fallback for imported oversized chunks so the legal conclusion
+    # at the end is not silently lost either.
+    if not selected:
+        index = priorities[0]
+        body_budget = max(200, MAX_CHARS_PER_GROUP - len(header) - 10)
+        body = bodies[index]
+        if len(body) > body_budget:
+            head_size = body_budget // 2
+            tail_size = body_budget - head_size - len("\n\n[…]\n\n")
+            bodies[index] = body[:head_size].rstrip() + "\n\n[…]\n\n" + body[-tail_size:].lstrip()
+        selected.add(index)
+
+    seed_set = selected & set(priorities)
+    neighbours = sorted(
+        (chunk.chunk_index for chunk in ordered if chunk.chunk_index not in selected),
+        key=lambda index: (
+            min(abs(index - seed) for seed in seed_set),
+            index,
+        ),
+    )
+    for index in neighbours:
+        candidate = selected | {index}
+        if len(render(candidate)) <= MAX_CHARS_PER_GROUP:
+            selected = candidate
+
+    return render(selected)
+
+
 def _merge_group(
     chunks: list[SearchResult],
     best_score: float,
-    seed_indices: frozenset[int] = frozenset(),
+    seeds: list[SearchResult] | None = None,
     is_jurisprudence: bool = False,
 ) -> SearchResult:
     """Merge chunks of a parent group into one SearchResult.
@@ -551,12 +657,27 @@ def _merge_group(
         ordered.append(c)
 
     template = ordered[0]
+    seeds = seeds or []
+    ranked_seeds = sorted(seeds, key=lambda result: result.score, reverse=True)
+    seed_priority = tuple(dict.fromkeys(result.chunk_index for result in ranked_seeds))
+    seed_indices = frozenset(seed_priority)
     if is_jurisprudence:
         merged_text = _merge_jurisprudence(ordered, seed_indices)
     else:
-        merged_text = "\n\n".join(c.text for c in ordered).strip()
-        if len(merged_text) > MAX_CHARS_PER_GROUP:
-            merged_text = merged_text[:MAX_CHARS_PER_GROUP].rsplit(" ", 1)[0] + " […]"
+        merged_text = _merge_relevance_first(
+            ordered,
+            seed_priority,
+            article_based=bool(template.article_nums),
+        )
+
+    seed_text: str | None = None
+    if ranked_seeds:
+        if is_jurisprudence:
+            seed_text = _decompose(ranked_seeds[0].text)[2] or ranked_seeds[0].text
+        elif template.article_nums:
+            seed_text = _decompose_article_chunk(ranked_seeds[0].text)[1]
+        else:
+            seed_text = ranked_seeds[0].text
 
     aggregated_articles: list[str] = []
     for c in ordered:
@@ -570,6 +691,7 @@ def _merge_group(
         text=merged_text,
         score=best_score,
         article_nums=aggregated_articles or template.article_nums,
+        seed_text=seed_text,
     )
 
 
@@ -620,16 +742,12 @@ async def expand_to_parents(
         seeds = group_seeds[key]
         chunks = siblings if siblings else seeds
         is_juris = key[0] == "doc"
-        seed_indices = frozenset(r.chunk_index for r in seeds)
         merged = _merge_group(
             chunks,
             best_score=group_best_score[key],
-            seed_indices=seed_indices,
+            seeds=seeds,
             is_jurisprudence=is_juris,
         )
-        if is_juris and seeds:
-            best_seed = max(seeds, key=lambda r: r.score)
-            merged = replace(merged, seed_text=_decompose(best_seed.text)[2] or best_seed.text)
         expanded.append(merged)
 
     expanded.sort(key=lambda r: r.score, reverse=True)
