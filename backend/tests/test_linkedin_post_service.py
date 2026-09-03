@@ -79,11 +79,17 @@ def test_prompt_requires_hook_body_sources_cta_and_forbids_hashtags() -> None:
 
 def test_carousel_post_prompt_is_short_and_forbids_slide_repetition() -> None:
     prompt = " ".join(LINKEDIN_CAROUSEL_POST_SYSTEM_PROMPT.split())
-    assert "entre 60 et 120 mots" in prompt
+    assert "entre 40 et 80 mots" in prompt
     assert "Ne reprends jamais le titre de la première slide" in prompt
     assert "Ne résume pas les slides une par une" in prompt
     assert "N'insère pas de bloc « Sources »" in LINKEDIN_CAROUSEL_POST_SYSTEM_PROMPT
-    assert "raison précise de faire défiler" in LINKEDIN_CAROUSEL_POST_SYSTEM_PROMPT
+    assert "visibles avant « voir plus »" in LINKEDIN_CAROUSEL_POST_SYSTEM_PROMPT
+    assert "N'ouvre jamais par une formule générique" in (
+        LINKEDIN_CAROUSEL_POST_SYSTEM_PROMPT
+    )
+    assert "invite explicitement à faire défiler" in prompt
+    assert "question de discussion artificielle" in prompt
+    assert "N'utilise pas de puces ni de liste" in prompt
 
 
 def test_carousel_user_prompt_exposes_exact_carousel_as_data() -> None:
@@ -219,7 +225,7 @@ def test_warnings_never_transform_content() -> None:
 
 
 def test_carousel_warnings_do_not_require_repeating_references() -> None:
-    content = "Introduction sans source répétée.\n\nVotre pratique ?"
+    content = "Introduction sans source répétée.\n\nFaites défiler le carrousel ↓"
     warnings = build_linkedin_carousel_warnings(content)
 
     assert warnings == []
@@ -265,7 +271,10 @@ async def test_generation_returns_non_empty_llm_output_byte_for_byte() -> None:
 
 @pytest.mark.asyncio
 async def test_carousel_post_generation_returns_raw_output_byte_for_byte() -> None:
-    raw = "  Un enjeu concret.\n\nFaites défiler pour vérifier les étapes.\n\nVotre pratique ?  "
+    raw = (
+        "  Un point concret.\n\nLe bon ordre évite un retard.\n\n"
+        "Faites défiler pour vérifier les étapes ↓  "
+    )
 
     with patch(
         "app.services.linkedin_post_service._llm.chat.completions.create",

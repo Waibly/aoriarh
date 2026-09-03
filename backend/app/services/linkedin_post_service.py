@@ -217,19 +217,22 @@ Règles absolues :
 - Produis uniquement le post final en texte brut, sans préambule, commentaire,
   titre technique, balise Markdown ni bloc de code.
 - N'ajoute aucun hashtag.
-- Écris entre 60 et 120 mots. Le texte doit être nettement plus court qu'un
+- Écris entre 40 et 80 mots. Le texte doit être nettement plus court qu'un
   post LinkedIn autonome, car le développement se trouve dans le carrousel.
 - Le post et le carrousel doivent se compléter. Ne reprends jamais le titre de
   la première slide, ses phrases, son plan, ses listes, ses explications, son
   bloc de sources ou son éventuel CTA. Ne résume pas les slides une par une.
-- Ouvre avec un hook distinct de la couverture. Il situe le problème concret
-  ou l'enjeu professionnel sans donner à nouveau la démonstration juridique.
-- Ajoute un court paragraphe qui donne une raison précise de faire défiler le
-  document. Tu peux annoncer le type de réponse proposé, mais pas recopier ses
-  enseignements.
-- Termine par une seule question courte qui ouvre la discussion sur une
-  pratique, un choix ou un point de vigilance professionnel. Cette question
-  doit compléter le carrousel et rester le dernier paragraphe.
+- Les deux premières lignes sont visibles avant « voir plus ». Elles forment un
+  hook autonome, spécifique au sujet et immédiatement compréhensible. Ouvre
+  par une friction, une erreur, une croyance ou une conséquence opérationnelle
+  concrète. N'ouvre jamais par une formule générique sur « un risque »,
+  « un enjeu », « une vigilance » ou « une étape à sécuriser ».
+- Après une ligne vide, ajoute une seule phrase de contexte qui apporte un
+  angle ou une tension utile sans résumer le contenu du document.
+- Termine, après une nouvelle ligne vide, par un CTA très court qui invite
+  explicitement à faire défiler le carrousel, par exemple « Faites défiler pour
+  voir les points à vérifier ↓ ». Le CTA doit être spécifique au bénéfice réel
+  du document. Ne termine pas par une question de discussion artificielle.
 - N'invente aucune règle, statistique, date, décision, source, URL, expérience
   personnelle ou résultat absent de la réponse fournie.
 - Ne corrige pas et ne complète pas le fond juridique. Ne transforme pas une
@@ -243,6 +246,8 @@ Règles absolues :
   avec « vous » lorsque cela sert l'accroche ou la question finale.
 - Aère le texte avec une ligne vide entre les paragraphes. Écris des phrases
   courtes, naturelles et professionnelles.
+- N'utilise pas de puces ni de liste dans le post d'accompagnement : le détail
+  et la structure sont portés par le carrousel.
 - N'utilise jamais de tiret cadratin « — » ni de tiret demi-cadratin « – ».
 - Ne demande jamais de liker, commenter, partager ou s'abonner.
 
@@ -528,9 +533,13 @@ def build_linkedin_carousel_warnings(content: str) -> list[str]:
             "Le post d'accompagnement contient un tiret cadratin ou demi-cadratin "
             "malgré la consigne. La génération brute reste inchangée."
         )
-    if not content.rstrip().endswith("?"):
+    last_paragraph = re.split(r"\n\s*\n", content.strip())[-1]
+    if not re.search(
+        r"(?im)^.{0,120}(faites défiler|faites glisser|parcourez|à faire défiler).{0,120}$",
+        last_paragraph,
+    ):
         warnings.append(
-            "La question finale ne semble pas être le dernier paragraphe du post. "
+            "Le post ne semble pas contenir un appel clair à parcourir le carrousel. "
             "La génération brute est affichée sans modification."
         )
     return warnings

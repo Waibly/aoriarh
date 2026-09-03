@@ -316,7 +316,7 @@ export function SocialMediaDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="flex h-[94dvh] max-h-[94dvh] flex-col sm:max-w-6xl">
+      <DialogContent className="flex h-[94dvh] max-h-[94dvh] w-[96vw] max-w-[96vw] flex-col sm:max-w-[96vw] xl:max-w-[1800px]">
         <DialogHeader>
           <DialogTitle>
             {includePost ? "Post + carrousel LinkedIn" : "Générer un média"}
@@ -354,7 +354,7 @@ export function SocialMediaDialog({
         )}
 
         {generation && (
-          <div className="min-h-0 flex-1 space-y-4 overflow-y-auto pr-1">
+          <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto pr-1 lg:overflow-hidden">
             {(warnings.length > 0 || exportError) && (
               <div
                 className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2.5 text-amber-900 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-200"
@@ -372,151 +372,162 @@ export function SocialMediaDialog({
               </div>
             )}
 
-            {includePost && (
-              <section className="space-y-3 rounded-xl border p-4">
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div>
-                    <div className="mb-1 flex items-center gap-2">
-                      <span className="bg-primary text-primary-foreground flex size-6 items-center justify-center rounded-full text-xs font-semibold">
-                        1
-                      </span>
-                      <h3 className="font-semibold">Post d’accompagnement</h3>
+            <div
+              className={
+                includePost
+                  ? "grid gap-4 lg:min-h-0 lg:flex-1 lg:grid-cols-[minmax(340px,0.72fr)_minmax(0,1.8fr)]"
+                  : "min-h-0 flex-1 lg:overflow-y-auto"
+              }
+            >
+              {includePost && (
+                <section className="space-y-3 rounded-xl border p-4 lg:min-h-0 lg:overflow-y-auto">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <div className="mb-1 flex items-center gap-2">
+                        <span className="bg-primary text-primary-foreground flex size-6 items-center justify-center rounded-full text-xs font-semibold">
+                          1
+                        </span>
+                        <h3 className="font-semibold">Post d’accompagnement</h3>
+                      </div>
+                      <p className="text-muted-foreground text-xs">
+                        Une introduction courte qui donne envie de parcourir le
+                        carrousel sans répéter ses slides.
+                      </p>
                     </div>
-                    <p className="text-muted-foreground text-xs">
-                      Une introduction courte qui donne envie de parcourir le
-                      carrousel sans répéter ses slides.
-                    </p>
-                  </div>
-                  <Button
-                    size="sm"
-                    onClick={handleCopyPost}
-                    disabled={!generation.post}
-                  >
-                    {postCopied ? (
-                      <Check className="size-4" />
-                    ) : (
-                      <Copy className="size-4" />
-                    )}
-                    {postCopied ? "Post copié" : "Copier le post"}
-                  </Button>
-                </div>
-
-                {generation.post ? (
-                  <>
-                    <textarea
-                      aria-label="Post LinkedIn du carrousel"
-                      value={generation.post.content}
-                      readOnly
-                      spellCheck={false}
-                      className="border-input bg-background text-foreground min-h-52 w-full resize-y rounded-lg border p-4 text-sm leading-6"
-                    />
-                    <p className="text-muted-foreground text-right text-xs tabular-nums">
-                      {generation.post.character_count.toLocaleString("fr-FR")}{" "}
-                      caractères
-                    </p>
-                  </>
-                ) : (
-                  <p className="text-muted-foreground rounded-lg border border-dashed p-4 text-sm">
-                    Le post d’accompagnement n’est pas disponible. Le carrousel
-                    généré reste intégralement accessible ci-dessous.
-                  </p>
-                )}
-              </section>
-            )}
-
-            <section className="space-y-3 rounded-xl border p-4">
-              <div>
-                <div className="mb-1 flex items-center gap-2">
-                  {includePost && (
-                    <span className="bg-primary text-primary-foreground flex size-6 items-center justify-center rounded-full text-xs font-semibold">
-                      2
-                    </span>
-                  )}
-                  <h3 className="font-semibold">
-                    {includePost ? "Carrousel LinkedIn" : "Média"}
-                  </h3>
-                </div>
-                <p className="text-muted-foreground text-xs">
-                  Cet aperçu unique correspond toujours au HTML actuel. Quand il
-                  vous convient, téléchargez directement le PDF ou les PNG.
-                </p>
-              </div>
-
-              <details className="rounded-lg border">
-                <summary className="flex cursor-pointer list-none items-center gap-2 px-3 py-2.5 text-sm font-medium">
-                  <Code2 className="size-4" />
-                  {includePost
-                    ? "Modifier le HTML du carrousel"
-                    : "Modifier le HTML du média"}
-                </summary>
-                <div className="space-y-2 border-t p-3">
-                  <div className="flex justify-end">
                     <Button
-                      variant="outline"
                       size="sm"
-                      onClick={handleResetHtml}
-                      disabled={!htmlModified || rendering || pdfDownloading}
+                      onClick={handleCopyPost}
+                      disabled={!generation.post}
                     >
-                      <RotateCcw className="size-4" />
-                      Revenir au HTML généré
+                      {postCopied ? (
+                        <Check className="size-4" />
+                      ) : (
+                        <Copy className="size-4" />
+                      )}
+                      {postCopied ? "Post copié" : "Copier le post"}
                     </Button>
                   </div>
-                  <textarea
-                    aria-label={
-                      includePost ? "HTML du carrousel" : "HTML du média"
-                    }
-                    value={html}
-                    onChange={(event) => setHtml(event.target.value)}
-                    spellCheck={false}
-                    className="border-input bg-background text-foreground focus-visible:ring-ring min-h-80 w-full resize-y rounded-lg border p-4 font-mono text-xs leading-5 focus-visible:ring-2 focus-visible:outline-none"
-                  />
+
+                  {generation.post ? (
+                    <>
+                      <textarea
+                        aria-label="Post LinkedIn du carrousel"
+                        value={generation.post.content}
+                        readOnly
+                        spellCheck={false}
+                        className="border-input bg-background text-foreground min-h-52 w-full resize-y rounded-lg border p-4 text-sm leading-6 lg:min-h-[52dvh]"
+                      />
+                      <p className="text-muted-foreground text-right text-xs tabular-nums">
+                        {generation.post.character_count.toLocaleString(
+                          "fr-FR"
+                        )}{" "}
+                        caractères
+                      </p>
+                    </>
+                  ) : (
+                    <p className="text-muted-foreground rounded-lg border border-dashed p-4 text-sm">
+                      Le post d’accompagnement n’est pas disponible. Le
+                      carrousel généré reste intégralement accessible
+                      ci-dessous.
+                    </p>
+                  )}
+                </section>
+              )}
+
+              <section className="space-y-3 rounded-xl border p-4 lg:min-h-0 lg:overflow-y-auto">
+                <div>
+                  <div className="mb-1 flex items-center gap-2">
+                    {includePost && (
+                      <span className="bg-primary text-primary-foreground flex size-6 items-center justify-center rounded-full text-xs font-semibold">
+                        2
+                      </span>
+                    )}
+                    <h3 className="font-semibold">
+                      {includePost ? "Carrousel LinkedIn" : "Média"}
+                    </h3>
+                  </div>
                   <p className="text-muted-foreground text-xs">
-                    L’aperçu ci-dessous se met à jour directement pendant vos
-                    modifications.
+                    Cet aperçu unique correspond toujours au HTML actuel. Quand
+                    il vous convient, téléchargez directement le PDF ou les PNG.
                   </p>
                 </div>
-              </details>
 
-              <div className="space-y-1.5">
-                <p className="text-muted-foreground text-xs font-medium">
-                  {includePost ? "Aperçu du carrousel" : "Aperçu du média"}
-                </p>
-                <LiveHtmlPreview
-                  html={html}
-                  title={
-                    includePost
-                      ? "Aperçu du carrousel LinkedIn"
-                      : "Aperçu du média"
-                  }
-                />
-              </div>
+                <details className="rounded-lg border">
+                  <summary className="flex cursor-pointer list-none items-center gap-2 px-3 py-2.5 text-sm font-medium">
+                    <Code2 className="size-4" />
+                    {includePost
+                      ? "Modifier le HTML du carrousel"
+                      : "Modifier le HTML du média"}
+                  </summary>
+                  <div className="space-y-2 border-t p-3">
+                    <div className="flex justify-end">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={handleResetHtml}
+                        disabled={!htmlModified || rendering || pdfDownloading}
+                      >
+                        <RotateCcw className="size-4" />
+                        Revenir au HTML généré
+                      </Button>
+                    </div>
+                    <textarea
+                      aria-label={
+                        includePost ? "HTML du carrousel" : "HTML du média"
+                      }
+                      value={html}
+                      onChange={(event) => setHtml(event.target.value)}
+                      spellCheck={false}
+                      className="border-input bg-background text-foreground focus-visible:ring-ring min-h-80 w-full resize-y rounded-lg border p-4 font-mono text-xs leading-5 focus-visible:ring-2 focus-visible:outline-none"
+                    />
+                    <p className="text-muted-foreground text-xs">
+                      L’aperçu ci-dessous se met à jour directement pendant vos
+                      modifications.
+                    </p>
+                  </div>
+                </details>
 
-              <details className="rounded-lg border">
-                <summary className="flex cursor-pointer list-none items-center gap-2 px-3 py-2.5 text-sm font-medium">
-                  <FileCode2 className="size-4" />
-                  {includePost
-                    ? "Voir la sortie brute du carrousel"
-                    : "Voir la sortie brute du média"}
-                </summary>
-                <div className="space-y-2 border-t p-3">
-                  <p className="text-muted-foreground text-xs">
-                    Cette sortie est exactement celle reçue du LLM. Elle n’est
-                    ni nettoyée, ni complétée, ni remplacée par le HTML édité.
+                <div className="space-y-1.5">
+                  <p className="text-muted-foreground text-xs font-medium">
+                    {includePost ? "Aperçu du carrousel" : "Aperçu du média"}
                   </p>
-                  <textarea
-                    aria-label={
+                  <LiveHtmlPreview
+                    html={html}
+                    title={
                       includePost
-                        ? "Sortie brute du carrousel"
-                        : "Sortie brute du média"
+                        ? "Aperçu du carrousel LinkedIn"
+                        : "Aperçu du média"
                     }
-                    value={generation.raw_content}
-                    readOnly
-                    spellCheck={false}
-                    className="border-input bg-muted/30 text-foreground min-h-64 w-full resize-y rounded-lg border p-4 font-mono text-xs leading-5"
                   />
                 </div>
-              </details>
-            </section>
+
+                <details className="rounded-lg border">
+                  <summary className="flex cursor-pointer list-none items-center gap-2 px-3 py-2.5 text-sm font-medium">
+                    <FileCode2 className="size-4" />
+                    {includePost
+                      ? "Voir la sortie brute du carrousel"
+                      : "Voir la sortie brute du média"}
+                  </summary>
+                  <div className="space-y-2 border-t p-3">
+                    <p className="text-muted-foreground text-xs">
+                      Cette sortie est exactement celle reçue du LLM. Elle n’est
+                      ni nettoyée, ni complétée, ni remplacée par le HTML édité.
+                    </p>
+                    <textarea
+                      aria-label={
+                        includePost
+                          ? "Sortie brute du carrousel"
+                          : "Sortie brute du média"
+                      }
+                      value={generation.raw_content}
+                      readOnly
+                      spellCheck={false}
+                      className="border-input bg-muted/30 text-foreground min-h-64 w-full resize-y rounded-lg border p-4 font-mono text-xs leading-5"
+                    />
+                  </div>
+                </details>
+              </section>
+            </div>
           </div>
         )}
 

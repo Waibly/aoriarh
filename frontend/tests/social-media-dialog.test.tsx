@@ -85,6 +85,16 @@ describe("SocialMediaDialog", () => {
     expect(post.compareDocumentPosition(preview)).toBe(
       Node.DOCUMENT_POSITION_FOLLOWING
     );
+    expect(post.closest("section")?.parentElement).toBe(
+      preview.closest("section")?.parentElement
+    );
+    expect(post.closest("section")?.parentElement).toHaveClass(
+      "lg:grid-cols-[minmax(340px,0.72fr)_minmax(0,1.8fr)]"
+    );
+    expect(screen.getByRole("dialog")).toHaveClass(
+      "w-[96vw]",
+      "xl:max-w-[1800px]"
+    );
     expect(screen.getAllByTitle("Aperçu du carrousel LinkedIn")).toHaveLength(
       1
     );
