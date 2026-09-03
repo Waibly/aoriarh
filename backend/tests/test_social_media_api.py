@@ -114,7 +114,7 @@ async def test_admin_receives_post_then_exact_carousel_without_eager_png_render(
         ) as generate_post,
     ):
         response = await client.post(
-            f"/api/v1/conversations/messages/{message_id}/social-media",
+            f"/api/v1/conversations/messages/{message_id}/social-media?include_post=true",
             headers=auth_header(admin_user["token"]),
         )
 
@@ -136,6 +136,7 @@ async def test_admin_receives_post_then_exact_carousel_without_eager_png_render(
     }
     assert generate.await_args.kwargs["question"] == "Quelle procédure appliquer ?"
     assert generate.await_args.kwargs["answer_markdown"] == "Voici la procédure à appliquer."
+    assert generate.await_args.kwargs["linkedin_carousel"] is True
     assert generate_post.await_args.kwargs["carousel_content"] == raw
     assert generate_post.await_args.kwargs["answer_markdown"] == (
         "Voici la procédure à appliquer."
@@ -168,7 +169,7 @@ async def test_post_failure_keeps_non_empty_carousel_output_visible(
         ),
     ):
         response = await client.post(
-            f"/api/v1/conversations/messages/{message_id}/social-media",
+            f"/api/v1/conversations/messages/{message_id}/social-media?include_post=true",
             headers=auth_header(admin_user["token"]),
         )
 
@@ -179,6 +180,44 @@ async def test_post_failure_keeps_non_empty_carousel_output_visible(
     assert response.json()["post"] is None
     assert response.json()["post_error"] is not None
     assert response.json()["render_error"] is None
+
+
+async def test_standalone_media_does_not_generate_a_linkedin_post(
+    client: AsyncClient,
+    admin_user: dict,
+) -> None:
+    conversation_id = await _create_conversation(
+        client, admin_user, suffix="media-only"
+    )
+    message_id = await _add_exchange(conversation_id)
+    raw = '<main class="carousel"><section class="slide">Média</section></main>'
+    generation = SocialMediaGeneration(
+        raw_content=raw,
+        html=f"<!doctype html><body>{raw}</body>",
+        references=[],
+        warnings=[],
+    )
+
+    with (
+        patch(
+            "app.services.social_media_service.generate_social_media",
+            new=AsyncMock(return_value=generation),
+        ) as generate,
+        patch(
+            "app.services.linkedin_post_service.generate_linkedin_carousel_post",
+            new=AsyncMock(),
+        ) as generate_post,
+    ):
+        response = await client.post(
+            f"/api/v1/conversations/messages/{message_id}/social-media",
+            headers=auth_header(admin_user["token"]),
+        )
+
+    assert response.status_code == 200, response.text
+    assert response.json()["post"] is None
+    assert response.json()["post_error"] is None
+    assert generate.await_args.kwargs["linkedin_carousel"] is False
+    generate_post.assert_not_awaited()
 
 
 async def test_render_endpoint_passes_edited_html_exactly(

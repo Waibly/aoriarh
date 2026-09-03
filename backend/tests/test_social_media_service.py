@@ -9,6 +9,7 @@ import fitz
 import pytest
 
 from app.services.social_media_service import (
+    LINKEDIN_CAROUSEL_SYSTEM_PROMPT,
     SOCIAL_MEDIA_SYSTEM_PROMPT,
     _load_logo_data_url,
     build_social_media_reference_context,
@@ -62,8 +63,11 @@ def test_inspection_only_adds_warnings_and_never_changes_raw_fragment():
 
 
 def test_prompt_requires_sober_copy_and_explained_legal_references():
-    assert "document PDF dans un post LinkedIn" in SOCIAL_MEDIA_SYSTEM_PROMPT
-    assert "post d'accompagnement distinct" in SOCIAL_MEDIA_SYSTEM_PROMPT
+    assert "carrousel Instagram" in SOCIAL_MEDIA_SYSTEM_PROMPT
+    assert (
+        "document PDF dans un post LinkedIn" in LINKEDIN_CAROUSEL_SYSTEM_PROMPT
+    )
+    assert "post d'accompagnement distinct" in LINKEDIN_CAROUSEL_SYSTEM_PROMPT
     assert "N'emploie aucun superlatif" in SOCIAL_MEDIA_SYSTEM_PROMPT
     assert "adverbe d'intensité ou de surenchère" in SOCIAL_MEDIA_SYSTEM_PROMPT
     assert '<span class="reference-topic">' in SOCIAL_MEDIA_SYSTEM_PROMPT
@@ -129,6 +133,27 @@ async def test_generation_returns_exact_non_empty_llm_output_without_fallback():
     assert generation.raw_content == raw
     assert raw in generation.html
     assert create.await_count == 1
+
+
+@pytest.mark.asyncio
+async def test_linkedin_carousel_generation_uses_its_dedicated_prompt():
+    create = AsyncMock(return_value=_response(RAW_FRAGMENT))
+
+    with patch(
+        "app.services.social_media_service._llm.chat.completions.create",
+        create,
+    ):
+        await generate_social_media(
+            question="Question",
+            answer_markdown="Réponse",
+            sources=[],
+            linkedin_carousel=True,
+        )
+
+    assert create.await_args.kwargs["messages"][0] == {
+        "role": "system",
+        "content": LINKEDIN_CAROUSEL_SYSTEM_PROMPT,
+    }
 
 
 @pytest.mark.asyncio

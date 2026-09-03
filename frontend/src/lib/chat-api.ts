@@ -191,16 +191,18 @@ async function socialMediaErrorMessage(
 }
 
 /**
- * Génère le post d'accompagnement et le carrousel HTML éditable.
+ * Génère un média HTML éditable, avec son post d'accompagnement si demandé.
  * Les PNG sont rendus uniquement lorsque l'utilisateur les télécharge.
  * Aucun contenu reçu n'est nettoyé ou réécrit côté navigateur.
  */
 export async function generateSocialMedia(
   messageId: string,
-  token: string
+  token: string,
+  includePost = false
 ): Promise<SocialMediaGenerationResult> {
+  const suffix = includePost ? "?include_post=true" : "";
   const response = await authFetch(
-    `/conversations/messages/${messageId}/social-media`,
+    `/conversations/messages/${messageId}/social-media${suffix}`,
     {
       method: "POST",
       token,

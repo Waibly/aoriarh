@@ -36,6 +36,7 @@ interface SocialMediaDialogProps {
   token: string | undefined;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  variant?: "media" | "linkedin-carousel";
 }
 
 function base64ToBytes(value: string): Uint8Array {
@@ -90,7 +91,7 @@ function downloadPngFiles(images: SocialMediaImageResult[]) {
 const LIVE_PREVIEW_DEFAULT_WIDTH = 1144;
 const LIVE_PREVIEW_DEFAULT_HEIGHT = 1414;
 
-function LiveHtmlPreview({ html }: { html: string }) {
+function LiveHtmlPreview({ html, title }: { html: string; title: string }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const [previewSize, setPreviewSize] = useState({
@@ -145,7 +146,7 @@ function LiveHtmlPreview({ html }: { html: string }) {
         <iframe
           ref={iframeRef}
           srcDoc={html}
-          title="Aperçu du carrousel LinkedIn"
+          title={title}
           sandbox="allow-same-origin"
           onLoad={measurePreview}
           className="absolute top-0 left-0 border-0 bg-white"
@@ -166,7 +167,9 @@ export function SocialMediaDialog({
   token,
   open,
   onOpenChange,
+  variant = "media",
 }: SocialMediaDialogProps) {
+  const includePost = variant === "linkedin-carousel";
   const [generation, setGeneration] =
     useState<SocialMediaGenerationResult | null>(null);
   const [html, setHtml] = useState("");
@@ -190,7 +193,7 @@ export function SocialMediaDialog({
     setError(null);
     setExportError(null);
     try {
-      const result = await generateSocialMedia(messageId, token);
+      const result = await generateSocialMedia(messageId, token, includePost);
       setGeneration(result);
       setHtml(result.html);
       setExportError(result.post_error ?? result.render_error);
@@ -199,13 +202,15 @@ export function SocialMediaDialog({
       setError(
         requestError instanceof Error
           ? requestError.message
-          : "La génération du post et du carrousel LinkedIn a échoué."
+          : includePost
+            ? "La génération du post et du carrousel LinkedIn a échoué."
+            : "La génération du média a échoué."
       );
     } finally {
       inFlightRef.current = false;
       setLoading(false);
     }
-  }, [messageId, token]);
+  }, [includePost, messageId, token]);
 
   useEffect(() => {
     if (open && !generation && !error && !inFlightRef.current) {
@@ -258,9 +263,9 @@ export function SocialMediaDialog({
   const handleDownloadHtml = useCallback(() => {
     downloadBlob(
       new Blob([html], { type: "text/html;charset=utf-8" }),
-      "aoria-carrousel-linkedin.html"
+      includePost ? "aoria-carrousel-linkedin.html" : "aoria-media.html"
     );
-  }, [html]);
+  }, [html, includePost]);
 
   const handleDownloadPngs = useCallback(async () => {
     if (!token || !html || rendering) return;
@@ -286,7 +291,10 @@ export function SocialMediaDialog({
     setExportError(null);
     try {
       const pdf = await downloadSocialMediaPdf(messageId, html, token);
-      downloadBlob(pdf, "aoria-carrousel-linkedin.pdf");
+      downloadBlob(
+        pdf,
+        includePost ? "aoria-carrousel-linkedin.pdf" : "aoria-media.pdf"
+      );
     } catch (requestError) {
       setExportError(
         requestError instanceof Error
@@ -296,24 +304,27 @@ export function SocialMediaDialog({
     } finally {
       setPdfDownloading(false);
     }
-  }, [html, messageId, pdfDownloading, token]);
+  }, [html, includePost, messageId, pdfDownloading, token]);
 
   const warnings = useMemo(
     () => [
-      ...(generation?.post?.warnings ?? []),
+      ...(includePost ? (generation?.post?.warnings ?? []) : []),
       ...(generation?.warnings ?? []),
     ],
-    [generation]
+    [generation, includePost]
   );
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="flex h-[94dvh] max-h-[94dvh] flex-col sm:max-w-6xl">
         <DialogHeader>
-          <DialogTitle>Post + carrousel LinkedIn</DialogTitle>
+          <DialogTitle>
+            {includePost ? "Post + carrousel LinkedIn" : "Générer un média"}
+          </DialogTitle>
           <DialogDescription>
-            Copiez d’abord le post d’accompagnement, vérifiez ensuite le
-            carrousel, puis téléchargez le format à publier.
+            {includePost
+              ? "Copiez d’abord le post d’accompagnement, vérifiez ensuite le carrousel, puis téléchargez le format à publier."
+              : "Vérifiez et ajustez le média dans l’aperçu en direct, puis téléchargez le format qui vous convient."}
           </DialogDescription>
         </DialogHeader>
 
@@ -323,7 +334,11 @@ export function SocialMediaDialog({
             role="status"
           >
             <Loader2 className="text-primary size-7 animate-spin" />
-            <p className="text-sm">Génération du post et du carrousel…</p>
+            <p className="text-sm">
+              {includePost
+                ? "Génération du post et du carrousel…"
+                : "Génération du média…"}
+            </p>
           </div>
         )}
 
@@ -357,63 +372,69 @@ export function SocialMediaDialog({
               </div>
             )}
 
-            <section className="space-y-3 rounded-xl border p-4">
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div>
-                  <div className="mb-1 flex items-center gap-2">
-                    <span className="bg-primary text-primary-foreground flex size-6 items-center justify-center rounded-full text-xs font-semibold">
-                      1
-                    </span>
-                    <h3 className="font-semibold">Post d’accompagnement</h3>
+            {includePost && (
+              <section className="space-y-3 rounded-xl border p-4">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <div className="mb-1 flex items-center gap-2">
+                      <span className="bg-primary text-primary-foreground flex size-6 items-center justify-center rounded-full text-xs font-semibold">
+                        1
+                      </span>
+                      <h3 className="font-semibold">Post d’accompagnement</h3>
+                    </div>
+                    <p className="text-muted-foreground text-xs">
+                      Une introduction courte qui donne envie de parcourir le
+                      carrousel sans répéter ses slides.
+                    </p>
                   </div>
-                  <p className="text-muted-foreground text-xs">
-                    Une introduction courte qui donne envie de parcourir le
-                    carrousel sans répéter ses slides.
-                  </p>
+                  <Button
+                    size="sm"
+                    onClick={handleCopyPost}
+                    disabled={!generation.post}
+                  >
+                    {postCopied ? (
+                      <Check className="size-4" />
+                    ) : (
+                      <Copy className="size-4" />
+                    )}
+                    {postCopied ? "Post copié" : "Copier le post"}
+                  </Button>
                 </div>
-                <Button
-                  size="sm"
-                  onClick={handleCopyPost}
-                  disabled={!generation.post}
-                >
-                  {postCopied ? (
-                    <Check className="size-4" />
-                  ) : (
-                    <Copy className="size-4" />
-                  )}
-                  {postCopied ? "Post copié" : "Copier le post"}
-                </Button>
-              </div>
 
-              {generation.post ? (
-                <>
-                  <textarea
-                    aria-label="Post LinkedIn du carrousel"
-                    value={generation.post.content}
-                    readOnly
-                    spellCheck={false}
-                    className="border-input bg-background text-foreground min-h-52 w-full resize-y rounded-lg border p-4 text-sm leading-6"
-                  />
-                  <p className="text-muted-foreground text-right text-xs tabular-nums">
-                    {generation.post.character_count.toLocaleString("fr-FR")}{" "}
-                    caractères
+                {generation.post ? (
+                  <>
+                    <textarea
+                      aria-label="Post LinkedIn du carrousel"
+                      value={generation.post.content}
+                      readOnly
+                      spellCheck={false}
+                      className="border-input bg-background text-foreground min-h-52 w-full resize-y rounded-lg border p-4 text-sm leading-6"
+                    />
+                    <p className="text-muted-foreground text-right text-xs tabular-nums">
+                      {generation.post.character_count.toLocaleString("fr-FR")}{" "}
+                      caractères
+                    </p>
+                  </>
+                ) : (
+                  <p className="text-muted-foreground rounded-lg border border-dashed p-4 text-sm">
+                    Le post d’accompagnement n’est pas disponible. Le carrousel
+                    généré reste intégralement accessible ci-dessous.
                   </p>
-                </>
-              ) : (
-                <p className="text-muted-foreground rounded-lg border border-dashed p-4 text-sm">
-                  Le post d’accompagnement n’est pas disponible. Le carrousel
-                  généré reste intégralement accessible ci-dessous.
-                </p>
-              )}
-            </section>
+                )}
+              </section>
+            )}
 
             <section className="space-y-3 rounded-xl border p-4">
               <div>
                 <div className="mb-1 flex items-center gap-2">
-                  <span className="bg-primary text-primary-foreground flex size-6 items-center justify-center rounded-full text-xs font-semibold">
-                    2
-                  </span>
-                  <h3 className="font-semibold">Carrousel LinkedIn</h3>
+                  {includePost && (
+                    <span className="bg-primary text-primary-foreground flex size-6 items-center justify-center rounded-full text-xs font-semibold">
+                      2
+                    </span>
+                  )}
+                  <h3 className="font-semibold">
+                    {includePost ? "Carrousel LinkedIn" : "Média"}
+                  </h3>
                 </div>
                 <p className="text-muted-foreground text-xs">
                   Cet aperçu unique correspond toujours au HTML actuel. Quand il
@@ -424,7 +445,9 @@ export function SocialMediaDialog({
               <details className="rounded-lg border">
                 <summary className="flex cursor-pointer list-none items-center gap-2 px-3 py-2.5 text-sm font-medium">
                   <Code2 className="size-4" />
-                  Modifier le HTML du carrousel
+                  {includePost
+                    ? "Modifier le HTML du carrousel"
+                    : "Modifier le HTML du média"}
                 </summary>
                 <div className="space-y-2 border-t p-3">
                   <div className="flex justify-end">
@@ -439,7 +462,9 @@ export function SocialMediaDialog({
                     </Button>
                   </div>
                   <textarea
-                    aria-label="HTML du carrousel"
+                    aria-label={
+                      includePost ? "HTML du carrousel" : "HTML du média"
+                    }
                     value={html}
                     onChange={(event) => setHtml(event.target.value)}
                     spellCheck={false}
@@ -454,15 +479,24 @@ export function SocialMediaDialog({
 
               <div className="space-y-1.5">
                 <p className="text-muted-foreground text-xs font-medium">
-                  Aperçu du carrousel
+                  {includePost ? "Aperçu du carrousel" : "Aperçu du média"}
                 </p>
-                <LiveHtmlPreview html={html} />
+                <LiveHtmlPreview
+                  html={html}
+                  title={
+                    includePost
+                      ? "Aperçu du carrousel LinkedIn"
+                      : "Aperçu du média"
+                  }
+                />
               </div>
 
               <details className="rounded-lg border">
                 <summary className="flex cursor-pointer list-none items-center gap-2 px-3 py-2.5 text-sm font-medium">
                   <FileCode2 className="size-4" />
-                  Voir la sortie brute du carrousel
+                  {includePost
+                    ? "Voir la sortie brute du carrousel"
+                    : "Voir la sortie brute du média"}
                 </summary>
                 <div className="space-y-2 border-t p-3">
                   <p className="text-muted-foreground text-xs">
@@ -470,7 +504,11 @@ export function SocialMediaDialog({
                     ni nettoyée, ni complétée, ni remplacée par le HTML édité.
                   </p>
                   <textarea
-                    aria-label="Sortie brute du carrousel"
+                    aria-label={
+                      includePost
+                        ? "Sortie brute du carrousel"
+                        : "Sortie brute du média"
+                    }
                     value={generation.raw_content}
                     readOnly
                     spellCheck={false}
@@ -489,7 +527,7 @@ export function SocialMediaDialog({
             disabled={!generation || loading || rendering || pdfDownloading}
           >
             <RefreshCw className="size-4" />
-            Régénérer l’ensemble
+            {includePost ? "Régénérer l’ensemble" : "Régénérer"}
           </Button>
           <Button
             variant="outline"
@@ -522,7 +560,9 @@ export function SocialMediaDialog({
             )}
             {pdfDownloading
               ? "Préparation du PDF…"
-              : "Télécharger le PDF LinkedIn"}
+              : includePost
+                ? "Télécharger le PDF LinkedIn"
+                : "Télécharger le PDF"}
           </Button>
         </DialogFooter>
       </DialogContent>

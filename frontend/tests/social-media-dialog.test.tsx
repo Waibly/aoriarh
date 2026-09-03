@@ -72,6 +72,7 @@ describe("SocialMediaDialog", () => {
         token="token-admin"
         open
         onOpenChange={jest.fn()}
+        variant="linkedin-carousel"
       />
     );
 
@@ -89,6 +90,7 @@ describe("SocialMediaDialog", () => {
     );
     expect(preview).toHaveAttribute("srcdoc", generatedHtml);
     expect(screen.queryByRole("tab")).not.toBeInTheDocument();
+    expect(mockGenerate).toHaveBeenCalledWith("message-1", "token-admin", true);
 
     fireEvent.click(screen.getByRole("button", { name: "Copier le post" }));
     await waitFor(() => expect(writeText).toHaveBeenCalledWith(postContent));
@@ -103,6 +105,7 @@ describe("SocialMediaDialog", () => {
         token="token-admin"
         open
         onOpenChange={jest.fn()}
+        variant="linkedin-carousel"
       />
     );
 
@@ -141,6 +144,7 @@ describe("SocialMediaDialog", () => {
         token="token-admin"
         open
         onOpenChange={jest.fn()}
+        variant="linkedin-carousel"
       />
     );
 
@@ -172,6 +176,7 @@ describe("SocialMediaDialog", () => {
         token="token-admin"
         open
         onOpenChange={jest.fn()}
+        variant="linkedin-carousel"
       />
     );
 
@@ -202,6 +207,7 @@ describe("SocialMediaDialog", () => {
         token="token-admin"
         open
         onOpenChange={jest.fn()}
+        variant="linkedin-carousel"
       />
     );
 
@@ -223,6 +229,43 @@ describe("SocialMediaDialog", () => {
         edited,
         "token-admin"
       )
+    );
+  });
+
+  it("conserve le média autonome sans générer de post LinkedIn", async () => {
+    mockGenerate.mockResolvedValueOnce({
+      post: null,
+      post_error: null,
+      raw_content: raw,
+      html: generatedHtml,
+      images: [],
+      references: [],
+      warnings: [],
+      render_error: null,
+    });
+
+    render(
+      <SocialMediaDialog
+        messageId="message-media"
+        token="token-admin"
+        open
+        onOpenChange={jest.fn()}
+        variant="media"
+      />
+    );
+
+    expect(await screen.findByText("Générer un média")).toBeInTheDocument();
+    expect(screen.getByTitle("Aperçu du média")).toHaveAttribute(
+      "srcdoc",
+      generatedHtml
+    );
+    expect(
+      screen.queryByRole("textbox", { name: "Post LinkedIn du carrousel" })
+    ).not.toBeInTheDocument();
+    expect(mockGenerate).toHaveBeenCalledWith(
+      "message-media",
+      "token-admin",
+      false
     );
   });
 });

@@ -486,10 +486,11 @@ def _encode_social_media_images(images: list) -> list[SocialMediaImageResponse]:
 async def generate_message_social_media(
     message_id: uuid.UUID,
     request: Request,
+    include_post: bool = False,
     user: User = Depends(require_role(["admin"])),
     db: AsyncSession = Depends(get_db),
 ) -> SocialMediaGenerationResponse:
-    """Génère le post LinkedIn et le HTML brut de son carrousel.
+    """Génère un média seul ou un post LinkedIn avec son carrousel.
 
     Toute sortie LLM non vide est renvoyée telle quelle, même si un contrôle
     informatif signale un problème. Aucun fallback éditorial ni post-traitement
@@ -546,6 +547,7 @@ async def generate_message_social_media(
             organisation_id=str(conversation.organisation_id),
             user_id=str(user.id),
             message_id=str(message.id),
+            linkedin_carousel=include_post,
         )
     except Exception:
         logger.exception("Échec de génération du média pour le message %s", message_id)
@@ -556,23 +558,26 @@ async def generate_message_social_media(
 
     post = None
     post_error = None
-    try:
-        post = await generate_linkedin_carousel_post(
-            question=question,
-            answer_markdown=message.content,
-            sources=sources,
-            carousel_content=generation.raw_content,
-            user_profile=user.profil_metier,
-            organisation_id=str(conversation.organisation_id),
-            user_id=str(user.id),
-            message_id=str(message.id),
-        )
-    except Exception:
-        logger.exception("Échec de génération du post carrousel pour %s", message_id)
-        post_error = (
-            "Le carrousel a bien été généré, mais son post d'accompagnement a "
-            "échoué. La sortie du carrousel reste disponible sans modification."
-        )
+    if include_post:
+        try:
+            post = await generate_linkedin_carousel_post(
+                question=question,
+                answer_markdown=message.content,
+                sources=sources,
+                carousel_content=generation.raw_content,
+                user_profile=user.profil_metier,
+                organisation_id=str(conversation.organisation_id),
+                user_id=str(user.id),
+                message_id=str(message.id),
+            )
+        except Exception:
+            logger.exception(
+                "Échec de génération du post carrousel pour %s", message_id
+            )
+            post_error = (
+                "Le carrousel a bien été généré, mais son post d'accompagnement a "
+                "échoué. La sortie du carrousel reste disponible sans modification."
+            )
 
     return SocialMediaGenerationResponse(
         post=(

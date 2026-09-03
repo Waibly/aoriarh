@@ -53,7 +53,7 @@ describe("bouton LinkedIn de MessageBubble", () => {
     jest.clearAllMocks();
   });
 
-  it("place les deux outils admin dans un encart séparé de la fiche", () => {
+  it("place les trois outils admin dans un encart séparé de la fiche", () => {
     mockUseSession.mockReturnValue({
       data: {
         access_token: "token-admin",
@@ -82,6 +82,11 @@ describe("bouton LinkedIn de MessageBubble", () => {
     ).toBeInTheDocument();
     expect(
       within(publicationTools).getByRole("button", {
+        name: "Générer un média",
+      })
+    ).toBeInTheDocument();
+    expect(
+      within(publicationTools).getByRole("button", {
         name: "Générer un post + carrousel LinkedIn",
       })
     ).toBeInTheDocument();
@@ -104,6 +109,9 @@ describe("bouton LinkedIn de MessageBubble", () => {
 
     expect(
       screen.queryByRole("button", { name: "Générer le post LinkedIn" })
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Générer un média" })
     ).not.toBeInTheDocument();
     expect(
       screen.queryByRole("button", {
@@ -132,6 +140,9 @@ describe("bouton LinkedIn de MessageBubble", () => {
 
     expect(
       screen.queryByRole("button", { name: "Générer le post LinkedIn" })
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Générer un média" })
     ).not.toBeInTheDocument();
     expect(
       screen.queryByRole("button", {
