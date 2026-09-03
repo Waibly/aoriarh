@@ -217,36 +217,66 @@ Règles absolues :
 - Produis uniquement le post final en texte brut, sans préambule, commentaire,
   titre technique, balise Markdown ni bloc de code.
 - N'ajoute aucun hashtag.
-- Écris entre 90 et 140 mots. Le texte reste plus court qu'un post LinkedIn
-  autonome, mais il doit contenir une véritable idée éditoriale et pas seulement
-  trois phrases servant de légende au document.
+- Écris entre 100 et 160 mots. Le texte doit contenir une véritable idée
+  éditoriale et pas seulement servir de légende au document.
 - Le post et le carrousel doivent se compléter. Ne reprends jamais le titre de
   la première slide, ses phrases, son plan, ses listes, ses explications, son
   bloc de sources ou son éventuel CTA. Ne résume pas les slides une par une.
-- Les deux premières lignes sont visibles avant « voir plus ». Elles forment un
-  hook autonome de 180 caractères maximum. Il nomme immédiatement le sujet et
-  révèle une tension, une erreur, une croyance ou une conséquence concrète.
-  Il ne se contente jamais d'annoncer qu'une action « peut être trop tard » ou
-  qu'une situation « peut créer un risque » sans livrer l'idée précise qui rend
-  cette affirmation intéressante.
-- Le corps développe ensuite un point de vue professionnel utile en deux à
-  quatre paragraphes courts. Il apporte une idée que le lecteur peut déjà
-  retenir, explique pourquoi elle change la décision ou l'organisation du
-  travail et crée une raison concrète de consulter le document. Chaque phrase
-  doit contenir une information, une opposition ou une conséquence spécifique.
-- Le corps ne doit pas être une transition administrative vide. N'écris jamais
-  « Pour les RH, l'enjeu est de... », « il convient de... », « il est important
-  de... », « il faut sécuriser... », « ce carrousel présente... » ou une variante
-  de ces formules. Préfère des verbes et des noms précis tirés du sujet.
-- Avant le CTA, formule en une phrase la promesse de lecture concrète : une
-  distinction à comprendre, une décision à prendre, un calendrier à maîtriser
-  ou une méthode à appliquer. N'énumère pas le plan et ne révèle pas toutes les
-  réponses portées par les slides.
-- Termine par un CTA de 4 à 12 mots qui invite explicitement à faire défiler le
-  carrousel. Il contient un bénéfice ou un objet propre au sujet. N'écris jamais
-  « Faites défiler pour vérifier les points », « le bon calendrier » ou une
-  autre invitation interchangeable. Ne termine pas par une question de
-  discussion artificielle.
+
+Rythme et style LinkedIn :
+- Chaque phrase porte une seule idée et compte entre 6 et 14 mots. Elle ne
+  dépasse jamais 18 mots, sauf pour le libellé exact d'une notion juridique.
+- Utilise la voix active, des verbes concrets et l'ordre sujet-verbe-complément.
+  Supprime les détours, les nominalisations et les précautions rhétoriques.
+- Un paragraphe contient une ou deux phrases maximum. Place une ligne vide
+  entre chaque paragraphe et avant le CTA. Aucun pavé de texte n'est admis.
+- Adresse-toi au lecteur avec « vous » lorsque c'est naturel. N'emploie pas un
+  ton administratif, académique, publicitaire ou dramatique.
+- N'écris jamais « Pour les RH, l'enjeu est de... », « il convient de... »,
+  « il est important de... », « il faut sécuriser... », « ce carrousel
+  présente... », « découvrez... » ou une variante de ces formulations.
+
+Hook :
+- Produis un seul hook. Il occupe le premier paragraphe, en une ou deux phrases
+  de 12 mots maximum chacune. L'ensemble ne dépasse pas 140 caractères afin de
+  rester lisible avant « voir plus ».
+- Le sujet juridique apparaît dans les huit premiers mots. Le hook livre déjà
+  une information précise et crée une tension honnête.
+- Choisis uniquement le mécanisme adapté au sujet : croyance corrigée, erreur
+  opérationnelle, contraste entre deux situations, conséquence concrète ou
+  question fermée réellement difficile.
+- N'ouvre pas par un infinitif abstrait. N'écris jamais qu'une action « peut
+  être trop tard » ou « peut créer un risque » sans nommer immédiatement le
+  fait précis, le moment ou la conséquence qui justifie cette affirmation.
+- Le hook ne répète ni le titre ni la promesse de la première slide.
+
+Corps et format selon l'intention :
+- Identifie silencieusement l'intention dominante, puis utilise une seule des
+  structures suivantes. Ne force jamais le même modèle sur tous les sujets.
+- Pour une alerte ou une erreur : expose la croyance, puis sa conséquence
+  concrète dans deux paragraphes opposés.
+- Pour une procédure, une checklist ou une chronologie : pose la situation,
+  puis utilise deux ou trois lignes courtes précédées de « • » pour annoncer
+  les décisions ou repères apportés, sans recopier les étapes des slides.
+- Pour une comparaison : emploie deux lignes parallèles et explicitement
+  contrastées. Chaque ligne commence par le cas réellement comparé.
+- Pour une règle ou une clarification : explique d'abord ce qui change la
+  décision, puis ce qui reste conditionnel ou ne change pas.
+- Pour une actualité juridique : nomme le changement, puis son effet pratique.
+- Si aucune structure visuelle n'améliore la lecture, utilise deux ou trois
+  paragraphes très courts. N'ajoute jamais une liste par automatisme.
+- Le corps donne une information utile avant même l'ouverture du carrousel.
+  Il explique ensuite ce que le document permettra de décider, distinguer ou
+  appliquer. Il ne paraphrase pas le hook et ne raconte pas le plan des slides.
+
+CTA :
+- Le dernier paragraphe contient un seul CTA direct de 4 à 12 mots.
+- Adapte l'action à l'intention : faire défiler pour trancher une distinction,
+  garder un repère pratique, comparer deux cas ou appliquer une méthode.
+- N'écris jamais « Faites défiler pour vérifier les points », « le bon
+  calendrier », « découvrez le carrousel », « qu'en pensez-vous ? », « et vous ? »
+  ou une autre invitation interchangeable.
+- Le symbole « ↓ » est le seul emoji autorisé et reste facultatif.
 - N'invente aucune règle, statistique, date, décision, source, URL, expérience
   personnelle ou résultat absent de la réponse fournie.
 - Ne corrige pas et ne complète pas le fond juridique. Ne transforme pas une
@@ -256,18 +286,14 @@ Règles absolues :
 - N'insère pas de bloc « Sources ». Les références figurent déjà dans le
   carrousel. Évite toute affirmation juridique détaillée qui exigerait de les
   répéter dans le post.
-- Adapte l'angle au profil métier fourni. Adresse-toi naturellement au lecteur
-  avec « vous » lorsque cela sert l'accroche ou la question finale.
-- Aère le texte avec une ligne vide entre les paragraphes. Écris des phrases
-  courtes, naturelles et professionnelles.
-- N'utilise pas de puces ni de liste dans le post d'accompagnement : le détail
-  et la structure sont portés par le carrousel.
+- Adapte l'angle au profil métier fourni sans annoncer ce profil dans le texte.
 - N'utilise jamais de tiret cadratin « — » ni de tiret demi-cadratin « – ».
 - Ne demande jamais de liker, commenter, partager ou s'abonner.
 
-Avant de répondre, vérifie silencieusement que le hook, chaque paragraphe et le
-CTA ne pourraient pas être réutilisés tels quels sur un autre sujet RH. Si une
-phrase est interchangeable, réécris-la avec une idée précise issue des données.
+Avant de répondre, vérifie silencieusement cinq points : hook spécifique, phrases
+de 18 mots maximum, format adapté à l'intention, absence de répétition avec les
+slides et CTA impossible à réutiliser sur un autre sujet. Réécris toute phrase
+qui échoue à l'un de ces contrôles avant de produire le post final.
 
 Le texte sera affiché et copié exactement tel que tu le produis.
 """
