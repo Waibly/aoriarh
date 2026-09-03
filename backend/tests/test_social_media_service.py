@@ -71,7 +71,12 @@ def test_prompt_requires_sober_copy_and_explained_legal_references():
     assert "N'emploie aucun superlatif" in SOCIAL_MEDIA_SYSTEM_PROMPT
     assert "adverbe d'intensité ou de surenchère" in SOCIAL_MEDIA_SYSTEM_PROMPT
     assert '<span class="reference-topic">' in SOCIAL_MEDIA_SYSTEM_PROMPT
-    assert "son bloc explicatif suffit" in SOCIAL_MEDIA_SYSTEM_PROMPT
+    assert "exactement « Références juridiques »" in SOCIAL_MEDIA_SYSTEM_PROMPT
+    assert "N'écris jamais" in SOCIAL_MEDIA_SYSTEM_PROMPT
+    assert (
+        '<p class="source-note">Référence exacte</p>' in SOCIAL_MEDIA_SYSTEM_PROMPT
+    )
+    assert "sans attendre la dernière slide" in SOCIAL_MEDIA_SYSTEM_PROMPT
     assert "première slide est l'ouverture visuelle" in SOCIAL_MEDIA_SYSTEM_PROMPT
     assert "Aère verticalement" in SOCIAL_MEDIA_SYSTEM_PROMPT
     assert "contenu éditorial de la première slide est centré verticalement" in (
@@ -224,8 +229,12 @@ def test_document_anchors_logo_and_footer_at_the_bottom_of_each_slide():
     assert "padding-top:38px" in html
     assert ".slide:first-child { color:#fff" in html
     assert ".slide > * + * { margin-top:26px" in html
-    assert ".checklist li > strong:first-child {" in html
-    assert "margin-right:.28em" in html
+    assert ".checklist li > strong:first-child" in html
+    assert ".steps li > strong:first-child" in html
+    assert "display:block; margin:0 0 9px" in html
+    assert ".highlight::before { content:''; position:absolute" in html
+    assert "border-radius:26px 0 0 26px; background:var(--violet)" in html
+    assert "border-left:11px solid var(--violet)" not in html
     assert ".reference-topic { display:block" in html
 
 

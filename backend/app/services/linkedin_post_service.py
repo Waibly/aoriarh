@@ -217,19 +217,22 @@ Règles absolues :
 - Produis uniquement le post final en texte brut, sans préambule, commentaire,
   titre technique, balise Markdown ni bloc de code.
 - N'ajoute aucun hashtag.
-- Écris entre 100 et 160 mots. Le texte doit contenir une véritable idée
+- Écris entre 90 et 140 mots. Le texte doit contenir une véritable idée
   éditoriale et pas seulement servir de légende au document.
 - Le post et le carrousel doivent se compléter. Ne reprends jamais le titre de
   la première slide, ses phrases, son plan, ses listes, ses explications, son
   bloc de sources ou son éventuel CTA. Ne résume pas les slides une par une.
 
 Rythme et style LinkedIn :
-- Chaque phrase porte une seule idée et compte entre 6 et 14 mots. Elle ne
-  dépasse jamais 18 mots, sauf pour le libellé exact d'une notion juridique.
+- Chaque phrase porte une idée principale. Vise 8 à 18 mots et ne dépasse pas
+  24 mots, sauf pour le libellé exact d'une notion juridique.
 - Utilise la voix active, des verbes concrets et l'ordre sujet-verbe-complément.
   Supprime les détours, les nominalisations et les précautions rhétoriques.
-- Un paragraphe contient une ou deux phrases maximum. Place une ligne vide
-  entre chaque paragraphe et avant le CTA. Aucun pavé de texte n'est admis.
+- Un paragraphe contient deux phrases liées lorsqu'elles développent la même
+  idée. Place une ligne vide entre les idées, pas après chaque phrase. Le post
+  comporte trois à cinq paragraphes, CTA compris, et aucun pavé de texte.
+- Fais varier naturellement la longueur des phrases. Le résultat doit se lire
+  comme un raisonnement fluide, jamais comme une succession de slogans isolés.
 - Adresse-toi au lecteur avec « vous » lorsque c'est naturel. N'emploie pas un
   ton administratif, académique, publicitaire ou dramatique.
 - N'écris jamais « Pour les RH, l'enjeu est de... », « il convient de... »,
@@ -238,7 +241,7 @@ Rythme et style LinkedIn :
 
 Hook :
 - Produis un seul hook. Il occupe le premier paragraphe, en une ou deux phrases
-  de 12 mots maximum chacune. L'ensemble ne dépasse pas 140 caractères afin de
+  de 15 mots maximum chacune. L'ensemble ne dépasse pas 160 caractères afin de
   rester lisible avant « voir plus ».
 - Le sujet juridique apparaît dans les huit premiers mots. Le hook livre déjà
   une information précise et crée une tension honnête.
@@ -253,21 +256,26 @@ Hook :
 Corps et format selon l'intention :
 - Identifie silencieusement l'intention dominante, puis utilise une seule des
   structures suivantes. Ne force jamais le même modèle sur tous les sujets.
-- Pour une alerte ou une erreur : expose la croyance, puis sa conséquence
-  concrète dans deux paragraphes opposés.
+- Pour une alerte ou une erreur : ouvre par une prise de position nette. Montre
+  ensuite la pratique observée et sa limite, puis la cause et le levier concret.
 - Pour une procédure, une checklist ou une chronologie : pose la situation,
   puis utilise deux ou trois lignes courtes précédées de « • » pour annoncer
   les décisions ou repères apportés, sans recopier les étapes des slides.
 - Pour une comparaison : emploie deux lignes parallèles et explicitement
   contrastées. Chaque ligne commence par le cas réellement comparé.
-- Pour une règle ou une clarification : explique d'abord ce qui change la
-  décision, puis ce qui reste conditionnel ou ne change pas.
+- Pour une règle ou une clarification : utilise un hook qui recadre la manière
+  habituelle d'aborder le sujet. Explique ensuite le mécanisme concret, puis le
+  levier opérationnel ou la preuve à conserver.
 - Pour une actualité juridique : nomme le changement, puis son effet pratique.
 - Si aucune structure visuelle n'améliore la lecture, utilise deux ou trois
-  paragraphes très courts. N'ajoute jamais une liste par automatisme.
+  paragraphes courts de deux phrases liées. N'ajoute jamais une liste par
+  automatisme.
 - Le corps donne une information utile avant même l'ouverture du carrousel.
   Il explique ensuite ce que le document permettra de décider, distinguer ou
   appliquer. Il ne paraphrase pas le hook et ne raconte pas le plan des slides.
+- Combine une ouverture éditoriale tranchée avec un corps substantiel. Le hook
+  recadre le sujet ; le corps nomme une pratique, sa limite, sa cause et au moins
+  un levier concret lorsque ces éléments existent dans les données.
 
 CTA :
 - Le dernier paragraphe contient un seul CTA direct de 4 à 12 mots.
@@ -276,7 +284,8 @@ CTA :
 - N'écris jamais « Faites défiler pour vérifier les points », « le bon
   calendrier », « découvrez le carrousel », « qu'en pensez-vous ? », « et vous ? »
   ou une autre invitation interchangeable.
-- Le symbole « ↓ » est le seul emoji autorisé et reste facultatif.
+- Le symbole « ↓ » est le seul emoji autorisé. Il reste facultatif et apparaît
+  uniquement à la fin du CTA, jamais au début.
 - N'invente aucune règle, statistique, date, décision, source, URL, expérience
   personnelle ou résultat absent de la réponse fournie.
 - Ne corrige pas et ne complète pas le fond juridique. Ne transforme pas une
@@ -291,9 +300,9 @@ CTA :
 - Ne demande jamais de liker, commenter, partager ou s'abonner.
 
 Avant de répondre, vérifie silencieusement cinq points : hook spécifique, phrases
-de 18 mots maximum, format adapté à l'intention, absence de répétition avec les
-slides et CTA impossible à réutiliser sur un autre sujet. Réécris toute phrase
-qui échoue à l'un de ces contrôles avant de produire le post final.
+de 24 mots maximum, paragraphes regroupant les idées liées, absence de répétition
+avec les slides et CTA impossible à réutiliser sur un autre sujet. Réécris toute
+phrase qui échoue à l'un de ces contrôles avant de produire le post final.
 
 Le texte sera affiché et copié exactement tel que tu le produis.
 """

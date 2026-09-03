@@ -79,17 +79,19 @@ def test_prompt_requires_hook_body_sources_cta_and_forbids_hashtags() -> None:
 
 def test_carousel_post_prompt_is_short_and_forbids_slide_repetition() -> None:
     prompt = " ".join(LINKEDIN_CAROUSEL_POST_SYSTEM_PROMPT.split())
-    assert "entre 100 et 160 mots" in prompt
+    assert "entre 90 et 140 mots" in prompt
     assert "Ne reprends jamais le titre de la première slide" in prompt
     assert "Ne résume pas les slides une par une" in prompt
     assert "N'insère pas de bloc « Sources »" in LINKEDIN_CAROUSEL_POST_SYSTEM_PROMPT
     assert "lisible avant « voir plus »" in LINKEDIN_CAROUSEL_POST_SYSTEM_PROMPT
-    assert "140 caractères" in prompt
-    assert "une ou deux phrases de 12 mots maximum" in prompt
-    assert "entre 6 et 14 mots" in prompt
-    assert "jamais 18 mots" in prompt
+    assert "160 caractères" in prompt
+    assert "une ou deux phrases de 15 mots maximum" in prompt
+    assert "8 à 18 mots" in prompt
+    assert "ne dépasse pas 24 mots" in prompt
     assert "voix active" in prompt
-    assert "une ou deux phrases maximum" in prompt
+    assert "Place une ligne vide entre les idées" in prompt
+    assert "trois à cinq paragraphes" in prompt
+    assert "succession de slogans isolés" in prompt
     assert "peut être trop tard" in prompt
     assert "Pour les RH, l'enjeu est de" in prompt
     assert "format selon l'intention" in prompt
@@ -99,10 +101,12 @@ def test_carousel_post_prompt_is_short_and_forbids_slide_repetition() -> None:
     assert "Pour une règle ou une clarification" in prompt
     assert "Pour une actualité juridique" in prompt
     assert "N'ajoute jamais une liste par automatisme" in prompt
+    assert "ouverture éditoriale tranchée" in prompt
+    assert "une pratique, sa limite, sa cause" in prompt
     assert "CTA direct de 4 à 12 mots" in prompt
     assert "invitation interchangeable" in prompt
     assert "seul emoji autorisé" in prompt
-    assert "format adapté à l'intention" in prompt
+    assert "uniquement à la fin du CTA" in prompt
 
 
 def test_carousel_user_prompt_exposes_exact_carousel_as_data() -> None:

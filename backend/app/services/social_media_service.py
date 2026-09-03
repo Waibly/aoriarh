@@ -133,10 +133,16 @@ Règles absolues :
   qu'elle concerne, selon la réponse fournie. Le lecteur doit comprendre son
   apport sans devoir l'ouvrir. N'emploie aucun libellé vague comme « Source
   juridique », « Référence à vérifier » ou « Pour en savoir plus ».
-- Tu peux aussi intégrer une référence exacte juste après l'affirmation qu'elle
-  soutient si cela reste court et lisible. Si elle alourdit la slide, ne
-  l'intègre pas dans le corps : son bloc explicatif suffit. Ne crée jamais une
-  slide supplémentaire uniquement pour répéter les mêmes références.
+- Le titre de ce bloc est exactement « Références juridiques ». N'écris jamais
+  « Références citées », « Sources » ni un autre intitulé.
+- Sur chaque slide contenant une affirmation juridique déterminante, place la
+  référence autorisée qui la soutient immédiatement après le bloc concerné dans
+  <p class="source-note">Référence exacte</p>. Le lecteur doit identifier le
+  fondement sans attendre la dernière slide. Ne place qu'une référence proche
+  par affirmation et évite les répétitions inutiles.
+- Le bloc final « Références juridiques » récapitule malgré tout les références
+  utilisées. Ne crée jamais une slide supplémentaire uniquement pour répéter
+  une référence qui figure déjà dans ce bloc final.
 - Le contexte documentaire associé aux références sert uniquement à nommer
   leur objet. Ne l'utilise jamais pour ajouter au média une règle ou une
   précision absente de la réponse source.
@@ -185,7 +191,8 @@ Bibliothèque HTML et classes disponibles :
 - slide-recap : synthèse ; h2 puis ul.checklist.
 - slide-sources : références ; h2 puis ul.sources. Chaque li contient
   <strong>Référence exacte</strong> puis
-  <span class="reference-topic">Objet précis en 3 à 8 mots</span>.
+  <span class="reference-topic">Objet précis en 3 à 8 mots</span>. Le h2 est
+  exactement « Références juridiques ».
 - slide-cta : conclusion facultative ; h2 et p.lead.
 - Les classes card, highlight, warning, example, pill, source-note, muted,
   columns et grid-2 peuvent être combinées lorsque cela sert le contenu.
@@ -410,8 +417,11 @@ strong {{ color:var(--violet-dark); font-weight:780; }}
 .pill {{ align-self:flex-start; border-radius:999px; background:var(--violet-soft);
   color:var(--violet); padding:12px 22px; font-size:24px; font-weight:800; }}
 .highlight, .card, .example, .warning {{ border-radius:26px; padding:34px 38px; }}
-.highlight {{ border-left:11px solid var(--violet); background:var(--violet-soft);
-  color:var(--violet-dark); font-size:40px; line-height:1.35; font-weight:700; }}
+.highlight {{ position:relative; overflow:hidden; border-left:0;
+  background:var(--violet-soft); color:var(--violet-dark); font-size:40px;
+  line-height:1.35; font-weight:700; }}
+.highlight::before {{ content:''; position:absolute; inset:0 auto 0 0; width:11px;
+  border-radius:26px 0 0 26px; background:var(--violet); }}
 .card {{ border:3px solid var(--line); background:#fff; }}
 .example {{ border:3px solid #bae6fd; background:var(--blue-soft); }}
 .warning {{ border:3px solid #fed7aa; background:var(--orange-soft); color:#7c3f0c; }}
@@ -424,8 +434,9 @@ li {{ margin-bottom:26px; padding-left:8px; }}
 .cards, .checklist, .steps, .timeline, .sources {{ list-style:none; padding:0; }}
 .cards li, .checklist li {{ position:relative; margin-bottom:20px; border-radius:22px;
   background:var(--violet-soft); padding:25px 28px 25px 76px; }}
-.cards li > strong:first-child, .checklist li > strong:first-child {{
-  margin-right:.28em; }}
+.cards li > strong:first-child, .checklist li > strong:first-child,
+.steps li > strong:first-child, .timeline li > strong:first-child {{
+  display:block; margin:0 0 9px; }}
 .cards li::before, .checklist li::before {{ content:'✓'; position:absolute; left:28px;
   top:25px; color:var(--violet); font-weight:900; }}
 .steps {{ counter-reset:step; }}
