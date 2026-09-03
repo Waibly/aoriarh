@@ -120,10 +120,16 @@ describe("SocialMediaDialog", () => {
       target: { value: edited },
     });
 
+    expect(screen.getByTitle("Aperçu HTML en direct")).toHaveAttribute(
+      "srcdoc",
+      edited
+    );
     expect(
-      screen.getByText(/Le HTML visible ne correspond pas aux PNG actuels/)
+      screen.getByText(/L’aperçu ci-dessous est à jour/)
     ).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Rendre les PNG" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Générer les PNG pour l’export" })
+    );
 
     await waitFor(() =>
       expect(mockRender).toHaveBeenCalledWith(
@@ -134,7 +140,7 @@ describe("SocialMediaDialog", () => {
     );
     await waitFor(() =>
       expect(
-        screen.queryByText(/Le HTML visible ne correspond pas aux PNG actuels/)
+        screen.queryByText(/L’aperçu ci-dessous est à jour/)
       ).not.toBeInTheDocument()
     );
   });
@@ -160,7 +166,9 @@ describe("SocialMediaDialog", () => {
     fireEvent.change(editor, {
       target: { value: "<body>HTML à conserver</body>" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Rendre les PNG" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Générer les PNG pour l’export" })
+    );
 
     expect(
       await screen.findByText("Rendu impossible, HTML conservé")

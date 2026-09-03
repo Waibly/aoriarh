@@ -71,6 +71,80 @@ function imageDataUrl(image: SocialMediaImageResult): string {
   return `data:image/png;base64,${image.content_base64}`;
 }
 
+const LIVE_PREVIEW_DEFAULT_WIDTH = 1144;
+const LIVE_PREVIEW_DEFAULT_HEIGHT = 1414;
+
+function LiveHtmlPreview({ html }: { html: string }) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const iframeRef = useRef<HTMLIFrameElement>(null);
+  const [previewSize, setPreviewSize] = useState({
+    width: LIVE_PREVIEW_DEFAULT_WIDTH,
+    height: LIVE_PREVIEW_DEFAULT_HEIGHT,
+  });
+  const [scale, setScale] = useState(1);
+
+  useEffect(() => {
+    setPreviewSize({
+      width: LIVE_PREVIEW_DEFAULT_WIDTH,
+      height: LIVE_PREVIEW_DEFAULT_HEIGHT,
+    });
+  }, [html]);
+
+  const measurePreview = useCallback(() => {
+    const container = containerRef.current;
+    const iframe = iframeRef.current;
+    if (!container || !iframe || container.clientWidth === 0) return;
+
+    const document = iframe.contentDocument;
+    const width = Math.max(
+      document?.documentElement.scrollWidth ?? 0,
+      document?.body.scrollWidth ?? 0,
+      LIVE_PREVIEW_DEFAULT_WIDTH
+    );
+    const height = Math.max(
+      document?.documentElement.scrollHeight ?? 0,
+      document?.body.scrollHeight ?? 0,
+      LIVE_PREVIEW_DEFAULT_HEIGHT
+    );
+
+    setPreviewSize({ width, height });
+    setScale(Math.min(1, container.clientWidth / width));
+  }, []);
+
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container || typeof ResizeObserver === "undefined") return;
+
+    const observer = new ResizeObserver(measurePreview);
+    observer.observe(container);
+    return () => observer.disconnect();
+  }, [measurePreview]);
+
+  return (
+    <div
+      ref={containerRef}
+      className="min-h-0 flex-1 overflow-auto rounded-lg border bg-neutral-100 dark:bg-neutral-950"
+    >
+      <div className="relative" style={{ height: previewSize.height * scale }}>
+        <iframe
+          ref={iframeRef}
+          srcDoc={html}
+          title="Aperçu HTML en direct"
+          sandbox="allow-same-origin"
+          onLoad={measurePreview}
+          className="absolute top-0 left-0 border-0 bg-white"
+          style={{
+            width: previewSize.width,
+            height: previewSize.height,
+            transform: `scale(${scale})`,
+            transformOrigin: "top left",
+          }}
+        />
+      </div>
+    </div>
+  );
+}
+
 export function SocialMediaDialog({
   messageId,
   token,
@@ -362,8 +436,8 @@ export function SocialMediaDialog({
               <TabsContent value="html" className="flex min-h-0 flex-col gap-2">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <p className="text-muted-foreground text-xs">
-                    Les modifications restent locales jusqu’au prochain rendu
-                    PNG.
+                    L’aperçu se met à jour en direct. Générez les PNG seulement
+                    lorsque le résultat vous convient.
                   </p>
                   <div className="flex gap-2">
                     <Button
@@ -385,23 +459,38 @@ export function SocialMediaDialog({
                       ) : (
                         <Images className="size-4" />
                       )}
-                      {rendering ? "Rendu…" : "Rendre les PNG"}
+                      {rendering
+                        ? "Génération…"
+                        : "Générer les PNG pour l’export"}
                     </Button>
                   </div>
                 </div>
                 {pngOutdated && (
-                  <p className="rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
-                    Le HTML visible ne correspond pas aux PNG actuels. Lancez le
-                    rendu pour appliquer exactement cette version.
+                  <p className="rounded-md bg-blue-50 px-3 py-2 text-xs text-blue-900 dark:bg-blue-950/40 dark:text-blue-200">
+                    L’aperçu ci-dessous est à jour. Les fichiers PNG seront
+                    préparés uniquement lorsque vous lancerez leur génération.
                   </p>
                 )}
-                <textarea
-                  aria-label="HTML du média"
-                  value={html}
-                  onChange={(event) => setHtml(event.target.value)}
-                  spellCheck={false}
-                  className="border-input bg-background text-foreground focus-visible:ring-ring min-h-0 flex-1 resize-none rounded-lg border p-4 font-mono text-xs leading-5 focus-visible:ring-2 focus-visible:outline-none"
-                />
+                <div className="grid min-h-0 flex-1 gap-3 lg:grid-cols-2">
+                  <div className="flex min-h-64 flex-col gap-1.5">
+                    <p className="text-muted-foreground text-xs font-medium">
+                      Code HTML
+                    </p>
+                    <textarea
+                      aria-label="HTML du média"
+                      value={html}
+                      onChange={(event) => setHtml(event.target.value)}
+                      spellCheck={false}
+                      className="border-input bg-background text-foreground focus-visible:ring-ring min-h-0 flex-1 resize-none rounded-lg border p-4 font-mono text-xs leading-5 focus-visible:ring-2 focus-visible:outline-none"
+                    />
+                  </div>
+                  <div className="flex min-h-64 flex-col gap-1.5">
+                    <p className="text-muted-foreground text-xs font-medium">
+                      Aperçu en direct
+                    </p>
+                    <LiveHtmlPreview html={html} />
+                  </div>
+                </div>
               </TabsContent>
 
               <TabsContent value="raw" className="flex min-h-0 flex-col gap-2">
