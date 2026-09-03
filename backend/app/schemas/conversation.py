@@ -72,8 +72,10 @@ class SocialMediaImageResponse(BaseModel):
 
 
 class SocialMediaGenerationResponse(BaseModel):
-    """Sortie LLM brute, HTML éditable et rendu optionnel associé."""
+    """Post LinkedIn, sortie LLM brute et HTML éditable du carrousel."""
 
+    post: LinkedInPostResponse | None = None
+    post_error: str | None = None
     raw_content: str
     html: str
     images: list[SocialMediaImageResponse]

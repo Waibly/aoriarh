@@ -6,13 +6,17 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from app.services.linkedin_post_service import (
+    LINKEDIN_CAROUSEL_POST_SYSTEM_PROMPT,
     LINKEDIN_POST_MAX_COMPLETION_TOKENS,
     LINKEDIN_POST_MODEL,
     LINKEDIN_POST_REASONING_EFFORT,
     LINKEDIN_POST_SYSTEM_PROMPT,
+    build_linkedin_carousel_user_prompt,
+    build_linkedin_carousel_warnings,
     build_linkedin_user_prompt,
     build_linkedin_warnings,
     format_linkedin_reference,
+    generate_linkedin_carousel_post,
     generate_linkedin_post,
     select_linkedin_references,
     select_publication_references,
@@ -71,6 +75,29 @@ def test_prompt_requires_hook_body_sources_cta_and_forbids_hashtags() -> None:
     assert "effectif exact ou" in LINKEDIN_POST_SYSTEM_PROMPT
     assert "seuil abstrait" in LINKEDIN_POST_SYSTEM_PROMPT
     assert "N'en fais jamais un exemple" in LINKEDIN_POST_SYSTEM_PROMPT
+
+
+def test_carousel_post_prompt_is_short_and_forbids_slide_repetition() -> None:
+    prompt = " ".join(LINKEDIN_CAROUSEL_POST_SYSTEM_PROMPT.split())
+    assert "entre 60 et 120 mots" in prompt
+    assert "Ne reprends jamais le titre de la première slide" in prompt
+    assert "Ne résume pas les slides une par une" in prompt
+    assert "N'insère pas de bloc « Sources »" in LINKEDIN_CAROUSEL_POST_SYSTEM_PROMPT
+    assert "raison précise de faire défiler" in LINKEDIN_CAROUSEL_POST_SYSTEM_PROMPT
+
+
+def test_carousel_user_prompt_exposes_exact_carousel_as_data() -> None:
+    carousel = '  <main class="carousel"><section>Titre distinct</section></main>  '
+    prompt = build_linkedin_carousel_user_prompt(
+        question="Question",
+        answer_markdown="Réponse",
+        references=[],
+        carousel_content=carousel,
+        user_profile="drh",
+    )
+
+    assert f"<carrousel_joint>\n{carousel}\n</carrousel_joint>" in prompt
+    assert "Profil métier : DRH / Responsable RH" in prompt
 
 
 def test_user_prompt_delimits_inputs_and_authorized_references() -> None:
@@ -191,6 +218,13 @@ def test_warnings_never_transform_content() -> None:
     assert any("références autorisées" in warning for warning in warnings)
 
 
+def test_carousel_warnings_do_not_require_repeating_references() -> None:
+    content = "Introduction sans source répétée.\n\nVotre pratique ?"
+    warnings = build_linkedin_carousel_warnings(content)
+
+    assert warnings == []
+
+
 @pytest.mark.asyncio
 async def test_generation_returns_non_empty_llm_output_byte_for_byte() -> None:
     raw = (
@@ -227,6 +261,27 @@ async def test_generation_returns_non_empty_llm_output_byte_for_byte() -> None:
     assert request["model"] == LINKEDIN_POST_MODEL
     assert request["reasoning_effort"] == LINKEDIN_POST_REASONING_EFFORT
     assert request["max_completion_tokens"] == LINKEDIN_POST_MAX_COMPLETION_TOKENS
+
+
+@pytest.mark.asyncio
+async def test_carousel_post_generation_returns_raw_output_byte_for_byte() -> None:
+    raw = "  Un enjeu concret.\n\nFaites défiler pour vérifier les étapes.\n\nVotre pratique ?  "
+
+    with patch(
+        "app.services.linkedin_post_service._llm.chat.completions.create",
+        new=AsyncMock(return_value=_llm_response(raw)),
+    ) as create:
+        generation = await generate_linkedin_carousel_post(
+            question="Question",
+            answer_markdown="Réponse",
+            sources=[],
+            carousel_content="<main class=\"carousel\">Carrousel</main>",
+        )
+
+    assert generation.content == raw
+    assert generation.warnings == []
+    request = create.await_args.kwargs
+    assert request["messages"][0]["content"] == LINKEDIN_CAROUSEL_POST_SYSTEM_PROMPT
 
 
 @pytest.mark.asyncio

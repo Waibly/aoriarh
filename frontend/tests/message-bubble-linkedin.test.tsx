@@ -82,7 +82,7 @@ describe("bouton LinkedIn de MessageBubble", () => {
     ).toBeInTheDocument();
     expect(
       within(publicationTools).getByRole("button", {
-        name: "Générer un média",
+        name: "Générer un post + carrousel LinkedIn",
       })
     ).toBeInTheDocument();
     expect(
@@ -106,7 +106,9 @@ describe("bouton LinkedIn de MessageBubble", () => {
       screen.queryByRole("button", { name: "Générer le post LinkedIn" })
     ).not.toBeInTheDocument();
     expect(
-      screen.queryByRole("button", { name: "Générer un média" })
+      screen.queryByRole("button", {
+        name: "Générer un post + carrousel LinkedIn",
+      })
     ).not.toBeInTheDocument();
     expect(
       screen.queryByRole("group", {
@@ -132,7 +134,9 @@ describe("bouton LinkedIn de MessageBubble", () => {
       screen.queryByRole("button", { name: "Générer le post LinkedIn" })
     ).not.toBeInTheDocument();
     expect(
-      screen.queryByRole("button", { name: "Générer un média" })
+      screen.queryByRole("button", {
+        name: "Générer un post + carrousel LinkedIn",
+      })
     ).not.toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: "Créer une fiche pratique" })

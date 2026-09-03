@@ -163,6 +163,8 @@ export interface SocialMediaImageResult {
 }
 
 export interface SocialMediaGenerationResult {
+  post: LinkedInPostResult | null;
+  post_error: string | null;
   raw_content: string;
   html: string;
   images: SocialMediaImageResult[];
@@ -189,7 +191,8 @@ async function socialMediaErrorMessage(
 }
 
 /**
- * Génère le fragment HTML brut, le document éditable et son premier rendu PNG.
+ * Génère le post d'accompagnement et le carrousel HTML éditable.
+ * Les PNG sont rendus uniquement lorsque l'utilisateur les télécharge.
  * Aucun contenu reçu n'est nettoyé ou réécrit côté navigateur.
  */
 export async function generateSocialMedia(

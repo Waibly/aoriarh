@@ -340,7 +340,7 @@ export function MessageBubble({ message, onFeedback }: MessageBubbleProps) {
                     className="border-primary/40 text-primary hover:bg-primary/10 hover:text-primary dark:border-primary/40 dark:bg-card dark:text-primary dark:hover:bg-primary/15 gap-1.5 bg-white"
                   >
                     <Images className="size-4" />
-                    Générer un média
+                    Générer un post + carrousel LinkedIn
                   </Button>
                 </div>
               )}

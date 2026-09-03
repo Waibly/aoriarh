@@ -489,19 +489,15 @@ async def generate_message_social_media(
     user: User = Depends(require_role(["admin"])),
     db: AsyncSession = Depends(get_db),
 ) -> SocialMediaGenerationResponse:
-    """Génère le HTML brut d'un média et tente de le rendre en PNG.
+    """Génère le post LinkedIn et le HTML brut de son carrousel.
 
     Toute sortie LLM non vide est renvoyée telle quelle, même si un contrôle
-    informatif ou le moteur PNG signale un problème. Aucun fallback éditorial
-    ni post-traitement correctif n'est appliqué.
+    informatif signale un problème. Aucun fallback éditorial ni post-traitement
+    correctif n'est appliqué. Les images ne sont rendues qu'à l'export.
     """
 
-    from starlette.concurrency import run_in_threadpool
-
-    from app.services.social_media_service import (
-        generate_social_media,
-        render_social_media_pngs,
-    )
+    from app.services.linkedin_post_service import generate_linkedin_carousel_post
+    from app.services.social_media_service import generate_social_media
 
     message = (
         await db.execute(select(Message).where(Message.id == message_id))
@@ -558,24 +554,44 @@ async def generate_message_social_media(
             detail="La génération du média a échoué. Veuillez réessayer.",
         )
 
-    images = []
-    render_error = None
+    post = None
+    post_error = None
     try:
-        images = await run_in_threadpool(render_social_media_pngs, generation.html)
+        post = await generate_linkedin_carousel_post(
+            question=question,
+            answer_markdown=message.content,
+            sources=sources,
+            carousel_content=generation.raw_content,
+            user_profile=user.profil_metier,
+            organisation_id=str(conversation.organisation_id),
+            user_id=str(user.id),
+            message_id=str(message.id),
+        )
     except Exception:
-        logger.exception("Échec du rendu PNG pour le message %s", message_id)
-        render_error = (
-            "Le HTML généré est disponible sans modification, mais son rendu PNG "
-            "a échoué. Vous pouvez modifier ou télécharger le HTML."
+        logger.exception("Échec de génération du post carrousel pour %s", message_id)
+        post_error = (
+            "Le carrousel a bien été généré, mais son post d'accompagnement a "
+            "échoué. La sortie du carrousel reste disponible sans modification."
         )
 
     return SocialMediaGenerationResponse(
+        post=(
+            LinkedInPostResponse(
+                content=post.content,
+                character_count=len(post.content),
+                references=post.references,
+                warnings=post.warnings,
+            )
+            if post is not None
+            else None
+        ),
+        post_error=post_error,
         raw_content=generation.raw_content,
         html=generation.html,
-        images=_encode_social_media_images(images),
+        images=[],
         references=generation.references,
         warnings=generation.warnings,
-        render_error=render_error,
+        render_error=None,
     )
 
 

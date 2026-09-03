@@ -8,6 +8,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from httpx import AsyncClient
 
 from app.models.conversation import Message
+from app.services.linkedin_post_service import LinkedInPostGeneration
 from app.services.security_alert_service import EVENT_TECHNICAL_RECON
 from app.services.social_media_service import RenderedMediaImage, SocialMediaGeneration
 from tests.conftest import auth_header
@@ -81,7 +82,7 @@ async def test_social_media_endpoint_requires_admin(
     assert pdf_response.status_code == 403
 
 
-async def test_admin_receives_exact_raw_html_and_png(
+async def test_admin_receives_post_then_exact_carousel_without_eager_png_render(
     client: AsyncClient,
     admin_user: dict,
 ) -> None:
@@ -95,7 +96,12 @@ async def test_admin_receives_exact_raw_html_and_png(
         references=[],
         warnings=["Avertissement visible"],
     )
-    png = b"\x89PNG\r\n\x1a\ncontenu"
+    post_content = "  Post court complémentaire.\n\nVotre pratique ?  "
+    post_generation = LinkedInPostGeneration(
+        content=post_content,
+        references=[],
+        warnings=["Avertissement post visible"],
+    )
 
     with (
         patch(
@@ -103,11 +109,9 @@ async def test_admin_receives_exact_raw_html_and_png(
             new=AsyncMock(return_value=generation),
         ) as generate,
         patch(
-            "app.services.social_media_service.render_social_media_pngs",
-            new=MagicMock(
-                return_value=[RenderedMediaImage(filename="aoria-media-01.png", content=png)]
-            ),
-        ) as render,
+            "app.services.linkedin_post_service.generate_linkedin_carousel_post",
+            new=AsyncMock(return_value=post_generation),
+        ) as generate_post,
     ):
         response = await client.post(
             f"/api/v1/conversations/messages/{message_id}/social-media",
@@ -116,24 +120,29 @@ async def test_admin_receives_exact_raw_html_and_png(
 
     assert response.status_code == 200, response.text
     assert response.json() == {
+        "post": {
+            "content": post_content,
+            "character_count": len(post_content),
+            "references": [],
+            "warnings": ["Avertissement post visible"],
+        },
+        "post_error": None,
         "raw_content": raw,
         "html": html,
-        "images": [
-            {
-                "filename": "aoria-media-01.png",
-                "content_base64": base64.b64encode(png).decode("ascii"),
-            }
-        ],
+        "images": [],
         "references": [],
         "warnings": ["Avertissement visible"],
         "render_error": None,
     }
     assert generate.await_args.kwargs["question"] == "Quelle procédure appliquer ?"
     assert generate.await_args.kwargs["answer_markdown"] == "Voici la procédure à appliquer."
-    render.assert_called_once_with(html)
+    assert generate_post.await_args.kwargs["carousel_content"] == raw
+    assert generate_post.await_args.kwargs["answer_markdown"] == (
+        "Voici la procédure à appliquer."
+    )
 
 
-async def test_png_failure_keeps_non_empty_llm_output_visible(
+async def test_post_failure_keeps_non_empty_carousel_output_visible(
     client: AsyncClient,
     admin_user: dict,
 ) -> None:
@@ -154,8 +163,8 @@ async def test_png_failure_keeps_non_empty_llm_output_visible(
             new=AsyncMock(return_value=generation),
         ),
         patch(
-            "app.services.social_media_service.render_social_media_pngs",
-            new=MagicMock(side_effect=RuntimeError("rendu impossible")),
+            "app.services.linkedin_post_service.generate_linkedin_carousel_post",
+            new=AsyncMock(side_effect=RuntimeError("post impossible")),
         ),
     ):
         response = await client.post(
@@ -167,7 +176,9 @@ async def test_png_failure_keeps_non_empty_llm_output_visible(
     assert response.json()["raw_content"] == raw
     assert response.json()["html"] == html
     assert response.json()["images"] == []
-    assert response.json()["render_error"] is not None
+    assert response.json()["post"] is None
+    assert response.json()["post_error"] is not None
+    assert response.json()["render_error"] is None
 
 
 async def test_render_endpoint_passes_edited_html_exactly(

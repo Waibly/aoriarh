@@ -1,15 +1,14 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import Image from "next/image";
 import {
   AlertTriangle,
+  Check,
   Code2,
-  Download,
+  Copy,
   FileArchive,
   FileCode2,
   FileText,
-  Images,
   Loader2,
   RefreshCw,
   RotateCcw,
@@ -24,7 +23,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   downloadSocialMediaPdf,
   generateSocialMedia,
@@ -32,7 +30,6 @@ import {
   type SocialMediaGenerationResult,
   type SocialMediaImageResult,
 } from "@/lib/chat-api";
-import { cn } from "@/lib/utils";
 
 interface SocialMediaDialogProps {
   messageId: string;
@@ -67,8 +64,27 @@ function downloadBlob(blob: Blob, filename: string) {
   window.URL.revokeObjectURL(url);
 }
 
-function imageDataUrl(image: SocialMediaImageResult): string {
-  return `data:image/png;base64,${image.content_base64}`;
+function downloadPngFiles(images: SocialMediaImageResult[]) {
+  if (images.length === 1) {
+    const image = images[0];
+    downloadBlob(
+      new Blob([bytesToArrayBuffer(base64ToBytes(image.content_base64))], {
+        type: "image/png",
+      }),
+      image.filename
+    );
+    return;
+  }
+
+  const files = Object.fromEntries(
+    images.map((image) => [image.filename, base64ToBytes(image.content_base64)])
+  );
+  downloadBlob(
+    new Blob([bytesToArrayBuffer(zipSync(files))], {
+      type: "application/zip",
+    }),
+    "aoria-carrousel-linkedin-png.zip"
+  );
 }
 
 const LIVE_PREVIEW_DEFAULT_WIDTH = 1144;
@@ -123,13 +139,13 @@ function LiveHtmlPreview({ html }: { html: string }) {
   return (
     <div
       ref={containerRef}
-      className="min-h-0 flex-1 overflow-auto rounded-lg border bg-neutral-100 dark:bg-neutral-950"
+      className="h-[58dvh] min-h-96 overflow-auto rounded-lg border bg-neutral-100 dark:bg-neutral-950"
     >
       <div className="relative" style={{ height: previewSize.height * scale }}>
         <iframe
           ref={iframeRef}
           srcDoc={html}
-          title="Aperçu HTML en direct"
+          title="Aperçu du carrousel LinkedIn"
           sandbox="allow-same-origin"
           onLoad={measurePreview}
           className="absolute top-0 left-0 border-0 bg-white"
@@ -154,14 +170,12 @@ export function SocialMediaDialog({
   const [generation, setGeneration] =
     useState<SocialMediaGenerationResult | null>(null);
   const [html, setHtml] = useState("");
-  const [renderedHtml, setRenderedHtml] = useState<string | null>(null);
-  const [images, setImages] = useState<SocialMediaImageResult[]>([]);
-  const [activeImage, setActiveImage] = useState(0);
   const [loading, setLoading] = useState(false);
   const [rendering, setRendering] = useState(false);
   const [pdfDownloading, setPdfDownloading] = useState(false);
+  const [postCopied, setPostCopied] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [renderError, setRenderError] = useState<string | null>(null);
+  const [exportError, setExportError] = useState<string | null>(null);
   const inFlightRef = useRef(false);
 
   const requestGeneration = useCallback(async () => {
@@ -174,20 +188,18 @@ export function SocialMediaDialog({
     inFlightRef.current = true;
     setLoading(true);
     setError(null);
-    setRenderError(null);
+    setExportError(null);
     try {
       const result = await generateSocialMedia(messageId, token);
       setGeneration(result);
       setHtml(result.html);
-      setImages(result.images);
-      setRenderedHtml(result.images.length > 0 ? result.html : null);
-      setRenderError(result.render_error);
-      setActiveImage(0);
+      setExportError(result.post_error ?? result.render_error);
+      setPostCopied(false);
     } catch (requestError) {
       setError(
         requestError instanceof Error
           ? requestError.message
-          : "La génération du média a échoué."
+          : "La génération du post et du carrousel LinkedIn a échoué."
       );
     } finally {
       inFlightRef.current = false;
@@ -202,28 +214,6 @@ export function SocialMediaDialog({
   }, [error, generation, open, requestGeneration]);
 
   const htmlModified = generation !== null && html !== generation.html;
-  const pngOutdated = renderedHtml === null || html !== renderedHtml;
-  const currentImage = images[activeImage] ?? null;
-
-  const handleRender = useCallback(async () => {
-    if (!token || !html || rendering) return;
-    setRendering(true);
-    setRenderError(null);
-    try {
-      const result = await renderSocialMediaHtml(messageId, html, token);
-      setImages(result.images);
-      setRenderedHtml(html);
-      setActiveImage(0);
-    } catch (requestError) {
-      setRenderError(
-        requestError instanceof Error
-          ? requestError.message
-          : "Le rendu PNG a échoué. Le HTML reste disponible sans modification."
-      );
-    } finally {
-      setRendering(false);
-    }
-  }, [html, messageId, rendering, token]);
 
   const handleRetry = useCallback(() => {
     setError(null);
@@ -234,72 +224,71 @@ export function SocialMediaDialog({
     if (
       htmlModified &&
       !window.confirm(
-        "Le HTML a été modifié. Une nouvelle génération remplacera ces modifications. Continuer ?"
+        "Le HTML du carrousel a été modifié. Une nouvelle génération remplacera ces modifications. Continuer ?"
       )
     ) {
       return;
     }
     setGeneration(null);
     setHtml("");
-    setRenderedHtml(null);
-    setImages([]);
-    setActiveImage(0);
     setError(null);
-    setRenderError(null);
+    setExportError(null);
+    setPostCopied(false);
     void requestGeneration();
   }, [htmlModified, requestGeneration]);
 
   const handleResetHtml = useCallback(() => {
     if (!generation) return;
     setHtml(generation.html);
-    setRenderError(generation.render_error);
+  }, [generation]);
+
+  const handleCopyPost = useCallback(async () => {
+    if (!generation?.post) return;
+    try {
+      await navigator.clipboard.writeText(generation.post.content);
+      setPostCopied(true);
+      setTimeout(() => setPostCopied(false), 2000);
+    } catch {
+      setExportError(
+        "Impossible de copier le post. Sélectionnez son texte manuellement."
+      );
+    }
   }, [generation]);
 
   const handleDownloadHtml = useCallback(() => {
     downloadBlob(
       new Blob([html], { type: "text/html;charset=utf-8" }),
-      "aoria-media.html"
+      "aoria-carrousel-linkedin.html"
     );
   }, [html]);
 
-  const handleDownloadImage = useCallback(() => {
-    if (!currentImage || pngOutdated) return;
-    downloadBlob(
-      new Blob(
-        [bytesToArrayBuffer(base64ToBytes(currentImage.content_base64))],
-        {
-          type: "image/png",
-        }
-      ),
-      currentImage.filename
-    );
-  }, [currentImage, pngOutdated]);
-
-  const handleDownloadPngs = useCallback(() => {
-    if (images.length === 0 || pngOutdated) return;
-    const files = Object.fromEntries(
-      images.map((image) => [
-        image.filename,
-        base64ToBytes(image.content_base64),
-      ])
-    );
-    downloadBlob(
-      new Blob([bytesToArrayBuffer(zipSync(files))], {
-        type: "application/zip",
-      }),
-      "aoria-media-png.zip"
-    );
-  }, [images, pngOutdated]);
+  const handleDownloadPngs = useCallback(async () => {
+    if (!token || !html || rendering) return;
+    setRendering(true);
+    setExportError(null);
+    try {
+      const result = await renderSocialMediaHtml(messageId, html, token);
+      downloadPngFiles(result.images);
+    } catch (requestError) {
+      setExportError(
+        requestError instanceof Error
+          ? requestError.message
+          : "L’export PNG a échoué. Le HTML reste disponible sans modification."
+      );
+    } finally {
+      setRendering(false);
+    }
+  }, [html, messageId, rendering, token]);
 
   const handleDownloadPdf = useCallback(async () => {
     if (!token || !html || pdfDownloading) return;
     setPdfDownloading(true);
-    setRenderError(null);
+    setExportError(null);
     try {
       const pdf = await downloadSocialMediaPdf(messageId, html, token);
-      downloadBlob(pdf, "aoria-media-linkedin.pdf");
+      downloadBlob(pdf, "aoria-carrousel-linkedin.pdf");
     } catch (requestError) {
-      setRenderError(
+      setExportError(
         requestError instanceof Error
           ? requestError.message
           : "L’export PDF a échoué. Le HTML reste disponible sans modification."
@@ -309,16 +298,22 @@ export function SocialMediaDialog({
     }
   }, [html, messageId, pdfDownloading, token]);
 
-  const warnings = useMemo(() => generation?.warnings ?? [], [generation]);
+  const warnings = useMemo(
+    () => [
+      ...(generation?.post?.warnings ?? []),
+      ...(generation?.warnings ?? []),
+    ],
+    [generation]
+  );
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="flex h-[94dvh] max-h-[94dvh] flex-col sm:max-w-6xl">
         <DialogHeader>
-          <DialogTitle>Générer un média</DialogTitle>
+          <DialogTitle>Post + carrousel LinkedIn</DialogTitle>
           <DialogDescription>
-            Le HTML produit par le modèle reste visible, éditable et
-            téléchargeable sans correction automatique.
+            Copiez d’abord le post d’accompagnement, vérifiez ensuite le
+            carrousel, puis téléchargez le format à publier.
           </DialogDescription>
         </DialogHeader>
 
@@ -328,7 +323,7 @@ export function SocialMediaDialog({
             role="status"
           >
             <Loader2 className="text-primary size-7 animate-spin" />
-            <p className="text-sm">Génération du média et des aperçus…</p>
+            <p className="text-sm">Génération du post et du carrousel…</p>
           </div>
         )}
 
@@ -344,8 +339,8 @@ export function SocialMediaDialog({
         )}
 
         {generation && (
-          <div className="flex min-h-0 flex-1 flex-col gap-3">
-            {(warnings.length > 0 || renderError) && (
+          <div className="min-h-0 flex-1 space-y-4 overflow-y-auto pr-1">
+            {(warnings.length > 0 || exportError) && (
               <div
                 className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2.5 text-amber-900 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-200"
                 role="alert"
@@ -356,157 +351,134 @@ export function SocialMediaDialog({
                     {warnings.map((warning, index) => (
                       <li key={`${index}-${warning}`}>{warning}</li>
                     ))}
-                    {renderError && <li>{renderError}</li>}
+                    {exportError && <li>{exportError}</li>}
                   </ul>
                 </div>
               </div>
             )}
 
-            <Tabs defaultValue="preview" className="min-h-0 flex-1">
-              <TabsList>
-                <TabsTrigger value="preview">
-                  <Images className="size-4" />
-                  Aperçu
-                </TabsTrigger>
-                <TabsTrigger value="html">
-                  <Code2 className="size-4" />
-                  Modifier le HTML
-                </TabsTrigger>
-                <TabsTrigger value="raw">
-                  <FileCode2 className="size-4" />
-                  Sortie brute du LLM
-                </TabsTrigger>
-              </TabsList>
-
-              <TabsContent value="preview" className="min-h-0 overflow-auto">
-                {images.length > 0 ? (
-                  <div className="grid min-h-0 gap-4 lg:grid-cols-[150px_minmax(0,1fr)]">
-                    <div className="flex gap-2 overflow-x-auto lg:max-h-[66dvh] lg:flex-col lg:overflow-y-auto">
-                      {images.map((image, index) => (
-                        <button
-                          type="button"
-                          key={image.filename}
-                          onClick={() => setActiveImage(index)}
-                          aria-label={`Afficher l'image ${index + 1}`}
-                          className={cn(
-                            "shrink-0 overflow-hidden rounded-md border-2 bg-white transition-colors",
-                            activeImage === index
-                              ? "border-primary"
-                              : "border-transparent"
-                          )}
-                        >
-                          <Image
-                            src={imageDataUrl(image)}
-                            alt={`Aperçu ${index + 1}`}
-                            width={1080}
-                            height={1350}
-                            unoptimized
-                            className="h-28 w-auto object-contain lg:h-auto lg:w-full"
-                          />
-                        </button>
-                      ))}
-                    </div>
-                    <div className="flex min-h-0 flex-col items-center gap-2 overflow-auto rounded-lg border bg-neutral-100 p-3 dark:bg-neutral-950">
-                      {currentImage && (
-                        <Image
-                          src={imageDataUrl(currentImage)}
-                          alt={`Média AORIA RH ${activeImage + 1}`}
-                          width={1080}
-                          height={1350}
-                          unoptimized
-                          className="max-h-[62dvh] max-w-full rounded-md object-contain shadow-sm"
-                        />
-                      )}
-                      <p className="text-muted-foreground text-xs tabular-nums">
-                        {activeImage + 1} / {images.length}
-                      </p>
-                    </div>
+            <section className="space-y-3 rounded-xl border p-4">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <div className="mb-1 flex items-center gap-2">
+                    <span className="bg-primary text-primary-foreground flex size-6 items-center justify-center rounded-full text-xs font-semibold">
+                      1
+                    </span>
+                    <h3 className="font-semibold">Post d’accompagnement</h3>
                   </div>
-                ) : (
-                  <div className="text-muted-foreground flex h-full min-h-64 flex-col items-center justify-center gap-3 text-center">
-                    <Images className="size-8" />
-                    <p className="max-w-md text-sm">
-                      Aucun PNG n’est disponible. Le HTML généré reste
-                      accessible dans l’éditeur et peut être rendu à nouveau.
-                    </p>
-                  </div>
-                )}
-              </TabsContent>
-
-              <TabsContent value="html" className="flex min-h-0 flex-col gap-2">
-                <div className="flex flex-wrap items-center justify-between gap-2">
                   <p className="text-muted-foreground text-xs">
-                    L’aperçu se met à jour en direct. Générez les PNG seulement
-                    lorsque le résultat vous convient.
+                    Une introduction courte qui donne envie de parcourir le
+                    carrousel sans répéter ses slides.
                   </p>
-                  <div className="flex gap-2">
+                </div>
+                <Button
+                  size="sm"
+                  onClick={handleCopyPost}
+                  disabled={!generation.post}
+                >
+                  {postCopied ? (
+                    <Check className="size-4" />
+                  ) : (
+                    <Copy className="size-4" />
+                  )}
+                  {postCopied ? "Post copié" : "Copier le post"}
+                </Button>
+              </div>
+
+              {generation.post ? (
+                <>
+                  <textarea
+                    aria-label="Post LinkedIn du carrousel"
+                    value={generation.post.content}
+                    readOnly
+                    spellCheck={false}
+                    className="border-input bg-background text-foreground min-h-52 w-full resize-y rounded-lg border p-4 text-sm leading-6"
+                  />
+                  <p className="text-muted-foreground text-right text-xs tabular-nums">
+                    {generation.post.character_count.toLocaleString("fr-FR")}{" "}
+                    caractères
+                  </p>
+                </>
+              ) : (
+                <p className="text-muted-foreground rounded-lg border border-dashed p-4 text-sm">
+                  Le post d’accompagnement n’est pas disponible. Le carrousel
+                  généré reste intégralement accessible ci-dessous.
+                </p>
+              )}
+            </section>
+
+            <section className="space-y-3 rounded-xl border p-4">
+              <div>
+                <div className="mb-1 flex items-center gap-2">
+                  <span className="bg-primary text-primary-foreground flex size-6 items-center justify-center rounded-full text-xs font-semibold">
+                    2
+                  </span>
+                  <h3 className="font-semibold">Carrousel LinkedIn</h3>
+                </div>
+                <p className="text-muted-foreground text-xs">
+                  Cet aperçu unique correspond toujours au HTML actuel. Quand il
+                  vous convient, téléchargez directement le PDF ou les PNG.
+                </p>
+              </div>
+
+              <details className="rounded-lg border">
+                <summary className="flex cursor-pointer list-none items-center gap-2 px-3 py-2.5 text-sm font-medium">
+                  <Code2 className="size-4" />
+                  Modifier le HTML du carrousel
+                </summary>
+                <div className="space-y-2 border-t p-3">
+                  <div className="flex justify-end">
                     <Button
                       variant="outline"
                       size="sm"
                       onClick={handleResetHtml}
-                      disabled={!htmlModified || rendering}
+                      disabled={!htmlModified || rendering || pdfDownloading}
                     >
                       <RotateCcw className="size-4" />
                       Revenir au HTML généré
                     </Button>
-                    <Button
-                      size="sm"
-                      onClick={handleRender}
-                      disabled={rendering || !html}
-                    >
-                      {rendering ? (
-                        <Loader2 className="size-4 animate-spin" />
-                      ) : (
-                        <Images className="size-4" />
-                      )}
-                      {rendering
-                        ? "Génération…"
-                        : "Générer les PNG pour l’export"}
-                    </Button>
                   </div>
-                </div>
-                {pngOutdated && (
-                  <p className="rounded-md bg-blue-50 px-3 py-2 text-xs text-blue-900 dark:bg-blue-950/40 dark:text-blue-200">
-                    L’aperçu ci-dessous est à jour. Les fichiers PNG seront
-                    préparés uniquement lorsque vous lancerez leur génération.
+                  <textarea
+                    aria-label="HTML du carrousel"
+                    value={html}
+                    onChange={(event) => setHtml(event.target.value)}
+                    spellCheck={false}
+                    className="border-input bg-background text-foreground focus-visible:ring-ring min-h-80 w-full resize-y rounded-lg border p-4 font-mono text-xs leading-5 focus-visible:ring-2 focus-visible:outline-none"
+                  />
+                  <p className="text-muted-foreground text-xs">
+                    L’aperçu ci-dessous se met à jour directement pendant vos
+                    modifications.
                   </p>
-                )}
-                <div className="grid min-h-0 flex-1 gap-3 lg:grid-cols-2">
-                  <div className="flex min-h-64 flex-col gap-1.5">
-                    <p className="text-muted-foreground text-xs font-medium">
-                      Code HTML
-                    </p>
-                    <textarea
-                      aria-label="HTML du média"
-                      value={html}
-                      onChange={(event) => setHtml(event.target.value)}
-                      spellCheck={false}
-                      className="border-input bg-background text-foreground focus-visible:ring-ring min-h-0 flex-1 resize-none rounded-lg border p-4 font-mono text-xs leading-5 focus-visible:ring-2 focus-visible:outline-none"
-                    />
-                  </div>
-                  <div className="flex min-h-64 flex-col gap-1.5">
-                    <p className="text-muted-foreground text-xs font-medium">
-                      Aperçu en direct
-                    </p>
-                    <LiveHtmlPreview html={html} />
-                  </div>
                 </div>
-              </TabsContent>
+              </details>
 
-              <TabsContent value="raw" className="flex min-h-0 flex-col gap-2">
-                <p className="text-muted-foreground text-xs">
-                  Cette sortie est exactement celle reçue du LLM. Elle n’est ni
-                  nettoyée, ni complétée, ni remplacée par le HTML édité.
+              <div className="space-y-1.5">
+                <p className="text-muted-foreground text-xs font-medium">
+                  Aperçu du carrousel
                 </p>
-                <textarea
-                  aria-label="Sortie brute du LLM"
-                  value={generation.raw_content}
-                  readOnly
-                  spellCheck={false}
-                  className="border-input bg-muted/30 text-foreground min-h-0 flex-1 resize-none rounded-lg border p-4 font-mono text-xs leading-5"
-                />
-              </TabsContent>
-            </Tabs>
+                <LiveHtmlPreview html={html} />
+              </div>
+
+              <details className="rounded-lg border">
+                <summary className="flex cursor-pointer list-none items-center gap-2 px-3 py-2.5 text-sm font-medium">
+                  <FileCode2 className="size-4" />
+                  Voir la sortie brute du carrousel
+                </summary>
+                <div className="space-y-2 border-t p-3">
+                  <p className="text-muted-foreground text-xs">
+                    Cette sortie est exactement celle reçue du LLM. Elle n’est
+                    ni nettoyée, ni complétée, ni remplacée par le HTML édité.
+                  </p>
+                  <textarea
+                    aria-label="Sortie brute du carrousel"
+                    value={generation.raw_content}
+                    readOnly
+                    spellCheck={false}
+                    className="border-input bg-muted/30 text-foreground min-h-64 w-full resize-y rounded-lg border p-4 font-mono text-xs leading-5"
+                  />
+                </div>
+              </details>
+            </section>
           </div>
         )}
 
@@ -514,10 +486,10 @@ export function SocialMediaDialog({
           <Button
             variant="outline"
             onClick={handleRegenerate}
-            disabled={!generation || loading || rendering}
+            disabled={!generation || loading || rendering || pdfDownloading}
           >
             <RefreshCw className="size-4" />
-            Régénérer
+            Régénérer l’ensemble
           </Button>
           <Button
             variant="outline"
@@ -529,16 +501,19 @@ export function SocialMediaDialog({
           </Button>
           <Button
             variant="outline"
-            onClick={handleDownloadImage}
-            disabled={!currentImage || pngOutdated}
+            onClick={handleDownloadPngs}
+            disabled={!html || rendering || pdfDownloading}
           >
-            <Download className="size-4" />
-            Télécharger l’image
+            {rendering ? (
+              <Loader2 className="size-4 animate-spin" />
+            ) : (
+              <FileArchive className="size-4" />
+            )}
+            {rendering ? "Préparation des PNG…" : "Télécharger les PNG"}
           </Button>
           <Button
-            variant="outline"
             onClick={handleDownloadPdf}
-            disabled={!html || pdfDownloading}
+            disabled={!html || pdfDownloading || rendering}
           >
             {pdfDownloading ? (
               <Loader2 className="size-4 animate-spin" />
@@ -546,15 +521,8 @@ export function SocialMediaDialog({
               <FileText className="size-4" />
             )}
             {pdfDownloading
-              ? "Export du PDF…"
+              ? "Préparation du PDF…"
               : "Télécharger le PDF LinkedIn"}
-          </Button>
-          <Button
-            onClick={handleDownloadPngs}
-            disabled={images.length === 0 || pngOutdated}
-          >
-            <FileArchive className="size-4" />
-            Télécharger les PNG
           </Button>
         </DialogFooter>
       </DialogContent>

@@ -26,15 +26,22 @@ describe("SocialMediaDialog", () => {
   const raw =
     '  <main class="carousel"><section class="slide">Texte brut</section></main>  ';
   const generatedHtml = `<!doctype html><body>${raw}</body>`;
+  const postContent =
+    "Une décision RH peut sembler simple.\n\nCe carrousel montre les points à examiner avant d’agir.\n\nQuelle vigilance guide votre pratique ?";
+  const writeText = jest.fn().mockResolvedValue(undefined);
 
   beforeEach(() => {
     jest.clearAllMocks();
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText },
+    });
     mockDownloadPdf.mockResolvedValue(
       new Blob(["pdf"], { type: "application/pdf" })
     );
     Object.defineProperty(window.URL, "createObjectURL", {
       configurable: true,
-      value: jest.fn(() => "blob:pdf"),
+      value: jest.fn(() => "blob:export"),
     });
     Object.defineProperty(window.URL, "revokeObjectURL", {
       configurable: true,
@@ -42,21 +49,23 @@ describe("SocialMediaDialog", () => {
     });
     jest.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation();
     mockGenerate.mockResolvedValue({
+      post: {
+        content: postContent,
+        character_count: postContent.length,
+        references: [],
+        warnings: [],
+      },
+      post_error: null,
       raw_content: raw,
       html: generatedHtml,
-      images: [
-        {
-          filename: "aoria-media-01.png",
-          content_base64: "aW1hZ2U=",
-        },
-      ],
+      images: [],
       references: [],
       warnings: ["Avertissement non bloquant"],
       render_error: null,
     });
   });
 
-  it("affiche la sortie brute exacte et le HTML éditable", async () => {
+  it("affiche d’abord le post puis l’unique aperçu du carrousel", async () => {
     render(
       <SocialMediaDialog
         messageId="message-1"
@@ -66,40 +75,26 @@ describe("SocialMediaDialog", () => {
       />
     );
 
-    expect(
-      await screen.findByText("Avertissement non bloquant")
-    ).toBeInTheDocument();
-
-    fireEvent.mouseDown(
-      screen.getByRole("tab", { name: "Sortie brute du LLM" }),
-      {
-        button: 0,
-        ctrlKey: false,
-      }
-    );
-    expect(
-      screen.getByRole("textbox", { name: "Sortie brute du LLM" })
-    ).toHaveValue(raw);
-
-    fireEvent.mouseDown(screen.getByRole("tab", { name: "Modifier le HTML" }), {
-      button: 0,
-      ctrlKey: false,
+    const post = await screen.findByRole("textbox", {
+      name: "Post LinkedIn du carrousel",
     });
-    expect(screen.getByRole("textbox", { name: "HTML du média" })).toHaveValue(
-      generatedHtml
+    const preview = screen.getByTitle("Aperçu du carrousel LinkedIn");
+
+    expect(post).toHaveValue(postContent);
+    expect(post.compareDocumentPosition(preview)).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING
     );
-    expect(mockGenerate).toHaveBeenCalledTimes(1);
+    expect(screen.getAllByTitle("Aperçu du carrousel LinkedIn")).toHaveLength(
+      1
+    );
+    expect(preview).toHaveAttribute("srcdoc", generatedHtml);
+    expect(screen.queryByRole("tab")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Copier le post" }));
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith(postContent));
   });
 
-  it("transmet le HTML édité exactement au moteur PNG", async () => {
-    mockRender.mockResolvedValue({
-      images: [
-        {
-          filename: "aoria-media-01.png",
-          content_base64: "bm91dmVsbGUtaW1hZ2U=",
-        },
-      ],
-    });
+  it("affiche la sortie brute exacte et actualise l’aperçu pendant l’édition", async () => {
     const edited = "  <!doctype html>\n<body>Version éditée</body>  ";
 
     render(
@@ -112,40 +107,63 @@ describe("SocialMediaDialog", () => {
     );
 
     await screen.findByText("Avertissement non bloquant");
-    fireEvent.mouseDown(screen.getByRole("tab", { name: "Modifier le HTML" }), {
-      button: 0,
-      ctrlKey: false,
-    });
-    fireEvent.change(screen.getByRole("textbox", { name: "HTML du média" }), {
-      target: { value: edited },
-    });
+    fireEvent.click(screen.getByText("Voir la sortie brute du carrousel"));
+    expect(
+      screen.getByRole("textbox", { name: "Sortie brute du carrousel" })
+    ).toHaveValue(raw);
 
-    expect(screen.getByTitle("Aperçu HTML en direct")).toHaveAttribute(
+    fireEvent.click(screen.getByText("Modifier le HTML du carrousel"));
+    fireEvent.change(
+      screen.getByRole("textbox", { name: "HTML du carrousel" }),
+      { target: { value: edited } }
+    );
+
+    expect(screen.getByTitle("Aperçu du carrousel LinkedIn")).toHaveAttribute(
       "srcdoc",
       edited
     );
-    expect(
-      screen.getByText(/L’aperçu ci-dessous est à jour/)
-    ).toBeInTheDocument();
+    expect(mockRender).not.toHaveBeenCalled();
+  });
+
+  it("génère et télécharge les PNG en une seule action", async () => {
+    mockRender.mockResolvedValue({
+      images: [
+        {
+          filename: "aoria-media-01.png",
+          content_base64: "bm91dmVsbGUtaW1hZ2U=",
+        },
+      ],
+    });
+
+    render(
+      <SocialMediaDialog
+        messageId="message-png"
+        token="token-admin"
+        open
+        onOpenChange={jest.fn()}
+      />
+    );
+
+    await screen.findByRole("textbox", {
+      name: "Post LinkedIn du carrousel",
+    });
     fireEvent.click(
-      screen.getByRole("button", { name: "Générer les PNG pour l’export" })
+      screen.getByRole("button", { name: "Télécharger les PNG" })
     );
 
     await waitFor(() =>
       expect(mockRender).toHaveBeenCalledWith(
-        "message-2",
-        edited,
+        "message-png",
+        generatedHtml,
         "token-admin"
       )
     );
     await waitFor(() =>
-      expect(
-        screen.queryByText(/L’aperçu ci-dessous est à jour/)
-      ).not.toBeInTheDocument()
+      expect(HTMLAnchorElement.prototype.click).toHaveBeenCalled()
     );
   });
 
-  it("conserve le HTML quand le rendu PNG échoue", async () => {
+  it("conserve le HTML quand l’export PNG échoue", async () => {
     mockRender.mockRejectedValue(new Error("Rendu impossible, HTML conservé"));
 
     render(
@@ -157,17 +175,16 @@ describe("SocialMediaDialog", () => {
       />
     );
 
-    await screen.findByText("Avertissement non bloquant");
-    fireEvent.mouseDown(screen.getByRole("tab", { name: "Modifier le HTML" }), {
-      button: 0,
-      ctrlKey: false,
+    await screen.findByRole("textbox", {
+      name: "Post LinkedIn du carrousel",
     });
-    const editor = screen.getByRole("textbox", { name: "HTML du média" });
+    fireEvent.click(screen.getByText("Modifier le HTML du carrousel"));
+    const editor = screen.getByRole("textbox", { name: "HTML du carrousel" });
     fireEvent.change(editor, {
       target: { value: "<body>HTML à conserver</body>" },
     });
     fireEvent.click(
-      screen.getByRole("button", { name: "Générer les PNG pour l’export" })
+      screen.getByRole("button", { name: "Télécharger les PNG" })
     );
 
     expect(
@@ -188,14 +205,14 @@ describe("SocialMediaDialog", () => {
       />
     );
 
-    await screen.findByText("Avertissement non bloquant");
-    fireEvent.mouseDown(screen.getByRole("tab", { name: "Modifier le HTML" }), {
-      button: 0,
-      ctrlKey: false,
+    await screen.findByRole("textbox", {
+      name: "Post LinkedIn du carrousel",
     });
-    fireEvent.change(screen.getByRole("textbox", { name: "HTML du média" }), {
-      target: { value: edited },
-    });
+    fireEvent.click(screen.getByText("Modifier le HTML du carrousel"));
+    fireEvent.change(
+      screen.getByRole("textbox", { name: "HTML du carrousel" }),
+      { target: { value: edited } }
+    );
     fireEvent.click(
       screen.getByRole("button", { name: "Télécharger le PDF LinkedIn" })
     );

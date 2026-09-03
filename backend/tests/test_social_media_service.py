@@ -62,12 +62,20 @@ def test_inspection_only_adds_warnings_and_never_changes_raw_fragment():
 
 
 def test_prompt_requires_sober_copy_and_explained_legal_references():
+    assert "document PDF dans un post LinkedIn" in SOCIAL_MEDIA_SYSTEM_PROMPT
+    assert "post d'accompagnement distinct" in SOCIAL_MEDIA_SYSTEM_PROMPT
     assert "N'emploie aucun superlatif" in SOCIAL_MEDIA_SYSTEM_PROMPT
     assert "adverbe d'intensité ou de surenchère" in SOCIAL_MEDIA_SYSTEM_PROMPT
     assert '<span class="reference-topic">' in SOCIAL_MEDIA_SYSTEM_PROMPT
     assert "son bloc explicatif suffit" in SOCIAL_MEDIA_SYSTEM_PROMPT
     assert "première slide est l'ouverture visuelle" in SOCIAL_MEDIA_SYSTEM_PROMPT
     assert "Aère verticalement" in SOCIAL_MEDIA_SYSTEM_PROMPT
+    assert "contenu éditorial de la première slide est centré verticalement" in (
+        SOCIAL_MEDIA_SYSTEM_PROMPT
+    )
+    assert "toutes les slides suivantes, le contenu est ferré en haut" in (
+        SOCIAL_MEDIA_SYSTEM_PROMPT
+    )
     assert "répartis-le sur une slide supplémentaire" in SOCIAL_MEDIA_SYSTEM_PROMPT
     assert "N'écris jamais <strong>Libellé</strong>Valeur" in SOCIAL_MEDIA_SYSTEM_PROMPT
     assert "publication publique et décontextualisée" in SOCIAL_MEDIA_SYSTEM_PROMPT
@@ -183,8 +191,9 @@ def test_document_anchors_logo_and_footer_at_the_bottom_of_each_slide():
 
     assert "width:1080px; height:1350px" in html
     assert "flex-direction:column; justify-content:flex-start" in html
-    assert ".slide > h1 + *, .slide > h2 + * { margin-top:auto" in html
-    assert ".slide > :last-child:not(h1):not(h2) { margin-bottom:auto" in html
+    assert ".slide:first-child { justify-content:center; }" in html
+    assert "margin-top:auto" not in html
+    assert "margin-bottom:auto" not in html
     assert "left:82px; bottom:40px; width:190px" in html
     assert "right:82px; bottom:40px; border-top" in html
     assert "padding-top:38px" in html
