@@ -79,17 +79,20 @@ def test_prompt_requires_hook_body_sources_cta_and_forbids_hashtags() -> None:
 
 def test_carousel_post_prompt_is_short_and_forbids_slide_repetition() -> None:
     prompt = " ".join(LINKEDIN_CAROUSEL_POST_SYSTEM_PROMPT.split())
-    assert "entre 40 et 80 mots" in prompt
+    assert "entre 90 et 140 mots" in prompt
     assert "Ne reprends jamais le titre de la première slide" in prompt
     assert "Ne résume pas les slides une par une" in prompt
     assert "N'insère pas de bloc « Sources »" in LINKEDIN_CAROUSEL_POST_SYSTEM_PROMPT
     assert "visibles avant « voir plus »" in LINKEDIN_CAROUSEL_POST_SYSTEM_PROMPT
-    assert "N'ouvre jamais par une formule générique" in (
-        LINKEDIN_CAROUSEL_POST_SYSTEM_PROMPT
-    )
-    assert "invite explicitement à faire défiler" in prompt
+    assert "180 caractères maximum" in prompt
+    assert "peut être trop tard" in prompt
+    assert "Pour les RH, l'enjeu est de" in prompt
+    assert "Chaque phrase doit contenir une information" in prompt
+    assert "CTA de 4 à 12 mots" in prompt
+    assert "invitation interchangeable" in prompt
     assert "question de discussion artificielle" in prompt
     assert "N'utilise pas de puces ni de liste" in prompt
+    assert "ne pourraient pas être réutilisés tels quels" in prompt
 
 
 def test_carousel_user_prompt_exposes_exact_carousel_as_data() -> None:

@@ -91,6 +91,27 @@ function downloadPngFiles(images: SocialMediaImageResult[]) {
 const LIVE_PREVIEW_DEFAULT_WIDTH = 1144;
 const LIVE_PREVIEW_DEFAULT_HEIGHT = 1414;
 
+export function calculatePreviewScale(
+  containerWidth: number,
+  containerHeight: number,
+  contentWidth: number,
+  slideHeight: number
+) {
+  if (
+    containerWidth <= 0 ||
+    containerHeight <= 0 ||
+    contentWidth <= 0 ||
+    slideHeight <= 0
+  ) {
+    return 1;
+  }
+  return Math.min(
+    1,
+    containerWidth / contentWidth,
+    containerHeight / slideHeight
+  );
+}
+
 function LiveHtmlPreview({ html, title }: { html: string; title: string }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const iframeRef = useRef<HTMLIFrameElement>(null);
@@ -101,6 +122,10 @@ function LiveHtmlPreview({ html, title }: { html: string; title: string }) {
   const [scale, setScale] = useState(1);
 
   useEffect(() => {
+    if (containerRef.current) {
+      containerRef.current.scrollTop = 0;
+      containerRef.current.scrollLeft = 0;
+    }
     setPreviewSize({
       width: LIVE_PREVIEW_DEFAULT_WIDTH,
       height: LIVE_PREVIEW_DEFAULT_HEIGHT,
@@ -123,9 +148,22 @@ function LiveHtmlPreview({ html, title }: { html: string; title: string }) {
       document?.body.scrollHeight ?? 0,
       LIVE_PREVIEW_DEFAULT_HEIGHT
     );
+    const firstSlide = document?.querySelector<HTMLElement>(".slide");
+    const slideHeight = Math.max(
+      firstSlide?.offsetHeight ?? 0,
+      firstSlide?.scrollHeight ?? 0,
+      LIVE_PREVIEW_DEFAULT_HEIGHT
+    );
 
     setPreviewSize({ width, height });
-    setScale(Math.min(1, container.clientWidth / width));
+    setScale(
+      calculatePreviewScale(
+        container.clientWidth,
+        container.clientHeight,
+        width,
+        slideHeight
+      )
+    );
   }, []);
 
   useEffect(() => {
@@ -490,6 +528,10 @@ export function SocialMediaDialog({
                 <div className="space-y-1.5">
                   <p className="text-muted-foreground text-xs font-medium">
                     {includePost ? "Aperçu du carrousel" : "Aperçu du média"}
+                  </p>
+                  <p className="text-muted-foreground text-xs">
+                    Une slide complète est ajustée à la hauteur disponible.
+                    Faites défiler cette zone pour parcourir les suivantes.
                   </p>
                   <LiveHtmlPreview
                     html={html}

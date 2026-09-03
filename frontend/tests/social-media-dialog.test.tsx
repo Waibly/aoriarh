@@ -1,5 +1,8 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { SocialMediaDialog } from "@/components/chat/social-media-dialog";
+import {
+  calculatePreviewScale,
+  SocialMediaDialog,
+} from "@/components/chat/social-media-dialog";
 import {
   downloadSocialMediaPdf,
   generateSocialMedia,
@@ -63,6 +66,15 @@ describe("SocialMediaDialog", () => {
       warnings: ["Avertissement non bloquant"],
       render_error: null,
     });
+  });
+
+  it("ajuste une slide entière à la hauteur disponible", () => {
+    expect(calculatePreviewScale(1300, 650, 1144, 1414)).toBeCloseTo(
+      650 / 1414
+    );
+    expect(calculatePreviewScale(600, 1600, 1144, 1414)).toBeCloseTo(
+      600 / 1144
+    );
   });
 
   it("affiche d’abord le post puis l’unique aperçu du carrousel", async () => {
