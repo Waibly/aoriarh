@@ -15,6 +15,7 @@ from app.services.linkedin_post_service import (
     format_linkedin_reference,
     generate_linkedin_post,
     select_linkedin_references,
+    select_publication_references,
 )
 
 
@@ -65,6 +66,11 @@ def test_prompt_requires_hook_body_sources_cta_and_forbids_hashtags() -> None:
     assert "8 mots maximum" not in LINKEDIN_POST_SYSTEM_PROMPT
     assert "question d'audit" in LINKEDIN_POST_SYSTEM_PROMPT
     assert "N'ajoute aucun hashtag" in LINKEDIN_POST_SYSTEM_PROMPT
+    assert "publication publique et décontextualisée" in LINKEDIN_POST_SYSTEM_PROMPT
+    assert "forme ou type de société" in LINKEDIN_POST_SYSTEM_PROMPT
+    assert "effectif exact ou" in LINKEDIN_POST_SYSTEM_PROMPT
+    assert "seuil abstrait" in LINKEDIN_POST_SYSTEM_PROMPT
+    assert "N'en fais jamais un exemple" in LINKEDIN_POST_SYSTEM_PROMPT
 
 
 def test_user_prompt_delimits_inputs_and_authorized_references() -> None:
@@ -145,6 +151,29 @@ def test_internal_reference_does_not_expose_document_name() -> None:
 
     assert reference == "Règlement intérieur"
     assert "ACME" not in reference
+
+
+def test_publication_references_exclude_organisation_documents() -> None:
+    sources = [
+        {
+            "source_type": "accord_entreprise",
+            "source_type_label": "Accord d'entreprise",
+            "document_name": "Accord ACME sur le télétravail",
+        },
+        {
+            "source_type": "code_travail",
+            "source_type_label": "Code du travail",
+            "document_name": "Code du travail",
+            "article_nums": ["L.1222-9"],
+        },
+    ]
+
+    selected = select_publication_references(
+        "L'accord ACME sur le télétravail complète l'article L. 1222-9.",
+        sources,
+    )
+
+    assert [source["source_type"] for source in selected] == ["code_travail"]
 
 
 def test_warnings_never_transform_content() -> None:

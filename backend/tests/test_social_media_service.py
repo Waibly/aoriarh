@@ -70,6 +70,11 @@ def test_prompt_requires_sober_copy_and_explained_legal_references():
     assert "Aère verticalement" in SOCIAL_MEDIA_SYSTEM_PROMPT
     assert "répartis-le sur une slide supplémentaire" in SOCIAL_MEDIA_SYSTEM_PROMPT
     assert "N'écris jamais <strong>Libellé</strong>Valeur" in SOCIAL_MEDIA_SYSTEM_PROMPT
+    assert "publication publique et décontextualisée" in SOCIAL_MEDIA_SYSTEM_PROMPT
+    assert "forme ou type de société" in SOCIAL_MEDIA_SYSTEM_PROMPT
+    assert "effectif exact ou" in SOCIAL_MEDIA_SYSTEM_PROMPT
+    assert "seuil abstrait" in SOCIAL_MEDIA_SYSTEM_PROMPT
+    assert "N'en fais jamais un exemple" in SOCIAL_MEDIA_SYSTEM_PROMPT
 
 
 def test_reference_context_exposes_the_topic_without_changing_the_exact_label():
@@ -177,7 +182,9 @@ def test_document_anchors_logo_and_footer_at_the_bottom_of_each_slide():
     )
 
     assert "width:1080px; height:1350px" in html
-    assert "flex-direction:column; justify-content:center" in html
+    assert "flex-direction:column; justify-content:flex-start" in html
+    assert ".slide > h1 + *, .slide > h2 + * { margin-top:auto" in html
+    assert ".slide > :last-child:not(h1):not(h2) { margin-bottom:auto" in html
     assert "left:82px; bottom:40px; width:190px" in html
     assert "right:82px; bottom:40px; border-top" in html
     assert "padding-top:38px" in html

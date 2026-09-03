@@ -34,6 +34,8 @@ _llm = AsyncOpenAI(
 )
 
 _INTERNAL_SOURCE_TYPES = {
+    "accord_entreprise",
+    "accord_performance_collective",
     "usage_entreprise",
     "engagement_unilateral",
     "reglement_interieur",
@@ -106,9 +108,22 @@ Règles absolues :
   personnelle ou résultat absent de la réponse fournie.
 - Ne corrige pas et ne complète pas le fond juridique. Conserve les conditions,
   exceptions, réserves et incertitudes de la réponse.
-- Ne révèle aucun nom de personne, nom d'entreprise, identifiant ou détail
-  confidentiel. Généralise le contexte sans transformer un cas particulier en
-  règle générale.
+- Le post est une publication publique et décontextualisée. Ne reprends et
+  n'évoque aucune information décrivant l'entreprise à l'origine de la
+  question, même anonymisée : nom, forme ou type de société, effectif exact ou
+  tranche d'effectif, secteur ou activité, localisation, établissement,
+  organisation interne, historique, pratique, accord, usage, règlement ou
+  autre document interne. N'en fais jamais un exemple ou un cas pratique.
+- Un nombre de salariés ou une caractéristique d'entreprise ne peut apparaître
+  que s'il constitue une condition générale de la règle juridique exposée. Dans
+  ce cas, présente-le uniquement comme un seuil abstrait applicable à toutes
+  les entreprises concernées, sans indiquer ni laisser entendre que
+  l'entreprise source remplit cette condition.
+- Tu peux citer une convention collective ou un IDCC uniquement pour exposer
+  la portée générale d'une règle conventionnelle. Ne dis jamais que cette
+  convention s'applique à l'entreprise source.
+- Ne révèle aucun nom de personne ni identifiant. Généralise le contexte sans
+  transformer un cas particulier en règle générale.
 - Utilise uniquement les références autorisées fournies. Recopie leur libellé
   à l'identique. Si la liste est vide, n'invente aucune source.
 - Écris entre 200 et 300 mots. Privilégie la clarté à l'exhaustivité : retiens
@@ -281,6 +296,16 @@ def select_linkedin_references(answer_markdown: str, sources: list[dict]) -> lis
         selected.append(source_copy)
 
     return selected
+
+
+def select_publication_references(answer_markdown: str, sources: list[dict]) -> list[dict]:
+    """Écarte des prompts publics les références propres à l'organisation."""
+
+    return [
+        source
+        for source in select_linkedin_references(answer_markdown, sources)
+        if _single_line(source.get("source_type")) not in _INTERNAL_SOURCE_TYPES
+    ]
 
 
 def _single_line(value: object) -> str:
@@ -461,7 +486,7 @@ async def generate_linkedin_post(
 ) -> LinkedInPostGeneration:
     """Génère un post et renvoie toute sortie non vide sans l'altérer."""
 
-    selected_sources = select_linkedin_references(answer_markdown, sources)
+    selected_sources = select_publication_references(answer_markdown, sources)
     references = format_linkedin_references(selected_sources)
     user_prompt = build_linkedin_user_prompt(
         question=question,

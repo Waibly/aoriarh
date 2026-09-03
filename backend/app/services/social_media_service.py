@@ -24,7 +24,7 @@ from app.core.config import settings
 from app.services.cost_tracker import cost_tracker
 from app.services.linkedin_post_service import (
     format_linkedin_references,
-    select_linkedin_references,
+    select_publication_references,
 )
 
 logger = logging.getLogger(__name__)
@@ -103,8 +103,22 @@ Règles absolues :
 - N'invente aucune règle, statistique, date, décision, source, URL, exemple ou
   résultat absent de la réponse fournie. Ne corrige et ne complète pas le fond.
 - Conserve les conditions, exceptions, réserves, incertitudes, délais et seuils.
-- Ne révèle aucun nom de personne, nom d'entreprise, identifiant ou détail
-  confidentiel. Généralise ces éléments pendant la génération.
+- Le média est une publication publique et décontextualisée. Ne reprends et
+  n'évoque aucune information décrivant l'entreprise à l'origine de la
+  question, même anonymisée : nom, forme ou type de société, effectif exact ou
+  tranche d'effectif, secteur ou activité, localisation, établissement,
+  organisation interne, historique, pratique, accord, usage, règlement ou
+  autre document interne. N'en fais jamais un exemple ou un cas pratique.
+- Un nombre de salariés ou une caractéristique d'entreprise ne peut apparaître
+  que s'il constitue une condition générale de la règle juridique exposée. Dans
+  ce cas, présente-le uniquement comme un seuil abstrait applicable à toutes
+  les entreprises concernées, sans indiquer ni laisser entendre que
+  l'entreprise source remplit cette condition.
+- Tu peux citer une convention collective ou un IDCC uniquement pour exposer
+  la portée générale d'une règle conventionnelle. Ne dis jamais que cette
+  convention s'applique à l'entreprise source.
+- Ne révèle aucun nom de personne ni identifiant. Généralise le contexte sans
+  transformer un cas particulier en règle générale.
 - Utilise uniquement les références autorisées et recopie leur libellé à
   l'identique. Si la liste est vide, n'invente aucune référence.
 - Si des références autorisées existent, consacre-leur un bloc lisible. Pour
@@ -334,7 +348,7 @@ body {{ counter-reset:slide; font-family:'Inter Variable','Segoe UI',Arial,sans-
   color:var(--ink); }}
 .carousel {{ margin:0; padding:0; }}
 .slide {{ counter-increment:slide; position:relative; display:flex;
-  flex-direction:column; justify-content:center; width:1080px; height:1350px;
+  flex-direction:column; justify-content:flex-start; width:1080px; height:1350px;
   padding:110px 92px 175px; background:#fff; break-after:page;
   page-break-after:always; break-inside:avoid; page-break-inside:avoid; }}
 .slide:last-child {{ break-after:auto; page-break-after:auto; }}
@@ -388,6 +402,8 @@ strong {{ color:var(--violet-dark); font-weight:780; }}
 ul, ol {{ margin-bottom:0; padding-left:46px; }}
 li {{ margin-bottom:26px; padding-left:8px; }}
 .slide > * + * {{ margin-top:26px; }}
+.slide > h1 + *, .slide > h2 + * {{ margin-top:auto; }}
+.slide > :last-child:not(h1):not(h2) {{ margin-bottom:auto; }}
 .highlight > :last-child, .card > :last-child, .example > :last-child,
 .warning > :last-child {{ margin-bottom:0; }}
 .cards, .checklist, .steps, .timeline, .sources {{ list-style:none; padding:0; }}
@@ -444,7 +460,7 @@ async def generate_social_media(
 ) -> SocialMediaGeneration:
     """Génère une seule sortie et la renvoie sans aucun fallback éditorial."""
 
-    selected_sources = select_linkedin_references(answer_markdown, sources)
+    selected_sources = select_publication_references(answer_markdown, sources)
     references = format_linkedin_references(selected_sources)
     user_prompt = build_social_media_user_prompt(
         question=question,
