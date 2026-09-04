@@ -105,8 +105,11 @@ def test_prompt_requires_sober_copy_and_explained_legal_references():
     assert "slide-dense" in SOCIAL_MEDIA_SYSTEM_PROMPT
     assert "répartis-le sur une slide supplémentaire" in SOCIAL_MEDIA_SYSTEM_PROMPT
     assert "N'écris jamais <strong>Libellé</strong>Valeur" in SOCIAL_MEDIA_SYSTEM_PROMPT
-    assert "Ne laisse jamais un deux-points" in SOCIAL_MEDIA_SYSTEM_PROMPT
-    assert "<strong>Libellé :</strong>" in SOCIAL_MEDIA_SYSTEM_PROMPT
+    assert "titre seul dans strong" in SOCIAL_MEDIA_SYSTEM_PROMPT
+    assert "sans deux-points" in SOCIAL_MEDIA_SYSTEM_PROMPT
+    assert "<strong>Libellé</strong><span>Explication.</span>" in (
+        SOCIAL_MEDIA_SYSTEM_PROMPT
+    )
     assert "publication publique et décontextualisée" in SOCIAL_MEDIA_SYSTEM_PROMPT
     assert "forme ou type de société" in SOCIAL_MEDIA_SYSTEM_PROMPT
     assert "effectif exact ou" in SOCIAL_MEDIA_SYSTEM_PROMPT
@@ -306,7 +309,7 @@ def test_direct_warning_text_is_readable_and_uses_non_brown_alert_palette():
     assert "--orange:" not in html
 
 
-def test_timeline_colon_stays_with_its_label_instead_of_starting_a_line():
+def test_timeline_title_is_alone_and_explanation_starts_on_next_line():
     fragment = """<main class="carousel">
       <section class="slide slide-cover">
         <h1>Couverture</h1><div class="slide-body"><p>Introduction</p></div>
@@ -315,7 +318,7 @@ def test_timeline_colon_stays_with_its_label_instead_of_starting_a_line():
         <h2>Enchaîner enquête et procédure disciplinaire</h2>
         <div class="slide-body">
           <ol class="timeline">
-            <li><strong>Enquête active</strong> : vérifier les faits sans inertie.</li>
+            <li><strong>Enquête active</strong><span>Vérifier les faits sans inertie.</span></li>
           </ol>
         </div>
       </section>
@@ -327,7 +330,8 @@ def test_timeline_colon_stays_with_its_label_instead_of_starting_a_line():
         label = page.search_for("Enquête active")[0]
         explanation = page.search_for("vérifier les faits")[0]
 
-        assert label.y0 == pytest.approx(explanation.y0, abs=2)
+        assert explanation.y0 > label.y1
+        assert "Enquête active\nVérifier les faits sans inertie." in page.get_text()
 
 
 def test_document_anchors_logo_and_footer_at_the_bottom_of_each_slide():
@@ -356,7 +360,8 @@ def test_document_anchors_logo_and_footer_at_the_bottom_of_each_slide():
     assert ".slide-dense .slide-body" in html
     assert ".checklist li > strong:first-child" in html
     assert ".steps li > strong:first-child" in html
-    assert ".timeline li > strong:first-child { display:inline" in html
+    assert ".timeline li > strong:first-child" in html
+    assert ".timeline li > span { display:block; }" in html
     assert "display:block; margin:0 0 9px" in html
     assert ".highlight::before { content:''; position:absolute" in html
     assert "border-radius:26px 0 0 26px; background:var(--violet)" in html
