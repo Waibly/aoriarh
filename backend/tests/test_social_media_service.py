@@ -92,7 +92,9 @@ def test_prompt_requires_sober_copy_and_explained_legal_references():
     assert "première slide est l'ouverture visuelle" in SOCIAL_MEDIA_SYSTEM_PROMPT
     assert "Aère verticalement" in SOCIAL_MEDIA_SYSTEM_PROMPT
     assert '<div class="slide-body">' in SOCIAL_MEDIA_SYSTEM_PROMPT
-    assert "titre en haut et centre" in SOCIAL_MEDIA_SYSTEM_PROMPT
+    assert "première slide seulement" in SOCIAL_MEDIA_SYSTEM_PROMPT
+    assert "ferrés en haut" in SOCIAL_MEDIA_SYSTEM_PROMPT
+    assert "pied de page reste ancré en bas" in SOCIAL_MEDIA_SYSTEM_PROMPT
     assert "La fidélité juridique prime toujours" in SOCIAL_MEDIA_SYSTEM_PROMPT
     assert "Le français doit rester idiomatique" in SOCIAL_MEDIA_SYSTEM_PROMPT
     assert "Ne fixe aucun nombre de mots arbitraire" in SOCIAL_MEDIA_SYSTEM_PROMPT
@@ -226,33 +228,53 @@ def test_renderer_creates_one_pdf_page_per_slide():
         assert document[0].rect.width / document[0].rect.height == pytest.approx(0.8)
 
 
-def test_title_stays_high_while_legal_content_is_centered_above_footer():
+def test_only_first_slide_is_centered_and_footers_stay_aligned():
+    html = render_social_media_document(RAW_FRAGMENT, generated_at=datetime(2026, 9, 4))
+
+    with fitz.open(stream=render_social_media_pdf(html), filetype="pdf") as document:
+        cover_title = document[0].search_for("Question courte, réponse utile")[0]
+        cover_body = document[0].search_for("Une réponse fidèle")[0]
+        second_title = document[1].search_for("Les étapes adaptées au sujet")[0]
+        second_body = document[1].search_for("Vérifier")[0]
+        first_footer = document[0].search_for("aoriarh.fr")[0]
+        second_footer = document[1].search_for("aoriarh.fr")[0]
+
+        assert cover_title.y0 > 250
+        assert cover_body.y0 > cover_title.y1
+        assert second_title.y0 < 120
+        assert second_body.y0 < 250
+        assert first_footer.y0 == pytest.approx(second_footer.y0)
+
+
+def test_wrapped_title_never_overlaps_following_content():
     fragment = """<main class="carousel">
-      <section class="slide slide-warning slide-compact">
-        <h2>Un entretien distinct</h2>
+      <section class="slide slide-cover">
+        <h1>Couverture</h1><div class="slide-body"><p>Introduction</p></div>
+      </section>
+      <section class="slide slide-list slide-compact">
+        <h2>Préserver la suite de la procédure</h2>
         <div class="slide-body">
+          <div class="warning">Une mise à pied conservatoire requalifiée en sanction
+          fragilise un licenciement prononcé ensuite pour les mêmes faits.</div>
           <ul class="checklist">
-            <li>Le retour après un temps partiel lié à la parentalité est concerné.</li>
-            <li>L'obligation ne s'applique pas si l'entretien a déjà eu lieu.</li>
+            <li>L'entretien préalable respecte le délai légal.</li>
+            <li>Le non-respect du délai peut rendre la procédure irrégulière.</li>
+            <li>La période d'écartement doit être régularisée.</li>
           </ul>
-          <p class="source-note">Code du travail, art. L. 6315-1</p>
-          <div class="warning">La situation doit être appréciée au regard des
-          conditions prévues par le texte.</div>
+          <p class="source-note">Code du travail, art. L. 1232-2</p>
         </div>
       </section>
     </main>"""
     html = render_social_media_document(fragment, generated_at=datetime(2026, 9, 4))
 
     with fitz.open(stream=render_social_media_pdf(html), filetype="pdf") as document:
-        page = document[0]
-        title = page.search_for("Un entretien distinct")[0]
-        first_item = page.search_for("Le retour après un temps partiel")[0]
-        warning = page.search_for("La situation doit être appréciée")[0]
+        page = document[1]
+        title_lines = page.search_for("Préserver la suite de la procédure")
+        warning = page.search_for("Une mise à pied conservatoire")[0]
         footer = page.search_for("aoriarh.fr")[0]
 
-        assert title.y0 < 120
-        assert first_item.y0 > title.y1 + 100
-        assert warning.y1 < footer.y0 - 30
+        assert warning.y0 > max(line.y1 for line in title_lines) + 15
+        assert page.search_for("Code du travail")[0].y1 < footer.y0 - 30
 
 
 def test_document_anchors_logo_and_footer_at_the_bottom_of_each_slide():
@@ -268,8 +290,9 @@ def test_document_anchors_logo_and_footer_at_the_bottom_of_each_slide():
     assert "padding-top:38px" in html
     assert ".slide:first-child { color:#fff" in html
     assert ".slide:first-child .source-note { color:#fff; }" in html
-    assert ".slide-body { flex:1; min-height:0; display:flex" in html
-    assert "justify-content:center; gap:24px; padding-top:30px" in html
+    assert ".slide:first-child { justify-content:center; }" in html
+    assert ".slide-body { flex:0 0 auto; min-height:0; display:flex" in html
+    assert "justify-content:flex-start; gap:24px; padding-top:30px" in html
     assert ".slide-body > * { flex-shrink:0; }" in html
     assert "display:flex; min-height:112px" in html
     assert "position:relative; overflow:hidden; display:flex" not in html

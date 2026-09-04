@@ -102,8 +102,11 @@ Règles absolues :
   précise, puis au plus un bloc court utile à la compréhension.
 - Sur chaque slide, place le titre h1 ou h2 directement sous la balise section,
   puis enveloppe tous les autres blocs éditoriaux dans un unique
-  <div class="slide-body">. Le design maintient ainsi le titre en haut et centre
-  verticalement le contenu dans l'espace restant, sans toucher au pied de page.
+  <div class="slide-body">.
+- Sur la première slide seulement, tout le groupe éditorial est centré
+  verticalement. À partir de la deuxième slide, le titre et slide-body sont
+  ferrés en haut. Le pied de page reste ancré en bas sur toutes les slides et
+  n'entre jamais dans ce centrage.
 - Une eyebrow éventuelle précède directement le titre. Aucun autre contenu ne
   doit se trouver hors de slide-body, y compris les source-note.
 - N'invente aucune règle, statistique, date, décision, source, URL, exemple ou
@@ -417,6 +420,7 @@ body {{ counter-reset:slide; font-family:'Inter Variable','Segoe UI',Arial,sans-
   padding:110px 92px 175px; background:#fff; break-after:page;
   page-break-after:always; break-inside:avoid; page-break-inside:avoid; }}
 .slide > :not(.slide-body) {{ flex-shrink:0; }}
+.slide:first-child {{ justify-content:center; }}
 .slide:last-child {{ break-after:auto; page-break-after:auto; }}
 .slide::before {{ content:''; position:absolute; left:82px; bottom:40px; width:190px;
   height:42px; background:url('{_LOGO_BRAND_URL}') left center/contain no-repeat; }}
@@ -455,8 +459,8 @@ p, li {{ font-size:35px; line-height:1.5; }}
 strong {{ color:var(--violet-dark); font-weight:780; }}
 .eyebrow {{ margin-bottom:24px; color:#eadcff; font-size:24px; font-weight:800;
   letter-spacing:.13em; text-transform:uppercase; }}
-.slide-body {{ flex:1; min-height:0; display:flex; flex-direction:column;
-  justify-content:center; gap:24px; padding-top:30px; }}
+.slide-body {{ flex:0 0 auto; min-height:0; display:flex; flex-direction:column;
+  justify-content:flex-start; gap:24px; padding-top:30px; }}
 .slide-body > * {{ flex-shrink:0; }}
 .lead {{ color:#494950; font-size:43px; line-height:1.35; }}
 .muted {{ color:var(--muted); }}
