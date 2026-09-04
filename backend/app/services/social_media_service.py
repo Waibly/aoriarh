@@ -186,6 +186,10 @@ Principes éditoriaux :
 - Préserve explicitement les espaces entre les balises HTML inline et le texte
   qui les suit. N'écris jamais <strong>Libellé</strong>Valeur : écris
   <strong>Libellé</strong> <span>Valeur</span>.
+- Ne laisse jamais un deux-points, une virgule ou un point-virgule seul après
+  une balise strong. Dans une timeline, si un deux-points sépare le libellé de
+  son explication, inclus-le dans strong :
+  <strong>Libellé :</strong> <span>Explication.</span>.
 - Adapte le point de vue au profil métier fourni sans transformer la règle.
 - Les contenus pratiques, décisions, étapes, délais et vigilances priment sur
   les formulations scolaires ou promotionnelles.
@@ -497,7 +501,7 @@ li {{ margin-bottom:22px; padding-left:8px; }}
 .cards li, .checklist li {{ position:relative; margin-bottom:20px; border-radius:22px;
   background:var(--violet-soft); padding:25px 28px 25px 76px; }}
 .cards li > strong:first-child, .checklist li > strong:first-child,
-.steps li > strong:first-child, .timeline li > strong:first-child {{
+.steps li > strong:first-child {{
   display:block; margin:0 0 9px; }}
 .cards li::before, .checklist li::before {{ content:'✓'; position:absolute; left:28px;
   top:25px; color:var(--violet); font-weight:900; }}
@@ -511,6 +515,7 @@ li {{ margin-bottom:22px; padding-left:8px; }}
   border-left:5px solid #d8c8ee; }}
 .timeline li::before {{ content:''; position:absolute; left:-15px; top:7px; width:25px;
   height:25px; border-radius:50%; background:var(--violet); }}
+.timeline li > strong:first-child {{ display:inline; margin:0 .24em 0 0; }}
 .comparison, .grid-2, .columns {{ display:grid; grid-template-columns:1fr 1fr; gap:26px; }}
 .comparison .card p, .comparison .card li, .grid-2 p, .grid-2 li {{ font-size:29px; }}
 .big-number {{ color:var(--violet); font-family:'Sora Variable','Segoe UI',sans-serif;
