@@ -95,6 +95,9 @@ def test_prompt_requires_sober_copy_and_explained_legal_references():
     assert "première slide seulement" in SOCIAL_MEDIA_SYSTEM_PROMPT
     assert "ferrés en haut" in SOCIAL_MEDIA_SYSTEM_PROMPT
     assert "pied de page reste ancré en bas" in SOCIAL_MEDIA_SYSTEM_PROMPT
+    assert "Elle donne seulement l'essentiel" in SOCIAL_MEDIA_SYSTEM_PROMPT
+    assert "N'y utilise jamais de highlight" in SOCIAL_MEDIA_SYSTEM_PROMPT
+    assert "couverture ne répète pas" in SOCIAL_MEDIA_SYSTEM_PROMPT
     assert "La fidélité juridique prime toujours" in SOCIAL_MEDIA_SYSTEM_PROMPT
     assert "Le français doit rester idiomatique" in SOCIAL_MEDIA_SYSTEM_PROMPT
     assert "Ne fixe aucun nombre de mots arbitraire" in SOCIAL_MEDIA_SYSTEM_PROMPT
@@ -277,6 +280,30 @@ def test_wrapped_title_never_overlaps_following_content():
         assert page.search_for("Code du travail")[0].y1 < footer.y0 - 30
 
 
+def test_direct_warning_text_is_readable_and_uses_non_brown_alert_palette():
+    fragment = """<main class="carousel">
+      <section class="slide slide-cover">
+        <h1>Couverture</h1><div class="slide-body"><p>Introduction</p></div>
+      </section>
+      <section class="slide slide-warning slide-compact">
+        <h2>Point de vigilance</h2>
+        <div class="slide-body">
+          <div class="warning">Évitez toute suspension à durée indéterminée.</div>
+        </div>
+      </section>
+    </main>"""
+    html = render_social_media_document(fragment, generated_at=datetime(2026, 9, 4))
+
+    with fitz.open(stream=render_social_media_pdf(html), filetype="pdf") as document:
+        warning = document[1].search_for("Évitez toute suspension")[0]
+
+        assert warning.height > 20
+
+    assert "--alert:#9f1239" in html
+    assert "--alert-soft:#fff1f2" in html
+    assert "--orange:" not in html
+
+
 def test_document_anchors_logo_and_footer_at_the_bottom_of_each_slide():
     html = render_social_media_document(
         RAW_FRAGMENT,
@@ -290,12 +317,15 @@ def test_document_anchors_logo_and_footer_at_the_bottom_of_each_slide():
     assert "padding-top:38px" in html
     assert ".slide:first-child { color:#fff" in html
     assert ".slide:first-child .source-note { color:#fff; }" in html
+    assert ".slide:first-child .highlight::before { display:none; }" in html
+    assert "border:0; border-radius:0; background:transparent" in html
     assert ".slide:first-child { justify-content:center; }" in html
     assert ".slide-body { flex:0 0 auto; min-height:0; display:flex" in html
     assert "justify-content:flex-start; gap:24px; padding-top:30px" in html
     assert ".slide-body > * { flex-shrink:0; }" in html
     assert "display:flex; min-height:112px" in html
     assert "position:relative; overflow:hidden; display:flex" not in html
+    assert "font-size:31px; line-height:1.42" in html
     assert ".slide-compact .slide-body" in html
     assert ".slide-dense .slide-body" in html
     assert ".checklist li > strong:first-child" in html

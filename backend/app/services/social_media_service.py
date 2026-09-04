@@ -98,8 +98,11 @@ Règles absolues :
   synthèse et CTA. Une slide de couverture ou un CTA ne sont pas obligatoires.
 - Chaque slide porte une fonction éditoriale distincte. Évite les répétitions.
 - La première slide est l'ouverture visuelle du média et s'affiche sur fond
-  violet. Elle reste concise : un titre, une réponse ou une promesse de lecture
-  précise, puis au plus un bloc court utile à la compréhension.
+  violet. Elle donne seulement l'essentiel : une eyebrow facultative, un titre
+  précis et, uniquement si elle apporte une information distincte, une seule
+  phrase lead. N'y utilise jamais de highlight, card, warning, example, liste,
+  grille ou autre encadré. Le développement juridique commence sur les slides
+  suivantes ; la couverture ne répète pas leur contenu.
 - Sur chaque slide, place le titre h1 ou h2 directement sous la balise section,
   puis enveloppe tous les autres blocs éditoriaux dans un unique
   <div class="slide-body">.
@@ -408,8 +411,9 @@ def render_social_media_document(raw_content: str, *, generated_at: datetime) ->
 {_FONTS_CSS}
 @page {{ size: 1080px 1350px; margin: 0; }}
 :root {{ --violet:{_VIOLET}; --violet-dark:#4b1f86; --violet-soft:#f5f3ff;
-  --ink:#27272a; --muted:#5f5f68; --line:#e9e4f2; --orange:#b45309;
-  --orange-soft:#fff7ed; --blue:#0369a1; --blue-soft:#f0f9ff; }}
+  --ink:#27272a; --muted:#5f5f68; --line:#e9e4f2; --alert:#9f1239;
+  --alert-soft:#fff1f2; --alert-line:#fecdd3;
+  --blue:#0369a1; --blue-soft:#f0f9ff; }}
 * {{ box-sizing:border-box; }}
 html, body {{ margin:0; padding:0; background:#ddd8e6; }}
 body {{ counter-reset:slide; font-family:'Inter Variable','Segoe UI',Arial,sans-serif;
@@ -448,6 +452,12 @@ body {{ counter-reset:slide; font-family:'Inter Variable','Segoe UI',Arial,sans-
 .slide-cover .highlight strong, .slide-cover .card strong,
 .slide:first-child .highlight strong, .slide:first-child .card strong {{
   color:var(--violet-dark); }}
+.slide:first-child .highlight, .slide:first-child .card,
+.slide:first-child .example, .slide:first-child .warning {{ min-height:0;
+  border:0; border-radius:0; background:transparent; color:#fff; padding:0; }}
+.slide:first-child .highlight::before {{ display:none; }}
+.slide:first-child .highlight strong, .slide:first-child .card strong,
+.slide:first-child .example strong, .slide:first-child .warning strong {{ color:#fff; }}
 h1, h2, h3, p, ul, ol {{ margin:0; }}
 h1, h2, h3 {{ font-family:'Sora Variable','Segoe UI',Arial,sans-serif; }}
 h1 {{ max-width:860px; font-size:78px; line-height:1.08;
@@ -466,7 +476,8 @@ strong {{ color:var(--violet-dark); font-weight:780; }}
 .muted {{ color:var(--muted); }}
 .pill {{ align-self:flex-start; border-radius:999px; background:var(--violet-soft);
   color:var(--violet); padding:12px 22px; font-size:24px; font-weight:800; }}
-.highlight, .card, .example, .warning {{ border-radius:26px; padding:34px 38px; }}
+.highlight, .card, .example, .warning {{ border-radius:26px; padding:34px 38px;
+  font-size:35px; line-height:1.45; }}
 .highlight {{ position:relative; display:flex; min-height:112px;
   flex-direction:column; justify-content:center; border-left:0;
   background:var(--violet-soft); color:var(--violet-dark); font-size:40px;
@@ -475,8 +486,9 @@ strong {{ color:var(--violet-dark); font-weight:780; }}
   border-radius:26px 0 0 26px; background:var(--violet); }}
 .card {{ border:3px solid var(--line); background:#fff; }}
 .example {{ border:3px solid #bae6fd; background:var(--blue-soft); }}
-.warning {{ border:3px solid #fed7aa; background:var(--orange-soft); color:#7c3f0c; }}
-.warning strong {{ color:var(--orange); }}
+.warning {{ border:3px solid var(--alert-line); background:var(--alert-soft);
+  color:#881337; }}
+.warning strong {{ color:var(--alert); }}
 ul, ol {{ margin-bottom:0; padding-left:46px; }}
 li {{ margin-bottom:22px; padding-left:8px; }}
 .highlight > :last-child, .card > :last-child, .example > :last-child,
@@ -515,7 +527,7 @@ li {{ margin-bottom:22px; padding-left:8px; }}
 .slide-compact .lead {{ font-size:37px; }}
 .slide-compact .highlight {{ min-height:96px; padding:27px 32px; font-size:35px; }}
 .slide-compact .card, .slide-compact .example, .slide-compact .warning {{
-  padding:27px 32px; }}
+  padding:27px 32px; font-size:31px; line-height:1.42; }}
 .slide-compact .cards li, .slide-compact .checklist li {{
   margin-bottom:15px; padding:20px 24px 20px 68px; }}
 .slide-compact .cards li::before, .slide-compact .checklist li::before {{
@@ -527,7 +539,7 @@ li {{ margin-bottom:22px; padding-left:8px; }}
 .slide-dense .lead {{ font-size:33px; }}
 .slide-dense .highlight {{ min-height:82px; padding:22px 28px; font-size:31px; }}
 .slide-dense .card, .slide-dense .example, .slide-dense .warning {{
-  padding:22px 28px; }}
+  padding:22px 28px; font-size:28px; line-height:1.36; }}
 .slide-dense .cards li, .slide-dense .checklist li {{
   margin-bottom:12px; padding:16px 22px 16px 62px; }}
 .slide-dense .cards li::before, .slide-dense .checklist li::before {{
