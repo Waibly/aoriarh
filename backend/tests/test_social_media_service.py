@@ -25,10 +25,13 @@ RAW_FRAGMENT = """<main class="carousel">
   <section class="slide slide-cover">
     <p class="eyebrow">Droit social</p>
     <h1>Question courte, réponse utile</h1>
+    <div class="slide-body"><p class="lead">Une réponse fidèle.</p></div>
   </section>
   <section class="slide slide-steps">
     <h2>Les étapes adaptées au sujet</h2>
-    <ol class="steps"><li>Vérifier</li><li>Agir</li></ol>
+    <div class="slide-body">
+      <ol class="steps"><li>Vérifier</li><li>Agir</li></ol>
+    </div>
   </section>
 </main>"""
 
@@ -62,6 +65,15 @@ def test_inspection_only_adds_warnings_and_never_changes_raw_fragment():
     assert any("section.slide" in warning for warning in warnings)
 
 
+def test_inspection_warns_about_missing_slide_body_without_changing_output():
+    raw = '<main class="carousel"><section class="slide"><h2>Titre</h2></section></main>'
+
+    warnings = inspect_social_media_fragment(raw, [])
+
+    assert any("exactement un bloc slide-body" in warning for warning in warnings)
+    assert raw == '<main class="carousel"><section class="slide"><h2>Titre</h2></section></main>'
+
+
 def test_prompt_requires_sober_copy_and_explained_legal_references():
     assert "carrousel Instagram" in SOCIAL_MEDIA_SYSTEM_PROMPT
     assert (
@@ -79,12 +91,13 @@ def test_prompt_requires_sober_copy_and_explained_legal_references():
     assert "sans attendre la dernière slide" in SOCIAL_MEDIA_SYSTEM_PROMPT
     assert "première slide est l'ouverture visuelle" in SOCIAL_MEDIA_SYSTEM_PROMPT
     assert "Aère verticalement" in SOCIAL_MEDIA_SYSTEM_PROMPT
-    assert "contenu éditorial de la première slide est centré verticalement" in (
-        SOCIAL_MEDIA_SYSTEM_PROMPT
-    )
-    assert "toutes les slides suivantes, le contenu est ferré en haut" in (
-        SOCIAL_MEDIA_SYSTEM_PROMPT
-    )
+    assert '<div class="slide-body">' in SOCIAL_MEDIA_SYSTEM_PROMPT
+    assert "titre en haut et centre" in SOCIAL_MEDIA_SYSTEM_PROMPT
+    assert "La fidélité juridique prime toujours" in SOCIAL_MEDIA_SYSTEM_PROMPT
+    assert "Le français doit rester idiomatique" in SOCIAL_MEDIA_SYSTEM_PROMPT
+    assert "Ne fixe aucun nombre de mots arbitraire" in SOCIAL_MEDIA_SYSTEM_PROMPT
+    assert "slide-compact" in SOCIAL_MEDIA_SYSTEM_PROMPT
+    assert "slide-dense" in SOCIAL_MEDIA_SYSTEM_PROMPT
     assert "répartis-le sur une slide supplémentaire" in SOCIAL_MEDIA_SYSTEM_PROMPT
     assert "N'écris jamais <strong>Libellé</strong>Valeur" in SOCIAL_MEDIA_SYSTEM_PROMPT
     assert "publication publique et décontextualisée" in SOCIAL_MEDIA_SYSTEM_PROMPT
@@ -213,6 +226,35 @@ def test_renderer_creates_one_pdf_page_per_slide():
         assert document[0].rect.width / document[0].rect.height == pytest.approx(0.8)
 
 
+def test_title_stays_high_while_legal_content_is_centered_above_footer():
+    fragment = """<main class="carousel">
+      <section class="slide slide-warning slide-compact">
+        <h2>Un entretien distinct</h2>
+        <div class="slide-body">
+          <ul class="checklist">
+            <li>Le retour après un temps partiel lié à la parentalité est concerné.</li>
+            <li>L'obligation ne s'applique pas si l'entretien a déjà eu lieu.</li>
+          </ul>
+          <p class="source-note">Code du travail, art. L. 6315-1</p>
+          <div class="warning">La situation doit être appréciée au regard des
+          conditions prévues par le texte.</div>
+        </div>
+      </section>
+    </main>"""
+    html = render_social_media_document(fragment, generated_at=datetime(2026, 9, 4))
+
+    with fitz.open(stream=render_social_media_pdf(html), filetype="pdf") as document:
+        page = document[0]
+        title = page.search_for("Un entretien distinct")[0]
+        first_item = page.search_for("Le retour après un temps partiel")[0]
+        warning = page.search_for("La situation doit être appréciée")[0]
+        footer = page.search_for("aoriarh.fr")[0]
+
+        assert title.y0 < 120
+        assert first_item.y0 > title.y1 + 100
+        assert warning.y1 < footer.y0 - 30
+
+
 def test_document_anchors_logo_and_footer_at_the_bottom_of_each_slide():
     html = render_social_media_document(
         RAW_FRAGMENT,
@@ -221,14 +263,17 @@ def test_document_anchors_logo_and_footer_at_the_bottom_of_each_slide():
 
     assert "width:1080px; height:1350px" in html
     assert "flex-direction:column; justify-content:flex-start" in html
-    assert ".slide:first-child { justify-content:center; }" in html
-    assert "margin-top:auto" not in html
-    assert "margin-bottom:auto" not in html
     assert "left:82px; bottom:40px; width:190px" in html
     assert "right:82px; bottom:40px; border-top" in html
     assert "padding-top:38px" in html
     assert ".slide:first-child { color:#fff" in html
-    assert ".slide > * + * { margin-top:26px" in html
+    assert ".slide-body { flex:1; min-height:0; display:flex" in html
+    assert "justify-content:center; gap:24px; padding-top:30px" in html
+    assert ".slide-body > * { flex-shrink:0; }" in html
+    assert "display:flex; min-height:112px" in html
+    assert "position:relative; overflow:hidden; display:flex" not in html
+    assert ".slide-compact .slide-body" in html
+    assert ".slide-dense .slide-body" in html
     assert ".checklist li > strong:first-child" in html
     assert ".steps li > strong:first-child" in html
     assert "display:block; margin:0 0 9px" in html

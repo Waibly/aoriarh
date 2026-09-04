@@ -100,15 +100,22 @@ Règles absolues :
 - La première slide est l'ouverture visuelle du média et s'affiche sur fond
   violet. Elle reste concise : un titre, une réponse ou une promesse de lecture
   précise, puis au plus un bloc court utile à la compréhension.
-- Tout le contenu éditorial de la première slide est centré verticalement par
-  le design system, à l'exception du pied de page. Garde donc cet ensemble
-  compact et équilibré autour de son centre.
-- Sur toutes les slides suivantes, le contenu est ferré en haut. Conserve une
-  respiration verticale nette entre les titres, paragraphes, listes et
-  encadrés, sans chercher à recentrer le groupe de contenu dans la page.
+- Sur chaque slide, place le titre h1 ou h2 directement sous la balise section,
+  puis enveloppe tous les autres blocs éditoriaux dans un unique
+  <div class="slide-body">. Le design maintient ainsi le titre en haut et centre
+  verticalement le contenu dans l'espace restant, sans toucher au pied de page.
+- Une eyebrow éventuelle précède directement le titre. Aucun autre contenu ne
+  doit se trouver hors de slide-body, y compris les source-note.
 - N'invente aucune règle, statistique, date, décision, source, URL, exemple ou
   résultat absent de la réponse fournie. Ne corrige et ne complète pas le fond.
 - Conserve les conditions, exceptions, réserves, incertitudes, délais et seuils.
+- La fidélité juridique prime toujours sur la brièveté et sur le nombre de
+  slides. Ne transforme jamais une faculté en obligation, une condition en
+  principe général, une possibilité en certitude ou une exception en règle.
+- Compacte seulement ce qui peut l'être sans perte de portée : supprime les
+  redites, factorise les formulations communes et choisis des phrases directes.
+  N'emploie ni style télégraphique, ni fragments artificiels, ni raccourci qui
+  rendrait le droit ambigu ou catégorique. Le français doit rester idiomatique.
 - Le média est une publication publique et décontextualisée. Ne reprends et
   n'évoque aucune information décrivant l'entreprise à l'origine de la
   question, même anonymisée : nom, forme ou type de société, effectif exact ou
@@ -143,6 +150,9 @@ Règles absolues :
 - Le bloc final « Références juridiques » récapitule malgré tout les références
   utilisées. Ne crée jamais une slide supplémentaire uniquement pour répéter
   une référence qui figure déjà dans ce bloc final.
+- Si le bloc « Références juridiques » ne tient pas lisiblement sur une slide,
+  poursuis-le sur une autre slide-sources slide-dense. Ne raccourcis, ne fusionne
+  et ne coupe jamais le libellé exact d'une référence pour gagner de la place.
 - Le contexte documentaire associé aux références sert uniquement à nommer
   leur objet. Ne l'utilise jamais pour ajouter au média une règle ou une
   précision absente de la réponse source.
@@ -154,13 +164,19 @@ Principes éditoriaux :
 - Donne rapidement l'information utile. Une accroche reste honnête et le contenu
   tient réellement sa promesse.
 - Une slide développe une idée principale lisible sur téléphone.
-- Préfère des titres courts, des paragraphes brefs et au maximum trois à cinq
-  éléments quand une liste améliore la compréhension.
+- Préfère des titres courts et des paragraphes brefs lorsque le sens juridique
+  le permet. Ne fixe aucun nombre de mots arbitraire : la longueur découle de ce
+  qui doit être dit fidèlement et de ce qui tient réellement dans le gabarit.
 - Aère verticalement les titres, paragraphes, listes et encadrés. Ne compacte
   jamais plusieurs idées pour les faire tenir sur une seule slide. Si le
   contenu devient dense, répartis-le sur une slide supplémentaire.
-- Limite chaque slide à deux à quatre blocs de contenu hors titre et pied de
-  page. Un bloc peut être un paragraphe, un encadré, une liste ou une grille.
+- Découpe aux frontières du raisonnement : principe, condition, exception,
+  conséquence ou référence. Ne coupe jamais une phrase, une énumération
+  indissociable ou le fondement d'une affirmation entre deux slides.
+- Utilise la classe slide-compact si une slide contient plusieurs blocs utiles
+  mais reste cohérente. Réserve slide-dense aux références longues ou à un bloc
+  juridique indivisible ; préfère une slide supplémentaire dès que le contenu
+  peut être séparé proprement.
 - Préserve explicitement les espaces entre les balises HTML inline et le texte
   qui les suit. N'écris jamais <strong>Libellé</strong>Valeur : écris
   <strong>Libellé</strong> <span>Valeur</span>.
@@ -178,18 +194,27 @@ Principes éditoriaux :
   média. Il reste discret, unique et professionnel.
 
 Bibliothèque HTML et classes disponibles :
-- slide-cover : ouverture visuelle forte ; h1, p.lead, p.eyebrow.
-- slide-answer : réponse ou principe essentiel ; h2, p.lead, div.highlight.
-- slide-list : liste ; h2 puis ul.cards ou ul.checklist.
-- slide-steps : procédure ; h2 puis ol.steps.
-- slide-timeline : chronologie ; h2 puis ol.timeline.
+- Structure obligatoire d'une slide : eyebrow facultative, h1 ou h2, puis un
+  unique div.slide-body contenant tout le contenu restant. Exemple minimal :
+  <section class="slide slide-answer"><h2>Titre</h2><div class="slide-body">
+  <div class="highlight">Réponse</div></div></section>.
+- slide-compact et slide-dense ajustent progressivement la typographie et les
+  espacements sans retirer de texte. Ajoute-les à section.slide seulement selon
+  la densité réelle du contenu.
+- slide-cover : ouverture visuelle forte ; eyebrow facultative et h1 avant
+  slide-body, puis p.lead dans slide-body.
+- slide-answer : réponse ou principe essentiel ; h2 puis slide-body contenant
+  p.lead ou div.highlight.
+- slide-list : liste ; h2 puis slide-body contenant ul.cards ou ul.checklist.
+- slide-steps : procédure ; h2 puis slide-body contenant ol.steps.
+- slide-timeline : chronologie ; h2 puis slide-body contenant ol.timeline.
 - slide-comparison : comparaison ; h2 puis div.comparison contenant deux
   article.card avec h3 et listes.
 - slide-number : seuil, montant ou délai ; h2 puis div.big-number et p.lead.
 - slide-example : cas pratique ; h2 puis div.example.
 - slide-warning : vigilance ou exception ; h2 puis div.warning.
 - slide-recap : synthèse ; h2 puis ul.checklist.
-- slide-sources : références ; h2 puis ul.sources. Chaque li contient
+- slide-sources : références ; h2 puis slide-body contenant ul.sources. Chaque li contient
   <strong>Référence exacte</strong> puis
   <span class="reference-topic">Objet précis en 3 à 8 mots</span>. Le h2 est
   exactement « Références juridiques ».
@@ -234,6 +259,8 @@ class _MediaFragmentInspector(HTMLParser):
         super().__init__(convert_charrefs=False)
         self.main_count = 0
         self.slide_count = 0
+        self.slide_body_counts: list[int] = []
+        self._current_slide: int | None = None
         self.forbidden_tags: list[str] = []
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
@@ -243,8 +270,16 @@ class _MediaFragmentInspector(HTMLParser):
             self.main_count += 1
         if tag == "section" and "slide" in classes:
             self.slide_count += 1
+            self.slide_body_counts.append(0)
+            self._current_slide = len(self.slide_body_counts) - 1
+        if tag == "div" and "slide-body" in classes and self._current_slide is not None:
+            self.slide_body_counts[self._current_slide] += 1
         if tag in {"script", "iframe", "object", "embed", "link"}:
             self.forbidden_tags.append(tag)
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag == "section":
+            self._current_slide = None
 
 
 def build_social_media_user_prompt(
@@ -332,6 +367,13 @@ def inspect_social_media_fragment(raw_content: str, references: list[str]) -> li
         warnings.append(
             "Aucune section.slide n'a été détectée. La génération brute reste inchangée."
         )
+    invalid_body_count = sum(count != 1 for count in inspector.slide_body_counts)
+    if invalid_body_count:
+        warnings.append(
+            f"{invalid_body_count} slide(s) ne contiennent pas exactement un bloc "
+            "slide-body ; leur centrage peut être imparfait. La génération brute reste "
+            "inchangée."
+        )
     if inspector.slide_count > 20:
         warnings.append("Le média contient plus de 20 slides. La génération brute reste inchangée.")
     if inspector.forbidden_tags:
@@ -374,7 +416,7 @@ body {{ counter-reset:slide; font-family:'Inter Variable','Segoe UI',Arial,sans-
   flex-direction:column; justify-content:flex-start; width:1080px; height:1350px;
   padding:110px 92px 175px; background:#fff; break-after:page;
   page-break-after:always; break-inside:avoid; page-break-inside:avoid; }}
-.slide:first-child {{ justify-content:center; }}
+.slide > :not(.slide-body) {{ flex-shrink:0; }}
 .slide:last-child {{ break-after:auto; page-break-after:auto; }}
 .slide::before {{ content:''; position:absolute; left:82px; bottom:40px; width:190px;
   height:42px; background:url('{_LOGO_BRAND_URL}') left center/contain no-repeat; }}
@@ -400,24 +442,27 @@ body {{ counter-reset:slide; font-family:'Inter Variable','Segoe UI',Arial,sans-
 .slide-cover .highlight strong, .slide-cover .card strong,
 .slide:first-child .highlight strong, .slide:first-child .card strong {{
   color:var(--violet-dark); }}
-h1, h2, h3, p, ul, ol {{ margin-top:0; }}
+h1, h2, h3, p, ul, ol {{ margin:0; }}
 h1, h2, h3 {{ font-family:'Sora Variable','Segoe UI',Arial,sans-serif; }}
-h1 {{ max-width:860px; margin-bottom:32px; font-size:78px; line-height:1.08;
+h1 {{ max-width:860px; font-size:78px; line-height:1.08;
   letter-spacing:-.035em; font-weight:800; }}
-h2 {{ margin-bottom:28px; color:var(--violet); font-size:61px; line-height:1.12;
+h2 {{ color:var(--violet); font-size:61px; line-height:1.12;
   letter-spacing:-.028em; font-weight:800; }}
-h3 {{ margin-bottom:20px; color:var(--violet); font-size:34px; line-height:1.2; }}
+h3 {{ color:var(--violet); font-size:34px; line-height:1.2; }}
 p, li {{ font-size:35px; line-height:1.5; }}
-p {{ margin-bottom:30px; }}
 strong {{ color:var(--violet-dark); font-weight:780; }}
-.eyebrow {{ margin-bottom:28px; color:#eadcff; font-size:24px; font-weight:800;
+.eyebrow {{ margin-bottom:24px; color:#eadcff; font-size:24px; font-weight:800;
   letter-spacing:.13em; text-transform:uppercase; }}
+.slide-body {{ flex:1; min-height:0; display:flex; flex-direction:column;
+  justify-content:center; gap:24px; padding-top:30px; }}
+.slide-body > * {{ flex-shrink:0; }}
 .lead {{ color:#494950; font-size:43px; line-height:1.35; }}
 .muted {{ color:var(--muted); }}
 .pill {{ align-self:flex-start; border-radius:999px; background:var(--violet-soft);
   color:var(--violet); padding:12px 22px; font-size:24px; font-weight:800; }}
 .highlight, .card, .example, .warning {{ border-radius:26px; padding:34px 38px; }}
-.highlight {{ position:relative; overflow:hidden; border-left:0;
+.highlight {{ position:relative; display:flex; min-height:112px;
+  flex-direction:column; justify-content:center; border-left:0;
   background:var(--violet-soft); color:var(--violet-dark); font-size:40px;
   line-height:1.35; font-weight:700; }}
 .highlight::before {{ content:''; position:absolute; inset:0 auto 0 0; width:11px;
@@ -427,8 +472,7 @@ strong {{ color:var(--violet-dark); font-weight:780; }}
 .warning {{ border:3px solid #fed7aa; background:var(--orange-soft); color:#7c3f0c; }}
 .warning strong {{ color:var(--orange); }}
 ul, ol {{ margin-bottom:0; padding-left:46px; }}
-li {{ margin-bottom:26px; padding-left:8px; }}
-.slide > * + * {{ margin-top:26px; }}
+li {{ margin-bottom:22px; padding-left:8px; }}
 .highlight > :last-child, .card > :last-child, .example > :last-child,
 .warning > :last-child {{ margin-bottom:0; }}
 .cards, .checklist, .steps, .timeline, .sources {{ list-style:none; padding:0; }}
@@ -458,6 +502,34 @@ li {{ margin-bottom:26px; padding-left:8px; }}
   padding:0 0 22px; color:var(--muted); font-size:27px; }}
 .sources strong {{ display:block; margin-bottom:7px; font-size:28px; }}
 .reference-topic {{ display:block; color:var(--muted); font-size:23px; line-height:1.35; }}
+.slide-compact h1 {{ font-size:68px; }}
+.slide-compact h2 {{ font-size:54px; }}
+.slide-compact .slide-body {{ gap:18px; padding-top:22px; }}
+.slide-compact p, .slide-compact li {{ font-size:31px; line-height:1.42; }}
+.slide-compact .lead {{ font-size:37px; }}
+.slide-compact .highlight {{ min-height:96px; padding:27px 32px; font-size:35px; }}
+.slide-compact .card, .slide-compact .example, .slide-compact .warning {{
+  padding:27px 32px; }}
+.slide-compact .cards li, .slide-compact .checklist li {{
+  margin-bottom:15px; padding:20px 24px 20px 68px; }}
+.slide-compact .cards li::before, .slide-compact .checklist li::before {{
+  left:25px; top:20px; }}
+.slide-dense h1 {{ font-size:61px; }}
+.slide-dense h2 {{ font-size:48px; }}
+.slide-dense .slide-body {{ gap:14px; padding-top:18px; }}
+.slide-dense p, .slide-dense li {{ font-size:28px; line-height:1.36; }}
+.slide-dense .lead {{ font-size:33px; }}
+.slide-dense .highlight {{ min-height:82px; padding:22px 28px; font-size:31px; }}
+.slide-dense .card, .slide-dense .example, .slide-dense .warning {{
+  padding:22px 28px; }}
+.slide-dense .cards li, .slide-dense .checklist li {{
+  margin-bottom:12px; padding:16px 22px 16px 62px; }}
+.slide-dense .cards li::before, .slide-dense .checklist li::before {{
+  left:22px; top:16px; }}
+.slide-dense .source-note {{ font-size:20px; }}
+.slide-dense .sources li {{ margin-bottom:14px; padding-bottom:14px; font-size:24px; }}
+.slide-dense .sources strong {{ margin-bottom:4px; font-size:25px; }}
+.slide-dense .reference-topic {{ font-size:21px; }}
 .generated-date {{ display:none; }}
 @media screen {{
   body {{ padding:32px; }}
