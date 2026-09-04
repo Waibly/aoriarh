@@ -1,5 +1,6 @@
 """Tests du filtre RH et du parsing du service JORF (fond LODA Légifrance)."""
 
+from app.rag.ingestion import ARTICLE_AWARE_SOURCE_TYPES
 from app.rag.norme_hierarchy import DOCUMENT_TYPE_HIERARCHY
 from app.services.jorf_service import (
     _CODE_SECU_ID,
@@ -109,7 +110,8 @@ def test_title_keywords_keep_pse_and_france_travail():
 def test_title_keywords_keep_smic_decree():
     # Le décret SMIC s'intitule "salaire minimum de croissance", sans le mot "smic".
     assert _title_matches_keywords(
-        "Décret n° 2025-1228 du 17 décembre 2025 portant relèvement du salaire minimum de croissance"
+        "Décret n° 2025-1228 du 17 décembre 2025 portant relèvement du salaire "
+        "minimum de croissance"
     ) is True
 
 
@@ -193,6 +195,8 @@ def test_nature_mapping_targets_existing_hierarchy_types():
         "DECRET": "decret",
         "ARRETE": "arrete",
     }
+
+    assert set(_NATURE_TO_SOURCE_TYPE.values()) <= ARTICLE_AWARE_SOURCE_TYPES
     for source_type in _NATURE_TO_SOURCE_TYPE.values():
         assert source_type in DOCUMENT_TYPE_HIERARCHY
 
@@ -232,6 +236,8 @@ def test_parse_consult_detects_code_link_and_concatenates_articles():
     assert _CODE_TRAVAIL_ID in code_ids
     assert "Premier article." in text
     assert "Second article." in text
+    assert "### Article 1\n\nPremier article." in text
+    assert "### Article 2\n\nSecond article." in text
     assert pub is not None
     assert (pub.year, pub.month, pub.day) == (2026, 5, 20)
 

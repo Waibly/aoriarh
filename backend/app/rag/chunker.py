@@ -28,10 +28,12 @@ def contains_markdown_table(text: str) -> bool:
     return bool(_TABLE_HEAD.search(text))
 
 
-# A real sentence end: . ! ? preceded by at least two lowercase letters. The
-# lowercase guard avoids cutting on legal abbreviations like "art.", "R.",
-# "n°", "L. 4121" or "24-13.599" where the period is not a sentence boundary.
-_SENTENCE_END = re.compile(r"[a-zàâäéèêëîïôöùûüçœ]{2}[.!?][\s)»\"]")
+# A real sentence or legal-clause end: . ! ? ; preceded by at least two
+# lowercase letters. The lowercase guard avoids cutting on legal abbreviations
+# like "art.", "R.", "n°", "L. 4121" or "24-13.599" where the period is not a
+# sentence boundary. The semicolon is important for long modifying acts whose
+# articles can otherwise form a single sentence spanning several pages.
+_SENTENCE_END = re.compile(r"[a-zàâäéèêëîïôöùûüçœ]{2}[ ]*[.!?;][\s)»\"]")
 # Only look for a boundary in the tail of the window, so chunks stay reasonably
 # full instead of being cut very early on the first boundary found.
 _BOUNDARY_ZONE = 0.6
@@ -163,7 +165,9 @@ class LegalChunker:
         for section in sections:
             if self._token_count(section) <= self._TITLE_ONLY_MAX_TOKENS:
                 # This section is just a title — accumulate as prefix
-                pending_prefix = f"{pending_prefix}\n{section}".strip() if pending_prefix else section
+                pending_prefix = (
+                    f"{pending_prefix}\n{section}".strip() if pending_prefix else section
+                )
             else:
                 if pending_prefix:
                     section = f"{pending_prefix}\n\n{section}"

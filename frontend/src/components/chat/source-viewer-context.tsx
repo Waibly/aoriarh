@@ -24,6 +24,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { getSourceFullContent } from "@/lib/chat-api";
+import { formatLegalSourceMarkdown } from "@/lib/legal-source-format";
 import { sourceDate, sourceIdcc } from "@/lib/source-evidence";
 import type { MessageSource } from "@/types/api";
 
@@ -104,8 +105,16 @@ export function SourceViewerProvider({
     [openSource, sourcesById]
   );
 
-  const displayedText =
+  const rawDisplayedText =
     fullContent ?? selectedSource?.full_text ?? selectedSource?.excerpt ?? "";
+  const displayedText = formatLegalSourceMarkdown(
+    rawDisplayedText,
+    selectedSource?.source_type
+  );
+  const displayedExcerpt = formatLegalSourceMarkdown(
+    selectedSource?.excerpt ?? "",
+    selectedSource?.source_type
+  );
   const selectedIdcc = selectedSource ? sourceIdcc(selectedSource) : null;
   const selectedDate = selectedSource ? sourceDate(selectedSource) : null;
   const isTruncated =
@@ -207,7 +216,7 @@ export function SourceViewerProvider({
                 <p className="mb-1 text-xs font-semibold tracking-wide text-[#652bb0] uppercase">
                   Passage sélectionné par la recherche
                 </p>
-                <div className="prose prose-sm max-w-none text-sm leading-6 text-slate-700 [&_h1]:my-1 [&_h1]:text-sm [&_h1]:leading-6 [&_h1]:font-semibold [&_h2]:my-1 [&_h2]:text-sm [&_h2]:leading-6 [&_h2]:font-semibold [&_h3]:my-1 [&_h3]:text-sm [&_h3]:leading-6 [&_h3]:font-semibold [&_li]:my-0 [&_li]:leading-6 [&_ol]:my-1 [&_ol]:pl-5 [&_p]:my-1 [&_p]:leading-6 [&_strong]:font-semibold [&_ul]:my-1 [&_ul]:pl-5 [&>*:first-child]:mt-0 [&>*:last-child]:mb-0">
+                <div className="prose prose-sm max-w-none text-sm leading-6 text-slate-700 [&_h1]:my-1 [&_h1]:text-sm [&_h1]:leading-6 [&_h1]:font-semibold [&_h2]:my-1 [&_h2]:text-sm [&_h2]:leading-6 [&_h2]:font-semibold [&_h3]:my-1 [&_h3]:text-sm [&_h3]:leading-6 [&_h3]:font-semibold [&_li]:my-0 [&_li]:leading-6 [&_li]:whitespace-pre-line [&_ol]:my-1 [&_ol]:pl-5 [&_p]:my-1 [&_p]:leading-6 [&_p]:whitespace-pre-line [&_strong]:font-semibold [&_ul]:my-1 [&_ul]:pl-5 [&>*:first-child]:mt-0 [&>*:last-child]:mb-0">
                   <ReactMarkdown
                     remarkPlugins={[remarkGfm]}
                     rehypePlugins={[rehypeSanitize]}
@@ -216,7 +225,7 @@ export function SourceViewerProvider({
                       a: ({ children }) => <span>{children}</span>,
                     }}
                   >
-                    {selectedSource.excerpt}
+                    {displayedExcerpt}
                   </ReactMarkdown>
                 </div>
               </div>
@@ -224,7 +233,7 @@ export function SourceViewerProvider({
             <p className="text-muted-foreground mb-2 text-xs font-semibold tracking-wide uppercase">
               Contexte documentaire
             </p>
-            <div className="prose prose-sm dark:prose-invert text-foreground [&_li::marker]:text-foreground/70 [&_th]:border-border [&_th]:bg-muted [&_td]:border-border max-w-none pr-4 text-[0.9375rem] leading-7 [&_h1]:mt-6 [&_h1]:mb-3 [&_h1]:text-lg [&_h1]:font-semibold [&_h2]:mt-5 [&_h2]:mb-2 [&_h2]:text-base [&_h2]:font-semibold [&_h3]:mt-4 [&_h3]:mb-2 [&_h3]:text-[0.9375rem] [&_h3]:font-semibold [&_li]:my-0.5 [&_li]:leading-7 [&_ol]:my-3 [&_ol]:list-decimal [&_ol]:pl-5 [&_p]:my-3 [&_p]:leading-7 [&_table]:my-3 [&_table]:w-full [&_table]:border-collapse [&_table]:text-xs [&_td]:border [&_td]:px-2 [&_td]:py-1 [&_td]:align-top [&_th]:border [&_th]:px-2 [&_th]:py-1 [&_th]:text-left [&_th]:font-semibold [&_ul]:my-3 [&_ul]:list-disc [&_ul]:pl-5 [&>*:first-child]:mt-0 [&>*:last-child]:mb-0">
+            <div className="prose prose-sm dark:prose-invert text-foreground [&_li::marker]:text-foreground/70 [&_th]:border-border [&_th]:bg-muted [&_td]:border-border max-w-none pr-4 text-[0.9375rem] leading-7 [&_h1]:mt-6 [&_h1]:mb-3 [&_h1]:text-lg [&_h1]:font-semibold [&_h2]:mt-5 [&_h2]:mb-2 [&_h2]:text-base [&_h2]:font-semibold [&_h3]:mt-4 [&_h3]:mb-2 [&_h3]:text-[0.9375rem] [&_h3]:font-semibold [&_li]:my-0.5 [&_li]:leading-7 [&_li]:whitespace-pre-line [&_ol]:my-3 [&_ol]:list-decimal [&_ol]:pl-5 [&_p]:my-3 [&_p]:leading-7 [&_p]:whitespace-pre-line [&_table]:my-3 [&_table]:w-full [&_table]:border-collapse [&_table]:text-xs [&_td]:border [&_td]:px-2 [&_td]:py-1 [&_td]:align-top [&_th]:border [&_th]:px-2 [&_th]:py-1 [&_th]:text-left [&_th]:font-semibold [&_ul]:my-3 [&_ul]:list-disc [&_ul]:pl-5 [&>*:first-child]:mt-0 [&>*:last-child]:mb-0">
               <ReactMarkdown
                 remarkPlugins={[remarkGfm]}
                 rehypePlugins={[rehypeSanitize]}

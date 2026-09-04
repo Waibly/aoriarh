@@ -17,11 +17,12 @@ from dataclasses import dataclass, field
 
 import tiktoken
 
-from app.rag.chunker import contains_markdown_table
+from app.rag.chunker import contains_markdown_table, force_split_on_boundary
 from app.rag.config import CHUNK_OVERLAP
 
-# Detect article boundaries in markdown: ### Article L1234-5
-_ARTICLE_HEADING = re.compile(r"(?m)^###\s+Article\s+.*$")
+# Detect article boundaries both in Markdown sources and in historical JORF
+# plain-text files: ### Article L1234-5 / Article 3.
+_ARTICLE_HEADING = re.compile(r"(?m)^(?:###\s+)?Article\s+.*$")
 
 # Detect section headings: ## Partie législative > Livre I > ...
 _SECTION_HEADING = re.compile(r"(?m)^##\s+(.+)$")
@@ -29,6 +30,22 @@ _SECTION_HEADING = re.compile(r"(?m)^##\s+(.+)$")
 _ARTICLE_CHUNK_SIZE = 450  # Smaller than generic (1024) for more precise embeddings
 _ARTICLE_CHUNK_OVERLAP = CHUNK_OVERLAP  # Reused when falling back to LegalChunker
 _MIN_CHUNK_TOKENS = 15  # Discard chunks below this threshold (title-only ghosts)
+
+# Structural subdivisions commonly found in laws, decrees and ordinances.
+# They are stronger split points than ordinary wrapped lines.
+_LEGAL_SUBDIVISION_START = re.compile(
+    r"^[«\"“]?\s*(?:"
+    r"[IVXLCDM]+\s*(?:[.-]\s*)+"  # I.- / II. / IV-
+    r"|[A-Z]\s*(?:[.-]\s*)+"  # A.- / B.
+    r"|\d+\s*°"  # 1° / 12 °
+    r"|[a-z]\s*\)"  # a) / b)
+    r"|[-•]\s+"  # tiret de subdivision
+    r"|(?:Sous-)?Section\s+"
+    r"|Chapitre\s+"
+    r"|Art(?:icle)?\.?\s+[LRD]?\s*\d"
+    r")",
+    re.IGNORECASE,
+)
 
 
 @dataclass
@@ -158,7 +175,9 @@ class ArticleChunker:
                         )
                     )
                 current_num = line.lstrip("#").strip()
-                current_lines = [line]
+                # Normalize historical JORF plain-text headings so retrieved
+                # chunks render consistently in the Markdown source viewer.
+                current_lines = [f"### {current_num}"]
                 continue
 
             current_lines.append(line)
@@ -306,12 +325,14 @@ class ArticleChunker:
         article_num: str,
         instrument: dict[str, str] | None = None,
     ) -> list[ChunkWithMeta]:
-        """Split an oversized article into chunks by paragraphs.
+        """Split an oversized article on legal subdivisions and paragraphs.
 
         Each continuation chunk is prefixed with a context line so it never
-        starts in the middle of nowhere.
+        starts in the middle of nowhere. If a single subdivision remains too
+        large, prefer punctuation (including semicolons) and disable overlap:
+        the repeated article heading provides context without making the next
+        chunk begin halfway through a reference.
         """
-        paragraphs = text.split("\n\n")
         chunks: list[ChunkWithMeta] = []
         current_parts: list[str] = []
         current_tokens = 0
@@ -323,59 +344,24 @@ class ArticleChunker:
         cont_prefix += f"### Article {article_num} (suite)\n\n"
         cont_prefix_tokens = self._token_count(cont_prefix)
 
-        for para in paragraphs:
-            para_tokens = self._token_count(para)
-
-            # Single paragraph exceeds chunk_size — force-split by characters
-            if para_tokens > self.chunk_size:
-                if current_parts:
-                    chunks.append(
-                        ChunkWithMeta(
-                            text="\n\n".join(current_parts),
-                            article_nums=[article_num],
-                            section_path=section,
-                            **instrument,
-                        )
+        body_limit = max(1, self.chunk_size - cont_prefix_tokens)
+        atomic_parts: list[str] = []
+        for block in self._split_legal_blocks(text):
+            if self._token_count(block) <= body_limit or contains_markdown_table(block):
+                atomic_parts.append(block)
+            else:
+                atomic_parts.extend(
+                    force_split_on_boundary(
+                        block,
+                        self._enc,
+                        body_limit,
+                        overlap=0,
                     )
-                    current_parts = []
-                    current_tokens = 0
-                    is_first_chunk = False
-                # Tables stay atomic even when oversized — splitting them
-                # destroys both readability and embedding quality.
-                if contains_markdown_table(para):
-                    piece = para if is_first_chunk else cont_prefix + para
-                    chunks.append(
-                        ChunkWithMeta(
-                            text=piece,
-                            article_nums=[article_num],
-                            section_path=section,
-                            **instrument,
-                        )
-                    )
-                    is_first_chunk = False
-                    continue
-                max_chars = self.chunk_size * 4
-                for i in range(0, len(para), max_chars):
-                    piece = para[i : i + max_chars]
-                    if not is_first_chunk:
-                        piece = cont_prefix + piece
-                    chunks.append(
-                        ChunkWithMeta(
-                            text=piece,
-                            article_nums=[article_num],
-                            section_path=section,
-                            **instrument,
-                        )
-                    )
-                    is_first_chunk = False
-                continue
+                )
 
-            # Reserve space for continuation prefix in non-first chunks
-            effective_limit = self.chunk_size
-            if not is_first_chunk and not current_parts:
-                effective_limit = self.chunk_size - cont_prefix_tokens
-
-            if current_tokens + para_tokens > effective_limit and current_parts:
+        for part in atomic_parts:
+            part_tokens = self._token_count(part)
+            if current_parts and current_tokens + part_tokens > self.chunk_size:
                 chunks.append(
                     ChunkWithMeta(
                         text="\n\n".join(current_parts),
@@ -388,13 +374,12 @@ class ArticleChunker:
                 current_tokens = 0
                 is_first_chunk = False
 
-            # Add continuation prefix at the start of each non-first chunk
             if not is_first_chunk and not current_parts:
                 current_parts.append(cont_prefix.rstrip())
                 current_tokens += cont_prefix_tokens
 
-            current_parts.append(para)
-            current_tokens += para_tokens
+            current_parts.append(part)
+            current_tokens += part_tokens
 
         if current_parts:
             chunks.append(
@@ -407,6 +392,30 @@ class ArticleChunker:
             )
 
         return chunks
+
+    @staticmethod
+    def _split_legal_blocks(text: str) -> list[str]:
+        """Keep prose together but start a block at each legal subdivision."""
+
+        blocks: list[str] = []
+        current_lines: list[str] = []
+
+        def _flush() -> None:
+            if current_lines:
+                blocks.append("\n".join(current_lines).strip())
+                current_lines.clear()
+
+        for raw_line in text.splitlines():
+            line = raw_line.strip()
+            if not line:
+                _flush()
+                continue
+            if current_lines and _LEGAL_SUBDIVISION_START.match(line):
+                _flush()
+            current_lines.append(line)
+
+        _flush()
+        return [block for block in blocks if block]
 
     @staticmethod
     def _context_prefix(section: str, instrument: dict[str, str]) -> str:

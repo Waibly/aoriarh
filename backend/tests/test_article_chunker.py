@@ -1,5 +1,7 @@
 """Tests for the ArticleChunker — section isolation, metadata, ghost filtering."""
 
+import re
+
 from app.rag.article_chunker import ArticleChunker
 
 # Simplified CCNT66-like markdown (articles 32, 33, 34, 35 across 3 sections)
@@ -50,8 +52,6 @@ def test_sections_never_mixed():
         # Each chunk should reference exactly one section_path
         assert c.section_path, f"Chunk missing section_path: {c.text[:80]}"
         # The text should NOT contain ## headers from multiple sections
-        import re
-
         sections_in_text = re.findall(r"^## (.+)$", c.text, re.MULTILINE)
         assert len(set(sections_in_text)) <= 1, f"Chunk mixes sections: {sections_in_text}"
 
@@ -207,6 +207,66 @@ def test_split_continuation_has_context():
         assert "Discipline" in c.text or "Section" in c.text or "##" in c.text, (
             f"Continuation chunk has no section context: {c.text[:100]}"
         )
+
+
+def test_plain_jorf_headings_are_normalized_and_keep_article_metadata():
+    text = """\
+Article 1
+I.-Le code du travail est ainsi modifié :
+1° Une première disposition est créée.
+
+Article 2
+Le présent décret entre en vigueur le lendemain de sa publication.
+"""
+
+    chunks = ArticleChunker().chunk_with_meta(text)
+
+    assert [number for chunk in chunks for number in chunk.article_nums] == ["1", "2"]
+    assert chunks[0].text.startswith("### Article 1")
+    assert "### Article 2" in chunks[-1].text
+
+
+def test_long_jorf_article_continuations_start_on_legal_boundaries():
+    subdivisions = "\n".join(
+        f"{index}° L'article L. 6111-{index} est complété par une disposition applicable ;"
+        for index in range(1, 30)
+    )
+    text = f"""\
+Article 3
+I.-Le code du travail est ainsi modifié :
+A.-Les dispositions suivantes sont ajoutées :
+{subdivisions}
+"""
+
+    chunks = ArticleChunker(chunk_size=90).chunk_with_meta(text)
+
+    assert len(chunks) > 2
+    for chunk in chunks:
+        assert chunk.article_nums == ["3"]
+        lines = [line for line in chunk.text.splitlines() if line.strip()]
+        assert lines[0].startswith("### Article 3")
+        assert re.match(r"(?:[IVXLCDM]+|[A-Z]|\d+)\s*(?:°|[.-])", lines[1])
+        assert not re.match(r"^\d{4}-\d", lines[1])
+
+
+def test_oversized_jorf_subdivision_splits_after_semicolons_without_overlap():
+    clauses = " ".join(
+        f"La règle numéro {index} conserve toutes ses références juridiques ;"
+        for index in range(1, 35)
+    )
+    text = f"Article 4\nI.-{clauses}"
+
+    chunks = ArticleChunker(chunk_size=80).chunk_with_meta(text)
+
+    assert len(chunks) > 2
+    for chunk in chunks:
+        body_lines = [
+            line
+            for line in chunk.text.splitlines()
+            if line.strip() and not line.startswith("### Article 4")
+        ]
+        assert body_lines
+        assert re.match(r"(?:I\.-)?La règle numéro \d+", body_lines[0])
 
 
 def test_successive_kali_instruments_keep_distinct_metadata():

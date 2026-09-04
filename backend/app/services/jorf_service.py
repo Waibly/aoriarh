@@ -563,7 +563,7 @@ class JorfService:
                 continue
             md = html_to_markdown(content) if "<" in content else content
             num = art.get("num", "")
-            parts.append(f"Article {num}\n{md}" if num else md)
+            parts.append(f"### Article {num}\n\n{md}" if num else md)
         full_text = "\n\n".join(parts)
 
         if not full_text:

@@ -28,7 +28,7 @@ from app.rag.text_extractor import TextExtractor
 from app.services.cost_tracker import cost_tracker
 from app.services.storage_service import StorageService
 
-# Source types that use article-aware chunking (Code du travail, CCN)
+# Source types that use article-aware chunking (Codes, CCN and JORF acts)
 ARTICLE_AWARE_SOURCE_TYPES = {
     "code_travail",
     "code_travail_reglementaire",
@@ -50,6 +50,10 @@ ARTICLE_AWARE_SOURCE_TYPES = {
     "convention_collective_nationale",
     "accord_branche",
     "accord_national_interprofessionnel",
+    "loi",
+    "ordonnance",
+    "decret",
+    "arrete",
 }
 
 logger = logging.getLogger(__name__)
