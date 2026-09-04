@@ -435,6 +435,8 @@ body {{ counter-reset:slide; font-family:'Inter Variable','Segoe UI',Arial,sans-
 .slide:first-child h2, .slide:first-child strong {{ color:#fff; }}
 .slide-cover .lead, .slide-cta .lead, .slide:first-child .lead {{ color:#f4edff; }}
 .slide:first-child .eyebrow {{ color:#eadcff; }}
+.slide-cover .source-note, .slide-cta .source-note,
+.slide:first-child .source-note {{ color:#fff; }}
 .slide-cover .highlight, .slide-cover .card, .slide-cover .example,
 .slide-cover .warning, .slide:first-child .highlight, .slide:first-child .card,
 .slide:first-child .example, .slide:first-child .warning {{ background:#fff;

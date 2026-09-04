@@ -267,6 +267,7 @@ def test_document_anchors_logo_and_footer_at_the_bottom_of_each_slide():
     assert "right:82px; bottom:40px; border-top" in html
     assert "padding-top:38px" in html
     assert ".slide:first-child { color:#fff" in html
+    assert ".slide:first-child .source-note { color:#fff; }" in html
     assert ".slide-body { flex:1; min-height:0; display:flex" in html
     assert "justify-content:center; gap:24px; padding-top:30px" in html
     assert ".slide-body > * { flex-shrink:0; }" in html
