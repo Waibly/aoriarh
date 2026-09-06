@@ -1,6 +1,11 @@
-import type { NextConfig } from "next";
-
-const nextConfig: NextConfig = {
+/** @type {import('next').NextConfig} */
+const nextConfig = {
+  output: "standalone",
+  // Next trace son chargeur de configuration TS même avec next.config.mjs.
+  // TypeScript n'est utilisé que pendant la compilation, jamais par le serveur.
+  outputFileTracingExcludes: {
+    "**/*": ["**/node_modules/typescript/**/*"],
+  },
   experimental: {
     reactCompiler: true,
   },

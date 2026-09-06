@@ -9,7 +9,8 @@
     "lint": "next lint",
     "format": "prettier --write \"src/**/*.{ts,tsx}\"",
     "test": "jest",
-    "test:watch": "jest --watch"
+    "test:watch": "jest --watch",
+    "test:standalone": "node scripts/check-standalone.mjs"
   },
   "dependencies": {
     "@stripe/stripe-js": "^5.0.0",
