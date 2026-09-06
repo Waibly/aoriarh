@@ -554,11 +554,57 @@ li {{ margin-bottom:22px; padding-left:8px; }}
 .slide-dense .sources li {{ margin-bottom:14px; padding-bottom:14px; font-size:24px; }}
 .slide-dense .sources strong {{ margin-bottom:4px; font-size:25px; }}
 .slide-dense .reference-topic {{ font-size:21px; }}
+/* Pagination native du rendu : le fragment généré reste intact. */
+@media print {{
+  @page {{
+    margin:110px 92px 175px;
+    background:#fff;
+    @bottom-left {{
+      content:'';
+      width:190px; height:82px;
+      background:url('{_LOGO_BRAND_URL}') left bottom / 190px 42px no-repeat;
+      border-top:2px solid #e9e4f2;
+      margin-bottom:40px;
+    }}
+    @bottom-right {{
+      content:'aoriarh.fr  ·  ' counter(page);
+      width:706px; height:82px;
+      border-top:2px solid #e9e4f2;
+      padding-top:38px; margin-bottom:40px;
+      color:{_VIOLET}; font-size:23px; font-weight:700;
+      font-family:'Inter Variable','Segoe UI',Arial,sans-serif;
+    }}
+  }}
+  @page cover {{
+    background:linear-gradient(145deg,#4b1f86 0%,#652BB0 55%,#8445ce 100%);
+    @bottom-left {{
+      background-image:url('{_LOGO_WHITE_URL}');
+      border-top-color:#ffffff55;
+    }}
+    @bottom-right {{ color:#fff; border-top-color:#ffffff55; }}
+  }}
+  html, body {{ background:transparent; }}
+  .slide {{
+    display:block; width:auto; height:auto; padding:0;
+    background:transparent; break-inside:auto; page-break-inside:auto;
+  }}
+  .slide-cover, .slide-cta, .slide:first-child {{ page:cover; background:transparent; }}
+  .slide:first-child {{ padding-top:240px; }}
+  .slide::before, .slide::after {{ display:none; }}
+  .slide .slide-body {{ display:block; }}
+  .slide-body > * + * {{ margin-top:24px; }}
+  .slide-compact .slide-body > * + * {{ margin-top:18px; }}
+  .slide-dense .slide-body > * + * {{ margin-top:14px; }}
+  h1, h2, h3 {{ break-after:avoid; }}
+  li, .card, .example, .warning, .highlight {{ break-inside:avoid; }}
+  .highlight, .comparison, .grid-2, .columns {{ display:block; }}
+  p {{ orphans:2; widows:2; }}
+}}
 .generated-date {{ display:none; }}
 @media screen {{
   body {{ padding:32px; }}
   .carousel {{ display:flex; flex-direction:column; align-items:center; gap:32px; }}
-  .slide {{ box-shadow:0 24px 70px #24133a2e; }}
+  .slide {{ height:auto; min-height:1350px; box-shadow:0 24px 70px #24133a2e; }}
 }}
 </style>
 </head>

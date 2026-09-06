@@ -375,3 +375,52 @@ def test_brand_logo_keeps_the_official_dark_and_violet_colors():
 
     assert "#313131" in svg
     assert "#652bb0" in svg.lower()
+
+
+@pytest.mark.parametrize("list_class", ["checklist", "steps", "sources"])
+def test_overflow_continues_on_new_pages_above_repeated_footer(list_class):
+    items = "".join(
+        f"<li><strong>Repère{index:02d}</strong>"
+        "Explication détaillée à conserver intégralement dans le document.</li>"
+        for index in range(18)
+    )
+    fragment = RAW_FRAGMENT.replace(
+        '<ol class="steps"><li>Vérifier</li><li>Agir</li></ol>',
+        f'<ul class="{list_class}">{items}</ul>',
+    )
+    html = render_social_media_document(fragment, generated_at=datetime(2026, 9, 6))
+    assert fragment in html
+
+    with fitz.open(stream=render_social_media_pdf(html), filetype="pdf") as document:
+        assert document.page_count > 2
+        texts = [page.get_text() for page in document]
+        for index in range(18):
+            assert sum(text.count(f"Repère{index:02d}") for text in texts) == 1
+        for page in document:
+            assert page.rect == fitz.Rect(0, 0, 810, 1012.5)
+            footer = page.search_for("aoriarh.fr")[0]
+            for block in page.get_text("blocks"):
+                if "aoriarh.fr" not in block[4]:
+                    assert block[3] < footer.y0 - 30
+
+
+def test_single_oversized_item_can_split_without_losing_text():
+    paragraphs = "".join(
+        f"<p>Passage{index:02d} : conserver cette explication du dossier.</p>"
+        for index in range(45)
+    )
+    fragment = RAW_FRAGMENT.replace(
+        '<ol class="steps"><li>Vérifier</li><li>Agir</li></ol>',
+        f'<ul class="checklist"><li>{paragraphs}</li></ul>',
+    )
+    html = render_social_media_document(fragment, generated_at=datetime(2026, 9, 6))
+    with fitz.open(stream=render_social_media_pdf(html), filetype="pdf") as document:
+        assert document.page_count > 2
+        text = "\n".join(page.get_text() for page in document)
+        for index in range(45):
+            assert text.count(f"Passage{index:02d}") == 1
+        for page in document:
+            footer = page.search_for("aoriarh.fr")[0]
+            for block in page.get_text("blocks"):
+                if "aoriarh.fr" not in block[4]:
+                    assert block[3] < footer.y0 - 30
