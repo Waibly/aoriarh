@@ -467,17 +467,17 @@ h1, h2, h3, p, ul, ol {{ margin:0; }}
 h1, h2, h3 {{ font-family:'Sora Variable','Segoe UI',Arial,sans-serif; }}
 h1 {{ max-width:860px; font-size:78px; line-height:1.08;
   letter-spacing:-.035em; font-weight:800; }}
-h2 {{ color:var(--violet); font-size:61px; line-height:1.12;
+h2 {{ color:var(--violet); font-size:54px; line-height:1.12;
   letter-spacing:-.028em; font-weight:800; }}
 h3 {{ color:var(--violet); font-size:34px; line-height:1.2; }}
-p, li {{ font-size:35px; line-height:1.5; }}
+p, li {{ font-size:34px; line-height:1.4; }}
 strong {{ color:var(--violet-dark); font-weight:780; }}
 .eyebrow {{ margin-bottom:24px; color:#eadcff; font-size:24px; font-weight:800;
   letter-spacing:.13em; text-transform:uppercase; }}
 .slide-body {{ flex:0 0 auto; min-height:0; display:flex; flex-direction:column;
   justify-content:flex-start; gap:24px; padding-top:30px; }}
 .slide-body > * {{ flex-shrink:0; }}
-.lead {{ color:#494950; font-size:43px; line-height:1.35; }}
+.lead {{ color:#494950; font-size:36px; line-height:1.35; }}
 .muted {{ color:var(--muted); }}
 .pill {{ align-self:flex-start; border-radius:999px; background:var(--violet-soft);
   color:var(--violet); padding:12px 22px; font-size:24px; font-weight:800; }}
@@ -534,7 +534,7 @@ li {{ margin-bottom:22px; padding-left:8px; }}
 .slide-compact h2 {{ font-size:54px; }}
 .slide-compact .slide-body {{ gap:18px; padding-top:22px; }}
 .slide-compact p, .slide-compact li {{ font-size:31px; line-height:1.42; }}
-.slide-compact .lead {{ font-size:37px; }}
+.slide-compact .lead {{ font-size:34px; }}
 .slide-compact .highlight {{ min-height:96px; padding:27px 32px; font-size:35px; }}
 .slide-compact .card, .slide-compact .example, .slide-compact .warning {{
   padding:27px 32px; font-size:31px; line-height:1.42; }}

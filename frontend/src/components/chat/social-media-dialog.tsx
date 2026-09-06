@@ -88,114 +88,108 @@ function downloadPngFiles(images: SocialMediaImageResult[]) {
   );
 }
 
-const LIVE_PREVIEW_DEFAULT_WIDTH = 1144;
-const LIVE_PREVIEW_DEFAULT_HEIGHT = 1414;
-
-export function calculatePreviewScale(
-  containerWidth: number,
-  containerHeight: number,
-  contentWidth: number,
-  slideHeight: number
-) {
-  if (
-    containerWidth <= 0 ||
-    containerHeight <= 0 ||
-    contentWidth <= 0 ||
-    slideHeight <= 0
-  ) {
-    return 1;
-  }
-  return Math.min(
-    1,
-    containerWidth / contentWidth,
-    containerHeight / slideHeight
-  );
-}
-
-function LiveHtmlPreview({ html, title }: { html: string; title: string }) {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const iframeRef = useRef<HTMLIFrameElement>(null);
-  const [previewSize, setPreviewSize] = useState({
-    width: LIVE_PREVIEW_DEFAULT_WIDTH,
-    height: LIVE_PREVIEW_DEFAULT_HEIGHT,
-  });
-  const [scale, setScale] = useState(1);
+export function ExportPreview({
+  html,
+  title,
+  messageId,
+  token,
+  active,
+}: {
+  html: string;
+  title: string;
+  messageId: string;
+  token: string | undefined;
+  active: boolean;
+}) {
+  const [result, setResult] = useState<{
+    html: string;
+    images: SocialMediaImageResult[];
+  } | null>(null);
+  const [failure, setFailure] = useState<{
+    html: string;
+    message: string;
+  } | null>(null);
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
-    if (containerRef.current) {
-      containerRef.current.scrollTop = 0;
-      containerRef.current.scrollLeft = 0;
-    }
-    setPreviewSize({
-      width: LIVE_PREVIEW_DEFAULT_WIDTH,
-      height: LIVE_PREVIEW_DEFAULT_HEIGHT,
-    });
-  }, [html]);
+    if (!active || !html || !token) return;
+    let cancelled = false;
+    // Attendre la fin de la saisie, puis utiliser le même moteur que les exports.
+    const timer = window.setTimeout(async () => {
+      setFailure(null);
+      try {
+        const rendered = await renderSocialMediaHtml(messageId, html, token);
+        if (!rendered.images.length)
+          throw new Error("Le rendu n’a produit aucune page.");
+        if (!cancelled) setResult({ html, images: rendered.images });
+      } catch (error) {
+        if (!cancelled) {
+          setFailure({
+            html,
+            message:
+              error instanceof Error
+                ? error.message
+                : "L’aperçu n’a pas pu être préparé.",
+          });
+        }
+      }
+    }, 500);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [active, html, messageId, token, attempt]);
 
-  const measurePreview = useCallback(() => {
-    const container = containerRef.current;
-    const iframe = iframeRef.current;
-    if (!container || !iframe || container.clientWidth === 0) return;
-
-    const document = iframe.contentDocument;
-    const width = Math.max(
-      document?.documentElement.scrollWidth ?? 0,
-      document?.body.scrollWidth ?? 0,
-      LIVE_PREVIEW_DEFAULT_WIDTH
-    );
-    const height = Math.max(
-      document?.documentElement.scrollHeight ?? 0,
-      document?.body.scrollHeight ?? 0,
-      LIVE_PREVIEW_DEFAULT_HEIGHT
-    );
-    const firstSlide = document?.querySelector<HTMLElement>(".slide");
-    const slideHeight = Math.max(
-      firstSlide?.offsetHeight ?? 0,
-      firstSlide?.scrollHeight ?? 0,
-      LIVE_PREVIEW_DEFAULT_HEIGHT
-    );
-
-    setPreviewSize({ width, height });
-    setScale(
-      calculatePreviewScale(
-        container.clientWidth,
-        container.clientHeight,
-        width,
-        slideHeight
-      )
-    );
-  }, []);
-
-  useEffect(() => {
-    const container = containerRef.current;
-    if (!container || typeof ResizeObserver === "undefined") return;
-
-    const observer = new ResizeObserver(measurePreview);
-    observer.observe(container);
-    return () => observer.disconnect();
-  }, [measurePreview]);
+  const images = result?.html === html ? result.images : null;
+  const error = failure?.html === html ? failure.message : null;
 
   return (
     <div
-      ref={containerRef}
-      className="h-[58dvh] min-h-96 overflow-auto rounded-lg border bg-neutral-100 dark:bg-neutral-950"
+      title={title}
+      className="h-[58dvh] min-h-96 space-y-4 overflow-auto rounded-lg border bg-neutral-100 p-3 dark:bg-neutral-950"
+      aria-busy={!images && !error}
     >
-      <div className="relative" style={{ height: previewSize.height * scale }}>
-        <iframe
-          ref={iframeRef}
-          srcDoc={html}
-          title={title}
-          sandbox="allow-same-origin"
-          onLoad={measurePreview}
-          className="absolute top-0 left-0 border-0 bg-white"
-          style={{
-            width: previewSize.width,
-            height: previewSize.height,
-            transform: `scale(${scale})`,
-            transformOrigin: "top left",
-          }}
-        />
-      </div>
+      {error ? (
+        <div role="alert" className="space-y-3 p-4 text-sm">
+          <p>
+            {error} Le HTML et la sortie brute restent disponibles ci-dessus et
+            ci-dessous.
+          </p>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              setFailure(null);
+              setAttempt((value) => value + 1);
+            }}
+          >
+            Réessayer l’aperçu
+          </Button>
+        </div>
+      ) : images ? (
+        images.map((image, index) => (
+          <figure key={index} className="mx-auto w-fit max-w-full space-y-1">
+            {/* Les PNG proviennent des pages PDF, sans recadrage ni remise en page. */}
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={`data:image/png;base64,${image.content_base64}`}
+              alt={`Page ${index + 1} sur ${images.length}`}
+              className="mx-auto block h-auto max-h-[50dvh] max-w-full shadow-sm"
+            />
+            <figcaption className="text-muted-foreground text-center text-xs">
+              Page {index + 1} / {images.length}
+            </figcaption>
+          </figure>
+        ))
+      ) : (
+        <p
+          role="status"
+          className="flex items-center justify-center gap-2 p-6 text-sm"
+        >
+          <Loader2 className="size-4 animate-spin" />
+          Préparation de l’aperçu des pages…
+        </p>
+      )}
     </div>
   );
 }
@@ -485,8 +479,8 @@ export function SocialMediaDialog({
                     </h3>
                   </div>
                   <p className="text-muted-foreground text-xs">
-                    Cet aperçu unique correspond toujours au HTML actuel. Quand
-                    il vous convient, téléchargez directement le PDF ou les PNG.
+                    Cet aperçu affiche les mêmes pages que le PDF et les PNG,
+                    avec les mêmes dimensions et sauts de page.
                   </p>
                 </div>
 
@@ -519,8 +513,7 @@ export function SocialMediaDialog({
                       className="border-input bg-background text-foreground focus-visible:ring-ring min-h-80 w-full resize-y rounded-lg border p-4 font-mono text-xs leading-5 focus-visible:ring-2 focus-visible:outline-none"
                     />
                     <p className="text-muted-foreground text-xs">
-                      L’aperçu ci-dessous se met à jour directement pendant vos
-                      modifications.
+                      L’aperçu se recalcule après vos modifications du HTML.
                     </p>
                   </div>
                 </details>
@@ -530,11 +523,14 @@ export function SocialMediaDialog({
                     {includePost ? "Aperçu du carrousel" : "Aperçu du média"}
                   </p>
                   <p className="text-muted-foreground text-xs">
-                    Une slide complète est ajustée à la hauteur disponible.
-                    Faites défiler cette zone pour parcourir les suivantes.
+                    Chaque page est ajustée à la hauteur disponible. Faites
+                    défiler cette zone pour parcourir les suivantes.
                   </p>
-                  <LiveHtmlPreview
+                  <ExportPreview
                     html={html}
+                    messageId={messageId}
+                    token={token}
+                    active={open}
                     title={
                       includePost
                         ? "Aperçu du carrousel LinkedIn"

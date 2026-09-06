@@ -1,6 +1,12 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import {
-  calculatePreviewScale,
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
+import {
+  ExportPreview,
   SocialMediaDialog,
 } from "@/components/chat/social-media-dialog";
 import {
@@ -39,6 +45,9 @@ describe("SocialMediaDialog", () => {
       configurable: true,
       value: { writeText },
     });
+    mockRender.mockResolvedValue({
+      images: [{ filename: "page.png", content_base64: "cGFnZQ==" }],
+    });
     mockDownloadPdf.mockResolvedValue(
       new Blob(["pdf"], { type: "application/pdf" })
     );
@@ -66,15 +75,6 @@ describe("SocialMediaDialog", () => {
       warnings: ["Avertissement non bloquant"],
       render_error: null,
     });
-  });
-
-  it("ajuste une slide entière à la hauteur disponible", () => {
-    expect(calculatePreviewScale(1300, 650, 1144, 1414)).toBeCloseTo(
-      650 / 1414
-    );
-    expect(calculatePreviewScale(600, 1600, 1144, 1414)).toBeCloseTo(
-      600 / 1144
-    );
   });
 
   it("affiche d’abord le post puis l’unique aperçu du carrousel", async () => {
@@ -110,7 +110,16 @@ describe("SocialMediaDialog", () => {
     expect(screen.getAllByTitle("Aperçu du carrousel LinkedIn")).toHaveLength(
       1
     );
-    expect(preview).toHaveAttribute("srcdoc", generatedHtml);
+    expect(await screen.findByAltText("Page 1 sur 1")).toHaveAttribute(
+      "src",
+      "data:image/png;base64,cGFnZQ=="
+    );
+    expect(mockRender).toHaveBeenCalledWith(
+      "message-1",
+      generatedHtml,
+      "token-admin"
+    );
+    expect(document.querySelector("iframe")).not.toBeInTheDocument();
     expect(screen.queryByRole("tab")).not.toBeInTheDocument();
     expect(mockGenerate).toHaveBeenCalledWith("message-1", "token-admin", true);
 
@@ -143,11 +152,14 @@ describe("SocialMediaDialog", () => {
       { target: { value: edited } }
     );
 
-    expect(screen.getByTitle("Aperçu du carrousel LinkedIn")).toHaveAttribute(
-      "srcdoc",
-      edited
+    await waitFor(() =>
+      expect(mockRender).toHaveBeenCalledWith(
+        "message-2",
+        edited,
+        "token-admin"
+      )
     );
-    expect(mockRender).not.toHaveBeenCalled();
+    expect(await screen.findByAltText("Page 1 sur 1")).toBeInTheDocument();
   });
 
   it("génère et télécharge les PNG en une seule action", async () => {
@@ -277,9 +289,11 @@ describe("SocialMediaDialog", () => {
     );
 
     expect(await screen.findByText("Générer un média")).toBeInTheDocument();
-    expect(screen.getByTitle("Aperçu du média")).toHaveAttribute(
-      "srcdoc",
-      generatedHtml
+    expect(await screen.findByAltText("Page 1 sur 1")).toBeInTheDocument();
+    expect(mockRender).toHaveBeenCalledWith(
+      "message-media",
+      generatedHtml,
+      "token-admin"
     );
     expect(
       screen.queryByRole("textbox", { name: "Post LinkedIn du carrousel" })
@@ -289,5 +303,80 @@ describe("SocialMediaDialog", () => {
       "token-admin",
       false
     );
+  });
+});
+
+describe("ExportPreview", () => {
+  it("ignore une réponse ancienne après modification du HTML", async () => {
+    let resolveOld!: (value: {
+      images: { filename: string; content_base64: string }[];
+    }) => void;
+    mockRender.mockReset();
+    mockRender.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveOld = resolve;
+        })
+    );
+    mockRender.mockResolvedValueOnce({
+      images: [
+        { filename: "new-1.png", content_base64: "bmV3MQ==" },
+        { filename: "new-2.png", content_base64: "bmV3Mg==" },
+      ],
+    });
+    const { rerender } = render(
+      <ExportPreview
+        html="ancien"
+        title="Aperçu"
+        messageId="m"
+        token="t"
+        active
+      />
+    );
+    await waitFor(() =>
+      expect(mockRender).toHaveBeenCalledWith("m", "ancien", "t")
+    );
+    rerender(
+      <ExportPreview
+        html="nouveau"
+        title="Aperçu"
+        messageId="m"
+        token="t"
+        active
+      />
+    );
+    expect(await screen.findByAltText("Page 2 sur 2")).toHaveAttribute(
+      "src",
+      "data:image/png;base64,bmV3Mg=="
+    );
+    await act(async () => {
+      resolveOld({ images: [{ filename: "old.png", content_base64: "b2xk" }] });
+    });
+    expect(screen.getByAltText("Page 1 sur 2")).toHaveAttribute(
+      "src",
+      "data:image/png;base64,bmV3MQ=="
+    );
+  });
+
+  it("permet de retenter une erreur technique d’aperçu", async () => {
+    mockRender.mockReset();
+    mockRender.mockRejectedValueOnce(new Error("Erreur technique"));
+    mockRender.mockResolvedValueOnce({
+      images: [{ filename: "page.png", content_base64: "cGFnZQ==" }],
+    });
+    render(
+      <ExportPreview
+        html="exact"
+        title="Aperçu"
+        messageId="m"
+        token="t"
+        active
+      />
+    );
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Erreur technique"
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Réessayer l’aperçu" }));
+    expect(await screen.findByAltText("Page 1 sur 1")).toBeInTheDocument();
   });
 });
