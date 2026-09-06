@@ -438,7 +438,7 @@ body {{ counter-reset:slide; font-family:'Inter Variable','Segoe UI',Arial,sans-
   color:var(--violet); font-size:23px; font-weight:700; letter-spacing:.02em;
   text-align:right; }}
 .slide-cover, .slide-cta, .slide:first-child {{ color:#fff;
-  background:linear-gradient(145deg,#4b1f86 0%,#652BB0 55%,#8445ce 100%); }}
+  background:{_VIOLET}; }}
 .slide-cover::before, .slide-cta::before, .slide:first-child::before {{
   background-image:url('{_LOGO_WHITE_URL}'); }}
 .slide-cover::after, .slide-cta::after, .slide:first-child::after {{ color:#fff;
@@ -498,6 +498,10 @@ ul, ol {{ margin-bottom:0; padding-left:46px; }}
 li {{ margin-bottom:22px; padding-left:8px; }}
 .highlight > :last-child, .card > :last-child, .example > :last-child,
 .warning > :last-child {{ margin-bottom:0; }}
+:is(.card, .example, .warning, .highlight) > :is(ul, ol):not(:first-child) {{
+  margin-top:20px; }}
+:is(.card, .example, .warning, .highlight) :is(ul, ol) > li:last-child {{
+  margin-bottom:0; }}
 .cards, .checklist, .steps, .timeline, .sources {{ list-style:none; padding:0; }}
 .cards li, .checklist li {{ position:relative; margin-bottom:20px; border-radius:22px;
   background:var(--violet-soft); padding:25px 28px 25px 76px; }}
@@ -576,7 +580,7 @@ li {{ margin-bottom:22px; padding-left:8px; }}
     }}
   }}
   @page cover {{
-    background:linear-gradient(145deg,#4b1f86 0%,#652BB0 55%,#8445ce 100%);
+    background:{_VIOLET};
     @bottom-left {{
       background-image:url('{_LOGO_WHITE_URL}');
       border-top-color:#ffffff55;
@@ -598,6 +602,7 @@ li {{ margin-bottom:22px; padding-left:8px; }}
   h1, h2, h3 {{ break-after:avoid; }}
   li, .card, .example, .warning, .highlight {{ break-inside:avoid; }}
   .highlight, .comparison, .grid-2, .columns {{ display:block; }}
+  :is(.comparison, .grid-2, .columns) > * + * {{ margin-top:26px; }}
   p {{ orphans:2; widows:2; }}
 }}
 .generated-date {{ display:none; }}
