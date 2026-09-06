@@ -15,7 +15,9 @@ c'est plus lent que d'habitude au lieu de laisser un écran figé.
 from __future__ import annotations
 
 import asyncio
+import json
 
+import pytest
 from httpx import AsyncClient
 
 from app.rag.agent import RagTrace
@@ -62,6 +64,40 @@ async def _fast_prepare_context(self, *args, **kwargs):
     return [_fake_result()], "question reformulée", RagTrace(
         query_original="q", model="test-model",
     )
+
+
+@pytest.mark.parametrize("raw", ["  sortie brute\n", "[HORS_SCOPE]"])
+@pytest.mark.parametrize("error", ["search_planner_error", "search_retrieval_error"])
+async def test_search_failure_emits_raw_details_before_technical_error(
+    client: AsyncClient, manager_user: dict, monkeypatch, error: str, raw: str,
+) -> None:
+    conv_id = await _make_conversation(client, manager_user)
+
+    async def failed_context(self, *args, **kwargs):
+        return [], raw, RagTrace(
+            query_original="question", model="test", error=error,
+            search_plan={"planner_raw_response": raw},
+        )
+
+    monkeypatch.setattr("app.api.conversations.classify_intent", _passthrough_intent)
+    monkeypatch.setattr("app.rag.agent.RAGAgent.prepare_context", failed_context)
+    res = await client.post(
+        f"/api/v1/conversations/{conv_id}/chat/stream",
+        headers=auth_header(manager_user["token"]), json={"message": "Question"},
+    )
+    assert res.status_code == 200
+    events = []
+    for block in res.text.replace("\r\n", "\n").split("\n\n"):
+        name = next((line[7:] for line in block.splitlines() if line.startswith("event: ")), None)
+        data = next((line[6:] for line in block.splitlines() if line.startswith("data: ")), None)
+        if name and data:
+            events.append((name, json.loads(data)))
+    details_index = next(i for i, (name, _) in enumerate(events) if name == "chat_search_details")
+    error_index = next(i for i, (name, _) in enumerate(events) if name == "chat_error")
+    assert details_index < error_index
+    assert events[details_index][1]["raw_response"] == raw
+    assert events[error_index][1]["error"] == error
+    assert all(name != "chat_delta" for name, _ in events)
 
 
 def _patch_timings(monkeypatch, *, slow=0.05, context=0.2, idle=0.3):

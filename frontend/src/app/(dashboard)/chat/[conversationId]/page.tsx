@@ -6,13 +6,14 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { useSession } from "next-auth/react";
 import { toast } from "sonner";
 import { ChatInput } from "@/components/chat/chat-input";
+import { SearchDetailsPanel } from "@/components/chat/search-details";
 
 const MessageList = dynamic(() =>
   import("@/components/chat/message-list").then((mod) => ({ default: mod.MessageList })),
   { ssr: false },
 );
 import { getConversation, streamMessage, updateMessageFeedback } from "@/lib/chat-api";
-import type { Message, MessageSource } from "@/types/api";
+import type { Message, MessageSource, SearchDetails } from "@/types/api";
 
 export default function ConversationPage() {
   const params = useParams<{ conversationId: string }>();
@@ -23,6 +24,7 @@ export default function ConversationPage() {
   const token = session?.access_token;
 
   const [messages, setMessages] = useState<Message[]>([]);
+  const [searchDetails, setSearchDetails] = useState<SearchDetails | null>(null);
   const [isStreaming, setIsStreaming] = useState(false);
   const [streamingStatus, setStreamingStatus] = useState<string | null>(null);
   const [streamingContent, setStreamingContent] = useState("");
@@ -76,6 +78,7 @@ export default function ConversationPage() {
       setIsStreaming(true);
       setStreamingContent("");
       setStreamingSources(null);
+      setSearchDetails(null);
 
       // Abort any previous in-progress stream
       abortControllerRef.current?.abort();
@@ -85,6 +88,7 @@ export default function ConversationPage() {
       // Local accumulators (synchronous — not subject to React batching)
       let accumulatedContent = "";
       let accumulatedSources: MessageSource[] | null = null;
+      let accumulatedDetails: SearchDetails | undefined;
 
       try {
         await streamMessage(
@@ -94,6 +98,10 @@ export default function ConversationPage() {
           {
             onStatus: (step) => {
               setStreamingStatus(step);
+            },
+            onSearchDetails: (details) => {
+              accumulatedDetails = details;
+              setSearchDetails(details);
             },
             onSources: (sources) => {
               accumulatedSources = sources;
@@ -118,6 +126,7 @@ export default function ConversationPage() {
                     role: "assistant" as const,
                     content: accumulatedContent,
                     sources: accumulatedSources,
+                    search_details: accumulatedDetails,
                     feedback: null,
                     feedback_comment: null,
                     fiche_eligible: ids.fiche_eligible,
@@ -127,6 +136,7 @@ export default function ConversationPage() {
               });
 
               setStreamingContent("");
+              setSearchDetails(null);
               setStreamingSources(null);
               setIsStreaming(false);
 
@@ -135,7 +145,8 @@ export default function ConversationPage() {
             },
             onError: (errorMsg) => {
               // If we already have partial content, keep it as a message
-              if (accumulatedContent) {
+              if (accumulatedContent || accumulatedDetails?.raw_response || accumulatedDetails?.router_raw_response) {
+                setSearchDetails(null);
                 setMessages((prev) => {
                   const filtered = prev.filter(
                     (m) => m.id !== tempUserMessage.id,
@@ -149,6 +160,7 @@ export default function ConversationPage() {
                       role: "assistant" as const,
                       content: accumulatedContent,
                       sources: accumulatedSources,
+                      search_details: accumulatedDetails,
                       feedback: null,
                       feedback_comment: null,
                       created_at: new Date().toISOString(),
@@ -224,6 +236,7 @@ export default function ConversationPage() {
         streamingSources={streamingSources}
         onFeedback={handleFeedback}
       />
+      <div className="max-h-64 overflow-auto"><SearchDetailsPanel details={searchDetails} /></div>
       <ChatInput
         onSend={handleSend}
         disabled={isStreaming}

@@ -4,6 +4,7 @@ from datetime import datetime
 from pydantic import BaseModel, Field, computed_field
 
 from app.rag.intent_router import is_security_response
+from app.rag.search_feedback import search_feedback
 
 
 class ConversationCreate(BaseModel):
@@ -35,6 +36,11 @@ class MessageRead(BaseModel):
     created_at: datetime
     # Nécessaire au calcul mais jamais exposée telle quelle au client.
     rag_trace: dict | None = Field(default=None, exclude=True)
+
+    @computed_field
+    @property
+    def search_details(self) -> dict:
+        return search_feedback(self.rag_trace)
 
     @computed_field
     @property

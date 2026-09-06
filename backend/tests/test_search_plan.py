@@ -156,7 +156,7 @@ def test_payroll_recovery_searches_operational_rule_and_its_limits():
     assert plan.query_budget == 2
 
 
-def test_simple_question_limits_planner_to_one_additional_query():
+def test_query_budget_is_prompt_guidance_without_truncating_generated_queries():
     plan = build_deterministic_search_plan(
         "Un employeur peut-il refuser une demande de congés payés ?"
     )
@@ -171,7 +171,10 @@ def test_simple_question_limits_planner_to_one_additional_query():
     )
 
     assert plan.query_budget == 1
-    assert enriched.search_queries == ["refus congés payés fixation dates employeur"]
+    assert enriched.search_queries == [
+        "refus congés payés fixation dates employeur",
+        "ordre départs congés payés conditions",
+    ]
 
 
 def test_interpretive_legal_family_gets_jurisprudence_and_two_distinct_angles():
@@ -307,7 +310,7 @@ def test_explicit_year_is_preserved_for_a_standard_question():
     plan = build_deterministic_search_plan("Quel était le montant du SMIC en 2025 ?")
 
     assert plan.time_scope == {
-        "kind": "calendar_year",
+        "kind": "application_year",
         "year": 2025,
         "source": "explicit",
     }
@@ -341,7 +344,7 @@ def test_plan_is_json_serializable():
     )
 
     encoded = json.dumps(plan.to_dict())
-    assert "adaptive-v1" in encoded
+    assert "adaptive-v2" in encoded
     assert plan.answer_intent is AnswerIntent.CALCULATION
 
 
@@ -380,7 +383,9 @@ def test_compact_payload_can_only_rewrite_an_anaphoric_follow_up():
         autonomous,
         _valid_payload(standalone_question="Question silencieusement modifiée"),
     )
-    assert autonomous_enriched.standalone_question == autonomous.query_original
+    # Keep the model output intact; execution uses the original without history.
+    assert autonomous_enriched.standalone_question == "Question silencieusement modifiée"
+    assert not autonomous_enriched.needs_condensation
 
 
 def test_planner_answer_intent_updates_generation_format():
@@ -394,7 +399,7 @@ def test_planner_answer_intent_updates_generation_format():
     assert enriched.answer_format == "comparison_table"
 
 
-def test_hypothesized_articles_are_canonical_limited_and_separate_from_explicit():
+def test_hypothesized_articles_are_preserved_without_rewriting_or_filtering():
     plan = build_deterministic_search_plan("Comment gérer cette rupture ?")
     payload = _valid_payload(
         hypothesized_articles=[
@@ -408,8 +413,10 @@ def test_hypothesized_articles_are_canonical_limited_and_separate_from_explicit(
     enriched = apply_compact_planner_payload(plan, payload)
 
     assert [item.reference for item in enriched.hypothesized_articles] == [
-        "L1234-1",
-        "R1234-2",
+        "L. 1234-1",
+        "article R1234-2",
+        "article imaginaire",
+        "Cass. soc. 22-18.875",
     ]
 
 
@@ -478,7 +485,7 @@ async def test_invalid_json_falls_back_without_raising_or_changing_constraints()
         model="test-model",
     )
 
-    assert result.plan.planner_status is PlannerStatus.FALLBACK
+    assert result.plan.planner_status is PlannerStatus.ERROR
     assert result.plan.ccn is SourceRequirement.REQUIRED
     assert result.plan.applicable_idccs == ["1486"]
     assert "planner_invalid_json" in result.plan.warnings
@@ -508,18 +515,18 @@ async def test_invalid_planner_enums_fall_back_instead_of_weakening_the_plan():
         model="test-model",
     )
 
-    assert result.plan.planner_status is PlannerStatus.FALLBACK
+    assert result.plan.planner_status is PlannerStatus.ERROR
     assert result.plan.legislation is SourceRequirement.REQUIRED
     assert result.plan.ccn is SourceRequirement.REQUIRED
 
 
 @pytest.mark.asyncio
-async def test_prepare_context_records_deterministic_plan_without_extra_llm_call():
+async def test_prepare_context_uses_compact_planner_by_default():
     with patch("app.rag.agent._search_engine"), patch("app.rag.agent.get_reranker"):
         agent = RAGAgent()
     agent.llm = MagicMock()
     agent.llm.chat.completions.create = AsyncMock(
-        return_value=_mock_llm_response("1. durée préavis démission")
+        return_value=_mock_llm_response(json.dumps(_valid_payload(hypothesized_articles=[])))
     )
     agent.search_engine = MagicMock()
     agent.search_engine.search = AsyncMock(return_value=[])
@@ -532,11 +539,11 @@ async def test_prepare_context_records_deterministic_plan_without_extra_llm_call
         org_idcc_list=["1486"],
     )
 
-    # Baseline unchanged: expansion + legal anchor, no compact planner call.
-    assert agent.llm.chat.completions.create.call_count == 2
+    # The default entry point now uses only the compact planner.
+    assert agent.llm.chat.completions.create.call_count == 1
     assert trace.search_plan is not None
     assert trace.search_plan["mode"] == "standard"
-    assert trace.search_plan["planner_status"] == "pending"
+    assert trace.search_plan["planner_status"] == "ok"
     assert trace.search_plan["applicable_idccs"] == ["1486"]
 
 
@@ -566,11 +573,11 @@ async def test_adaptive_search_uses_queries_but_never_guessed_article_identifier
     )
 
     assert variants == [
-        "Quel préavis pour un cadre ?",
+        plan.standalone_question,
         "préavis démission cadre Syntec",
     ]
     call = agent._run_variant_searches.await_args
-    assert call.args[1] == "préavis de démission cadres"
+    assert call.args[1] == plan.standalone_question
     assert "L1237-19" not in call.args[1]
     assert call.kwargs["apply_legislation_floor"] is True
 
@@ -609,7 +616,7 @@ async def test_adaptive_search_executes_all_four_multi_issue_queries():
         "org-1",
     )
 
-    assert variants == [question, *queries]
+    assert variants == [plan.standalone_question, *queries]
     agent._run_variant_searches.assert_awaited_once()
 
 
@@ -646,16 +653,13 @@ async def test_exact_reference_uses_direct_lookup_plus_one_general_safety_search
         )
 
     fetch.assert_awaited_once()
-    agent.search_engine.search.assert_awaited_once()
+    assert agent.search_engine.search.await_count == 3  # main + legislation + CCN
     assert variants == [plan.query_original]
     assert [(result.document_id, result.chunk_index) for result in pool] == [
         ("code-direct", 0),
         ("related", 1),
     ]
-    assert agent._plan_search_diagnostics == {
-        "direct_reference_candidate_chunks": 1,
-        "general_safety_candidate_chunks": 2,
-    }
+    assert agent._plan_search_diagnostics["direct_reference_candidate_chunks"] == 1
 
 
 @pytest.mark.asyncio
@@ -854,7 +858,7 @@ async def test_source_directed_plan_preserves_filtered_results_and_bounds_fallba
     assert agent._run_variant_searches.await_args.kwargs["apply_legislation_floor"] is False
     complement_call = agent.search_engine.search.await_args
     assert agent.search_engine.search.await_count == 1
-    assert complement_call.args[0] == "préavis de démission cadres"
+    assert complement_call.args[0] == plan.standalone_question
     assert complement_call.kwargs["top_k"] == 5
     assert "code_travail" in complement_call.kwargs["source_type_filter"]
     assert "loi" in complement_call.kwargs["source_type_filter"]
@@ -866,7 +870,7 @@ async def test_source_directed_plan_preserves_filtered_results_and_bounds_fallba
             "convention_collective_nationale",
             "accord_branche",
         ],
-        "complement_query": "préavis de démission cadres",
+        "complement_query": plan.standalone_question,
         "complement_branches": [
             {
                 "kind": "legislation",
@@ -901,9 +905,13 @@ async def test_standard_plan_adds_ccn_priority_candidates_without_narrowing_main
         source_type="convention_collective_nationale",
     )
     agent = RAGAgent.__new__(RAGAgent)
-    agent._run_variant_searches = AsyncMock(return_value=[code])
     agent.search_engine = MagicMock()
-    agent.search_engine.search = AsyncMock(return_value=[ccn])
+    async def retrieve(query, org, **kwargs):
+        if "convention_collective_nationale" in (kwargs.get("source_type_filter") or []):
+            return [ccn]
+        return [code]
+
+    agent.search_engine.search = AsyncMock(side_effect=retrieve)
     agent._org_id = "org-1"
     agent._user_id = None
     agent._conversation_id = None
@@ -920,16 +928,15 @@ async def test_standard_plan_adds_ccn_priority_candidates_without_narrowing_main
         ("code-1", 0),
         ("ccn-1", 9),
     ]
-    agent._run_variant_searches.assert_awaited_once()
-    assert agent._run_variant_searches.await_args.kwargs["source_type_filter"] is None
-    priority_call = agent.search_engine.search.await_args
-    assert priority_call.kwargs["top_k"] == 8
+    ccn_calls = [call for call in agent.search_engine.search.await_args_list
+                 if "convention_collective_nationale" in
+                 (call.kwargs.get("source_type_filter") or [])]
+    assert len(ccn_calls) == 1
+    priority_call = ccn_calls[0]
+    assert priority_call.kwargs["top_k"] == 20
     assert set(priority_call.kwargs["source_type_filter"]) == {
         "convention_collective_nationale",
         "accord_branche",
-    }
-    assert agent._plan_search_diagnostics == {
-        "priority_branches": [{"kind": "ccn", "candidate_chunks": 1, "added_chunks": 1}]
     }
 
 
@@ -976,7 +983,7 @@ async def test_source_directed_plan_adds_jurisprudence_when_either_layer_require
     agent.search_engine = MagicMock()
     legislation = _search_result("law-1", 0, source_type="loi")
     ruling = _search_result("case-1", 0, source_type="arret_cour_cassation")
-    agent.search_engine.search = AsyncMock(side_effect=[[primary[0], legislation], [ruling]])
+    agent.search_engine.search = AsyncMock(side_effect=[[], [primary[0], legislation], [ruling]])
     agent._org_id = "org-1"
     agent._user_id = None
     agent._conversation_id = None
@@ -996,9 +1003,10 @@ async def test_source_directed_plan_adds_jurisprudence_when_either_layer_require
         ("law-1", 0),
         ("case-1", 0),
     ]
-    assert agent.search_engine.search.await_count == 2
-    legislation_call, jurisprudence_call = agent.search_engine.search.await_args_list
-    assert legislation_call.args[0] == "validité du préavis rupture du contrat"
+    assert agent.search_engine.search.await_count == 3
+    boss_call, legislation_call, jurisprudence_call = agent.search_engine.search.await_args_list
+    assert boss_call.kwargs["source_type_filter"] == ["boss"]
+    assert legislation_call.args[0] == plan.standalone_question
     assert "loi" in legislation_call.kwargs["source_type_filter"]
     assert "boss" in legislation_call.kwargs["source_type_filter"]
     assert jurisprudence_call.kwargs["top_k"] == 3
@@ -1067,6 +1075,7 @@ async def test_adaptive_article_hypotheses_are_tenant_filtered_bounded_candidate
         },
         organisation_id="org-1",
         org_idcc_list=["1486"],
+        diagnostics=agent._branch_diagnostics,
     )
     assert [(result.document_id, result.chunk_index) for result in results] == [
         ("semantic", 0),
@@ -1181,10 +1190,10 @@ async def test_adaptive_trace_distinguishes_found_and_reranker_retained_hypothes
 
 
 @pytest.mark.asyncio
-async def test_baseline_never_fetches_plan_article_hypotheses():
+async def test_plan_without_hypotheses_never_fetches_article_hypotheses():
     with patch("app.rag.agent._search_engine"), patch("app.rag.agent.get_reranker"):
         agent = RAGAgent()
-    agent._search_with_expansion = AsyncMock(return_value=([], ["question"]))
+    agent._search_with_plan = AsyncMock(return_value=([], ["question"]))
     agent.reranker = MagicMock()
     agent.reranker.rerank = AsyncMock(return_value=[])
 
@@ -1198,7 +1207,9 @@ async def test_baseline_never_fetches_plan_article_hypotheses():
             new=AsyncMock(return_value=[]),
         ),
     ):
-        await agent.prepare_context("question", "org-1")
+        await agent.prepare_context(
+            "question", "org-1", search_plan=build_deterministic_search_plan("question"),
+        )
 
     fetch_mock.assert_not_awaited()
 
@@ -1214,8 +1225,6 @@ async def test_adaptive_prepare_reuses_follow_up_plan_without_condense_or_expans
 
     with patch("app.rag.agent._search_engine"), patch("app.rag.agent.get_reranker"):
         agent = RAGAgent()
-    agent._condense_question = AsyncMock()
-    agent._search_with_expansion = AsyncMock()
     agent._search_with_plan = AsyncMock(return_value=([], [plan.standalone_question]))
     agent.reranker = MagicMock()
     agent.reranker.rerank = AsyncMock(return_value=[])
@@ -1228,8 +1237,6 @@ async def test_adaptive_prepare_reuses_follow_up_plan_without_condense_or_expans
         search_plan=plan,
     )
 
-    agent._condense_question.assert_not_called()
-    agent._search_with_expansion.assert_not_called()
     agent._search_with_plan.assert_awaited_once()
     assert reformulated == plan.standalone_question
     assert trace.query_condensed == plan.standalone_question
@@ -1243,7 +1250,6 @@ async def test_production_adaptive_search_executes_deterministic_plan_without_ll
     with patch("app.rag.agent._search_engine"), patch("app.rag.agent.get_reranker"):
         agent = RAGAgent()
     agent._search_with_plan = AsyncMock(return_value=([], ["question"]))
-    agent._search_with_expansion = AsyncMock()
     agent.reranker = MagicMock()
     agent.reranker.rerank = AsyncMock(return_value=[])
 
@@ -1260,32 +1266,29 @@ async def test_production_adaptive_search_executes_deterministic_plan_without_ll
         _results, _reformulated, trace = await agent.prepare_context(
             "Quelles sont les dernières actualités en droit social ?",
             "org-1",
-            adaptive_search=True,
         )
 
     planner.assert_awaited_once()
     agent._search_with_plan.assert_awaited_once()
-    agent._search_with_expansion.assert_not_awaited()
     assert trace.search_plan_usage["execution"] == "adaptive"
     assert trace.search_plan_usage["prompt_tokens"] == 0
 
 
 @pytest.mark.asyncio
-async def test_production_adaptive_search_falls_back_to_deterministic_search():
-    """An unavailable compact planner must not prevent deterministic retrieval."""
+async def test_production_planner_failure_does_not_launch_a_fallback():
+    """An unavailable planner reports failure without any replacement retrieval."""
 
     query = "Un employeur peut-il licencier un salarié pendant un arrêt maladie ?"
     deterministic = build_deterministic_search_plan(query)
     fallback = replace(
         deterministic,
-        planner_status=PlannerStatus.FALLBACK,
+        planner_status=PlannerStatus.ERROR,
         warnings=[*deterministic.warnings, "planner_timeout"],
     )
 
     with patch("app.rag.agent._search_engine"), patch("app.rag.agent.get_reranker"):
         agent = RAGAgent()
-    agent._search_with_plan = AsyncMock()
-    agent._search_with_expansion = AsyncMock(return_value=([], [query]))
+    agent._search_with_plan = AsyncMock(return_value=([], [query]))
     agent.reranker = MagicMock()
     agent.reranker.rerank = AsyncMock(return_value=[])
 
@@ -1302,11 +1305,9 @@ async def test_production_adaptive_search_falls_back_to_deterministic_search():
         _results, _reformulated, trace = await agent.prepare_context(
             query,
             "org-1",
-            adaptive_search=True,
         )
 
-    agent._search_with_expansion.assert_awaited_once()
     agent._search_with_plan.assert_not_awaited()
-    assert trace.search_plan_usage["execution"] == "deterministic_fallback"
-    assert trace.search_plan_usage["fallback_to_deterministic"] is True
-    assert trace.search_plan["planner_status"] == "fallback"
+    assert trace.search_plan_usage["execution"] == "planner_error"
+    assert trace.search_plan_usage["fallback_to_deterministic"] is False
+    assert trace.search_plan["planner_status"] == "error"

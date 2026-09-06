@@ -53,8 +53,6 @@ from app.models.conversation import Conversation
 from app.models.organisation import Organisation
 from app.models.user import User
 from app.rag.agent import (
-    _OUT_OF_SCOPE_ANSWER,
-    _OUT_OF_SCOPE_MARKER,
     RAGAgent,
 )
 from app.rag.config import (
@@ -64,6 +62,7 @@ from app.rag.config import (
 )
 from app.rag.intent_router import classify_intent
 from app.rag.pipeline import prepare_rag_context
+from app.rag.search_feedback import search_feedback
 from app.services.conversation_service import ConversationService
 from app.services.security_alert_service import send_security_alert_bg
 
@@ -331,6 +330,10 @@ async def public_ask(
                     organisation_id=demo_org_id,
                     use_llm_fallback=True,
                 )
+                if intent_result.raw_response:
+                    yield _sse_event("chat_search_details", search_feedback({
+                        "router_raw_response": intent_result.raw_response,
+                    }))
                 if intent_result.static_answer is not None:
                     meta_user = await service.add_message(
                         conversation_id=conversation.id,
@@ -347,6 +350,7 @@ async def public_ask(
                     # cohérent et auditable.
                     meta_assistant.rag_trace = {
                         "static_intent": intent_result.intent.value,
+                        "router_raw_response": intent_result.raw_response,
                         "security_event": intent_result.security_event,
                     }
                     await db.commit()
@@ -420,21 +424,20 @@ async def public_ask(
                     )
                     return
 
-                if reformulated == _OUT_OF_SCOPE_MARKER:
-                    await service.add_message(
-                        conversation_id=conversation.id,
-                        role="user",
-                        content=message,
-                    )
-                    await service.add_message(
-                        conversation_id=conversation.id,
-                        role="assistant",
-                        content=_OUT_OF_SCOPE_ANSWER,
-                    )
-                    yield _sse_event("chat_delta", {"content": _OUT_OF_SCOPE_ANSWER})
-                    yield _sse_event("chat_done", {"upsell": _DEMO_UPSELL})
+                rag_trace.router_raw_response = intent_result.raw_response
+                yield _sse_event("chat_search_details", search_feedback(rag_trace))
+                if rag_trace.error == "search_retrieval_error":
+                    yield _sse_event("chat_error", {
+                        "error": "search_retrieval_error",
+                        "message": "Les recherches documentaires ont échoué. La disponibilité des documents n’a pas pu être vérifiée.",
+                    })
                     return
-
+                if rag_trace.error == "search_planner_error":
+                    yield _sse_event("chat_error", {
+                        "error": "search_planner_error",
+                        "message": "Le plan de recherche n’a pas pu être exécuté. Aucune recherche de secours n’a été lancée.",
+                    })
+                    return
                 if not results:
                     yield _sse_event(
                         "chat_error",

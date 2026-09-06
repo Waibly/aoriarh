@@ -31,9 +31,12 @@ from qdrant_client.models import (
     MatchValue,
 )
 
+from app.rag.access_filter import build_org_access_filter
+from app.rag.article_reference import normalize_article_reference
 from app.rag.norme_hierarchy import DOCUMENT_TYPE_HIERARCHY
 from app.rag.qdrant_store import COLLECTION_NAME
 from app.rag.search import SearchResult
+from app.rag.source_intent import CODE_SOURCE_LABELS
 
 logger = logging.getLogger(__name__)
 
@@ -62,9 +65,58 @@ _PATTERN_NUM_POURVOI = re.compile(r"\b(\d{2})[-\s](\d{2})[\.\s]?(\d{3})\b")
 
 # Article de code : "L4121-1", "L. 4121-1", "art. L.4121-1", "R1234-2", etc.
 _PATTERN_ARTICLE_CODE = re.compile(
-    r"\b([LRDA])\.?\s*(\d{3,4})[-\s]?(\d+)\b",
+    r"\b([LRDA])\.?\s*(\d{1,4})([-‑–]\d+(?:[-‑–]\d+)*)\b",
     re.IGNORECASE,
 )
+_PATTERN_ARTICLE_NUMERIC = re.compile(
+    r"\b(?:article|art\.)\s+(\d+(?:[-‑–.]\d+)*)\b", re.IGNORECASE,
+)
+
+
+def _article_mentions(query: str) -> list[tuple[int, int, str]]:
+    matches = [
+        (m.start(), m.end(), normalize_article_reference("".join(m.groups())))
+        for m in _PATTERN_ARTICLE_CODE.finditer(query)
+    ]
+    matches.extend(
+        (m.start(), m.end(), m.group(1).replace("‑", "-").replace("–", "-"))
+        for m in _PATTERN_ARTICLE_NUMERIC.finditer(query)
+    )
+    return sorted(matches)
+
+
+def article_lookup_keys(article: str) -> list[str]:
+    """Also match the prefixed spellings emitted by historical ingestion."""
+    keys = [article]
+    if re.fullmatch(r"[LRDA]\d+(?:-\d+)+", article):
+        keys.extend([article[0] + "." + article[1:], article[0] + ". " + article[1:]])
+    return keys
+
+
+def reference_source_types(query: str) -> dict[str, list[str]]:
+    """Associate each explicit article with an adjacent named Code, if known.
+
+    A following Code applies to a preceding list of articles. A preceding Code
+    is reused only within the same clause. Ambiguous references stay unscoped.
+    """
+    codes = sorted(
+        (m.start(), m.end(), types)
+        for label, types in CODE_SOURCE_LABELS.items()
+        for m in re.finditer(label, query, re.I)
+    )
+    result: dict[str, list[str]] = {}
+    for start, end, article in _article_mentions(query):
+        after = next((c for c in codes if c[0] >= end), None)
+        before = next((c for c in reversed(codes) if c[1] <= start), None)
+        chosen = None
+        if after and not re.search(r"[;!?\n]|\bet\s+(?:le|du)\s*$", query[end:after[0]], re.I):
+            chosen = after
+        elif before and not re.search(r"[;!?\n]", query[before[1]:start]):
+            chosen = before
+        if chosen:
+            result.setdefault(article, [])
+            result[article] = list(dict.fromkeys([*result[article], *chosen[2]]))
+    return result
 
 # Source types treated as "full document = parent"
 _JURISPRUDENCE_SOURCE_TYPES = {
@@ -95,9 +147,7 @@ def detect_identifiers(query: str) -> dict[str, list[str]]:
 
     articles: list[str] = []
     seen_a: set[str] = set()
-    for m in _PATTERN_ARTICLE_CODE.finditer(query):
-        prefix = m.group(1).upper()
-        canonical = f"{prefix}{m.group(2)}-{m.group(3)}"
+    for _start, _end, canonical in _article_mentions(query):
         if canonical not in seen_a:
             seen_a.add(canonical)
             articles.append(canonical)
@@ -108,81 +158,7 @@ def detect_identifiers(query: str) -> dict[str, list[str]]:
 # --- Identifier-based retrieval boost -----------------------------------------
 
 
-def _build_org_access_filter(
-    organisation_id: str | None,
-    org_idcc_list: list[str] | None = None,
-) -> Filter | None:
-    """Build the same multi-tenant access filter used by HybridSearch.
-
-    Allows: org's own docs + common non-CCN docs + common CCN docs for org's IDCCs.
-    Returns None if organisation_id is None (no filter applied — admin context).
-    """
-    if not organisation_id:
-        return None
-
-    should: list = [
-        FieldCondition(
-            key="organisation_id",
-            match=MatchValue(value=organisation_id),
-        ),
-    ]
-    ccn_types = ["convention_collective_nationale", "accord_branche"]
-    if org_idcc_list:
-        should.append(
-            Filter(
-                must=[
-                    FieldCondition(
-                        key="organisation_id",
-                        match=MatchValue(value="common"),
-                    ),
-                ],
-                must_not=[
-                    FieldCondition(
-                        key="source_type",
-                        match=MatchAny(any=ccn_types),
-                    ),
-                ],
-            )
-        )
-        for st in ccn_types:
-            should.append(
-                Filter(
-                    must=[
-                        FieldCondition(
-                            key="organisation_id",
-                            match=MatchValue(value="common"),
-                        ),
-                        FieldCondition(
-                            key="source_type",
-                            match=MatchValue(value=st),
-                        ),
-                        FieldCondition(
-                            key="idcc",
-                            match=MatchAny(any=org_idcc_list),
-                        ),
-                    ],
-                )
-            )
-    else:
-        # No IDCC installed → exclude ALL CCN/accord_branche docs to avoid
-        # leaking content from sectors that don't apply to this org.
-        should.append(
-            Filter(
-                must=[
-                    FieldCondition(
-                        key="organisation_id",
-                        match=MatchValue(value="common"),
-                    ),
-                ],
-                must_not=[
-                    FieldCondition(
-                        key="source_type",
-                        match=MatchAny(any=ccn_types),
-                    ),
-                ],
-            )
-        )
-    return Filter(should=should)
+_build_org_access_filter = build_org_access_filter
 
 
 async def fetch_by_identifiers(
@@ -190,6 +166,11 @@ async def fetch_by_identifiers(
     identifiers: dict[str, list[str]],
     organisation_id: str | None,
     org_idcc_list: list[str] | None = None,
+    reference_query: str | None = None,
+    source_type_filter: list[str] | None = None,
+    excluded_source_types: list[str] | None = None,
+    diagnostics: list[dict] | None = None,
+    article_source_filters: dict[str, list[str]] | None = None,
 ) -> list[SearchResult]:
     """Fetch chunks matching identifiers via Qdrant scroll, respecting org access.
 
@@ -204,12 +185,19 @@ async def fetch_by_identifiers(
     org_filter = _build_org_access_filter(organisation_id, org_idcc_list)
 
     def _scroll(extra_must: list) -> list[SearchResult]:
+        diagnostic = {"kind": "reference", "status": "running", "candidate_chunks": 0}
+        if diagnostics is not None:
+            diagnostics.append(diagnostic)
         must = list(extra_must)
         if org_filter is not None:
             # Nest the org access filter inside `must` so its `should` clauses
             # remain a required disjunction (multi-tenant safety).
             must.append(org_filter)
-        flt = Filter(must=must)
+        if source_type_filter is not None:
+            must.append(FieldCondition(key="source_type", match=MatchAny(any=source_type_filter)))
+        flt = Filter(must=must, must_not=[
+            FieldCondition(key="source_type", match=MatchAny(any=excluded_source_types)),
+        ] if excluded_source_types else None)
         try:
             pts, _ = qdrant.scroll(
                 collection_name=COLLECTION_NAME,
@@ -219,15 +207,21 @@ async def fetch_by_identifiers(
                 with_vectors=False,
             )
         except Exception as exc:
+            diagnostic["status"] = "error"
             logger.warning("[BOOST] Identifier scroll failed (%s): %s", extra_must, exc)
             return []
+        diagnostic.update(status="ok" if pts else "empty", candidate_chunks=len(pts))
         return [_payload_to_result(p.payload or {}, score=1.0) for p in pts]
 
+    scopes = (article_source_filters if article_source_filters is not None
+              else reference_source_types(reference_query or ""))
     conditions: list[list] = [
         [FieldCondition(key="numero_pourvoi", match=MatchValue(value=pourvoi))]
         for pourvoi in identifiers.get("numero_pourvoi", [])
     ] + [
-        [FieldCondition(key="article_nums", match=MatchAny(any=[article]))]
+        [FieldCondition(key="article_nums", match=MatchAny(any=article_lookup_keys(article)))]
+        + ([FieldCondition(key="source_type", match=MatchAny(any=scopes[article]))]
+           if article in scopes else [])
         for article in identifiers.get("article_nums", [])
     ]
     batches = await asyncio.gather(*[asyncio.to_thread(_scroll, cond) for cond in conditions])

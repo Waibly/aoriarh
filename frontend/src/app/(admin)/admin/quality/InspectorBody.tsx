@@ -63,6 +63,7 @@ export interface SearchPlanTrace {
   jurisprudence: string;
   internal_documents: string;
   planner_status: "not_needed" | "pending" | "ok" | "fallback";
+  planner_raw_response?: string | null;
   legal_topics: string[];
   search_queries: string[];
   hypothesized_articles: { reference: string; confidence: string }[];
@@ -319,6 +320,9 @@ function SearchPlanPanel({
           )}
         </div>
 
+        {plan.planner_raw_response && (
+          <pre className="whitespace-pre-wrap break-words">{plan.planner_raw_response}</pre>
+        )}
         {plan.standalone_question !== plan.query_original && (
           <div>
             <span className="text-muted-foreground">

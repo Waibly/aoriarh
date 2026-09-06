@@ -16,7 +16,11 @@ from enum import StrEnum
 from typing import Any
 
 from app.rag.parent_expansion import detect_identifiers
-from app.rag.source_intent import detect_source_intent
+from app.rag.source_intent import (
+    detect_exclusive_sources,
+    detect_source_exclusions,
+    detect_source_intent,
+)
 
 
 class SearchMode(StrEnum):
@@ -56,7 +60,8 @@ class PlannerStatus(StrEnum):
     NOT_NEEDED = "not_needed"
     PENDING = "pending"
     OK = "ok"
-    FALLBACK = "fallback"
+    FALLBACK = "fallback"  # Compatibility with persisted traces only.
+    ERROR = "error"
 
 
 @dataclass(frozen=True)
@@ -96,6 +101,9 @@ _LEGAL_NEWS_PATTERNS = [
 ]
 
 _FOLLOW_UP_PATTERNS = [
+    re.compile(r"^\s*(?:et|mais)\s+(?:les?|la|un|une|ceux|celles)\b", re.I),
+    re.compile(r"^\s*quelle?\s+(?:dur[ée]e|montant|d[ée]lai|risque)\s*\??\s*$", re.I),
+    re.compile(r"^\s*(?:peux-tu\s+|pouvez-vous\s+)?(?:d[ée]tailler|pr[ée]ciser|expliquer)\s*\??\s*$", re.I),
     re.compile(r"^\s*(?:et|mais)\s+(?:pour|dans|si|concernant)\b", re.IGNORECASE),
     re.compile(r"\b(?:dans ce cas|dans cette situation|pour chacun)\b", re.IGNORECASE),
     re.compile(r"\b(?:ça|cela|ce point|cet article|ce texte|cet accord)\b", re.IGNORECASE),
@@ -188,6 +196,10 @@ class SearchPlan:
     planner_answer_intent: AnswerIntent | None = None
     reasons: list[str] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
+    has_history: bool = False
+    excluded_source_types: list[str] = field(default_factory=list)
+    exclusive_source_types: list[str] = field(default_factory=list)
+    planner_raw_response: str | None = None
 
     def to_dict(self) -> dict:
         """Return a JSON-compatible representation for traces and APIs."""
@@ -223,6 +235,12 @@ servent seulement à résoudre une référence comme « cet article ».
 dans missing_facts.
 - standalone_question : question autonome fidèle, 1 à 2 phrases. Si la question \
 est déjà autonome, recopie-la exactement.
+- Résous les relances avec l'historique, même si needs_condensation est false : \
+ce signal déterministe peut manquer une anaphore. Une référence exacte ne \
+supprime pas le besoin de contexte. Si le sujet change, ne conserve pas l'ancien.
+- needs_history : true uniquement si la question a besoin d'une information \
+de l'historique pour être comprise. Une reformulation stylistique ne suffit pas. \
+Pour une nouvelle question autonome, retourne false et conserve son sujet.
 - legal_topics : 1 à 6 notions juridiques précises qui changent la recherche. \
 Elles décrivent le problème de droit indépendamment de la source demandée : ne \
 répète pas « CCN », le nom de la convention, l'IDCC, « Code du travail », \
@@ -247,10 +265,19 @@ le mécanisme demandé, pas seulement le paiement du salaire en général.
 - hypothesized_articles : 0 à 3 articles de Code seulement. N'en propose que si \
 le rapprochement est plausible. Ce sont des candidats incertains à vérifier \
 dans le corpus, jamais des autorités ; confidence vaut "low" ou "medium".
+- Lorsqu'un numéro d'article est cité mais que son texte n'est pas fourni, ne \
+devine jamais sa signification ni son applicabilité. Résous seulement le contexte \
+exprimé par l'utilisateur. N'ajoute ni thème, ni conséquence, ni mécanisme juridique \
+supposé à partir de ce numéro dans standalone_question, legal_topics ou search_queries. \
+La recherche exacte vérifiera le texte. Les références explicites ne sont pas des hypothèses.
 - source_hints : sous-ensemble de ["legislation", "ccn", "jurisprudence", \
 "internal", "boss"]. Utilise "boss" pour les cotisations/contributions, \
 l'assiette sociale, les exonérations, avantages en nature ou frais \
 professionnels. Ce sont des priorités, jamais des droits d'accès.
+- N'ajoute pas boss au seul motif qu'il est question de rémunération, de préavis \
+ou d'indemnités. Le besoin de cotisations/exonérations doit venir de la question, \
+pas d'une supposition sur un article cité. Limite internal aux questions qui \
+nécessitent réellement de lire un document de l'organisation.
 - jurisprudence : "required" si la question porte sur une validité, une \
 interprétation contestable, une exception, une sanction, une discrimination, \
 un licenciement, une garantie/protection de l'emploi ou la position des \
@@ -265,6 +292,7 @@ réponse finale.
 
 Schéma JSON exact :
 {
+  "needs_history": false,
   "standalone_question": "...",
   "legal_topics": ["..."],
   "search_queries": ["..."],
@@ -343,62 +371,59 @@ def _answer_format(intent: AnswerIntent) -> str:
 
 
 def _time_scope(query: str, *, legal_news: bool) -> dict[str, int | str] | None:
+    years = re.findall(r"\b(20\d{2})\b", query)
+    publication = legal_news or bool(re.search(r"\bpubli[ée]\w*\b", query, re.I))
+    publication = publication or bool(re.search(
+        r"\b(?:arr[êe]ts?|d[ée]cisions?|textes?|jurisprudence)\b[^.!?]{0,50}"
+        r"\b(?:derniers?|r[ée]cents?)\b", query, re.I,
+    ))
+    if publication and len(set(years)) > 1:
+        return None
+    if publication and len(set(years)) == 1:
+        return {"kind": "calendar_year", "year": int(years[0]), "source": "explicit"}
     rolling = re.search(
         r"\b(?:sur\s+les\s+)?(\d{1,3})\s+derniers?\s+jours?\b",
         query,
         re.IGNORECASE,
     )
-    if rolling:
+    if rolling and publication:
         return {
             "kind": "rolling_days",
             "days": min(max(int(rolling.group(1)), 1), 366),
             "source": "explicit",
         }
-    if re.search(r"\b(?:cette|la)\s+semaine\b", query, re.IGNORECASE):
+    if publication and re.search(r"\b(?:cette|la)\s+semaine\b", query, re.IGNORECASE):
         return {"kind": "rolling_days", "days": 7, "source": "explicit"}
-    if re.search(r"\b(?:ce|du)\s+mois\b", query, re.IGNORECASE):
+    if publication and re.search(r"\b(?:ce|du)\s+mois\b", query, re.IGNORECASE):
         return {"kind": "rolling_days", "days": 30, "source": "explicit"}
     if legal_news:
         return {"kind": "rolling_days", "days": 30, "source": "default_news"}
-    year = re.search(r"\b(20\d{2})\b", query)
-    if year:
-        return {"kind": "calendar_year", "year": int(year.group(1)), "source": "explicit"}
+    application = re.search(
+        r"\b(?:applicables?|en vigueur|quel [ée]tait|quelle [ée]tait|r[èe]gles?|droit)\b"
+        r"[^.?!]{0,80}\ben\s+(20\d{2})\b", query, re.I,
+    )
+    if application and not re.search(r"\baujourd['’]hui\b", query, re.I):
+        return {"kind": "application_year", "year": int(application.group(1)), "source": "explicit"}
     return None
 
 
 def _string_list(
     payload: dict[str, Any],
     key: str,
-    *,
-    limit: int,
-    max_chars: int,
 ) -> list[str]:
     value = payload.get(key, [])
     if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
         raise ValueError(f"invalid_{key}")
-    output: list[str] = []
-    seen: set[str] = set()
-    for item in value:
-        clean = " ".join(item.split()).strip()
-        normalized = clean.casefold()
-        if clean and len(clean) <= max_chars and normalized not in seen:
-            seen.add(normalized)
-            output.append(clean)
-        if len(output) >= limit:
-            break
-    return output
+    return list(value)
 
 
 def _parse_hypothesized_articles(
     payload: dict[str, Any],
-    explicit_articles: list[str],
 ) -> list[HypothesizedArticle]:
     raw = payload.get("hypothesized_articles", [])
     if not isinstance(raw, list):
         raise ValueError("invalid_hypothesized_articles")
-    explicit = set(explicit_articles)
     output: list[HypothesizedArticle] = []
-    seen: set[str] = set()
     for item in raw:
         if not isinstance(item, dict):
             raise ValueError("invalid_hypothesized_article")
@@ -406,17 +431,7 @@ def _parse_hypothesized_articles(
         confidence = item.get("confidence")
         if not isinstance(reference, str) or confidence not in {"low", "medium"}:
             raise ValueError("invalid_hypothesized_article")
-        detected = detect_identifiers(reference).get("article_nums", [])
-        if len(detected) != 1:
-            # A malformed or non-Code reference is ignored, never searched.
-            continue
-        canonical = detected[0]
-        if canonical in explicit or canonical in seen:
-            continue
-        seen.add(canonical)
-        output.append(HypothesizedArticle(reference=canonical, confidence=confidence))
-        if len(output) >= 4:
-            break
+        output.append(HypothesizedArticle(reference=reference, confidence=confidence))
     return output
 
 
@@ -431,28 +446,13 @@ def apply_compact_planner_payload(
     standalone = payload.get("standalone_question")
     if not isinstance(standalone, str):
         raise ValueError("invalid_standalone_question")
-    standalone = " ".join(standalone.split()).strip()
-    if not standalone or len(standalone) > 600:
+    if not standalone.strip():
         raise ValueError("invalid_standalone_question")
-    # An autonomous question must never be silently rewritten. The model may
-    # only resolve anaphora when the deterministic layer requested it.
-    if not plan.needs_condensation:
-        standalone = plan.query_original
+    topics = _string_list(payload, "legal_topics")
+    queries = _string_list(payload, "search_queries")
+    missing_facts = _string_list(payload, "missing_facts")
 
-    topics = _string_list(payload, "legal_topics", limit=6, max_chars=120)
-    queries = _string_list(
-        payload,
-        "search_queries",
-        limit=plan.query_budget,
-        max_chars=300,
-    )
-    normalized_original = " ".join(plan.query_original.casefold().split())
-    queries = [
-        query for query in queries if " ".join(query.casefold().split()) != normalized_original
-    ]
-    missing_facts = _string_list(payload, "missing_facts", limit=3, max_chars=180)
-
-    raw_hints = _string_list(payload, "source_hints", limit=4, max_chars=30)
+    raw_hints = _string_list(payload, "source_hints")
     allowed_hints = {"legislation", "ccn", "jurisprudence", "internal", "boss"}
     if any(hint not in allowed_hints for hint in raw_hints):
         raise ValueError("invalid_source_hints")
@@ -469,18 +469,14 @@ def apply_compact_planner_payload(
         raise ValueError("invalid_answer_intent") from exc
 
     warnings = list(plan.warnings)
-    if plan.needs_condensation and standalone.casefold() == plan.query_original.casefold():
-        warnings.append("planner_condensation_unchanged")
-    hypotheses = _parse_hypothesized_articles(
-        payload,
-        plan.explicit_identifiers.get("article_nums", []),
-    )
+    hypotheses = _parse_hypothesized_articles(payload)
     if hypotheses:
         warnings.append("hypothesized_articles_require_retrieval_validation")
 
     return replace(
         plan,
         standalone_question=standalone,
+        needs_condensation=payload.get("needs_history", plan.needs_condensation) is True,
         planner_status=PlannerStatus.OK,
         legal_topics=topics,
         search_queries=queries,
@@ -499,6 +495,7 @@ def _planner_user_message(
     *,
     history: list[dict[str, str]] | None,
     org_context: dict[str, str | bool | None] | None,
+    cited_sources: list[str] | None = None,
 ) -> str:
     recent_history = []
     for message in (history or [])[-6:]:
@@ -506,7 +503,7 @@ def _planner_user_message(
         content = message.get("content")
         if role not in {"user", "assistant"} or not isinstance(content, str):
             continue
-        recent_history.append({"role": role, "content": content[:1000]})
+        recent_history.append({"role": role, "content": content})
     safe_org = {}
     for key in (
         "convention_collective",
@@ -535,16 +532,17 @@ def _planner_user_message(
         "constraints": constraints,
         "organisation_context": safe_org,
         "conversation_history": recent_history,
+        "previous_source_names": cited_sources or [],
         "question": plan.query_original,
     }
     return json.dumps(data, ensure_ascii=False)
 
 
-def _planner_fallback(plan: SearchPlan, reason: str) -> SearchPlan:
+def _planner_error(plan: SearchPlan, reason: str) -> SearchPlan:
     warnings = list(plan.warnings)
     if reason not in warnings:
         warnings.append(reason)
-    return replace(plan, planner_status=PlannerStatus.FALLBACK, warnings=warnings)
+    return replace(plan, planner_status=PlannerStatus.ERROR, warnings=warnings)
 
 
 async def run_compact_search_planner(
@@ -555,11 +553,20 @@ async def run_compact_search_planner(
     history: list[dict[str, str]] | None = None,
     org_context: dict[str, str | bool | None] | None = None,
     timeout_seconds: float = 60.0,
+    cited_sources: list[str] | None = None,
 ) -> PlannerCallResult:
-    """Run the optional planner safely; never raise into the RAG pipeline."""
+    """Preserve raw output and report failure without a replacement plan."""
 
     if not plan.needs_llm_planner:
         return PlannerCallResult(plan=plan)
+    prompt_tokens = completion_tokens = 0
+
+    def failure(reason: str) -> PlannerCallResult:
+        return PlannerCallResult(
+            plan=_planner_error(plan, reason), prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
+        )
+
     try:
         response = await asyncio.wait_for(
             llm.chat.completions.create(
@@ -572,18 +579,23 @@ async def run_compact_search_planner(
                             plan,
                             history=history,
                             org_context=org_context,
+                            cited_sources=cited_sources,
                         ),
                     },
                 ],
                 response_format={"type": "json_object"},
-                max_completion_tokens=600,
+                max_completion_tokens=2400,
                 reasoning_effort="minimal",
             ),
             timeout=timeout_seconds,
         )
         content = response.choices[0].message.content
-        if not isinstance(content, str) or not content.strip():
-            return PlannerCallResult(plan=_planner_fallback(plan, "planner_empty_response"))
+        usage = getattr(response, "usage", None)
+        prompt_tokens = int(getattr(usage, "prompt_tokens", 0) or 0)
+        completion_tokens = int(getattr(usage, "completion_tokens", 0) or 0)
+        if not isinstance(content, str) or not content:
+            return failure("planner_empty_response")
+        plan = replace(plan, planner_raw_response=content)
         payload = json.loads(content)
         enriched = apply_compact_planner_payload(plan, payload)
         usage = getattr(response, "usage", None)
@@ -593,13 +605,13 @@ async def run_compact_search_planner(
             completion_tokens=int(getattr(usage, "completion_tokens", 0) or 0),
         )
     except TimeoutError:
-        return PlannerCallResult(plan=_planner_fallback(plan, "planner_timeout"))
+        return failure("planner_timeout")
     except json.JSONDecodeError:
-        return PlannerCallResult(plan=_planner_fallback(plan, "planner_invalid_json"))
+        return failure("planner_invalid_json")
     except ValueError as exc:
-        return PlannerCallResult(plan=_planner_fallback(plan, str(exc)))
+        return failure(str(exc))
     except Exception:
-        return PlannerCallResult(plan=_planner_fallback(plan, "planner_llm_error"))
+        return failure("planner_llm_error")
 
 
 def build_deterministic_search_plan(
@@ -629,6 +641,8 @@ def build_deterministic_search_plan(
 
     reasons: list[str] = []
     warnings: list[str] = []
+    if legal_news and len(set(re.findall(r"\b20\d{2}\b", query))) > 1:
+        warnings.append("ambiguous_time_scope")
     if legal_news:
         mode = SearchMode.LEGAL_NEWS
         reasons.append("explicit_legal_news_request")
@@ -688,7 +702,7 @@ def build_deterministic_search_plan(
 
     # Deterministic routes need no semantic planner. Other questions will use
     # one compact planner call before retrieval.
-    needs_llm_planner = mode not in {
+    needs_llm_planner = needs_condensation or mode not in {
         SearchMode.EXACT_REFERENCE,
         SearchMode.LEGAL_NEWS,
     }
@@ -738,7 +752,7 @@ def build_deterministic_search_plan(
     else:
         query_budget = 1
     return SearchPlan(
-        version="adaptive-v1",
+        version="adaptive-v2",
         query_original=query,
         standalone_question=query,
         mode=mode,
@@ -758,4 +772,7 @@ def build_deterministic_search_plan(
         planner_status=(PlannerStatus.PENDING if needs_llm_planner else PlannerStatus.NOT_NEEDED),
         reasons=reasons,
         warnings=warnings,
+        has_history=has_history,
+        excluded_source_types=detect_source_exclusions(query),
+        exclusive_source_types=detect_exclusive_sources(query),
     )

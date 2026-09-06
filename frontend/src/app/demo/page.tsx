@@ -13,6 +13,8 @@ import {
 } from "lucide-react";
 
 import { StreamingBubble } from "@/components/chat/streaming-bubble";
+import { SearchDetailsPanel } from "@/components/chat/search-details";
+import type { SearchDetails } from "@/types/api";
 import {
   Turnstile,
   TURNSTILE_ENABLED,
@@ -44,6 +46,7 @@ function DemoClient() {
   const initialQuestion = (searchParams.get("q") || "").slice(0, MAX_LEN).trim();
 
   const [turns, setTurns] = useState<Turn[]>([]);
+  const [searchDetails, setSearchDetails] = useState<SearchDetails | null>(null);
   const [streamingContent, setStreamingContent] = useState("");
   const [streamingSources, setStreamingSources] = useState<MessageSource[]>([]);
   const [status, setStatus] = useState<string | null>(null);
@@ -69,6 +72,7 @@ function DemoClient() {
       setStreamingSources([]);
       setStatus("Analyse de votre question...");
       setError(null);
+      setSearchDetails(null);
       setDone(false);
       setIsStreaming(true);
 
@@ -79,6 +83,7 @@ function DemoClient() {
         { message: trimmed, turnstileToken: token },
         {
           onStatus: (step) => setStatus(step),
+          onSearchDetails: setSearchDetails,
           onSources: (s) => {
             srcs = s;
             setStreamingSources(s);
@@ -216,6 +221,7 @@ function DemoClient() {
             />
           )}
 
+          <SearchDetailsPanel details={searchDetails} />
           {error && (
             <div className="rounded-xl border border-destructive/30 bg-destructive/5 p-4 text-sm text-foreground">
               {error}

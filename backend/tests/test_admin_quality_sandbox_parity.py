@@ -96,7 +96,7 @@ async def test_sandbox_generation_receives_same_context_as_chat(monkeypatch):
         "Bureaux d'études techniques (IDCC 1486)"
     )
     assert prepare_kwargs["org_context"]["profil_metier"] == "responsable_rh"
-    assert prepare_kwargs["adaptive_search"] is True
+    assert "adaptive_search" not in prepare_kwargs
 
     generation_kwargs = agent.stream_generate.call_args.kwargs
     assert generation_kwargs["history"] == history

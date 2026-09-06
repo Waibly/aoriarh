@@ -36,5 +36,4 @@ async def prepare_rag_context(
         user_id=user_id,
         conversation_id=context_id,
         is_replay=is_replay,
-        adaptive_search=True,
     )

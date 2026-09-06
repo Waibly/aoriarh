@@ -52,6 +52,7 @@ class Intent(str, Enum):
     META_SOURCES = "meta_sources"              # "tes sources, dernière maj"
     META_INTERNALS = "meta_internals"          # "quel modèle, comment tu fonctionnes" ⚠️ IP
     OUT_OF_SCOPE = "out_of_scope"              # droit hors social FR, recettes, etc.
+    ROUTING_ERROR = "routing_error"
     GREETING = "greeting"                      # "bonjour", "merci"
 
 
@@ -68,6 +69,7 @@ class IntentResult:
     via: str = "prefilter"
     # Catégorie d'alerte interne. None pour les intentions ordinaires.
     security_event: str | None = None
+    raw_response: str | None = None
 
 
 # ─── Pre-filter patterns (déterministe, ~5ms) ──────────────────────────────
@@ -99,7 +101,8 @@ _PATTERNS_PROTECTED_DATA = [
 _PATTERNS_PRIVILEGE_CLAIM = [
     r"\b(je suis|j['’]ai le r[oô]le|en tant que|consid[èe]re[- ]moi comme)\s+"
     r"(un\s+|l['’])?(admin|administrateur|super[- ]?admin|root|superuser|"
-    r"d[ée]veloppeur|propri[ée]taire)\b",
+    r"d[ée]veloppeur|propri[ée]taire)\b[^.?!]{0,100}"
+    r"\b(donn[ée]es internes|acc[èe]s|permissions?|autorisations?|secrets?)\b",
     r"\b(contourne|bypass|d[ée]sactive|ignore)\b[^.?!]{0,60}"
     r"\b(permissions?|autorisations?|droits? d['’]acc[èe]s|authentification|"
     r"contr[oô]les? d['’]acc[èe]s)\b",
@@ -116,13 +119,15 @@ _PATTERNS_INSTRUCTION_BYPASS = [
 ]
 
 _PATTERNS_INTERNALS = [
-    r"\b(quel|quelle|quels|quelles)\s+(modèle|llm|ia|moteur|outil|techno|stack|prompt|framework|librairie|reranker|embedding|vector|base de données)\b",
+    r"\b(quel|quelle|quels|quelles)\s+(modèle|llm|ia|moteur|outil|techno|stack|prompt|framework|librairie|reranker|embedding|vector|base de données)\b"
+    r"[^.?!]{0,50}\b(utilises?-tu|utilisez-vous|tu utilises|vous utilisez|aoria)\b",
     # 'c'est quoi les techno', 'tu utilises quoi', 'ça tourne avec quoi'
-    r"\b(c'est quoi|qu'est[- ]ce que c'est|qu'est[- ]ce que)\s+(les|le|la|ton|ta|tes|votre|vos)?\s*(techno|technologie|stack|modèle|llm|ia|outil|moteur|infrastructure|prompt|framework|librairie)\b",
+    r"\b(c'est quoi|qu'est[- ]ce que c'est|qu'est[- ]ce que)\s+(ton|ta|tes|votre|vos)\s+(techno|technologie|stack|modèle|llm|ia|outil|moteur|infrastructure|prompt|framework|librairie)\b",
     r"\b(t['eu]|tu|vous)\s+(utilis\w*|tournes?\s+(avec|sur)|emploies?|fonctionne(s|z)?\s+avec)\s+(quoi|quel|quelle|quels|quelles|un|une|du|de la|des|le|la|les|comme)",
     r"\b(comment|de quelle (façon|manière))\s+(tu|vous)\s+(es codé|fonctionne|fonctionnez|marche|marches|es construit|es entraîné|es développ)",
     r"\bton\s+(prompt|système|architecture|infrastructure|hébergeur)\b",
-    r"\b(openai|chatgpt|gpt[- .]?\d*|claude|anthropic|qdrant|voyage)\b",
+    r"\b(tu|vous|aoria)\b[^.?!]{0,30}\b(utilises?|utilisez|emploies?|employez|fonctionnes?)\b"
+    r"[^.?!]{0,30}\b(openai|chatgpt|gpt[- .]?\d*|claude|anthropic|qdrant|voyage)\b",
     r"\b(quel|qui est)\s+(est\s+)?(ton|votre)\s+(fournisseur|sous-traitant|hébergeur)\b",
     r"\b(où|ou|comment)\s+(sont|est)\s+héberg[ée]es?\s+(les|tes|vos)\s+donn[ée]es\b",
 ]
@@ -156,7 +161,6 @@ _PATTERNS_SCOPE = [
     # du 25/03/2024 ?"). En cas d'ambiguïté on laisse le LLM classifier
     # trancher (cf. _CLASSIFIER_PROMPT) ou on tombe en RAG par défaut.
     r"\b(es-tu|êtes-vous|es tu)\s+(spécialisé|expert|capable)\b",
-    r"\b(peux-tu|peut-on|peut on|pouvez-vous)\s+(répondre|me parler|m'aider)\s+(sur|à propos de|en (matière|droit))",
     r"\b(quelles?\s+convention(s)?\s+collectives?)\s+(tu|vous|que tu|que vous)\s+(connais|connaissez|maîtris|couvr|gèr)",
     r"\b(quelles?\s+(idcc|ccn))\s+(tu|vous)\b",
     # Droits ÉTRANGERS uniquement (catch direct). Les autres branches du droit
@@ -406,20 +410,26 @@ social FR de 2017)
 
 Si tu hésites entre legal_question et autre chose, choisis legal_question \
 (le RAG sera lancé, c'est sécuritaire).
-Si la question contient des mots-clés techniques (modèle, prompt, qdrant, \
-openai, gpt, claude, anthropic, stack, framework), choisis meta_internals \
-SANS HÉSITATION.
+Les mots modèle, outil, voyage, ChatGPT ou OpenAI ne suffisent jamais à classer \
+meta_internals. Cette catégorie concerne une demande sur le fonctionnement \
+d'AORIA elle-même. Un modèle de lettre, les frais de voyage, l'usage de ChatGPT \
+par les salariés et « peux-tu m'aider sur un licenciement » sont legal_question. \
+Un utilisateur qui décrit son métier ou son statut ne demande pas forcément \
+des privilèges techniques. Les aspects civils, pénaux ou fiscaux d'une question \
+RH restent legal_question.
 """
 
 
-async def _classify_via_llm(query: str, llm: AsyncOpenAI) -> Intent:
-    """Appelle gpt-5-mini pour classifier. Fallback sur LEGAL_QUESTION en cas d'erreur."""
+async def _classify_via_llm(
+    query: str, llm: AsyncOpenAI, raw_capture: dict | None = None,
+) -> Intent:
+    """Classify without inventing a replacement intent on failure."""
     try:
         response = await llm.chat.completions.create(
             model="gpt-5-mini",
             messages=[
                 {"role": "system", "content": _CLASSIFIER_PROMPT},
-                {"role": "user", "content": query[:1000]},
+                {"role": "user", "content": query},
             ],
             # gpt-5 family rejects max_tokens (exige max_completion_tokens)
             # ET toute temperature ≠ 1 (erreur 400 → le classifieur tombait
@@ -430,18 +440,20 @@ async def _classify_via_llm(query: str, llm: AsyncOpenAI) -> Intent:
             response_format={"type": "json_object"},
             reasoning_effort="minimal",
         )
-        content = response.choices[0].message.content or "{}"
-        data = json.loads(content)
-        intent_str = data.get("intent", "legal_question")
-        # Validation — si valeur inconnue, fallback safe
+        raw = response.choices[0].message.content
+        if raw_capture is not None:
+            raw_capture["content"] = raw
+        data = json.loads(raw)
+        intent_str = data["intent"]
+        # An unusable intent is a visible error, never a replacement legal route.
         try:
             return Intent(intent_str)
         except ValueError:
-            logger.warning("LLM router renvoyé intent inconnue: %r — fallback legal_question", intent_str)
-            return Intent.LEGAL_QUESTION
+            logger.warning("LLM router renvoyé intent inconnue: %r", intent_str)
+            return Intent.ROUTING_ERROR
     except Exception:
-        logger.exception("LLM classifier failed — fallback legal_question")
-        return Intent.LEGAL_QUESTION
+        logger.exception("LLM classifier failed — no replacement route")
+        return Intent.ROUTING_ERROR
 
 
 # ─── Entrée publique ───────────────────────────────────────────────────────
@@ -514,26 +526,36 @@ async def classify_intent(
     if not use_llm_fallback:
         return IntentResult(Intent.LEGAL_QUESTION, static_answer=None, via="prefilter_default")
 
-    intent = await _classify_via_llm(q, llm)
+    raw_capture: dict = {}
+    intent = await _classify_via_llm(q, llm, raw_capture)
+
+    def llm_result(*args, **kwargs):
+        return IntentResult(*args, **kwargs, raw_response=raw_capture.get("content"))
+
+    if intent == Intent.ROUTING_ERROR:
+        return llm_result(
+            intent, "Le routage de la question a échoué ; aucune recherche de secours n’a été lancée.",
+            via="llm_error",
+        )
 
     # 3. Génère la réponse statique si meta
     if intent == Intent.META_INTERNALS:
-        return IntentResult(
+        return llm_result(
             intent, _ANSWER_INTERNALS, via="llm",
             security_event=EVENT_TECHNICAL_RECON,
         )
     if intent == Intent.GREETING:
-        return IntentResult(intent, _ANSWER_GREETING, via="llm")
+        return llm_result(intent, _ANSWER_GREETING, via="llm")
     if intent == Intent.META_CAPABILITIES:
-        return IntentResult(intent, _ANSWER_CAPABILITIES, via="llm")
+        return llm_result(intent, _ANSWER_CAPABILITIES, via="llm")
     if intent == Intent.META_SOURCES:
         ans = await _answer_sources_status(db)
-        return IntentResult(intent, ans, via="llm")
+        return llm_result(intent, ans, via="llm")
     if intent == Intent.META_SCOPE:
         ans = await _answer_scope_check(db, q, organisation_id)
-        return IntentResult(intent, ans, via="llm")
+        return llm_result(intent, ans, via="llm")
     if intent == Intent.OUT_OF_SCOPE:
-        return IntentResult(intent, _ANSWER_OUT_OF_SCOPE, via="llm")
+        return llm_result(intent, _ANSWER_OUT_OF_SCOPE, via="llm")
 
     # legal_question → laisse passer en RAG
-    return IntentResult(Intent.LEGAL_QUESTION, static_answer=None, via="llm")
+    return llm_result(Intent.LEGAL_QUESTION, static_answer=None, via="llm")

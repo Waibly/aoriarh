@@ -6,11 +6,8 @@ EMBEDDING_MODEL = settings.voyage_embedding_model
 # Génération de la réponse finale (étape lourde) : piloté par settings.
 LLM_MODEL = settings.llm_model
 LLM_REASONING_EFFORT = settings.llm_reasoning_effort
-# Expansion de requête + ancre législative (étapes légères, transformation simple).
+# Planificateur compact de recherche (nom conservé pour les consommateurs existants).
 EXPAND_MODEL = "gpt-5-mini"
-# Condensation des questions de suivi (étape légère et rapide, gardée volontairement
-# sur un modèle léger : la qualité dépend surtout des instructions, pas de la taille).
-CONDENSE_MODEL = "gpt-5-mini"
 
 # C1 — Plancher de confiance : si le meilleur score de reranking reste sous ce
 # seuil, la recherche est jugée faible et l'étape de génération reçoit une

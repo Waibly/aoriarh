@@ -17,6 +17,7 @@ from dataclasses import dataclass, field
 
 import tiktoken
 
+from app.rag.article_reference import normalize_article_reference
 from app.rag.chunker import contains_markdown_table, force_split_on_boundary
 from app.rag.config import CHUNK_OVERLAP
 
@@ -226,6 +227,8 @@ class ArticleChunker:
         article_num = (
             num.replace("Article ", "").strip() if num.startswith("Article") else num.strip()
         )
+        if re.fullmatch(r"[LRDA]\.?\s*\d+(?:[-‑–]\d+)+", article_num, re.I):
+            article_num = normalize_article_reference(article_num)
         return {
             "section": section,
             "num": num,

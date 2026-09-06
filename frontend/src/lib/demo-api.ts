@@ -14,6 +14,7 @@ export interface DemoStreamCallbacks {
   onMeta?: (conversationId: string) => void;
   onStatus?: (step: string) => void;
   onSources: (sources: MessageSource[]) => void;
+  onSearchDetails?: (details: import("@/types/api").SearchDetails) => void;
   onDelta: (content: string) => void;
   onDone: (payload: { upsell?: string }) => void;
   onError: (message: string) => void;
@@ -85,6 +86,9 @@ export async function streamPublicAsk(
             break;
           case "chat_status":
             callbacks.onStatus?.(parsed.step);
+            break;
+          case "chat_search_details":
+            callbacks.onSearchDetails?.(parsed);
             break;
           case "chat_sources":
             callbacks.onSources(parsed.sources);

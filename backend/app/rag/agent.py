@@ -24,6 +24,8 @@ from app.rag.parent_expansion import (
     detect_identifiers,
     expand_to_parents,
     fetch_by_identifiers,
+    normalize_article_reference,
+    reference_source_types,
 )
 from app.rag.reranker import get_reranker
 from app.rag.search import HybridSearch, SearchResult
@@ -147,43 +149,6 @@ _JURIS_SOURCE_TYPES: frozenset[str] = frozenset(
     if isinstance(meta.get("niveau"), int) and meta["niveau"] == 4
 )
 
-_SOURCE_TOPIC_MARKERS: tuple[tuple[frozenset[str], re.Pattern[str]], ...] = (
-    (
-        _CCN_SOURCE_TYPES,
-        re.compile(r"\b(?:ccn|convention\s+collective|idcc)\b", re.IGNORECASE),
-    ),
-    (
-        frozenset({"accord_entreprise", "accord_performance_collective"}),
-        re.compile(r"\baccords?\s+(?:collectifs?\s+)?d['’]entreprise\b", re.IGNORECASE),
-    ),
-    (
-        frozenset({"reglement_interieur"}),
-        re.compile(r"\br[èe]glement\s+int[ée]rieur\b", re.IGNORECASE),
-    ),
-    (
-        frozenset({"contrat_travail"}),
-        re.compile(r"\b(?:mon|notre|votre|son)\s+contrat\b", re.IGNORECASE),
-    ),
-    (
-        frozenset({"code_travail", "code_travail_reglementaire"}),
-        re.compile(r"\bcode\s+du\s+travail\b", re.IGNORECASE),
-    ),
-    (
-        _JURIS_SOURCE_TYPES,
-        re.compile(
-            r"\b(?:jurisprudence|cour\s+de\s+cassation|arr[eê]ts?)\b",
-            re.IGNORECASE,
-        ),
-    ),
-    (
-        frozenset({"boss"}),
-        re.compile(
-            r"\b(?:boss|bulletin\s+officiel\s+de\s+la\s+s[ée]curit[ée]\s+sociale)\b",
-            re.IGNORECASE,
-        ),
-    ),
-)
-
 # Balance "hiérarchie des normes" : plafonds de sièges en tête de la liste finale.
 _BALANCE_JURIS_CAP = 4  # arrêts max avant report en fin de liste
 _BALANCE_CCN_CAP = 3  # textes CCN max avant report en fin de liste
@@ -208,7 +173,7 @@ _MAX_FOLLOWED_ARTICLES = 12
 
 def _normalize_article_num(raw: str) -> str:
     """Clé canonique d'un article, alignée sur le format stocké (« D. 241-7 » → « D241-7 »)."""
-    return raw.upper().replace(".", "").replace(" ", "").replace("‑", "-").replace("–", "-")
+    return normalize_article_reference(raw)
 
 
 def _extract_modified_articles(text: str) -> set[str]:
@@ -218,37 +183,6 @@ def _extract_modified_articles(text: str) -> set[str]:
         for m in rx.finditer(text or ""):
             out.add(_normalize_article_num(m.group(1)))
     return out
-
-
-def _build_plan_complement_query(plan: SearchPlan, fallback: str) -> str:
-    """Build a source-neutral query for legal complements.
-
-    A source-directed query such as « selon la CCN Syntec » must keep those
-    words for the primary CCN search, but not for the legislation branch: they
-    otherwise attract provisions about collective agreements themselves. The
-    planner's legal topics are retained unless they repeat the requested source
-    family. No legal topic is hard-coded here.
-    """
-
-    requested_types = set(plan.requested_source_types)
-
-    def is_source_label(text: str) -> bool:
-        return any(
-            requested_types.intersection(source_types) and pattern.search(text)
-            for source_types, pattern in _SOURCE_TOPIC_MARKERS
-        )
-
-    neutral_topics = [
-        topic.strip() for topic in plan.legal_topics if topic.strip() and not is_source_label(topic)
-    ]
-    if neutral_topics:
-        return " ".join(neutral_topics)
-
-    for query in plan.search_queries:
-        if query.strip() and not is_source_label(query):
-            return query.strip()
-
-    return fallback
 
 
 def _plan_time_bounds(
@@ -429,11 +363,13 @@ class RagTrace:
     search_plan: dict | None = None
     search_plan_usage: dict[str, int | float | str] = field(default_factory=dict)
     search_plan_validation: dict = field(default_factory=dict)
+    router_raw_response: str | None = None
     error: str | None = None
 
     def to_dict(self) -> dict:
         return {
             "query_original": self.query_original,
+            "router_raw_response": self.router_raw_response,
             "query_condensed": self.query_condensed,
             "variants": self.variants,
             "identifiers_detected": self.identifiers_detected,
@@ -520,7 +456,7 @@ _SOURCE_TYPE_LABELS: dict[str, str] = {
     "divers": "Divers",
 }
 
-_OUT_OF_SCOPE_MARKER = "[HORS_SCOPE]"
+# Kept only for historical reporting of previously stored refusals.
 _OUT_OF_SCOPE_ANSWER = (
     "Je suis spécialisé en droit social et ressources humaines. "
     "Je ne peux pas répondre à cette question. N'hésitez pas à me poser "
@@ -695,117 +631,6 @@ def _generation_system_prompt() -> tuple[str, int]:
     )
 
 
-_QUERY_EXPAND_PROMPT = """\
-Tu es un expert RH spécialisé en droit social français. Ta mission : transformer \
-la question d'un utilisateur en 2 ou 3 variantes de recherche DIVERSES (chacune \
-apporte un angle différent, jamais une simple paraphrase d'une autre) pour \
-récupérer les documents pertinents (Code du travail, CCN, jurisprudence, \
-règlement intérieur, contrats).
-
-## Règle absolue — anti-hallucination juridique
-N'introduis JAMAIS un concept juridique qui n'est pas dans la question d'origine. \
-N'ajoute aucune sous-question ni détail non demandé. Ne confonds pas :
-- prescription ≠ forclusion ≠ déchéance
-- licenciement ≠ rupture conventionnelle ≠ démission ≠ résiliation judiciaire
-- indemnité ≠ dommages-intérêts ≠ allocation
-- préavis ≠ période d'essai ≠ délai de réflexion
-- CDI ≠ CDD ≠ intérim ≠ contrat de chantier
-- congé ≠ absence ≠ suspension du contrat
-En l'absence de synonyme direct et sûr, RÉPÈTE le terme d'origine.
-
-## Génère les variantes numérotées (1. puis 2. puis éventuellement 3.)
-
-1. REFORMULATION : la question de l'utilisateur, COURTE et fidèle, fautes \
-d'orthographe/frappe corrigées. Ne change pas le vocabulaire, ne résume pas, \
-n'ajoute aucune sous-question ni détail. Préserve tels quels les identifiants \
-(articles, numéros de pourvoi, IDCC).
-
-2. MOTS-CLÉS : 6 à 10 mots-clés séparés par des espaces — les mots de la \
-question, leurs synonymes directs, et la désambiguïsation des termes courants du \
-métier RH (sans ajouter de concept voisin). Règles :
-   - Désambiguïse le jargon : "collectif obligatoire" → mutuelle prévoyance \
-entreprise adhésion obligatoire (PAS négociation collective).
-   - Intègre l'équivalent conventionnel ANCIEN (CCN avant 1980, comme la CCN 66) \
-UNIQUEMENT si le terme figure dans la question : préavis ↔ délai-congé ; période \
-d'essai ↔ essai probatoire ; congés payés ↔ congés annuels ; salaire ↔ \
-appointements / rémunération conventionnelle ; indemnité de licenciement ↔ \
-indemnité conventionnelle de rupture ; sanction disciplinaire ↔ mesure \
-disciplinaire ; promotion ↔ avancement ; rupture du contrat ↔ cessation d'emploi.
-   - Inclus TEL QUEL tout identifiant ("L4121-1", "22-18.875").
-   - Références temporelles relatives : si la question contient « cette année », \
-"actuellement", "en ce moment", "en vigueur", "aujourd'hui", "récemment", "le \
-dernier"/"la dernière", "à jour", etc., ajoute l'année (et si pertinent la date) \
-CONCRÈTE correspondante, déduite de la « Date du jour » fournie dans le message. \
-Ex. « le SMIC a-t-il été revalorisé cette année ? » avec une date du jour en 2026 \
-→ ajoute "2026" et "1er janvier 2026" aux mots-clés. Cela permet de retrouver les \
-décrets/arrêtés datés qui fixent les montants en vigueur.
-   - N'ajoute AUCUN autre synonyme ni concept voisin.
-
-3. VARIANTE CCN — UNIQUEMENT si le bloc [ORGANISATION] du message indique une \
-ligne "- CCN rattachée : ...". Format : \
-<IDCC entre parenthèses> convention collective <mots-clés du sujet>. \
-Ex : "IDCC 0413 convention collective délai préavis". \
-Si AUCUNE CCN n'est rattachée, N'ÉMETS PAS cette variante : ne renvoie que les \
-variantes 1 et 2.
-
-## Format de sortie
-- Chaque variante sur une ligne, précédée de son numéro (1. 2. 3.)
-- Aucune explication, aucun préambule, aucun texte d'instruction recopié"""
-
-_LEGAL_ANCHOR_PROMPT = """\
-Tu es un juriste en droit social français. À partir de la question de l'utilisateur, \
-rédige UNE requête de recherche dense en vocabulaire LÉGISLATIF codifié, destinée à \
-retrouver les ARTICLES de loi applicables (Code du travail et autres codes).
-
-Règles :
-- Nomme les notions juridiques exactes et les NUMÉROS D'ARTICLES probables \
-(ex : L.2411-1, R.2421-1, L.2422-4), même si tu n'es pas certain du numéro exact : \
-ce texte sert UNIQUEMENT à retrouver les bons textes, il n'est jamais montré à l'utilisateur.
-- N'emploie AUCUN terme renvoyant à la jurisprudence (pas de « arrêt », « Cass », \
-« juge », « cour », « nullité »…) : on ne cherche ici que des textes de loi.
-- N'introduis aucun concept juridique étranger à la question.
-- 1 à 3 phrases denses, sur une seule ligne, sans préambule ni mise en forme."""
-
-_CONDENSE_PROMPT = """\
-Tu reformules une question de suivi en question autonome, compréhensible SANS \
-l'historique, destinée à une recherche documentaire.
-
-Méthode :
-1. Identifie le SUJET en cours et la SITUATION factuelle déjà établie (type de \
-contrat, statut du salarié, CCN/IDCC, faits validés dans les échanges).
-2. RÉSOUS les références : "cet accord", "ce texte", "cette convention", \
-"ce salarié", "cette procédure", "ça", "c'est correct ?" → remplace par le nom/ \
-sujet exact identifié dans l'historique ou les sources citées. C'est CRITIQUE \
-pour que la recherche trouve le bon document.
-3. Réécris la question de suivi en y intégrant ce contexte — et RIEN DE PLUS.
-
-Règles strictes :
-- COURTE : 1 à 2 phrases. Reste au plus près de la formulation de l'utilisateur.
-- N'AJOUTE AUCUNE sous-question, contrainte, hypothèse ou précision que \
-l'utilisateur n'a pas formulée. Garde EXACTEMENT les sous-questions posées : s'il \
-en pose plusieurs, garde-les ; s'il n'en pose qu'une, n'en invente pas d'autres. \
-Interdit : « en supposant que… », ou ajouter « + conditions de renouvellement / \
-références d'articles / dates d'effet / échelons » quand ce n'est pas demandé.
-- Si l'utilisateur fait relire ou corriger un TEXTE qu'il a collé, NE RECOPIE PAS \
-ce texte : désigne-le par une référence courte (« la note sur X »).
-- Forme TOUJOURS INTERROGATIVE (une question, pas une consigne ni une \
-affirmation : « Quelle est… ? », « Quels sont… ? »).
-- CONSERVE : organisation, CCN/IDCC, statut salarié, type de contrat, situation \
-factuelle.
-- Renvoie la question TELLE QUELLE uniquement si elle est déjà autonome ET sans \
-lien avec l'historique. Dans le doute, reformule (mais COURT). Une relance vague \
-(« il en manque », « et pour X ? », « complète », « lesquels ? ») doit reprendre \
-EXPLICITEMENT le sujet en cours.
-- Réponds UNIQUEMENT avec la question reformulée.
-
-Exemple :
-- Historique : sujet = durée de la période d'essai de l'éducateur spécialisé \
-(CCN66 / IDCC 0413), organisation Empreintes.
-- Q : « et pour un chef de service ? »
-- → « Quelle est la durée de la période d'essai en CDI pour un chef de service \
-selon la CCN66 (IDCC 0413) ? »"""
-
-
 def _normalize_question(s: str) -> str:
     """Normalise une question pour comparer reformulation et original (C2)."""
     return " ".join((s or "").lower().split()).strip(" ?.!,;:")
@@ -861,6 +686,72 @@ class RAGAgent:
 
     # --- Streaming support ---
 
+    async def _search(self, query: str, organisation_id: str, **kwargs) -> list[SearchResult]:
+        """Execute one branch under the request's source constraints."""
+        diagnostic = {
+            "kind": "hybrid", "query": query, "source_types": kwargs.get("source_type_filter"),
+            "status": "planned", "candidate_chunks": 0,
+            "date_from": str(kwargs.get("date_from") or ""),
+            "date_to": str(kwargs.get("date_to") or ""),
+        }
+        if not hasattr(self, "_branch_diagnostics"):
+            self._branch_diagnostics = []
+        self._branch_diagnostics.append(diagnostic)
+        plan = getattr(self, "_active_search_plan", None)
+        if plan:
+            excluded = set(plan.excluded_source_types)
+            allowed = kwargs.get("source_type_filter")
+            if plan.exclusive_source_types:
+                allowed = sorted(set(plan.exclusive_source_types if allowed is None else allowed)
+                                 & set(plan.exclusive_source_types))
+            if allowed is not None:
+                allowed = [st for st in allowed if st not in excluded]
+                if not allowed:
+                    diagnostic["status"] = "skipped_source_policy"
+                    return []
+                kwargs["source_type_filter"] = allowed
+            if excluded:
+                kwargs["excluded_source_types"] = sorted(excluded)
+        if isinstance(self.search_engine, HybridSearch):
+            if not hasattr(self, "_encoding_cache"):
+                self._encoding_cache = {}
+            kwargs["encoding_cache"] = self._encoding_cache
+        diagnostic.update({
+            "source_types": kwargs.get("source_type_filter"),
+            "excluded_source_types": kwargs.get("excluded_source_types", []),
+            "status": "running", "candidate_chunks": 0,
+        })
+        try:
+            results = await asyncio.wait_for(
+                self.search_engine.search(query, organisation_id, **kwargs),
+                timeout=RAG_TIMEOUT_PER_STEP,
+            )
+            diagnostic.update(status="ok" if results else "empty", candidate_chunks=len(results))
+            return results
+        except BaseException:
+            diagnostic["status"] = "error"
+            raise
+
+    async def _fetch_identifiers(self, qdrant, identifiers, **kwargs):
+        plan = getattr(self, "_active_search_plan", None)
+        if plan:
+            original_scopes = reference_source_types(plan.query_original)
+            kwargs["article_source_filters"] = original_scopes
+            if plan.excluded_source_types:
+                kwargs["excluded_source_types"] = plan.excluded_source_types
+            if plan.exclusive_source_types:
+                kwargs["source_type_filter"] = plan.exclusive_source_types
+        key = repr((identifiers, kwargs))
+        if not hasattr(self, "_identifier_cache"):
+            self._identifier_cache = {}
+        if key not in self._identifier_cache:
+            if not hasattr(self, "_branch_diagnostics"):
+                self._branch_diagnostics = []
+            self._identifier_cache[key] = await fetch_by_identifiers(
+                qdrant, identifiers, diagnostics=self._branch_diagnostics, **kwargs,
+            )
+        return list(self._identifier_cache[key])
+
     async def prepare_context(
         self,
         query: str,
@@ -873,18 +764,23 @@ class RAGAgent:
         conversation_id: str | None = None,
         is_replay: bool = False,
         search_plan: SearchPlan | None = None,
-        adaptive_search: bool = False,
     ) -> tuple[list[SearchResult], str, RagTrace]:
         """Run steps 0-5 (non-streaming) and return results + reformulated query + trace."""
         self._org_id = organisation_id
         self._user_id = user_id
         self._conversation_id = conversation_id
         self._is_replay = is_replay
+        self._encoding_cache = {}
+        self._identifier_cache = {}
+        self._branch_diagnostics = []
+        self._active_search_plan = search_plan
+        if org_context and org_context.get("not_subject_to_ccn"):
+            org_idcc_list = None
         t0 = time.perf_counter()
 
         trace = RagTrace(query_original=query, model=rag_config.LLM_MODEL)
         search_plan_trace: SearchPlan
-        if adaptive_search and search_plan is None:
+        if search_plan is None:
             deterministic_plan = build_deterministic_search_plan(
                 query,
                 has_history=bool(history),
@@ -898,8 +794,8 @@ class RAGAgent:
                 model=rag_config.EXPAND_MODEL,
                 history=history,
                 org_context=org_context,
-                # The planner is optional: do not let it consume the full
-                # retrieval-step timeout before falling back to the baseline.
+                cited_sources=cited_sources,
+                # A technical failure is reported without a replacement search.
                 timeout_seconds=min(RAG_TIMEOUT_PER_STEP, 15.0),
             )
             planner_ms = (time.perf_counter() - planner_t0) * 1000
@@ -908,8 +804,7 @@ class RAGAgent:
                 not deterministic_plan.needs_llm_planner
                 or planner_result.plan.planner_status.value == "ok"
             )
-            if use_adaptive_plan:
-                search_plan = planner_result.plan
+            search_plan = planner_result.plan
 
             planner_cost = float(
                 compute_cost(
@@ -925,8 +820,8 @@ class RAGAgent:
                 "completion_tokens": planner_result.completion_tokens,
                 "cost_usd": planner_cost,
                 "latency_ms": round(planner_ms),
-                "execution": "adaptive" if use_adaptive_plan else "deterministic_fallback",
-                "fallback_to_deterministic": not use_adaptive_plan,
+                "execution": "adaptive" if use_adaptive_plan else "planner_error",
+                "fallback_to_deterministic": False,
             }
             if planner_result.prompt_tokens or planner_result.completion_tokens:
                 cost_tracker.log_bg(
@@ -941,70 +836,48 @@ class RAGAgent:
                     context_id=self._conversation_id,
                     is_replay=self._is_replay,
                 )
-        elif search_plan is None:
-            search_plan_trace = build_deterministic_search_plan(
-                query,
-                has_history=bool(history),
-                org_idcc_list=org_idcc_list,
-                not_subject_to_ccn=bool(org_context and org_context.get("not_subject_to_ccn")),
-            )
         else:
             search_plan_trace = search_plan
         trace.search_plan = search_plan_trace.to_dict()
+        self._active_search_plan = search_plan
 
-        # Step 0: Condensation (multi-turn)
-        if search_plan is not None and search_plan.needs_condensation:
+        if search_plan is not None and search_plan.planner_status.value in {"error", "fallback"}:
+            trace.error = "search_planner_error"
+            trace.perf_ms["total"] = (time.perf_counter() - t0) * 1000
+            return [], query, trace
+
+        # Use the generated question verbatim, without a deterministic rewrite.
+        if search_plan is not None and search_plan.planner_status.value == "ok":
             query = search_plan.standalone_question
             trace.query_condensed = query
             trace.perf_ms["condense"] = 0.0
-        elif history and search_plan is None:
-            t_cond = time.perf_counter()
-            query = await self._step_with_timeout(
-                self._condense_question(
-                    query,
-                    history,
-                    org_context=org_context,
-                    cited_sources=cited_sources,
-                ),
-                fallback=query,
-            )
-            trace.perf_ms["condense"] = (time.perf_counter() - t_cond) * 1000
-            trace.query_condensed = query
-            logger.info(
-                "[PERF] Step 0 — Condensation %.0fms | %s",
-                trace.perf_ms["condense"],
-                query[:100],
-            )
-            if _OUT_OF_SCOPE_MARKER in query:
-                logger.info("[SCOPE] Question hors-scope détectée (condensation)")
-                trace.out_of_scope = True
-                trace.perf_ms["total"] = (time.perf_counter() - t0) * 1000
-                return [], _OUT_OF_SCOPE_MARKER, trace
-
-        # Step 1-2: Query expansion + parallel search + RRF
+        # Step 1-2: Execute planned queries + parallel search + RRF
         t_exp_q = time.perf_counter()
-        if search_plan is None:
-            results, variants = await self._search_with_expansion(
-                query,
-                organisation_id,
-                org_idcc_list=org_idcc_list,
-                org_context=org_context,
-            )
-        else:
-            results, variants = await self._search_with_plan(
-                search_plan,
-                query,
-                organisation_id,
-                org_idcc_list=org_idcc_list,
-            )
-            trace.search_plan_validation.update(getattr(self, "_plan_search_diagnostics", {}))
+        results, variants = await self._search_with_plan(
+            search_plan, query, organisation_id, org_idcc_list=org_idcc_list,
+        )
+        trace.search_plan_validation.update(getattr(self, "_plan_search_diagnostics", {}))
         trace.perf_ms["expand_search"] = (time.perf_counter() - t_exp_q) * 1000
         trace.variants = list(variants) if variants else []
-        if variants and variants[0] == _OUT_OF_SCOPE_MARKER:
-            logger.info("[SCOPE] Question hors-scope détectée (expansion)")
-            trace.out_of_scope = True
+        trace.search_plan_validation["branches"] = self._branch_diagnostics
+        attempted_branches = [
+            branch for branch in self._branch_diagnostics
+            if branch["status"] in {"ok", "empty", "error"}
+        ]
+        if not results and attempted_branches and all(
+            branch["status"] == "error" for branch in attempted_branches
+        ):
+            trace.error = "search_retrieval_error"
             trace.perf_ms["total"] = (time.perf_counter() - t0) * 1000
-            return [], _OUT_OF_SCOPE_MARKER, trace
+            return [], query, trace
+        if search_plan:
+            found_types = {r.source_type for r in results}
+            groups = detect_source_intent(search_plan.query_original) or detect_source_intent(query)
+            trace.search_plan_validation["missing_requested_source_types"] = sorted(
+                {st for types, _ in groups if not set(types) & found_types for st in types}
+            )
+            if "contrat_travail" in search_plan.requested_source_types:
+                trace.search_plan_validation["contract_identity_unresolved"] = True
         reformulated = variants[0] if variants else query
 
         # Step 1.5: Identifier-based retrieval boost
@@ -1321,258 +1194,6 @@ class RAGAgent:
 
     # --- Step implementations ---
 
-    async def _condense_question(
-        self,
-        query: str,
-        history: list[dict[str, str]],
-        org_context: dict[str, str | None] | None = None,
-        cited_sources: list[str] | None = None,
-    ) -> str:
-        """Step 0: Condense a follow-up question using conversation history."""
-        recent = history[-CONDENSE_HISTORY_LIMIT:]
-        history_lines: list[str] = []
-        for msg in recent:
-            role_label = "Utilisateur" if msg["role"] == "user" else "Assistant"
-            content = msg["content"][:1500]
-            history_lines.append(f"{role_label}: {content}")
-        history_text = "\n".join(history_lines)
-
-        # Build context block with org info and cited sources
-        context_parts: list[str] = []
-        if org_context:
-            org_info = []
-            if org_context.get("nom"):
-                org_info.append(f"Organisation : {org_context['nom']}")
-            if org_context.get("not_subject_to_ccn"):
-                org_info.append("Convention collective : aucune (organisation non soumise à CCN)")
-            elif org_context.get("convention_collective"):
-                org_info.append(f"Convention collective : {org_context['convention_collective']}")
-            if org_context.get("secteur_activite"):
-                org_info.append(f"Secteur : {org_context['secteur_activite']}")
-            if org_info:
-                context_parts.append("Contexte organisation :\n" + "\n".join(org_info))
-        if cited_sources:
-            context_parts.append("Sources déjà citées : " + ", ".join(cited_sources))
-
-        user_content = f"Historique :\n{history_text}\n\n"
-        if context_parts:
-            user_content += "\n".join(context_parts) + "\n\n"
-        user_content += f"Question de suivi : {query}"
-
-        # NB: pas de `temperature` — la famille gpt-5 rejette toute valeur ≠ 1
-        # (erreur 400). Ce paramètre silencieusement fatal a tué la
-        # condensation en prod pendant des semaines (113/113 suivis non
-        # reformulés) : le fallback renvoyait la relance brute.
-        response = await self.llm.chat.completions.create(
-            model=rag_config.CONDENSE_MODEL,
-            messages=[
-                {"role": "system", "content": _CONDENSE_PROMPT},
-                {"role": "user", "content": user_content},
-            ],
-            # 800 : le raisonnement de gpt-5-mini partage ce budget avec la
-            # sortie — 400 risquait de tronquer les condensations denses.
-            max_completion_tokens=800,
-            reasoning_effort="minimal",
-        )
-        if response.usage:
-            cost_tracker.log_bg(
-                provider="openai",
-                model=rag_config.CONDENSE_MODEL,
-                operation_type="condense",
-                tokens_input=response.usage.prompt_tokens,
-                tokens_output=response.usage.completion_tokens,
-                organisation_id=self._org_id,
-                user_id=self._user_id,
-                context_type="question",
-                context_id=self._conversation_id,
-                is_replay=self._is_replay,
-            )
-        condensed = (response.choices[0].message.content or query).strip() or query
-
-        # C2 — Filet de sécurité : si le modèle a renvoyé la relance quasiment
-        # telle quelle alors qu'une conversation est en cours, la requête de
-        # recherche perd le sujet ("la durée pour chacun" -> chacun = ?). On la
-        # rattache au sujet courant (dernière question substantielle de l'user)
-        # pour que le retrieval reste sur les rails.
-        if _normalize_question(condensed) == _normalize_question(query):
-            anchor = self._running_topic(history)
-            if anchor:
-                condensed = f"{anchor} {query}"
-                logger.info(
-                    "[CONDENSE] Relance non reformulée — requête ancrée sur le sujet courant",
-                )
-        return condensed
-
-    def _running_topic(self, history: list[dict[str, str]]) -> str | None:
-        """Dernière question substantielle de l'utilisateur dans l'historique.
-
-        Sert d'ancre pour les relances vagues ("il en manque", "pour chacun")
-        que le condenseur n'a pas réécrites : on réinjecte ce sujet dans la
-        requête de recherche pour éviter la dérive.
-        """
-        for msg in reversed(history):
-            if msg.get("role") == "user":
-                text = (msg.get("content") or "").strip()
-                # On saute les relances courtes/anaphoriques sans contenu propre.
-                if len(text.split()) >= 5:
-                    return text.rstrip(" ?.!")[:200]
-        return None
-
-    @staticmethod
-    def _build_expand_user_message(
-        query: str,
-        org_context: dict[str, str | None] | None,
-    ) -> str:
-        """Build the user message for query expansion with tenant context."""
-        header = f"Date du jour : {_today_fr()}."
-        if not org_context:
-            return f"{header}\nQuestion : {query}"
-        lines = ["[ORGANISATION]"]
-        if org_context.get("not_subject_to_ccn"):
-            lines.append("- CCN rattachée : aucune (organisation non soumise à CCN)")
-        else:
-            ccn = org_context.get("convention_collective")
-            if ccn:
-                lines.append(f"- CCN rattachée : {ccn}")
-        secteur = org_context.get("secteur_activite")
-        if secteur:
-            lines.append(f"- Secteur : {secteur}")
-        taille = org_context.get("taille")
-        if taille:
-            lines.append(f"- Taille : {taille}")
-        forme = org_context.get("forme_juridique")
-        if forme:
-            lines.append(f"- Forme juridique : {forme}")
-        if len(lines) == 1:
-            return f"{header}\nQuestion : {query}"
-        lines.append("")
-        lines.append(f"Question : {query}")
-        return f"{header}\n" + "\n".join(lines)
-
-    async def _expand_queries(
-        self,
-        query: str,
-        org_context: dict[str, str | None] | None = None,
-    ) -> list[str]:
-        """Step 1: Expand the user query into 2-3 search variants."""
-        user_content = self._build_expand_user_message(query, org_context)
-        response = await self.llm.chat.completions.create(
-            model=rag_config.EXPAND_MODEL,
-            messages=[
-                {"role": "system", "content": _QUERY_EXPAND_PROMPT},
-                {"role": "user", "content": user_content},
-            ],
-            max_completion_tokens=800,
-            reasoning_effort="minimal",
-        )
-        if response.usage:
-            cost_tracker.log_bg(
-                provider="openai",
-                model=rag_config.EXPAND_MODEL,
-                operation_type="expand",
-                tokens_input=response.usage.prompt_tokens,
-                tokens_output=response.usage.completion_tokens,
-                organisation_id=self._org_id,
-                user_id=self._user_id,
-                context_type="question",
-                context_id=self._conversation_id,
-                is_replay=self._is_replay,
-            )
-        content = response.choices[0].message.content or ""
-        if _OUT_OF_SCOPE_MARKER in content:
-            return [_OUT_OF_SCOPE_MARKER]
-        return self._parse_variants(content, query)
-
-    async def _generate_legal_anchor(
-        self,
-        query: str,
-        org_context: dict[str, str | None] | None = None,
-    ) -> str:
-        """Generate a legislation-targeted search query (codified vocabulary +
-        likely article numbers).
-
-        Used by the legislation floor: a conversational question ("quelle
-        procédure pour licencier un salarié protégé ?") matches verbose
-        jurisprudence far better than terse code articles, so the relevant
-        articles never enter the candidate pool. This anchor restates the
-        question in codified terms so an auxiliary legislation-only search can
-        surface them. Never shown to the user — embedding signal only.
-        """
-        response = await self.llm.chat.completions.create(
-            model=rag_config.EXPAND_MODEL,
-            messages=[
-                {"role": "system", "content": _LEGAL_ANCHOR_PROMPT},
-                {"role": "user", "content": self._build_expand_user_message(query, org_context)},
-            ],
-            # gpt-5-mini en mode raisonnement consomme une partie du budget en
-            # reasoning tokens. À 400, le raisonnement épuisait le budget et le
-            # contenu revenait VIDE ~3 fois sur 4 (finish_reason=length), donc
-            # l'injection par numéro ne se déclenchait jamais. Mesuré : à 1500,
-            # 0 ancre vide sur 4 (le texte utile ne fait que ~350 tokens).
-            max_completion_tokens=1500,
-            reasoning_effort="minimal",
-        )
-        if response.usage:
-            cost_tracker.log_bg(
-                provider="openai",
-                model=rag_config.EXPAND_MODEL,
-                operation_type="expand",
-                tokens_input=response.usage.prompt_tokens,
-                tokens_output=response.usage.completion_tokens,
-                organisation_id=self._org_id,
-                user_id=self._user_id,
-                context_type="question",
-                context_id=self._conversation_id,
-                is_replay=self._is_replay,
-            )
-        return (response.choices[0].message.content or "").strip()
-
-    # Libellés des consignes du prompt d'expansion que le modèle recopie en
-    # tête de variante (~42 % des questions en prod). Laissés tels quels, ils
-    # partent dans la recherche : "QUESTION CORRIGÉE", "MOTS-CLÉS"… deviennent
-    # des termes BM25 parasites et décalent l'embedding dense.
-    _VARIANT_LABEL_RE = re.compile(
-        r"^(?:reformulation|question\s+corrig[ée]e|intention\s+rh"
-        r"|terminologie\s+juridique|mots[-\s]?cl[ée]s|variante\s+ccn)\s*:\s*",
-        re.IGNORECASE,
-    )
-
-    @staticmethod
-    def _parse_variants(content: str, original_query: str) -> list[str]:
-        """Parse numbered variants from LLM response (labels stripped, deduped)."""
-        variants: list[str] = []
-        seen: set[str] = set()
-        for line in content.strip().split("\n"):
-            line = line.strip()
-            # Match lines starting with "1.", "2.", "3." (with optional space/dash after)
-            match = re.match(r"^\d+[\.\)]\s*[-–—]?\s*(.+)$", line)
-            if not match:
-                continue
-            variant = RAGAgent._VARIANT_LABEL_RE.sub("", match.group(1).strip()).strip()
-            key = " ".join(variant.lower().split())
-            # Filtre les fuites d'instruction (ex. « (pas de CCN rattachée, donc
-            # pas de variante CCN) » émis quand l'org n'a pas de convention) :
-            # ces méta-lignes ne doivent pas devenir des requêtes de recherche.
-            if any(
-                p in key
-                for p in (
-                    "pas de variante",
-                    "ccn rattachée",
-                    "ccn rattachee",
-                    "répéter la question",
-                    "répète la variante",
-                    "répète la question",
-                )
-            ):
-                continue
-            if variant and key not in seen:
-                seen.add(key)
-                variants.append(variant)
-
-        if not variants:
-            return [original_query]
-        return variants
-
     @staticmethod
     def _reciprocal_rank_fusion(
         result_lists: list[list[SearchResult]],
@@ -1617,7 +1238,7 @@ class RAGAgent:
         if not any(identifiers.values()):
             return results
         try:
-            extra = await fetch_by_identifiers(
+            extra = await self._fetch_identifiers(
                 self.search_engine.qdrant,
                 identifiers,
                 organisation_id=organisation_id,
@@ -1721,7 +1342,7 @@ class RAGAgent:
             return results, validation, {}, set()
 
         try:
-            fetched = await fetch_by_identifiers(
+            fetched = await self._fetch_identifiers(
                 self.search_engine.qdrant,
                 {"numero_pourvoi": [], "article_nums": requested},
                 organisation_id=organisation_id,
@@ -1788,106 +1409,6 @@ class RAGAgent:
         )
         return results, validation, refs_by_key, added_keys
 
-    async def _search_with_expansion(
-        self,
-        query: str,
-        organisation_id: str,
-        org_idcc_list: list[str] | None = None,
-        org_context: dict[str, str | None] | None = None,
-    ) -> tuple[list[SearchResult], list[str]]:
-        """Expand query into variants, search in parallel, fuse with RRF."""
-        t0 = time.perf_counter()
-
-        # Detect explicit source-type intent (e.g. "que dit la CCN...")
-        intents = detect_source_intent(query)
-        source_type_filter: list[str] | None = None
-        if intents:
-            source_type_filter = []
-            for source_types, _needs_org in intents:
-                source_type_filter.extend(source_types)
-            logger.info(
-                "[INTENT] Source-type filter detected: %s",
-                ", ".join(source_type_filter),
-            )
-
-        # Legislation floor: when the user did NOT ask for a specific source
-        # category, also run an auxiliary legislation-only retrieval so codified
-        # articles get a fair shot at the reranker. Skipped when an explicit
-        # intent is set (we then respect exactly what the user asked for).
-        apply_legislation_floor = source_type_filter is None
-
-        # Expand the query and (in parallel) build the legislation anchor query.
-        expand_coro = self._step_with_timeout(
-            self._expand_queries(query, org_context=org_context),
-            fallback=[query],
-        )
-        if apply_legislation_floor:
-            anchor_coro = self._step_with_timeout(
-                self._generate_legal_anchor(query, org_context=org_context),
-                fallback="",
-            )
-            variants, legal_anchor = await asyncio.gather(expand_coro, anchor_coro)
-        else:
-            variants = await expand_coro
-            legal_anchor = ""
-        t1 = time.perf_counter()
-        logger.info(
-            "[PERF] Step 1 — Query expansion %.0fms | %d variants: %s",
-            (t1 - t0) * 1000,
-            len(variants),
-            " | ".join(v[:60] for v in variants),
-        )
-
-        # Out-of-scope short-circuit: don't run the legislation floor either.
-        if variants and variants[0] == _OUT_OF_SCOPE_MARKER:
-            return [], variants
-
-        # Always include the original query as variant #0 so identifiers like
-        # article numbers / numéros de pourvoi (which are stripped from LLM
-        # variants by design) are still searched. Variants that only restate
-        # the original (typically the "question corrigée") are dropped: each
-        # duplicate costs one Voyage embedding + one Qdrant query for nothing.
-        if variants:
-            norm_q = _normalize_question(query)
-            variants = [v for v in variants if _normalize_question(v) != norm_q]
-            variants = [query] + variants
-
-        pool = await self._run_variant_searches(
-            variants,
-            legal_anchor,
-            organisation_id,
-            org_idcc_list=org_idcc_list,
-            source_type_filter=source_type_filter,
-            apply_legislation_floor=apply_legislation_floor,
-        )
-
-        # Filet de sécurité : un filtre d'intention peut vider la recherche
-        # (l'org n'a aucun document du type demandé, ou la CCN n'est pas
-        # installée). Mesuré en prod : ~3 % des questions finissaient avec un
-        # pool vide puis des chunks bruts non rerankés. On relance alors le
-        # pipeline complet SANS filtre (plancher législation réactivé) pour
-        # que la chaîne qualité s'applique normalement.
-        if source_type_filter and len(pool) < 3:
-            logger.warning(
-                "[INTENT] Filtered search returned %d candidate(s) — "
-                "retrying without source-type filter",
-                len(pool),
-            )
-            legal_anchor = await self._step_with_timeout(
-                self._generate_legal_anchor(query, org_context=org_context),
-                fallback="",
-            )
-            pool = await self._run_variant_searches(
-                variants,
-                legal_anchor,
-                organisation_id,
-                org_idcc_list=org_idcc_list,
-                source_type_filter=None,
-                apply_legislation_floor=True,
-            )
-
-        return pool, variants
-
     async def _search_with_plan(
         self,
         plan: SearchPlan,
@@ -1902,69 +1423,29 @@ class RAGAgent:
         """
 
         self._plan_search_diagnostics: dict = {}
-        variants: list[str] = []
-        seen: set[str] = set()
-        max_variants = plan.query_budget + 1
-        for candidate in [query, *plan.search_queries]:
-            normalized = _normalize_question(candidate)
-            if not normalized or normalized in seen:
-                continue
-            seen.add(normalized)
-            variants.append(candidate)
-            if len(variants) >= max_variants:
-                break
-
+        self._active_search_plan = plan
+        if plan.planner_status.value == "ok":
+            query = plan.standalone_question
+        variants = [query, *plan.search_queries]
         date_from, date_to = _plan_time_bounds(plan)
-        if date_from and date_to and plan.time_scope.get("kind") == "rolling_days":
-            news_query = (
-                f"droit social publication entrée en vigueur "
-                f"{date_from.isoformat()} {date_to.isoformat()}"
-            )
-            if _normalize_question(news_query) not in seen:
-                variants.append(news_query)
 
-        # Exact references bypass semantic planning and go straight to the
-        # indexed identifier lookup. One broad semantic query remains as a
-        # bounded completeness floor for related rules and exceptions.
-        if plan.mode is SearchMode.EXACT_REFERENCE:
-            direct = await fetch_by_identifiers(
-                self.search_engine.qdrant,
-                plan.explicit_identifiers,
-                organisation_id=organisation_id,
-                org_idcc_list=org_idcc_list,
+        # Direct matches are additive; they must not bypass required branches.
+        direct = []
+        if any(plan.explicit_identifiers.values()):
+            direct = await self._fetch_identifiers(
+                self.search_engine.qdrant, plan.explicit_identifiers,
+                organisation_id=organisation_id, org_idcc_list=org_idcc_list,
             )
-            safety = await self._step_with_timeout(
-                self.search_engine.search(
-                    query,
-                    organisation_id,
-                    top_k=TOP_K,
-                    org_idcc_list=org_idcc_list,
-                    cost_ctx=self._cost_ctx,
-                ),
-                fallback=[],
-            )
-            pool = list(direct)
-            seen_direct = {(result.document_id, result.chunk_index) for result in pool}
-            for candidate in safety:
-                key = (candidate.document_id, candidate.chunk_index)
-                if key not in seen_direct:
-                    seen_direct.add(key)
-                    pool.append(candidate)
-            self._plan_search_diagnostics = {
-                "direct_reference_candidate_chunks": len(direct),
-                "general_safety_candidate_chunks": len(safety),
-            }
-            return pool, variants
+            self._plan_search_diagnostics["direct_reference_candidate_chunks"] = len(direct)
 
         source_type_filter = plan.requested_source_types or None
         apply_legislation_floor = plan.legislation in {
             SourceRequirement.REQUIRED,
             SourceRequirement.SAFETY_FLOOR,
         }
-        # Semantic legislative vocabulary only. Unverified article candidates
-        # are never appended to this string, so _run_variant_searches cannot
-        # inject them by identifier.
-        legal_anchor = " ".join(plan.legal_topics) or variants[0]
+        # Execute the question verbatim; do not manufacture another query
+        # by concatenating generated topic labels.
+        legal_anchor = query
         pool = await self._run_variant_searches(
             variants,
             legal_anchor,
@@ -1975,47 +1456,34 @@ class RAGAgent:
             # broad written-law floor would reintroduce unrelated domains such
             # as BOSS, OIT or another Code despite the user's source request.
             apply_legislation_floor=apply_legislation_floor and not source_type_filter,
+            ccn_floor_cap=(_MAX_PLAN_CCN_PRIORITY_CHUNKS
+                           if "ccn" in plan.planner_source_hints else CCN_FLOOR_TOP),
+            inject_anchor_identifiers=False,
         )
+        seen_pool = {(r.document_id, r.chunk_index) for r in direct}
+        pool = list(direct) + [r for r in pool if (r.document_id, r.chunk_index) not in seen_pool]
 
         # Priority branches add candidates to the broad pool; they never
         # replace it. Run them together to keep their latency bounded.
         priority_tasks = []
+        if "boss" in plan.planner_source_hints and "boss" not in (source_type_filter or []):
+            priority_tasks.append((
+                "boss", 5, self._search(
+                    query, organisation_id,
+                    top_k=5, org_idcc_list=org_idcc_list,
+                    source_type_filter=["boss"], cost_ctx=self._cost_ctx,
+                ),
+            ))
+        if date_from or date_to:
+            priority_tasks.append((
+                "chronology", _MAX_PLAN_CHRONOLOGY_PRIORITY_CHUNKS,
+                self._search(
+                    query, organisation_id, top_k=_MAX_PLAN_CHRONOLOGY_PRIORITY_CHUNKS,
+                    org_idcc_list=org_idcc_list, source_type_filter=source_type_filter,
+                    date_from=date_from, date_to=date_to, cost_ctx=self._cost_ctx,
+                ),
+            ))
         if not source_type_filter:
-            if (
-                plan.ccn is not SourceRequirement.DISABLED
-                and "ccn" in plan.planner_source_hints
-                and org_idcc_list
-            ):
-                priority_tasks.append(
-                    (
-                        "ccn",
-                        _MAX_PLAN_CCN_PRIORITY_CHUNKS,
-                        self.search_engine.search(
-                            query,
-                            organisation_id,
-                            top_k=_MAX_PLAN_CCN_PRIORITY_CHUNKS,
-                            org_idcc_list=org_idcc_list,
-                            source_type_filter=sorted(_CCN_SOURCE_TYPES),
-                            cost_ctx=self._cost_ctx,
-                        ),
-                    )
-                )
-            if date_from or date_to:
-                priority_tasks.append(
-                    (
-                        "chronology",
-                        _MAX_PLAN_CHRONOLOGY_PRIORITY_CHUNKS,
-                        self.search_engine.search(
-                            query,
-                            organisation_id,
-                            top_k=_MAX_PLAN_CHRONOLOGY_PRIORITY_CHUNKS,
-                            org_idcc_list=org_idcc_list,
-                            date_from=date_from,
-                            date_to=date_to,
-                            cost_ctx=self._cost_ctx,
-                        ),
-                    )
-                )
             if (
                 plan.jurisprudence is SourceRequirement.REQUIRED
                 or plan.planner_jurisprudence is SourceRequirement.REQUIRED
@@ -2024,7 +1492,7 @@ class RAGAgent:
                     (
                         "jurisprudence",
                         _MAX_PLAN_JURISPRUDENCE_COMPLEMENT_CHUNKS,
-                        self.search_engine.search(
+                        self._search(
                             query,
                             organisation_id,
                             top_k=_MAX_PLAN_JURISPRUDENCE_COMPLEMENT_CHUNKS,
@@ -2041,7 +1509,7 @@ class RAGAgent:
                     (
                         "internal",
                         _MAX_PLAN_INTERNAL_PRIORITY_CHUNKS,
-                        self.search_engine.search(
+                        self._search(
                             query,
                             organisation_id,
                             top_k=_MAX_PLAN_INTERNAL_PRIORITY_CHUNKS,
@@ -2083,12 +1551,12 @@ class RAGAgent:
                 )
 
         if source_type_filter:
-            complement_query = _build_plan_complement_query(plan, legal_anchor)
-            self._plan_search_diagnostics = {
+            complement_query = query
+            self._plan_search_diagnostics.update({
                 "directed_primary_source_types": list(source_type_filter),
                 "complement_query": complement_query,
                 "complement_branches": [],
-            }
+            })
             complement_tasks = []
             if apply_legislation_floor:
                 legislation_source_types = [
@@ -2100,7 +1568,7 @@ class RAGAgent:
                     (
                         "legislation",
                         _MAX_PLAN_LEGISLATION_COMPLEMENT_CHUNKS,
-                        self.search_engine.search(
+                        self._search(
                             complement_query,
                             organisation_id,
                             top_k=_MAX_PLAN_LEGISLATION_COMPLEMENT_CHUNKS,
@@ -2123,7 +1591,7 @@ class RAGAgent:
                     (
                         "jurisprudence",
                         _MAX_PLAN_JURISPRUDENCE_COMPLEMENT_CHUNKS,
-                        self.search_engine.search(
+                        self._search(
                             complement_query,
                             organisation_id,
                             top_k=_MAX_PLAN_JURISPRUDENCE_COMPLEMENT_CHUNKS,
@@ -2185,6 +1653,8 @@ class RAGAgent:
         org_idcc_list: list[str] | None = None,
         source_type_filter: list[str] | None = None,
         apply_legislation_floor: bool = True,
+        ccn_floor_cap: int = CCN_FLOOR_TOP,
+        inject_anchor_identifiers: bool = True,
     ) -> list[SearchResult]:
         """Search all variants in parallel, fuse with RRF, inject the
         legislation floor and the articles named by the legal anchor.
@@ -2196,7 +1666,7 @@ class RAGAgent:
         """
         t1 = time.perf_counter()
         search_tasks = [
-            self.search_engine.search(
+            self._search(
                 variant,
                 organisation_id,
                 top_k=TOP_K,
@@ -2210,7 +1680,7 @@ class RAGAgent:
         if apply_legislation_floor:
             leg_task_idx = len(search_tasks)
             search_tasks.append(
-                self.search_engine.search(
+                self._search(
                     legal_anchor or variants[0],
                     organisation_id,
                     top_k=TOP_K,
@@ -2234,7 +1704,7 @@ class RAGAgent:
         if org_idcc_list and not ccn_already_searched:
             ccn_task_idx = len(search_tasks)
             search_tasks.append(
-                self.search_engine.search(
+                self._search(
                     variants[0],
                     organisation_id,
                     top_k=TOP_K,
@@ -2268,9 +1738,6 @@ class RAGAgent:
             ", ".join(str(len(r)) for r in valid_results),
         )
 
-        if not valid_results:
-            return []
-
         # Fuse variant results with RRF, then inject the floors (legislation +
         # CCN). Both are injected rather than RRF-fused: fusing them in would
         # dilute them, since the near-duplicate variants out-vote them.
@@ -2298,7 +1765,7 @@ class RAGAgent:
         if leg_results:
             _inject(leg_results, LEGISLATION_FLOOR_TOP, "LEGFLOOR")
         if ccn_results:
-            _inject(ccn_results, CCN_FLOOR_TOP, "CCNFLOOR")
+            _inject(ccn_results, ccn_floor_cap, "CCNFLOOR")
 
         # Articles explicitement nommés par l'ancre législative : le LLM nomme
         # le bon article (ex. "L1235-3" pour le barème Macron) même quand son
@@ -2306,7 +1773,7 @@ class RAGAgent:
         # On les récupère par numéro et on les injecte dans le pool. Mesuré :
         # L1235-3 passe d'absent à visible, sans régression sur les autres
         # requêtes. Le reranker reste seul juge de l'ordre final.
-        if apply_legislation_floor and legal_anchor:
+        if apply_legislation_floor and legal_anchor and inject_anchor_identifiers:
             # Plafond relevé de 3 à 12 : les questions de procédure ("étapes des
             # élections du CSE") s'appuient sur tout un bloc d'articles (L2314-1
             # à -33). À 3, on ne récupérait que les premiers et on jetait les
@@ -2316,7 +1783,7 @@ class RAGAgent:
             anchor_arts = detect_identifiers(legal_anchor).get("article_nums", [])[:12]
             if anchor_arts:
                 try:
-                    anchor_chunks = await fetch_by_identifiers(
+                    anchor_chunks = await self._fetch_identifiers(
                         self.search_engine.qdrant,
                         {"numero_pourvoi": [], "article_nums": anchor_arts},
                         organisation_id=organisation_id,
@@ -2350,7 +1817,7 @@ class RAGAgent:
                 modified |= _extract_modified_articles(r.text)
         if modified:
             try:
-                follow_chunks = await fetch_by_identifiers(
+                follow_chunks = await self._fetch_identifiers(
                     self.search_engine.qdrant,
                     {
                         "numero_pourvoi": [],

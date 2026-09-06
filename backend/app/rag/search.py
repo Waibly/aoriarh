@@ -12,13 +12,13 @@ from qdrant_client.models import (
     Filter,
     FusionQuery,
     MatchAny,
-    MatchValue,
     Prefetch,
     SparseVector,
 )
 
 from app.core.config import settings
 from app.core.http_client import get_shared_async_client
+from app.rag.access_filter import build_org_access_filter
 from app.rag.config import EMBEDDING_MODEL, TOP_K
 from app.rag.qdrant_store import COLLECTION_NAME, get_qdrant_client
 from app.services.cost_tracker import CostContext, cost_tracker
@@ -119,6 +119,7 @@ class HybridSearch:
         source_type_filter: list[str] | None = None,
         date_from: datetime.date | None = None,
         date_to: datetime.date | None = None,
+        excluded_source_types: list[str] | None = None,
     ) -> Filter:
         """Construit le filtre Qdrant de cloisonnement multi-tenant.
 
@@ -130,70 +131,13 @@ class HybridSearch:
         rendre le cloisonnement testable isolément (invariant de sécurité, cf.
         démo publique corpus-commun-only).
         """
-        should_conditions = [
-            # Org's own documents
-            FieldCondition(
-                key="organisation_id",
-                match=MatchValue(value=organisation_id),
-            ),
-        ]
-
-        # Source types tied to a specific CCN/IDCC
-        _ccn_source_types = [
-            "convention_collective_nationale",
-            "accord_branche",
-        ]
-
-        if org_idcc_list:
-            # Common docs that are NOT CCN/accord (code du travail, jurisprudence, etc.)
-            should_conditions.append(
-                Filter(
-                    must=[
-                        FieldCondition(key="organisation_id", match=MatchValue(value="common")),
-                    ],
-                    must_not=[
-                        FieldCondition(
-                            key="source_type",
-                            match=MatchAny(any=_ccn_source_types),
-                        ),
-                    ],
-                )
-            )
-            # Common CCN + accord_branche docs only for org's selected IDCCs
-            for st in _ccn_source_types:
-                should_conditions.append(
-                    Filter(
-                        must=[
-                            FieldCondition(key="organisation_id", match=MatchValue(value="common")),
-                            FieldCondition(key="source_type", match=MatchValue(value=st)),
-                            FieldCondition(key="idcc", match=MatchAny(any=org_idcc_list)),
-                        ],
-                    )
-                )
-        else:
-            # No IDCC list installed → exclude ALL CCN/accord_branche docs to
-            # avoid leaking content from sectors that don't apply to this org.
-            # Universal common docs (Code du travail, jurisprudence, doctrine,
-            # etc.) remain accessible.
-            should_conditions.append(
-                Filter(
-                    must=[
-                        FieldCondition(key="organisation_id", match=MatchValue(value="common")),
-                    ],
-                    must_not=[
-                        FieldCondition(
-                            key="source_type",
-                            match=MatchAny(any=_ccn_source_types),
-                        ),
-                    ],
-                )
-            )
-
-        org_filter = Filter(should=should_conditions)
+        org_filter = build_org_access_filter(organisation_id, org_idcc_list)
+        if org_filter is None:
+            raise ValueError("An organisation is required for hybrid search")
 
         # If source_type_filter is set, wrap the org filter with a source_type
         # constraint so we only search in the requested types.
-        if source_type_filter:
+        if source_type_filter is not None:
             org_filter = Filter(
                 must=[
                     org_filter,
@@ -221,6 +165,10 @@ class HybridSearch:
                 ],
             )
 
+        if excluded_source_types:
+            org_filter = Filter(must=[org_filter], must_not=[
+                FieldCondition(key="source_type", match=MatchAny(any=excluded_source_types)),
+            ])
         return org_filter
 
     async def search(
@@ -233,6 +181,8 @@ class HybridSearch:
         date_from: datetime.date | None = None,
         date_to: datetime.date | None = None,
         cost_ctx: CostContext | None = None,
+        excluded_source_types: list[str] | None = None,
+        encoding_cache: dict | None = None,
     ) -> list[SearchResult]:
         """Execute a hybrid search combining dense and sparse vectors.
 
@@ -249,12 +199,19 @@ class HybridSearch:
         t0 = time.perf_counter()
 
         # 1. Encode query — dense (Voyage AI) + sparse (BM25) in parallel
-        dense_task = self._encode_dense(query, cost_ctx)
-        sparse_task = asyncio.to_thread(self._encode_sparse_sync, query)
-        dense_embedding, sparse_vector = await asyncio.gather(
-            dense_task,
-            sparse_task,
-        )
+        async def encode():
+            return await asyncio.gather(
+                self._encode_dense(query, cost_ctx),
+                asyncio.to_thread(self._encode_sparse_sync, query),
+            )
+
+        if encoding_cache is None:
+            dense_embedding, sparse_vector = await encode()
+        else:
+            # Cache belongs to one preparation, never to this shared engine.
+            if query not in encoding_cache:
+                encoding_cache[query] = asyncio.create_task(encode())
+            dense_embedding, sparse_vector = await encoding_cache[query]
 
         t1 = time.perf_counter()
         logger.info("[PERF] Encoding (dense+sparse parallel) %.0fms", (t1 - t0) * 1000)
@@ -267,6 +224,7 @@ class HybridSearch:
             source_type_filter,
             date_from,
             date_to,
+            excluded_source_types,
         )
 
         # 3. Hybrid query with RRF fusion via prefetch

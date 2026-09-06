@@ -641,7 +641,7 @@ async def _run_sandbox_pipeline(
     answer: str | None = None
     sources_dicts: list[dict] = []
 
-    if not skip_generation and reformulated != "[HORS_SCOPE]" and results:
+    if not skip_generation and results:
         sources = agent.format_sources(results)
         sources_dicts = [dataclasses.asdict(s) for s in sources]
         fresh_keys = {_source_key(source) for source in sources_dicts}

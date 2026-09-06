@@ -291,6 +291,7 @@ export async function updateMessageFeedback(
 }
 
 export interface StreamCallbacks {
+  onSearchDetails?: (details: import("@/types/api").SearchDetails) => void;
   onStatus?: (step: string) => void;
   onSources: (sources: MessageSource[]) => void;
   onDelta: (content: string) => void;
@@ -351,6 +352,9 @@ export async function streamMessage(
         switch (eventType) {
           case "chat_status":
             callbacks.onStatus?.(parsed.step);
+            break;
+          case "chat_search_details":
+            callbacks.onSearchDetails?.(parsed);
             break;
           case "chat_sources":
             callbacks.onSources(parsed.sources);

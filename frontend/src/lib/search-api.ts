@@ -19,6 +19,7 @@ export interface DocSearchCard {
 }
 
 export interface DocSearchResponse {
+  search_details?: import("@/types/api").SearchDetails;
   query_used: string;
   variants: string[];
   out_of_scope: boolean;

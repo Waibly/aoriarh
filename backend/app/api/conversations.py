@@ -20,8 +20,6 @@ from app.models.document import Document
 from app.models.organisation import Organisation
 from app.models.user import User
 from app.rag.agent import (
-    _OUT_OF_SCOPE_ANSWER,
-    _OUT_OF_SCOPE_MARKER,
     _SOURCE_TYPE_LABELS,
     RAGAgent,
 )
@@ -32,6 +30,7 @@ from app.rag.config import (
 )
 from app.rag.intent_router import classify_intent, is_security_response
 from app.rag.pipeline import prepare_rag_context
+from app.rag.search_feedback import search_feedback
 from app.schemas.conversation import (
     ChatRequest,
     ConversationCreate,
@@ -889,6 +888,7 @@ class DocumentSearchCard(BaseModel):
 
 
 class DocumentSearchResponse(BaseModel):
+    search_details: dict | None = None
     query_used: str
     variants: list[str]
     out_of_scope: bool
@@ -946,14 +946,6 @@ async def search_documents(
         context_id=str(question_id),
     )
 
-    if reformulated == _OUT_OF_SCOPE_MARKER:
-        return DocumentSearchResponse(
-            query_used=data.query,
-            variants=[],
-            out_of_scope=True,
-            results=[],
-        )
-
     cards: list[DocumentSearchCard] = []
     seen: set[tuple[str, int]] = set()
     for r in results:
@@ -987,6 +979,7 @@ async def search_documents(
     cards.sort(key=lambda c: c.score, reverse=True)
     return DocumentSearchResponse(
         query_used=reformulated or data.query,
+        search_details=search_feedback(rag_trace),
         variants=list(rag_trace.variants or []),
         out_of_scope=False,
         results=cards,
@@ -1074,6 +1067,10 @@ async def chat_stream(
                 organisation_id=conversation.organisation_id,
                 use_llm_fallback=not history,
             )
+            if intent_result.raw_response:
+                yield _sse_event("chat_search_details", search_feedback({
+                    "router_raw_response": intent_result.raw_response,
+                }))
             if intent_result.static_answer is not None:
                 logger.info(
                     "[INTENT] %s via %s — court-circuit RAG",
@@ -1096,6 +1093,7 @@ async def chat_stream(
                 try:
                     meta_assistant.rag_trace = {
                         "static_intent": intent_result.intent.value,
+                        "router_raw_response": intent_result.raw_response,
                         "security_event": intent_result.security_event,
                     }
                     meta_assistant.latency_ms = int((time.perf_counter() - t_total) * 1000)
@@ -1211,63 +1209,20 @@ async def chat_stream(
                 )
                 return
 
-            # --- Hors-scope: send refusal as a normal answer, save to history ---
-            if reformulated == _OUT_OF_SCOPE_MARKER:
-                logger.info("[SCOPE] Hors-scope — returning refusal for: %s", data.message[:100])
-                # Persist d'abord pour récupérer les ids (le frontend les
-                # attend dans chat_done — émettre vide casse l'écran).
-                oos_user = await service.add_message(
-                    conversation_id=conversation_id,
-                    role="user",
-                    content=data.message,
-                )
-                oos_assistant = await service.add_message(
-                    conversation_id=conversation_id,
-                    role="assistant",
-                    content=_OUT_OF_SCOPE_ANSWER,
-                )
-                yield _sse_event("chat_delta", {"content": _OUT_OF_SCOPE_ANSWER})
-                yield _sse_event(
-                    "chat_done",
-                    {
-                        "message_id": str(oos_user.id),
-                        "answer_id": str(oos_assistant.id),
-                    },
-                )
-                # Persist minimal trace for the Quality page (trace et quota
-                # commités séparément — cf. bloc principal plus bas).
-                oos_needs_title = conversation.title is None
-                oos_trace_failed = False
-                try:
-                    oos_assistant.rag_trace = rag_trace.to_dict()
-                    oos_assistant.latency_ms = int((time.perf_counter() - t_total) * 1000)
-                    oos_assistant.question_id = question_id
-                    await db.commit()
-                except Exception:
-                    logger.exception(
-                        "[QUALITY] Failed to persist out-of-scope trace for message %s",
-                        oos_assistant.id,
-                    )
-                    await db.rollback()
-                    oos_trace_failed = True
-                try:
-                    if oos_trace_failed:
-                        await db.refresh(account)
-                    await billing.increment_question_count(account)
-                    await db.commit()
-                except Exception:
-                    logger.exception(
-                        "[BILLING] Failed to increment question count for account %s",
-                        getattr(account, "id", "?"),
-                    )
-                    await db.rollback()
-                if oos_needs_title:
-                    title = data.message[:100].strip()
-                    if len(data.message) > 100:
-                        title = title.rsplit(" ", 1)[0] + "…"
-                    await service.update_title(conversation_id, title)
+            rag_trace.router_raw_response = intent_result.raw_response
+            yield _sse_event("chat_search_details", search_feedback(rag_trace))
+            if rag_trace.error == "search_retrieval_error":
+                yield _sse_event("chat_error", {
+                    "error": "search_retrieval_error",
+                    "message": "Les recherches documentaires ont échoué. La disponibilité des documents n’a pas pu être vérifiée.",
+                })
                 return
-
+            if rag_trace.error == "search_planner_error":
+                yield _sse_event("chat_error", {
+                    "error": "search_planner_error",
+                    "message": "Le plan de recherche n’a pas pu être exécuté. Aucune recherche de secours n’a été lancée.",
+                })
+                return
             if not results:
                 yield _sse_event(
                     "chat_error",
@@ -1295,6 +1250,12 @@ async def chat_stream(
             # la génération.
             _fresh_keys = {_source_key(s) for s in sources_dicts}
             carried_sources = [s for s in carried_raw if _source_key(s) not in _fresh_keys]
+            source_policy = rag_trace.search_plan or {}
+            excluded_types = set(source_policy.get("excluded_source_types", []))
+            exclusive_types = set(source_policy.get("exclusive_source_types", []))
+            carried_sources = [s for s in carried_sources
+                               if s.get("source_type") not in excluded_types
+                               and (not exclusive_types or s.get("source_type") in exclusive_types)]
             if carried_sources:
                 logger.info(
                     "[RAG] Couche 2 — %d source(s) portée(s) injectée(s) en génération",

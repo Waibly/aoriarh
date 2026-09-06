@@ -114,6 +114,12 @@ export interface MessageSource {
   publication?: string | null;
 }
 
+export interface SearchDetails {
+  router_raw_response?: string | null;
+  raw_response: string | null;
+  warnings: string[];
+}
+
 export interface Message {
   id: string;
   conversation_id: string;
@@ -123,6 +129,7 @@ export interface Message {
   feedback: string | null;
   feedback_comment: string | null;
   fiche_eligible?: boolean;
+  search_details?: SearchDetails;
   created_at: string;
 }
 

@@ -14,6 +14,7 @@ import { getSourceFullContent, type SourceFullContent } from "@/lib/chat-api";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import { SearchDetailsPanel } from "@/components/chat/search-details";
 import {
   Sheet,
   SheetContent,
@@ -411,6 +412,7 @@ export default function RechercheDocumentairePage() {
           </div>
 
           {searchField}
+          <SearchDetailsPanel details={data?.search_details} />
 
           {/* Résultats */}
           <div className="space-y-4">
