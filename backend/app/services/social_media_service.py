@@ -469,7 +469,7 @@ h1 {{ max-width:860px; font-size:78px; line-height:1.08;
   letter-spacing:-.035em; font-weight:800; }}
 h2 {{ color:var(--violet); font-size:54px; line-height:1.12;
   letter-spacing:-.028em; font-weight:800; }}
-h3 {{ color:var(--violet); font-size:34px; line-height:1.2; }}
+h3 {{ color:var(--violet); font-size:38px; line-height:1.2; }}
 p, li {{ font-size:34px; line-height:1.4; }}
 strong {{ color:var(--violet-dark); font-weight:780; }}
 .eyebrow {{ margin-bottom:24px; color:#eadcff; font-size:24px; font-weight:800;
@@ -511,11 +511,12 @@ li {{ margin-bottom:22px; padding-left:8px; }}
 .cards li::before, .checklist li::before {{ content:'✓'; position:absolute; left:28px;
   top:25px; color:var(--violet); font-weight:900; }}
 .steps {{ counter-reset:step; }}
-.steps li {{ counter-increment:step; position:relative; min-height:76px;
-  margin-bottom:22px; padding:8px 0 8px 102px; }}
-.steps li::before {{ content:counter(step); position:absolute; left:0; top:0; width:74px;
-  height:74px; border-radius:50%; background:var(--violet); color:#fff; display:flex;
-  align-items:center; justify-content:center; font-size:30px; font-weight:850; }}
+.steps li {{ counter-increment:step; position:relative; min-height:56px;
+  margin-bottom:22px; padding:5px 0 5px 80px; }}
+.steps li > strong:first-child {{ font-size:38px; line-height:1.2; }}
+.steps li::before {{ content:counter(step); position:absolute; left:0; top:0; width:56px;
+  height:56px; border-radius:50%; background:var(--violet); color:#fff; display:flex;
+  align-items:center; justify-content:center; font-size:26px; font-weight:850; }}
 .timeline li {{ position:relative; margin:0 0 0 30px; padding:0 0 32px 62px;
   border-left:5px solid #d8c8ee; }}
 .timeline li::before {{ content:''; position:absolute; left:-15px; top:7px; width:25px;
