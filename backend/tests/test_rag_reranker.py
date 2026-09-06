@@ -3,194 +3,123 @@ from unittest.mock import AsyncMock, patch
 import httpx
 import pytest
 
-from app.rag.reranker import VoyageReranker
+from app.rag.reranker import (
+    RerankingError,
+    VoyageReranker,
+    build_rerank_query,
+    document_rerank_input,
+)
 from app.rag.search import SearchResult
 
-_DUMMY_REQUEST = httpx.Request("POST", "https://api.voyageai.com/v1/rerank")
+
+def result(doc="doc", score=0.8, text="passage"):
+    return SearchResult(text, doc, doc, "code_travail", 1, 1.0, 0, score)
 
 
-def _make_result(text: str, score: float, doc_id: str = "doc1", chunk: int = 0) -> SearchResult:
-    return SearchResult(
-        text=text,
-        doc_name="test.pdf",
-        document_id=doc_id,
-        source_type="code_travail",
-        norme_niveau=4,
-        norme_poids=0.8,
-        chunk_index=chunk,
-        score=score,
+async def test_raw_scores_and_inputs_are_preserved_including_territories():
+    items = [result("Mayotte", text="Dispositions applicables à Mayotte"), result("national")]
+    rr = VoyageReranker()
+    rr._call_api = AsyncMock(
+        return_value={
+            "data": [
+                {"index": 0, "relevance_score": 0.95},
+                {"index": 1, "relevance_score": 0.6},
+            ]
+        }
     )
+    ranked = await rr.rerank("À Mayotte ?", items)
+    assert [r.score for r in ranked] == [0.95, 0.6]
+    assert [r.score for r in items] == [0.8, 0.8]
+    assert ranked[0] is not items[0]
+    assert ranked[0].retrieval_score == 0.8
+    assert ranked[0].rerank_score == 0.95
+    rr._call_api.assert_awaited_once_with("À Mayotte ?", [document_rerank_input(r) for r in items])
+    assert [r.text for r in ranked] == [r.text for r in items]
 
 
-def _mock_rerank_response(indices_scores: list[tuple[int, float]]) -> dict:
-    return {
-        "data": [
-            {"index": idx, "relevance_score": score}
-            for idx, score in indices_scores
-        ],
-        "usage": {"total_tokens": 100},
-    }
+def test_rerank_context_keeps_question_and_excludes_unrelated_org_fields():
+    import json
+    question = "Question complète\navec plusieurs lignes"
+    encoded = build_rerank_query(question, {"convention_collective": "CCN test",
+                                          "secret": "not-for-provider"}, "autonome")
+    data = json.loads(encoded.split("\n", 1)[1])
+    assert data["question_originale"] == question
+    assert data["contexte_organisation"] == {"convention_collective": "CCN test"}
 
 
-def _httpx_response(status_code: int, json_data: dict) -> httpx.Response:
-    return httpx.Response(status_code, json=json_data, request=_DUMMY_REQUEST)
+@pytest.mark.parametrize(
+    "response",
+    [
+        {},
+        {"data": []},
+        {"data": [{"index": 0, "relevance_score": 0.2}]},
+        {"data": [{"index": 0, "relevance_score": 0.2}, {"index": 0, "relevance_score": 0.8}]},
+        {"data": [{"index": -1, "relevance_score": 0.2}, {"index": 1, "relevance_score": 0.8}]},
+        {"data": [{"index": True, "relevance_score": 0.2}, {"index": 1, "relevance_score": 0.8}]},
+        {
+            "data": [
+                {"index": 0, "relevance_score": float("nan")},
+                {"index": 1, "relevance_score": 0.8},
+            ]
+        },
+        {"data": [{"index": 0, "relevance_score": "0.2"}, {"index": 1, "relevance_score": 0.8}]},
+        {"data": [None, None]},
+        None,
+    ],
+)
+async def test_invalid_contract_is_an_error_not_a_replacement(response):
+    rr = VoyageReranker()
+    rr._call_api = AsyncMock(return_value=response)
+    items = [result("a"), result("b")]
+    with pytest.raises(RerankingError):
+        await rr.rerank("question", items)
+    assert [r.score for r in items] == [0.8, 0.8]
+    rr._call_api.assert_awaited_once()
 
 
-@pytest.fixture
-def reranker():
-    return VoyageReranker()
+async def test_failure_is_propagated_without_fallback():
+    rr = VoyageReranker()
+    rr._call_api = AsyncMock(side_effect=httpx.ConnectError("offline"))
+    with pytest.raises(RerankingError, match="unavailable"):
+        await rr.rerank("q", [result()])
+    rr._call_api.assert_awaited_once()
 
 
-class TestVoyageReranker:
-    @pytest.mark.asyncio
-    async def test_rerank_sorts_by_relevance_score(self, reranker):
-        results = [
-            _make_result("chunk A", 0.5, "doc1", 0),
-            _make_result("chunk B", 0.8, "doc2", 0),
-            _make_result("chunk C", 0.3, "doc3", 0),
-        ]
+async def test_single_candidate_is_actually_scored():
+    rr = VoyageReranker()
+    rr._call_api = AsyncMock(return_value={"data": [{"index": 0, "relevance_score": 0.1}]})
+    assert (await rr.rerank("q", [result()]))[0].score == 0.1
+    rr._call_api.assert_awaited_once()
 
-        mock_response = _httpx_response(
-            200, _mock_rerank_response([(0, 0.2), (1, 0.9), (2, 0.6)]),
-        )
 
-        with patch("app.rag.reranker.httpx.AsyncClient") as mock_client_cls:
-            mock_client = AsyncMock()
-            mock_client.post.return_value = mock_response
-            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-            mock_client.__aexit__ = AsyncMock(return_value=False)
-            mock_client_cls.return_value = mock_client
+async def test_empty_pool_does_not_call_service():
+    rr = VoyageReranker()
+    rr._call_api = AsyncMock()
+    assert await rr.rerank("q", []) == []
+    rr._call_api.assert_not_awaited()
 
-            reranked = await reranker.rerank("test query", results, top_k=3)
 
-        assert len(reranked) == 3
-        # Should be sorted: B (0.9), C (0.6), A (0.2)
-        assert reranked[0].text == "chunk B"
-        assert reranked[0].score == 0.9
-        assert reranked[1].text == "chunk C"
-        assert reranked[1].score == 0.6
-        assert reranked[2].text == "chunk A"
-        assert reranked[2].score == 0.2
-
-    @pytest.mark.asyncio
-    async def test_rerank_respects_top_k(self, reranker):
-        results = [
-            _make_result("chunk A", 0.5, "doc1", 0),
-            _make_result("chunk B", 0.8, "doc2", 0),
-            _make_result("chunk C", 0.3, "doc3", 0),
-        ]
-
-        mock_response = _httpx_response(
-            200, _mock_rerank_response([(0, 0.2), (1, 0.9), (2, 0.6)]),
-        )
-
-        with patch("app.rag.reranker.httpx.AsyncClient") as mock_client_cls:
-            mock_client = AsyncMock()
-            mock_client.post.return_value = mock_response
-            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-            mock_client.__aexit__ = AsyncMock(return_value=False)
-            mock_client_cls.return_value = mock_client
-
-            reranked = await reranker.rerank("test query", results, top_k=2)
-
-        assert len(reranked) == 2
-        assert reranked[0].text == "chunk B"
-        assert reranked[1].text == "chunk C"
-
-    @pytest.mark.asyncio
-    async def test_fallback_on_api_failure(self, reranker):
-        results = [
-            _make_result("chunk A", 0.9, "doc1", 0),
-            _make_result("chunk B", 0.5, "doc2", 0),
-            _make_result("chunk C", 0.3, "doc3", 0),
-        ]
-
-        with patch("app.rag.reranker.httpx.AsyncClient") as mock_client_cls:
-            mock_client = AsyncMock()
-            mock_client.post.side_effect = httpx.ConnectError("Connection failed")
-            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-            mock_client.__aexit__ = AsyncMock(return_value=False)
-            mock_client_cls.return_value = mock_client
-
-            reranked = await reranker.rerank("test query", results, top_k=2)
-
-        # Fallback: return original results truncated
-        assert len(reranked) == 2
-        assert reranked[0].text == "chunk A"
-        assert reranked[1].text == "chunk B"
-
-    @pytest.mark.asyncio
-    async def test_api_failure_can_exclude_unvalidated_candidates(self, reranker):
-        safe = _make_result("semantic chunk", 0.4, "doc-safe", 0)
-        hypothesis = _make_result("guessed article", 1.0, "doc-guess", 0)
-        reranker._call_api = AsyncMock(side_effect=httpx.ConnectError("failed"))
-
-        reranked = await reranker.rerank(
-            "test query",
-            [safe, hypothesis],
-            top_k=2,
-            fallback_results=[safe],
-        )
-
-        assert reranked == [safe]
-
-    @pytest.mark.asyncio
-    async def test_empty_results(self, reranker):
-        reranked = await reranker.rerank("test query", [], top_k=5)
-        assert reranked == []
-
-    @pytest.mark.asyncio
-    async def test_single_result(self, reranker):
-        results = [_make_result("only chunk", 0.8)]
-        reranked = await reranker.rerank("test query", results, top_k=5)
-        assert len(reranked) == 1
-        assert reranked[0].text == "only chunk"
-
-    @pytest.mark.asyncio
-    async def test_retry_on_429(self, reranker):
-        results = [
-            _make_result("chunk A", 0.5, "doc1", 0),
-            _make_result("chunk B", 0.8, "doc2", 0),
-        ]
-
-        rate_limit_response = _httpx_response(429, {"error": "rate limited"})
-        success_response = _httpx_response(
-            200, _mock_rerank_response([(0, 0.7), (1, 0.3)]),
-        )
-
-        with patch("app.rag.reranker.httpx.AsyncClient") as mock_client_cls:
-            mock_client = AsyncMock()
-            mock_client.post.side_effect = [rate_limit_response, success_response]
-            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-            mock_client.__aexit__ = AsyncMock(return_value=False)
-            mock_client_cls.return_value = mock_client
-
-            with patch("app.rag.reranker.asyncio.sleep", new_callable=AsyncMock):
-                reranked = await reranker.rerank("test query", results, top_k=2)
-
-        assert len(reranked) == 2
-        assert reranked[0].text == "chunk A"
-        assert reranked[0].score == 0.7
-
-    @pytest.mark.asyncio
-    async def test_scores_updated_after_rerank(self, reranker):
-        results = [
-            _make_result("chunk A", 0.5, "doc1", 0),
-            _make_result("chunk B", 0.3, "doc2", 0),
-        ]
-
-        mock_response = _httpx_response(
-            200, _mock_rerank_response([(0, 0.95), (1, 0.15)]),
-        )
-
-        with patch("app.rag.reranker.httpx.AsyncClient") as mock_client_cls:
-            mock_client = AsyncMock()
-            mock_client.post.return_value = mock_response
-            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-            mock_client.__aexit__ = AsyncMock(return_value=False)
-            mock_client_cls.return_value = mock_client
-
-            reranked = await reranker.rerank("test query", results, top_k=2)
-
-        assert reranked[0].score == 0.95
-        assert reranked[1].score == 0.15
+@pytest.mark.parametrize("mode", ["429", "timeout", "success"])
+async def test_bounded_transport_retries_and_no_input_truncation(mode):
+    client = AsyncMock()
+    request = httpx.Request("POST", "https://api.voyageai.com/v1/rerank")
+    success = httpx.Response(200, request=request, json={"data": []})
+    client.post.side_effect = (
+        [httpx.TimeoutException("timeout")] * 3
+        if mode == "timeout"
+        else [httpx.Response(429, request=request)] * 3
+        if mode == "429"
+        else [success]
+    )
+    with (
+        patch("app.rag.reranker.get_shared_async_client", return_value=client),
+        patch("app.rag.reranker.asyncio.sleep", new_callable=AsyncMock) as sleep,
+    ):
+        if mode == "success":
+            await VoyageReranker()._call_api("q", ["doc"])
+        else:
+            with pytest.raises((httpx.TimeoutException, httpx.HTTPStatusError)):
+                await VoyageReranker()._call_api("q", ["doc"])
+        assert client.post.await_count == (1 if mode == "success" else 3)
+        assert sleep.await_count == (0 if mode == "success" else 2)
+        assert client.post.call_args.kwargs["json"]["truncation"] is False

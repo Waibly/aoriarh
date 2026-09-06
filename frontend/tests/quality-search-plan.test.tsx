@@ -16,6 +16,20 @@ import {
   type InspectorPayload,
 } from "@/app/(admin)/admin/quality/InspectorBody";
 
+test("exposes technical document selection diagnostics without rendering their HTML", () => {
+  const data = payload();
+  data.rag_trace!.search_plan_validation = {
+    selection: {
+      status: "complete",
+      groups: [{ status: "selected", fetch_limited: true, parent_key: ["<script>unsafe</script>"] }],
+    },
+  };
+  const { container } = render(<InspectorBody data={data} />);
+  expect(screen.getByText("Traçabilité de la sélection documentaire")).toBeInTheDocument();
+  expect(screen.getByText(/"fetch_limited": true/)).toBeInTheDocument();
+  expect(container.querySelector("script")).toBeNull();
+});
+
 function payload(): InspectorPayload {
   return {
     question: "Et pour un cadre ?",

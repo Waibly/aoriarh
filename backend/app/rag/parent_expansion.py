@@ -1,25 +1,14 @@
-"""Small-to-big retrieval: expand retrieved chunks to their full parent context.
+"""Bounded documentary context built from intact indexed passages.
 
-After hybrid search + reranking returns the top chunks, this module ensures
-that the LLM receives the FULL relevant context, not just the chunk that
-matched the query embedding. Three strategies depending on document type:
-
-- Jurisprudence (arrêts) : the parent is the full document. All sibling
-  chunks of the same arrêt are fetched and merged.
-- Article-based docs (Code du travail, CCN, accords) : the parent is the
-  full article. All chunks sharing the same article number are fetched.
-- Other documents : a sliding window of ±2 chunks around the matched
-  chunk_index, so the LLM sees the immediate neighborhood.
-
-In addition, an identifier-detection helper looks for explicit references
-in the user query (numéros de pourvoi, articles de code) and pulls the
-matching chunks directly via Qdrant filters, bypassing the semantic search
-which fails on identifier-only queries (e.g. "que dit l'article L.4121-1").
+Rank all candidates, select distinct parent groups, fetch neighboring passages
+with access control and bounded pagination, and retain the best ranked passage.
+No content-based rewriting, ranking rescue or replacement on transport failure.
 """
 
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import logging
 import re
 from dataclasses import replace
@@ -29,11 +18,11 @@ from qdrant_client.models import (
     Filter,
     MatchAny,
     MatchValue,
+    Range,
 )
 
 from app.rag.access_filter import build_org_access_filter
 from app.rag.article_reference import normalize_article_reference
-from app.rag.norme_hierarchy import DOCUMENT_TYPE_HIERARCHY
 from app.rag.qdrant_store import COLLECTION_NAME
 from app.rag.search import SearchResult
 from app.rag.source_intent import CODE_SOURCE_LABELS
@@ -41,17 +30,15 @@ from app.rag.source_intent import CODE_SOURCE_LABELS
 logger = logging.getLogger(__name__)
 
 
-def _is_legislation(source_type: str) -> bool:
-    """True for "written law" (hierarchy levels 1–5 except jurisprudence)."""
-    niveau = DOCUMENT_TYPE_HIERARCHY.get(source_type, {}).get("niveau")
-    return isinstance(niveau, int) and niveau <= 5 and niveau != 4
+class RetrievalError(RuntimeError):
+    """A requested search could not execute; not an empty search result."""
 
 
 # --- Tunables -----------------------------------------------------------------
 
 # Max chunks fetched per parent group (cap on Qdrant scroll cost).
 MAX_CHUNKS_PER_GROUP = 30
-# Max characters per merged group sent to the LLM (truncated with ellipsis).
+# Max characters per group. Whole passages only; no text slicing.
 MAX_CHARS_PER_GROUP = 9000
 # Max parent groups kept after expansion (token budget).
 MAX_PARENT_GROUPS = 10
@@ -69,7 +56,8 @@ _PATTERN_ARTICLE_CODE = re.compile(
     re.IGNORECASE,
 )
 _PATTERN_ARTICLE_NUMERIC = re.compile(
-    r"\b(?:article|art\.)\s+(\d+(?:[-‑–.]\d+)*)\b", re.IGNORECASE,
+    r"\b(?:article|art\.)\s+(\d+(?:[-‑–.]\d+)*)\b",
+    re.IGNORECASE,
 )
 
 
@@ -109,14 +97,15 @@ def reference_source_types(query: str) -> dict[str, list[str]]:
         after = next((c for c in codes if c[0] >= end), None)
         before = next((c for c in reversed(codes) if c[1] <= start), None)
         chosen = None
-        if after and not re.search(r"[;!?\n]|\bet\s+(?:le|du)\s*$", query[end:after[0]], re.I):
+        if after and not re.search(r"[;!?\n]|\bet\s+(?:le|du)\s*$", query[end : after[0]], re.I):
             chosen = after
-        elif before and not re.search(r"[;!?\n]", query[before[1]:start]):
+        elif before and not re.search(r"[;!?\n]", query[before[1] : start]):
             chosen = before
         if chosen:
             result.setdefault(article, [])
             result[article] = list(dict.fromkeys([*result[article], *chosen[2]]))
     return result
+
 
 # Source types treated as "full document = parent"
 _JURISPRUDENCE_SOURCE_TYPES = {
@@ -195,9 +184,14 @@ async def fetch_by_identifiers(
             must.append(org_filter)
         if source_type_filter is not None:
             must.append(FieldCondition(key="source_type", match=MatchAny(any=source_type_filter)))
-        flt = Filter(must=must, must_not=[
-            FieldCondition(key="source_type", match=MatchAny(any=excluded_source_types)),
-        ] if excluded_source_types else None)
+        flt = Filter(
+            must=must,
+            must_not=[
+                FieldCondition(key="source_type", match=MatchAny(any=excluded_source_types)),
+            ]
+            if excluded_source_types
+            else None,
+        )
         try:
             pts, _ = qdrant.scroll(
                 collection_name=COLLECTION_NAME,
@@ -209,19 +203,25 @@ async def fetch_by_identifiers(
         except Exception as exc:
             diagnostic["status"] = "error"
             logger.warning("[BOOST] Identifier scroll failed (%s): %s", extra_must, exc)
-            return []
+            raise RetrievalError("identifier_lookup_failed") from exc
         diagnostic.update(status="ok" if pts else "empty", candidate_chunks=len(pts))
         return [_payload_to_result(p.payload or {}, score=1.0) for p in pts]
 
-    scopes = (article_source_filters if article_source_filters is not None
-              else reference_source_types(reference_query or ""))
+    scopes = (
+        article_source_filters
+        if article_source_filters is not None
+        else reference_source_types(reference_query or "")
+    )
     conditions: list[list] = [
         [FieldCondition(key="numero_pourvoi", match=MatchValue(value=pourvoi))]
         for pourvoi in identifiers.get("numero_pourvoi", [])
     ] + [
         [FieldCondition(key="article_nums", match=MatchAny(any=article_lookup_keys(article)))]
-        + ([FieldCondition(key="source_type", match=MatchAny(any=scopes[article]))]
-           if article in scopes else [])
+        + (
+            [FieldCondition(key="source_type", match=MatchAny(any=scopes[article]))]
+            if article in scopes
+            else []
+        )
         for article in identifiers.get("article_nums", [])
     ]
     batches = await asyncio.gather(*[asyncio.to_thread(_scroll, cond) for cond in conditions])
@@ -275,6 +275,11 @@ def _payload_to_result(payload: dict, *, score: float = 0.0) -> SearchResult:
         effective_from=payload.get("effective_from"),
         effective_to=payload.get("effective_to"),
         instrument_status=payload.get("instrument_status"),
+        organisation_id=payload.get("organisation_id"),
+        **{key: payload.get(key) for key in (
+            "article_id", "article_title", "article_status",
+            "article_effective_from", "article_effective_to",
+        )},
     )
 
 
@@ -302,470 +307,187 @@ def _parent_key_for(r: SearchResult) -> tuple:
     return ("window", r.document_id, r.chunk_index)
 
 
-def _fetch_siblings(qdrant, key: tuple) -> list[SearchResult]:
-    """Fetch all sibling chunks belonging to a parent group via Qdrant scroll."""
-    kind = key[0]
-    try:
-        if kind == "doc":
-            doc_id = key[1]
-            pts, _ = qdrant.scroll(
-                collection_name=COLLECTION_NAME,
-                scroll_filter=Filter(
-                    must=[FieldCondition(key="document_id", match=MatchValue(value=doc_id))]
-                ),
-                limit=MAX_CHUNKS_PER_GROUP,
-                with_payload=True,
-                with_vectors=False,
-            )
-            return [_payload_to_result(p.payload or {}) for p in pts]
-
-        if kind == "article":
-            doc_id, instrument_id, article = key[1], key[2], key[3]
-            must = [
-                FieldCondition(key="document_id", match=MatchValue(value=doc_id)),
-                FieldCondition(key="article_nums", match=MatchAny(any=[article])),
-            ]
-            if instrument_id:
-                must.append(
-                    FieldCondition(
-                        key="instrument_id",
-                        match=MatchValue(value=instrument_id),
-                    )
-                )
-            pts, _ = qdrant.scroll(
-                collection_name=COLLECTION_NAME,
-                scroll_filter=Filter(must=must),
-                limit=MAX_CHUNKS_PER_GROUP,
-                with_payload=True,
-                with_vectors=False,
-            )
-            return [_payload_to_result(p.payload or {}) for p in pts]
-
-        if kind == "window":
-            doc_id, center_idx = key[1], key[2]
-            pts, _ = qdrant.scroll(
-                collection_name=COLLECTION_NAME,
-                scroll_filter=Filter(
-                    must=[FieldCondition(key="document_id", match=MatchValue(value=doc_id))]
-                ),
-                limit=MAX_CHUNKS_PER_GROUP * 4,
-                with_payload=True,
-                with_vectors=False,
-            )
-            all_results = [_payload_to_result(p.payload or {}) for p in pts]
-            return [c for c in all_results if abs(c.chunk_index - center_idx) <= 2]
-    except Exception as exc:
-        logger.warning("[EXPAND] Sibling fetch failed for %s: %s", key, exc)
-    return []
+class ParentExpansionError(RuntimeError):
+    """Technical failure while assembling the source context."""
 
 
-# --- Jurisprudence-aware merging ---------------------------------------------
+def deduplicate_article_passages(results: list[SearchResult]) -> list[SearchResult]:
+    """Deduplicate exact versioned passages AFTER access filtering, not documents.
 
-# A line that is exactly a section label, e.g. "[Motifs de la décision]".
-_SECTION_LINE = re.compile(r"^\[[^\]\n]+\]$")
-# Min/max overlap (chars) considered when stitching consecutive chunks.
-_MIN_OVERLAP = 20
-_MAX_OVERLAP = 600
-
-
-def _decompose(text: str) -> tuple[str, str | None, str]:
-    """Split a stored chunk into (meta_header, section_label, body).
-
-    Jurisprudence chunks are stored as ``"<meta header>\\n[Section]\\n\\n<body>"``.
-    The meta header (court + date + pourvoi) is identical on every chunk of the
-    same arrêt, so callers strip it to avoid repeating it N times. Returns empty
-    meta / None section when that structure is absent (paragraph-fallback
-    chunks), in which case the whole text is the body.
+    Never infer equivalence from similar wording, incomplete identities or scores.
+    Different fragments of a long article and different ACL scopes remain distinct.
     """
-    lines = text.split("\n")
-    meta = ""
-    section: str | None = None
-    start = 0
-    if len(lines) >= 2 and _SECTION_LINE.match(lines[1].strip()):
-        meta = lines[0]
-        section = lines[1].strip()
-        start = 2
-    elif lines and _SECTION_LINE.match(lines[0].strip()):
-        section = lines[0].strip()
-        start = 1
-    while start < len(lines) and lines[start].strip() == "":
-        start += 1
-    body = "\n".join(lines[start:]).strip()
-    return meta, section, body
-
-
-def _section_kind(section: str | None, body: str) -> str:
-    """Classify a chunk: motifs, dispositif, faits, moyens, en-tete or autre."""
-    s = (section or "").lower()
-    if "motifs" in s:
-        return "motifs"
-    if "dispositif" in s:
-        return "dispositif"
-    if "faits" in s:
-        return "faits"
-    if "moyens" in s:
-        return "moyens"
-    if "en-tête" in s or "en-tete" in s:
-        return "en-tete"
-    # No usable label (paragraph fallback): sniff the body for ruling markers.
-    if "Réponse de la Cour" in body:
-        return "motifs"
-    if re.search(r"PAR CES MOTIFS|REJETTE|CASSE ET ANNULE", body):
-        return "dispositif"
-    return "autre"
-
-
-def _overlap_len(tail: str, nxt: str) -> int:
-    """Length of the longest suffix of ``tail`` that is also a prefix of ``nxt``."""
-    window = tail[-_MAX_OVERLAP:]
-    hi = min(len(window), len(nxt))
-    for k in range(hi, _MIN_OVERLAP - 1, -1):
-        if window[-k:] == nxt[:k]:
-            return k
-    return 0
-
-
-def _merge_jurisprudence(
-    ordered: list[SearchResult],
-    seed_indices: frozenset[int],
-) -> str:
-    """Merge an arrêt's chunks, keeping the ruling rather than the boilerplate.
-
-    Court decisions put the holding (motifs / dispositif) at the END, but the
-    char budget is finite. Keeping "the first N chars" drops exactly the part
-    that answers the question. So we always keep the motifs/dispositif and the
-    chunks that matched the query (seeds), fill the rest with faits/moyens then
-    en-tête, strip the repeated per-chunk header, and stitch the token overlap
-    between consecutive chunks. Dropped ranges are marked with […].
-    """
-    dec = {c.chunk_index: _decompose(c.text) for c in ordered}
-    meta_header = ""
-    for c in ordered:
-        if dec[c.chunk_index][0]:
-            meta_header = dec[c.chunk_index][0]
-            break
-
-    def kind(ci: int) -> str:
-        _, section, body = dec[ci]
-        return _section_kind(section, body)
-
-    def tier(ci: int) -> int:
-        # The holding (motifs/dispositif) wins over everything: it is the answer.
-        # Matched chunks (seeds) come next — they are often the faits/moyens that
-        # the query hit, large and less decisive, so they must not crowd out the
-        # ruling. Then the remaining faits/moyens, then the en-tête boilerplate.
-        if kind(ci) in ("motifs", "dispositif"):
-            return 0
-        if ci in seed_indices:
-            return 1
-        if kind(ci) in ("faits", "moyens"):
-            return 2
-        return 3
-
-    # Reserve room for the header and a little label/separator overhead.
-    budget = MAX_CHARS_PER_GROUP - (len(meta_header) + 2 if meta_header else 0) - 400
-    if budget < 500:
-        budget = MAX_CHARS_PER_GROUP
-
-    chosen: set[int] = set()
-    remaining = budget
-    for t in (0, 1, 2, 3):
-        for c in ordered:
-            ci = c.chunk_index
-            if ci in chosen or tier(ci) != t:
+    seen = set()
+    output = []
+    for r in results:
+        if r.article_id and r.instrument_id and r.organisation_id is not None:
+            key = (r.organisation_id, r.source_type, r.idcc, r.instrument_id,
+                   r.article_id, r.article_effective_from, r.article_effective_to,
+                   r.article_status, r.effective_from, r.effective_to,
+                   r.instrument_status, r.article_title, r.text)
+            if key in seen:
                 continue
-            need = len(dec[ci][2]) + 2
-            if need <= remaining:
-                chosen.add(ci)
-                remaining -= need
-            elif t <= 1 and not chosen:
-                # Always keep at least the top-priority chunk (the ruling, or the
-                # best match if no ruling was detected), even if it is large.
-                chosen.add(ci)
-                remaining = 0
-    if not chosen and ordered:
-        chosen.add(ordered[0].chunk_index)
-
-    text = ""
-    prev_idx: int | None = None
-    prev_section: str | None = None
-    tail = ""
-    for c in ordered:
-        ci = c.chunk_index
-        if ci not in chosen:
-            continue
-        _, section, body = dec[ci]
-        if not body:
-            prev_idx = ci
-            continue
-        if prev_idx is not None and ci != prev_idx + 1:
-            text += "\n\n[…]"
-            tail = ""
-            prev_section = None
-        if section and section != prev_section:
-            text += ("\n\n" if text else "") + section + "\n\n" + body
-            prev_section = section
-        else:
-            k = _overlap_len(tail, body) if tail else 0
-            if k:
-                text += body[k:]
-            elif text:
-                text += "\n\n" + body
-            else:
-                text += body
-        tail = body
-        prev_idx = ci
-
-    merged = (meta_header + "\n\n" + text) if meta_header else text
-    merged = merged.strip()
-    if len(merged) > MAX_CHARS_PER_GROUP:
-        merged = merged[:MAX_CHARS_PER_GROUP].rsplit(" ", 1)[0] + " […]"
-    return merged
+            seen.add(key)
+        output.append(r)
+    return output
 
 
-def _decompose_article_chunk(text: str) -> tuple[str, str]:
-    """Split an indexed legal-article chunk into its repeated header and body.
-
-    ``ArticleChunker`` prefixes every continuation chunk with the instrument,
-    section and article heading.  Keeping that prefix eight times can consume
-    several thousand characters without adding legal information.
-    """
-    lines = text.splitlines()
-    for index, line in enumerate(lines):
-        if line.strip().startswith("### Article "):
-            header = "\n".join(lines[: index + 1]).strip()
-            body = "\n".join(lines[index + 1 :]).strip()
-            return header, body
-    return "", text.strip()
-
-
-def _merge_relevance_first(
-    ordered: list[SearchResult],
-    seed_priority: tuple[int, ...],
-    *,
-    article_based: bool,
-) -> str:
-    """Merge a bounded parent while always retaining its best-matched chunk.
-
-    The old implementation concatenated from the start and then sliced the
-    first 9,000 characters.  A relevant clause near the end of a long article
-    was therefore discarded even when the reranker had selected that exact
-    chunk.  This merger first tries the complete parent, then reserves the
-    budget for seeds and fills the remaining space with their closest siblings.
-    """
-    if not ordered:
-        return ""
-
-    bodies: dict[int, str] = {}
-    header = ""
-    for chunk in ordered:
-        if article_based:
-            chunk_header, body = _decompose_article_chunk(chunk.text)
-            if not header and chunk_header:
-                header = chunk_header
-            bodies[chunk.chunk_index] = body
-        else:
-            bodies[chunk.chunk_index] = chunk.text.strip()
-
-    def render(selected: set[int]) -> str:
-        parts: list[str] = []
-        if header:
-            parts.append(header)
-        previous: int | None = None
-        for chunk in ordered:
-            index = chunk.chunk_index
-            if index not in selected:
-                continue
-            if previous is not None and index != previous + 1:
-                parts.append("[…]")
-            body = bodies[index]
-            if body:
-                parts.append(body)
-            previous = index
-        return "\n\n".join(parts).strip()
-
-    all_indices = {chunk.chunk_index for chunk in ordered}
-    complete = render(all_indices)
-    if len(complete) <= MAX_CHARS_PER_GROUP:
-        return complete
-
-    available = all_indices
-    priorities = tuple(index for index in seed_priority if index in available)
-    if not priorities:
-        priorities = (ordered[0].chunk_index,)
-
-    selected: set[int] = set()
-    for index in priorities:
-        candidate = selected | {index}
-        if len(render(candidate)) <= MAX_CHARS_PER_GROUP:
-            selected = candidate
-
-    # A normally chunked seed is far below the group budget.  Keep a bounded
-    # head+tail fallback for imported oversized chunks so the legal conclusion
-    # at the end is not silently lost either.
-    if not selected:
-        index = priorities[0]
-        body_budget = max(200, MAX_CHARS_PER_GROUP - len(header) - 10)
-        body = bodies[index]
-        if len(body) > body_budget:
-            head_size = body_budget // 2
-            tail_size = body_budget - head_size - len("\n\n[…]\n\n")
-            bodies[index] = body[:head_size].rstrip() + "\n\n[…]\n\n" + body[-tail_size:].lstrip()
-        selected.add(index)
-
-    seed_set = selected & set(priorities)
-    neighbours = sorted(
-        (chunk.chunk_index for chunk in ordered if chunk.chunk_index not in selected),
-        key=lambda index: (
-            min(abs(index - seed) for seed in seed_set),
-            index,
-        ),
-    )
-    for index in neighbours:
-        candidate = selected | {index}
-        if len(render(candidate)) <= MAX_CHARS_PER_GROUP:
-            selected = candidate
-
-    return render(selected)
-
-
-def _merge_group(
-    chunks: list[SearchResult],
-    best_score: float,
-    seeds: list[SearchResult] | None = None,
-    is_jurisprudence: bool = False,
-) -> SearchResult:
-    """Merge chunks of a parent group into one SearchResult.
-
-    For jurisprudence, the holding is prioritised over position (see
-    ``_merge_jurisprudence``). For other groups, chunks are concatenated in
-    chunk_index order and truncated at MAX_CHARS_PER_GROUP characters.
-    """
-    seen: set[tuple[str, int]] = set()
-    ordered: list[SearchResult] = []
-    for c in sorted(chunks, key=lambda x: x.chunk_index):
-        key = (c.document_id, c.chunk_index)
-        if key in seen:
-            continue
-        seen.add(key)
-        ordered.append(c)
-
-    template = ordered[0]
-    seeds = seeds or []
-    ranked_seeds = sorted(seeds, key=lambda result: result.score, reverse=True)
-    seed_priority = tuple(dict.fromkeys(result.chunk_index for result in ranked_seeds))
-    seed_indices = frozenset(seed_priority)
-    if is_jurisprudence:
-        merged_text = _merge_jurisprudence(ordered, seed_indices)
-    else:
-        merged_text = _merge_relevance_first(
-            ordered,
-            seed_priority,
-            article_based=bool(template.article_nums),
+def _fetch_siblings(qdrant, key: tuple, access_filter=None):
+    """Bounded pagination; window constraints are applied by Qdrant itself."""
+    kind, doc_id = key[:2]
+    must = [FieldCondition(key="document_id", match=MatchValue(value=doc_id))]
+    if access_filter is not None:
+        must.append(access_filter)
+    if kind == "article":
+        instrument_id, article = key[2], key[3]
+        must.append(FieldCondition(key="article_nums", match=MatchAny(any=[article])))
+        if instrument_id:
+            must.append(FieldCondition(key="instrument_id", match=MatchValue(value=instrument_id)))
+    elif kind == "window":
+        last_center = key[3] if len(key) > 3 else key[2]
+        must.append(
+            FieldCondition(key="chunk_index", range=Range(gte=key[2] - 2, lte=last_center + 2))
         )
+    found = []
+    offset = None
+    seen_offsets = set()
+    for page in range(4):
+        kwargs = dict(
+            collection_name=COLLECTION_NAME,
+            scroll_filter=Filter(must=must),
+            limit=MAX_CHUNKS_PER_GROUP,
+            with_payload=True,
+            with_vectors=False,
+        )
+        if offset is not None:
+            kwargs["offset"] = offset
+        points, offset = qdrant.scroll(**kwargs)
+        found.extend(_payload_to_result(p.payload or {}) for p in points)
+        if offset is None:
+            return found, {"pages": page + 1, "fetch_limited": False}
+        if str(offset) in seen_offsets:
+            raise ParentExpansionError("parent_pagination_not_progressing")
+        seen_offsets.add(str(offset))
+    return found, {"pages": 4, "fetch_limited": True}
 
-    seed_text: str | None = None
-    if ranked_seeds:
-        if is_jurisprudence:
-            seed_text = _decompose(ranked_seeds[0].text)[2] or ranked_seeds[0].text
-        elif template.article_nums:
-            seed_text = _decompose_article_chunk(ranked_seeds[0].text)[1]
-        else:
-            seed_text = ranked_seeds[0].text
 
-    aggregated_articles: list[str] = []
-    for c in ordered:
-        if c.article_nums:
-            for a in c.article_nums:
-                if a not in aggregated_articles:
-                    aggregated_articles.append(a)
-
+def _merge_group(chunks, best_score, seeds=None):
+    """Assemble whole indexed passages; never reconstruct a legal conclusion."""
+    ranked_seeds = sorted(seeds or chunks, key=lambda r: r.score, reverse=True)
+    if not ranked_seeds:
+        raise ParentExpansionError("parent_without_seed")
+    best = ranked_seeds[0]
+    by_index = {r.chunk_index: r for r in chunks}
+    # Original ranked passages win over the secondary fetch.
+    by_index.update({r.chunk_index: r for r in reversed(ranked_seeds)})
+    if len(best.text) > MAX_CHARS_PER_GROUP:
+        raise ParentExpansionError("selected_passage_exceeds_context_budget")
+    priorities = list(dict.fromkeys(r.chunk_index for r in ranked_seeds))
+    priorities += sorted(
+        (i for i in by_index if i not in priorities),
+        key=lambda i: (abs(i - best.chunk_index), i),
+    )
+    selected = []
+    chars = 0
+    for i in priorities:
+        cost = len(by_index[i].text) + (2 if selected else 0)
+        if chars + cost <= MAX_CHARS_PER_GROUP:
+            selected.append(i)
+            chars += cost
+    ordered = [by_index[i] for i in sorted(selected)]
+    articles = list(dict.fromkeys(a for r in ordered for a in (r.article_nums or [])))
     return replace(
-        template,
-        text=merged_text,
+        best,
+        text="\n\n".join(r.text for r in ordered),
         score=best_score,
-        article_nums=aggregated_articles or template.article_nums,
-        seed_text=seed_text,
+        seed_text=best.text,
+        article_nums=articles or best.article_nums,
+        context_chunk_indices=[r.chunk_index for r in ordered],
     )
 
 
 async def expand_to_parents(
     results: list[SearchResult],
     qdrant,
-    min_legislation: int = 0,
+    *,
+    organisation_id: str | None = None,
+    org_idcc_list: list[str] | None = None,
+    diagnostics: list[dict] | None = None,
 ) -> list[SearchResult]:
-    """Expand each retrieved chunk to its parent group and return merged results.
+    """Select distinct parent groups by raw rank, then fetch their context.
 
-    The output preserves descending score order. At most MAX_PARENT_GROUPS
-    groups are returned. The original chunks are NOT preserved separately —
-    each parent group becomes a single SearchResult.
-
-    min_legislation: guarantee that up to this many "written-law" groups
-    (Code/loi/décret…) already present in the reranked input survive the
-    MAX_PARENT_GROUPS cap. The reranker buries terse code articles below
-    verbose jurisprudence, so a directly-applicable article can land at rank
-    11–15 and get dropped. This only rescues legislation the reranker already
-    accepted into its output — it never injects new law — so questions whose
-    rerank carries no legislation (pure jurisprudence) are untouched.
+    Budgets are technical limits, not minimum confidence or source-type quotas.
+    Each included passage is copied intact from the index.
     """
     if not results:
-        return results
-
-    # Group by parent key, remember the best seed score per group
-    group_seeds: dict[tuple, list[SearchResult]] = {}
-    group_best_score: dict[tuple, float] = {}
-    group_order: list[tuple] = []
+        return []
+    # Overlapping windows are one parent, not several copies consuming seats.
+    results = deduplicate_article_passages(sorted(results, key=lambda r: r.score, reverse=True))
+    window_centers = {}
     for r in results:
-        key = _parent_key_for(r)
-        if key not in group_seeds:
-            group_seeds[key] = []
-            group_best_score[key] = r.score
-            group_order.append(key)
-        group_seeds[key].append(r)
-        if r.score > group_best_score[key]:
-            group_best_score[key] = r.score
+        if _parent_key_for(r)[0] == "window":
+            window_centers.setdefault(r.document_id, set()).add(r.chunk_index)
+    window_keys = {}
+    for doc, centers in window_centers.items():
+        clusters = []
+        for center in sorted(centers):
+            if clusters and center <= clusters[-1][-1] + 4:
+                clusters[-1].append(center)
+            else:
+                clusters.append([center])
+        for cluster in clusters:
+            key = ("window", doc, cluster[0], cluster[-1])
+            for center in cluster:
+                window_keys[(doc, center)] = key
+    groups = {}
+    for r in sorted(results, key=lambda r: r.score, reverse=True):
+        key = window_keys.get((r.document_id, r.chunk_index), _parent_key_for(r))
+        groups.setdefault(key, []).append(r)
+    selected = list(groups)[:MAX_PARENT_GROUPS]
+    if diagnostics is None:
+        diagnostics = []
+    for key in list(groups)[MAX_PARENT_GROUPS:]:
+        diagnostics.append(
+            {
+                "parent_key": list(key),
+                "status": "excluded_group_budget",
+                "score": groups[key][0].score,
+                "seed_indices": [r.chunk_index for r in groups[key]],
+            }
+        )
+    access = build_org_access_filter(organisation_id, org_idcc_list)
+    semaphore = asyncio.Semaphore(4)
 
-    # Un fetch de voisins par groupe parent, en parallèle et hors event loop
-    # (client Qdrant synchrone). Ordre garanti par gather.
-    siblings_lists = await asyncio.gather(
-        *[asyncio.to_thread(_fetch_siblings, qdrant, key) for key in group_order]
-    )
+    async def fetch(key):
+        async with semaphore:
+            return await asyncio.to_thread(_fetch_siblings, qdrant, key, access)
 
-    expanded: list[SearchResult] = []
-    for key, siblings in zip(group_order, siblings_lists):
-        seeds = group_seeds[key]
-        chunks = siblings if siblings else seeds
-        is_juris = key[0] == "doc"
-        merged = _merge_group(
-            chunks,
-            best_score=group_best_score[key],
-            seeds=seeds,
-            is_jurisprudence=is_juris,
+    fetched = await asyncio.gather(*(fetch(key) for key in selected), return_exceptions=True)
+    expanded = []
+    for key, outcome in zip(selected, fetched):
+        if isinstance(outcome, BaseException):
+            diagnostics.append({"parent_key": list(key), "status": "fetch_error"})
+            raise ParentExpansionError("parent_fetch_failed") from outcome
+        siblings, info = outcome
+        seeds = groups[key]
+        merged = _merge_group(siblings, seeds[0].score, seeds=seeds)
+        available = {r.chunk_index for r in siblings + seeds}
+        included = set(merged.context_chunk_indices or [])
+        diagnostics.append(
+            {
+                "parent_key": list(key),
+                "status": "selected",
+                **info,
+                "seeds_not_refetched": sorted(
+                    {r.chunk_index for r in seeds} - {r.chunk_index for r in siblings}
+                ),
+                "score": merged.score,
+                "seed_indices": [r.chunk_index for r in seeds],
+                "context_indices": sorted(included),
+                "omitted_indices": sorted(available - included),
+                "context_chars": len(merged.text),
+                "context_sha256": hashlib.sha256(merged.text.encode()).hexdigest(),
+            }
         )
         expanded.append(merged)
-
-    expanded.sort(key=lambda r: r.score, reverse=True)
-    if len(expanded) <= MAX_PARENT_GROUPS:
-        return expanded
-
-    kept = expanded[:MAX_PARENT_GROUPS]
-    if min_legislation > 0:
-        present = sum(1 for r in kept if _is_legislation(r.source_type))
-        if present < min_legislation:
-            dropped_leg = [
-                r for r in expanded[MAX_PARENT_GROUPS:] if _is_legislation(r.source_type)
-            ]
-            need = min_legislation - present
-            for r in dropped_leg[:need]:
-                # Replace the lowest-scored non-legislation group still kept.
-                for j in range(len(kept) - 1, -1, -1):
-                    if not _is_legislation(kept[j].source_type):
-                        logger.info(
-                            "[LEGFLOOR] Preserved %s through parent cap (score %.3f)",
-                            r.source_type,
-                            r.score,
-                        )
-                        kept[j] = r
-                        break
-            kept.sort(key=lambda r: r.score, reverse=True)
-    return kept
+    return expanded

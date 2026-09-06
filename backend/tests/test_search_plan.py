@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import datetime
 import json
 from dataclasses import replace
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -697,107 +696,6 @@ async def test_legal_news_adds_dated_candidates_without_dropping_broad_fallback(
     ]
 
 
-def test_legal_news_time_guard_keeps_current_sources_and_undated_context():
-    plan = build_deterministic_search_plan(
-        "Quelles sont les dernières actualités en droit social ?"
-    )
-    today = datetime.date.today()
-    recent = _search_result("recent", 0, source_type="arret_cour_appel")
-    recent.date_decision = today.isoformat()
-    older_recent = _search_result("older-recent", 0, source_type="loi")
-    older_recent.content_date = f"{today - datetime.timedelta(days=20)}T00:00:00Z"
-    old = _search_result("old", 0, source_type="arret_cour_cassation")
-    old.date_decision = (today - datetime.timedelta(days=365)).isoformat()
-    undated = [_search_result(f"context-{index}", 0) for index in range(3)]
-
-    kept, diagnostics = RAGAgent._apply_news_time_scope(
-        [old, *undated, older_recent, recent],
-        plan,
-    )
-
-    assert [result.document_id for result in kept] == [
-        "older-recent",
-        "recent",
-        "context-0",
-        "context-1",
-    ]
-    assert diagnostics == {
-        "in_period": 2,
-        "undated": 3,
-        "out_of_period": 1,
-        "status": "applied",
-        "undated_context_kept": 2,
-    }
-    assert [result.document_id for result in RAGAgent._sort_news_results(kept, plan)] == [
-        "recent",
-        "older-recent",
-        "context-0",
-        "context-1",
-    ]
-
-
-def test_legal_news_time_guard_preserves_broad_fallback_on_corpus_gap():
-    plan = build_deterministic_search_plan(
-        "Quelles sont les dernières actualités en droit social ?"
-    )
-    old = _search_result("old", 0, source_type="arret_cour_cassation")
-    old.date_decision = (datetime.date.today() - datetime.timedelta(days=365)).isoformat()
-    undated = _search_result("context", 0)
-
-    kept, diagnostics = RAGAgent._apply_news_time_scope([old, undated], plan)
-
-    assert kept == [old, undated]
-    assert diagnostics["status"] == "broad_fallback_no_in_period_match"
-
-
-def test_temporal_rule_priority_prefers_applicable_regime_without_deleting_history():
-    current = _search_result("boss", 69, source_type="boss")
-    current.text = (
-        "Evaluation applicable à compter du 1er février 2025 : "
-        "le forfait est fixé par le tableau suivant."
-    )
-    current.score = 0.72
-    expired = _search_result("boss", 68, source_type="boss")
-    expired.text = "Evaluation applicable jusqu'au 31 janvier 2025 : ancien tableau récapitulatif."
-    expired.score = 0.79
-    neutral = _search_result("boss", 30, source_type="boss")
-    neutral.text = "La valeur réelle comprend l'assurance et l'entretien."
-    neutral.score = 0.80
-
-    ranked, diagnostics = RAGAgent._apply_temporal_rule_priority(
-        [neutral, expired, current],
-        target_date=datetime.date(2026, 8, 15),
-    )
-
-    assert [result.chunk_index for result in ranked] == [69, 30, 68]
-    assert expired in ranked
-    assert diagnostics == {
-        "classified": 2,
-        "applicable": 1,
-        "expired": 1,
-        "future": 0,
-    }
-
-
-def test_temporal_rule_priority_does_not_reclassify_case_law_facts():
-    ruling = _search_result(
-        "ruling",
-        0,
-        source_type="arret_cour_cassation",
-    )
-    ruling.text = "Le contrat avait été conclu avant le 1er février 2025."
-    ruling.score = 0.76
-
-    ranked, diagnostics = RAGAgent._apply_temporal_rule_priority(
-        [ruling],
-        target_date=datetime.date(2026, 8, 15),
-    )
-
-    assert ranked == [ruling]
-    assert ruling.score == 0.76
-    assert diagnostics["classified"] == 0
-
-
 @pytest.mark.asyncio
 async def test_source_directed_plan_preserves_filtered_results_and_bounds_fallback():
     plan = build_deterministic_search_plan(
@@ -1101,7 +999,7 @@ async def test_adaptive_article_hypotheses_are_tenant_filtered_bounded_candidate
 
 
 @pytest.mark.asyncio
-async def test_low_confidence_article_hypotheses_never_reach_the_corpus_lookup():
+async def test_low_confidence_article_hypotheses_are_looked_up_without_promotion():
     plan = build_deterministic_search_plan("Un licenciement pendant une maladie ?")
     plan = apply_compact_planner_payload(
         plan,
@@ -1130,13 +1028,13 @@ async def test_low_confidence_article_hypotheses_never_reach_the_corpus_lookup()
             ["1486"],
         )
 
-    fetch_mock.assert_not_awaited()
+    fetch_mock.assert_awaited_once()
     assert results == []
     assert refs_by_key == {}
     assert added_keys == set()
     assert validation["hypotheses_proposed"] == ["L1226-9"]
-    assert validation["hypotheses_requested"] == []
-    assert validation["hypotheses_skipped_low_confidence"] == ["L1226-9"]
+    assert validation["hypotheses_requested"] == ["L1226-9"]
+    assert validation["hypotheses_skipped_low_confidence"] == []
 
 
 @pytest.mark.asyncio
@@ -1184,9 +1082,12 @@ async def test_adaptive_trace_distinguishes_found_and_reranker_retained_hypothes
         "L3141-16",
         "L9999-1",
     ]
-    assert trace.search_plan_validation["rejected_below_confidence_floor"] == ["L9999-1"]
-    assert trace.search_plan_validation["retained_after_rerank"] == ["L3141-16"]
+    assert trace.search_plan_validation["rejected_below_confidence_floor"] == []
+    assert trace.search_plan_validation["retained_after_rerank"] == ["L3141-16", "L9999-1"]
     assert trace.search_plan_validation["retained_in_final_sources"] == ["L3141-16"]
+    rerank_data = json.loads(agent.reranker.rerank.call_args.args[0].split("\n", 1)[1])
+    assert rerank_data["question_originale"] == plan.query_original
+    assert rerank_data["question_autonome"] == plan.standalone_question
 
 
 @pytest.mark.asyncio
@@ -1225,6 +1126,7 @@ async def test_adaptive_prepare_reuses_follow_up_plan_without_condense_or_expans
 
     with patch("app.rag.agent._search_engine"), patch("app.rag.agent.get_reranker"):
         agent = RAGAgent()
+    agent._fetch_identifiers = AsyncMock(return_value=[])
     agent._search_with_plan = AsyncMock(return_value=([], [plan.standalone_question]))
     agent.reranker = MagicMock()
     agent.reranker.rerank = AsyncMock(return_value=[])

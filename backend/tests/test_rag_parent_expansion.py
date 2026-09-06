@@ -84,7 +84,7 @@ def _make_qdrant_mock(siblings_by_filter):
     """Build a Qdrant mock returning siblings keyed by filter signature."""
     mock = MagicMock()
 
-    def _scroll(collection_name, scroll_filter, limit, with_payload, with_vectors):
+    def _scroll(collection_name, scroll_filter, limit, with_payload, with_vectors, offset=None):
         # Build a key from the filter conditions for matching
         conds = []
         for c in scroll_filter.must or []:
@@ -138,7 +138,8 @@ class TestExpandToParents:
         merged = out[0]
         assert merged.score == 0.8
         # Merged text should contain all 5 chunks in order
-        for i in range(5):
+        assert seed.text in merged.text
+        for i in range(1, 5):
             assert f"chunk {i}" in merged.text
 
     async def test_article_groups_by_article_num(self):
@@ -182,7 +183,8 @@ class TestExpandToParents:
         merged = out[0]
         # Best score of the seeds
         assert merged.score == 0.6
-        assert "art chunk 3" in merged.text
+        assert s1.text in merged.text
+        assert s2.text in merged.text
         assert "art chunk 5" in merged.text
 
     async def test_long_article_keeps_best_matching_clause_at_the_end(self):
@@ -236,7 +238,7 @@ class TestExpandToParents:
 
         assert "REGLE_20_10" in merged.text
         assert "REGLE_20_10" in (merged.seed_text or "")
-        assert merged.text.count("## Source juridique : CCN 66") == 1
+        assert seed.text in merged.text  # indexed passages are preserved intact
         assert len(merged.text) <= MAX_CHARS_PER_GROUP
 
     async def test_caps_to_max_parent_groups(self):
@@ -276,122 +278,6 @@ class TestExpandToParents:
 # --- jurisprudence-aware merging ----------------------------------------------
 
 
-_META = "Cass. soc., 06/05/2026, n° 24-13.599"
-
-
-def _juris_payload(doc_id: str, idx: int, label: str, body: str) -> dict:
-    return {
-        "text": f"{_META}\n{label}\n\n{body}",
-        "doc_name": "Cass. soc. 24-13.599",
-        "document_id": doc_id,
-        "source_type": "arret_cour_cassation",
-        "norme_niveau": 4,
-        "norme_poids": 0.7,
-        "chunk_index": idx,
-    }
-
-
-class TestJurisprudenceMerge:
-    async def test_keeps_holding_over_boilerplate(self):
-        # A long arrêt: en-tête + faits (x2) + motifs + dispositif, > 9000 chars.
-        # The holding (motifs/dispositif) sits at the END, the budget is finite,
-        # so the merge must drop the boilerplate, not the ruling.
-        entete = "EN-TETE blabla. " * 300 + " ENTETE_END"
-        faits1 = "Faits partie un. " * 220 + " FAITS1_MARK"
-        faits2 = "Faits partie deux. " * 220 + " FAITS2_MARK"
-        motifs = "Réponse de la Cour. " + "motif blah. " * 130 + " MOTIFS_HOLDING"
-        dispo = "PAR CES MOTIFS REJETTE. " + "dispositif blah. " * 30 + " DISPOSITIF_END"
-
-        doc_id = "arret-1"
-        payloads = [
-            _juris_payload(doc_id, 0, "[En-tête]", entete),
-            _juris_payload(doc_id, 1, "[Faits et procédure]", faits1),
-            _juris_payload(doc_id, 2, "[Faits et procédure]", faits2),
-            _juris_payload(doc_id, 3, "[Motifs de la décision]", motifs),
-            _juris_payload(doc_id, 4, "[Dispositif]", dispo),
-        ]
-        # Seed = the chunk the reranker matched (the motifs).
-        seed = _make_chunk(
-            doc_id=doc_id,
-            chunk_index=3,
-            text=payloads[3]["text"],
-            source_type="arret_cour_cassation",
-            score=0.85,
-        )
-        qdrant = _make_qdrant_mock({(("document_id", doc_id),): payloads})
-
-        out = await expand_to_parents([seed], qdrant)
-        assert len(out) == 1
-        merged = out[0].text
-
-        # The ruling survives even though it is at the end of the document.
-        assert "Réponse de la Cour" in merged
-        assert "MOTIFS_HOLDING" in merged
-        assert "DISPOSITIF_END" in merged
-        assert "[Motifs de la décision]" in merged
-        assert "[Dispositif]" in merged
-        # The boilerplate header is dropped (lowest priority, largest).
-        assert "ENTETE_END" not in merged
-        # A gap marker appears where chunks were dropped.
-        assert "[…]" in merged
-        # The per-chunk meta header is kept exactly once, not repeated per chunk.
-        assert merged.count(_META) == 1
-        # Budget respected.
-        assert len(merged) <= MAX_CHARS_PER_GROUP
-
-    async def test_sets_seed_text_to_matched_passage(self):
-        motifs = "Réponse de la Cour. " + "motif blah. " * 50 + " MOTIFS_HOLDING"
-        doc_id = "arret-2"
-        payloads = [
-            _juris_payload(doc_id, 0, "[En-tête]", "EN-TETE court."),
-            _juris_payload(doc_id, 1, "[Motifs de la décision]", motifs),
-        ]
-        seed = _make_chunk(
-            doc_id=doc_id,
-            chunk_index=1,
-            text=payloads[1]["text"],
-            source_type="arret_cour_cassation",
-            score=0.9,
-        )
-        qdrant = _make_qdrant_mock({(("document_id", doc_id),): payloads})
-
-        out = await expand_to_parents([seed], qdrant)
-        seed_text = out[0].seed_text
-        # Excerpt source = the matched passage, stripped of header and label.
-        assert seed_text is not None
-        assert "MOTIFS_HOLDING" in seed_text
-        assert _META not in seed_text
-        assert "[Motifs de la décision]" not in seed_text
-
-    async def test_dedupes_overlap_and_repeated_header(self):
-        # Two consecutive chunks of the same section share an overlap region
-        # (as force-split chunks do). The merge must stitch it, not repeat it.
-        overlap = "ZONE_DE_CHEVAUCHEMENT_UNIQUE_0123456789 "  # > 20 chars
-        body1 = "Debut des faits. " * 5 + overlap
-        body2 = overlap + "Suite des faits. " * 5
-        doc_id = "arret-3"
-        payloads = [
-            _juris_payload(doc_id, 0, "[Faits et procédure]", body1),
-            _juris_payload(doc_id, 1, "[Faits et procédure]", body2),
-        ]
-        seed = _make_chunk(
-            doc_id=doc_id,
-            chunk_index=0,
-            text=payloads[0]["text"],
-            source_type="arret_cour_cassation",
-            score=0.7,
-        )
-        qdrant = _make_qdrant_mock({(("document_id", doc_id),): payloads})
-
-        merged = (await expand_to_parents([seed], qdrant))[0].text
-        assert merged.count("ZONE_DE_CHEVAUCHEMENT_UNIQUE_0123456789") == 1
-        assert merged.count(_META) == 1
-        assert merged.count("[Faits et procédure]") == 1
-
-
-# --- fetch_by_identifiers -----------------------------------------------------
-
-
 class TestFetchByIdentifiers:
     async def test_no_identifiers_returns_empty(self):
         out = await fetch_by_identifiers(
@@ -419,70 +305,3 @@ class TestFetchByIdentifiers:
         assert len(out) == 1
         assert out[0].text == "arrêt content"
         assert qdrant.scroll.called
-
-
-# --- legislation floor preservation ------------------------------------------
-
-
-def _jur(i: int, score: float) -> SearchResult:
-    return _make_chunk(
-        doc_id=f"jur{i}",
-        chunk_index=0,
-        text=f"arret {i}",
-        source_type="arret_cour_cassation",
-        score=score,
-        doc_name=f"Cass {i}",
-    )
-
-
-def _code(i: int, art: str, score: float) -> SearchResult:
-    return _make_chunk(
-        doc_id=f"code{i}",
-        chunk_index=0,
-        text=f"article {art}",
-        source_type="code_travail",
-        article_nums=[art],
-        score=score,
-        doc_name="Code du travail",
-    )
-
-
-def _n_legislation(results: list[SearchResult]) -> int:
-    return sum(1 for r in results if r.source_type.startswith("code_"))
-
-
-class TestLegislationFloorPreservation:
-    def _results(self) -> list[SearchResult]:
-        # 10 jurisprudence (highest scores) + 2 code articles ranked 11–12
-        return [_jur(i, 0.90 - i * 0.02) for i in range(10)] + [
-            _code(1, "L2411-1", 0.62),
-            _code(2, "R2421-3", 0.60),
-        ]
-
-    async def test_default_drops_low_ranked_legislation(self):
-        out = await expand_to_parents(self._results(), _make_qdrant_mock({}))
-        assert len(out) == MAX_PARENT_GROUPS
-        assert _n_legislation(out) == 0  # code cut by the cap, as before
-
-    async def test_min_legislation_preserves_articles(self):
-        out = await expand_to_parents(
-            self._results(),
-            _make_qdrant_mock({}),
-            min_legislation=2,
-        )
-        assert len(out) == MAX_PARENT_GROUPS
-        assert _n_legislation(out) == 2
-        arts = sorted(r.article_nums[0] for r in out if r.article_nums)
-        assert arts == ["L2411-1", "R2421-3"]
-
-    async def test_pure_jurisprudence_not_polluted(self):
-        # No legislation in the reranked input → nothing is forced in.
-        pure = [_jur(i, 0.90 - i * 0.02) for i in range(12)]
-        out = await expand_to_parents(pure, _make_qdrant_mock({}), min_legislation=2)
-        assert _n_legislation(out) == 0
-
-    async def test_legislation_already_kept_is_not_duplicated(self):
-        # One code article already in the top-10 → no spurious swapping.
-        mixed = [_code(1, "L1111-1", 0.95)] + [_jur(i, 0.90 - i * 0.02) for i in range(11)]
-        out = await expand_to_parents(mixed, _make_qdrant_mock({}), min_legislation=2)
-        assert _n_legislation(out) == 1

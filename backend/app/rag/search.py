@@ -104,6 +104,15 @@ class SearchResult:
     # Best-matched chunk body, carried through parent expansion so the source
     # card excerpt shows the relevant passage instead of the document header.
     seed_text: str | None = None
+    retrieval_score: float | None = None
+    rerank_score: float | None = None
+    context_chunk_indices: list[int] | None = None
+    organisation_id: str | None = None
+    article_id: str | None = None
+    article_title: str | None = None
+    article_status: str | None = None
+    article_effective_from: str | None = None
+    article_effective_to: str | None = None
 
 
 class HybridSearch:
@@ -299,6 +308,11 @@ class HybridSearch:
                     effective_from=payload.get("effective_from"),
                     effective_to=payload.get("effective_to"),
                     instrument_status=payload.get("instrument_status"),
+                    organisation_id=payload.get("organisation_id"),
+                    **{key: payload.get(key) for key in (
+                        "article_id", "article_title", "article_status",
+                        "article_effective_from", "article_effective_to",
+                    )},
                 )
             )
 

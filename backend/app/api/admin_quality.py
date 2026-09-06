@@ -641,7 +641,7 @@ async def _run_sandbox_pipeline(
     answer: str | None = None
     sources_dicts: list[dict] = []
 
-    if not skip_generation and results:
+    if not skip_generation and results and not rag_trace.error:
         sources = agent.format_sources(results)
         sources_dicts = [dataclasses.asdict(s) for s in sources]
         fresh_keys = {_source_key(source) for source in sources_dicts}
@@ -663,7 +663,7 @@ async def _run_sandbox_pipeline(
             full_answer += chunk
         answer = full_answer
         rag_trace.perf_ms["generate"] = (_time.perf_counter() - generate_t0) * 1000
-    elif results:
+    elif results and not rag_trace.error:
         sources = agent.format_sources(results)
         sources_dicts = [dataclasses.asdict(s) for s in sources]
 

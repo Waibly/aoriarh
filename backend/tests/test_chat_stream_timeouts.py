@@ -67,7 +67,7 @@ async def _fast_prepare_context(self, *args, **kwargs):
 
 
 @pytest.mark.parametrize("raw", ["  sortie brute\n", "[HORS_SCOPE]"])
-@pytest.mark.parametrize("error", ["search_planner_error", "search_retrieval_error"])
+@pytest.mark.parametrize("error", ["search_planner_error", "search_retrieval_error", "search_reranking_error", "search_context_error"])
 async def test_search_failure_emits_raw_details_before_technical_error(
     client: AsyncClient, manager_user: dict, monkeypatch, error: str, raw: str,
 ) -> None:

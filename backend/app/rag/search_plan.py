@@ -247,7 +247,7 @@ répète pas « CCN », le nom de la convention, l'IDCC, « Code du travail », 
 « jurisprudence » ou le nom du document, déjà présents dans constraints.
 - search_queries : respecte strictement constraints.query_budget (1 à 4) et \
 produis des requêtes courtes en vocabulaire juridique, sans dupliquer la \
-question originale ni les noms/identifiants de la source demandée. Chaque \
+question originale entière ; conserve les précisions de contexte utiles. Chaque \
 requête doit couvrir un point explicite différent de la question. Regroupe les \
 points étroitement liés si leur nombre dépasse le budget. Pour un budget de 2, \
 la première couvre la règle ou le droit demandé, la seconde ses conditions, \
@@ -265,6 +265,16 @@ le mécanisme demandé, pas seulement le paiement du salaire en général.
 - hypothesized_articles : 0 à 3 articles de Code seulement. N'en propose que si \
 le rapprochement est plausible. Ce sont des candidats incertains à vérifier \
 dans le corpus, jamais des autorités ; confidence vaut "low" ou "medium".
+- Couvre la règle demandée ET les dispositions qui déterminent son application : \
+champ professionnel, classification, articulation loi/accord/contrat, exceptions \
+et droit applicable à la date des faits. Une durée ou un montant conventionnel \
+ne suffit pas à établir la règle actuelle. Utilise aussi hypothesized_articles \
+pour rechercher ces dispositions d'articulation, sans inventer leur contenu. \
+La confiance déclarée ne conditionne pas la consultation des références proposées.
+- Dans les requêtes, conserve le contexte d'emploi et la convention connus \
+lorsqu'ils distinguent les régimes applicables. Un intitulé de métier semblable \
+ne rend pas interchangeables salariés de droit privé, agents publics et statuts \
+spéciaux. Cherche les textes régissant le cas, pas seulement le même métier.
 - Lorsqu'un numéro d'article est cité mais que son texte n'est pas fourni, ne \
 devine jamais sa signification ni son applicabilité. Résous seulement le contexte \
 exprimé par l'utilisateur. N'ajoute ni thème, ni conséquence, ni mécanisme juridique \

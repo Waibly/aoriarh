@@ -1211,10 +1211,20 @@ async def chat_stream(
 
             rag_trace.router_raw_response = intent_result.raw_response
             yield _sse_event("chat_search_details", search_feedback(rag_trace))
+            if rag_trace.error in {"search_reranking_error", "search_context_error"}:
+                yield _sse_event("chat_error", {
+                    "error": rag_trace.error,
+                    "message": (
+                        "Le classement des documents a échoué. Aucun classement de secours n’a été utilisé."
+                        if rag_trace.error == "search_reranking_error"
+                        else "Le contexte documentaire n’a pas pu être préparé. Aucune réponse n’a été générée."
+                    ),
+                })
+                return
             if rag_trace.error == "search_retrieval_error":
                 yield _sse_event("chat_error", {
                     "error": "search_retrieval_error",
-                    "message": "Les recherches documentaires ont échoué. La disponibilité des documents n’a pas pu être vérifiée.",
+                    "message": "Une recherche documentaire a échoué. Aucune réponse n’a été générée à partir des résultats incomplets.",
                 })
                 return
             if rag_trace.error == "search_planner_error":
@@ -1257,6 +1267,13 @@ async def chat_stream(
                                if s.get("source_type") not in excluded_types
                                and (not exclusive_types or s.get("source_type") in exclusive_types)]
             if carried_sources:
+                details = search_feedback(rag_trace)
+                details["warnings"].append(
+                    "Des passages de sources des tours précédents sont également transmis, "
+                    "dans une limite de six sources et de 9 000 caractères par source. "
+                    "Leur applicabilité à la nouvelle question n’est pas présumée."
+                )
+                yield _sse_event("chat_search_details", details)
                 logger.info(
                     "[RAG] Couche 2 — %d source(s) portée(s) injectée(s) en génération",
                     len(carried_sources),

@@ -8,6 +8,7 @@ def search_feedback(trace: dict | object | None) -> dict:
             "search_plan": getattr(trace, "search_plan", None),
             "search_plan_validation": getattr(trace, "search_plan_validation", None),
             "router_raw_response": getattr(trace, "router_raw_response", None),
+            "error": getattr(trace, "error", None),
         }
     plan = (trace or {}).get("search_plan") or {}
     validation = (trace or {}).get("search_plan_validation") or {}
@@ -30,6 +31,18 @@ def search_feedback(trace: dict | object | None) -> dict:
         )
     if validation.get("contract_identity_unresolved"):
         warnings.append("Le contrat personnel concerné n'est pas identifié par cette recherche.")
+    if any(branch.get("status") == "error" for branch in validation.get("branches", [])) or (trace or {}).get("error") == "search_retrieval_error":
+        warnings.append("Une recherche documentaire a échoué ; la récupération des sources est incomplète.")
+    selection = validation.get("selection") or {}
+    if selection.get("status") == "error":
+        warnings.append("La sélection documentaire a échoué ; aucun classement de secours n’a été utilisé.")
+    groups = selection.get("groups", [])
+    if selection.get("excluded_by_publication_period"):
+        warnings.append("Des résultats sans date vérifiable ou hors de la période de publication demandée ont été écartés, sans recherche de remplacement.")
+    if any(g.get("fetch_limited") for g in groups):
+        warnings.append("La récupération des passages voisins a atteint sa limite technique. Les passages sélectionnés sont conservés.")
+    if any(g.get("omitted_indices") for g in groups):
+        warnings.append("Le contexte contient une sélection de passages, pas nécessairement les documents complets.")
     return {
         "raw_response": plan.get("planner_raw_response"),
         "warnings": warnings,

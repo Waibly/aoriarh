@@ -1,9 +1,9 @@
 """Chunker spécialisé pour les documents structurés par articles (Code du travail, CCN).
 
 Stratégie : les articles sont déjà séparés dans le markdown (### Article ...).
-On découpe au niveau article et on regroupe les petits articles voisins pour
-atteindre une taille de chunk optimale, sans jamais couper un article en deux
-et sans jamais mélanger des articles de sections différentes.
+On conserve les articles KALI identifiés par leur instrument comme unités séparées.
+Les autres petits articles voisins peuvent être regroupés au sein d'une section.
+Les articles longs sont fragmentés en conservant leur identité documentaire.
 
 Chaque chunk est préfixé par le chemin hiérarchique (partie > livre > titre > chapitre)
 pour donner du contexte au RAG.
@@ -12,6 +12,7 @@ Retourne des ChunkWithMeta contenant le texte + les metadata structurelles
 (numéros d'articles, chemin de section).
 """
 
+import json
 import re
 from dataclasses import dataclass, field
 
@@ -31,6 +32,11 @@ _SECTION_HEADING = re.compile(r"(?m)^##\s+(.+)$")
 _ARTICLE_CHUNK_SIZE = 450  # Smaller than generic (1024) for more precise embeddings
 _ARTICLE_CHUNK_OVERLAP = CHUNK_OVERLAP  # Reused when falling back to LegalChunker
 _MIN_CHUNK_TOKENS = 15  # Discard chunks below this threshold (title-only ghosts)
+ARTICLE_METADATA_PREFIX = "Métadonnées article : "
+ARTICLE_METADATA_FIELDS = (
+    "article_id", "article_title", "article_status",
+    "article_effective_from", "article_effective_to",
+)
 
 # Structural subdivisions commonly found in laws, decrees and ordinances.
 # They are stronger split points than ordinary wrapped lines.
@@ -61,14 +67,20 @@ class ChunkWithMeta:
     effective_from: str = ""
     effective_to: str = ""
     instrument_status: str = ""
+    article_id: str = ""
+    article_title: str = ""
+    article_status: str = ""
+    article_effective_from: str = ""
+    article_effective_to: str = ""
 
 
 class ArticleChunker:
     """Chunks structured legal documents (Code du travail, CCN) by article boundaries.
 
-    - Never splits an article across chunks
+    - Splits long articles while retaining their structural metadata
     - Never mixes articles from different sections in the same chunk
-    - Groups small consecutive articles from the SAME section (up to ~450 tokens)
+    - Keeps instrument-identified KALI articles separate
+    - Groups other small consecutive articles from the SAME section
     - Preserves section context as a prefix in each chunk
     - Smaller chunk_size than generic chunker for more precise embeddings
     - Returns ChunkWithMeta with article_nums and section_path metadata
@@ -229,6 +241,14 @@ class ArticleChunker:
         )
         if re.fullmatch(r"[LRDA]\.?\s*\d+(?:[-‑–]\d+)+", article_num, re.I):
             article_num = normalize_article_reference(article_num)
+        metadata = {}
+        for line in lines:
+            if line.startswith(ARTICLE_METADATA_PREFIX):
+                parsed = json.loads(line[len(ARTICLE_METADATA_PREFIX):])
+                if not isinstance(parsed, dict) or any(not isinstance(v, str) for v in parsed.values()):
+                    raise ValueError("invalid_article_metadata")
+                metadata = {key: parsed.get(key, "") for key in ARTICLE_METADATA_FIELDS}
+                break
         return {
             "section": section,
             "num": num,
@@ -236,6 +256,7 @@ class ArticleChunker:
             "content": content,
             "tokens": self._token_count(content),
             **(instrument or {}),
+            **metadata,
         }
 
     def _group_articles(self, articles: list[dict]) -> list[ChunkWithMeta]:
@@ -269,7 +290,12 @@ class ArticleChunker:
                 "effective_from": article.get("effective_from", ""),
                 "effective_to": article.get("effective_to", ""),
                 "instrument_status": article.get("instrument_status", ""),
+                **{key: article.get(key, "") for key in ARTICLE_METADATA_FIELDS},
             }
+            # KALI articles are retrieval units, including short provisions.
+            # Legacy Code/other documents keep their existing grouping policy.
+            if article_instrument["instrument_id"]:
+                _flush()
             # Section or legal instrument change → always flush. Successive
             # salary agreements must never be merged into the same chunk.
             if article["section"] != current_section or article_instrument != current_instrument:
@@ -345,6 +371,8 @@ class ArticleChunker:
         instrument = instrument or {}
         cont_prefix = self._context_prefix(section, instrument)
         cont_prefix += f"### Article {article_num} (suite)\n\n"
+        if instrument.get("article_title"):
+            cont_prefix += instrument["article_title"] + "\n\n"
         cont_prefix_tokens = self._token_count(cont_prefix)
 
         body_limit = max(1, self.chunk_size - cont_prefix_tokens)

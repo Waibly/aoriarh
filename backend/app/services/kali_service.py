@@ -6,6 +6,7 @@ le fetch des textes de conventions collectives, et l'ingestion dans le pipeline 
 
 import asyncio
 import hashlib
+import json
 import logging
 import re
 import time
@@ -1281,6 +1282,8 @@ class KaliService:
             articles.append(
                 {
                     "num": num,
+                    "article_id": art.get("id") or "",
+                    "article_title": art.get("surtitre") or "",
                     "content": self._clean_html(content),
                     "section": section_path,
                     "etat": etat or "",
@@ -1362,6 +1365,8 @@ class KaliService:
         document_heading: str,
     ) -> str:
         """Format articles while retaining their parent KALITEXT identity."""
+        from app.rag.article_chunker import ARTICLE_METADATA_PREFIX
+
         lines = [document_heading, ""]
         current_source: tuple[str, str, str, str, str, str] | None = None
         unnamed_counter = 0
@@ -1400,6 +1405,16 @@ class KaliService:
                 # Ensure every article has a heading so the chunker can detect it
                 unnamed_counter += 1
                 lines.append(f"### Article (sans numéro {unnamed_counter})\n")
+            metadata = {
+                "article_id": art.get("article_id", ""),
+                "article_title": art.get("article_title", ""),
+                "article_status": art.get("etat", ""),
+                "article_effective_from": art.get("date_debut", ""),
+                "article_effective_to": art.get("date_fin", ""),
+            }
+            if any(metadata.values()):
+                lines.append(ARTICLE_METADATA_PREFIX + json.dumps(metadata, ensure_ascii=False))
+                lines.append("")
             lines.append(art["content"])
             lines.append("")
 

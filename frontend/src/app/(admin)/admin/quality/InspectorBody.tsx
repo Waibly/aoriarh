@@ -100,6 +100,11 @@ export interface RagTrace {
     fallback_to_deterministic?: boolean;
   };
   search_plan_validation?: {
+    selection?: {
+      status: string;
+      reason?: string;
+      groups: Record<string, unknown>[];
+    };
     status?: "ok" | "lookup_failed";
     hypotheses_proposed?: string[];
     hypotheses_requested?: string[];
@@ -818,6 +823,15 @@ export function InspectorBody({ data }: { data: InspectorPayload }) {
           usage={data.rag_trace.search_plan_usage}
           validation={data.rag_trace.search_plan_validation}
         />
+      )}
+
+      {data.rag_trace?.search_plan_validation?.selection && (
+        <details className="rounded border p-3 text-xs">
+          <summary>Traçabilité de la sélection documentaire</summary>
+          <pre className="mt-2 max-h-96 overflow-auto whitespace-pre-wrap">
+            {JSON.stringify(data.rag_trace.search_plan_validation.selection, null, 2)}
+          </pre>
+        </details>
       )}
 
       {/* Réponse */}

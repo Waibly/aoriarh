@@ -5,6 +5,7 @@ import re
 import time
 from collections.abc import AsyncGenerator
 from dataclasses import dataclass, field
+from functools import wraps
 
 import httpx
 from openai import AsyncOpenAI
@@ -16,21 +17,22 @@ from app.rag.config import (
     CONDENSE_HISTORY_LIMIT,
     LEGISLATION_FLOOR_TOP,
     RAG_TIMEOUT_PER_STEP,
-    RERANK_TOP_K,
     TOP_K,
 )
 from app.rag.norme_hierarchy import DOCUMENT_TYPE_HIERARCHY
 from app.rag.parent_expansion import (
+    ParentExpansionError,
+    RetrievalError,
+    deduplicate_article_passages,
     detect_identifiers,
     expand_to_parents,
     fetch_by_identifiers,
     normalize_article_reference,
     reference_source_types,
 )
-from app.rag.reranker import get_reranker
+from app.rag.reranker import RerankingError, build_rerank_query, get_reranker
 from app.rag.search import HybridSearch, SearchResult
 from app.rag.search_plan import (
-    SearchMode,
     SearchPlan,
     SourceRequirement,
     build_deterministic_search_plan,
@@ -68,7 +70,6 @@ _CODE_SOURCE_TYPES: frozenset[str] = frozenset(
 )
 _MAX_PLAN_HYPOTHESIS_CHUNKS_PER_ARTICLE = 2
 _MAX_PLAN_HYPOTHESIS_CHUNKS_TOTAL = 6
-_PLAN_HYPOTHESIS_RERANK_FLOOR = rag_config.LOW_CONFIDENCE_RERANK
 
 # Compléments d'une recherche explicitement dirigée vers une source (CCN,
 # document interne, Code…). Ils restent bornés mais couvrent les normes écrites
@@ -80,54 +81,9 @@ _MAX_PLAN_CCN_PRIORITY_CHUNKS = 8
 _MAX_PLAN_CHRONOLOGY_PRIORITY_CHUNKS = 8
 _MAX_PLAN_INTERNAL_PRIORITY_CHUNKS = 4
 
-# Règles portant leur propre période d'application.  Ce signal ne s'applique
-# qu'aux sources normatives : une date rencontrée dans les faits d'un arrêt ne
-# doit jamais modifier le score de la décision.
-_TEMPORAL_RULE_SOURCE_TYPES: frozenset[str] = frozenset(
-    set(_LEGISLATION_SOURCE_TYPES)
-    | {
-        "boss",
-        "convention_collective_nationale",
-        "accord_branche",
-        "accord_entreprise",
-        "engagement_unilateral",
-        "reglement_interieur",
-    }
-)
-_FRENCH_MONTH_NUMBERS = {
-    "janvier": 1,
-    "fevrier": 2,
-    "février": 2,
-    "mars": 3,
-    "avril": 4,
-    "mai": 5,
-    "juin": 6,
-    "juillet": 7,
-    "aout": 8,
-    "août": 8,
-    "septembre": 9,
-    "octobre": 10,
-    "novembre": 11,
-    "decembre": 12,
-    "décembre": 12,
-}
-_FRENCH_DATE_PATTERN = (
-    r"(?P<day>1er|[0-3]?\d)\s+"
-    r"(?P<month>janvier|f[ée]vrier|mars|avril|mai|juin|juillet|ao[uû]t|"
-    r"septembre|octobre|novembre|d[ée]cembre)\s+"
-    r"(?P<year>20\d{2})"
-)
-_TEMPORAL_FROM_RE = re.compile(
-    rf"(?:à|a)\s+(?:compter|partir)\s+du\s+{_FRENCH_DATE_PATTERN}",
-    re.IGNORECASE,
-)
-_TEMPORAL_UNTIL_RE = re.compile(rf"jusqu['’]au\s+{_FRENCH_DATE_PATTERN}", re.IGNORECASE)
-_TEMPORAL_BEFORE_RE = re.compile(rf"avant\s+le\s+{_FRENCH_DATE_PATTERN}", re.IGNORECASE)
-
 # Types « convention collective » de l'org. Tout résultat de ce type présent
 # dans le pool a passé le filtre IDCC (cf. HybridSearch.search) : c'est donc la
-# convention installée de l'organisation. Sert au repêchage et au plancher de
-# confiance dédiés aux CCN.
+# convention installée de l'organisation. Sert uniquement au ciblage amont.
 _CCN_SOURCE_TYPES: frozenset[str] = frozenset({"convention_collective_nationale", "accord_branche"})
 _INTERNAL_SOURCE_TYPES: frozenset[str] = frozenset(
     {
@@ -148,11 +104,6 @@ _JURIS_SOURCE_TYPES: frozenset[str] = frozenset(
     for st, meta in DOCUMENT_TYPE_HIERARCHY.items()
     if isinstance(meta.get("niveau"), int) and meta["niveau"] == 4
 )
-
-# Balance "hiérarchie des normes" : plafonds de sièges en tête de la liste finale.
-_BALANCE_JURIS_CAP = 4  # arrêts max avant report en fin de liste
-_BALANCE_CCN_CAP = 3  # textes CCN max avant report en fin de liste
-_BALANCE_PROMOTE_RATIO = 0.7  # on ne hisse la règle en tête que si compétitive
 
 # Reference-following : un décret/une loi est un texte MODIFICATIF (« l'article X
 # est ainsi rédigé »), souvent illisible seul et mal reranké. La règle applicable
@@ -203,99 +154,6 @@ def _plan_time_bounds(
     return None, None
 
 
-def _result_effective_date(result: "SearchResult") -> datetime.date | None:
-    """Read the normalized date carried by legislation or case-law chunks."""
-
-    raw = result.date_decision or result.content_date
-    if not raw:
-        return None
-    try:
-        return datetime.date.fromisoformat(str(raw)[:10])
-    except (TypeError, ValueError):
-        return None
-
-
-def _date_from_french_match(match: re.Match[str]) -> datetime.date | None:
-    """Convert a matched French legal date into a date value."""
-
-    try:
-        day = 1 if match.group("day").casefold() == "1er" else int(match.group("day"))
-        month = _FRENCH_MONTH_NUMBERS[match.group("month").casefold()]
-        return datetime.date(int(match.group("year")), month, day)
-    except (KeyError, TypeError, ValueError):
-        return None
-
-
-def _rule_temporal_status(
-    text: str,
-    *,
-    target_date: datetime.date,
-) -> str:
-    """Classify an explicit rule period as applicable, expired or neutral.
-
-    Only unambiguous legal boundary phrases are considered.  Other dates stay
-    neutral, avoiding guesses from publication dates or examples.
-    """
-
-    sample = text[:5000]
-    starts = [
-        parsed
-        for match in _TEMPORAL_FROM_RE.finditer(sample)
-        if (parsed := _date_from_french_match(match)) is not None
-    ]
-    ends = [
-        parsed
-        for pattern in (_TEMPORAL_UNTIL_RE, _TEMPORAL_BEFORE_RE)
-        for match in pattern.finditer(sample)
-        if (parsed := _date_from_french_match(match)) is not None
-    ]
-    if not starts and not ends:
-        return "neutral"
-
-    # A passage may restate several successive regimes.  If at least one is
-    # applicable today, it remains eligible; otherwise its explicit period is
-    # either expired or not yet applicable.
-    if any(start <= target_date for start in starts) and not ends:
-        return "applicable"
-    if any(target_date <= end for end in ends) and not starts:
-        return "applicable"
-    if starts and ends:
-        if any(start <= target_date for start in starts) and any(
-            target_date <= end for end in ends
-        ):
-            return "applicable"
-    if ends and all(target_date > end for end in ends):
-        return "expired"
-    if starts and all(target_date < start for start in starts):
-        return "future"
-    return "neutral"
-
-
-def _assess_confidence(
-    results: list["SearchResult"],
-) -> tuple[float | None, bool]:
-    """Confiance du retrieval, consciente du type de source.
-
-    On est confiant si l'on dispose soit d'une source générale forte
-    (≥ LOW_CONFIDENCE_RERANK), soit d'un match CCN décent
-    (≥ CCN_LOW_CONFIDENCE_RERANK) : un article de la convention installée de
-    l'org reranke structurellement plus bas mais reste une vraie réponse.
-
-    Renvoie (meilleur_score_global, low_confidence).
-    """
-    if not results:
-        return None, False
-    best = max(r.score for r in results)
-    best_ccn = max(
-        (r.score for r in results if r.source_type in _CCN_SOURCE_TYPES),
-        default=None,
-    )
-    confident = best >= rag_config.LOW_CONFIDENCE_RERANK or (
-        best_ccn is not None and best_ccn >= rag_config.CCN_LOW_CONFIDENCE_RERANK
-    )
-    return best, not confident
-
-
 @dataclass
 class RAGSource:
     """A source reference returned alongside the answer."""
@@ -324,6 +182,7 @@ class RAGSource:
     idcc: str | None = None
     legal_status: str | None = None
     corpus_status: str = "available_at_answer_time"
+    context_passages: list[dict] | None = None
 
 
 @dataclass
@@ -348,15 +207,13 @@ class RagTrace:
     hybrid_results: list[dict] = field(default_factory=list)
     rerank_results: list[dict] = field(default_factory=list)
     parent_groups: list[dict] = field(default_factory=list)
-    # Groups removed by the relevance floor (step 3.6) — kept in the trace so
-    # the Quality page can audit what the noise cut actually removed.
+    # Legacy fields retained for historical trace compatibility only.
     groups_dropped: list[dict] = field(default_factory=list)
     perf_ms: dict[str, float] = field(default_factory=dict)
     model: str | None = None
     out_of_scope: bool = False
     no_results: bool = False
-    # C1 — Confiance du retrieval : meilleur score de reranking et drapeau
-    # "faible pertinence" qui déclenche une consigne de rigueur à la génération.
+    # Raw best score; low_confidence is no longer inferred for new requests.
     max_rerank_score: float | None = None
     low_confidence: bool = False
     # Plan adaptatif : observé en production, exécutable dans le sandbox qualité.
@@ -402,6 +259,9 @@ def _serialize_chunks(results: list, limit: int = 30, text_chars: int = 250) -> 
                 "doc_name": (r.doc_name or "")[:120],
                 "chunk_index": r.chunk_index,
                 "score": round(float(r.score), 4),
+                "retrieval_score": getattr(r, "retrieval_score", None),
+                "rerank_score": getattr(r, "rerank_score", None),
+                "context_chunk_indices": getattr(r, "context_chunk_indices", None),
                 "source_type": r.source_type,
                 "text_preview": (r.text or "")[:text_chars],
             }
@@ -658,6 +518,27 @@ def _today_fr() -> str:
     return f"{d.day} {_FRENCH_MONTHS[d.month - 1]} {d.year}"
 
 
+def _report_retrieval_errors(method):
+    @wraps(method)
+    async def wrapped(self, *args, **kwargs):
+        started = time.perf_counter()
+        try:
+            return await method(self, *args, **kwargs)
+        except RetrievalError as exc:
+            trace = self._retrieval_trace
+            trace.error = "search_retrieval_error"
+            trace.search_plan_validation.update(
+                getattr(self, "_plan_search_diagnostics", {})
+            )
+            trace.search_plan_validation.update(
+                status="error", reason=str(exc),
+                branches=self._branch_diagnostics,
+            )
+            trace.perf_ms["total"] = (time.perf_counter() - started) * 1000
+            return [], trace.query_original, trace
+    return wrapped
+
+
 class RAGAgent:
     """Agent structuré pour la génération de réponses juridiques RH."""
 
@@ -747,11 +628,15 @@ class RAGAgent:
         if key not in self._identifier_cache:
             if not hasattr(self, "_branch_diagnostics"):
                 self._branch_diagnostics = []
-            self._identifier_cache[key] = await fetch_by_identifiers(
-                qdrant, identifiers, diagnostics=self._branch_diagnostics, **kwargs,
-            )
+            try:
+                self._identifier_cache[key] = await fetch_by_identifiers(
+                    qdrant, identifiers, diagnostics=self._branch_diagnostics, **kwargs,
+                )
+            except Exception as exc:
+                raise RetrievalError("identifier_lookup_failed") from exc
         return list(self._identifier_cache[key])
 
+    @_report_retrieval_errors
     async def prepare_context(
         self,
         query: str,
@@ -779,6 +664,7 @@ class RAGAgent:
         t0 = time.perf_counter()
 
         trace = RagTrace(query_original=query, model=rag_config.LLM_MODEL)
+        self._retrieval_trace = trace
         search_plan_trace: SearchPlan
         if search_plan is None:
             deterministic_plan = build_deterministic_search_plan(
@@ -864,7 +750,7 @@ class RAGAgent:
             branch for branch in self._branch_diagnostics
             if branch["status"] in {"ok", "empty", "error"}
         ]
-        if not results and attempted_branches and all(
+        if any(
             branch["status"] == "error" for branch in attempted_branches
         ):
             trace.error = "search_retrieval_error"
@@ -916,13 +802,12 @@ class RAGAgent:
         # normal reranker decide whether any of them is relevant. A guessed
         # reference is never presented as a source merely because it exists.
         hypothesis_refs_by_key: dict[tuple[str, int], set[str]] = {}
-        hypothesis_added_keys: set[tuple[str, int]] = set()
         if search_plan is not None and search_plan.hypothesized_articles:
             (
                 results,
                 hypothesis_validation,
                 hypothesis_refs_by_key,
-                hypothesis_added_keys,
+                _added_keys,
             ) = await self._inject_plan_hypothesis_candidates(
                 search_plan,
                 results,
@@ -931,140 +816,68 @@ class RAGAgent:
             )
             trace.search_plan_validation.update(hypothesis_validation)
 
-        # Snapshot the candidate pool right before rerank
-        trace.hybrid_results = _serialize_chunks(results, limit=30)
+        # Keep retrieval and model scores distinct. Score ALL candidates before
+        # applying the distinct-parent budget; never fill seats with a fallback.
+        if any(branch.get("status") == "error" for branch in self._branch_diagnostics):
+            raise RetrievalError("reference_branch_failed")
+        before_dedup = len(results)
+        results = deduplicate_article_passages(results)
+        trace.search_plan_validation["exact_article_duplicates_removed"] = before_dedup - len(results)
+        trace.hybrid_results = _serialize_chunks(results, limit=len(results))
         t2 = time.perf_counter()
-
-        # Step 3: Reranking
-        _pool_pre_rerank = results
-        rerank_fallback = [
-            result
-            for result in results
-            if (result.document_id, result.chunk_index) not in hypothesis_added_keys
-        ][:RERANK_TOP_K]
-        rerank_top_k = RERANK_TOP_K
-        if (
-            search_plan is not None
-            and search_plan.mode is SearchMode.LEGAL_NEWS
-            and any(_plan_time_bounds(search_plan))
-        ):
-            # The API already scores the whole pool: asking it to return a
-            # wider shortlist does not add another call.  The dated guard
-            # below can then select enough in-period documents instead of
-            # being forced to keep an old broad-search result from the top 5.
-            rerank_top_k += _MAX_PLAN_CHRONOLOGY_PRIORITY_CHUNKS
-        results = await self._step_with_timeout(
-            self.reranker.rerank(
-                query,
-                results,
-                top_k=rerank_top_k,
-                cost_ctx=self._cost_ctx,
-                fallback_results=rerank_fallback,
-            ),
-            fallback=rerank_fallback,
-        )
-        if trace.search_plan_validation:
-            retained_results: list[SearchResult] = []
-            rejected_refs: set[str] = set()
-            for result in results:
-                key = (result.document_id, result.chunk_index)
-                if key in hypothesis_added_keys and result.score < _PLAN_HYPOTHESIS_RERANK_FLOOR:
-                    rejected_refs.update(hypothesis_refs_by_key.get(key, set()))
-                    continue
-                retained_results.append(result)
-            results = retained_results
-            trace.search_plan_validation["rejected_below_confidence_floor"] = sorted(rejected_refs)
-        if search_plan is not None and not search_plan.time_scope:
-            results, temporal_diagnostics = self._apply_temporal_rule_priority(
-                results,
-                target_date=datetime.date.today(),
+        selection = {"status": "reranking", "groups": []}
+        trace.search_plan_validation["selection"] = selection
+        try:
+            results = await asyncio.wait_for(
+                self.reranker.rerank(
+                    build_rerank_query(
+                        trace.query_original, org_context,
+                        search_plan.standalone_question if search_plan else query,
+                    ),
+                    results, cost_ctx=self._cost_ctx,
+                ),
+                timeout=RAG_TIMEOUT_PER_STEP,
             )
-            if temporal_diagnostics["classified"]:
-                trace.search_plan_validation["temporal_rule_priority"] = temporal_diagnostics
-        results = self._ensure_ccn_represented(
-            _pool_pre_rerank,
-            results,
-            org_idcc_list,
-        )
-
+        except (RerankingError, TimeoutError) as exc:
+            trace.error = "search_reranking_error"
+            selection.update(status="error", reason=(
+                "reranker_timeout" if isinstance(exc, TimeoutError) else str(exc)
+            ))
+            return [], reformulated, trace
         trace.perf_ms["rerank"] = (time.perf_counter() - t2) * 1000
-        trace.rerank_results = _serialize_chunks(results, limit=RERANK_TOP_K)
-        if trace.search_plan_validation:
-            trace.search_plan_validation["retained_after_rerank"] = self._retained_hypothesis_refs(
-                results, hypothesis_refs_by_key
-            )
-        # C1 — Confiance du retrieval : si même le meilleur document reste sous
-        # le seuil, la recherche est faible -> on signalera à la génération de
-        # ne rien inventer. Calculé ici sur les scores de rerank propres, avec
-        # un seuil dédié plus bas pour la CCN installée de l'org (qui reranke
-        # structurellement plus bas que le Code du travail).
-        trace.max_rerank_score, trace.low_confidence = _assess_confidence(results)
-        logger.info(
-            "[PERF] Step 3 — Reranking %.0fms | %d results | max_score=%.3f%s",
-            trace.perf_ms["rerank"],
-            len(results),
-            trace.max_rerank_score if trace.max_rerank_score is not None else -1.0,
-            " | LOW_CONFIDENCE" if trace.low_confidence else "",
+        trace.rerank_results = _serialize_chunks(results, limit=len(results))
+        trace.max_rerank_score = max((r.score for r in results), default=None)
+        trace.search_plan_validation["retained_after_rerank"] = self._retained_hypothesis_refs(
+            results, hypothesis_refs_by_key
         )
 
-        # Step 3.5: Parent expansion (small-to-big)
+        # Explicit publication period is a query constraint, not a score bonus.
+        # Never substitute out-of-period documents when the requested period is empty.
+        if search_plan.mode.value == "legal_news":
+            results, excluded = self._filter_publication_period(results, search_plan)
+            selection["excluded_by_publication_period"] = excluded
+
         t_exp = time.perf_counter()
-        results = await expand_to_parents(
-            results,
-            self.search_engine.qdrant,
-            min_legislation=2,
-        )
+        try:
+            results = await asyncio.wait_for(
+                expand_to_parents(
+                    results, self.search_engine.qdrant,
+                    organisation_id=organisation_id, org_idcc_list=org_idcc_list,
+                    diagnostics=selection["groups"],
+                ),
+                timeout=RAG_TIMEOUT_PER_STEP,
+            )
+        except (ParentExpansionError, TimeoutError) as exc:
+            trace.error = "search_context_error"
+            selection.update(status="error", reason=(
+                "parent_timeout" if isinstance(exc, TimeoutError) else str(exc)
+            ))
+            return [], reformulated, trace
         trace.perf_ms["parent_expansion"] = (time.perf_counter() - t_exp) * 1000
-        trace.parent_groups = _serialize_chunks(results, limit=15, text_chars=400)
-        logger.info(
-            "[PERF] Step 3.5 — Parent expansion %.0fms | %d groups",
-            trace.perf_ms["parent_expansion"],
-            len(results),
-        )
-
-        # A chronological digest must not quietly present an old dated source
-        # as a current development.  This guard is deliberately limited to
-        # LEGAL_NEWS plans.  It activates only when the corpus contains at
-        # least one in-period result and retains a small undated legal-context
-        # tail, so the broad completeness search remains useful.  If the dated
-        # branch found nothing, the broad fallback is left untouched.
-        if search_plan is not None and search_plan.mode is SearchMode.LEGAL_NEWS:
-            results, time_diagnostics = self._apply_news_time_scope(results, search_plan)
-            trace.search_plan_validation["time_scope_guard"] = time_diagnostics
-
-        # Step 3.6: Relevance floor — drop weak groups (noise) before they
-        # reach the source panel and the generation context.
-        results, dropped = self._apply_score_floor(results)
-        if dropped:
-            trace.groups_dropped = [
-                {
-                    "doc_name": (r.doc_name or "")[:120],
-                    "source_type": r.source_type,
-                    "score": round(float(r.score), 4),
-                }
-                for r in dropped
-            ]
-            logger.info(
-                "[FLOOR] Dropped %d low-relevance group(s) (< %.2f): %s",
-                len(dropped),
-                rag_config.SOURCE_SCORE_FLOOR,
-                ", ".join(f"{r.source_type}:{r.score:.2f}" for r in dropped),
-            )
-
-        t3 = time.perf_counter()
-        results = self._cross_reference(results)
-        # Step 4.5: hiérarchie des normes — la règle applicable ne doit pas être
-        # noyée sous la jurisprudence ou la CCN en tête de liste.
-        results = self._balance_source_types(results)
-        if search_plan is not None and search_plan.mode is SearchMode.LEGAL_NEWS:
-            results = self._sort_news_results(results, search_plan)
-        if trace.search_plan_validation:
-            trace.search_plan_validation["retained_in_final_sources"] = (
-                self._retained_hypothesis_refs(results, hypothesis_refs_by_key)
-            )
-        logger.info(
-            "[PERF] Step 4 — Cross-ref %.0fms",
-            (time.perf_counter() - t3) * 1000,
+        trace.parent_groups = _serialize_chunks(results, limit=len(results), text_chars=400)
+        selection["status"] = "complete"
+        trace.search_plan_validation["retained_in_final_sources"] = self._retained_hypothesis_refs(
+            results, hypothesis_refs_by_key
         )
 
         if not results:
@@ -1244,9 +1057,11 @@ class RAGAgent:
                 organisation_id=organisation_id,
                 org_idcc_list=org_idcc_list,
             )
+        except RetrievalError:
+            raise
         except Exception:
             logger.exception("[BOOST] Identifier injection failed")
-            return results
+            raise RetrievalError("identifier_injection_failed")
         if not extra:
             return results
         seen = {(r.document_id, r.chunk_index) for r in results}
@@ -1305,11 +1120,12 @@ class RAGAgent:
     ]:
         """Validate and append bounded Code article candidates from a plan.
 
-        Only medium-confidence proposals are looked up. The lookup uses the
+        All proposed references are looked up, regardless of self-confidence.
+        The lookup uses the
         same organisation/IDCC access filter as explicit identifier retrieval.
         Only Code sources are accepted, at most two chunks per article and six
-        total. Candidates are appended (never promoted), then must reach the
-        normal retrieval confidence floor in the common reranker.
+        total. Candidates are appended (never promoted), then scored alongside
+        all other candidates, without a special score threshold.
         """
 
         proposed: list[str] = []
@@ -1321,10 +1137,7 @@ class RAGAgent:
                 proposed.append(reference)
             if not reference or reference in requested:
                 continue
-            if hypothesis.confidence != "medium":
-                skipped_low_confidence.append(reference)
-            else:
-                requested.append(reference)
+            requested.append(reference)
 
         validation: dict = {
             "status": "ok",
@@ -1350,8 +1163,7 @@ class RAGAgent:
             )
         except Exception:
             logger.exception("[PLAN] Article hypothesis validation failed")
-            validation["status"] = "lookup_failed"
-            return results, validation, {}, set()
+            raise RetrievalError("hypothesis_lookup_failed")
 
         selected: list[SearchResult] = []
         refs_by_key: dict[tuple[str, int], set[str]] = {}
@@ -1523,10 +1335,13 @@ class RAGAgent:
         if priority_tasks:
             priority_results = await asyncio.gather(
                 *[
-                    self._step_with_timeout(task, fallback=[])
+                    self._step_with_timeout(task)
                     for _label, _cap, task in priority_tasks
-                ]
+                ], return_exceptions=True,
             )
+            for outcome in priority_results:
+                if isinstance(outcome, BaseException):
+                    raise outcome
             seen_pool = {(result.document_id, result.chunk_index) for result in pool}
             diagnostics = self._plan_search_diagnostics.setdefault("priority_branches", [])
             for (label, cap, _task), candidates in zip(
@@ -1611,10 +1426,13 @@ class RAGAgent:
             )
             complement_results = await asyncio.gather(
                 *[
-                    self._step_with_timeout(task, fallback=[])
+                    self._step_with_timeout(task)
                     for _label, _cap, task in complement_tasks
-                ]
+                ], return_exceptions=True,
             )
+            for outcome in complement_results:
+                if isinstance(outcome, BaseException):
+                    raise outcome
             seen_pool = {(result.document_id, result.chunk_index) for result in pool}
             for (label, cap, _task), candidates in zip(
                 complement_tasks,
@@ -1714,15 +1532,18 @@ class RAGAgent:
                 )
             )
         search_results = await asyncio.gather(*search_tasks, return_exceptions=True)
+        if any(isinstance(result, BaseException) for result in search_results):
+            for result in search_results:
+                if isinstance(result, BaseException) and not isinstance(result, Exception):
+                    raise result
+            failure = next(result for result in search_results if isinstance(result, Exception))
+            raise RetrievalError("search_branch_failed") from failure
 
         # Split variant results (RRF-fused) from the floor results (injected)
         valid_results: list[list[SearchResult]] = []
         leg_results: list[SearchResult] = []
         ccn_results: list[SearchResult] = []
         for i, result in enumerate(search_results):
-            if isinstance(result, Exception):
-                logger.warning("Search failed for task %d: %s", i, result)
-                continue
             if i == leg_task_idx:
                 leg_results = result
             elif i == ccn_task_idx:
@@ -1791,7 +1612,7 @@ class RAGAgent:
                     )
                 except Exception:
                     logger.exception("[ANCHOR] Article injection failed")
-                    anchor_chunks = []
+                    raise RetrievalError("anchor_lookup_failed")
                 seen_a = {(r.document_id, r.chunk_index) for r in pool}
                 added = 0
                 for c in anchor_chunks:
@@ -1828,7 +1649,7 @@ class RAGAgent:
                 )
             except Exception:
                 logger.exception("[FOLLOW] Modified-article injection failed")
-                follow_chunks = []
+                raise RetrievalError("follow_lookup_failed")
             seen_f = {(c.document_id, c.chunk_index) for c in pool}
             added_f = 0
             for c in follow_chunks:
@@ -1849,253 +1670,26 @@ class RAGAgent:
         return pool
 
     @staticmethod
-    def _apply_score_floor(
-        results: list[SearchResult],
-    ) -> tuple[list[SearchResult], list[SearchResult]]:
-        """Step 3.6: drop parent groups below the relevance floor.
-
-        Calibrated on prod traces (june 2026): ~52 % of served groups scored
-        < 0.5 and were mostly off-topic noise — shown to the user and paid for
-        in the generation context. The floor cuts that tail on the CLEAN
-        rerank scores (must run before the cross-reference boost). Guards:
-        the SOURCE_FLOOR_MIN_KEEP best groups always survive, so the LLM is
-        never starved even on a weak retrieval.
-
-        Returns (kept, dropped), both in descending score order.
-        """
-        if not results:
-            return results, []
-        ranked = sorted(results, key=lambda r: r.score, reverse=True)
-        above = sum(1 for r in ranked if r.score >= rag_config.SOURCE_SCORE_FLOOR)
-        cut = max(above, rag_config.SOURCE_FLOOR_MIN_KEEP)
-        kept, dropped = ranked[:cut], ranked[cut:]
-
-        # Repêchage CCN : la convention installée de l'org reranke plus bas que
-        # le Code du travail et tombe sous le plancher général sur les questions
-        # cadrées « Code du travail ». On repêche les meilleurs groupes CCN
-        # tombés (jusqu'à CCN_FLOOR_RESCUE), tant qu'ils restent pertinents, pour
-        # que la convention de l'org atteigne toujours la génération.
-        if dropped:
-            rescued: list[SearchResult] = []
-            rest: list[SearchResult] = []
-            for r in dropped:
-                if (
-                    len(rescued) < rag_config.CCN_FLOOR_RESCUE
-                    and r.source_type in _CCN_SOURCE_TYPES
-                    and r.score >= rag_config.CCN_SCORE_FLOOR
-                ):
-                    rescued.append(r)
-                else:
-                    rest.append(r)
-            if rescued:
-                kept = sorted(kept + rescued, key=lambda r: r.score, reverse=True)
-                dropped = rest
-        return kept, dropped
-
-    @staticmethod
-    def _apply_news_time_scope(
-        results: list[SearchResult],
-        plan: SearchPlan,
-    ) -> tuple[list[SearchResult], dict[str, int | str]]:
-        """Keep a news digest inside its planned period without starving it.
-
-        Dated documents outside the period are removed only when at least one
-        dated in-period document exists.  Up to two undated results survive as
-        legal background.  With no in-period match, all results remain as the
-        completeness fallback and generation can report the corpus gap.
-        """
-
-        date_from, date_to = _plan_time_bounds(plan)
-        if not results or not date_from or not date_to:
-            return results, {"status": "not_applicable"}
-
-        in_period: list[SearchResult] = []
-        undated: list[SearchResult] = []
-        out_of_period: list[SearchResult] = []
-        for result in results:
-            result_date = _result_effective_date(result)
-            if result_date is None:
-                undated.append(result)
-            elif date_from <= result_date <= date_to:
-                in_period.append(result)
-            else:
-                out_of_period.append(result)
-
-        diagnostics: dict[str, int | str] = {
-            "in_period": len(in_period),
-            "undated": len(undated),
-            "out_of_period": len(out_of_period),
-        }
-        if not in_period:
-            diagnostics["status"] = "broad_fallback_no_in_period_match"
-            return results, diagnostics
-
-        diagnostics["status"] = "applied"
-        diagnostics["undated_context_kept"] = min(2, len(undated))
-        return in_period + undated[:2], diagnostics
-
-    @staticmethod
-    def _apply_temporal_rule_priority(
-        results: list[SearchResult],
-        *,
-        target_date: datetime.date,
-    ) -> tuple[list[SearchResult], dict[str, int]]:
-        """Prefer the applicable version of explicitly time-bounded rules.
-
-        The reranker remains the relevance judge.  This bounded adjustment is
-        applied afterwards only to normative passages that state an explicit
-        applicability boundary.  Neutral passages and case-law facts are left
-        untouched; expired passages remain available as historical context.
-        """
-
-        diagnostics = {
-            "classified": 0,
-            "applicable": 0,
-            "expired": 0,
-            "future": 0,
-        }
-        for result in results:
-            if result.source_type not in _TEMPORAL_RULE_SOURCE_TYPES:
-                continue
-            status = _rule_temporal_status(result.text, target_date=target_date)
-            if status == "neutral":
-                continue
-            diagnostics["classified"] += 1
-            diagnostics[status] += 1
-            if status == "applicable":
-                result.score = min(1.0, result.score * 1.18)
-            elif status == "expired":
-                result.score *= 0.55
-            else:  # future
-                result.score *= 0.65
-
-        if diagnostics["classified"]:
-            results = sorted(results, key=lambda result: result.score, reverse=True)
-            logger.info(
-                "[TEMPORAL] Prioritized explicit rule periods for %s: %s",
-                target_date.isoformat(),
-                diagnostics,
-            )
-        return results, diagnostics
-
-    @staticmethod
-    def _sort_news_results(
-        results: list[SearchResult],
-        plan: SearchPlan,
-    ) -> list[SearchResult]:
-        """Present dated news newest-first, followed by undated background."""
-
+    def _filter_publication_period(results, plan):
         date_from, date_to = _plan_time_bounds(plan)
         if not date_from or not date_to:
-            return results
-        return sorted(
-            results,
-            key=lambda result: (
-                _result_effective_date(result) is not None,
-                _result_effective_date(result) or datetime.date.min,
-                result.score,
-            ),
-            reverse=True,
-        )
-
-    @staticmethod
-    def _ensure_ccn_represented(
-        pool: list["SearchResult"],
-        reranked: list["SearchResult"],
-        org_idcc_list: list[str] | None,
-    ) -> list["SearchResult"]:
-        """Garantit que la convention de l'org atteigne la génération.
-
-        Sur une question cadrée « selon le Code du travail… », les articles du
-        Code raflent les RERANK_TOP_K places et la CCN de l'org — pourtant
-        présente dans le pool — est coupée AU rerank, avant le plancher de
-        pertinence (donc avant son repêchage). Le reranker a néanmoins déjà
-        scoré tout le pool : on réinjecte simplement les meilleurs groupes CCN
-        coupés (bornés à CCN_FLOOR_RESCUE), sans appel API supplémentaire. Ne
-        se déclenche que si l'org a une CCN ET qu'aucune CCN n'a survécu au
-        rerank.
-        """
-        if not org_idcc_list:
-            return reranked
-        if any(r.source_type in _CCN_SOURCE_TYPES for r in reranked):
-            return reranked
-        kept = {(r.document_id, r.chunk_index) for r in reranked}
-        extra = sorted(
-            (
-                r
-                for r in pool
-                if r.source_type in _CCN_SOURCE_TYPES and (r.document_id, r.chunk_index) not in kept
-            ),
-            key=lambda r: r.score,
-            reverse=True,
-        )[: rag_config.CCN_FLOOR_RESCUE]
-        if extra:
-            logger.info(
-                "[CCNFLOOR] Réinjecté %d groupe(s) CCN coupé(s) au rerank (scores %s)",
-                len(extra),
-                [round(r.score, 3) for r in extra],
-            )
-        return reranked + extra
-
-    def _cross_reference(self, results: list[SearchResult]) -> list[SearchResult]:
-        """Step 4: Boost documents cited multiple times."""
-        doc_counts: dict[str, int] = {}
-        for r in results:
-            doc_counts[r.document_id] = doc_counts.get(r.document_id, 0) + 1
-
-        for r in results:
-            count = doc_counts.get(r.document_id, 1)
-            if count > 1:
-                r.score *= 1.0 + 0.05 * (count - 1)
-
-        results.sort(key=lambda r: r.score, reverse=True)
-        return results
-
-    @staticmethod
-    def _balance_source_types(
-        results: list[SearchResult],
-    ) -> list[SearchResult]:
-        """Remet la hiérarchie des normes dans le classement FINAL.
-
-        Sur les sujets riches en jurisprudence (ou quand la CCN de l'org est
-        volumineuse), les arrêts (ou la CCN) raflent le haut de la liste et
-        noient la règle applicable — pourtant c'est la loi/le code/le décret qui
-        énonce la règle. Deux effets, sans jamais rien supprimer :
-        - on hisse le meilleur texte de loi/code/décret au 1er rang, à condition
-          qu'il soit compétitif (score >= 0,7 x meilleur score) ; sinon on ne
-          force rien (question réellement jurisprudentielle) ;
-        - on plafonne le nombre d'arrêts et de textes CCN en tête ; les
-          excédentaires sont reportés en fin de liste.
-        L'ordre par score est préservé partout ailleurs.
-        """
-        if len(results) <= 2:
-            return results
-        ordered = sorted(results, key=lambda r: r.score, reverse=True)
-        top_score = ordered[0].score
-        rules = [r for r in ordered if r.source_type in _LEGISLATION_SOURCE_TYPES]
-        if rules and top_score > 0:
-            best = max(rules, key=lambda r: r.score)
-            if best is not ordered[0] and best.score >= _BALANCE_PROMOTE_RATIO * top_score:
-                ordered.remove(best)
-                ordered.insert(0, best)
-
-        kept: list[SearchResult] = []
-        deferred: list[SearchResult] = []
-        n_juris = n_ccn = 0
-        for r in ordered:
-            st = r.source_type
-            if st in _JURIS_SOURCE_TYPES:
-                if n_juris >= _BALANCE_JURIS_CAP:
-                    deferred.append(r)
-                    continue
-                n_juris += 1
-            elif st in _CCN_SOURCE_TYPES:
-                if n_ccn >= _BALANCE_CCN_CAP:
-                    deferred.append(r)
-                    continue
-                n_ccn += 1
-            kept.append(r)
-        return kept + deferred
+            return results, []
+        kept, excluded = [], []
+        for result in results:
+            raw = result.date_decision or result.content_date
+            try:
+                date = datetime.date.fromisoformat(str(raw)[:10])
+            except (ValueError, TypeError):
+                date = None
+            if date is not None and date_from <= date <= date_to:
+                kept.append(result)
+            else:
+                excluded.append({
+                    "document_id": result.document_id, "chunk_index": result.chunk_index,
+                    "reason": "missing_publication_date" if date is None else "outside_publication_period",
+                    "score": result.score,
+                })
+        return kept, excluded
 
     def _build_context(self, results: list[SearchResult]) -> str:
         """Build context string from search results."""
@@ -2128,6 +1722,17 @@ class RAGAgent:
                     else:
                         article_label = r.section_path
                 header += f"Localisation : {article_label}\n"
+
+            if r.instrument_id:
+                header += f"Identifiant de l'instrument : {r.instrument_id}\n"
+            if r.instrument_title:
+                header += f"Instrument : {r.instrument_title}\n"
+            if r.effective_from or r.effective_to:
+                header += f"Période d'effet renseignée : {r.effective_from or '?'} — {r.effective_to or '?'}\n"
+            if r.instrument_status:
+                header += f"Statut renseigné : {r.instrument_status}\n"
+            if r.context_chunk_indices is not None:
+                header += f"Passages indexés inclus (sélection partielle possible) : {r.context_chunk_indices}\n"
 
             # Date of the text (CCN, avenants, lois…) so the LLM can apply the
             # recency rule ("l'avenant le plus récent gagne") on facts, not on
@@ -2253,7 +1858,7 @@ class RAGAgent:
     # Nombre max de sources portées d'un tour à l'autre et taille de chaque
     # extrait : plafonds pour borner les tokens ajoutés au prompt de génération.
     _CARRIED_MAX = 6
-    _CARRIED_TEXT_CHARS = 900
+    _CARRIED_TEXT_CHARS = 9000
 
     def _build_carried_context(self, carried: list[dict] | None) -> str:
         """Rendu du bloc « sources déjà mobilisées » à partir des sources
@@ -2295,19 +1900,40 @@ class RAGAgent:
                     loc = f"{loc} — {src['section_path']}" if loc else src["section_path"]
                 if loc:
                     header += f"Localisation : {loc}\n"
-            body = (src.get("excerpt") or src.get("full_text") or "").strip()
+            passages = src.get("context_passages") or []
+            body = src.get("full_text") or src.get("excerpt") or ""
+            if passages:
+                selected = []
+                used = 0
+                omitted = 0
+                for passage in passages:
+                    text = passage.get("text", "")
+                    if used + len(text) > self._CARRIED_TEXT_CHARS:
+                        omitted += 1
+                        continue
+                    used += len(text)
+                    selected.append(
+                        f"Instrument : {passage.get('instrument_id') or 'non renseigné'}\n"
+                        f"Passages indexés : {passage.get('chunk_indices')}\n{text}"
+                    )
+                if omitted:
+                    header += f"Limite technique : {omitted} groupe(s) historique(s) non joint(s).\n"
+                blocks.append(header + "\n\n".join(selected))
+                continue
             if len(body) > self._CARRIED_TEXT_CHARS:
-                body = body[: self._CARRIED_TEXT_CHARS].rstrip() + " [...]"
+                blocks.append(header + "Texte non joint : budget technique dépassé.")
+                continue
+            if not src.get("full_text"):
+                header += "Disponibilité : seul un extrait historique est disponible.\n"
             blocks.append(header + body)
         if not blocks:
             return ""
         return (
             "## Sources déjà mobilisées plus tôt dans la conversation\n\n"
-            "Ces sources ont été retrouvées lors de tours précédents de cet "
-            "échange. Elles restent un fondement VALIDE : tu peux t'appuyer "
-            "dessus et les citer pour répondre à un suivi, exactement comme les "
-            "« Sources documentaires » du tour courant. Elles les complètent "
-            "sans écraser les règles de hiérarchie des normes et de récence.\n\n"
+            "Ces passages proviennent de tours précédents, pas de la recherche "
+            "actuelle. Leur pertinence et leur applicabilité au nouveau sujet "
+            "ne sont pas établies par leur présence dans l'historique. "
+            "Les limites de disponibilité sont indiquées séparément.\n\n"
             + "\n\n".join(blocks)
         )
 
@@ -2458,6 +2084,17 @@ class RAGAgent:
                     norme_niveau=meta.norme_niveau,
                     excerpt=excerpt,
                     full_text=full_text,
+                    context_passages=[
+                        {
+                            "text": r.text,
+                            "chunk_indices": r.context_chunk_indices,
+                            "instrument_id": r.instrument_id,
+                            "instrument_title": r.instrument_title,
+                            "effective_from": r.effective_from,
+                            "effective_to": r.effective_to,
+                        }
+                        for r in results if r.document_id == doc_id
+                    ],
                     juridiction=meta.juridiction,
                     chambre=meta.chambre,
                     formation=meta.formation,
@@ -2474,16 +2111,11 @@ class RAGAgent:
 
         return sources
 
-    async def _step_with_timeout(self, coro, fallback):
-        """Run a coroutine with per-step timeout, returning fallback on error."""
+    async def _step_with_timeout(self, coro):
+        """Bound a search step; errors never become replacement candidates."""
         try:
             return await asyncio.wait_for(coro, timeout=RAG_TIMEOUT_PER_STEP)
-        except TimeoutError:
-            logger.warning(
-                "Step timed out (%.0fs), using fallback",
-                RAG_TIMEOUT_PER_STEP,
-            )
-            return fallback
-        except Exception:
-            logger.exception("Step failed, using fallback")
-            return fallback
+        except TimeoutError as exc:
+            raise RetrievalError("search_step_timeout") from exc
+        except Exception as exc:
+            raise RetrievalError("search_step_failed") from exc

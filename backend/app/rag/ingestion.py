@@ -376,6 +376,12 @@ class IngestionPipeline:
                     # Structural metadata from ArticleChunker
                     if chunks_meta:
                         meta = chunks_meta[i]
+                        from app.rag.article_chunker import ARTICLE_METADATA_FIELDS
+
+                        for key in ARTICLE_METADATA_FIELDS:
+                            value = getattr(meta, key)
+                            if value:
+                                payload[key] = value
                         if meta.article_nums:
                             payload["article_nums"] = meta.article_nums
                         if meta.section_path:
