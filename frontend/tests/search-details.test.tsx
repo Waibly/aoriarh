@@ -1,19 +1,18 @@
-import { render, screen } from "@testing-library/react";
+import { render } from "@testing-library/react";
 import { SearchDetailsPanel } from "@/components/chat/search-details";
 
-test("does not expose raw planner output beside its warning", () => {
+test("does not render internal search details", () => {
   const raw = '  {"standalone_question": "incomplet"\n';
   const { container } = render(<SearchDetailsPanel details={{
     raw_response: raw,
     warnings: ["Recherche de secours utilisée."],
   }} />);
-  expect(container.querySelector("pre")).toBeNull();
+  expect(container.firstChild).toBeNull();
   expect(container).not.toHaveTextContent(raw);
-  expect(screen.getByRole("status")).toHaveTextContent("Recherche de secours utilisée.");
-  expect(container.querySelector("details")).toHaveAttribute("open");
+  expect(container).not.toHaveTextContent("Recherche de secours utilisée.");
 });
 
-test("does not expose the classifier when there is no user-facing warning", () => {
+test("does not render the classifier either", () => {
   const raw = ' {"intent":"legal_question"}\n';
   const { container } = render(<SearchDetailsPanel details={{
     raw_response: null, router_raw_response: raw, warnings: [],
