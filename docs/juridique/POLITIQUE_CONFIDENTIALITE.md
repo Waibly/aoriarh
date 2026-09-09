@@ -9,7 +9,7 @@
 
 La présente politique décrit la manière dont **{{RAISON_SOCIALE}}** (ci-après « AORIA RH » ou « nous ») collecte, utilise, conserve et protège les données à caractère personnel des utilisateurs de son Service, conformément au Règlement (UE) 2016/679 (**RGPD**) et à la loi n° 78-17 du 6 janvier 1978 modifiée (**Loi Informatique et Libertés**).
 
-Elle complète les [Conditions Générales de Vente](/docs/CGV.md) et en fait partie intégrante.
+Elle complète les [Conditions Générales de Vente](/docs/juridique/CGV.md) et en fait partie intégrante.
 
 ---
 

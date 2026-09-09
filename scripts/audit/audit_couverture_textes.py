@@ -31,7 +31,7 @@ Limites, à garder en tête pour lire le résultat
 
 Usage :
     docker compose -f docker-compose.prod.yml exec backend \
-        python scripts/audit_couverture_textes.py
+        python scripts/audit/audit_couverture_textes.py
 """
 from __future__ import annotations
 

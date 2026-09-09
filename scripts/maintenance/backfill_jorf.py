@@ -23,11 +23,11 @@ fenêtre, donc le script peut être relancé après une interruption sans re-ing
 Usage :
     # 1. Compter sans rien écrire (aucun /consult, aucune ingestion)
     docker compose -f docker-compose.prod.yml exec backend \
-        python scripts/backfill_jorf.py --debut 2020-01-01 --fin 2026-05-28 --dry-run
+        python scripts/maintenance/backfill_jorf.py --debut 2020-01-01 --fin 2026-05-28 --dry-run
 
     # 2. Lancer pour de vrai, une année à la fois
     docker compose -f docker-compose.prod.yml exec backend \
-        python scripts/backfill_jorf.py --debut 2020-01-01 --fin 2020-12-31
+        python scripts/maintenance/backfill_jorf.py --debut 2020-01-01 --fin 2020-12-31
 """
 from __future__ import annotations
 

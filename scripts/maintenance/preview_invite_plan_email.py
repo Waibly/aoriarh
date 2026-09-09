@@ -5,7 +5,7 @@ via Brevo (clé lue dans backend/.env). Le HTML est aussi écrit sur disque pour
 ouverture rapide dans un navigateur.
 
 Usage (depuis la racine du projet) :
-    backend/.venv/bin/python scripts/preview_invite_plan_email.py
+    backend/.venv/bin/python scripts/maintenance/preview_invite_plan_email.py
 """
 
 from __future__ import annotations

@@ -15,7 +15,7 @@ Ces règles concernent les fonctionnalités LLM des applications développées o
 
 ## Déploiement en production
 
-- Avant toute livraison, lire intégralement `docs/DEPLOIEMENT_PRODUCTION.md` et le fichier local non versionné `ACCES_PROD.md`.
+- Avant toute livraison, lire intégralement `docs/exploitation/DEPLOIEMENT_PRODUCTION.md` et le fichier local non versionné `ACCES_PROD.md`.
 - Suivre exclusivement la procédure et les accès indiqués dans ces deux fichiers.
 - Une demande explicite de déploiement vaut autorisation pour le commit, le push et les commandes de livraison prévues par la procédure. Ne pas redemander une confirmation déjà donnée.
 - Ne reconstruire que les services concernés et toujours employer `--no-deps` pour un déploiement isolé.

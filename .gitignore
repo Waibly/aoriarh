@@ -29,6 +29,10 @@ node_modules/
 .next/
 out/
 .turbo/
+*.tsbuildinfo
+
+# Generated Astro metadata
+.astro/
 
 # IDE
 .vscode/
@@ -71,3 +75,4 @@ SECURISATION_VPS.html
 # Misc
 *.log
 tmp/
+docs/.~lock*

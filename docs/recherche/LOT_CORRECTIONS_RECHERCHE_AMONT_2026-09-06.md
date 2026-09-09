@@ -201,6 +201,6 @@ Ne pas fixer de gain chiffré avant la mesure de référence. Les corrections ne
 - Ajustement du modèle de reranking, des seuils et des quotas de documents finaux.
 - Modification de la génération finale, hormis les avertissements et l'accès aux sorties brutes nécessaires au respect d'AGENTS.md.
 - Nouvelle ingestion massive ou réindexation : décision séparée si A2 révèle une incompatibilité des données existantes.
-- Déploiement en production : non demandé. Lorsqu'il sera demandé, appliquer `docs/DEPLOIEMENT_PRODUCTION.md` et `ACCES_PROD.md`.
+- Déploiement en production : non demandé. Lorsqu'il sera demandé, appliquer `docs/exploitation/DEPLOIEMENT_PRODUCTION.md` et `ACCES_PROD.md`.
 
 Livrables attendus de l'implémentation : corrections par étape, tests de régression, jeu d'évaluation annoté, comparaison avant/après et liste explicite des limites restantes.
