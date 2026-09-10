@@ -142,6 +142,35 @@ class TestExpandToParents:
         for i in range(1, 5):
             assert f"chunk {i}" in merged.text
 
+    async def test_jurisprudence_does_not_drop_chunks_to_fit_context_budget(self):
+        """An arrêt keeps its dispositif even when the document exceeds 9,000 chars."""
+        doc_id = "long-arret"
+        payloads = [
+            {
+                "text": f"chunk {i} " + ("x" * 3000),
+                "doc_name": "arrêt complet",
+                "document_id": doc_id,
+                "source_type": "arret_cour_cassation",
+                "norme_niveau": 1,
+                "norme_poids": 1.0,
+                "chunk_index": i,
+            }
+            for i in range(4)
+        ]
+        seed = _make_chunk(
+            doc_id=doc_id,
+            chunk_index=0,
+            text=payloads[0]["text"],
+            source_type="arret_cour_cassation",
+            score=0.8,
+        )
+        qdrant = _make_qdrant_mock({(("document_id", doc_id),): payloads})
+
+        merged = (await expand_to_parents([seed], qdrant))[0]
+
+        assert merged.context_chunk_indices == [0, 1, 2, 3]
+        assert all(f"chunk {i}" in merged.text for i in range(4))
+
     async def test_article_groups_by_article_num(self):
         # Two seed chunks of the same article in same doc → one merged group
         s1 = _make_chunk(

@@ -333,8 +333,15 @@ def deduplicate_article_passages(results: list[SearchResult]) -> list[SearchResu
 
 
 def _fetch_siblings(qdrant, key: tuple, access_filter=None):
-    """Bounded pagination; window constraints are applied by Qdrant itself."""
+    """Fetch the parent passages, keeping explicit jurisprudence complete.
+
+    Search windows and article parents remain bounded.  An explicit
+    jurisprudence parent is different: once an arrêt is selected, omitting a
+    later chunk can omit its answer or dispositif.  Its document scroll must
+    therefore run to completion.
+    """
     kind, doc_id = key[:2]
+    complete_document = kind == "doc"
     must = [FieldCondition(key="document_id", match=MatchValue(value=doc_id))]
     if access_filter is not None:
         must.append(access_filter)
@@ -351,7 +358,9 @@ def _fetch_siblings(qdrant, key: tuple, access_filter=None):
     found = []
     offset = None
     seen_offsets = set()
-    for page in range(4):
+    page = 0
+    while True:
+        page += 1
         kwargs = dict(
             collection_name=COLLECTION_NAME,
             scroll_filter=Filter(must=must),
@@ -364,14 +373,15 @@ def _fetch_siblings(qdrant, key: tuple, access_filter=None):
         points, offset = qdrant.scroll(**kwargs)
         found.extend(_payload_to_result(p.payload or {}) for p in points)
         if offset is None:
-            return found, {"pages": page + 1, "fetch_limited": False}
+            return found, {"pages": page, "fetch_limited": False}
         if str(offset) in seen_offsets:
             raise ParentExpansionError("parent_pagination_not_progressing")
         seen_offsets.add(str(offset))
-    return found, {"pages": 4, "fetch_limited": True}
+        if not complete_document and page >= 4:
+            return found, {"pages": page, "fetch_limited": True}
 
 
-def _merge_group(chunks, best_score, seeds=None):
+def _merge_group(chunks, best_score, seeds=None, *, complete_document: bool = False):
     """Assemble whole indexed passages; never reconstruct a legal conclusion."""
     ranked_seeds = sorted(seeds or chunks, key=lambda r: r.score, reverse=True)
     if not ranked_seeds:
@@ -380,8 +390,22 @@ def _merge_group(chunks, best_score, seeds=None):
     by_index = {r.chunk_index: r for r in chunks}
     # Original ranked passages win over the secondary fetch.
     by_index.update({r.chunk_index: r for r in reversed(ranked_seeds)})
-    if len(best.text) > MAX_CHARS_PER_GROUP:
+    if len(best.text) > MAX_CHARS_PER_GROUP and not complete_document:
         raise ParentExpansionError("selected_passage_exceeds_context_budget")
+    if complete_document:
+        # Jurisprudence is indexed as one document parent.  Once selected,
+        # preserve every fetched chunk in document order; never spend a
+        # character budget that could remove the answer or dispositif.
+        ordered = [by_index[i] for i in sorted(by_index)]
+        articles = list(dict.fromkeys(a for r in ordered for a in (r.article_nums or [])))
+        return replace(
+            best,
+            text="\n\n".join(r.text for r in ordered),
+            score=best_score,
+            seed_text=best.text,
+            article_nums=articles or best.article_nums,
+            context_chunk_indices=[r.chunk_index for r in ordered],
+        )
     priorities = list(dict.fromkeys(r.chunk_index for r in ranked_seeds))
     priorities += sorted(
         (i for i in by_index if i not in priorities),
@@ -470,7 +494,12 @@ async def expand_to_parents(
             raise ParentExpansionError("parent_fetch_failed") from outcome
         siblings, info = outcome
         seeds = groups[key]
-        merged = _merge_group(siblings, seeds[0].score, seeds=seeds)
+        merged = _merge_group(
+            siblings,
+            seeds[0].score,
+            seeds=seeds,
+            complete_document=key[0] == "doc",
+        )
         available = {r.chunk_index for r in siblings + seeds}
         included = set(merged.context_chunk_indices or [])
         diagnostics.append(
