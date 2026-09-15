@@ -80,6 +80,7 @@ class XPostResponse(BaseModel):
 
     content: str
     character_count: int
+    posts: list[str]
     format: Literal["short", "thread"]
     references: list[str]
     warnings: list[str]

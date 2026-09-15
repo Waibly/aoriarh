@@ -193,9 +193,10 @@ async def test_admin_can_choose_the_x_thread_format(
 ) -> None:
     conversation_id = await _create_conversation(client, admin_user, suffix="x")
     message_id, sources = await _add_exchange(conversation_id)
-    raw = "1/3 Accroche.\n\n2/3 Règle.\n\n3/3 Source."
+    raw = "Accroche.\n\nRègle.\n\nSource."
     generation = XPostGeneration(
         content=raw,
+        posts=["Accroche.", "Règle.", "Source."],
         format="thread",
         references=["Code du travail, art. L.1234-1"],
         warnings=[],
@@ -231,6 +232,7 @@ async def test_admin_can_choose_the_x_thread_format(
     assert response.json() == {
         "content": raw,
         "character_count": len(raw),
+        "posts": ["Accroche.", "Règle.", "Source."],
         "format": "thread",
         "references": ["Code du travail, art. L.1234-1"],
         "warnings": [],
@@ -255,6 +257,7 @@ async def test_x_visual_failure_keeps_generated_text_available(
     message_id, _ = await _add_exchange(conversation_id)
     generation = XPostGeneration(
         content="Post X conservé",
+        posts=["Post X conservé"],
         format="short",
         references=[],
         warnings=[],

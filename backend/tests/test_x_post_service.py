@@ -11,6 +11,7 @@ from app.services.x_post_service import (
     build_x_user_prompt,
     build_x_warnings,
     generate_x_post,
+    split_x_posts,
 )
 
 
@@ -28,10 +29,15 @@ def test_prompts_define_the_free_x_formats_and_natural_hook() -> None:
     assert "français idiomatique" in short
     assert "immédiatement compréhensible à la première lecture" in short
     assert "slogan télégraphique" in short
-    assert "280 caractères maximum" in short
+    assert "limite X de 280 caractères" in short
+    assert "plafond prudent de 250 caractères" in short
+    assert "Vise environ 220 caractères" in short
+    assert "compte tous les caractères" in short
     assert "exactement trois posts" in thread
-    assert "1/3" in thread and "2/3" in thread and "3/3" in thread
-    assert "280 caractères maximum" in thread
+    assert "Ne place jamais « 1/3 », « 2/3 », « 3/3 »" in thread
+    assert "X les relie nativement" in thread
+    assert "plafond prudent de 250 caractères" in thread
+    assert "Vérifie séparément la longueur de chacun" in thread
 
 
 def test_user_prompt_delimits_source_data_and_profile() -> None:
@@ -49,16 +55,29 @@ def test_user_prompt_delimits_source_data_and_profile() -> None:
 
 def test_warnings_report_limits_without_changing_content() -> None:
     short = "x" * (X_SHORT_MAX_CHARACTERS + 1)
-    thread = "1/3 " + "a" * 277 + "\n\n2/3 Court\n\n3/3 Fin"
+    thread = "a" * 281 + "\n\nCourt\n\nFin"
 
     assert "sans troncature" in build_x_warnings(short, "short")[0]
     assert "posts 1" in build_x_warnings(thread, "thread")[0]
     assert "sans reconstruction" in build_x_warnings("Post libre", "thread")[0]
 
 
+def test_posts_are_split_without_numbering_or_rewriting() -> None:
+    raw = "Premier post exact.\n\nDeuxième post exact.\n\nTroisième post exact."
+
+    assert split_x_posts(raw, "thread") == [
+        "Premier post exact.",
+        "Deuxième post exact.",
+        "Troisième post exact.",
+    ]
+    assert split_x_posts("  Post court exact.  ", "short") == [
+        "  Post court exact.  "
+    ]
+
+
 @pytest.mark.asyncio
 async def test_generation_returns_non_empty_output_exactly() -> None:
-    raw = "  1/3 Hook naturel.\n\n2/3 Règle utile.\n\n3/3 Source exacte.  "
+    raw = "Hook naturel.\n\nRègle utile.\n\nSource exacte."
     with patch(
         "app.services.x_post_service._llm.chat.completions.create",
         new=AsyncMock(return_value=_llm_response(raw)),
@@ -71,6 +90,7 @@ async def test_generation_returns_non_empty_output_exactly() -> None:
         )
 
     assert generation.content == raw
+    assert generation.posts == ["Hook naturel.", "Règle utile.", "Source exacte."]
     assert generation.format == "thread"
     assert create.await_args.kwargs["reasoning_effort"] == "medium"
 

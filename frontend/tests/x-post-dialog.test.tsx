@@ -51,22 +51,29 @@ describe("XPostDialog", () => {
       screen.getByRole("combobox", { name: "Format de publication X" })
     ).toHaveTextContent("Fil de 3 posts (recommandé)");
     expect(
-      screen.getByText("3 posts · 280 caractères chacun · Tous les comptes")
+      screen.getByText("3 posts séparés · cible 220 chacun · limite X 280")
     ).toBeInTheDocument();
     expect(
       screen.getByText(/compatible avec votre compte X gratuit/)
     ).toBeInTheDocument();
+    expect(screen.getByText("Ce qui va être généré")).toBeInTheDocument();
+    expect(screen.getByText("3 champs séparés")).toBeInTheDocument();
+    expect(
+      screen.getByText(/ne sont pas ajoutés au texte copié/)
+    ).toBeInTheDocument();
     expect(mockGenerateXPost).not.toHaveBeenCalled();
   });
 
-  it("génère, affiche et copie exactement le fil brut", async () => {
-    const raw = "  1/3 Hook.\n\n2/3 Règle.\n\n3/3 Source.  ";
+  it("affiche trois champs et copie chaque post sans numérotation", async () => {
+    const posts = ["Hook naturel.", "Règle utile.", "Source exacte."];
+    const raw = posts.join("\n\n");
     const visualRaw =
       '  <main class="x-card"><section class="x-visual"><h1>Titre</h1></section></main>  ';
     const visualHtml = `<!doctype html><body>${visualRaw}</body>`;
     mockGenerateXPost.mockResolvedValue({
       content: raw,
       character_count: raw.length,
+      posts,
       format: "thread",
       references: [],
       warnings: ["Avertissement technique visible."],
@@ -88,8 +95,14 @@ describe("XPostDialog", () => {
     fireEvent.click(screen.getByRole("button", { name: "Générer" }));
 
     expect(
-      await screen.findByRole("textbox", { name: "Publication X générée" })
-    ).toHaveValue(raw);
+      await screen.findByRole("textbox", { name: "Post 1 sur 3" })
+    ).toHaveValue(posts[0]);
+    expect(screen.getByRole("textbox", { name: "Post 2 sur 3" })).toHaveValue(
+      posts[1]
+    );
+    expect(screen.getByRole("textbox", { name: "Post 3 sur 3" })).toHaveValue(
+      posts[2]
+    );
     expect(
       screen.getByText("Avertissement technique visible.")
     ).toBeInTheDocument();
@@ -112,9 +125,19 @@ describe("XPostDialog", () => {
     );
 
     fireEvent.click(
-      screen.getByRole("button", { name: "Copier la publication" })
+      screen.getByRole("button", { name: "Copier post 1 sur 3" })
     );
-    await waitFor(() => expect(writeText).toHaveBeenCalledWith(raw));
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith(posts[0]));
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Copier post 2 sur 3" })
+    );
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith(posts[1]));
+
+    fireEvent.click(screen.getByText("Voir la sortie brute complète"));
+    expect(
+      screen.getByRole("textbox", { name: "Sortie brute complète du fil X" })
+    ).toHaveValue(raw);
 
     fireEvent.click(screen.getByText("Voir la sortie brute du visuel"));
     expect(

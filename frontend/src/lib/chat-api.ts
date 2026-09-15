@@ -162,6 +162,7 @@ export type XPostFormat = "short" | "thread";
 export interface XPostResult {
   content: string;
   character_count: number;
+  posts: string[];
   format: XPostFormat;
   references: string[];
   warnings: string[];

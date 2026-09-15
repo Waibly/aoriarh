@@ -8,9 +8,12 @@ import {
   Copy,
   Download,
   FileCode2,
+  ImageIcon,
+  ListOrdered,
   Loader2,
   RefreshCw,
   RotateCcw,
+  Sparkles,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -51,12 +54,12 @@ const FORMAT_DETAILS: Record<
 > = {
   short: {
     label: "Post court",
-    description: "1 post · 280 caractères · Tous les comptes",
+    description: "1 post · cible 220 · plafond prudent 250 · limite X 280",
     limit: 280,
   },
   thread: {
     label: "Fil de 3 posts (recommandé)",
-    description: "3 posts · 280 caractères chacun · Tous les comptes",
+    description: "3 posts séparés · cible 220 chacun · limite X 280",
     limit: null,
   },
 };
@@ -94,7 +97,7 @@ export function XPostDialog({
   const [rendering, setRendering] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [exportError, setExportError] = useState<string | null>(null);
-  const [copied, setCopied] = useState(false);
+  const [copiedPost, setCopiedPost] = useState<number | null>(null);
   const inFlightRef = useRef(false);
 
   const requestPost = useCallback(async () => {
@@ -112,7 +115,7 @@ export function XPostDialog({
       setPost(generated);
       setHtml(generated.visual_html ?? "");
       setExportError(generated.visual_error);
-      setCopied(false);
+      setCopiedPost(null);
     } catch (requestError) {
       setError(
         requestError instanceof Error
@@ -131,21 +134,20 @@ export function XPostDialog({
     setHtml("");
     setError(null);
     setExportError(null);
-    setCopied(false);
+    setCopiedPost(null);
   }, []);
 
-  const handleCopy = useCallback(async () => {
-    if (!post) return;
+  const handleCopy = useCallback(async (content: string, index: number) => {
     try {
-      await navigator.clipboard.writeText(post.content);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
+      await navigator.clipboard.writeText(content);
+      setCopiedPost(index);
+      setTimeout(() => setCopiedPost(null), 2000);
     } catch {
       toast.error(
-        "Impossible de copier la publication. Sélectionnez le texte manuellement."
+        "Impossible de copier ce post. Sélectionnez le texte manuellement."
       );
     }
-  }, [post]);
+  }, []);
 
   const htmlModified = Boolean(post?.visual_html) && html !== post?.visual_html;
 
@@ -199,12 +201,23 @@ export function XPostDialog({
   }, [html, messageId, rendering, token]);
 
   const details = FORMAT_DETAILS[format];
-  const overLimit =
-    details.limit !== null && (post?.character_count ?? 0) > details.limit;
+  const displayPosts = post
+    ? post.posts.length > 0
+      ? post.posts
+      : [post.content]
+    : [];
+  const hasStructuredThread = format !== "thread" || post?.posts.length === 3;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="flex h-[94dvh] max-h-[94dvh] w-[96vw] max-w-[96vw] flex-col sm:max-w-[96vw] xl:max-w-[1800px]">
+      <DialogContent
+        className={cn(
+          "flex w-[96vw] flex-col",
+          post
+            ? "h-[94dvh] max-h-[94dvh] max-w-[96vw] sm:max-w-[96vw] xl:max-w-[1800px]"
+            : "max-h-[90dvh] max-w-3xl sm:max-w-3xl"
+        )}
+      >
         <DialogHeader>
           <DialogTitle>Générer une publication X</DialogTitle>
           <DialogDescription>
@@ -240,16 +253,56 @@ export function XPostDialog({
         </div>
 
         {!post && !loading && !error && (
-          <div className="text-muted-foreground flex min-h-0 flex-1 items-center justify-center text-center text-sm">
-            Le fil de trois posts offre assez d’espace pour la règle, ses
-            nuances et les références, tout en restant visible comme un ensemble
-            sur X.
+          <div className="bg-muted/30 space-y-5 rounded-xl border p-5 sm:p-6">
+            <div className="flex gap-4">
+              <div className="bg-primary/10 text-primary flex size-11 shrink-0 items-center justify-center rounded-xl">
+                <Sparkles className="size-5" />
+              </div>
+              <div className="space-y-1">
+                <h3 className="font-semibold">Ce qui va être généré</h3>
+                <p className="text-muted-foreground text-sm leading-6">
+                  À partir de la réponse AORIA RH, vous obtiendrez un texte prêt
+                  à relire et un visuel horizontal à joindre au premier post.
+                </p>
+              </div>
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-3">
+              <div className="bg-background rounded-lg border p-3">
+                <ListOrdered className="text-primary mb-2 size-4" />
+                <p className="text-sm font-medium">
+                  {format === "thread" ? "3 champs séparés" : "1 champ texte"}
+                </p>
+                <p className="text-muted-foreground mt-1 text-xs leading-5">
+                  Chaque post dispose de son propre bouton de copie.
+                </p>
+              </div>
+              <div className="bg-background rounded-lg border p-3">
+                <Check className="text-primary mb-2 size-4" />
+                <p className="text-sm font-medium">Marge de sécurité</p>
+                <p className="text-muted-foreground mt-1 text-xs leading-5">
+                  Environ 220 caractères visés, 250 au maximum demandé.
+                </p>
+              </div>
+              <div className="bg-background rounded-lg border p-3">
+                <ImageIcon className="text-primary mb-2 size-4" />
+                <p className="text-sm font-medium">Visuel AORIA RH</p>
+                <p className="text-muted-foreground mt-1 text-xs leading-5">
+                  Une image 1260 × 675 prête à télécharger en PNG.
+                </p>
+              </div>
+            </div>
+
+            <p className="text-muted-foreground text-center text-xs">
+              Les numéros 1/3, 2/3 et 3/3 servent de libellés dans cette fenêtre
+              et ne sont pas ajoutés au texte copié.
+            </p>
           </div>
         )}
 
         {loading && !post && (
           <div
-            className="text-muted-foreground flex min-h-0 flex-1 flex-col items-center justify-center gap-3"
+            className="text-muted-foreground flex min-h-64 flex-col items-center justify-center gap-3"
             role="status"
           >
             <Loader2 className="text-primary size-7 animate-spin" />
@@ -300,26 +353,83 @@ export function XPostDialog({
                 <div>
                   <h3 className="font-semibold">Texte de la publication</h3>
                   <p className="text-muted-foreground text-xs">
-                    Le texte est compatible avec un compte X gratuit.
+                    Copiez chaque post séparément dans le fil natif de X.
                   </p>
                 </div>
-                <textarea
-                  aria-label="Publication X générée"
-                  value={post.content}
-                  readOnly
-                  spellCheck={false}
-                  className="border-input bg-background text-foreground focus-visible:ring-ring min-h-80 w-full resize-y rounded-lg border p-4 text-sm leading-6 focus-visible:ring-2 focus-visible:outline-none lg:min-h-[58dvh]"
-                />
-                <p
-                  className={cn(
-                    "text-muted-foreground text-right text-xs tabular-nums",
-                    overLimit && "text-destructive font-medium"
-                  )}
-                >
-                  {format === "thread"
-                    ? `${post.character_count.toLocaleString("fr-FR")} caractères au total · 280 maximum par post`
-                    : `${post.character_count.toLocaleString("fr-FR")} / ${details.limit?.toLocaleString("fr-FR")} caractères`}
-                </p>
+
+                <div className="space-y-3">
+                  {displayPosts.map((content, index) => {
+                    const overLimit = content.length > 280;
+                    const aboveTarget = content.length > 250;
+                    const label =
+                      format === "thread" && hasStructuredThread
+                        ? `Post ${index + 1} sur 3`
+                        : format === "short"
+                          ? "Post X"
+                          : "Sortie brute";
+                    return (
+                      <article
+                        key={`${index}-${content}`}
+                        className="bg-muted/20 space-y-2 rounded-lg border p-3"
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <p className="text-sm font-medium">{label}</p>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => void handleCopy(content, index)}
+                            disabled={loading}
+                            aria-label={`Copier ${label.toLocaleLowerCase("fr-FR")}`}
+                          >
+                            {copiedPost === index ? (
+                              <Check className="size-4" />
+                            ) : (
+                              <Copy className="size-4" />
+                            )}
+                            {copiedPost === index ? "Copié" : "Copier"}
+                          </Button>
+                        </div>
+                        <textarea
+                          aria-label={label}
+                          value={content}
+                          readOnly
+                          spellCheck={false}
+                          className="border-input bg-background text-foreground focus-visible:ring-ring min-h-32 w-full resize-y rounded-lg border p-3 text-sm leading-6 focus-visible:ring-2 focus-visible:outline-none"
+                        />
+                        <p
+                          className={cn(
+                            "text-muted-foreground text-right text-xs tabular-nums",
+                            aboveTarget && "text-amber-700 dark:text-amber-300",
+                            overLimit && "text-destructive font-medium"
+                          )}
+                        >
+                          {content.length.toLocaleString("fr-FR")} / 280
+                          caractères
+                          {aboveTarget && !overLimit
+                            ? " · au-dessus de la cible prudente de 250"
+                            : ""}
+                        </p>
+                      </article>
+                    );
+                  })}
+                </div>
+
+                {format === "thread" && hasStructuredThread && (
+                  <details className="rounded-lg border">
+                    <summary className="cursor-pointer px-3 py-2.5 text-sm font-medium">
+                      Voir la sortie brute complète
+                    </summary>
+                    <div className="border-t p-3">
+                      <textarea
+                        aria-label="Sortie brute complète du fil X"
+                        value={post.content}
+                        readOnly
+                        spellCheck={false}
+                        className="border-input bg-muted/30 text-foreground min-h-48 w-full resize-y rounded-lg border p-3 text-xs leading-5"
+                      />
+                    </div>
+                  </details>
+                )}
               </section>
 
               <section className="space-y-3 rounded-xl border p-4 lg:min-h-0 lg:overflow-y-auto">
@@ -437,14 +547,6 @@ export function XPostDialog({
                   <Download className="size-4" />
                 )}
                 {rendering ? "Préparation du PNG…" : "Télécharger le PNG"}
-              </Button>
-              <Button onClick={handleCopy} disabled={loading}>
-                {copied ? (
-                  <Check className="size-4" />
-                ) : (
-                  <Copy className="size-4" />
-                )}
-                {copied ? "Publication copiée" : "Copier la publication"}
               </Button>
             </>
           )}

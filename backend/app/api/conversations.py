@@ -564,6 +564,7 @@ async def generate_message_x_post(
     return XPostResponse(
         content=generation.content,
         character_count=len(generation.content),
+        posts=generation.posts,
         format=generation.format,
         references=generation.references,
         warnings=generation.warnings,

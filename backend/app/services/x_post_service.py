@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-import re
 from dataclasses import dataclass
 from typing import Literal
 
@@ -62,6 +61,15 @@ Règles absolues :
   question générique, ni dramatisation artificielle.
 - Centre la publication sur une seule idée juridique principale. Utilise des
   phrases courtes, la voix active et des verbes concrets.
+- La limite X de 280 caractères est une limite technique, jamais une cible.
+  Garde systématiquement une marge de sécurité : aucun post généré ne doit
+  dépasser 250 caractères.
+- Avant de répondre, compte tous les caractères du texte final de chaque post,
+  y compris les espaces, la ponctuation, les éventuels emojis, hashtags,
+  mentions et références.
+- Si tout le contenu ne tient pas sous 250 caractères, conserve l'idée juridique
+  la plus utile et retire les détails secondaires. N'approche jamais 280
+  caractères et ne sacrifie pas la clarté pour remplir l'espace disponible.
 - N'utilise aucun hashtag par automatisme. Un seul hashtag précis est admis s'il
   apporte réellement un repère de recherche. Ne demande jamais de liker,
   repartager, suivre le compte ou s'abonner.
@@ -74,7 +82,8 @@ Le texte sera affiché et copié exactement tel que tu le produis.
 
 _FORMAT_INSTRUCTIONS: dict[XPostFormat, str] = {
     "short": """Format post court :
-- Produis un seul post de 280 caractères maximum, espaces et référence compris.
+- Produis un seul post. Vise environ 220 caractères et ne dépasse jamais le
+  plafond prudent de 250 caractères, espaces et référence compris.
 - Ce format doit fonctionner pour un compte X sans abonnement.
 - Donne une idée utile complète. Ne comprime jamais la syntaxe au point de rendre
   le hook ou la règle difficiles à comprendre.
@@ -82,15 +91,19 @@ _FORMAT_INSTRUCTIONS: dict[XPostFormat, str] = {
   Sinon, n'invente pas d'abréviation et privilégie la fidélité du fond.
 - Termine par une question courte uniquement si elle tient et semble naturelle.""",
     "thread": """Format fil de trois posts :
-- Produis exactement trois posts. Chacun fait 280 caractères maximum, numéro
-  « 1/3 », « 2/3 » ou « 3/3 » compris.
+- Produis exactement trois posts. Vise environ 220 caractères par post et ne
+  dépasse jamais le plafond prudent de 250 caractères pour chacun. Vérifie
+  séparément la longueur de chacun.
 - Écris chaque post sur un seul paragraphe. Sépare les posts par une seule ligne
   vide. N'ajoute aucun séparateur, titre ou commentaire hors des trois posts.
-- Le post 1/3 contient le hook idiomatique et la règle principale.
-- Le post 2/3 explique les conditions, l'exception, le risque ou le levier
+- Ne place jamais « 1/3 », « 2/3 », « 3/3 » ni aucune autre numérotation dans
+  les posts. L'interface affiche leur ordre séparément et X les relie nativement.
+- Le premier post contient le hook idiomatique et la règle principale.
+- Le deuxième post explique les conditions, l'exception, le risque ou le levier
   opérationnel le plus utile. Il reste compréhensible isolément.
-- Le post 3/3 donne le repère pratique, puis les références autorisées les plus
-  utiles. Il peut finir par une question professionnelle courte et naturelle.
+- Le troisième post donne le repère pratique, puis les références autorisées
+  les plus utiles. Il peut finir par une question professionnelle courte et
+  naturelle.
 - Chaque post apporte une information nouvelle. Ne répète pas le hook.""",
 }
 
@@ -100,6 +113,7 @@ class XPostGeneration:
     """Sortie LLM brute et métadonnées informatives non bloquantes."""
 
     content: str
+    posts: list[str]
     format: XPostFormat
     references: list[str]
     warnings: list[str]
@@ -128,16 +142,15 @@ def build_x_user_prompt(
     )
 
 
-def _thread_posts(content: str) -> list[str]:
-    matches = list(re.finditer(r"(?m)^[123]/3 ", content))
-    if [match.group(0) for match in matches] != ["1/3 ", "2/3 ", "3/3 "]:
+def split_x_posts(content: str, format: XPostFormat) -> list[str]:
+    """Expose les posts exacts sans réécrire la sortie brute du modèle."""
+
+    if format == "short":
+        return [content]
+    posts = content.split("\n\n")
+    if len(posts) != X_THREAD_POST_COUNT or any(not post.strip() for post in posts):
         return []
-    return [
-        content[match.start() : matches[index + 1].start()].strip()
-        if index + 1 < len(matches)
-        else content[match.start() :].strip()
-        for index, match in enumerate(matches)
-    ]
+    return posts
 
 
 def build_x_warnings(content: str, format: XPostFormat) -> list[str]:
@@ -150,10 +163,10 @@ def build_x_warnings(content: str, format: XPostFormat) -> list[str]:
             "La génération brute est affichée sans troncature."
         )
     elif format == "thread":
-        posts = _thread_posts(content)
+        posts = split_x_posts(content, format)
         if len(posts) != X_THREAD_POST_COUNT:
             warnings.append(
-                "La sortie ne contient pas les trois posts numérotés attendus. "
+                "La sortie ne contient pas les trois paragraphes attendus. "
                 "La génération brute reste affichée sans reconstruction."
             )
         else:
@@ -226,6 +239,7 @@ async def generate_x_post(
 
     return XPostGeneration(
         content=content,
+        posts=split_x_posts(content, format),
         format=format,
         references=references,
         warnings=build_x_warnings(content, format),
