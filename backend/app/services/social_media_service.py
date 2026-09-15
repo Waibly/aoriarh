@@ -270,17 +270,20 @@ Règles absolues :
   se terminant par </main>. Aucun préambule, commentaire, bloc Markdown, style,
   script, iframe ou balise de document.
 - Le main contient exactement une section class="x-visual".
-- La section contient exactement un h1, puis éventuellement un seul
-  p class="source-note". N'ajoute aucun autre élément.
+- La section contient exactement un h1, puis un div class="source-list" dès
+  qu'au moins une référence autorisée est fournie. N'ajoute aucun autre
+  élément.
 - Le h1 contient un titre idiomatique, précis et autonome de 2 à 7 mots. Il
   identifie immédiatement le sujet juridique sans question générique, slogan,
   dramatisation, promesse ni formulation télégraphique.
 - Le titre synthétise le sujet traité dans la réponse. Il n'ajoute aucune règle
   ni conclusion absente de cette réponse.
-- Si une référence autorisée soutient directement le sujet du titre, recopie
-  son libellé exact dans p.source-note. Utilise une seule référence, la plus
-  directement liée au titre. Si aucune référence n'est fournie, n'invente rien
-  et omets p.source-note.
+- Si des références autorisées sont fournies, elles doivent toutes apparaître
+  sur le média. Dans div.source-list, ajoute exactement un p class="source-note"
+  par référence, dans l'ordre fourni, et recopie chaque libellé à l'identique.
+  Ne raccourcis, ne fusionne et ne reformule aucune référence.
+- Si aucune référence n'est fournie, n'invente rien et omets entièrement
+  div.source-list.
 - N'ajoute ni logo, ni signature, ni date, ni URL : le gabarit les fournit.
 - Ne révèle aucune information sur l'entreprise ou la personne à l'origine de
   la question, même anonymisée.
@@ -288,7 +291,8 @@ Règles absolues :
 
 Exemple de structure, uniquement pour les balises :
 <main class="x-card"><section class="x-visual"><h1>Titre juridique précis</h1>
-<p class="source-note">Référence exacte</p></section></main>
+<div class="source-list"><p class="source-note">Première référence exacte</p>
+<p class="source-note">Deuxième référence exacte</p></div></section></main>
 
 Le fragment sera conservé et affiché exactement tel que tu le produis.
 """
@@ -344,6 +348,7 @@ class _XVisualFragmentInspector(HTMLParser):
         self.main_count = 0
         self.visual_count = 0
         self.title_count = 0
+        self.source_list_count = 0
         self.source_count = 0
         self.forbidden_tags: list[str] = []
 
@@ -355,6 +360,8 @@ class _XVisualFragmentInspector(HTMLParser):
             self.visual_count += 1
         if tag == "h1":
             self.title_count += 1
+        if tag == "div" and "source-list" in classes:
+            self.source_list_count += 1
         if tag == "p" and "source-note" in classes:
             self.source_count += 1
         if tag in {"script", "iframe", "object", "embed", "link", "style"}:
@@ -498,9 +505,9 @@ def inspect_x_visual_fragment(raw_content: str, references: list[str]) -> list[s
             "Le visuel ne contient pas exactement un titre h1. "
             "La génération brute reste inchangée."
         )
-    if inspector.source_count > 1:
+    if references and inspector.source_list_count != 1:
         warnings.append(
-            "Le visuel contient plusieurs blocs de référence. "
+            "Le visuel ne contient pas exactement un bloc de sources. "
             "La génération brute reste inchangée."
         )
     if inspector.forbidden_tags:
@@ -509,9 +516,13 @@ def inspect_x_visual_fragment(raw_content: str, references: list[str]) -> list[s
             f"Le HTML X contient des balises non prévues ({tags}). Elles ne sont "
             "pas supprimées ; le moteur PNG n'exécute aucun script."
         )
-    if references and not any(reference in raw_content for reference in references):
+    missing_references = [reference for reference in references if reference not in raw_content]
+    if references and (
+        inspector.source_count != len(references) or missing_references
+    ):
         warnings.append(
-            "Aucune référence autorisée ne figure à l'identique dans le visuel. "
+            "Une ou plusieurs références autorisées ne figurent pas à l'identique "
+            "dans le visuel. "
             "La génération brute reste inchangée."
         )
     return warnings
@@ -769,8 +780,13 @@ body {{ font-family:'Inter Variable','Segoe UI',Arial,sans-serif; color:#fff; }}
 h1 {{ position:absolute; top:224px; left:72px; width:730px; margin:0; color:#fff;
   font-family:'Sora Variable','Segoe UI',Arial,sans-serif;
   font-size:67px; line-height:1.08; letter-spacing:-.035em; font-weight:790; }}
-.source-note {{ position:absolute; left:142px; right:72px; bottom:70px; margin:0;
-  color:#fff; font-size:22px; line-height:1.25; font-weight:650; }}
+.source-list {{ position:absolute; left:142px; right:72px; bottom:47px;
+  color:#fff; font-size:17px; line-height:1.25; font-weight:650; }}
+.source-list::before {{ content:'Sources'; display:block; margin-bottom:6px;
+  color:#e8d9ff; font-size:12px; font-weight:700; letter-spacing:.08em;
+  text-transform:uppercase; }}
+.source-note {{ margin:0; color:#fff; }}
+.source-note + .source-note {{ margin-top:4px; }}
 .generated-date {{ display:none; }}
 @media screen {{ body {{ display:block; }} }}
 </style>

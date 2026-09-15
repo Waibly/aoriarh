@@ -41,7 +41,8 @@ RAW_FRAGMENT = """<main class="carousel">
 
 X_RAW_FRAGMENT = """<main class="x-card"><section class="x-visual">
 <h1>Enregistrement clandestin et prud’hommes</h1>
-<p class="source-note">Cass. soc., 10 juin 2026, n° 25-10.445</p>
+<div class="source-list">
+<p class="source-note">Cass. soc., 10 juin 2026, n° 25-10.445</p></div>
 </section></main>"""
 
 
@@ -126,7 +127,7 @@ def test_prompt_requires_sober_copy_and_explained_legal_references():
     assert "N'en fais jamais un exemple" in SOCIAL_MEDIA_SYSTEM_PROMPT
 
 
-def test_x_visual_prompt_requires_one_short_sourced_card():
+def test_x_visual_prompt_requires_all_sources_on_the_card():
     prompt = " ".join(X_VISUAL_SYSTEM_PROMPT.split())
 
     assert '<main class="x-card">' in prompt
@@ -134,7 +135,10 @@ def test_x_visual_prompt_requires_one_short_sourced_card():
     assert "exactement un h1" in prompt
     assert "2 à 7 mots" in prompt
     assert "idiomatique" in prompt
-    assert "une seule référence" in prompt
+    assert "elles doivent toutes apparaître sur le média" in prompt
+    assert 'div class="source-list"' in prompt
+    assert 'un p class="source-note" par référence' in prompt
+    assert "Ne raccourcis, ne fusionne et ne reformule" in prompt
     assert "N'ajoute ni logo" in prompt
 
 
@@ -146,6 +150,22 @@ def test_x_visual_inspection_warns_without_changing_raw_fragment():
     assert any("main.x-card" in warning for warning in warnings)
     assert any("section.x-visual" in warning for warning in warnings)
     assert raw == "  <p>Sortie libre</p>  "
+
+
+def test_x_visual_inspection_requires_every_authorized_reference():
+    references = [
+        "Code du travail, art. L.1237-13",
+        "Convention collective Syntec, art. 4.5",
+    ]
+    raw = """<main class="x-card"><section class="x-visual">
+    <h1>Indemnité de rupture conventionnelle</h1>
+    <div class="source-list">
+      <p class="source-note">Code du travail, art. L.1237-13</p>
+    </div></section></main>"""
+
+    warnings = inspect_x_visual_fragment(raw, references)
+
+    assert any("ne figurent pas à l'identique" in warning for warning in warnings)
 
 
 def test_reference_context_exposes_the_topic_without_changing_the_exact_label():
@@ -289,6 +309,26 @@ def test_renderer_creates_one_1260_by_675_x_visual():
     assert len(images) == 1
     pixmap = fitz.Pixmap(images[0].content)
     assert (pixmap.width, pixmap.height) == (1260, 675)
+
+
+def test_x_visual_renders_every_source_on_the_media():
+    fragment = """<main class="x-card"><section class="x-visual">
+    <h1>Indemnité de rupture conventionnelle</h1>
+    <div class="source-list">
+      <p class="source-note">Code du travail, art. L.1237-13</p>
+      <p class="source-note">Convention collective Syntec, art. 4.5</p>
+    </div></section></main>"""
+    html = render_x_visual_document(
+        fragment,
+        generated_at=datetime(2026, 9, 15),
+    )
+
+    with fitz.open(stream=render_social_media_pdf(html), filetype="pdf") as document:
+        text = "\n".join(page.get_text() for page in document)
+
+    assert "SOURCES" in text
+    assert "Code du travail, art. L.1237-13" in text
+    assert "Convention collective Syntec, art. 4.5" in text
 
 
 def test_renderer_creates_one_pdf_page_per_slide():
