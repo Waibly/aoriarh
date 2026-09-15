@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from app.services.x_post_service import (
+    X_POST_MAX_COMPLETION_TOKENS,
     X_SHORT_MAX_CHARACTERS,
     build_x_system_prompt,
     build_x_user_prompt,
@@ -29,6 +30,9 @@ def test_prompts_define_the_free_x_formats_and_natural_hook() -> None:
     assert "français idiomatique" in short
     assert "immédiatement compréhensible à la première lecture" in short
     assert "slogan télégraphique" in short
+    assert "jamais « En Syntec »" in short
+    assert "La convention collective Syntec prévoit" in short
+    assert "Évite les raccourcis de note juridique" in short
     assert "limite X de 280 caractères" in short
     assert "plafond prudent de 250 caractères" in short
     assert "Vise environ 220 caractères" in short
@@ -93,6 +97,11 @@ async def test_generation_returns_non_empty_output_exactly() -> None:
     assert generation.posts == ["Hook naturel.", "Règle utile.", "Source exacte."]
     assert generation.format == "thread"
     assert create.await_args.kwargs["reasoning_effort"] == "medium"
+    assert (
+        create.await_args.kwargs["max_completion_tokens"]
+        == X_POST_MAX_COMPLETION_TOKENS
+        == 6000
+    )
 
 
 @pytest.mark.asyncio

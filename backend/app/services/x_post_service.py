@@ -23,7 +23,7 @@ XPostFormat = Literal["short", "thread"]
 
 X_POST_MODEL = "gpt-5.6-terra"
 X_POST_REASONING_EFFORT = "medium"
-X_POST_MAX_COMPLETION_TOKENS = 3000
+X_POST_MAX_COMPLETION_TOKENS = 6000
 X_SHORT_MAX_CHARACTERS = 280
 X_THREAD_POST_COUNT = 3
 
@@ -56,6 +56,14 @@ Règles absolues :
 - Adapte l'angle au profil métier fourni sans annoncer ce profil dans le texte.
 - Écris dans un français idiomatique, naturel, conversationnel et professionnel.
   Chaque phrase doit être immédiatement compréhensible à la première lecture.
+- Ne traite jamais le nom d'une convention collective comme un lieu ou un
+  adverbe. N'écris notamment jamais « En Syntec », « chez Syntec » ou « sous
+  Syntec ». Écris une phrase naturelle comme « La convention collective Syntec
+  prévoit... » ou, si le contexte l'exige, « Pour les salariés relevant de la
+  convention collective Syntec... ».
+- Évite les raccourcis de note juridique composés d'un statut suivi de deux
+  points, comme « ETAM : ... ». Intègre le statut dans une phrase complète et
+  fluide lorsque cela améliore la lecture.
 - Commence par un hook autonome qui nomme rapidement le sujet et apporte déjà
   une information. N'utilise ni slogan télégraphique, ni ellipse ambiguë, ni
   question générique, ni dramatisation artificielle.
@@ -229,9 +237,12 @@ async def generate_x_post(
         if content.strip():
             break
         logger.warning(
-            "Sortie X vide pour le message %s (tentative %d/2)",
+            "Sortie X vide pour le message %s (tentative %d/2, "
+            "finish_reason=%s, completion_tokens=%s)",
             message_id,
             attempt + 1,
+            getattr(response.choices[0], "finish_reason", None),
+            response.usage.completion_tokens if response.usage else None,
         )
 
     if not content.strip():
