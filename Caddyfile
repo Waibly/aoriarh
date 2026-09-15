@@ -33,3 +33,42 @@ monitoring.aoriarh.fr {
 	header Strict-Transport-Security "max-age=31536000; includeSubDomains"
 	reverse_proxy grafana:3000
 }
+
+# Calendoria — application privée, non indexable.
+calendoria.tosika.fr {
+	encode zstd gzip
+	request_body {
+		max_size 16MB
+	}
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		Permissions-Policy "camera=(), microphone=(), geolocation=()"
+		X-Robots-Tag "noindex, nofollow, noarchive, nosnippet, noimageindex, noai, noimageai"
+	}
+	reverse_proxy calendoria-web:3000
+}
+
+# Origine publique dédiée aux URL temporaires signées utilisées par Meta.
+media.calendoria.tosika.fr {
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "no-referrer"
+		X-Robots-Tag "noindex, nofollow, noarchive, nosnippet, noimageindex, noai, noimageai"
+	}
+	@media path /calendoria-media/*
+	@media_read {
+		path /calendoria-media/*
+		method GET HEAD
+	}
+	handle @media_read {
+		reverse_proxy calendoria-minio:9000
+	}
+	handle @media {
+		respond "Méthode non autorisée" 405
+	}
+	respond 404
+}
