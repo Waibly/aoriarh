@@ -21,6 +21,7 @@ jest.mock("next-auth/react", () => ({
 jest.mock("@/lib/chat-api", () => ({
   downloadFiche: jest.fn(),
   generateLinkedInPost: jest.fn(),
+  generateXPost: jest.fn(),
   generateSocialMedia: jest.fn(),
   getSourceFullContent: jest.fn(),
   renderSocialMediaHtml: jest.fn(),
@@ -48,12 +49,12 @@ function renderMessage(value: Message = message) {
   );
 }
 
-describe("bouton LinkedIn de MessageBubble", () => {
+describe("outils de publication de MessageBubble", () => {
   beforeEach(() => {
     jest.clearAllMocks();
   });
 
-  it("place les trois outils admin dans un encart séparé de la fiche", () => {
+  it("place les quatre outils admin dans un encart séparé de la fiche", () => {
     mockUseSession.mockReturnValue({
       data: {
         access_token: "token-admin",
@@ -78,6 +79,11 @@ describe("bouton LinkedIn de MessageBubble", () => {
     expect(
       within(publicationTools).getByRole("button", {
         name: "Générer le post LinkedIn",
+      })
+    ).toBeInTheDocument();
+    expect(
+      within(publicationTools).getByRole("button", {
+        name: "Générer une publication X",
       })
     ).toBeInTheDocument();
     expect(
@@ -111,6 +117,9 @@ describe("bouton LinkedIn de MessageBubble", () => {
       screen.queryByRole("button", { name: "Générer le post LinkedIn" })
     ).not.toBeInTheDocument();
     expect(
+      screen.queryByRole("button", { name: "Générer une publication X" })
+    ).not.toBeInTheDocument();
+    expect(
       screen.queryByRole("button", { name: "Générer un média" })
     ).not.toBeInTheDocument();
     expect(
@@ -140,6 +149,9 @@ describe("bouton LinkedIn de MessageBubble", () => {
 
     expect(
       screen.queryByRole("button", { name: "Générer le post LinkedIn" })
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Générer une publication X" })
     ).not.toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: "Générer un média" })

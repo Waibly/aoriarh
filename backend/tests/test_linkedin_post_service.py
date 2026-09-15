@@ -43,6 +43,11 @@ def test_prompt_requires_hook_body_sources_cta_and_forbids_hashtags() -> None:
     assert "tout se joue" in normalized_prompt
     assert "titre scolaire" in normalized_prompt
     assert "non idiomatique" in normalized_prompt
+    assert "idiomatique en français" in normalized_prompt
+    assert "se comprendre naturellement dès la première lecture" in normalized_prompt
+    assert "même lorsqu'il est lu seul" in normalized_prompt
+    assert "tournure télégraphique" in normalized_prompt
+    assert "le référent d'un pronom" in normalized_prompt
     assert "paragraphes d'une ou deux phrases" in LINKEDIN_POST_SYSTEM_PROMPT
     assert "directement au lecteur" in LINKEDIN_POST_SYSTEM_PROMPT
     assert "rarement 20 mots" in LINKEDIN_POST_SYSTEM_PROMPT
@@ -93,6 +98,11 @@ def test_carousel_post_prompt_is_short_and_forbids_slide_repetition() -> None:
     assert "trois à cinq paragraphes" in prompt
     assert "succession de slogans isolés" in prompt
     assert "peut être trop tard" in prompt
+    assert "idiomatique en français" in prompt
+    assert "se comprendre naturellement dès la première lecture" in prompt
+    assert "même lorsqu'il est lu sans le carrousel" in prompt
+    assert "slogan télégraphique" in prompt
+    assert "le référent d'un pronom" in prompt
     assert "Pour les RH, l'enjeu est de" in prompt
     assert "format selon l'intention" in prompt
     assert "Pour une alerte ou une erreur" in prompt

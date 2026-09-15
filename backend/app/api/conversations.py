@@ -43,6 +43,8 @@ from app.schemas.conversation import (
     SocialMediaImageResponse,
     SocialMediaRenderRequest,
     SocialMediaRenderResponse,
+    XPostRequest,
+    XPostResponse,
 )
 from app.services.billing_service import BillingService
 from app.services.conversation_service import ConversationService
@@ -464,6 +466,111 @@ async def generate_message_linkedin_post(
         character_count=len(generation.content),
         references=generation.references,
         warnings=generation.warnings,
+    )
+
+
+@router.post(
+    "/messages/{message_id}/x-post",
+    response_model=XPostResponse,
+)
+@limiter.limit("10/minute")
+async def generate_message_x_post(
+    message_id: uuid.UUID,
+    data: XPostRequest,
+    request: Request,
+    user: User = Depends(require_role(["admin"])),
+    db: AsyncSession = Depends(get_db),
+) -> XPostResponse:
+    """Génère un post X court ou un fil compatible avec un compte gratuit."""
+
+    from app.services.social_media_service import generate_x_visual
+    from app.services.x_post_service import generate_x_post
+
+    message = (
+        await db.execute(select(Message).where(Message.id == message_id))
+    ).scalar_one_or_none()
+    if message is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Message non trouvé",
+        )
+
+    service = ConversationService(db)
+    conversation = await service.get_conversation(
+        conversation_id=message.conversation_id,
+        user=user,
+    )
+    if conversation.user_id != user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Le post X ne peut être généré que depuis votre propre conversation.",
+        )
+    if message.role != "assistant" or not (message.content or "").strip():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Seule une réponse de l'assistant peut devenir un post X.",
+        )
+    if is_security_response(message.content, message.rag_trace):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Cette réponse de sécurité ne peut pas devenir un post X.",
+        )
+
+    question = ""
+    for conversation_message in conversation.messages:
+        if conversation_message.created_at >= message.created_at:
+            break
+        if conversation_message.role == "user":
+            question = conversation_message.content
+
+    sources = message.sources if isinstance(message.sources, list) else []
+    try:
+        generation = await generate_x_post(
+            question=question,
+            answer_markdown=message.content,
+            sources=sources,
+            format=data.format,
+            user_profile=user.profil_metier,
+            organisation_id=str(conversation.organisation_id),
+            user_id=str(user.id),
+            message_id=str(message.id),
+        )
+    except Exception:
+        logger.exception("Échec de génération X pour le message %s", message_id)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="La génération du post X a échoué. Veuillez réessayer.",
+        )
+
+    visual = None
+    visual_error = None
+    try:
+        visual = await generate_x_visual(
+            question=question,
+            answer_markdown=message.content,
+            sources=sources,
+            user_profile=user.profil_metier,
+            organisation_id=str(conversation.organisation_id),
+            user_id=str(user.id),
+            message_id=str(message.id),
+        )
+    except Exception:
+        logger.exception("Échec de génération du visuel X pour %s", message_id)
+        visual_error = (
+            "Le texte X a bien été généré, mais la génération du visuel a échoué. "
+            "Le texte reste disponible sans modification."
+        )
+
+    return XPostResponse(
+        content=generation.content,
+        character_count=len(generation.content),
+        format=generation.format,
+        references=generation.references,
+        warnings=generation.warnings,
+        visual_raw_content=visual.raw_content if visual is not None else None,
+        visual_html=visual.html if visual is not None else None,
+        visual_warnings=visual.warnings if visual is not None else [],
+        visual_error=visual_error,
     )
 
 

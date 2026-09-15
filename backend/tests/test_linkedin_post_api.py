@@ -11,6 +11,8 @@ from app.models.conversation import Message
 from app.models.fiche import Fiche
 from app.services.linkedin_post_service import LinkedInPostGeneration
 from app.services.security_alert_service import EVENT_TECHNICAL_RECON
+from app.services.social_media_service import SocialMediaGeneration
+from app.services.x_post_service import XPostGeneration
 from tests.conftest import auth_header
 from tests.conftest import test_session_factory as session_factory
 
@@ -178,6 +180,154 @@ async def test_security_response_never_reaches_linkedin_llm(
         response = await client.post(
             f"/api/v1/conversations/messages/{message_id}/linkedin-post",
             headers=auth_header(admin_user["token"]),
+        )
+
+    assert response.status_code == 422
+    assert "réponse de sécurité" in response.json()["detail"]
+    generate.assert_not_awaited()
+
+
+async def test_admin_can_choose_the_x_thread_format(
+    client: AsyncClient,
+    admin_user: dict,
+) -> None:
+    conversation_id = await _create_conversation(client, admin_user, suffix="x")
+    message_id, sources = await _add_exchange(conversation_id)
+    raw = "1/3 Accroche.\n\n2/3 Règle.\n\n3/3 Source."
+    generation = XPostGeneration(
+        content=raw,
+        format="thread",
+        references=["Code du travail, art. L.1234-1"],
+        warnings=[],
+    )
+    visual_raw = (
+        '<main class="x-card"><section class="x-visual">'
+        "<h1>Préavis de licenciement</h1></section></main>"
+    )
+    visual = SocialMediaGeneration(
+        raw_content=visual_raw,
+        html=f"<!doctype html><body>{visual_raw}</body>",
+        references=["Code du travail, art. L.1234-1"],
+        warnings=["Avertissement visuel"],
+    )
+
+    with (
+        patch(
+            "app.services.x_post_service.generate_x_post",
+            new=AsyncMock(return_value=generation),
+        ) as generate,
+        patch(
+            "app.services.social_media_service.generate_x_visual",
+            new=AsyncMock(return_value=visual),
+        ) as generate_visual,
+    ):
+        response = await client.post(
+            f"/api/v1/conversations/messages/{message_id}/x-post",
+            headers=auth_header(admin_user["token"]),
+            json={"format": "thread"},
+        )
+
+    assert response.status_code == 200, response.text
+    assert response.json() == {
+        "content": raw,
+        "character_count": len(raw),
+        "format": "thread",
+        "references": ["Code du travail, art. L.1234-1"],
+        "warnings": [],
+        "visual_raw_content": visual_raw,
+        "visual_html": visual.html,
+        "visual_warnings": ["Avertissement visuel"],
+        "visual_error": None,
+    }
+    call = generate.await_args.kwargs
+    assert call["format"] == "thread"
+    assert call["sources"] == sources
+    assert generate_visual.await_args.kwargs["answer_markdown"] == (
+        "L'article L. 1234-1 fixe la règle."
+    )
+
+
+async def test_x_visual_failure_keeps_generated_text_available(
+    client: AsyncClient,
+    admin_user: dict,
+) -> None:
+    conversation_id = await _create_conversation(client, admin_user, suffix="x-visual")
+    message_id, _ = await _add_exchange(conversation_id)
+    generation = XPostGeneration(
+        content="Post X conservé",
+        format="short",
+        references=[],
+        warnings=[],
+    )
+
+    with (
+        patch(
+            "app.services.x_post_service.generate_x_post",
+            new=AsyncMock(return_value=generation),
+        ),
+        patch(
+            "app.services.social_media_service.generate_x_visual",
+            new=AsyncMock(side_effect=RuntimeError("visuel impossible")),
+        ),
+    ):
+        response = await client.post(
+            f"/api/v1/conversations/messages/{message_id}/x-post",
+            headers=auth_header(admin_user["token"]),
+            json={"format": "short"},
+        )
+
+    assert response.status_code == 200, response.text
+    assert response.json()["content"] == "Post X conservé"
+    assert response.json()["visual_html"] is None
+    assert response.json()["visual_raw_content"] is None
+    assert response.json()["visual_error"] is not None
+
+
+async def test_x_endpoint_rejects_unknown_format(
+    client: AsyncClient,
+    admin_user: dict,
+) -> None:
+    response = await client.post(
+        "/api/v1/conversations/messages/00000000-0000-0000-0000-000000000099/x-post",
+        headers=auth_header(admin_user["token"]),
+        json={"format": "long"},
+    )
+
+    assert response.status_code == 422
+
+
+async def test_x_endpoint_requires_global_admin_role(
+    client: AsyncClient,
+    manager_user: dict,
+) -> None:
+    response = await client.post(
+        "/api/v1/conversations/messages/00000000-0000-0000-0000-000000000099/x-post",
+        headers=auth_header(manager_user["token"]),
+        json={"format": "short"},
+    )
+
+    assert response.status_code == 403
+
+
+async def test_security_response_never_reaches_x_llm(
+    client: AsyncClient,
+    admin_user: dict,
+) -> None:
+    conversation_id = await _create_conversation(client, admin_user, suffix="x-security")
+    message_id, _ = await _add_exchange(
+        conversation_id,
+        answer="Réponse de sécurité déterministe",
+        rag_trace={"security_event": EVENT_TECHNICAL_RECON},
+    )
+
+    with patch(
+        "app.services.x_post_service.generate_x_post",
+        new=AsyncMock(),
+    ) as generate:
+        response = await client.post(
+            f"/api/v1/conversations/messages/{message_id}/x-post",
+            headers=auth_header(admin_user["token"]),
+            json={"format": "thread"},
         )
 
     assert response.status_code == 422

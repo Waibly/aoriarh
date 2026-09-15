@@ -11,14 +11,18 @@ import pytest
 from app.services.social_media_service import (
     LINKEDIN_CAROUSEL_SYSTEM_PROMPT,
     SOCIAL_MEDIA_SYSTEM_PROMPT,
+    X_VISUAL_SYSTEM_PROMPT,
     _load_logo_data_url,
     build_social_media_reference_context,
     build_social_media_user_prompt,
     generate_social_media,
+    generate_x_visual,
     inspect_social_media_fragment,
+    inspect_x_visual_fragment,
     render_social_media_document,
     render_social_media_pdf,
     render_social_media_pngs,
+    render_x_visual_document,
 )
 
 RAW_FRAGMENT = """<main class="carousel">
@@ -34,6 +38,11 @@ RAW_FRAGMENT = """<main class="carousel">
     </div>
   </section>
 </main>"""
+
+X_RAW_FRAGMENT = """<main class="x-card"><section class="x-visual">
+<h1>Enregistrement clandestin et prud’hommes</h1>
+<p class="source-note">Cass. soc., 10 juin 2026, n° 25-10.445</p>
+</section></main>"""
 
 
 def _response(content: str):
@@ -117,6 +126,28 @@ def test_prompt_requires_sober_copy_and_explained_legal_references():
     assert "N'en fais jamais un exemple" in SOCIAL_MEDIA_SYSTEM_PROMPT
 
 
+def test_x_visual_prompt_requires_one_short_sourced_card():
+    prompt = " ".join(X_VISUAL_SYSTEM_PROMPT.split())
+
+    assert '<main class="x-card">' in prompt
+    assert 'section class="x-visual"' in prompt
+    assert "exactement un h1" in prompt
+    assert "2 à 7 mots" in prompt
+    assert "idiomatique" in prompt
+    assert "une seule référence" in prompt
+    assert "N'ajoute ni logo" in prompt
+
+
+def test_x_visual_inspection_warns_without_changing_raw_fragment():
+    raw = "  <p>Sortie libre</p>  "
+
+    warnings = inspect_x_visual_fragment(raw, [])
+
+    assert any("main.x-card" in warning for warning in warnings)
+    assert any("section.x-visual" in warning for warning in warnings)
+    assert raw == "  <p>Sortie libre</p>  "
+
+
 def test_reference_context_exposes_the_topic_without_changing_the_exact_label():
     context = build_social_media_reference_context(
         [
@@ -185,6 +216,31 @@ async def test_linkedin_carousel_generation_uses_its_dedicated_prompt():
 
 
 @pytest.mark.asyncio
+async def test_x_visual_generation_returns_exact_fragment_and_dedicated_document():
+    raw = f"  {X_RAW_FRAGMENT}\n"
+    create = AsyncMock(return_value=_response(raw))
+
+    with patch(
+        "app.services.social_media_service._llm.chat.completions.create",
+        create,
+    ):
+        generation = await generate_x_visual(
+            question="Question",
+            answer_markdown="Réponse",
+            sources=[],
+            generated_at=datetime(2026, 9, 15),
+        )
+
+    assert generation.raw_content == raw
+    assert raw in generation.html
+    assert "@page { size:1260px 675px" in generation.html
+    assert create.await_args.kwargs["messages"][0] == {
+        "role": "system",
+        "content": X_VISUAL_SYSTEM_PROMPT,
+    }
+
+
+@pytest.mark.asyncio
 async def test_empty_generation_fails_after_one_call_without_substitute():
     create = AsyncMock(return_value=_response(""))
 
@@ -220,6 +276,19 @@ def test_renderer_creates_one_exact_size_png_per_slide():
         assert image.content.startswith(b"\x89PNG\r\n\x1a\n")
         pixmap = fitz.Pixmap(image.content)
         assert (pixmap.width, pixmap.height) == (1080, 1350)
+
+
+def test_renderer_creates_one_1260_by_675_x_visual():
+    html = render_x_visual_document(
+        X_RAW_FRAGMENT,
+        generated_at=datetime(2026, 9, 15),
+    )
+
+    images = render_social_media_pngs(html)
+
+    assert len(images) == 1
+    pixmap = fitz.Pixmap(images[0].content)
+    assert (pixmap.width, pixmap.height) == (1260, 675)
 
 
 def test_renderer_creates_one_pdf_page_per_slide():

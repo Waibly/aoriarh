@@ -157,6 +157,50 @@ export async function generateLinkedInPost(
   return response.json() as Promise<LinkedInPostResult>;
 }
 
+export type XPostFormat = "short" | "thread";
+
+export interface XPostResult {
+  content: string;
+  character_count: number;
+  format: XPostFormat;
+  references: string[];
+  warnings: string[];
+  visual_raw_content: string | null;
+  visual_html: string | null;
+  visual_warnings: string[];
+  visual_error: string | null;
+}
+
+/** Génère une publication X et conserve exactement la sortie reçue. */
+export async function generateXPost(
+  messageId: string,
+  token: string,
+  format: XPostFormat
+): Promise<XPostResult> {
+  const response = await authFetch(
+    `/conversations/messages/${messageId}/x-post`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ format }),
+      token,
+    }
+  );
+
+  if (!response.ok) {
+    let message = "La génération du post X a échoué. Veuillez réessayer.";
+    try {
+      const data = await response.json();
+      if (typeof data?.detail === "string") message = data.detail;
+    } catch {
+      // Corps non JSON : conserve le message technique générique.
+    }
+    throw new Error(message);
+  }
+
+  return response.json() as Promise<XPostResult>;
+}
+
 export interface SocialMediaImageResult {
   filename: string;
   content_base64: string;

@@ -154,10 +154,14 @@ Règles absolues :
 Structure éditoriale :
 1. Produis un seul hook final, jamais plusieurs propositions ou variantes. Il
    occupe la première ligne et peut être complété par une seconde ligne courte
-   qui renforce la même idée. Le hook doit permettre d'identifier immédiatement
-   le sujet juridique, créer une tension concrète entre une croyance et la règle,
-   une pratique et son risque, ou une décision et sa conséquence, puis montrer
-   pourquoi cela concerne le profil métier ciblé. Privilégie dans cet ordre :
+   qui renforce la même idée. Le hook doit être idiomatique en français et se
+   comprendre naturellement dès la première lecture, même lorsqu'il est lu seul.
+   Rédige une ou deux phrases complètes, fluides et immédiatement intelligibles.
+   N'utilise ni tournure télégraphique, ni ellipse qui oblige à deviner le sujet,
+   le lien logique ou le référent d'un pronom. Le hook doit permettre d'identifier
+   immédiatement le sujet juridique, créer une tension concrète entre une croyance
+   et la règle, une pratique et son risque, ou une décision et sa conséquence,
+   puis montrer pourquoi cela concerne le profil métier ciblé. Privilégie dans cet ordre :
    une croyance courante corrigée, une erreur fréquente, une règle
    contre-intuitive, une situation opérationnelle précise, ou une prise de
    position utile. Donne déjà une information au lecteur tout en lui donnant
@@ -243,6 +247,10 @@ Hook :
 - Produis un seul hook. Il occupe le premier paragraphe, en une ou deux phrases
   de 15 mots maximum chacune. L'ensemble ne dépasse pas 160 caractères afin de
   rester lisible avant « voir plus ».
+- Le hook doit être idiomatique en français et se comprendre naturellement dès
+  la première lecture, même lorsqu'il est lu sans le carrousel. Rédige une ou
+  deux phrases complètes et fluides. N'utilise ni slogan télégraphique, ni ellipse
+  qui oblige à deviner le sujet, le lien logique ou le référent d'un pronom.
 - Le sujet juridique apparaît dans les huit premiers mots. Le hook livre déjà
   une information précise et crée une tension honnête.
 - Choisis uniquement le mécanisme adapté au sujet : croyance corrigée, erreur

@@ -44,6 +44,7 @@ import { MessageSources } from "./message-sources";
 import { SearchDetailsPanel } from "./search-details";
 import { LinkedInPostDialog } from "./linkedin-post-dialog";
 import { SocialMediaDialog } from "./social-media-dialog";
+import { XPostDialog } from "./x-post-dialog";
 import { ChatMarkdownTable } from "./chat-markdown-table";
 import { downloadFiche } from "@/lib/chat-api";
 import { cn } from "@/lib/utils";
@@ -80,6 +81,19 @@ function LinkedInFilledIcon({ className }: { className?: string }) {
   );
 }
 
+function XFilledIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="currentColor"
+      aria-hidden="true"
+      className={className}
+    >
+      <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24h-6.657l-5.214-6.817-5.967 6.817H1.68l7.73-8.835L1.254 2.25h6.826l4.713 6.231 5.45-6.231Zm-1.161 17.52h1.833L7.084 4.126H5.117L17.083 19.77Z" />
+    </svg>
+  );
+}
+
 export function MessageBubble({ message, onFeedback }: MessageBubbleProps) {
   const isUser = message.role === "user";
   const { data: session } = useSession();
@@ -88,6 +102,7 @@ export function MessageBubble({ message, onFeedback }: MessageBubbleProps) {
   const [comment, setComment] = useState("");
   const [ficheLoading, setFicheLoading] = useState(false);
   const [linkedinOpen, setLinkedinOpen] = useState(false);
+  const [xPostOpen, setXPostOpen] = useState(false);
   const [socialMediaOpen, setSocialMediaOpen] = useState(false);
   const [linkedinCarouselOpen, setLinkedinCarouselOpen] = useState(false);
   const commentRef = useRef<HTMLInputElement>(null);
@@ -338,6 +353,16 @@ export function MessageBubble({ message, onFeedback }: MessageBubbleProps) {
                   <Button
                     variant="outline"
                     size="sm"
+                    onClick={() => setXPostOpen(true)}
+                    disabled={!session?.access_token}
+                    className="border-primary/40 text-primary hover:bg-primary/10 hover:text-primary dark:border-primary/40 dark:bg-card dark:text-primary dark:hover:bg-primary/15 gap-1.5 bg-white"
+                  >
+                    <XFilledIcon className="size-4" />
+                    Générer une publication X
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
                     onClick={() => setSocialMediaOpen(true)}
                     disabled={!session?.access_token}
                     className="border-primary/40 text-primary hover:bg-primary/10 hover:text-primary dark:border-primary/40 dark:bg-card dark:text-primary dark:hover:bg-primary/15 gap-1.5 bg-white"
@@ -366,6 +391,12 @@ export function MessageBubble({ message, onFeedback }: MessageBubbleProps) {
                 token={session?.access_token}
                 open={linkedinOpen}
                 onOpenChange={setLinkedinOpen}
+              />
+              <XPostDialog
+                messageId={message.id}
+                token={session?.access_token}
+                open={xPostOpen}
+                onOpenChange={setXPostOpen}
               />
               <SocialMediaDialog
                 messageId={message.id}

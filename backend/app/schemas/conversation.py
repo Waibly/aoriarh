@@ -1,5 +1,6 @@
 import uuid
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, Field, computed_field
 
@@ -68,6 +69,24 @@ class LinkedInPostResponse(BaseModel):
     character_count: int
     references: list[str]
     warnings: list[str]
+
+
+class XPostRequest(BaseModel):
+    format: Literal["short", "thread"] = "thread"
+
+
+class XPostResponse(BaseModel):
+    """Publication X et visuel HTML brut, sans correction éditoriale."""
+
+    content: str
+    character_count: int
+    format: Literal["short", "thread"]
+    references: list[str]
+    warnings: list[str]
+    visual_raw_content: str | None = None
+    visual_html: str | None = None
+    visual_warnings: list[str] = Field(default_factory=list)
+    visual_error: str | None = None
 
 
 class SocialMediaImageResponse(BaseModel):
