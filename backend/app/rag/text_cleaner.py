@@ -1,6 +1,8 @@
 import re
 import unicodedata
 
+from app.rag.article_chunker import ARTICLE_METADATA_PREFIX
+
 # Pattern matching legal structural headings (titles, chapters, sections, etc.)
 _HEADING_RE = re.compile(
     r"^\s*("
@@ -58,7 +60,20 @@ def _remove_toc_blocks(text: str) -> str:
 
 
 def clean_text(text: str) -> str:
-    """Clean extracted text for RAG indexation."""
+    """Clean prose while preserving serialized article metadata verbatim.
+
+    Typography normalization must never touch JSON: replacing a smart quote
+    inside a string with an unescaped ASCII quote makes valid metadata invalid.
+    Invalid source metadata is also preserved so the parser reports the error.
+    """
+    parts = re.split(rf"(?m)^({re.escape(ARTICLE_METADATA_PREFIX)}[^\n]*)$", text)
+    return "".join(
+        part if i % 2 else _clean_prose(part)
+        for i, part in enumerate(parts)
+    ).strip()
+
+
+def _clean_prose(text: str) -> str:
     # Remove zero-width chars and control characters (keep newlines and tabs)
     text = "".join(
         ch for ch in text
@@ -94,4 +109,4 @@ def clean_text(text: str) -> str:
     # Normalize multiple spaces
     text = re.sub(r"[ \t]{2,}", " ", text)
 
-    return text.strip()
+    return text

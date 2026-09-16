@@ -295,7 +295,7 @@ async def get_dashboard(
             title=f"{docs_row.error} document(s) en erreur d'indexation",
             detail="Ces documents ne sont pas interrogeables par le RAG.",
             action_label="Voir les documents",
-            action_href="/admin/corpus",
+            action_href="/admin/corpus#indexation-errors",
         ))
     if failed_24h > 0:
         incidents.append(Incident(

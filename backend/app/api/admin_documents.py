@@ -41,6 +41,51 @@ class StorageStats(BaseModel):
     org_documents: int
 
 
+class IndexationErrorItem(BaseModel):
+    id: uuid.UUID
+    name: str
+    organisation_id: uuid.UUID | None
+    organisation_name: str | None
+    indexation_error: str | None
+
+
+class IndexationErrorsResponse(BaseModel):
+    items: list[IndexationErrorItem]
+    total: int
+    page: int
+    page_size: int
+
+
+@router.get("/errors", response_model=IndexationErrorsResponse)
+async def list_indexation_errors(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    user: User = Depends(require_role(["admin"])),
+    db: AsyncSession = Depends(get_db),
+) -> IndexationErrorsResponse:
+    """Expose common and organisation failures to admins, with their original error."""
+    from app.models.organisation import Organisation
+
+    condition = Document.indexation_status == "error"
+    total = (await db.execute(
+        select(func.count()).select_from(Document).where(condition)
+    )).scalar_one()
+    rows = (await db.execute(
+        select(
+            Document.id, Document.name, Document.organisation_id,
+            Organisation.name.label("organisation_name"), Document.indexation_error,
+        )
+        .outerjoin(Organisation, Document.organisation_id == Organisation.id)
+        .where(condition)
+        .order_by(Document.updated_at.desc(), Document.id)
+        .offset((page - 1) * page_size).limit(page_size)
+    )).mappings().all()
+    return IndexationErrorsResponse(
+        items=[IndexationErrorItem(**row) for row in rows],
+        total=total, page=page, page_size=page_size,
+    )
+
+
 @router.get("/stats", response_model=StorageStats)
 async def get_storage_stats(
     user: User = Depends(require_role(["admin"])),

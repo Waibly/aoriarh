@@ -28,6 +28,7 @@ import {
 import { toast } from "sonner";
 import { useOrg } from "@/lib/org-context";
 import { apiFetch } from "@/lib/api";
+import { conventionDisplayStatus } from "@/lib/convention-status";
 import type { Document, OrganisationConvention, CcnReference } from "@/types/api";
 import { SOURCE_TYPE_OPTIONS } from "@/types/api";
 import { CcnSelector } from "@/components/ccn-selector";
@@ -731,6 +732,7 @@ function CcnDetailPane({
   docs: Document[];
   onDownload: (id: string) => void;
 }) {
+  const displayStatus = conventionDisplayStatus(ccn.status, docs);
   // Split docs : consolidated official text vs recently published amendments.
   // The amendments list is read-only from the client's perspective — they
   // are common documents managed by AORIA RH and synchronised by the BOCC
@@ -786,22 +788,22 @@ function CcnDetailPane({
               {sourceDateBadge.label}
             </Badge>
           )}
-          {ccn.status === "ready" && (
+          {displayStatus === "ready" && (
             <Badge className="bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 border-0">
               <CheckCircle2 className="h-3.5 w-3.5 mr-1" /> Active — utilisée par AORIA RH
             </Badge>
           )}
-          {(ccn.status === "fetching" || ccn.status === "indexing" || ccn.status === "pending") && (
+          {(displayStatus === "fetching" || displayStatus === "indexing" || displayStatus === "pending") && (
             <Badge className="bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400 border-0">
               <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />
-              {ccn.status === "fetching"
+              {displayStatus === "fetching"
                 ? "Récupération du texte officiel (1-2 min)..."
-                : ccn.status === "indexing"
+                : displayStatus === "indexing"
                   ? "Préparation pour le chat (30-60 s)..."
                   : "Démarrage..."}
             </Badge>
           )}
-          {ccn.status === "error" && (
+          {displayStatus === "error" && (
             <Badge className="bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400 border-0">
               Erreur — contactez le support
             </Badge>
@@ -812,8 +814,10 @@ function CcnDetailPane({
             </Badge>
           )}
         </div>
-        {ccn.status === "error" && ccn.error_message && (
-          <p className="text-xs text-destructive mt-2">{ccn.error_message}</p>
+        {displayStatus === "error" && (
+          <p className="text-xs text-destructive mt-2">
+            {ccn.error_message ?? "Un ou plusieurs documents de cette convention sont en erreur d’indexation."}
+          </p>
         )}
       </div>
 

@@ -106,6 +106,41 @@ async def test_manager_cannot_access_admin_endpoints(
 
 
 @pytest.mark.asyncio
+async def test_errors_requires_admin(client: AsyncClient, regular_user: dict[str, str]):
+    res = await client.get("/api/v1/admin/documents/errors", headers=auth_header(regular_user["token"]))
+    assert res.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_errors_include_both_scopes_and_original_error(client: AsyncClient, admin_user: dict[str, str]):
+    from app.models.document import Document
+    from app.models.organisation import Organisation
+
+    user_id = await _get_user_id("admin@test.com")
+    org_id = uuid.uuid4()
+    async with test_session_factory() as session:
+        session.add(Organisation(id=org_id, name="Organisation test"))
+        await session.commit()
+    common = await _create_document_in_db(uploaded_by=user_id, status="error", name="CCN commune")
+    org = await _create_document_in_db(uploaded_by=user_id, org_id=org_id, status="error", name="CCN entreprise")
+    await _create_document_in_db(uploaded_by=user_id, status="indexed")
+    async with test_session_factory() as session:
+        doc = await session.get(Document, org)
+        doc.indexation_error = "Expecting ',' delimiter"
+        await session.commit()
+    headers = auth_header(admin_user["token"])
+    data = (await client.get("/api/v1/admin/documents/errors", headers=headers)).json()
+    assert data["total"] == 2
+    items = {item["id"]: item for item in data["items"]}
+    assert items[str(common)]["organisation_id"] is None
+    assert items[str(org)]["organisation_name"] == "Organisation test"
+    assert items[str(org)]["indexation_error"] == "Expecting ',' delimiter"
+    pages = [(await client.get(f"/api/v1/admin/documents/errors?page={page}&page_size=1", headers=headers)).json() for page in (1, 2)]
+    assert all(page["total"] == 2 and len(page["items"]) == 1 for page in pages)
+    assert pages[0]["items"][0]["id"] != pages[1]["items"][0]["id"]
+
+
+@pytest.mark.asyncio
 async def test_stats_empty(
     client: AsyncClient, admin_user: dict[str, str]
 ) -> None:

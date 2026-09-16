@@ -53,6 +53,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { InfoTooltip } from "@/components/admin/info-tooltip";
+import { IndexationErrors } from "./IndexationErrors";
 import { InspectorBody, type InspectorPayload, type RagTrace, type CitedSource } from "../quality/InspectorBody";
 
 // ----------------- Types -----------------
@@ -1415,6 +1416,7 @@ export default function CorpusPage() {
       </div>
 
       {/* Live ingestion progress (visible only when worker is busy) */}
+      <IndexationErrors token={token} />
       <IngestionProgressBanner token={token} />
 
       {/* Sync banner */}
