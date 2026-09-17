@@ -103,7 +103,6 @@ async def isolated(monkeypatch):
         db.add(doc)
         await db.commit()
         storage.put_file_bytes(doc.storage_path, source)
-        monkeypatch.setattr(settings, "document_extraction_organisation_ids", [org.id])
         seed = dict(doc_id=doc.id, org_id=org.id, user_id=user.id, old_path=doc.storage_path)
 
     async def embeddings(chunks, *args, **kwargs):

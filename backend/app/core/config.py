@@ -38,16 +38,14 @@ class Settings(BaseSettings):
     minio_bucket: str = "aoriarh-documents"
     minio_use_ssl: bool = False
 
-    # First document-reading pilot: no chat/retrieval change, no legacy backfill.
-    document_extraction_enabled: bool = False
+    # Available to every organisation; global operational switch, no legacy backfill.
+    document_extraction_enabled: bool = True
     storage_recovery_enabled: bool = False
-    document_extraction_organisation_ids: list[UUID] = Field(default_factory=list)
 
     def document_extraction_enabled_for(self, organisation_id: UUID | None) -> bool:
         return (
             self.document_extraction_enabled
             and organisation_id is not None
-            and organisation_id in self.document_extraction_organisation_ids
         )
 
     # OpenAI

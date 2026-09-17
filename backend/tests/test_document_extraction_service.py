@@ -63,7 +63,6 @@ async def dossier(monkeypatch):
         user = User(id=uuid.uuid4(), email="reader@example.test", full_name="Reader", role="user")
         org = Organisation(id=uuid.uuid4(), name="Org A")
         other_org = Organisation(id=uuid.uuid4(), name="Org B")
-        monkeypatch.setattr(settings, "document_extraction_organisation_ids", [org.id])
         db.add_all([user, org, other_org])
         await db.flush()
         db.add(Membership(user_id=user.id, organisation_id=org.id, role_in_org="user"))
@@ -286,14 +285,12 @@ async def test_common_corpus_stays_on_legacy_extractor(dossier, monkeypatch):
     assert not pipeline.storage.mock_calls
 
 
-async def test_enabling_flag_without_allowlist_does_not_change_ingestion(dossier, monkeypatch):
+async def test_enabled_for_every_organisation_but_not_common_corpus(dossier, monkeypatch):
     monkeypatch.setattr(settings, "document_extraction_enabled", True)
-    monkeypatch.setattr(settings, "document_extraction_organisation_ids", [])
-    pipeline = IngestionPipeline.__new__(IngestionPipeline)
-    pipeline.extractor = TextExtractor()
-    pipeline.storage = MagicMock()
-    assert await pipeline._extract_document_text(dossier.doc, RAW.encode(), dossier.db) == RAW
-    assert not pipeline.storage.mock_calls
+    assert settings.document_extraction_enabled_for(dossier.org.id)
+    assert settings.document_extraction_enabled_for(uuid.uuid4())
+    assert not settings.document_extraction_enabled_for(None)
+    monkeypatch.setattr(settings, "document_extraction_enabled", False)
     assert not settings.document_extraction_enabled_for(dossier.org.id)
 
 
