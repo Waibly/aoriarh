@@ -5,10 +5,11 @@ import json
 import logging
 import time
 import uuid
+from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, UploadFile, status
 from fastapi.responses import Response, StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -53,6 +54,45 @@ from app.services.security_alert_service import send_security_alert_bg
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+class ExistingDocumentAttachment(BaseModel):
+    source_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+
+
+@router.get("/{conversation_id}/document-library")
+@limiter.limit("120/minute")
+async def search_conversation_library(
+    conversation_id: uuid.UUID, request: Request, response: Response,
+    name: str = Query("", max_length=200),
+    uploaded_from: date | None = None, uploaded_to: date | None = None,
+    offset: int = Query(0, ge=0, le=10_000), limit: int = Query(20, ge=1, le=50),
+    user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db),
+):
+    from app.services.conversation_library_service import ConversationLibraryService
+
+    service = ConversationLibraryService(db)
+    conversation = await service.conversation(conversation_id, user)
+    response.headers["Cache-Control"] = "private, no-store"
+    return await service.search(conversation, name=name, uploaded_from=uploaded_from,
+                                uploaded_to=uploaded_to, offset=offset, limit=limit)
+
+
+@router.post("/{conversation_id}/document-library/{document_id}")
+@limiter.limit("30/hour")
+async def prepare_existing_conversation_document(
+    conversation_id: uuid.UUID, document_id: uuid.UUID,
+    data: ExistingDocumentAttachment, request: Request, response: Response,
+    user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db),
+):
+    from app.services.conversation_library_service import ConversationLibraryService
+
+    service = ConversationLibraryService(db)
+    conversation = await service.conversation(conversation_id, user)
+    billing = BillingService(db)
+    billing.ensure_plan_active(await billing.get_account_for_organisation(conversation.organisation_id))
+    response.headers["Cache-Control"] = "private, no-store"
+    return await service.prepare(conversation, user, document_id, data.source_sha256)
 
 
 @router.post("/{conversation_id}/documents", status_code=201)

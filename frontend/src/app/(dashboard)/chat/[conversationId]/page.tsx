@@ -7,6 +7,8 @@ import { useSession } from "next-auth/react";
 import { toast } from "sonner";
 import { ChatInput } from "@/components/chat/chat-input";
 import { SearchDetailsPanel } from "@/components/chat/search-details";
+import { DocumentLibrary } from "@/components/chat/document-library";
+import { prepareLibraryDocument } from "@/lib/chat-document-library";
 
 const MessageList = dynamic(() =>
   import("@/components/chat/message-list").then((mod) => ({ default: mod.MessageList })),
@@ -36,6 +38,8 @@ export default function ConversationPage() {
   >(null);
   const initialQueryProcessed = useRef(false);
   const abortControllerRef = useRef<AbortController | null>(null);
+  const activeConversationRef = useRef(conversationId);
+  activeConversationRef.current = conversationId;
 
   // Load existing conversation messages (skip when there's an initial query
   // since the conversation was just created and is empty, and skip during streaming)
@@ -48,6 +52,7 @@ export default function ConversationPage() {
     let cancelled = false;
     setAttachments(undefined);
     setAttachmentsEnabled(false);
+    setIsUploading(false);
     (async () => {
       try {
         const data = await getConversation(conversationId, token);
@@ -247,6 +252,23 @@ export default function ConversationPage() {
         onFeedback={handleFeedback}
       />
       <div className="max-h-64 overflow-auto"><SearchDetailsPanel details={searchDetails} /></div>
+      {attachmentsEnabled && token && <DocumentLibrary key={conversationId}
+        conversationId={conversationId} token={token}
+        selectedIds={(attachments ?? []).map((doc) => doc.document_id)}
+        disabled={isStreaming || isUploading}
+        onSelect={async (document) => {
+          if (isStreaming || isUploading || (attachments?.length ?? 0) >= 3) return;
+          setIsUploading(true);
+          try {
+            const ref = await prepareLibraryDocument(conversationId, token, document);
+            if (activeConversationRef.current === conversationId) {
+              setAttachments((current) => current?.some((d) => d.document_id === ref.document_id)
+                ? current : [...(current ?? []), ref]);
+            }
+          } finally {
+            if (activeConversationRef.current === conversationId) setIsUploading(false);
+          }
+        }} />}
       <ChatInput
         onSend={handleSend}
         disabled={isStreaming || isUploading}
