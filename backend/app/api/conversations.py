@@ -6,7 +6,7 @@ import logging
 import time
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, UploadFile, status
 from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy import select
@@ -53,6 +53,44 @@ from app.services.security_alert_service import send_security_alert_bg
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+@router.post("/{conversation_id}/documents", status_code=201)
+@limiter.limit("30/hour")
+async def attach_conversation_document(
+    conversation_id: uuid.UUID, request: Request, file: UploadFile,
+    user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db),
+):
+    from app.core.config import settings
+    from app.rag.tasks import enqueue_ingestion
+    from app.rag.text_extractor import TextExtractor
+    from app.services.document_extraction_service import DocumentExtractionService, SourceSnapshot
+    from app.services.document_service import DocumentService, storage
+
+    conversation = await ConversationService(db).get_conversation(conversation_id, user)
+    from app.core.dependencies import verify_org_membership
+    if user.role != "admin" and await verify_org_membership(conversation.organisation_id, user, db) is None:
+        raise HTTPException(403, "Vous n'avez plus accès à cette organisation")
+    if not settings.document_extraction_enabled_for(conversation.organisation_id):
+        raise HTTPException(409, "Les pièces jointes ne sont pas activées pour cette organisation")
+    billing = BillingService(db)
+    account = await billing.get_account_for_organisation(conversation.organisation_id)
+    billing.ensure_plan_active(account)
+    org = await db.get(Organisation, conversation.organisation_id)
+    await billing.check_document_limit(org)
+    doc = await DocumentService(db).upload_document(file, "divers", org.id, user.id,
+                                                   max_file_size=2 * 1024 * 1024)
+    # The company original remains available even if extraction/queue fails.
+    extraction = DocumentExtractionService(db, storage)
+    try:
+        raw_bytes = await asyncio.to_thread(storage.get_file_bytes, doc.storage_path)
+        await extraction.extract(SourceSnapshot.from_document(doc), raw_bytes, TextExtractor())
+        manifest = await extraction.status(doc.id, org.id, user.id)
+        await enqueue_ingestion(str(doc.id), expected_source=doc.storage_path)
+    except Exception:
+        raise HTTPException(503, "Fichier enregistré dans Documents, mais préparation incomplète ; aucune pièce jointe confirmée") from None
+    return {"document_id": str(doc.id), "extraction_id": str(manifest["extraction_id"]),
+            "name": doc.name, "coverage": manifest["coverage"]}
 
 
 @router.post("/", response_model=ConversationRead, status_code=status.HTTP_201_CREATED)
@@ -1116,6 +1154,18 @@ async def chat_stream(
     account = await billing.get_account_for_organisation(conversation.organisation_id)
     await billing.check_question_quota(account)
 
+    from app.services.conversation_document_service import (
+        active_references, read_conversation_documents, prepare_document_task,
+    )
+    references = active_references(conversation.messages, data.document_references)
+    documents, document_continuity = await read_conversation_documents(
+        db, conversation, user, references,
+    )
+    if documents:
+        references = [{"document_id": str(d["document_id"]),
+                       "extraction_id": str(d["extraction_id"]), "name": d["source_name"]}
+                      for d in documents]
+
     # 2. Load org context for RAG
     org_context = await _load_org_context(db, conversation.organisation_id)
     if org_context is not None:
@@ -1173,13 +1223,15 @@ async def chat_stream(
                 db=db,
                 llm=agent.llm,
                 organisation_id=conversation.organisation_id,
-                use_llm_fallback=not history,
+                use_llm_fallback=not history and not documents,
             )
             if intent_result.raw_response:
                 yield _sse_event("chat_search_details", search_feedback({
                     "router_raw_response": intent_result.raw_response,
                 }))
-            if intent_result.static_answer is not None:
+            if intent_result.static_answer is not None and (
+                not documents or is_security_response(intent_result.static_answer)
+            ):
                 logger.info(
                     "[INTENT] %s via %s — court-circuit RAG",
                     intent_result.intent.value,
@@ -1192,6 +1244,7 @@ async def chat_stream(
                     conversation_id=conversation_id,
                     role="user",
                     content=data.message,
+                    document_references=references,
                 )
                 meta_assistant = await service.add_message(
                     conversation_id=conversation_id,
@@ -1266,18 +1319,25 @@ async def chat_stream(
             # the whole conversation as before). The agent's `conversation_id`
             # parameter is in fact used as the cost context id.
             question_id = uuid.uuid4()
-            ctx_task = asyncio.ensure_future(
-                prepare_rag_context(
-                    agent,
-                    query=data.message,
-                    organisation_id=str(conversation.organisation_id),
-                    org_context=org_context,
-                    history=history if history else None,
-                    cited_sources=cited_sources if cited_sources else None,
-                    org_idcc_list=org_idcc_list,
-                    user_id=str(user.id),
-                    context_id=str(question_id),
+            async def legal_context(query=data.message, *, search_plan=None):
+                return await prepare_rag_context(
+                    agent, query=query, organisation_id=str(conversation.organisation_id),
+                    org_context=org_context, history=history or None,
+                    cited_sources=cited_sources or None, org_idcc_list=org_idcc_list,
+                    user_id=str(user.id), context_id=str(question_id),
+                    **({"search_plan": search_plan} if search_plan is not None else {}),
                 )
+            if documents:
+                from app.rag.config import EXPAND_MODEL
+                agent._org_id = str(conversation.organisation_id)
+                agent._user_id = str(user.id)
+                agent._conversation_id = str(question_id)
+            ctx_task = asyncio.ensure_future(
+                prepare_document_task(agent, query=data.message, documents=documents,
+                    continuity=document_continuity, legal_search=legal_context, model=EXPAND_MODEL,
+                    org_context=org_context, org_idcc_list=org_idcc_list,
+                    cited_sources=cited_sources or None)
+                if documents else legal_context()
             )
             try:
                 try:
@@ -1317,7 +1377,8 @@ async def chat_stream(
                 )
                 return
 
-            rag_trace.router_raw_response = intent_result.raw_response
+            if not documents:
+                rag_trace.router_raw_response = intent_result.raw_response
             yield _sse_event("chat_search_details", search_feedback(rag_trace))
             if rag_trace.error in {"search_reranking_error", "search_context_error"}:
                 yield _sse_event("chat_error", {
@@ -1354,12 +1415,25 @@ async def chat_stream(
                 )
                 return
 
+            if documents:
+                # Recheck current ACL/version after the potentially long legal search.
+                await read_conversation_documents(db, conversation, user, references)
+                from app.rag.document_generation import build_document_task_context
+
+                document_task_context = build_document_task_context(documents, results, rag_trace)
+
             # 3. Send status: searching done, preparing response
             yield _sse_event("chat_status", {"step": "Recherche dans les sources..."})
 
             # 3b. Send sources before generation starts
             sources = agent.format_sources(results)
             sources_dicts = [dataclasses.asdict(s) for s in sources]
+            for source in sources_dicts:
+                for document in documents:
+                    if source.get("document_id") == str(document["document_id"]):
+                        source["extraction_id"] = str(document["extraction_id"])
+                        source["coverage"] = document["coverage"]
+                        source["selection_kind"] = "explicit_document_reference"
             yield _sse_event("chat_sources", {"sources": sources_dicts})
 
             # Couche 2 — écarte des sources portées celles déjà présentes dans les
@@ -1368,6 +1442,8 @@ async def chat_stream(
             # la génération.
             _fresh_keys = {_source_key(s) for s in sources_dicts}
             carried_sources = [s for s in carried_raw if _source_key(s) not in _fresh_keys]
+            if documents:
+                carried_sources = []  # No unchecked stale source copies in the documentary path.
             source_policy = rag_trace.search_plan or {}
             excluded_types = set(source_policy.get("excluded_source_types", []))
             exclusive_types = set(source_policy.get("exclusive_source_types", []))
@@ -1411,7 +1487,7 @@ async def chat_stream(
                         data.message,
                         results,
                         org_context=org_context,
-                        history=history,
+                        history=None if documents else history,
                         low_confidence=rag_trace.low_confidence,
                         condensed_query=reformulated,
                         carried_sources=carried_sources or None,
@@ -1421,6 +1497,8 @@ async def chat_stream(
                             and rag_trace.search_plan_usage.get("execution") == "adaptive"
                             else None
                         ),
+                        **({"document_continuity": document_continuity,
+                            "document_task_context": document_task_context} if documents else {}),
                     ),
                     idle_timeout=RAG_TIMEOUT_STREAM_IDLE,
                     slow_notice=RAG_SLOW_NOTICE,
@@ -1499,6 +1577,7 @@ async def chat_stream(
                 conversation_id=conversation_id,
                 role="user",
                 content=data.message,
+                document_references=references,
             )
             assistant_message = await service.add_message(
                 conversation_id=conversation_id,

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from app.rag.agent import RAGAgent, RagTrace
 from app.rag.search import SearchResult
+from app.rag.search_plan import SearchPlan
 
 
 async def prepare_rag_context(
@@ -18,6 +19,7 @@ async def prepare_rag_context(
     user_id: str | None = None,
     context_id: str | None = None,
     is_replay: bool = False,
+    search_plan: SearchPlan | None = None,
 ) -> tuple[list[SearchResult], str, RagTrace]:
     """Prépare les sources avec le pipeline adaptatif de production.
 
@@ -36,4 +38,5 @@ async def prepare_rag_context(
         user_id=user_id,
         conversation_id=context_id,
         is_replay=is_replay,
+        **({"search_plan": search_plan} if search_plan is not None else {}),
     )

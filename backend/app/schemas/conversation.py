@@ -23,6 +23,12 @@ class ConversationRead(BaseModel):
     created_at: datetime
     updated_at: datetime
 
+    @computed_field
+    @property
+    def document_attachments_enabled(self) -> bool:
+        from app.core.config import settings
+        return settings.document_extraction_enabled_for(self.organisation_id)
+
 
 class MessageRead(BaseModel):
     model_config = {"from_attributes": True}
@@ -31,6 +37,7 @@ class MessageRead(BaseModel):
     conversation_id: uuid.UUID
     role: str
     content: str
+    document_references: list[dict] | None = None
     sources: list[dict] | None
     feedback: str | None
     feedback_comment: str | None
@@ -120,5 +127,12 @@ class SocialMediaRenderResponse(BaseModel):
     images: list[SocialMediaImageResponse]
 
 
+class ChatDocumentReference(BaseModel):
+    document_id: uuid.UUID
+    extraction_id: uuid.UUID
+
+
 class ChatRequest(BaseModel):
     message: str = Field(..., min_length=1, max_length=5000)
+    # None inherits the last explicit set; [] clears it. Never inferred by matching.
+    document_references: list[ChatDocumentReference] | None = Field(None, max_length=3)

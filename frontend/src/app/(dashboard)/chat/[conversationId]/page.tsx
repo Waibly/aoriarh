@@ -12,7 +12,7 @@ const MessageList = dynamic(() =>
   import("@/components/chat/message-list").then((mod) => ({ default: mod.MessageList })),
   { ssr: false },
 );
-import { getConversation, streamMessage, updateMessageFeedback } from "@/lib/chat-api";
+import { getConversation, streamMessage, updateMessageFeedback, uploadChatDocument, type ChatDocumentReference } from "@/lib/chat-api";
 import type { Message, MessageSource, SearchDetails } from "@/types/api";
 
 export default function ConversationPage() {
@@ -24,6 +24,9 @@ export default function ConversationPage() {
   const token = session?.access_token;
 
   const [messages, setMessages] = useState<Message[]>([]);
+  const [attachments, setAttachments] = useState<ChatDocumentReference[] | undefined>();
+  const [isUploading, setIsUploading] = useState(false);
+  const [attachmentsEnabled, setAttachmentsEnabled] = useState(false);
   const [searchDetails, setSearchDetails] = useState<SearchDetails | null>(null);
   const [isStreaming, setIsStreaming] = useState(false);
   const [streamingStatus, setStreamingStatus] = useState<string | null>(null);
@@ -40,14 +43,19 @@ export default function ConversationPage() {
   isStreamingRef.current = isStreaming;
 
   useEffect(() => {
-    if (!token || conversationId === "new" || initialQuery || isStreamingRef.current) return;
+    if (!token || conversationId === "new") return;
 
     let cancelled = false;
+    setAttachments(undefined);
+    setAttachmentsEnabled(false);
     (async () => {
       try {
         const data = await getConversation(conversationId, token);
+        if (!cancelled) setAttachmentsEnabled(data.document_attachments_enabled === true);
         if (!cancelled && !isStreamingRef.current) {
           setMessages(data.messages);
+          const latest = [...data.messages].reverse().find((m) => m.role === "user" && m.document_references != null);
+          setAttachments(latest?.document_references ?? []);
         }
       } catch {
         // conversation not found or access denied
@@ -68,6 +76,7 @@ export default function ConversationPage() {
         conversation_id: conversationId,
         role: "user",
         content,
+        document_references: attachments,
         sources: null,
         feedback: null,
         feedback_comment: null,
@@ -180,6 +189,7 @@ export default function ConversationPage() {
             },
           },
           abortController.signal,
+          attachments,
         );
       } catch {
         if (!abortController.signal.aborted) {
@@ -193,7 +203,7 @@ export default function ConversationPage() {
         }
       }
     },
-    [conversationId, token],
+    [conversationId, token, attachments],
   );
 
   const handleFeedback = useCallback(
@@ -239,7 +249,20 @@ export default function ConversationPage() {
       <div className="max-h-64 overflow-auto"><SearchDetailsPanel details={searchDetails} /></div>
       <ChatInput
         onSend={handleSend}
-        disabled={isStreaming}
+        disabled={isStreaming || isUploading}
+        attachments={attachments}
+        onRemove={(id) => setAttachments((current) => (current ?? []).filter((doc) => doc.document_id !== id))}
+        onAttach={attachmentsEnabled ? async (file) => {
+          if (!token || isUploading || (attachments?.length ?? 0) >= 3) return;
+          if (file.size > 2 * 1024 * 1024) { toast.error("Maximum 2 Mo par pièce jointe"); return; }
+          setIsUploading(true);
+          try {
+            const doc = await uploadChatDocument(conversationId, file, token);
+            setAttachments((current) => [...(current ?? []), doc]);
+          } catch (error) {
+            toast.error(error instanceof Error ? error.message : "Échec du dépôt");
+          } finally { setIsUploading(false); }
+        } : undefined}
         onStop={
           isStreaming
             ? () => {

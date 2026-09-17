@@ -210,11 +210,14 @@ class OrganisationService:
         )
         documents = docs_result.scalars().all()
         storage = StorageService()
+        from app.services.document_extraction_service import delete_extraction_artifacts
+        from app.services.storage_operation_service import (
+            queue_storage_delete, finish_pending_storage_deletes,
+        )
+
+        await delete_extraction_artifacts(self.db, storage, [doc.id for doc in documents])
         for doc in documents:
-            try:
-                storage.delete_file(doc.storage_path)
-            except Exception:
-                logger.warning("Failed to delete file %s", doc.storage_path)
+            await queue_storage_delete(self.db, storage, doc.id, doc.storage_path)
 
         # 3. Delete practical sheets before their source messages and organisation
         await self.db.execute(
@@ -259,6 +262,7 @@ class OrganisationService:
         # 10. Delete organisation
         await self.db.delete(org)
         await self.db.commit()
+        await finish_pending_storage_deletes(self.db, storage)
 
     # --- Member management ---
 

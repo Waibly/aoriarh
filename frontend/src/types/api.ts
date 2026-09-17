@@ -84,6 +84,7 @@ export interface Conversation {
   id: string;
   organisation_id: string;
   user_id: string;
+  document_attachments_enabled?: boolean;
   title: string | null;
   created_at: string;
   updated_at: string;
@@ -125,6 +126,7 @@ export interface Message {
   conversation_id: string;
   role: "user" | "assistant";
   content: string;
+  document_references?: { document_id: string; extraction_id: string; name?: string }[] | null;
   sources: MessageSource[] | null;
   feedback: string | null;
   feedback_comment: string | null;

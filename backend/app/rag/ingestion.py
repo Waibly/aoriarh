@@ -12,7 +12,7 @@ from qdrant_client.models import (
     MatchValue,
     PointStruct,
 )
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
@@ -57,6 +57,10 @@ ARTICLE_AWARE_SOURCE_TYPES = {
 }
 
 logger = logging.getLogger(__name__)
+
+
+class StaleDocumentIngestion(RuntimeError):
+    """The source has changed/deleted; this job must not publish or update it."""
 
 # Retry config for Voyage AI rate limits
 MAX_RETRIES = 3
@@ -191,6 +195,7 @@ async def _get_embeddings_with_progress(
     api_key: str,
     doc: Document,
     db: AsyncSession,
+    progress_callback=None,
 ) -> list[list[float]]:
     """Get dense embeddings with progress updates (15% → 80%) and concurrency."""
     total_batches = math.ceil(len(texts) / EMBEDDING_BATCH_SIZE)
@@ -220,8 +225,11 @@ async def _get_embeddings_with_progress(
             done_count += 1
             # Update progress: 15% → 80% proportional to batches done
             progress = 15 + int(65 * done_count / total_batches)
-            doc.indexation_progress = progress
-            await db.commit()
+            if progress_callback is not None:
+                await progress_callback(progress)
+            else:
+                doc.indexation_progress = progress
+                await db.commit()
 
     async with httpx.AsyncClient() as client:
         await asyncio.gather(*[_process_batch(i, client) for i in range(total_batches)])
@@ -263,10 +271,34 @@ class IngestionPipeline:
         ensure_collection(self.qdrant)
 
     async def _update_progress(self, doc: Document, db: AsyncSession, progress: int) -> None:
-        doc.indexation_progress = progress
-        await db.commit()
+        await self._update_current(doc, db, indexation_progress=progress)
 
-    async def ingest(self, document_id: uuid.UUID, db: AsyncSession) -> None:
+    def _current_source_conditions(self):
+        doc_id, path, digest = self._ingestion_source
+        return (Document.id == doc_id, Document.storage_path == path, Document.file_hash == digest)
+
+    async def _update_current(self, doc: Document, db: AsyncSession, **values) -> None:
+        result = await db.execute(
+            update(Document).where(*self._current_source_conditions()).values(**values)
+            .execution_options(synchronize_session=False)
+        )
+        if result.rowcount != 1:
+            await db.rollback()
+            raise StaleDocumentIngestion("source_version_changed")
+        await db.commit()
+        # Refresh through SQLAlchemy after the guarded commit, not dirty assignments
+        # that could later flush an old status over a replacement.
+        await db.refresh(doc)
+
+    async def _lock_publication(self, db: AsyncSession) -> None:
+        current = (await db.execute(
+            select(Document.id).where(*self._current_source_conditions()).with_for_update()
+        )).first()
+        if current is None:
+            raise StaleDocumentIngestion("source_version_changed")
+
+    async def ingest(self, document_id: uuid.UUID, db: AsyncSession,
+                     expected_source: str | None = None) -> None:
         # 1. Load document from PostgreSQL
         result = await db.execute(select(Document).where(Document.id == document_id))
         doc = result.scalar_one_or_none()
@@ -274,20 +306,23 @@ class IngestionPipeline:
             logger.error("Document %s not found in DB", document_id)
             return
 
+        if expected_source is not None and doc.storage_path != expected_source:
+            logger.info("Ignoring obsolete queued ingestion for document %s", document_id)
+            return
+        self._ingestion_source = (doc.id, doc.storage_path, doc.file_hash)
+
         start_time = time.time()
 
         try:
             # 2. Update status to indexing
-            doc.indexation_status = "indexing"
-            doc.indexation_progress = 0
-            await db.commit()
+            await self._update_current(doc, db, indexation_status="indexing", indexation_progress=0)
 
             # 3. Download from MinIO
             file_bytes = self.storage.get_file_bytes(doc.storage_path)
             await self._update_progress(doc, db, 5)
 
             # 4. Extract text
-            raw_text = self.extractor.extract(file_bytes, doc.file_format or "pdf")
+            raw_text = await self._extract_document_text(doc, file_bytes, db)
             await self._update_progress(doc, db, 10)
 
             # 5. Clean text
@@ -295,10 +330,9 @@ class IngestionPipeline:
 
             if not cleaned_text.strip():
                 logger.warning("Document %s: no text extracted", document_id)
-                doc.indexation_status = "error"
-                doc.indexation_error = "Aucun texte extrait du document"
-                doc.indexation_progress = None
-                await db.commit()
+                await self._update_current(doc, db, indexation_status="error",
+                                           indexation_error="Aucun texte extrait du document",
+                                           indexation_progress=None)
                 return
 
             # 6. Chunk (route to specialized chunker by source type)
@@ -316,10 +350,9 @@ class IngestionPipeline:
                 chunks = self.chunker.chunk(cleaned_text)
             if not chunks:
                 logger.warning("Document %s: no chunks produced", document_id)
-                doc.indexation_status = "error"
-                doc.indexation_error = "Aucun chunk produit après extraction du texte"
-                doc.indexation_progress = None
-                await db.commit()
+                await self._update_current(doc, db, indexation_status="error",
+                                           indexation_error="Aucun chunk produit après extraction du texte",
+                                           indexation_progress=None)
                 return
 
             chunk_char_lengths = [len(c) for c in chunks]
@@ -337,7 +370,8 @@ class IngestionPipeline:
 
             # 7. Generate embeddings (dense + sparse) — 15% → 80%
             dense_embeddings = await _get_embeddings_with_progress(
-                chunks, settings.voyage_api_key, doc, db
+                chunks, settings.voyage_api_key, doc, db,
+                progress_callback=lambda progress: self._update_progress(doc, db, progress),
             )
             sparse_vectors = _get_sparse_vectors(chunks)
             await self._update_progress(doc, db, 85)
@@ -423,16 +457,18 @@ class IngestionPipeline:
                 )
 
             # 9. Upsert NEW chunks into Qdrant (batch by 100)
+            # Replacement/deletion cannot commit while this short publication
+            # transaction runs. No intermediate progress commit releases its lock.
+            await self._lock_publication(db)
             batch_size = 100
             for i in range(0, len(points), batch_size):
                 self.qdrant.upsert(
                     collection_name=COLLECTION_NAME,
                     points=points[i : i + batch_size],
                 )
-            await self._update_progress(doc, db, 95)
 
             # 10. Delete OLD chunks (insert-then-swap: old data stays intact until new is in)
-            self._cleanup_old_chunks(str(doc.id), set(new_point_ids))
+            self._cleanup_old_chunks(str(doc.id), set(new_point_ids), strict=True)
 
             # 11. Update status to indexed
             duration_ms = int((time.time() - start_time) * 1000)
@@ -450,15 +486,42 @@ class IngestionPipeline:
             )
 
         except Exception as exc:
+            from app.services.document_extraction_service import ExtractionError
+
+            if (isinstance(exc, StaleDocumentIngestion)
+                    or isinstance(exc, ExtractionError) and str(exc) == "source_version_changed"):
+                await db.rollback()
+                logger.warning(
+                    "Extraction cancelled: document %s changed during ingestion", document_id,
+                )
+                return
             duration_ms = int((time.time() - start_time) * 1000)
             logger.exception("Failed to index document %s (%dms)", document_id, duration_ms)
-            doc.indexation_status = "error"
-            doc.indexation_duration_ms = duration_ms
-            doc.indexation_error = str(exc)[:500]
-            doc.indexation_progress = None
-            await db.commit()
+            await db.rollback()
+            try:
+                await self._update_current(
+                    doc, db, indexation_status="error", indexation_duration_ms=duration_ms,
+                    indexation_error=str(exc)[:500], indexation_progress=None,
+                )
+            except StaleDocumentIngestion:
+                logger.info("Discarded error from obsolete job for document %s", document_id)
 
-    def _cleanup_old_chunks(self, document_id: str, new_point_ids: set[str]) -> None:
+    async def _extract_document_text(
+        self, doc: Document, file_bytes: bytes, db: AsyncSession,
+    ) -> str:
+        if not settings.document_extraction_enabled_for(doc.organisation_id):
+            return self.extractor.extract(file_bytes, doc.file_format or "pdf")
+        from app.services.document_extraction_service import (
+            DocumentExtractionService,
+            SourceSnapshot,
+        )
+
+        return await DocumentExtractionService(db, self.storage).extract(
+            SourceSnapshot.from_document(doc), file_bytes, self.extractor,
+        )
+
+    def _cleanup_old_chunks(self, document_id: str, new_point_ids: set[str],
+                            strict: bool = False) -> None:
         """Delete old Qdrant points for a document, keeping only new_point_ids."""
         try:
             old_point_ids: list[str] = []
@@ -499,6 +562,8 @@ class IngestionPipeline:
                         points_selector=old_point_ids[i : i + 500],
                     )
         except Exception:
+            if strict:
+                raise
             logger.warning(
                 "Failed to cleanup old Qdrant chunks for document %s",
                 document_id,

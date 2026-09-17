@@ -31,10 +31,10 @@ async def get_arq_pool() -> ArqRedis:
     return _pool
 
 
-async def enqueue_ingestion(document_id: str) -> None:
+async def enqueue_ingestion(document_id: str, expected_source: str | None = None) -> None:
     """Enqueue a document ingestion job to the ARQ worker."""
     pool = await get_arq_pool()
-    await pool.enqueue_job("run_ingestion", document_id)
+    await pool.enqueue_job("run_ingestion", document_id, expected_source=expected_source)
     logger.info("Ingestion job enqueued for document %s", document_id)
 
 

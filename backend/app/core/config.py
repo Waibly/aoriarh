@@ -1,3 +1,5 @@
+from uuid import UUID
+
 from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -35,6 +37,18 @@ class Settings(BaseSettings):
     minio_secret_key: str  # OBLIGATOIRE — pas de défaut
     minio_bucket: str = "aoriarh-documents"
     minio_use_ssl: bool = False
+
+    # First document-reading pilot: no chat/retrieval change, no legacy backfill.
+    document_extraction_enabled: bool = False
+    storage_recovery_enabled: bool = False
+    document_extraction_organisation_ids: list[UUID] = Field(default_factory=list)
+
+    def document_extraction_enabled_for(self, organisation_id: UUID | None) -> bool:
+        return (
+            self.document_extraction_enabled
+            and organisation_id is not None
+            and organisation_id in self.document_extraction_organisation_ids
+        )
 
     # OpenAI
     openai_api_key: str  # OBLIGATOIRE — pas de défaut

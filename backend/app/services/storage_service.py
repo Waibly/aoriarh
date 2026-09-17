@@ -70,3 +70,19 @@ class StorageService:
             Params={"Bucket": self.bucket, "Key": path},
             ExpiresIn=expires,
         )
+
+    def get_file_bytes_bounded(self, path: str, max_bytes: int) -> bytes:
+        """Read an artifact without buffering an unexpectedly large object."""
+        if max_bytes < 1:
+            raise ValueError("invalid_read_budget")
+        response = self.client.get_object(Bucket=self.bucket, Key=path)
+        body = response["Body"]
+        try:
+            if response.get("ContentLength", 0) > max_bytes:
+                raise ValueError("read_budget_exceeded")
+            data = body.read(max_bytes + 1)
+            if len(data) > max_bytes:
+                raise ValueError("read_budget_exceeded")
+            return data
+        finally:
+            body.close()

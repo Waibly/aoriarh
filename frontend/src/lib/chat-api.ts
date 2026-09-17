@@ -357,20 +357,21 @@ export async function streamMessage(
 ): Promise<void> {
   // Do NOT pass signal to fetch — React Strict Mode aborts it in dev.
   // Instead we check signal.aborted manually in the read loop.
+  documentReferences?: ChatDocumentReference[],
   const response = await authFetch(
     `/conversations/${conversationId}/chat/stream`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ message }),
+      body: JSON.stringify({ message, document_references: documentReferences }),
       token,
     },
   );
 
   if (!response.ok) {
-    callbacks.onError(
-      "Une erreur est survenue lors du traitement de votre question.",
-    );
+    const body = await response.json().catch(() => null);
+    callbacks.onError(typeof body?.detail === "string" ? body.detail :
+      "Une erreur est survenue lors du traitement de votre question.");
     return;
   }
 
@@ -460,4 +461,21 @@ export async function streamMessage(
   } finally {
     reader.releaseLock();
   }
+}
+
+export interface ChatDocumentReference {
+  document_id: string;
+  extraction_id: string;
+  name?: string;
+}
+
+export async function uploadChatDocument(conversationId: string, file: File, token: string): Promise<ChatDocumentReference> {
+  const body = new FormData();
+  body.append("file", file);
+  const response = await authFetch(`/conversations/${conversationId}/documents`, {
+    method: "POST", body, token,
+  });
+  const result = await response.json();
+  if (!response.ok) throw new Error(typeof result.detail === "string" ? result.detail : "Échec du dépôt du document");
+  return result;
 }

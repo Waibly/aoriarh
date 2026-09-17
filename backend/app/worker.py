@@ -115,14 +115,27 @@ async def _finish_sync_log(
         await db.commit()
 
 
-async def run_ingestion(ctx: dict, document_id: str) -> None:
+async def run_storage_recovery(ctx: dict) -> dict:
+    """Bounded technical cleanup of registered object keys, disabled by default."""
+    if not settings.storage_recovery_enabled:
+        return {"status": "disabled"}
+    from app.services.storage_operation_service import StorageOperationService
+    from app.services.storage_service import StorageService
+
+    async with ctx["session_factory"]() as db:
+        result = await StorageOperationService(db, StorageService()).recover(limit=25)
+    logger.info("Storage recovery: %s", result)
+    return result
+
+
+async def run_ingestion(ctx: dict, document_id: str, expected_source: str | None = None) -> None:
     """Tâche d'ingestion exécutée par le worker ARQ."""
     logger.info("Worker: ingestion started for document %s", document_id)
     session_factory = ctx["session_factory"]
     try:
         async with session_factory() as db:
             pipeline = IngestionPipeline()
-            await pipeline.ingest(uuid.UUID(document_id), db)
+            await pipeline.ingest(uuid.UUID(document_id), db, expected_source=expected_source)
         logger.info("Worker: ingestion completed for document %s", document_id)
     except Exception:
         logger.exception("Worker: ingestion failed for document %s", document_id)
@@ -1730,6 +1743,7 @@ async def run_emailing_campaigns(ctx: dict) -> None:
 class WorkerSettings:
     functions = [
         run_ingestion,
+        run_storage_recovery,
         run_judilibre_sync,
         run_full_jurisprudence_sync,
         run_jurisprudence_initialization,
@@ -1754,6 +1768,7 @@ class WorkerSettings:
         run_emailing_campaigns,
     ]
     cron_jobs = [
+        cron(run_storage_recovery, minute={0, 10, 20, 30, 40, 50}),
         # Corpus juridique réparti sur 2 jours pour lisser la charge API PISTE
         # (codes + jurisprudence + CCN tapent tous le quota PISTE partagé).
         # La fenêtre de 30j gère le chevauchement entre runs : les doublons

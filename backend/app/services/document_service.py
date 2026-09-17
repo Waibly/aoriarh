@@ -17,6 +17,10 @@ from app.models.document import Document
 from app.rag.norme_hierarchy import DOCUMENT_TYPE_HIERARCHY
 from app.rag.qdrant_store import COLLECTION_NAME, get_qdrant_client
 from app.services.storage_service import StorageService
+from app.services.storage_operation_service import (
+    StorageOperationService, finish_pending_storage_deletes, finish_storage_io, queue_storage_delete,
+)
+from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -211,10 +215,19 @@ class DocumentService:
         prefix = str(org_id) if org_id else "common"
         safe_filename = _safe_storage_filename(file.filename, file_format)
         path = f"{prefix}/{file_id}_{safe_filename}"
-        await storage.upload_file(file, path)
+        document_id = uuid.uuid4()
+        operation = None
+        if settings.document_extraction_enabled_for(org_id):
+            operations = StorageOperationService(self.db, storage)
+            operation_id = await operations.reserve(document_id, path, "original")
+            operation = await operations.lock_write(operation_id)
+            await finish_storage_io(storage.upload_file(file, path))
+        else:
+            await storage.upload_file(file, path)
 
         # Create DB record
         doc = Document(
+            id=document_id,
             organisation_id=org_id,
             name=file.filename or "document",
             source_type=source_type,
@@ -235,6 +248,8 @@ class DocumentService:
             publication=publication,
         )
         self.db.add(doc)
+        if operation is not None:
+            operation.status = "retained"
         await self.db.commit()
         await self.db.refresh(doc)
         return doc
@@ -300,10 +315,12 @@ class DocumentService:
         self, doc_id: uuid.UUID, org_id: uuid.UUID
     ) -> None:
         doc = await self.get_document(doc_id, org_id)
-        storage.delete_file(doc.storage_path)
+        await self._delete_extraction_artifacts(doc_id)
+        await queue_storage_delete(self.db, storage, doc_id, doc.storage_path)
         self._delete_qdrant_chunks(doc_id)
         await self.db.delete(doc)
         await self.db.commit()
+        await finish_pending_storage_deletes(self.db, storage)
 
     async def get_download_url(
         self, doc_id: uuid.UUID, org_id: uuid.UUID
@@ -347,10 +364,12 @@ class DocumentService:
 
     async def delete_common_document(self, doc_id: uuid.UUID) -> None:
         doc = await self.get_common_document(doc_id)
-        storage.delete_file(doc.storage_path)
+        await self._delete_extraction_artifacts(doc_id)
+        await queue_storage_delete(self.db, storage, doc_id, doc.storage_path)
         self._delete_qdrant_chunks(doc_id)
         await self.db.delete(doc)
         await self.db.commit()
+        await finish_pending_storage_deletes(self.db, storage)
 
     async def get_common_download_url(self, doc_id: uuid.UUID) -> str:
         doc = await self.get_common_document(doc_id)
@@ -419,17 +438,35 @@ class DocumentService:
                 detail="Le fichier est identique à la version actuelle",
             )
 
-        # Delete old file from MinIO
+        # Keep the current file recoverable until the new upload AND DB commit succeed.
         old_path = doc.storage_path
-        storage.delete_file(old_path)
-
-        # Upload new file to MinIO
-        await file.seek(0)
+        old_hash = doc.file_hash
+        operation = None
+        # Reserve before the PUT. This commit releases any earlier lock, so the
+        # expected source is checked under a fresh lock below.
         file_id = uuid.uuid4()
         prefix = str(org_id) if org_id else "common"
         safe_filename = _safe_storage_filename(file.filename, file_format)
         new_path = f"{prefix}/{file_id}_{safe_filename}"
-        await storage.upload_file(file, new_path)
+        if settings.document_extraction_enabled_for(org_id):
+            operations = StorageOperationService(self.db, storage)
+            operation_id = await operations.reserve(doc_id, new_path, "original")
+        current = (await self.db.execute(
+            select(Document.id).where(
+                Document.id == doc_id, Document.storage_path == old_path,
+                Document.file_hash == old_hash,
+            ).with_for_update()
+        )).first()
+        if current is None:
+            raise HTTPException(409, "Le document a été modifié ; rechargez sa version actuelle")
+
+        # Upload new file to MinIO
+        await file.seek(0)
+        if settings.document_extraction_enabled_for(org_id):
+            operation = await operations.lock_write(operation_id)
+            await finish_storage_io(storage.upload_file(file, new_path))
+        else:
+            await storage.upload_file(file, new_path)
 
         # Update DB record (same document ID)
         doc.name = file.filename or doc.name
@@ -441,8 +478,12 @@ class DocumentService:
         doc.indexation_error = None
         doc.chunk_count = None
         doc.uploaded_by = user_id
+        if operation is not None:
+            operation.status = "retained"
+        await queue_storage_delete(self.db, storage, doc_id, old_path)
         await self.db.commit()
         await self.db.refresh(doc)
+        await finish_pending_storage_deletes(self.db, storage)
         return doc
 
     # ---- Metadata edit ----
@@ -501,6 +542,12 @@ class DocumentService:
         return doc
 
     # ---- Qdrant cleanup ----
+
+    async def _delete_extraction_artifacts(self, doc_id: uuid.UUID) -> None:
+        # Independent of the pilot flag: disabling reads must not disable erasure.
+        from app.services.document_extraction_service import delete_extraction_artifacts
+
+        await delete_extraction_artifacts(self.db, storage, [doc_id])
 
     @staticmethod
     def _delete_qdrant_chunks(doc_id: uuid.UUID) -> None:

@@ -342,16 +342,15 @@ class DataRetentionService:
             )
             docs = list(docs_result.scalars())
             storage = StorageService()
+            from app.services.document_extraction_service import delete_extraction_artifacts
+            from app.services.storage_operation_service import queue_storage_delete
+
+            await delete_extraction_artifacts(
+                self.db, storage, [doc.id for doc in docs],
+            )
             for doc in docs:
-                try:
-                    if doc.storage_path:
-                        storage.delete_file(doc.storage_path)
-                        summary["storage_objects_deleted"] += 1
-                except Exception:
-                    logger.exception(
-                        "Purge: failed to delete storage object %s for account %s",
-                        doc.storage_path, account_id,
-                    )
+                if doc.storage_path:
+                    await queue_storage_delete(self.db, storage, doc.id, doc.storage_path)
 
             # Conversations + messages (no cascade from Account)
             if org_ids:
@@ -438,6 +437,12 @@ class DataRetentionService:
             await self.db.delete(owner)
 
         await self.db.commit()
+
+        if org_ids:
+            from app.services.storage_operation_service import finish_pending_storage_deletes
+            recovery = await finish_pending_storage_deletes(self.db, storage)
+            summary["storage_objects_deleted"] = recovery["deleted"]
+            summary["storage_objects_pending"] = recovery["pending"]
 
         logger.info(
             "Purge: account %s deleted — %s",

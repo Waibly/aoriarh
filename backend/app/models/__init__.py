@@ -8,6 +8,8 @@ from app.models.booster_purchase import BoosterPurchase
 from app.models.ccn import CcnReference, OrganisationConvention
 from app.models.conversation import Conversation, Message
 from app.models.document import Document
+from app.models.document_extraction import DocumentExtraction
+from app.models.storage_operation import StorageOperation
 from app.models.fiche import Fiche
 from app.models.emailing import (
     EmailCampaign,
@@ -42,6 +44,8 @@ __all__ = [
     "CcnReference",
     "Conversation",
     "Document",
+    "DocumentExtraction",
+    "StorageOperation",
     "EmailCampaign",
     "EmailCampaignEvent",
     "EmailCampaignRecipient",

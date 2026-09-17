@@ -183,7 +183,7 @@ async def upload_common_document(
         details=f"file={file.filename} source_type={source_type}",
     )
     await db.commit()
-    await enqueue_ingestion(str(doc.id))
+    await enqueue_ingestion(str(doc.id), expected_source=doc.storage_path)
     return doc  # type: ignore[return-value]
 
 
@@ -240,7 +240,7 @@ async def upload_common_documents_batch(
                 details=f"file={file.filename} source_type={source_type} batch=true",
             )
             await db.commit()
-            await enqueue_ingestion(str(doc.id))
+            await enqueue_ingestion(str(doc.id), expected_source=doc.storage_path)
             results.append(BatchUploadFileResult(
                 filename=file.filename or "unknown",
                 success=True,
@@ -528,7 +528,7 @@ async def replace_common_document(
         details=f"new_file={file.filename}",
     )
     await db.commit()
-    await enqueue_ingestion(str(doc.id))
+    await enqueue_ingestion(str(doc.id), expected_source=doc.storage_path)
     return doc  # type: ignore[return-value]
 
 
@@ -570,7 +570,7 @@ async def reindex_common_document(
         ip_address=request.client.host if request.client else None,
     )
     await db.commit()
-    await enqueue_ingestion(str(doc.id))
+    await enqueue_ingestion(str(doc.id), expected_source=doc.storage_path)
     return doc  # type: ignore[return-value]
 
 
@@ -623,7 +623,7 @@ async def reindex_all_documents(
     # Enqueue ingestion jobs
     for doc in docs:
         if doc.indexation_status == "pending":
-            await enqueue_ingestion(str(doc.id))
+            await enqueue_ingestion(str(doc.id), expected_source=doc.storage_path)
 
     logger.info("Reindex all: %d enqueued, %d skipped", enqueued, skipped)
     return ReindexAllResponse(enqueued=enqueued, skipped=skipped)

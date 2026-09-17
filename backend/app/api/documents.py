@@ -3,11 +3,12 @@ import urllib.parse
 import uuid
 from datetime import date
 
-from fastapi import APIRouter, Depends, Form, HTTPException, Request, UploadFile, status
+from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request, UploadFile, status
 from fastapi.responses import Response
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
 from app.core.database import get_db
 from app.core.dependencies import get_current_user, require_org_role, require_role
 from app.core.limiter import limiter
@@ -17,6 +18,8 @@ from app.schemas.document import (
     BatchUploadFileResult,
     BatchUploadResponse,
     DocumentDownload,
+    DocumentExtractionStatus,
+    DocumentExtractionText,
     DocumentRead,
 )
 from app.services.billing_service import BillingService
@@ -25,6 +28,47 @@ from app.services.document_service import DocumentService
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+@router.get("/{organisation_id}/{document_id}/extraction", response_model=DocumentExtractionStatus)
+@limiter.limit("120/minute")
+async def document_extraction_status(
+    request: Request,
+    organisation_id: uuid.UUID,
+    document_id: uuid.UUID,
+    response: Response,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    if not settings.document_extraction_enabled_for(organisation_id):
+        raise HTTPException(404, "Fonctionnalité non disponible")
+    response.headers["Cache-Control"] = "private, no-store"
+    from app.services.document_extraction_service import DocumentExtractionService
+    return await DocumentExtractionService(db).status(document_id, organisation_id, user.id)
+
+
+@router.get(
+    "/{organisation_id}/{document_id}/extractions/{extraction_id}/text",
+    response_model=DocumentExtractionText,
+)
+@limiter.limit("120/minute")
+async def read_document_extraction(
+    request: Request,
+    organisation_id: uuid.UUID,
+    document_id: uuid.UUID,
+    extraction_id: uuid.UUID,
+    response: Response,
+    max_bytes: int = Query(24_000, ge=1, le=1024 * 1024),
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    if not settings.document_extraction_enabled_for(organisation_id):
+        raise HTTPException(404, "Fonctionnalité non disponible")
+    response.headers["Cache-Control"] = "private, no-store"
+    from app.services.document_extraction_service import DocumentExtractionService
+    return await DocumentExtractionService(db).read(
+        document_id, organisation_id, user.id, extraction_id, max_bytes,
+    )
 
 
 @router.get("/common/", response_model=list[DocumentRead])
@@ -72,7 +116,7 @@ async def upload_documents_batch(
                 org_id=organisation_id,
                 user_id=user.id,
             )
-            await enqueue_ingestion(str(doc.id))
+            await enqueue_ingestion(str(doc.id), expected_source=doc.storage_path)
             results.append(BatchUploadFileResult(
                 filename=file.filename or "unknown",
                 success=True,
@@ -146,7 +190,7 @@ async def upload_document(
         solution=solution,
         publication=publication,
     )
-    await enqueue_ingestion(str(doc.id))
+    await enqueue_ingestion(str(doc.id), expected_source=doc.storage_path)
     return doc  # type: ignore[return-value]
 
 
@@ -229,7 +273,7 @@ async def replace_document(
         user_id=user.id,
         org_id=organisation_id,
     )
-    await enqueue_ingestion(str(doc.id))
+    await enqueue_ingestion(str(doc.id), expected_source=doc.storage_path)
     return doc  # type: ignore[return-value]
 
 
@@ -259,7 +303,7 @@ async def reindex_document(
 ) -> DocumentRead:
     service = DocumentService(db)
     doc = await service.reset_for_reindex(document_id, organisation_id)
-    await enqueue_ingestion(str(doc.id))
+    await enqueue_ingestion(str(doc.id), expected_source=doc.storage_path)
     return doc  # type: ignore[return-value]
 
 
@@ -323,7 +367,7 @@ async def bulk_reindex_documents(
     for doc_id in body.document_ids:
         try:
             doc = await service.reset_for_reindex(doc_id, organisation_id)
-            await enqueue_ingestion(str(doc.id))
+            await enqueue_ingestion(str(doc.id), expected_source=doc.storage_path)
             succeeded += 1
         except Exception as exc:
             errors.append(f"{doc_id}: {str(exc)[:120]}")

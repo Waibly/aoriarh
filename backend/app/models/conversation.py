@@ -40,6 +40,7 @@ class Message(TimestampMixin, Base):
     )
     role: Mapped[str] = mapped_column(String(20), nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False)
+    document_references: Mapped[list[dict] | None] = mapped_column(JSON, nullable=True)
     sources: Mapped[dict | None] = mapped_column(JSON)
     feedback: Mapped[str | None] = mapped_column(String(20))
     feedback_comment: Mapped[str | None] = mapped_column(Text)

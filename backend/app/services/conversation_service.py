@@ -136,6 +136,7 @@ class ConversationService:
         role: str,
         content: str,
         sources: list[dict] | None = None,
+        document_references: list[dict] | None = None,
     ) -> Message:
         """Add a message to an existing conversation."""
         result = await self.db.execute(
@@ -153,6 +154,7 @@ class ConversationService:
             role=role,
             content=content,
             sources=sources,
+            document_references=document_references,
         )
         self.db.add(message)
         await self.db.commit()
