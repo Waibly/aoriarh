@@ -354,10 +354,10 @@ export async function streamMessage(
   token: string,
   callbacks: StreamCallbacks,
   signal?: AbortSignal,
+  documentReferences?: ChatDocumentReference[],
 ): Promise<void> {
   // Do NOT pass signal to fetch — React Strict Mode aborts it in dev.
   // Instead we check signal.aborted manually in the read loop.
-  documentReferences?: ChatDocumentReference[],
   const response = await authFetch(
     `/conversations/${conversationId}/chat/stream`,
     {
