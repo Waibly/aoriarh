@@ -6,8 +6,8 @@ import type { ChatDocumentReference } from "@/lib/chat-api";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
-interface ChatInputProps {
-  onSend: (content: string) => void;
+export interface ChatInputProps {
+  onSend: (content: string) => void | boolean | Promise<void | boolean>;
   disabled?: boolean;
   onStop?: () => void;
   attachments?: ChatDocumentReference[];
@@ -21,10 +21,10 @@ export function ChatInput({ onSend, disabled = false, onStop, attachments = [], 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
-  const handleSend = useCallback(() => {
+  const handleSend = useCallback(async () => {
     const trimmed = value.trim();
     if (!trimmed || disabled) return;
-    onSend(trimmed);
+    if (await onSend(trimmed) === false) return;
     setValue("");
     if (textareaRef.current) {
       textareaRef.current.style.height = "auto";

@@ -1,14 +1,9 @@
 "use client";
 
-import { useState, useRef, useCallback } from "react";
+import type { ReactNode } from "react";
 import Image from "next/image";
-import { Scale, ArrowUp } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
-
-interface WelcomeScreenProps {
-  onSend: (content: string) => void;
-}
+import { Scale } from "lucide-react";
+import { ChatInput, type ChatInputProps } from "@/components/chat/chat-input";
 
 const suggestions = [
   "Un salarié en arrêt maladie peut-il être licencié ?",
@@ -17,88 +12,28 @@ const suggestions = [
   "Quelles sont les obligations lors d'un entretien préalable au licenciement ?",
 ];
 
-export function WelcomeScreen({ onSend }: WelcomeScreenProps) {
-  const [value, setValue] = useState("");
-  const [isFocused, setIsFocused] = useState(false);
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
-
-  const handleSend = useCallback(() => {
-    const trimmed = value.trim();
-    if (!trimmed) return;
-    onSend(trimmed);
-    setValue("");
-  }, [value, onSend]);
-
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      handleSend();
-    }
-  };
-
-  const handleInput = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    setValue(e.target.value);
-    const el = e.target;
-    el.style.height = "auto";
-    el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
-  };
-
+export function WelcomeScreen({ library, ...inputProps }: ChatInputProps & { library?: ReactNode }) {
   return (
     <div className="flex flex-1 flex-col items-center justify-center rounded-xl bg-white px-4 dark:bg-card animate-in fade-in duration-500">
-      <div className="mb-6 animate-in fade-in zoom-in-95 duration-500">
+      <div className="mb-6">
         <Image src="/icon-aoria-dark.svg" alt="AORIA RH" width={48} height={48} priority className="dark:hidden" />
         <Image src="/icon-aoria-white.svg" alt="AORIA RH" width={48} height={48} priority className="hidden dark:block" />
       </div>
-      <h1 className="text-2xl font-semibold tracking-tight animate-in fade-in slide-in-from-bottom-2 duration-500 delay-100">AORIA RH</h1>
-      <p className="text-muted-foreground mt-1 text-base animate-in fade-in slide-in-from-bottom-2 duration-500 delay-150">
-        Assistant juridique RH
-      </p>
-      <p className="text-muted-foreground mt-4 max-w-md text-center text-sm animate-in fade-in slide-in-from-bottom-2 duration-500 delay-200">
+      <h1 className="text-2xl font-semibold tracking-tight">AORIA RH</h1>
+      <p className="text-muted-foreground mt-1 text-base">Assistant juridique RH</p>
+      <p className="text-muted-foreground mt-4 max-w-md text-center text-sm">
         Posez vos questions en droit social français. Je m&apos;appuie sur vos
         documents et la réglementation en vigueur pour vous répondre.
       </p>
-
-      {/* Champ de saisie centré */}
-      <div className="mt-8 w-full max-w-2xl animate-in fade-in slide-in-from-bottom-2 duration-500 delay-300">
-        <div
-          data-slot="chat-input"
-          className={cn(
-            "flex min-h-[3.5rem] items-end gap-2 rounded-xl border bg-white px-4 py-3 shadow-sm transition-[color,box-shadow] dark:bg-card",
-            isFocused
-              ? "border-ring ring-ring/50 ring-[3px]"
-              : "border-input",
-          )}
-        >
-          <textarea
-            ref={textareaRef}
-            value={value}
-            onChange={handleInput}
-            onKeyDown={handleKeyDown}
-            onFocus={() => setIsFocused(true)}
-            onBlur={() => setIsFocused(false)}
-            placeholder="Posez votre question juridique..."
-            rows={1}
-            className="flex-1 resize-none bg-transparent py-0.5 text-base text-foreground placeholder:text-muted-foreground outline-none"
-          />
-          <Button
-            size="icon-sm"
-            className="shrink-0 rounded-lg"
-            onClick={handleSend}
-            disabled={!value.trim()}
-          >
-            <ArrowUp />
-          </Button>
-        </div>
+      <div className="mt-8 w-full max-w-2xl">
+        {library}
+        <ChatInput {...inputProps} />
       </div>
-
-      {/* Suggestions */}
-      <div className="mt-6 grid w-full max-w-2xl grid-cols-1 gap-3 sm:grid-cols-2 animate-in fade-in slide-in-from-bottom-2 duration-500 delay-[400ms]">
+      <div className="mt-6 grid w-full max-w-2xl grid-cols-1 gap-3 sm:grid-cols-2">
         {suggestions.map((suggestion) => (
-          <button
-            key={suggestion}
-            className="flex items-start gap-2 rounded-xl bg-[#652bb0]/10 px-4 py-3 text-left text-sm text-foreground transition-colors hover:bg-[#652bb0]/20"
-            onClick={() => onSend(suggestion)}
-          >
+          <button key={suggestion} disabled={inputProps.disabled}
+            className="flex items-start gap-2 rounded-xl bg-[#652bb0]/10 px-4 py-3 text-left text-sm text-foreground transition-colors hover:bg-[#652bb0]/20 disabled:opacity-50"
+            onClick={() => void inputProps.onSend(suggestion)}>
             <Scale className="mt-0.5 size-4 shrink-0" />
             {suggestion}
           </button>

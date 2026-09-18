@@ -7,14 +7,15 @@ import { searchChatLibrary, type LibraryDocument, type LibrarySearch } from "@/l
 
 const emptySearch: LibrarySearch = { name: "", uploaded_from: "", uploaded_to: "" };
 
-export function DocumentLibrary({ conversationId, token, selectedIds, disabled, onSelect }: {
+export function DocumentLibrary({ conversationId, token, selectedIds, disabled, onSelect, initiallyOpen = false }: {
   conversationId: string;
   token: string;
   selectedIds: string[];
   disabled: boolean;
   onSelect: (document: LibraryDocument) => Promise<void>;
+  initiallyOpen?: boolean;
 }) {
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(initiallyOpen);
   const [search, setSearch] = useState(emptySearch);
   const [submitted, setSubmitted] = useState(emptySearch);
   const [items, setItems] = useState<LibraryDocument[]>([]);
@@ -26,6 +27,11 @@ export function DocumentLibrary({ conversationId, token, selectedIds, disabled, 
   const sequence = useRef(0);
   const selecting = useRef(false);
   useEffect(() => () => { sequence.current += 1; }, []);
+  useEffect(() => {
+    if (initiallyOpen) void load(emptySearch);
+    // Only initialise on mount. Interactive searches are submitted explicitly.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   async function load(criteria: LibrarySearch, nextOffset = 0) {
     const request = ++sequence.current;

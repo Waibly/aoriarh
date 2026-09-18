@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { ChatInput } from "@/components/chat/chat-input";
 
 describe("chat documents", () => {
@@ -14,7 +14,7 @@ describe("chat documents", () => {
     fireEvent.click(screen.getByLabelText("Retirer courrier.txt"));
     expect(remove).toHaveBeenCalledWith("one");
   });
-  it("limits selection to three active pieces without changing the message", () => {
+  it("limits selection to three active pieces without changing the message", async () => {
     const send = jest.fn();
     render(<ChatInput onSend={send} onAttach={jest.fn()}
       attachments={[1, 2, 3].map((id) => ({ document_id: String(id), extraction_id: "v1" }))} />);
@@ -23,5 +23,6 @@ describe("chat documents", () => {
     fireEvent.change(input, { target: { value: "Prépare un mail" } });
     fireEvent.keyDown(input, { key: "Enter", code: "Enter" });
     expect(send).toHaveBeenCalledWith("Prépare un mail");
+    await waitFor(() => expect(input).toHaveValue(""));
   });
 });
