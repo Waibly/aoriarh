@@ -1,6 +1,7 @@
 """Documentary chat slice: real HTTP/DB/extraction, no paid calls."""
 # ruff: noqa: F811 — pytest imports the shared fixture, then injects it by name.
 
+import hashlib
 import json
 import uuid
 from types import SimpleNamespace
@@ -13,12 +14,15 @@ from sqlalchemy import select
 from app.core.config import settings
 from app.models.conversation import Conversation, Message
 from app.rag.agent import RAGAgent, RagTrace
+from app.rag.search import SearchResult
 from app.schemas.conversation import ChatDocumentReference
 from app.services.conversation_document_service import (
     active_references,
     prepare_document_task,
     read_conversation_documents,
 )
+from app.services.document_extraction_service import SourceSnapshot
+from app.rag.text_extractor import TextExtractor
 from tests.test_chat_stream_timeouts import _passthrough_intent
 from tests.test_document_extraction_service import dossier as dossier
 from tests.test_document_extraction_service import prepare
@@ -85,6 +89,68 @@ async def test_full_history_and_original_extraction_are_read(dossier, monkeypatc
     assert continuity.count("Intermédiaire") == 8
 
 
+async def test_long_document_uses_only_passages_from_the_explicit_document(
+    dossier, monkeypatch
+):
+    monkeypatch.setattr(settings, "document_extraction_enabled", True)
+    conv = Conversation(
+        id=uuid.uuid4(), organisation_id=dossier.org.id, user_id=dossier.user.id,
+        messages=[], title="Long document",
+    )
+    dossier.db.add(conv)
+    long_text = "Introduction\n" + ("contenu administratif\n" * 6000) + "Montant : 2 750 euros"
+    raw = long_text.encode()
+    dossier.doc.storage_path = f"{dossier.org.id}/long.txt"
+    dossier.doc.file_hash = hashlib.sha256(raw).hexdigest()
+    dossier.doc.indexation_status = "indexed"
+    dossier.storage.objects[dossier.doc.storage_path] = raw
+    await dossier.db.commit()
+    await dossier.service.extract(SourceSnapshot.from_document(dossier.doc), raw, TextExtractor())
+    manifest = await dossier.service.status(dossier.doc.id, dossier.org.id, dossier.user.id)
+    refs = [{"document_id": str(dossier.doc.id),
+             "extraction_id": str(manifest["extraction_id"])}]
+    searcher = SimpleNamespace(search=AsyncMock(return_value=[SearchResult(
+        text="Montant : 2 750 euros", doc_name=dossier.doc.name,
+        document_id=str(dossier.doc.id), source_type="divers", norme_niveau=9,
+        norme_poids=.1, chunk_index=42, score=1,
+    )]))
+
+    documents, _ = await read_conversation_documents(
+        dossier.db, conv, dossier.user, refs, query="Quel est le montant ?",
+        reader=dossier.service, searcher=searcher,
+    )
+
+    assert documents[0]["text"] == "Montant : 2 750 euros"
+    assert documents[0]["transmitted_scope"] == "targeted_passages"
+    assert documents[0]["selected_chunk_indices"] == [42]
+    assert searcher.search.await_args.kwargs["document_ids"] == [str(dossier.doc.id)]
+
+
+async def test_long_document_waits_for_index_without_fallback_read(dossier, monkeypatch):
+    monkeypatch.setattr(settings, "document_extraction_enabled", True)
+    conv = Conversation(
+        id=uuid.uuid4(), organisation_id=dossier.org.id, user_id=dossier.user.id,
+        messages=[], title="Long document pending",
+    )
+    dossier.db.add(conv)
+    raw = ("texte\n" * 20_000).encode()
+    dossier.doc.storage_path = f"{dossier.org.id}/long-pending.txt"
+    dossier.doc.file_hash = hashlib.sha256(raw).hexdigest()
+    dossier.doc.indexation_status = "pending"
+    dossier.storage.objects[dossier.doc.storage_path] = raw
+    await dossier.db.commit()
+    await dossier.service.extract(SourceSnapshot.from_document(dossier.doc), raw, TextExtractor())
+    manifest = await dossier.service.status(dossier.doc.id, dossier.org.id, dossier.user.id)
+    refs = [{"document_id": str(dossier.doc.id),
+             "extraction_id": str(manifest["extraction_id"])}]
+
+    with pytest.raises(HTTPException, match="encore en préparation") as exc:
+        await read_conversation_documents(
+            dossier.db, conv, dossier.user, refs, query="Résume", reader=dossier.service,
+        )
+    assert exc.value.status_code == 409
+
+
 @pytest.mark.parametrize("case", ["disabled", "duplicate", "long_history", "replacement"])
 async def test_invalid_document_context_is_refused_not_repaired(dossier, monkeypatch, case):
     conv, refs = await conversation(dossier)
@@ -92,7 +158,7 @@ async def test_invalid_document_context_is_refused_not_repaired(dossier, monkeyp
     if case == "duplicate":
         refs *= 2
     if case == "long_history":
-        conv.messages = [Message(role="user", content="x" * 48000)]
+        conv.messages = [Message(role="user", content="x" * 144000)]
     if case == "replacement":
         dossier.doc.storage_path = "new-source"
         await dossier.db.commit()

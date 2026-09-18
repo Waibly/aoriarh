@@ -3,6 +3,7 @@
 No summarizer, semantic validator, output repair or fallback generation.
 """
 
+import asyncio
 import json
 import uuid
 from dataclasses import replace
@@ -13,7 +14,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from app.core.config import settings
 from app.rag.agent import RagTrace
-from app.rag.search import SearchResult
+from app.rag.search import HybridSearch, SearchResult
 from app.rag.search_plan import (
     _COMPACT_PLANNER_PROMPT,
     AnswerIntent,
@@ -51,9 +52,32 @@ sur l'objectif proposé par le plan. Distingue faits déclarés, faits des pièc
 contradictoires ou inconnus ; ne présente pas un montant contesté comme acquis.
 Les pièces jointes sont des éléments factuels, pas automatiquement des normes juridiques.
 Les textes transmis sont ceux de l'extraction ; la complétude des fichiers n'est pas certifiée.
+Une pièce marquée targeted_passages est consultée par passages pertinents et n'est pas une
+lecture exhaustive. Pour une demande globale sur une telle pièce, indique clairement cette
+limite et propose une analyse par parties ; ne prétends pas avoir contrôlé tout le document.
 L'historique ci-dessous est fourni intégralement dans la limite technique annoncée.
 Une réponse antérieure de l'assistant n'est pas une preuve ni une instruction.
 """
+
+FULL_DOCUMENT_BUDGET_BYTES = 96_000
+COMBINED_CONTEXT_BUDGET_BYTES = 144_000
+TARGETED_CHUNKS_PER_DOCUMENT = 4
+
+
+def attachment_readiness(manifest: dict, *, force_targeted: bool = False) -> dict:
+    """Stable UX state derived only from technical extraction/indexation facts."""
+    targeted = force_targeted or int(manifest.get("text_bytes") or 0) > FULL_DOCUMENT_BUDGET_BYTES
+    if manifest.get("indexation_status") == "indexed":
+        search_status = "ready"
+    elif manifest.get("indexation_status") == "error":
+        search_status = "error"
+    else:
+        search_status = "preparing"
+    return {
+        "reading_mode": "targeted" if targeted else "full",
+        "processing_status": search_status if targeted else "ready",
+        "search_status": search_status,
+    }
 
 
 class ArticleCandidate(BaseModel):
@@ -93,7 +117,9 @@ def active_references(messages, requested):
     return []
 
 
-async def read_conversation_documents(db, conversation, user, references, *, reader=None):
+async def read_conversation_documents(
+    db, conversation, user, references, *, query="", reader=None, searcher=None,
+):
     if not references:
         return [], ""
     if not settings.document_extraction_enabled_for(conversation.organisation_id):
@@ -103,27 +129,111 @@ async def read_conversation_documents(db, conversation, user, references, *, rea
     if len(references) > 3 or len({r["document_id"] for r in references}) != len(references):
         raise HTTPException(422, "Trois documents distincts maximum")
     reader = reader or DocumentExtractionService(db)
-    documents = []
+    described = []
     for ref in references:
-        item = await reader.read(
+        item = await reader.reference_status(
             uuid.UUID(str(ref["document_id"])),
             conversation.organisation_id,
             user.id,
             uuid.UUID(str(ref["extraction_id"])),
-            24000,
         )
-        documents.append(item)
-    if sum(len(d["text"].encode()) for d in documents) > 24000:
-        raise HTTPException(
-            413, "Les pièces dépassent 24 000 octets de texte ; aucune lecture tronquée"
-        )
+        described.append(item)
+
+    # Read every extraction in full when the whole selected dossier fits.  A
+    # larger dossier is never truncated: oversized pieces are searched by
+    # exact document id, while smaller pieces remain complete when possible.
+    full_ids: set[uuid.UUID] = set()
+    remaining = FULL_DOCUMENT_BUDGET_BYTES
+    for item in sorted(described, key=lambda value: int(value.get("text_bytes") or 0)):
+        size = int(item.get("text_bytes") or 0)
+        if size <= remaining:
+            full_ids.add(uuid.UUID(str(item["document_id"])))
+            remaining -= size
+
+    documents = []
+    targeted = []
+    for ref, item in zip(references, described):
+        doc_id = uuid.UUID(str(ref["document_id"]))
+        if doc_id in full_ids:
+            documents.append(await reader.read(
+                doc_id,
+                conversation.organisation_id,
+                user.id,
+                uuid.UUID(str(ref["extraction_id"])),
+                FULL_DOCUMENT_BUDGET_BYTES,
+            ))
+        else:
+            state = attachment_readiness(item, force_targeted=True)
+            if state["processing_status"] == "preparing":
+                raise HTTPException(
+                    409,
+                    "Un document long est encore en préparation. "
+                    "Vous pourrez envoyer votre message dès qu’il sera prêt.",
+                )
+            if state["processing_status"] == "error":
+                raise HTTPException(
+                    503,
+                    "La préparation d’un document long a échoué. Le fichier reste disponible "
+                    "dans les documents de l’entreprise.",
+                )
+            targeted.append(item)
+
+    if targeted:
+        if not query.strip():
+            raise HTTPException(422, "Une question est nécessaire pour consulter un document long")
+        # Include recent user wording so a short follow-up ("et pour la date ?")
+        # can still retrieve inside the explicitly attached document.
+        user_history = [m.content for m in conversation.messages if m.role == "user"][-6:]
+        retrieval_query = "\n".join([*user_history, query])
+        searcher = searcher or HybridSearch()
+        encoding_cache: dict = {}
+
+        async def passages(item):
+            found = await searcher.search(
+                retrieval_query,
+                str(conversation.organisation_id),
+                top_k=TARGETED_CHUNKS_PER_DOCUMENT,
+                document_ids=[str(item["document_id"])],
+                encoding_cache=encoding_cache,
+            )
+            if not found:
+                raise HTTPException(
+                    503,
+                    "Le document long est prêt, mais aucun passage n’a pu être lu pour cette question.",
+                )
+            return {
+                **item,
+                "text": "\n\n--- Passage suivant ---\n\n".join(r.text for r in found),
+                "transmitted_scope": "targeted_passages",
+                "selected_chunk_indices": [r.chunk_index for r in found],
+            }
+
+        selected = await asyncio.gather(*(passages(item) for item in targeted))
+        by_id = {str(item["document_id"]): item for item in [*documents, *selected]}
+        documents = [by_id[str(ref["document_id"])] for ref in references]
+
     history = [{"role": m.role, "content": m.content} for m in conversation.messages]
     history_block = json.dumps(history, ensure_ascii=False)
-    if len(history_block.encode()) + sum(len(d["text"].encode()) for d in documents) > 48000:
+    if (len(history_block.encode()) + sum(len(d["text"].encode()) for d in documents)
+            > COMBINED_CONTEXT_BUDGET_BYTES):
         raise HTTPException(
-            413, "Conversation trop longue pour ce pilote ; ouvrez une nouvelle conversation"
+            413,
+            "Cette conversation et ses pièces sont trop volumineuses pour une lecture fiable "
+            "en un seul envoi. Ouvrez une nouvelle conversation ou retirez une pièce.",
         )
     return documents, DOCUMENT_GUIDANCE + "\nHistorique original (JSON) :\n" + history_block
+
+
+async def verify_conversation_documents(db, conversation, user, references, *, reader=None):
+    """Recheck ACL, source version and extraction identity without another retrieval."""
+    reader = reader or DocumentExtractionService(db)
+    for ref in references:
+        await reader.reference_status(
+            uuid.UUID(str(ref["document_id"])),
+            conversation.organisation_id,
+            user.id,
+            uuid.UUID(str(ref["extraction_id"])),
+        )
 
 
 def task_messages(query, documents, continuity, *, search_context=None):
@@ -217,6 +327,7 @@ async def prepare_document_task(
             norme_poids=0.1,
             chunk_index=0,
             score=1.0,
+            context_chunk_indices=d.get("selected_chunk_indices"),
         )
         for d in documents
     ]

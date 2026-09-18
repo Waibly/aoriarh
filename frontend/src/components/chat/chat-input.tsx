@@ -3,6 +3,7 @@
 import { useState, useRef, useCallback } from "react";
 import { ArrowUp, Loader2, Square, Paperclip, Plus, FolderOpen, FileText, X, ChevronRight } from "lucide-react";
 import type { ChatDocumentReference } from "@/lib/chat-api";
+import { effectiveAttachments } from "@/lib/chat-attachments";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 
@@ -22,6 +23,7 @@ export function ChatInput({ onSend, disabled = false, onStop, attachments = [], 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const limitReached = attachments.length >= 3;
+  const attachmentStates = effectiveAttachments(attachments);
 
   const handleSend = useCallback(async () => {
     const trimmed = value.trim();
@@ -38,12 +40,16 @@ export function ChatInput({ onSend, disabled = false, onStop, attachments = [], 
         <div data-slot="chat-input"
           className="rounded-3xl border border-border/80 bg-white shadow-[0_4px_24px_-12px_rgba(0,0,0,0.18)] transition-[border-color,box-shadow] focus-within:border-primary/35 focus-within:shadow-[0_4px_28px_-12px_rgba(101,43,176,0.16)] dark:bg-card">
           {attachments.length > 0 && <div className="flex flex-wrap gap-2 px-4 pt-4" aria-label="Pièces jointes">
-            {attachments.map((doc) => <div key={doc.document_id}
+            {attachmentStates.map((doc) => <div key={doc.document_id}
               className="flex max-w-full items-center gap-2.5 rounded-xl border border-border/70 bg-muted/40 py-2 pl-2.5 pr-1.5">
               <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary/8 text-primary"><FileText className="size-4" /></span>
               <div className="min-w-0">
                 <p className="max-w-44 truncate text-xs font-medium sm:max-w-56" title={doc.name}>{doc.name || "Document joint"}</p>
-                <p className="mt-0.5 text-[10px] text-muted-foreground">Document joint</p>
+                <p className={`mt-0.5 text-[10px] ${doc.effective_processing_status === "error" ? "text-destructive" : "text-muted-foreground"}`}>
+                  {doc.effective_processing_status === "preparing" ? "Préparation de la lecture…" :
+                    doc.effective_processing_status === "error" ? "Préparation échouée" :
+                    doc.effective_reading_mode === "targeted" ? "Document long · lecture ciblée" : "Lu intégralement"}
+                </p>
               </div>
               <button type="button" aria-label={`Retirer ${doc.name || "le document"}`}
                 title="Retirer de cette conversation" disabled={disabled} onClick={() => onRemove?.(doc.document_id)}

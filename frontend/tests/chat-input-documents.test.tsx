@@ -26,6 +26,17 @@ describe("chat documents", () => {
     expect(send).toHaveBeenCalledWith("Prépare un mail");
     await waitFor(() => expect(input).toHaveValue(""));
   });
+  it("shows full, targeted and preparing states without technical byte limits", () => {
+    render(<ChatInput onSend={jest.fn()} attachments={[
+      { document_id: "short", extraction_id: "v1", name: "contrat.pdf", text_bytes: 20_000,
+        reading_mode: "full", processing_status: "ready", search_status: "ready" },
+      { document_id: "long", extraction_id: "v2", name: "accord.pdf", text_bytes: 120_000,
+        reading_mode: "targeted", processing_status: "preparing", search_status: "preparing" },
+    ]} />);
+    expect(screen.getByText("Lu intégralement")).toBeVisible();
+    expect(screen.getByText("Préparation de la lecture…")).toBeVisible();
+    expect(screen.queryByText(/96 000|octets|budget de lecture/)).not.toBeInTheDocument();
+  });
 });
 
 it("keeps sharing information in the add menu, not on the empty composer", () => {

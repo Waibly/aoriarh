@@ -149,16 +149,23 @@ class ConversationLibraryService:
             raise HTTPException(409, "L'extraction de ce document n'est pas disponible")
         if manifest["source_sha256"] != source_sha256:
             raise HTTPException(409, "Le document a changé ; relancez la recherche")
-        result = await reader.read(
-            doc.id,
-            conversation.organisation_id,
-            user.id,
-            manifest["extraction_id"],
-            24_000,
+        from app.services.conversation_document_service import attachment_readiness
+
+        manifest = await reader.reference_status(
+            doc.id, conversation.organisation_id, user.id, manifest["extraction_id"],
+            verify_artifact=True,
         )
+        readiness = attachment_readiness(manifest)
+        if (readiness["reading_mode"] == "targeted"
+                and manifest["indexation_status"] == "pending"):
+            from app.rag.tasks import enqueue_ingestion
+
+            await enqueue_ingestion(str(doc.id), expected_source=doc.storage_path)
         return {
-            "document_id": result["document_id"],
-            "extraction_id": result["extraction_id"],
+            "document_id": manifest["document_id"],
+            "extraction_id": manifest["extraction_id"],
             "name": doc.name,
-            "coverage": result["coverage"],
+            "coverage": manifest["coverage"],
+            "text_bytes": manifest["text_bytes"],
+            **readiness,
         }

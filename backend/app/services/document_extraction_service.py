@@ -364,3 +364,44 @@ class DocumentExtractionService:
         if record.source_storage_path != doc.storage_path or record.source_sha256 != doc.file_hash:
             raise HTTPException(409, "La version du document a changé")
         return {**self.manifest(record), "text": text, "transmitted_scope": "full_extracted_text"}
+
+    async def reference_status(
+        self,
+        doc_id: uuid.UUID,
+        org_id: uuid.UUID,
+        user_id: uuid.UUID,
+        extraction_id: uuid.UUID,
+        *,
+        verify_artifact: bool = False,
+    ) -> dict:
+        """Describe one exact, still-authorized extraction without reading its body."""
+        doc = await self._authorize(doc_id, org_id, user_id)
+        record = (
+            await self.db.execute(
+                select(DocumentExtraction).where(
+                    DocumentExtraction.id == extraction_id,
+                    DocumentExtraction.document_id == doc.id,
+                )
+            )
+        ).scalar_one_or_none()
+        if record is None:
+            raise HTTPException(404, "Extraction non accessible")
+        if record.source_storage_path != doc.storage_path or record.source_sha256 != doc.file_hash:
+            raise HTTPException(409, "La version du document a changé")
+        if record.status != "ready":
+            raise HTTPException(409, "Le texte extrait n'est pas disponible")
+        if verify_artifact:
+            try:
+                await self._read_artifact(record, MAX_EXTRACTION_BYTES)
+            except ExtractionError:
+                raise HTTPException(503, "Erreur technique de lecture de l'extraction") from None
+            # A revocation or replacement during object-storage I/O must win.
+            doc = await self._authorize(doc_id, org_id, user_id)
+            if (record.source_storage_path != doc.storage_path
+                    or record.source_sha256 != doc.file_hash):
+                raise HTTPException(409, "La version du document a changé")
+        return {
+            **self.manifest(record),
+            "indexation_status": doc.indexation_status,
+            "indexation_error": doc.indexation_error,
+        }

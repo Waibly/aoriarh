@@ -467,6 +467,10 @@ export interface ChatDocumentReference {
   document_id: string;
   extraction_id: string;
   name?: string;
+  text_bytes?: number;
+  reading_mode?: "full" | "targeted";
+  processing_status?: "ready" | "preparing" | "error";
+  search_status?: "ready" | "preparing" | "error";
 }
 
 export async function uploadChatDocument(conversationId: string, file: File, token: string): Promise<ChatDocumentReference> {
@@ -478,4 +482,17 @@ export async function uploadChatDocument(conversationId: string, file: File, tok
   const result = await response.json();
   if (!response.ok) throw new Error(typeof result.detail === "string" ? result.detail : "Échec du dépôt du document");
   return result;
+}
+
+export async function getChatDocumentReadiness(
+  conversationId: string,
+  reference: ChatDocumentReference,
+  token: string,
+): Promise<ChatDocumentReference> {
+  const params = new URLSearchParams({ extraction_id: reference.extraction_id });
+  const result = await apiFetch<ChatDocumentReference>(
+    `/conversations/${conversationId}/documents/${reference.document_id}/readiness?${params}`,
+    { token },
+  );
+  return { ...reference, ...result };
 }

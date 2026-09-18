@@ -12,6 +12,9 @@ jest.mock("sonner", () => ({ toast: { error: jest.fn() } }));
 jest.mock("@/lib/chat-api", () => ({
   createConversation: jest.fn(), uploadChatDocument: jest.fn(), getConversation: jest.fn(),
   streamMessage: jest.fn(), updateMessageFeedback: jest.fn(),
+  getChatDocumentReadiness: jest.fn(async (_conversationId, reference) => ({
+    ...reference, text_bytes: 100, reading_mode: "full", processing_status: "ready", search_status: "ready",
+  })),
 }));
 jest.mock("@/lib/chat-document-library", () => ({ searchChatLibrary: jest.fn(), prepareLibraryDocument: jest.fn() }));
 
@@ -57,7 +60,7 @@ it("sends the first message exactly once with its uploaded reference, even with 
   expect(streamMessage).not.toHaveBeenCalled();
   fireEvent.keyDown(screen.getByRole("textbox"), { key: "Enter" });
   await waitFor(() => expect(streamMessage).toHaveBeenCalledTimes(1));
-  expect((streamMessage as jest.Mock).mock.calls[0][5]).toEqual([reference]);
+  expect((streamMessage as jest.Mock).mock.calls[0][5]).toEqual([expect.objectContaining(reference)]);
   expect((streamMessage as jest.Mock).mock.calls[0][1]).toBe("Lis ce document");
   expect(createConversation).toHaveBeenCalledTimes(1);
   expect(onSaved).not.toHaveBeenCalled();
@@ -79,7 +82,7 @@ it("selects an enterprise document before the first message, without uploading a
   await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
   typeAndSend();
   await waitFor(() => expect(streamMessage).toHaveBeenCalledTimes(1));
-  expect((streamMessage as jest.Mock).mock.calls[0][5]).toEqual([reference]);
+  expect((streamMessage as jest.Mock).mock.calls[0][5]).toEqual([expect.objectContaining(reference)]);
   expect(createConversation).toHaveBeenCalledTimes(1);
   expect(uploadChatDocument).not.toHaveBeenCalled();
 });

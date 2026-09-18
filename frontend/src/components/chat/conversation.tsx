@@ -8,6 +8,8 @@ import { ChatInput } from "@/components/chat/chat-input";
 import { SearchDetailsPanel } from "@/components/chat/search-details";
 import { DocumentLibrary } from "@/components/chat/document-library";
 import { prepareLibraryDocument } from "@/lib/chat-document-library";
+import { attachmentBlocker } from "@/lib/chat-attachments";
+import { useAttachmentReadiness } from "@/hooks/use-attachment-readiness";
 
 const MessageList = dynamic(() =>
   import("@/components/chat/message-list").then((mod) => ({ default: mod.MessageList })),
@@ -28,7 +30,7 @@ export function Conversation({ conversationId, initialQuery = null, initialAttac
   const token = session?.access_token;
 
   const [messages, setMessages] = useState<Message[]>([]);
-  const [attachments, setAttachments] = useState<ChatDocumentReference[] | undefined>(initialAttachments);
+  const [attachments, setAttachments] = useState<ChatDocumentReference[]>(initialAttachments ?? []);
   const [isUploading, setIsUploading] = useState(false);
   const [attachmentsEnabled, setAttachmentsEnabled] = useState(false);
   const [libraryOpen, setLibraryOpen] = useState(false);
@@ -43,6 +45,7 @@ export function Conversation({ conversationId, initialQuery = null, initialAttac
   const abortControllerRef = useRef<AbortController | null>(null);
   const activeConversationRef = useRef(conversationId);
   activeConversationRef.current = conversationId;
+  useAttachmentReadiness(conversationId, token, attachments, setAttachments);
 
   // Load existing conversation messages (skip when there's an initial query
   // since the conversation was just created and is empty, and skip during streaming)
@@ -53,7 +56,7 @@ export function Conversation({ conversationId, initialQuery = null, initialAttac
     if (!token || conversationId === "new") return;
 
     let cancelled = false;
-    if (!initialQuery) setAttachments(undefined);
+    if (!initialQuery) setAttachments([]);
     setAttachmentsEnabled(false);
     setIsUploading(false);
     (async () => {
@@ -78,6 +81,8 @@ export function Conversation({ conversationId, initialQuery = null, initialAttac
   const handleSend = useCallback(
     async (content: string) => {
       if (!token || conversationId === "new") return;
+      const blocked = attachmentBlocker(attachments ?? []);
+      if (blocked) { toast.error(blocked); return false; }
 
       const tempUserMessage: Message = {
         id: `temp-${Date.now()}`,
@@ -266,8 +271,8 @@ export function Conversation({ conversationId, initialQuery = null, initialAttac
           try {
             const ref = await prepareLibraryDocument(conversationId, token, document);
             if (activeConversationRef.current === conversationId) {
-              setAttachments((current) => current?.some((d) => d.document_id === ref.document_id)
-                ? current : [...(current ?? []), ref]);
+              setAttachments((current) => current.some((d) => d.document_id === ref.document_id)
+                ? current : [...current, ref]);
             }
           } finally {
             if (activeConversationRef.current === conversationId) setIsUploading(false);

@@ -129,8 +129,42 @@ async def attach_conversation_document(
         await enqueue_ingestion(str(doc.id), expected_source=doc.storage_path)
     except Exception:
         raise HTTPException(503, "Fichier enregistré dans Documents, mais préparation incomplète ; aucune pièce jointe confirmée") from None
+    from app.services.conversation_document_service import attachment_readiness
+
+    manifest = await extraction.reference_status(
+        doc.id, org.id, user.id, manifest["extraction_id"]
+    )
     return {"document_id": str(doc.id), "extraction_id": str(manifest["extraction_id"]),
-            "name": doc.name, "coverage": manifest["coverage"]}
+            "name": doc.name, "coverage": manifest["coverage"],
+            "text_bytes": manifest["text_bytes"], **attachment_readiness(manifest)}
+
+
+@router.get("/{conversation_id}/documents/{document_id}/readiness")
+@limiter.limit("120/minute")
+async def conversation_document_readiness(
+    conversation_id: uuid.UUID,
+    document_id: uuid.UUID,
+    extraction_id: uuid.UUID,
+    request: Request,
+    response: Response,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    from app.services.conversation_document_service import attachment_readiness
+    from app.services.document_extraction_service import DocumentExtractionService
+
+    conversation = await ConversationService(db).get_conversation(conversation_id, user)
+    manifest = await DocumentExtractionService(db).reference_status(
+        document_id, conversation.organisation_id, user.id, extraction_id
+    )
+    response.headers["Cache-Control"] = "private, no-store"
+    return {
+        "document_id": str(document_id),
+        "extraction_id": str(extraction_id),
+        "name": manifest["source_name"],
+        "text_bytes": manifest["text_bytes"],
+        **attachment_readiness(manifest),
+    }
 
 
 @router.post("/", response_model=ConversationRead, status_code=status.HTTP_201_CREATED)
@@ -1199,7 +1233,7 @@ async def chat_stream(
     )
     references = active_references(conversation.messages, data.document_references)
     documents, document_continuity = await read_conversation_documents(
-        db, conversation, user, references,
+        db, conversation, user, references, query=data.message,
     )
     if documents:
         references = [{"document_id": str(d["document_id"]),
@@ -1457,7 +1491,9 @@ async def chat_stream(
 
             if documents:
                 # Recheck current ACL/version after the potentially long legal search.
-                await read_conversation_documents(db, conversation, user, references)
+                from app.services.conversation_document_service import verify_conversation_documents
+
+                await verify_conversation_documents(db, conversation, user, references)
                 from app.rag.document_generation import build_document_task_context
 
                 document_task_context = build_document_task_context(documents, results, rag_trace)

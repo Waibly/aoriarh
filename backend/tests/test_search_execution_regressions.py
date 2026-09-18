@@ -97,6 +97,16 @@ def test_exclusion_and_idcc_filter_in_real_qdrant(corpus):
     assert corpus.scroll(COLLECTION_NAME, scroll_filter=empty)[0] == []
 
 
+def test_explicit_document_filter_cannot_return_another_tenant_document(corpus):
+    search = HybridSearch.__new__(HybridSearch)
+    scope = search._build_org_filter("org", document_ids=["5"])
+    points, _ = corpus.scroll(COLLECTION_NAME, scroll_filter=scope, limit=20)
+    assert [point.payload["document_id"] for point in points] == ["5"]
+
+    foreign = search._build_org_filter("org", document_ids=["2"])
+    assert corpus.scroll(COLLECTION_NAME, scroll_filter=foreign)[0] == []
+
+
 async def test_successful_floor_survives_failed_main_branches():
     obj = agent()
 

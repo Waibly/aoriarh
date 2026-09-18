@@ -84,6 +84,9 @@ def build_document_task_context(documents, results, trace):
                          else "retrieved_reference"),
                 "extraction_id": str(selected[result.document_id].get("extraction_id") or "")
                 if result.document_id in selected else None,
+                "reading_scope": selected[result.document_id].get(
+                    "transmitted_scope", "full_extracted_text"
+                ) if result.document_id in selected else None,
             }
             for i, result in enumerate(results, start=1)
         ],

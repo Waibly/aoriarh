@@ -129,6 +129,7 @@ class HybridSearch:
         date_from: datetime.date | None = None,
         date_to: datetime.date | None = None,
         excluded_source_types: list[str] | None = None,
+        document_ids: list[str] | None = None,
     ) -> Filter:
         """Construit le filtre Qdrant de cloisonnement multi-tenant.
 
@@ -153,6 +154,20 @@ class HybridSearch:
                     FieldCondition(
                         key="source_type",
                         match=MatchAny(any=source_type_filter),
+                    ),
+                ],
+            )
+
+        # Explicit chat attachments are identified before retrieval.  This
+        # filter searches inside those exact documents; it never discovers or
+        # silently adds another personal file to the conversation.
+        if document_ids is not None:
+            org_filter = Filter(
+                must=[
+                    org_filter,
+                    FieldCondition(
+                        key="document_id",
+                        match=MatchAny(any=document_ids),
                     ),
                 ],
             )
@@ -192,6 +207,7 @@ class HybridSearch:
         cost_ctx: CostContext | None = None,
         excluded_source_types: list[str] | None = None,
         encoding_cache: dict | None = None,
+        document_ids: list[str] | None = None,
     ) -> list[SearchResult]:
         """Execute a hybrid search combining dense and sparse vectors.
 
@@ -234,6 +250,7 @@ class HybridSearch:
             date_from,
             date_to,
             excluded_source_types,
+            document_ids=document_ids,
         )
 
         # 3. Hybrid query with RRF fusion via prefetch

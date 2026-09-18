@@ -111,6 +111,23 @@ async def test_legacy_file_prepared_once_without_duplicate_or_reindex(
     enqueue.assert_not_awaited()
 
 
+async def test_attachment_readiness_exposes_user_facing_mode(journey, dossier, client):
+    selected = await client.post(
+        f"{journey.url}/document-library/{dossier.doc.id}",
+        json={"source_sha256": dossier.doc.file_hash},
+    )
+    assert selected.status_code == 200
+    response = await client.get(
+        f"{journey.url}/documents/{dossier.doc.id}/readiness",
+        params={"extraction_id": selected.json()["extraction_id"]},
+    )
+    assert response.status_code == 200
+    assert response.headers["cache-control"] == "private, no-store"
+    assert response.json()["reading_mode"] == "full"
+    assert response.json()["processing_status"] == "ready"
+    assert response.json()["name"] == dossier.doc.name
+
+
 @pytest.mark.parametrize(
     "fault,expected",
     [
@@ -141,7 +158,7 @@ async def test_selection_rechecks_access_and_version(journey, dossier, client, f
         assert (await client.get(f"{journey.url}/document-library")).status_code == 404
 
 
-@pytest.mark.parametrize("failure,expected", [("missing_file", 503), ("too_long", 413)])
+@pytest.mark.parametrize("failure,expected", [("missing_file", 503), ("previous_limit", 200)])
 async def test_no_attachment_confirmed_on_unreadable_or_oversized_text(
     journey, dossier, client, failure, expected
 ):
@@ -157,6 +174,8 @@ async def test_no_attachment_confirmed_on_unreadable_or_oversized_text(
         json={"source_sha256": dossier.doc.file_hash},
     )
     assert response.status_code == expected, response.text
+    if failure == "previous_limit":
+        assert response.json()["reading_mode"] == "full"
 
 
 async def test_corrupt_existing_extraction_is_not_rebuilt(journey, dossier, client):

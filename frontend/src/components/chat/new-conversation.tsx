@@ -7,6 +7,8 @@ import { Conversation } from "@/components/chat/conversation";
 import { DocumentLibrary } from "@/components/chat/document-library";
 import { createConversation, uploadChatDocument, type ChatDocumentReference } from "@/lib/chat-api";
 import { prepareLibraryDocument } from "@/lib/chat-document-library";
+import { attachmentBlocker } from "@/lib/chat-attachments";
+import { useAttachmentReadiness } from "@/hooks/use-attachment-readiness";
 import type { Conversation as ConversationData } from "@/types/api";
 
 export function NewConversation({ organisationId, token, onSaved }: {
@@ -22,6 +24,7 @@ export function NewConversation({ organisationId, token, onSaved }: {
   const mounted = useRef(true);
   const [libraryOpen, setLibraryOpen] = useState(false);
   const [firstMessage, setFirstMessage] = useState<string | null>(null);
+  useAttachmentReadiness(draft?.id, token, attachments, setAttachments);
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
 
   async function ensureConversation() {
@@ -72,7 +75,12 @@ export function NewConversation({ organisationId, token, onSaved }: {
       setLibraryOpen(true);
     })}
     onRemove={(id) => setAttachments((current) => current.filter((d) => d.document_id !== id))}
-    onSend={(content) => run(async () => { await ensureConversation(); setFirstMessage(content); })}
+    onSend={(content) => run(async () => {
+      await ensureConversation();
+      const blocked = attachmentBlocker(attachments);
+      if (blocked) throw new Error(blocked);
+      setFirstMessage(content);
+    })}
     onAttach={draft?.document_attachments_enabled === false ? undefined : async (file) => {
       await run(async () => {
         if (file.size > 2 * 1024 * 1024) throw new Error("Maximum 2 Mo par pièce jointe");
