@@ -1,4 +1,5 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { useState } from "react";
 import { DocumentLibrary } from "@/components/chat/document-library";
 import { searchChatLibrary } from "@/lib/chat-document-library";
 
@@ -9,8 +10,13 @@ const document = { document_id: "one", name: "Compte rendu mars.txt", source_typ
   file_size: 200, source_sha256: "a".repeat(64) };
 
 function mount(selectedIds: string[] = [], onSelect = jest.fn().mockResolvedValue(undefined)) {
-  return { ...render(<DocumentLibrary conversationId="conversation" token="token"
-    selectedIds={selectedIds} disabled={false} onSelect={onSelect} />), onSelect };
+  function Harness() {
+    const [open, setOpen] = useState(false);
+    return <><button disabled={selectedIds.length >= 3} onClick={() => setOpen(true)}>Documents de l’entreprise</button>
+      <DocumentLibrary conversationId="conversation" token="token" open={open} onOpenChange={setOpen}
+        selectedIds={selectedIds} disabled={false} onSelect={onSelect} /></>;
+  }
+  return { ...render(<Harness />), onSelect };
 }
 async function open() {
   fireEvent.click(screen.getByRole("button", { name: "Documents de l’entreprise" }));

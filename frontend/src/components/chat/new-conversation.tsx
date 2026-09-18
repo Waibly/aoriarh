@@ -2,7 +2,6 @@
 
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
-import { Button } from "@/components/ui/button";
 import { WelcomeScreen } from "@/components/chat/welcome-screen";
 import { Conversation } from "@/components/chat/conversation";
 import { DocumentLibrary } from "@/components/chat/document-library";
@@ -21,7 +20,7 @@ export function NewConversation({ organisationId, token, onSaved }: {
   const [busy, setBusy] = useState(false);
   const working = useRef(false);
   const mounted = useRef(true);
-  const [libraryReady, setLibraryReady] = useState(false);
+  const [libraryOpen, setLibraryOpen] = useState(false);
   const [firstMessage, setFirstMessage] = useState<string | null>(null);
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
 
@@ -66,7 +65,12 @@ export function NewConversation({ organisationId, token, onSaved }: {
     onConversationSaved={() => onSaved(draft.id)} />;
 
   const disabled = busy || !organisationId || !token;
-  return <WelcomeScreen disabled={disabled} attachments={attachments}
+  return <><WelcomeScreen disabled={disabled} attachments={attachments}
+    onBrowse={draft?.document_attachments_enabled === false ? undefined : () => void run(async () => {
+      const conversation = await ensureConversation();
+      checkAttachments(conversation);
+      setLibraryOpen(true);
+    })}
     onRemove={(id) => setAttachments((current) => current.filter((d) => d.document_id !== id))}
     onSend={(content) => run(async () => { await ensureConversation(); setFirstMessage(content); })}
     onAttach={draft?.document_attachments_enabled === false ? undefined : async (file) => {
@@ -78,8 +82,9 @@ export function NewConversation({ organisationId, token, onSaved }: {
         if (mounted.current) setAttachments((current) => [...current, reference]);
       });
     }}
-    library={libraryReady && draft && token ? <DocumentLibrary conversationId={draft.id} token={token}
-      initiallyOpen
+  />
+    {draft && token && <DocumentLibrary conversationId={draft.id} token={token}
+      open={libraryOpen} onOpenChange={setLibraryOpen}
       selectedIds={attachments.map((d) => d.document_id)} disabled={disabled}
       onSelect={async (document) => {
         await run(async () => {
@@ -88,12 +93,6 @@ export function NewConversation({ organisationId, token, onSaved }: {
           if (mounted.current) setAttachments((current) => current.some((d) => d.document_id === reference.document_id)
             ? current : [...current, reference]);
         }, false);
-      }} /> : <Button variant="outline" size="sm"
-        disabled={disabled || draft?.document_attachments_enabled === false}
-        onClick={() => void run(async () => {
-          const conversation = await ensureConversation();
-          checkAttachments(conversation);
-          setLibraryReady(true);
-        })}>Documents de l’entreprise</Button>}
-  />;
+      }} />}
+  </>;
 }

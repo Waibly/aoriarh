@@ -31,6 +31,7 @@ export function Conversation({ conversationId, initialQuery = null, initialAttac
   const [attachments, setAttachments] = useState<ChatDocumentReference[] | undefined>(initialAttachments);
   const [isUploading, setIsUploading] = useState(false);
   const [attachmentsEnabled, setAttachmentsEnabled] = useState(false);
+  const [libraryOpen, setLibraryOpen] = useState(false);
   const [searchDetails, setSearchDetails] = useState<SearchDetails | null>(null);
   const [isStreaming, setIsStreaming] = useState(false);
   const [streamingStatus, setStreamingStatus] = useState<string | null>(null);
@@ -255,6 +256,7 @@ export function Conversation({ conversationId, initialQuery = null, initialAttac
       />
       <div className="max-h-64 overflow-auto"><SearchDetailsPanel details={searchDetails} /></div>
       {attachmentsEnabled && token && <DocumentLibrary key={conversationId}
+        open={libraryOpen} onOpenChange={setLibraryOpen}
         conversationId={conversationId} token={token}
         selectedIds={(attachments ?? []).map((doc) => doc.document_id)}
         disabled={isStreaming || isUploading}
@@ -272,6 +274,7 @@ export function Conversation({ conversationId, initialQuery = null, initialAttac
           }
         }} />}
       <ChatInput
+        onBrowse={attachmentsEnabled ? () => setLibraryOpen(true) : undefined}
         onSend={handleSend}
         disabled={isStreaming || isUploading}
         attachments={attachments}

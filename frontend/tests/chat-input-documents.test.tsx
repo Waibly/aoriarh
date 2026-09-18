@@ -4,13 +4,13 @@ import { ChatInput } from "@/components/chat/chat-input";
 describe("chat documents", () => {
   it("does not expose upload when the capability is unavailable", () => {
     render(<ChatInput onSend={jest.fn()} />);
-    expect(screen.queryByLabelText("Joindre un document")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Ajouter des documents")).not.toBeInTheDocument();
   });
   it("shows retained references and clears only the selected reference", () => {
     const remove = jest.fn();
     render(<ChatInput onSend={jest.fn()} onAttach={jest.fn()} onRemove={remove}
       attachments={[{ document_id: "one", extraction_id: "v1", name: "courrier.txt" }]} />);
-    expect(screen.getByText(/documents de l’entreprise/)).toBeInTheDocument();
+    expect(screen.queryByText(/Retirer une pièce du chat/)).not.toBeInTheDocument();
     fireEvent.click(screen.getByLabelText("Retirer courrier.txt"));
     expect(remove).toHaveBeenCalledWith("one");
   });
@@ -18,11 +18,23 @@ describe("chat documents", () => {
     const send = jest.fn();
     render(<ChatInput onSend={send} onAttach={jest.fn()}
       attachments={[1, 2, 3].map((id) => ({ document_id: String(id), extraction_id: "v1" }))} />);
-    expect(screen.getByLabelText("Joindre un document")).toBeDisabled();
+    fireEvent.click(screen.getByLabelText("Ajouter des documents"));
+    expect(screen.getByRole("button", { name: /Importer un fichier/ })).toBeDisabled();
     const input = screen.getByRole("textbox");
     fireEvent.change(input, { target: { value: "Prépare un mail" } });
     fireEvent.keyDown(input, { key: "Enter", code: "Enter" });
     expect(send).toHaveBeenCalledWith("Prépare un mail");
     await waitFor(() => expect(input).toHaveValue(""));
   });
+});
+
+it("keeps sharing information in the add menu, not on the empty composer", () => {
+  render(<ChatInput onSend={jest.fn()} onAttach={jest.fn()} onBrowse={jest.fn()} />);
+  expect(screen.queryByText(/Ajouté aux documents/)).not.toBeInTheDocument();
+  fireEvent.click(screen.getByLabelText("Ajouter des documents"));
+  expect(screen.getByText(/Ajouté aux documents de l’entreprise/)).toBeVisible();
+  expect(screen.getByRole("button", { name: /Documents de l’entreprise/ })).toBeVisible();
+  expect(screen.getByText(/Seul le texte extrait/)).not.toBeVisible();
+  fireEvent.click(screen.getByText("Formats et informations"));
+  expect(screen.getByText(/Seul le texte extrait/)).toBeVisible();
 });

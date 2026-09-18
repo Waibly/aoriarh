@@ -40,8 +40,9 @@ beforeEach(() => {
 
 it("shows attachment controls immediately without creating a conversation on page load", () => {
   mount();
-  expect(screen.getByLabelText("Joindre un document")).toBeEnabled();
-  expect(screen.getByRole("button", { name: "Documents de l’entreprise" })).toBeEnabled();
+  expect(screen.getByLabelText("Ajouter des documents")).toBeEnabled();
+  fireEvent.click(screen.getByLabelText("Ajouter des documents"));
+  expect(screen.getByRole("button", { name: /Documents de l’entreprise/ })).toBeEnabled();
   expect(createConversation).not.toHaveBeenCalled();
 });
 
@@ -72,7 +73,8 @@ it("sends the first message exactly once with its uploaded reference, even with 
 
 it("selects an enterprise document before the first message, without uploading again", async () => {
   mount();
-  fireEvent.click(screen.getByRole("button", { name: "Documents de l’entreprise" }));
+  fireEvent.click(screen.getByLabelText("Ajouter des documents"));
+  fireEvent.click(screen.getByRole("button", { name: /Documents de l’entreprise/ }));
   fireEvent.click(await screen.findByRole("button", { name: "Choisir contrat.txt" }));
   await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
   typeAndSend();

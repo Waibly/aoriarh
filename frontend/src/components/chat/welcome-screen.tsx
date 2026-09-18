@@ -1,6 +1,5 @@
 "use client";
 
-import type { ReactNode } from "react";
 import Image from "next/image";
 import { Scale } from "lucide-react";
 import { ChatInput, type ChatInputProps } from "@/components/chat/chat-input";
@@ -12,7 +11,7 @@ const suggestions = [
   "Quelles sont les obligations lors d'un entretien préalable au licenciement ?",
 ];
 
-export function WelcomeScreen({ library, ...inputProps }: ChatInputProps & { library?: ReactNode }) {
+export function WelcomeScreen(inputProps: ChatInputProps) {
   return (
     <div className="flex flex-1 flex-col items-center justify-center rounded-xl bg-white px-4 dark:bg-card animate-in fade-in duration-500">
       <div className="mb-6">
@@ -25,8 +24,7 @@ export function WelcomeScreen({ library, ...inputProps }: ChatInputProps & { lib
         Posez vos questions en droit social français. Je m&apos;appuie sur vos
         documents et la réglementation en vigueur pour vous répondre.
       </p>
-      <div className="mt-8 w-full max-w-2xl">
-        {library}
+      <div className="mt-8 w-full max-w-3xl">
         <ChatInput {...inputProps} />
       </div>
       <div className="mt-6 grid w-full max-w-2xl grid-cols-1 gap-3 sm:grid-cols-2">

@@ -7,15 +7,15 @@ import { searchChatLibrary, type LibraryDocument, type LibrarySearch } from "@/l
 
 const emptySearch: LibrarySearch = { name: "", uploaded_from: "", uploaded_to: "" };
 
-export function DocumentLibrary({ conversationId, token, selectedIds, disabled, onSelect, initiallyOpen = false }: {
+export function DocumentLibrary({ conversationId, token, selectedIds, disabled, onSelect, open, onOpenChange }: {
   conversationId: string;
   token: string;
   selectedIds: string[];
   disabled: boolean;
   onSelect: (document: LibraryDocument) => Promise<void>;
-  initiallyOpen?: boolean;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
 }) {
-  const [open, setOpen] = useState(initiallyOpen);
   const [search, setSearch] = useState(emptySearch);
   const [submitted, setSubmitted] = useState(emptySearch);
   const [items, setItems] = useState<LibraryDocument[]>([]);
@@ -28,10 +28,11 @@ export function DocumentLibrary({ conversationId, token, selectedIds, disabled, 
   const selecting = useRef(false);
   useEffect(() => () => { sequence.current += 1; }, []);
   useEffect(() => {
-    if (initiallyOpen) void load(emptySearch);
-    // Only initialise on mount. Interactive searches are submitted explicitly.
+    if (open) void load(search);
+    else sequence.current += 1;
+    // Reopen with the current filters; typing alone must not trigger searches.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [open]);
 
   async function load(criteria: LibrarySearch, nextOffset = 0) {
     const request = ++sequence.current;
@@ -55,9 +56,7 @@ export function DocumentLibrary({ conversationId, token, selectedIds, disabled, 
 
   function changeOpen(value: boolean) {
     if (selecting.current) return;
-    sequence.current += 1;
-    setOpen(value);
-    if (value) void load(search);
+    onOpenChange(value);
   }
 
   async function select(document: LibraryDocument) {
@@ -68,7 +67,7 @@ export function DocumentLibrary({ conversationId, token, selectedIds, disabled, 
     setError("");
     try {
       await onSelect(document);
-      if (request === sequence.current) setOpen(false);
+      if (request === sequence.current) onOpenChange(false);
     } catch (e) {
       if (request === sequence.current) setError(e instanceof Error ? e.message : "Préparation impossible");
     } finally {
@@ -78,10 +77,6 @@ export function DocumentLibrary({ conversationId, token, selectedIds, disabled, 
   }
 
   return <>
-    <div className="px-2 pt-2 sm:px-6">
-      <Button variant="outline" size="sm" disabled={disabled || selectedIds.length >= 3}
-        onClick={() => changeOpen(true)}>Documents de l’entreprise</Button>
-    </div>
     <Dialog open={open} onOpenChange={changeOpen}>
       <DialogContent>
         <DialogHeader>
