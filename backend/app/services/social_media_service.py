@@ -86,6 +86,7 @@ def _load_asset_data_url(filename: str, mime_type: str) -> str:
 _LOGO_MARK_WATERMARK_URL = _load_asset_data_url(
     "logo-mark-watermark.svg", "image/svg+xml"
 )
+_BALANCE_ICON_URL = _load_asset_data_url("icon-balance-white.svg", "image/svg+xml")
 
 
 SOCIAL_MEDIA_SYSTEM_PROMPT = """\
@@ -751,6 +752,13 @@ def render_x_visual_document(raw_content: str, *, generated_at: datetime) -> str
     """Entoure le fragment X exact d'un gabarit horizontal AORIA RH autonome."""
 
     generated_label = generated_at.strftime("%d/%m/%Y")
+    inspector = _XVisualFragmentInspector()
+    try:
+        inspector.feed(raw_content)
+    except Exception:
+        # Le fragment reste rendu tel quel ; ce comptage ne pilote que le libellé.
+        pass
+    source_label = "Source" if inspector.source_count == 1 else "Sources"
     return f"""<!doctype html>
 <html lang="fr">
 <head>
@@ -774,19 +782,20 @@ body {{ font-family:'Inter Variable','Segoe UI',Arial,sans-serif; color:#fff; }}
 .x-visual::before {{ content:'Le droit social. Vos sources. Votre contexte.';
   position:absolute; top:137px; left:72px; color:#f2eaff; font-size:16px;
   line-height:1.2; font-weight:650; letter-spacing:.005em; }}
-.x-visual::after {{ content:'⚖'; position:absolute; left:72px; bottom:58px;
-  width:50px; height:50px; color:#fff; font-family:'Segoe UI Symbol',serif;
-  font-size:43px; line-height:1; opacity:.95; }}
 h1 {{ position:absolute; top:224px; left:72px; width:730px; margin:0; color:#fff;
   font-family:'Sora Variable','Segoe UI',Arial,sans-serif;
   font-size:67px; line-height:1.08; letter-spacing:-.035em; font-weight:790; }}
-.source-list {{ position:absolute; left:142px; right:72px; bottom:47px;
-  color:#fff; font-size:17px; line-height:1.25; font-weight:650; }}
-.source-list::before {{ content:'Sources'; display:block; margin-bottom:6px;
-  color:#e8d9ff; font-size:12px; font-weight:700; letter-spacing:.08em;
+.source-list {{ position:absolute; left:72px; right:72px; bottom:42px;
+  min-height:58px; padding:3px 0 3px 76px;
+  color:#fff; font-size:21px; line-height:1.28;
+  font-weight:650; background-image:url('{_BALANCE_ICON_URL}');
+  background-repeat:no-repeat; background-position:left center;
+  background-size:52px 52px; }}
+.source-list::before {{ content:'{source_label}'; display:block; margin-bottom:5px;
+  color:#e8d9ff; font-size:15px; line-height:1.1; font-weight:750; letter-spacing:.08em;
   text-transform:uppercase; }}
 .source-note {{ margin:0; color:#fff; }}
-.source-note + .source-note {{ margin-top:4px; }}
+.source-note + .source-note {{ margin-top:5px; }}
 .generated-date {{ display:none; }}
 @media screen {{ body {{ display:block; }} }}
 </style>

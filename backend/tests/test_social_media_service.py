@@ -331,6 +331,28 @@ def test_x_visual_renders_every_source_on_the_media():
     assert "Convention collective Syntec, art. 4.5" in text
 
 
+def test_x_visual_uses_singular_source_label_and_aligned_vector_icon():
+    html = render_x_visual_document(
+        X_RAW_FRAGMENT,
+        generated_at=datetime(2026, 9, 15),
+    )
+
+    with fitz.open(stream=render_social_media_pdf(html), filetype="pdf") as document:
+        page = document[0]
+        label = page.search_for("SOURCE")[-1]
+        reference = page.search_for("Cass. soc.")[0]
+
+        assert "SOURCES" not in page.get_text()
+        assert reference.x0 == pytest.approx(label.x0, abs=1)
+        assert reference.y0 > label.y1
+
+    assert "icon-balance-white.svg" not in html
+    assert "data:image/svg+xml;base64," in html
+    assert "content:'⚖'" not in html
+    assert "font-size:21px" in html
+    assert "font-size:15px" in html
+
+
 def test_renderer_creates_one_pdf_page_per_slide():
     html = render_social_media_document(
         RAW_FRAGMENT,
