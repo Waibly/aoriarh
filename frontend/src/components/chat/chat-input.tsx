@@ -4,10 +4,12 @@ import { useState, useRef, useCallback } from "react";
 import { ArrowUp, Loader2, Square, Paperclip, Plus, FolderOpen, FileText, X, ChevronRight } from "lucide-react";
 import type { ChatDocumentReference } from "@/lib/chat-api";
 import { effectiveAttachments } from "@/lib/chat-attachments";
+import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 
 export interface ChatInputProps {
+  variant?: "default" | "welcome";
   onSend: (content: string) => void | boolean | Promise<void | boolean>;
   disabled?: boolean;
   onStop?: () => void;
@@ -17,7 +19,7 @@ export interface ChatInputProps {
   onRemove?: (id: string) => void;
 }
 
-export function ChatInput({ onSend, disabled = false, onStop, attachments = [], onAttach, onBrowse, onRemove }: ChatInputProps) {
+export function ChatInput({ onSend, disabled = false, onStop, attachments = [], onAttach, onBrowse, onRemove, variant = "default" }: ChatInputProps) {
   const [value, setValue] = useState("");
   const [menuOpen, setMenuOpen] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -35,10 +37,11 @@ export function ChatInput({ onSend, disabled = false, onStop, attachments = [], 
   }, [value, disabled, onSend]);
 
   return (
-    <div className="w-full px-1 pt-3 sm:px-3">
+    <div className={cn("w-full", variant === "default" && "px-1 pt-3 sm:px-3")}>
       <div className="mx-auto max-w-3xl">
         <div data-slot="chat-input"
-          className="rounded-3xl border border-border/80 bg-white shadow-[0_4px_24px_-12px_rgba(0,0,0,0.18)] transition-[border-color,box-shadow] focus-within:border-primary/35 focus-within:shadow-[0_4px_28px_-12px_rgba(101,43,176,0.16)] dark:bg-card">
+          className={cn("rounded-3xl border border-border/80 bg-white shadow-[0_4px_24px_-12px_rgba(0,0,0,0.18)] transition-[border-color,box-shadow] focus-within:border-primary/35 focus-within:shadow-[0_4px_28px_-12px_rgba(101,43,176,0.16)] dark:bg-card",
+            variant === "welcome" && "rounded-2xl border-primary/20 shadow-[0_8px_32px_-16px_rgba(101,43,176,0.2)] focus-within:border-primary/50")}>
           {attachments.length > 0 && <div className="flex flex-wrap gap-2 px-4 pt-4" aria-label="Pièces jointes">
             {attachmentStates.map((doc) => <div key={doc.document_id}
               className="flex max-w-full items-center gap-2.5 rounded-xl border border-border/70 bg-muted/40 py-2 pl-2.5 pr-1.5">
@@ -59,7 +62,7 @@ export function ChatInput({ onSend, disabled = false, onStop, attachments = [], 
             </div>)}
           </div>}
           <textarea ref={textareaRef} value={value} disabled={disabled} rows={2}
-            aria-label="Votre message" placeholder="Comment puis-je vous aider ?"
+            aria-label="Votre message" placeholder={variant === "welcome" ? "Décrivez votre situation ou posez votre question…" : "Comment puis-je vous aider ?"}
             onChange={(event) => {
               setValue(event.target.value);
               event.target.style.height = "auto";
@@ -76,10 +79,11 @@ export function ChatInput({ onSend, disabled = false, onStop, attachments = [], 
             <div className="flex min-h-9 items-center gap-2">
               {(onAttach || onBrowse) && <Popover open={menuOpen} onOpenChange={setMenuOpen}>
                 <PopoverTrigger asChild>
-                  <Button type="button" variant="ghost" size="icon" aria-label="Ajouter des documents"
+                  <Button type="button" variant="ghost" size={variant === "welcome" ? "sm" : "icon"} aria-label="Ajouter des documents"
                     title="Ajouter des documents" disabled={disabled}
-                    className="size-9 rounded-full text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:ring-2">
-                    <Plus className="size-5" />
+                    className={cn("h-9 rounded-full text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:ring-2", variant === "welcome" ? "gap-2 px-3 text-xs" : "size-9")}>
+                    <Plus aria-hidden="true" className="size-5" />
+                    {variant === "welcome" && <span>Joindre un document</span>}
                   </Button>
                 </PopoverTrigger>
                 <PopoverContent align="start" side="top" sideOffset={12}
@@ -129,9 +133,9 @@ export function ChatInput({ onSend, disabled = false, onStop, attachments = [], 
             if (file) await onAttach(file);
           }} />}
         </div>
-        <p className="mt-2.5 text-center text-[11px] leading-relaxed text-muted-foreground/80">
+        {variant === "default" && <p className="mt-2.5 text-center text-[11px] leading-relaxed text-muted-foreground">
           Aoria RH peut faire des erreurs. Vérifiez les informations importantes.
-        </p>
+        </p>}
       </div>
     </div>
   );

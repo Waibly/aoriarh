@@ -204,7 +204,7 @@ function ConversationHistory() {
           <div className="space-y-0.5 px-2 py-2">
             <div className="flex items-center justify-between px-2 pt-2 pb-1">
               <p className="text-muted-foreground text-xs font-medium">
-                Historique de chat
+                Conversations récentes
               </p>
               <Tooltip>
                 <TooltipTrigger asChild>
@@ -418,7 +418,7 @@ export function Sidebar({
           if (target?.closest("a[href]")) onNavigate();
         }}
       >
-        <div className="p-4">
+        <div className="px-5 pb-5 pt-6">
           <Image
             src="/logo-aoria.svg"
             alt="AORIA RH"
@@ -446,7 +446,7 @@ export function Sidebar({
         </div>
 
         {/* Navigation principale */}
-        <nav className="space-y-1 px-2 py-2">
+        <nav aria-label="Navigation principale" className="space-y-1 px-3 py-3">
           {navigation
             .filter((item) => {
               if (item.managerOnly)
@@ -463,32 +463,22 @@ export function Sidebar({
                   : pathname.startsWith(item.href);
               const isChat = item.href === "/chat";
               return (
-                <div key={item.name} className="flex items-center gap-1">
+                <div key={item.name} className={cn("flex items-center", isChat && "mb-3")}>
                   <Button
                     variant="ghost"
                     className={cn(
-                      "flex-1 justify-start font-normal",
-                      isActive && "bg-accent text-accent-foreground font-medium"
+                      "h-10 flex-1 justify-start rounded-lg px-3 font-normal",
+                      isChat
+                        ? "bg-primary font-medium text-white hover:bg-primary/90 hover:text-white"
+                        : isActive && "bg-accent text-accent-foreground font-medium"
                     )}
                     asChild
                   >
-                    <Link href={item.href}>
-                      <item.icon className="mr-2 h-5 w-5" />
+                    <Link href={item.href} aria-current={isActive ? "page" : undefined}>
+                      {isChat ? <Plus aria-hidden="true" className="mr-2 size-4" /> : <item.icon aria-hidden="true" className="mr-2 size-4 text-muted-foreground" />}
                       {item.name}
                     </Link>
                   </Button>
-                  {isChat && (
-                    <Button
-                      size="icon-sm"
-                      className="bg-primary text-primary-foreground hover:bg-primary/90 shrink-0"
-                      title="Nouvelle conversation"
-                      asChild
-                    >
-                      <Link href="/chat">
-                        <Plus className="h-4 w-4" />
-                      </Link>
-                    </Button>
-                  )}
                 </div>
               );
             })}
