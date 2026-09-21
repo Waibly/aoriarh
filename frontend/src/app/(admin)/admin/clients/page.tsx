@@ -32,6 +32,7 @@ type ClientRow = {
   account_id: string;
   account_name: string | null;
   owner_email: string | null;
+  registered_at: string;
   plan: string;
   status: string;
   mrr_eur: number;
@@ -48,9 +49,10 @@ type ClientsResponse = {
   page_size: number;
 };
 
-type SortKey = "margin" | "mrr" | "questions" | "activity" | "name";
+type SortKey = "signup" | "margin" | "mrr" | "questions" | "activity" | "name";
 
 const SORT_LABELS: Record<SortKey, string> = {
+  signup: "Inscription",
   margin: "Marge",
   mrr: "MRR",
   questions: "Questions (30 j)",
@@ -90,7 +92,7 @@ export default function AdminClientsPage() {
   const token = session?.access_token;
   const [data, setData] = useState<ClientsResponse | null>(null);
   const [loading, setLoading] = useState(true);
-  const [sort, setSort] = useState<SortKey>("margin");
+  const [sort, setSort] = useState<SortKey>("signup");
   const [page, setPage] = useState(1);
 
   const load = useCallback(async () => {
@@ -173,6 +175,7 @@ export default function AdminClientsPage() {
               <TableHeader>
                 <TableRow>
                   <TableHead>Client</TableHead>
+                  <TableHead>Inscription</TableHead>
                   <TableHead>Plan</TableHead>
                   <TableHead>Statut</TableHead>
                   <TableHead className="text-right">MRR</TableHead>
@@ -191,6 +194,9 @@ export default function AdminClientsPage() {
                         {r.owner_email ?? "—"}
                       </div>
                     </TableCell>
+                    <TableCell className="text-muted-foreground">
+                      {fmtDate(r.registered_at)}
+                    </TableCell>
                     <TableCell>{getPlanLabel(r.plan)}</TableCell>
                     <TableCell>
                       <Badge variant={STATUS_VARIANTS[r.status] ?? "outline"}>
@@ -207,11 +213,12 @@ export default function AdminClientsPage() {
                             pathname: "/admin/quality",
                             query: {
                               account_id: r.account_id,
-                              account_name: r.account_name ?? r.owner_email ?? "Client",
+                              account_name:
+                                r.account_name ?? r.owner_email ?? "Client",
                               days: "30",
                             },
                           }}
-                          className="font-medium text-primary underline decoration-primary/40 underline-offset-4 hover:decoration-primary"
+                          className="text-primary decoration-primary/40 hover:decoration-primary font-medium underline underline-offset-4"
                           title={`Voir les ${r.questions_30d} questions et réponses de ${r.account_name ?? r.owner_email ?? "ce client"}`}
                         >
                           {r.questions_30d}

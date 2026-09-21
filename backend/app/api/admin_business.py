@@ -99,6 +99,7 @@ class ClientRow(BaseModel):
     account_id: str
     account_name: str | None
     owner_email: str | None
+    registered_at: str
     plan: str
     status: str
     mrr_eur: float
@@ -491,7 +492,9 @@ async def _product_value(
 
 @router.get("/clients", response_model=ClientsResponse)
 async def get_clients(
-    sort: Literal["margin", "mrr", "questions", "activity", "name"] = Query("margin"),
+    sort: Literal["signup", "margin", "mrr", "questions", "activity", "name"] = Query(
+        "signup"
+    ),
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=200),
     _: User = Depends(require_role(["admin"])),
@@ -517,6 +520,7 @@ async def get_clients(
                 account_id=str(acc.id),
                 account_name=acc.name,
                 owner_email=owner.email if owner else None,
+                registered_at=acc.created_at.isoformat(),
                 plan=acc.plan,
                 status=acc.status,
                 mrr_eur=mrr_eur,
@@ -528,6 +532,7 @@ async def get_clients(
         )
 
     sort_keys = {
+        "signup": lambda r: r.registered_at,
         "margin": lambda r: r.margin_eur,
         "mrr": lambda r: r.mrr_eur,
         "questions": lambda r: r.questions_30d,
