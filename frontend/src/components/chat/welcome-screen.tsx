@@ -3,30 +3,29 @@
 import Image from "next/image";
 import {
   BriefcaseBusiness,
+  CalendarDays,
+  Clock3,
   HeartPulse,
-  House,
-  Scale,
 } from "lucide-react";
 import { ChatInput, type ChatInputProps } from "@/components/chat/chat-input";
 
 const suggestions = [
   {
+    icon: CalendarDays,
+    question: "Entretiens professionnels : que vérifier avant le 1er octobre 2026 ?",
+  },
+  {
     icon: HeartPulse,
-    question: "Un salarié en arrêt maladie peut-il être licencié ?",
+    question:
+      "Un ancien salarié peut-il réclamer des congés acquis pendant un arrêt maladie ?",
   },
   {
     icon: BriefcaseBusiness,
-    question:
-      "Quelles sont les indemnités dues en cas de rupture conventionnelle ?",
+    question: "Rupture conventionnelle : quels droits au chômage depuis septembre 2026 ?",
   },
   {
-    icon: House,
-    question: "Un employeur peut-il refuser une demande de télétravail ?",
-  },
-  {
-    icon: Scale,
-    question:
-      "Quelles sont les obligations lors d'un entretien préalable au licenciement ?",
+    icon: Clock3,
+    question: "Faut-il payer des heures supplémentaires non autorisées ?",
   },
 ];
 
