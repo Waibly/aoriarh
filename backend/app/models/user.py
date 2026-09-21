@@ -16,7 +16,9 @@ class User(TimestampMixin, Base):
     full_name: Mapped[str] = mapped_column(String(255), nullable=False)
     role: Mapped[str] = mapped_column(String(20), nullable=False, default="user")
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
-    auth_provider: Mapped[str] = mapped_column(String(20), nullable=False, default="credentials", server_default="credentials")
+    auth_provider: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="credentials", server_default="credentials"
+    )
     google_sub: Mapped[str | None] = mapped_column(
         String(255), unique=True, index=True, nullable=True
     )
@@ -40,6 +42,9 @@ class User(TimestampMixin, Base):
     attributed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     memberships = relationship("Membership", back_populates="user", lazy="selectin")
-    conversations = relationship("Conversation", back_populates="user", lazy="selectin")
+    # Conversation history is large and must never be pulled implicitly when a
+    # User is loaded for authentication. Callers that need it must opt in with
+    # an explicit loader/query.
+    conversations = relationship("Conversation", back_populates="user", lazy="raise")
     owned_account = relationship("Account", back_populates="owner", uselist=False, lazy="selectin")
     account_memberships = relationship("AccountMember", back_populates="user", lazy="selectin")

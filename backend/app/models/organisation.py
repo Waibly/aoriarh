@@ -25,5 +25,12 @@ class Organisation(TimestampMixin, Base):
     account: Mapped["Account | None"] = relationship("Account", back_populates="organisations")  # noqa: F821
     memberships = relationship("Membership", back_populates="organisation", lazy="selectin")
     documents = relationship("Document", back_populates="organisation", lazy="selectin")
-    conversations = relationship("Conversation", back_populates="organisation", lazy="selectin")
-    conventions = relationship("OrganisationConvention", back_populates="organisation", lazy="selectin", passive_deletes=True)
+    # Avoid loading every conversation (and historically every message) when
+    # listing the lightweight organisation selector.
+    conversations = relationship("Conversation", back_populates="organisation", lazy="raise")
+    conventions = relationship(
+        "OrganisationConvention",
+        back_populates="organisation",
+        lazy="selectin",
+        passive_deletes=True,
+    )

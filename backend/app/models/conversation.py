@@ -27,7 +27,7 @@ class Conversation(TimestampMixin, Base):
     organisation = relationship("Organisation", back_populates="conversations")
     user = relationship("User", back_populates="conversations")
     messages = relationship(
-        "Message", back_populates="conversation", order_by="Message.created_at", lazy="selectin"
+        "Message", back_populates="conversation", order_by="Message.created_at", lazy="raise"
     )
 
 
