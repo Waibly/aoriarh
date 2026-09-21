@@ -78,22 +78,22 @@ describe("outils de publication de MessageBubble", () => {
     );
     expect(
       within(publicationTools).getByRole("button", {
-        name: "Générer le post LinkedIn",
+        name: "Post LinkedIn",
       })
     ).toBeInTheDocument();
     expect(
       within(publicationTools).getByRole("button", {
-        name: "Générer une publication X",
+        name: "Publication X",
       })
     ).toBeInTheDocument();
     expect(
       within(publicationTools).getByRole("button", {
-        name: "Générer un média",
+        name: "Média",
       })
     ).toBeInTheDocument();
     expect(
       within(publicationTools).getByRole("button", {
-        name: "Générer un post + carrousel LinkedIn",
+        name: "Post + carrousel LinkedIn",
       })
     ).toBeInTheDocument();
     expect(
@@ -114,17 +114,17 @@ describe("outils de publication de MessageBubble", () => {
     renderMessage();
 
     expect(
-      screen.queryByRole("button", { name: "Générer le post LinkedIn" })
+      screen.queryByRole("button", { name: "Post LinkedIn" })
     ).not.toBeInTheDocument();
     expect(
-      screen.queryByRole("button", { name: "Générer une publication X" })
+      screen.queryByRole("button", { name: "Publication X" })
     ).not.toBeInTheDocument();
     expect(
-      screen.queryByRole("button", { name: "Générer un média" })
+      screen.queryByRole("button", { name: "Média" })
     ).not.toBeInTheDocument();
     expect(
       screen.queryByRole("button", {
-        name: "Générer un post + carrousel LinkedIn",
+        name: "Post + carrousel LinkedIn",
       })
     ).not.toBeInTheDocument();
     expect(
@@ -148,17 +148,17 @@ describe("outils de publication de MessageBubble", () => {
     renderMessage({ ...message, fiche_eligible: false });
 
     expect(
-      screen.queryByRole("button", { name: "Générer le post LinkedIn" })
+      screen.queryByRole("button", { name: "Post LinkedIn" })
     ).not.toBeInTheDocument();
     expect(
-      screen.queryByRole("button", { name: "Générer une publication X" })
+      screen.queryByRole("button", { name: "Publication X" })
     ).not.toBeInTheDocument();
     expect(
-      screen.queryByRole("button", { name: "Générer un média" })
+      screen.queryByRole("button", { name: "Média" })
     ).not.toBeInTheDocument();
     expect(
       screen.queryByRole("button", {
-        name: "Générer un post + carrousel LinkedIn",
+        name: "Post + carrousel LinkedIn",
       })
     ).not.toBeInTheDocument();
     expect(

@@ -348,7 +348,7 @@ export function MessageBubble({ message, onFeedback }: MessageBubbleProps) {
                     className="border-primary/40 text-primary hover:bg-primary/10 hover:text-primary dark:border-primary/40 dark:bg-card dark:text-primary dark:hover:bg-primary/15 gap-1.5 bg-white"
                   >
                     <LinkedInFilledIcon className="size-4" />
-                    Générer le post LinkedIn
+                    Post LinkedIn
                   </Button>
                   <Button
                     variant="outline"
@@ -358,7 +358,7 @@ export function MessageBubble({ message, onFeedback }: MessageBubbleProps) {
                     className="border-primary/40 text-primary hover:bg-primary/10 hover:text-primary dark:border-primary/40 dark:bg-card dark:text-primary dark:hover:bg-primary/15 gap-1.5 bg-white"
                   >
                     <XFilledIcon className="size-4" />
-                    Générer une publication X
+                    Publication X
                   </Button>
                   <Button
                     variant="outline"
@@ -368,7 +368,7 @@ export function MessageBubble({ message, onFeedback }: MessageBubbleProps) {
                     className="border-primary/40 text-primary hover:bg-primary/10 hover:text-primary dark:border-primary/40 dark:bg-card dark:text-primary dark:hover:bg-primary/15 gap-1.5 bg-white"
                   >
                     <Images className="size-4" />
-                    Générer un média
+                    Média
                   </Button>
                   <Button
                     variant="outline"
@@ -378,7 +378,7 @@ export function MessageBubble({ message, onFeedback }: MessageBubbleProps) {
                     className="border-primary/40 text-primary hover:bg-primary/10 hover:text-primary dark:border-primary/40 dark:bg-card dark:text-primary dark:hover:bg-primary/15 gap-1.5 bg-white"
                   >
                     <Images className="size-4" />
-                    Générer un post + carrousel LinkedIn
+                    Post + carrousel LinkedIn
                   </Button>
                 </div>
               )}
