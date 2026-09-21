@@ -2,7 +2,6 @@
 
 import Image from "next/image";
 import {
-  ArrowUpRight,
   BriefcaseBusiness,
   HeartPulse,
   House,
@@ -12,23 +11,19 @@ import { ChatInput, type ChatInputProps } from "@/components/chat/chat-input";
 
 const suggestions = [
   {
-    topic: "Santé & absences",
     icon: HeartPulse,
     question: "Un salarié en arrêt maladie peut-il être licencié ?",
   },
   {
-    topic: "Rupture du contrat",
     icon: BriefcaseBusiness,
     question:
       "Quelles sont les indemnités dues en cas de rupture conventionnelle ?",
   },
   {
-    topic: "Organisation du travail",
     icon: House,
     question: "Un employeur peut-il refuser une demande de télétravail ?",
   },
   {
-    topic: "Procédure de licenciement",
     icon: Scale,
     question:
       "Quelles sont les obligations lors d'un entretien préalable au licenciement ?",
@@ -78,31 +73,18 @@ export function WelcomeScreen(inputProps: ChatInputProps) {
               </p>
             </div>
             <ChatInput {...inputProps} variant="welcome" />
-            <div className="mt-7 sm:mt-8">
-              <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
-                {suggestions.map(({ topic, icon: Icon, question }) => (
+            <div className="mt-8">
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                {suggestions.map(({ icon: Icon, question }) => (
                   <button
-                    key={topic}
+                    key={question}
                     type="button"
                     disabled={inputProps.disabled}
-                    className="group bg-primary/8 hover:border-primary/20 hover:bg-primary/12 focus-visible:outline-ring flex items-start gap-3 rounded-xl border border-transparent p-4 text-left transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                    className="bg-primary/8 hover:border-primary/20 hover:bg-primary/12 focus-visible:outline-ring flex items-start gap-2.5 rounded-xl border border-transparent px-3 py-2.5 text-left transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
                     onClick={() => void inputProps.onSend(question)}
                   >
-                    <span className="bg-primary/7 text-primary flex size-8 shrink-0 items-center justify-center rounded-lg">
-                      <Icon aria-hidden="true" className="size-4" />
-                    </span>
-                    <span className="min-w-0 flex-1">
-                      <span className="text-muted-foreground mb-1.5 block text-[11px] font-medium tracking-wide">
-                        {topic}
-                      </span>
-                      <span className="block text-sm leading-relaxed">
-                        {question}
-                      </span>
-                    </span>
-                    <ArrowUpRight
-                      aria-hidden="true"
-                      className="text-muted-foreground/60 group-hover:text-primary mt-1 size-3.5 shrink-0 transition-colors"
-                    />
+                    <Icon aria-hidden="true" className="text-primary mt-0.5 size-4 shrink-0" />
+                    <span className="min-w-0 text-sm leading-5">{question}</span>
                   </button>
                 ))}
               </div>
