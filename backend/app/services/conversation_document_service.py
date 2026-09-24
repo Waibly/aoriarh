@@ -86,11 +86,10 @@ class ArticleCandidate(BaseModel):
     confidence: Literal["low", "medium"]
 
 
-class DocumentLegalSearch(BaseModel):
+class LegalSearchArguments(BaseModel):
     """Executable arguments only; access constraints remain application-owned."""
     model_config = ConfigDict(extra="forbid", strict=True)
     needs_history: bool
-    standalone_question: str
     legal_topics: list[str]
     search_queries: list[str] = Field(min_length=1, max_length=4)
     hypothesized_articles: list[ArticleCandidate] = Field(max_length=3)
@@ -98,6 +97,10 @@ class DocumentLegalSearch(BaseModel):
     jurisprudence: Literal["required", "optional"]
     answer_intent: AnswerIntent
     missing_facts: list[str]
+
+
+class DocumentLegalSearch(LegalSearchArguments):
+    standalone_question: str
 
 
 class DocumentTask(BaseModel):

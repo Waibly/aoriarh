@@ -46,7 +46,13 @@ def request_payload(payload, **options):
         }
         if kind == "search_legal":
             item.update(
-                kind="legal", search=operation["legal_search"], use_organisation_convention=True
+                kind="legal",
+                search={
+                    key: value
+                    for key, value in operation["legal_search"].items()
+                    if key != "standalone_question"
+                },
+                use_organisation_convention=True,
             )
         elif kind == "find_documents":
             item.update(kind="find_existing_document", lookup=operation["lookup"])

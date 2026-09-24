@@ -12,7 +12,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, ValidationError
 
 from app.services.case_calculation import CalculationSpec
-from app.services.conversation_document_service import DocumentLegalSearch
+from app.services.conversation_document_service import DocumentLegalSearch, LegalSearchArguments
 from app.services.conversation_orchestrator import (
     CaseDelta,
     CaseEntryProposal,
@@ -129,10 +129,8 @@ class RequestBase(BaseModel):
     replaces_task_id: uuid.UUID | None
 
 
-class RequestLegalSearch(DocumentLegalSearch):
-    # Read compatibility for stored v2 requests. New wire schemas express the
-    # autonomous question once, in LegalRequest.question.
-    standalone_question: str | None = None
+class RequestLegalSearch(LegalSearchArguments):
+    """Search arguments; the autonomous question belongs to LegalRequest only."""
 
 
 class LegalRequest(RequestBase):
@@ -204,9 +202,6 @@ def request_schema(query_budget: int, *, continuation: bool = False) -> dict:
                 strict(value)
 
     strict(schema)
-    search_schema = schema["$defs"]["RequestLegalSearch"]
-    search_schema["properties"].pop("standalone_question")
-    search_schema["required"].remove("standalone_question")
     if continuation:
         # The discovery phase is finished. This is an executable capability
         # boundary, not a semantic judgement on the proposed questions.
@@ -366,10 +361,7 @@ def decode_requests(
         if isinstance(item, LegalRequest):
             search = DocumentLegalSearch.model_validate({
                 **item.search.model_dump(),
-                "standalone_question": (
-                    item.question if item.search.standalone_question is None
-                    else item.search.standalone_question
-                ),
+                "standalone_question": item.question,
             })
             operation = OrchestratorAction(
                 action="search_legal",

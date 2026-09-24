@@ -31,6 +31,10 @@ def request(kind="answer", id="email", **kwargs):
     )
     item.update({"task_type": "drafting"} if kind == "answer" else {})
     item.update({"use_organisation_convention": True} if kind == "legal" else {})
+    if "search" in kwargs:
+        kwargs["search"] = {
+            key: value for key, value in kwargs["search"].items() if key != "standalone_question"
+        }
     return {**item, **kwargs}
 
 
