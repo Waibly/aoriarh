@@ -1,5 +1,10 @@
 # Plan d’intégration du dossier conversationnel AORIA RH
 
+> Décision du 24 septembre : dossier généralisé sans interrupteur d'activation ni
+> liste pilote. Les passages historiques ci-dessous décrivant une activation
+> conditionnelle sont remplacés par le
+> [plan de généralisation](../exploitation/GENERALISATION_DOSSIER_2026-09-24.md).
+
 **Statut :** Lots 1 à 7 implémentés localement ; dispositifs du Lot 8 prêts,
 validation pilote et activation production à effectuer.
 **Date :** 23 septembre 2026

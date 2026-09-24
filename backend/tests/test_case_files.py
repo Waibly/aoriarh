@@ -18,17 +18,9 @@ from tests.conftest import auth_header
 from tests.conftest import test_session_factory as session_factory
 
 
-async def test_pilot_access_is_scoped_to_configured_organisations(
-    client, manager_user, monkeypatch
-):
-    from app.core.config import settings
-
-    org_id, conversation_id = await _create_org_and_conversation(client, manager_user)
-    monkeypatch.setattr(settings, "case_file_enabled", False)
-    monkeypatch.setattr(settings, "case_file_pilot_organisation_ids", [])
+async def test_dossier_is_available_without_activation(client, manager_user):
+    _, conversation_id = await _create_org_and_conversation(client, manager_user)
     path = f"/api/v1/conversations/{conversation_id}/case-file"
-    assert (await client.get(path, headers=auth_header(manager_user["token"]))).status_code == 404
-    monkeypatch.setattr(settings, "case_file_pilot_organisation_ids", [uuid.UUID(org_id)])
     assert (await client.get(path, headers=auth_header(manager_user["token"]))).status_code == 200
 
 

@@ -54,7 +54,6 @@ export function Conversation({
   const [attachmentsEnabled, setAttachmentsEnabled] = useState(false);
   const [libraryOpen, setLibraryOpen] = useState(false);
   const [caseFileOpen, setCaseFileOpen] = useState(false);
-  const [caseFileEnabled, setCaseFileEnabled] = useState(false);
   const [caseFileRefreshVersion, setCaseFileRefreshVersion] = useState(0);
   const [searchDetails, setSearchDetails] = useState<SearchDetails | null>(
     null
@@ -82,12 +81,10 @@ export function Conversation({
     let cancelled = false;
     if (!initialQuery) setAttachments([]);
     setAttachmentsEnabled(false);
-    setCaseFileEnabled(false);
     setIsUploading(false);
     (async () => {
       try {
         const data = await getConversation(conversationId, token);
-        if (!cancelled) setCaseFileEnabled(data.case_file_enabled === true);
         if (!cancelled)
           setAttachmentsEnabled(data.document_attachments_enabled === true);
         if (!cancelled && !isStreamingRef.current && !initialQuery) {
@@ -301,7 +298,7 @@ export function Conversation({
 
   return (
     <div className="dark:bg-card flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl bg-white p-4">
-      {caseFileEnabled && (
+      {token && conversationId !== "new" && (
         <div className="flex justify-end border-b pb-3">
           <Button
             type="button"
@@ -406,7 +403,7 @@ export function Conversation({
             : undefined
         }
       />
-      {token && caseFileEnabled && (
+      {token && conversationId !== "new" && (
         <CaseFilePanel
           key={`case-file-${conversationId}`}
           conversationId={conversationId}

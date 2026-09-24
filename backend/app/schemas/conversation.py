@@ -29,12 +29,6 @@ class ConversationRead(BaseModel):
         from app.core.config import settings
         return settings.document_extraction_enabled_for(self.organisation_id)
 
-    @computed_field
-    @property
-    def case_file_enabled(self) -> bool:
-        from app.core.config import settings
-        return settings.case_file_enabled_for(self.organisation_id)
-
 
 class MessageRead(BaseModel):
     model_config = {"from_attributes": True}

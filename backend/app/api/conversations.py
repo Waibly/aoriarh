@@ -1563,60 +1563,6 @@ async def chat_stream(
                     ),
                 })
                 return
-            if prepared_context.direct_response is not None:
-                direct_response = prepared_context.direct_response
-                total_latency_ms = int((time.perf_counter() - t_total) * 1000)
-                rag_trace.perf_ms["total"] = float(total_latency_ms)
-                needs_title = conversation.title is None
-                assistant_message = await service.add_message(
-                    conversation_id=conversation_id,
-                    role="assistant",
-                    content=direct_response,
-                )
-                user_message_id = str(user_message.id)
-                assistant_message_id = str(assistant_message.id)
-                if prepared_context.case_context is not None:
-                    version, case_failed = await _finalize_case_answer(
-                        db, conversation_id, user_message_id, assistant_message_id, prepared_context
-                    )
-                    if case_failed:
-                        for instance in (assistant_message, conversation, account):
-                            await db.refresh(instance)
-                        yield _sse_event("chat_warning", {
-                            "message": "La réponse est conservée, mais le dossier a changé ou sa "
-                            "finalisation a échoué. Les tâches n’ont pas été clôturées.",
-                        })
-                    if version is not None:
-                        yield _sse_event("case_file_updated", {
-                            "conversation_id": str(conversation_id), "version": version,
-                        })
-                assistant_message.rag_trace = rag_trace.to_dict()
-                assistant_message.question_id = question_id
-                assistant_message.latency_ms = total_latency_ms
-                await db.commit()
-                try:
-                    await billing.increment_question_count(account)
-                    await db.commit()
-                except Exception:
-                    logger.exception(
-                        "[BILLING] Failed to increment direct-response question count"
-                    )
-                    await db.rollback()
-                if needs_title:
-                    title = data.message[:100].strip()
-                    if len(data.message) > 100:
-                        title = title.rsplit(" ", 1)[0] + "…"
-                    await service.update_title(conversation_id, title)
-                yield _sse_event("chat_delta", {"content": direct_response})
-                yield _sse_event(
-                    "chat_done",
-                    {
-                        "message_id": user_message_id,
-                        "answer_id": assistant_message_id,
-                        "fiche_eligible": False,
-                    },
-                )
-                return
             if not results and not prepared_context.generate_without_sources:
                 yield _sse_event(
                     "chat_error",

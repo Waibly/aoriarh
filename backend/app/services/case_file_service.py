@@ -178,12 +178,6 @@ class CaseFileService:
         conversation = await ConversationService(self.db).get_conversation(
             conversation_id, user, include_messages=False
         )
-        from app.core.config import settings
-
-        if not settings.case_file_enabled_for(conversation.organisation_id):
-            raise HTTPException(
-                status_code=404, detail="Dossier non activé pour cette organisation"
-            )
         case_file = await self._load_for_conversation(conversation_id)
         if case_file is None:
             await self.create_for_conversation(conversation, actor_type="system_backfill")

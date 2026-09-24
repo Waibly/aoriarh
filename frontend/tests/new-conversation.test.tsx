@@ -1,6 +1,7 @@
 import { StrictMode } from "react";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { NewConversation } from "@/components/chat/new-conversation";
+import { Conversation } from "@/components/chat/conversation";
 import { createConversation, uploadChatDocument, getConversation, streamMessage } from "@/lib/chat-api";
 import { searchChatLibrary, prepareLibraryDocument } from "@/lib/chat-document-library";
 import { toast } from "sonner";
@@ -39,6 +40,17 @@ beforeEach(() => {
   (searchChatLibrary as jest.Mock).mockResolvedValue({ items: [{ ...reference, source_sha256: "a".repeat(64),
     uploaded_at: "2026-03-01T10:00:00Z", file_format: "txt" }], has_more: false });
   (streamMessage as jest.Mock).mockResolvedValue(undefined);
+});
+
+it("shows the dossier for an existing conversation without an activation field", async () => {
+  render(<Conversation conversationId="conversation" />);
+  await waitFor(() => expect(getConversation).toHaveBeenCalledWith("conversation", "token"));
+  expect(screen.getByRole("button", { name: "Dossier" })).toBeInTheDocument();
+});
+
+it("does not open a dossier before a conversation exists", () => {
+  render(<Conversation conversationId="new" />);
+  expect(screen.queryByRole("button", { name: "Dossier" })).not.toBeInTheDocument();
 });
 
 it("shows attachment controls immediately without creating a conversation on page load", () => {

@@ -94,7 +94,6 @@ async def main():
                 model=EXPAND_MODEL,
                 org_context=profile,
                 org_idcc_list=["1486"],
-                request_contract=True,
                 case_file_context={
                     "version": 1,
                     "status": "active",

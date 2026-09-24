@@ -4,7 +4,6 @@
 import asyncio
 import json
 import uuid
-from functools import partial
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
@@ -27,9 +26,58 @@ from app.services.conversation_orchestrator import (
 from tests.test_conversation_documents import conversation, task_payload
 from tests.test_document_extraction_service import dossier as dossier
 
-# Regression coverage for the previous wire contract, still used when dossier is
-# disabled. The request contract and production-default path have dedicated tests.
-prepare_conversation_context = partial(prepare_conversation_context, request_contract=False)
+
+def request_payload(payload, **options):
+    """Build current request-wire fixtures from the executor operations under test."""
+    requests = list(payload.get("requests", []))
+    tasks = payload.get("case_tasks", [])
+    if tasks:
+        requests = [r for r in requests if r["kind"] != "answer"]
+    for operation in payload.get("actions", []):
+        kind = operation["action"]
+        if tasks and kind in {"generate", "respond"}:
+            continue
+        item = {
+            "id": operation["id"],
+            "question": operation.get("query") or "Demande complète",
+            "depends_on": operation.get("depends_on", []),
+            "fact_keys": [],
+            "replaces_task_id": None,
+        }
+        if kind == "search_legal":
+            item.update(
+                kind="legal", search=operation["legal_search"], use_organisation_convention=True
+            )
+        elif kind == "find_documents":
+            item.update(kind="find_existing_document", lookup=operation["lookup"])
+        elif kind == "read_documents":
+            item.update(
+                kind="read_existing_document", source_request_id=operation.get("source_action_id")
+            )
+        elif kind == "search_documents":
+            item.update(kind="search_uploaded_passages")
+        else:
+            item.update(
+                kind="answer", task_type="clarification" if kind == "respond" else "drafting"
+            )
+            item["question"] = operation.get("response") or item["question"]
+        requests.append(item)
+    for task in tasks:
+        item = {
+            "id": task["id"],
+            "question": task["question"],
+            "depends_on": task.get("depends_on", []),
+            "fact_keys": task.get("relevant_entry_keys", []),
+            "replaces_task_id": task.get("replaces_task_id"),
+        }
+        if task["task_type"] == "calculation":
+            item.update(kind="calculation", specification=task.get("calculation"))
+        else:
+            item.update(kind="answer", task_type=task["task_type"])
+        requests.append(item)
+    return json.dumps(
+        {"case_delta": payload.get("case_delta", {"entries": []}), "requests": requests}, **options
+    )
 
 
 def action(kind, action_id, *, depends_on=None, **values):
@@ -49,7 +97,7 @@ def action(kind, action_id, *, depends_on=None, **values):
 
 
 def plan(actions, *, continuation=False):
-    return json.dumps(
+    return request_payload(
         {
             "objective": "Traiter la demande originale",
             "actions": actions,
@@ -121,8 +169,9 @@ async def test_first_fragment_is_yielded_immediately_without_changing_text():
     async def chunks():
         for text in ["  Début", "\n", "suite  "]:
             consumed.append(text)
-            yield SimpleNamespace(usage=None, choices=[SimpleNamespace(
-                delta=SimpleNamespace(content=text))])
+            yield SimpleNamespace(
+                usage=None, choices=[SimpleNamespace(delta=SimpleNamespace(content=text))]
+            )
 
     agent.llm.chat.completions.create = AsyncMock(return_value=chunks())
     metrics = {}
@@ -288,7 +337,7 @@ async def test_open_task_is_explicitly_replaced_and_answer_is_audited(dossier):
         }
     ]
     await prepare_conversation_context(
-        planner(json.dumps(payload)),
+        planner(request_payload(payload)),
         db=dossier.db,
         conversation=conv,
         user=dossier.user,
@@ -319,25 +368,6 @@ async def test_open_task_is_explicitly_replaced_and_answer_is_audited(dossier):
         await dossier.db.execute(select(CaseEvent).where(CaseEvent.event_type == "tasks_finalized"))
     ).scalar_one()
     assert event.structured_delta["answer_id"] == str(ids[2])
-
-
-async def test_disabled_dossier_removes_its_schema_and_prompt():
-    agent = planner(plan([action("respond", "answer", response="Précisez votre demande.")]))
-    result = await plan_conversation(
-        agent,
-        query="Question",
-        history=[],
-        active_documents=[],
-        documents=[],
-        tool_results=[],
-        continuation=False,
-        model="test",
-        dossier_enabled=False,
-    )
-    assert result.plan is not None
-    request = agent.llm.chat.completions.create.await_args.kwargs
-    assert "case_tasks" not in request["response_format"]["json_schema"]["schema"]["properties"]
-    assert "numeric_value" not in request["messages"][0]["content"]
 
 
 async def test_context_budget_is_explicit_and_does_not_call_or_truncate_llm():
@@ -391,7 +421,7 @@ async def test_dossier_write_failure_returns_explicit_error_after_rollback(
         AsyncMock(side_effect=CaseFileApplyError("case_version_conflict")),
     )
     prepared = await prepare_conversation_context(
-        planner(json.dumps(payload)),
+        planner(request_payload(payload)),
         db=dossier.db,
         conversation=conv,
         user=dossier.user,
@@ -405,7 +435,7 @@ async def test_dossier_write_failure_returns_explicit_error_after_rollback(
         source_message_id=message.id,
     )
     assert prepared.trace.error == "case_execution_conflict"
-    assert prepared.trace.router_raw_response == json.dumps(payload)
+    assert prepared.trace.router_raw_response == request_payload(payload)
 
 
 @pytest.mark.parametrize("proposed_value", ["3200.10", "9999"])
@@ -456,7 +486,7 @@ async def test_calculation_is_stored_and_invalidated_after_fact_correction(dossi
         }
     ]
     prepared = await prepare_conversation_context(
-        planner(json.dumps(payload)),
+        planner(request_payload(payload)),
         db=dossier.db,
         conversation=conv,
         user=dossier.user,
@@ -546,7 +576,7 @@ async def test_invalid_raw_plan_is_visible_and_never_retried():
 
 
 async def test_case_observation_rejects_unknown_document_identifiers_without_retry():
-    raw = json.dumps(
+    raw = request_payload(
         {
             "objective": "Observer une pièce",
             "actions": [action("generate", "generate_answer")],
@@ -585,9 +615,12 @@ async def test_case_observation_rejects_unknown_document_identifiers_without_ret
         model="test",
     )
 
-    assert result.plan is None
+    assert result.plan is not None  # Independent answer remains executable.
+    assert result.fact_delta is None
     assert result.raw == raw
-    assert result.trace.error == "search_planner_error"
+    assert result.trace.search_plan_validation["request_errors"] == [
+        {"scope": "case_delta", "error": "unknown_case_document_source"}
+    ]
     assert agent.llm.chat.completions.create.await_count == 1
 
 
@@ -595,7 +628,7 @@ async def test_case_observation_preserves_complex_facts_and_tasks_without_applyi
     dossier,
 ):
     conv, _ = await conversation(dossier)
-    raw = json.dumps(
+    raw = request_payload(
         {
             "objective": "Analyser un licenciement économique complexe",
             "actions": [action("generate", "generate_answer")],
@@ -699,7 +732,7 @@ async def test_valid_case_delta_is_applied_once_with_message_provenance(dossier)
     )
     dossier.db.add(source_message)
     await dossier.db.commit()
-    raw = json.dumps(
+    raw = request_payload(
         {
             "objective": "Calculer les indemnités",
             "actions": [action("generate", "generate_answer")],
@@ -766,7 +799,7 @@ async def test_valid_case_delta_is_applied_once_with_message_provenance(dossier)
         (await dossier.db.execute(select(CaseTask).order_by(CaseTask.created_at))).scalars().all()
     )
     await dossier.db.refresh(case_file)
-    assert case_file.version == 3
+    assert case_file.version == 4
     assert entry.value_text == "8 000 €"
     assert entry.source_message_id == source_message.id
     assert all(task.created_from_message_id == source_message.id for task in tasks)
@@ -776,13 +809,14 @@ async def test_valid_case_delta_is_applied_once_with_message_provenance(dossier)
     assert result.trace.case_file_observation["mode"] == "applied"
     application_result = result.trace.case_file_observation["application_result"]
     assert application_result["applied"] is True
-    assert application_result["version"] == 3
-    assert application_result["entries_created"] == 1
+    assert application_result["version"] == 4
+    assert application_result["entries_created"] == 0  # Facts persisted before execution.
     assert application_result["tasks_created"] == 2
     events = (await dossier.db.execute(select(CaseEvent))).scalars().all()
     assert [event.event_type for event in events] == [
         "created",
         "planner_observation",
+        "delta_applied",
         "delta_applied",
         "tasks_executed",
     ]
@@ -1118,7 +1152,8 @@ async def test_ambiguous_filename_is_never_silently_selected(dossier):
 
     assert result.references == []
     assert result.results == []
-    assert result.direct_response.startswith("J’ai trouvé deux documents")
+    assert result.generate_without_sources is True
+    assert result.trace.search_plan_usage["planner_calls"] == 1
     assert result.trace.search_plan["tool_results"][0]["status"] == "ambiguous"
 
 
@@ -1129,6 +1164,7 @@ async def test_pure_legal_question_uses_one_planner_call_and_existing_legal_exec
             action(
                 "search_legal",
                 "search_law",
+                query="Quelle est la durée légale ?",
                 legal_search=task_payload("documents_and_law")["legal_search"],
             )
         ]

@@ -41,14 +41,6 @@ class Settings(BaseSettings):
     # Available to every organisation; global operational switch, no legacy backfill.
     document_extraction_enabled: bool = True
     storage_recovery_enabled: bool = False
-    case_file_enabled: bool = False
-    case_file_pilot_organisation_ids: list[UUID] = Field(default_factory=list)
-
-    def case_file_enabled_for(self, organisation_id: UUID | None) -> bool:
-        return organisation_id is not None and (
-            self.case_file_enabled or organisation_id in self.case_file_pilot_organisation_ids
-        )
-
     def document_extraction_enabled_for(self, organisation_id: UUID | None) -> bool:
         return (
             self.document_extraction_enabled

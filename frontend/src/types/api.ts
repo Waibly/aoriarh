@@ -85,7 +85,6 @@ export interface Conversation {
   organisation_id: string;
   user_id: string;
   document_attachments_enabled?: boolean;
-  case_file_enabled?: boolean;
   title: string | null;
   created_at: string;
   updated_at: string;

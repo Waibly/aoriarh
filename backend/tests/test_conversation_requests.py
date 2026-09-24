@@ -206,7 +206,6 @@ async def test_live_contract_uses_one_call_and_preserves_raw():
         tool_results=[],
         continuation=False,
         model="test",
-        request_contract=True,
     )
     assert result.plan is not None
     assert result.raw == raw

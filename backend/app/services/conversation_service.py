@@ -30,10 +30,8 @@ class ConversationService:
         )
         self.db.add(conversation)
         await self.db.flush()
-        from app.core.config import settings
         from app.services.case_file_service import CaseFileService
-        if settings.case_file_enabled_for(organisation_id):
-            await CaseFileService(self.db).create_for_conversation(conversation)
+        await CaseFileService(self.db).create_for_conversation(conversation)
         await self.db.commit()
         await self.db.refresh(conversation)
         return conversation
