@@ -29,6 +29,11 @@ class ConversationService:
             title=title,
         )
         self.db.add(conversation)
+        await self.db.flush()
+        from app.core.config import settings
+        from app.services.case_file_service import CaseFileService
+        if settings.case_file_enabled_for(organisation_id):
+            await CaseFileService(self.db).create_for_conversation(conversation)
         await self.db.commit()
         await self.db.refresh(conversation)
         return conversation
@@ -59,6 +64,8 @@ class ConversationService:
         self,
         conversation_id: uuid.UUID,
         user: User,
+        *,
+        include_messages: bool = True,
     ) -> Conversation:
         """Get a conversation with its messages. Checks ownership.
 
@@ -66,11 +73,10 @@ class ConversationService:
         page replay/inspect features) but appear as 404 to regular users
         so they can't navigate back to a hidden conversation via URL.
         """
-        result = await self.db.execute(
-            select(Conversation)
-            .options(selectinload(Conversation.messages))
-            .where(Conversation.id == conversation_id)
-        )
+        query = select(Conversation).where(Conversation.id == conversation_id)
+        if include_messages:
+            query = query.options(selectinload(Conversation.messages))
+        result = await self.db.execute(query)
         conversation = result.scalar_one_or_none()
 
         if conversation is None:

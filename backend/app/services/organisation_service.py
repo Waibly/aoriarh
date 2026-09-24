@@ -230,6 +230,9 @@ class OrganisationService:
         )
         conv_ids = [row[0] for row in conv_result.all()]
         if conv_ids:
+            from app.services.case_file_service import delete_case_files_for_conversations
+
+            await delete_case_files_for_conversations(self.db, conv_ids)
             await self.db.execute(
                 delete(Message).where(Message.conversation_id.in_(conv_ids))
             )

@@ -15,7 +15,7 @@ import uuid
 from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -23,6 +23,7 @@ from app.core.config import settings
 from app.core.database import get_db
 from app.core.dependencies import require_role
 from app.models.api_usage import ApiUsageLog
+from app.models.case_file import CaseEvent, CaseFile
 from app.models.ccn import CcnReference, OrganisationConvention
 from app.models.conversation import Conversation, Message
 from app.models.organisation import Organisation
@@ -91,6 +92,16 @@ class OrgCcnInfo(BaseModel):
     use_custom: bool
 
 
+class CaseObservationInspect(BaseModel):
+    event_id: uuid.UUID
+    case_version: int
+    created_at: datetime
+    raw_planner_output: str | None
+    structured_delta: dict | None
+    technical_error: str | None
+    organisation_context_snapshot: dict | None
+
+
 class MessageInspect(BaseModel):
     message_id: uuid.UUID
     conversation_id: uuid.UUID
@@ -112,6 +123,7 @@ class MessageInspect(BaseModel):
     cost_usd: float | None
     latency_ms: int | None
     rag_trace: dict | None
+    case_file_observations: list[CaseObservationInspect] = Field(default_factory=list)
 
 
 # ----------------- Helpers -----------------
@@ -499,6 +511,40 @@ async def inspect_message(
         )
         cost_value = float(cost_q.scalar() or 0.0)
 
+    observation_ids: list[uuid.UUID] = []
+    observation_trace = (msg.rag_trace or {}).get("case_file_observation") or {}
+    for raw_event_id in observation_trace.get("event_ids") or []:
+        try:
+            observation_ids.append(uuid.UUID(str(raw_event_id)))
+        except ValueError:
+            continue
+    observations: list[CaseObservationInspect] = []
+    if observation_ids:
+        observation_rows = (
+            await db.execute(
+                select(CaseEvent)
+                .join(CaseFile, CaseEvent.case_file_id == CaseFile.id)
+                .where(
+                    CaseEvent.id.in_(observation_ids),
+                    CaseFile.conversation_id == conv.id,
+                    CaseEvent.event_type == "planner_observation",
+                )
+                .order_by(CaseEvent.created_at)
+            )
+        ).scalars()
+        observations = [
+            CaseObservationInspect(
+                event_id=event.id,
+                case_version=event.case_version,
+                created_at=event.created_at,
+                raw_planner_output=event.raw_planner_output,
+                structured_delta=event.structured_delta,
+                technical_error=event.technical_error,
+                organisation_context_snapshot=event.organisation_context_snapshot,
+            )
+            for event in observation_rows
+        ]
+
     return MessageInspect(
         message_id=msg.id,
         conversation_id=conv.id,
@@ -520,6 +566,7 @@ async def inspect_message(
         cost_usd=cost_value,
         latency_ms=msg.latency_ms,
         rag_trace=msg.rag_trace,
+        case_file_observations=observations,
     )
 
 

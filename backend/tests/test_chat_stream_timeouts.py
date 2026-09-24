@@ -7,7 +7,7 @@ c'est plus lent que d'habitude au lieu de laisser un écran figé.
 
 - RAG_SLOW_NOTICE : message de patience (« plus de temps que d'habitude… »)
   quand rien n'avance, réponse jamais coupée pour autant ;
-- RAG_TIMEOUT_CONTEXT : borne globale de la préparation → chat_error propre ;
+- Préparation : messages de patience sans coupure sur la durée totale ;
 - RAG_TIMEOUT_STREAM_IDLE : inactivité du flux de génération, réarmée à
   chaque token. Un flux lent mais vivant va TOUJOURS au bout ; un flux mort
   est abandonné en conservant et annotant le déjà-émis, puis chat_done.
@@ -16,13 +16,19 @@ from __future__ import annotations
 
 import asyncio
 import json
+import uuid
 
 import pytest
-from httpx import AsyncClient
+from httpx import AsyncClient, Request
+from openai import APITimeoutError
+from sqlalchemy import select
 
+from app.models.conversation import Message
 from app.rag.agent import RagTrace
 from app.rag.search import SearchResult
+from app.services.conversation_orchestrator import PreparedConversation
 from tests.conftest import auth_header
+from tests.conftest import test_session_factory as session_factory
 
 
 async def _make_conversation(client: AsyncClient, manager_user: dict) -> str:
@@ -60,27 +66,72 @@ async def _passthrough_intent(*args, **kwargs):
     return IntentResult(Intent.LEGAL_QUESTION, static_answer=None, via="test")
 
 
-async def _fast_prepare_context(self, *args, **kwargs):
-    return [_fake_result()], "question reformulée", RagTrace(
-        query_original="q", model="test-model",
+async def _fast_prepare_context(*args, **kwargs):
+    return PreparedConversation(
+        results=[_fake_result()],
+        reformulated="question reformulée",
+        trace=RagTrace(query_original="q", model="test-model"),
+        documents=[],
+        references=[],
     )
 
 
+async def test_real_progress_is_forwarded_before_generation(client, manager_user, monkeypatch):
+    conv_id = await _make_conversation(client, manager_user)
+
+    async def prepare(*args, **kwargs):
+        kwargs["on_progress"]("Consultation des documents…")
+        await asyncio.sleep(0.01)
+        kwargs["on_progress"]("Recherche des références utiles…")
+        await asyncio.sleep(0.01)
+        return await _fast_prepare_context()
+
+    async def generate(*args, **kwargs):
+        yield "  Réponse originale\n"
+
+    monkeypatch.setattr("app.api.conversations.classify_intent", _passthrough_intent)
+    monkeypatch.setattr("app.services.conversation_orchestrator.prepare_conversation_context", prepare)
+    monkeypatch.setattr("app.rag.agent.RAGAgent.stream_generate", generate)
+    res = await client.post(f"/api/v1/conversations/{conv_id}/chat/stream",
+                            headers=auth_header(manager_user["token"]), json={"message": "Question"})
+    assert res.text.index("Consultation des documents") < res.text.index("Recherche des références")
+    assert res.text.index("Recherche des références") < res.text.index("event: chat_delta")
+    assert "Traitement des éléments chiffrés" not in res.text
+    assert "chat_done" in res.text
+
+
 @pytest.mark.parametrize("raw", ["  sortie brute\n", "[HORS_SCOPE]"])
-@pytest.mark.parametrize("error", ["search_planner_error", "search_retrieval_error", "search_reranking_error", "search_context_error"])
+@pytest.mark.parametrize(
+    "error",
+    [
+        "search_planner_error",
+        "search_retrieval_error",
+        "search_reranking_error",
+        "search_context_error",
+    ],
+)
 async def test_search_failure_emits_raw_details_before_technical_error(
     client: AsyncClient, manager_user: dict, monkeypatch, error: str, raw: str,
 ) -> None:
     conv_id = await _make_conversation(client, manager_user)
 
-    async def failed_context(self, *args, **kwargs):
-        return [], raw, RagTrace(
-            query_original="question", model="test", error=error,
-            search_plan={"planner_raw_response": raw},
+    async def failed_context(*args, **kwargs):
+        return PreparedConversation(
+            results=[],
+            reformulated=raw,
+            trace=RagTrace(
+                query_original="question", model="test", error=error,
+                search_plan={"planner_raw_response": raw},
+            ),
+            documents=[],
+            references=[],
         )
 
     monkeypatch.setattr("app.api.conversations.classify_intent", _passthrough_intent)
-    monkeypatch.setattr("app.rag.agent.RAGAgent.prepare_context", failed_context)
+    monkeypatch.setattr(
+        "app.services.conversation_orchestrator.prepare_conversation_context",
+        failed_context,
+    )
     res = await client.post(
         f"/api/v1/conversations/{conv_id}/chat/stream",
         headers=auth_header(manager_user["token"]), json={"message": "Question"},
@@ -98,26 +149,41 @@ async def test_search_failure_emits_raw_details_before_technical_error(
     assert events[details_index][1]["raw_response"] == raw
     assert events[error_index][1]["error"] == error
     assert all(name != "chat_delta" for name, _ in events)
+    async with session_factory() as db:
+        messages = list(
+            (
+                await db.execute(
+                    select(Message).where(Message.conversation_id == uuid.UUID(conv_id))
+                )
+            ).scalars()
+        )
+    assert [(message.role, message.content) for message in messages] == [("user", "Question")]
 
 
 def _patch_timings(monkeypatch, *, slow=0.05, context=0.2, idle=0.3):
     monkeypatch.setattr("app.api.conversations.classify_intent", _passthrough_intent)
     monkeypatch.setattr("app.api.conversations.RAG_SLOW_NOTICE", slow)
-    monkeypatch.setattr("app.api.conversations.RAG_TIMEOUT_CONTEXT", context)
     monkeypatch.setattr("app.api.conversations.RAG_TIMEOUT_STREAM_IDLE", idle)
 
 
+@pytest.mark.parametrize("provider_timeout", [False, True])
 async def test_context_timeout_yields_notice_then_clean_error(
     client: AsyncClient, manager_user: dict, monkeypatch,
+    provider_timeout: bool,
 ) -> None:
     conv_id = await _make_conversation(client, manager_user)
 
-    async def hanging_prepare_context(self, *args, **kwargs):
-        await asyncio.sleep(30)
+    async def hanging_prepare_context(*args, **kwargs):
+        if provider_timeout:
+            await asyncio.sleep(0.08)
+            raise APITimeoutError(request=Request("POST", "https://example.test"))
+        await asyncio.sleep(0.08)
+        raise TimeoutError("connection timed out")
 
     _patch_timings(monkeypatch)
     monkeypatch.setattr(
-        "app.rag.agent.RAGAgent.prepare_context", hanging_prepare_context,
+        "app.services.conversation_orchestrator.prepare_conversation_context",
+        hanging_prepare_context,
     )
 
     res = await client.post(
@@ -131,7 +197,7 @@ async def test_context_timeout_yields_notice_then_clean_error(
     assert "plus de temps que d'habitude" in body
     assert "chat_error" in body
     assert "timeout" in body
-    assert "trop de temps" in body
+    assert "connexion à un service nécessaire a expiré" in body
 
 
 async def test_dead_stream_keeps_partial_answer(
@@ -146,7 +212,8 @@ async def test_dead_stream_keeps_partial_answer(
 
     _patch_timings(monkeypatch)
     monkeypatch.setattr(
-        "app.rag.agent.RAGAgent.prepare_context", _fast_prepare_context,
+        "app.services.conversation_orchestrator.prepare_conversation_context",
+        _fast_prepare_context,
     )
     monkeypatch.setattr("app.rag.agent.RAGAgent.stream_generate", dying_stream)
 
@@ -166,6 +233,13 @@ async def test_dead_stream_keeps_partial_answer(
     # …et se termine proprement (messages persistés + ids renvoyés).
     assert "chat_done" in body
     assert "chat_error" not in body
+
+    loaded = await client.get(
+        f"/api/v1/conversations/{conv_id}", headers=auth_header(manager_user["token"])
+    )
+    answer = next(message for message in loaded.json()["messages"] if message["role"] == "assistant")
+    assert answer["content"] == "Début de réponse."
+    assert any("interrompue" in warning for warning in answer["search_details"]["warnings"])
 
 
 async def test_slow_but_alive_stream_is_never_cut(
@@ -188,7 +262,8 @@ async def test_slow_but_alive_stream_is_never_cut(
 
     _patch_timings(monkeypatch)
     monkeypatch.setattr(
-        "app.rag.agent.RAGAgent.prepare_context", _fast_prepare_context,
+        "app.services.conversation_orchestrator.prepare_conversation_context",
+        _fast_prepare_context,
     )
     monkeypatch.setattr("app.rag.agent.RAGAgent.stream_generate", slow_alive_stream)
 
@@ -209,6 +284,92 @@ async def test_slow_but_alive_stream_is_never_cut(
     assert "chat_done" in body
 
 
+async def test_orchestrator_can_generate_without_forcing_a_document_search(
+    client: AsyncClient, manager_user: dict, monkeypatch,
+) -> None:
+    conv_id = await _make_conversation(client, manager_user)
+
+    async def generation_context(*args, **kwargs):
+        # Longer than the former simulated global deadline (0.2 seconds).
+        await asyncio.sleep(0.25)
+        return PreparedConversation(
+            results=[],
+            reformulated="Rédiger à partir des faits fournis",
+            trace=RagTrace(query_original="Rédige un mail", model="test-model"),
+            documents=[],
+            references=[],
+            generate_without_sources=True,
+        )
+
+    async def generated(self, *args, **kwargs):
+        yield "Mail rédigé à partir des faits fournis."
+
+    _patch_timings(monkeypatch, slow=0.05, idle=10)
+    monkeypatch.setattr(
+        "app.services.conversation_orchestrator.prepare_conversation_context",
+        generation_context,
+    )
+    monkeypatch.setattr("app.rag.agent.RAGAgent.stream_generate", generated)
+
+    response = await client.post(
+        f"/api/v1/conversations/{conv_id}/chat/stream",
+        headers=auth_header(manager_user["token"]),
+        json={"message": "Rédige un mail à partir de ces faits"},
+    )
+
+    assert "Mail rédigé à partir des faits fournis." in response.text
+    assert "plus de temps que d'habitude" in response.text
+    assert "chat_error" not in response.text
+    assert "chat_done" in response.text
+    assert "no_results" not in response.text
+
+
+async def test_applied_case_delta_emits_case_file_update_event(
+    client: AsyncClient, manager_user: dict, monkeypatch,
+) -> None:
+    conv_id = await _make_conversation(client, manager_user)
+    case_file_id = str(uuid.uuid4())
+
+    async def applied_context(*args, **kwargs):
+        trace = RagTrace(query_original="Situation détaillée", model="test-model")
+        trace.case_file_observation = {
+            "mode": "applied",
+            "case_file_id": case_file_id,
+            "case_file_version": 2,
+            "event_ids": [],
+            "technical_errors": [],
+            "application_result": {"applied": True, "version": 2},
+        }
+        return PreparedConversation(
+            results=[],
+            reformulated="Situation détaillée",
+            trace=trace,
+            documents=[],
+            references=[],
+            generate_without_sources=True,
+        )
+
+    async def generated(self, *args, **kwargs):
+        yield "Réponse."
+
+    _patch_timings(monkeypatch, slow=5, context=10, idle=10)
+    monkeypatch.setattr(
+        "app.services.conversation_orchestrator.prepare_conversation_context",
+        applied_context,
+    )
+    monkeypatch.setattr("app.rag.agent.RAGAgent.stream_generate", generated)
+
+    response = await client.post(
+        f"/api/v1/conversations/{conv_id}/chat/stream",
+        headers=auth_header(manager_user["token"]),
+        json={"message": "Voici ma situation détaillée"},
+    )
+
+    assert "event: case_file_updated" in response.text
+    assert f'"case_file_id": "{case_file_id}"' in response.text
+    assert '"version": 2' in response.text
+
+
 async def test_quota_incremented_even_if_trace_persist_fails(
     client: AsyncClient, manager_user: dict, monkeypatch,
 ) -> None:
@@ -227,7 +388,8 @@ async def test_quota_incremented_even_if_trace_persist_fails(
 
     _patch_timings(monkeypatch, slow=5, context=10, idle=10)
     monkeypatch.setattr(
-        "app.rag.agent.RAGAgent.prepare_context", _fast_prepare_context,
+        "app.services.conversation_orchestrator.prepare_conversation_context",
+        _fast_prepare_context,
     )
     monkeypatch.setattr("app.rag.agent.RAGAgent.stream_generate", ok_stream)
     monkeypatch.setattr(RagTrace, "to_dict", broken_to_dict)

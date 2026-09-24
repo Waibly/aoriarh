@@ -85,6 +85,7 @@ export interface Conversation {
   organisation_id: string;
   user_id: string;
   document_attachments_enabled?: boolean;
+  case_file_enabled?: boolean;
   title: string | null;
   created_at: string;
   updated_at: string;
@@ -126,7 +127,9 @@ export interface Message {
   conversation_id: string;
   role: "user" | "assistant";
   content: string;
-  document_references?: { document_id: string; extraction_id: string; name?: string }[] | null;
+  document_references?:
+    | { document_id: string; extraction_id: string; name?: string }[]
+    | null;
   sources: MessageSource[] | null;
   feedback: string | null;
   feedback_comment: string | null;
@@ -137,6 +140,66 @@ export interface Message {
 
 export interface ConversationWithMessages extends Conversation {
   messages: Message[];
+}
+
+export interface CaseEntry {
+  id: string;
+  entry_type: string;
+  key: string | null;
+  label: string;
+  value_text: string | null;
+  value_json: Record<string, unknown> | unknown[] | null;
+  status: string;
+  valid_from: string | null;
+  valid_to: string | null;
+  source_kind: string;
+  source_message_id: string | null;
+  source_document_id: string | null;
+  source_extraction_id: string | null;
+  source_excerpt: string | null;
+  supersedes_entry_id: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CaseTask {
+  id: string;
+  task_type: string;
+  question: string;
+  status: string;
+  depends_on: string[];
+  relevant_entry_ids: string[];
+  required_document_ids: string[];
+  created_from_message_id: string | null;
+  result_message_id: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CaseDocumentLink {
+  id: string;
+  document_id: string | null;
+  extraction_id: string | null;
+  role: string | null;
+  document_name: string;
+  source_sha256: string | null;
+  reading_scope: string | null;
+  added_from_message_id: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ConversationCaseFile {
+  id: string;
+  conversation_id: string;
+  version: number;
+  status: string;
+  inherited_context: Record<string, string | boolean | null> | null;
+  entries: CaseEntry[];
+  tasks: CaseTask[];
+  documents: CaseDocumentLink[];
+  created_at: string;
+  updated_at: string;
 }
 
 export interface Invitation {
@@ -211,7 +274,6 @@ export const TAILLE_OPTIONS = [
 export type FormeJuridique = (typeof FORME_JURIDIQUE_OPTIONS)[number];
 export type Taille = (typeof TAILLE_OPTIONS)[number];
 
-
 export const SOURCE_TYPE_OPTIONS: {
   value: string;
   label: string;
@@ -219,38 +281,82 @@ export const SOURCE_TYPE_OPTIONS: {
 }[] = [
   // Niveau 1 — Constitution
   { value: "constitution", label: "Constitution", niveau: 1 },
-  { value: "bloc_constitutionnalite", label: "Bloc de constitutionnalité", niveau: 1 },
+  {
+    value: "bloc_constitutionnalite",
+    label: "Bloc de constitutionnalité",
+    niveau: 1,
+  },
   // Niveau 2 — Normes internationales
   { value: "traite_international", label: "Traité international", niveau: 2 },
   { value: "convention_oit", label: "Convention OIT", niveau: 2 },
   { value: "directive_europeenne", label: "Directive européenne", niveau: 2 },
   { value: "reglement_europeen", label: "Règlement européen", niveau: 2 },
-  { value: "charte_droits_fondamentaux", label: "Charte des droits fondamentaux", niveau: 2 },
+  {
+    value: "charte_droits_fondamentaux",
+    label: "Charte des droits fondamentaux",
+    niveau: 2,
+  },
   // Niveau 3 — Lois & Ordonnances
   { value: "code_travail", label: "Code du travail", niveau: 3 },
   { value: "loi", label: "Loi", niveau: 3 },
   { value: "ordonnance", label: "Ordonnance", niveau: 3 },
-  { value: "code_securite_sociale", label: "Code de la sécurité sociale", niveau: 3 },
+  {
+    value: "code_securite_sociale",
+    label: "Code de la sécurité sociale",
+    niveau: 3,
+  },
   { value: "code_penal", label: "Code pénal", niveau: 3 },
   { value: "code_civil", label: "Code civil", niveau: 3 },
-  { value: "code_action_sociale", label: "Code de l'action sociale et des familles", niveau: 3 },
-  { value: "code_sante_publique", label: "Code de la santé publique", niveau: 3 },
+  {
+    value: "code_action_sociale",
+    label: "Code de l'action sociale et des familles",
+    niveau: 3,
+  },
+  {
+    value: "code_sante_publique",
+    label: "Code de la santé publique",
+    niveau: 3,
+  },
   // Niveau 4 — Jurisprudence
-  { value: "arret_cour_cassation", label: "Arrêt Cour de cassation", niveau: 4 },
+  {
+    value: "arret_cour_cassation",
+    label: "Arrêt Cour de cassation",
+    niveau: 4,
+  },
   { value: "arret_cour_appel", label: "Arrêt Cour d'appel", niveau: 4 },
   { value: "arret_conseil_etat", label: "Arrêt Conseil d'État", niveau: 4 },
-  { value: "decision_conseil_constitutionnel", label: "Décision Conseil constitutionnel", niveau: 4 },
+  {
+    value: "decision_conseil_constitutionnel",
+    label: "Décision Conseil constitutionnel",
+    niveau: 4,
+  },
   // Niveau 5 — Réglementaire
   { value: "decret", label: "Décret", niveau: 5 },
   { value: "arrete", label: "Arrêté", niveau: 5 },
   { value: "circulaire", label: "Circulaire", niveau: 5 },
-  { value: "code_travail_reglementaire", label: "Code du travail (partie réglementaire)", niveau: 5 },
+  {
+    value: "code_travail_reglementaire",
+    label: "Code du travail (partie réglementaire)",
+    niveau: 5,
+  },
   // Niveau 6 — Conventions collectives
-  { value: "accord_national_interprofessionnel", label: "Accord national interprofessionnel (ANI)", niveau: 6 },
+  {
+    value: "accord_national_interprofessionnel",
+    label: "Accord national interprofessionnel (ANI)",
+    niveau: 6,
+  },
   { value: "accord_branche", label: "Accord de branche", niveau: 6 },
-  { value: "convention_collective_nationale", label: "Convention collective nationale (CCN)", niveau: 6 },
+  {
+    value: "convention_collective_nationale",
+    label: "Convention collective nationale (CCN)",
+    niveau: 6,
+  },
   { value: "accord_entreprise", label: "Accord d'entreprise", niveau: 6 },
-  { value: "accord_performance_collective", label: "Accord de performance collective (APC)", niveau: 6 },
+  {
+    value: "accord_performance_collective",
+    label: "Accord de performance collective (APC)",
+    niveau: 6,
+  },
   // Niveau 7 — Usages & Engagements
   { value: "usage_entreprise", label: "Usage d'entreprise", niveau: 7 },
   { value: "engagement_unilateral", label: "Engagement unilatéral", niveau: 7 },
@@ -263,8 +369,16 @@ export const SOURCE_TYPE_OPTIONS: {
 ];
 
 export const NORME_POIDS: Record<number, number> = {
-  1: 1.0, 2: 0.95, 3: 0.90, 4: 0.85, 5: 0.80,
-  6: 0.75, 7: 0.65, 8: 0.55, 9: 0.50, 10: 0.40,
+  1: 1.0,
+  2: 0.95,
+  3: 0.9,
+  4: 0.85,
+  5: 0.8,
+  6: 0.75,
+  7: 0.65,
+  8: 0.55,
+  9: 0.5,
+  10: 0.4,
 };
 
 export interface ChatResponse {

@@ -9,6 +9,7 @@ from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, UploadFile, status
 from fastapi.responses import Response, StreamingResponse
+from openai import APITimeoutError
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -26,7 +27,6 @@ from app.rag.agent import (
 )
 from app.rag.config import (
     RAG_SLOW_NOTICE,
-    RAG_TIMEOUT_CONTEXT,
     RAG_TIMEOUT_STREAM_IDLE,
 )
 from app.rag.intent_router import classify_intent, is_security_response
@@ -90,7 +90,8 @@ async def prepare_existing_conversation_document(
     service = ConversationLibraryService(db)
     conversation = await service.conversation(conversation_id, user)
     billing = BillingService(db)
-    billing.ensure_plan_active(await billing.get_account_for_organisation(conversation.organisation_id))
+    account = await billing.get_account_for_organisation(conversation.organisation_id)
+    billing.ensure_plan_active(account)
     response.headers["Cache-Control"] = "private, no-store"
     return await service.prepare(conversation, user, document_id, data.source_sha256)
 
@@ -109,7 +110,9 @@ async def attach_conversation_document(
 
     conversation = await ConversationService(db).get_conversation(conversation_id, user)
     from app.core.dependencies import verify_org_membership
-    if user.role != "admin" and await verify_org_membership(conversation.organisation_id, user, db) is None:
+    if user.role != "admin" and (
+        await verify_org_membership(conversation.organisation_id, user, db) is None
+    ):
         raise HTTPException(403, "Vous n'avez plus accès à cette organisation")
     if not settings.document_extraction_enabled_for(conversation.organisation_id):
         raise HTTPException(409, "Les pièces jointes ne sont pas activées pour cette organisation")
@@ -128,7 +131,11 @@ async def attach_conversation_document(
         manifest = await extraction.status(doc.id, org.id, user.id)
         await enqueue_ingestion(str(doc.id), expected_source=doc.storage_path)
     except Exception:
-        raise HTTPException(503, "Fichier enregistré dans Documents, mais préparation incomplète ; aucune pièce jointe confirmée") from None
+        raise HTTPException(
+            503,
+            "Fichier enregistré dans Documents, mais préparation incomplète ; "
+            "aucune pièce jointe confirmée",
+        ) from None
     from app.services.conversation_document_service import attachment_readiness
 
     manifest = await extraction.reference_status(
@@ -952,51 +959,33 @@ async def _load_org_context(
     db: AsyncSession, organisation_id: uuid.UUID
 ) -> dict[str, str | bool | None] | None:
     """Load organisation profile for RAG context injection."""
-    from app.models.ccn import CcnReference, OrganisationConvention
+    from app.services.organisation_context_service import load_organisation_context
 
-    result = await db.execute(select(Organisation).where(Organisation.id == organisation_id))
-    org = result.scalar_one_or_none()
-    if org is None:
-        return None
-
-    # Get installed CCNs with their names
-    ccn_result = await db.execute(
-        select(OrganisationConvention.idcc, CcnReference.titre)
-        .join(CcnReference, CcnReference.idcc == OrganisationConvention.idcc)
-        .where(
-            OrganisationConvention.organisation_id == organisation_id,
-            OrganisationConvention.status.in_(["ready", "indexing", "fetching"]),
-        )
-    )
-    installed_ccns = ccn_result.all()
-
-    # Source de vérité = les CCN réellement installées (celles qui sont
-    # cherchables dans Qdrant). Le champ libre `org.convention_collective`
-    # n'est qu'un fallback legacy : il n'était PAS resynchronisé lors d'un
-    # changement de CCN, ce qui réinjectait l'ancienne convention dans le
-    # contexte (ex. on supprime Propreté + installe la CCN66 mais le contexte
-    # continue d'annoncer « Propreté » à la génération). On reconstruit donc
-    # toujours depuis les conventions installées dès qu'il y en a, et on ne
-    # retombe sur le champ libre que pour les orgs sans CCN installée.
-    if installed_ccns:
-        convention_str = "; ".join(f"{row.titre} (IDCC {row.idcc})" for row in installed_ccns)
-    else:
-        convention_str = org.convention_collective
-
-    ctx: dict[str, str | bool | None] = {
-        "nom": org.name,
-        "forme_juridique": org.forme_juridique,
-        "taille": org.taille,
-        "convention_collective": convention_str,
-        "secteur_activite": org.secteur_activite,
-        "not_subject_to_ccn": bool(org.not_subject_to_ccn),
-    }
-    return ctx
+    return await load_organisation_context(db, organisation_id)
 
 
 def _sse_event(event: str, data: dict) -> str:
     """Format a Server-Sent Event."""
     return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
+
+
+async def _finalize_case_answer(db, conversation_id, message_id, answer_id, prepared):
+    """A dossier persistence failure must not discard an already saved answer."""
+    from app.services.case_file_service import CaseFileService
+    try:
+        version = await CaseFileService(db).link_task_answer(
+            conversation_id, uuid.UUID(message_id), uuid.UUID(answer_id),
+            expected_version=(prepared.trace.case_file_observation or {}).get("case_file_version"),
+            used_version=(prepared.case_context or {}).get("dossier", {}).get("version"),
+        )
+        return version, False
+    except Exception:
+        await db.rollback()
+        logger.exception("Case-file finalization failed; original answer remains saved")
+        prepared.trace.search_plan = {
+            **(prepared.trace.search_plan or {}), "case_finalization_error": True,
+        }
+        return None, True
 
 
 _SLOW_GENERATION_NOTICE = "La rédaction prend plus de temps que d'habitude, désolé pour l'attente…"
@@ -1229,9 +1218,11 @@ async def chat_stream(
     await billing.check_question_quota(account)
 
     from app.services.conversation_document_service import (
-        active_references, read_conversation_documents, prepare_document_task,
+        active_references,
+        read_conversation_documents,
     )
     references = active_references(conversation.messages, data.document_references)
+    initial_reference_ids = {str(reference["document_id"]) for reference in references}
     documents, document_continuity = await read_conversation_documents(
         db, conversation, user, references, query=data.message,
     )
@@ -1240,12 +1231,23 @@ async def chat_stream(
                        "extraction_id": str(d["extraction_id"]), "name": d["source_name"]}
                       for d in documents]
 
+    # Persist the user's exact request before any intent/planning/generation
+    # call. It becomes the stable provenance for dossier facts and tasks, and
+    # remains available when a later technical step fails.
+    user_message = await service.add_message(
+        conversation_id=conversation_id,
+        role="user",
+        content=data.message,
+        document_references=references,
+    )
+
     # 2. Load org context for RAG
     org_context = await _load_org_context(db, conversation.organisation_id)
     if org_context is not None:
         org_context["profil_metier"] = user.profil_metier
 
     async def sse_generator():  # noqa: C901
+        nonlocal documents, references
         t_total = time.perf_counter()
         agent = RAGAgent()
         recent_messages = conversation.messages[-6:]
@@ -1287,17 +1289,15 @@ async def chat_stream(
             # greeting). Évite : (a) hallucination sur questions méta,
             # (b) leakage de l'architecture vers l'utilisateur, (c) coût RAG
             # inutile pour les salutations / questions hors-scope.
-            # En cours de conversation, une relance est presque toujours la
-            # suite de l'échange juridique : le classifieur LLM la jugerait
-            # SANS l'historique (« Et pour les cadres ? » n'a aucun sens seul).
-            # On garde les préfiltres déterministes (sécurité IP, salutations)
-            # mais on saute le classifieur dès qu'il y a un historique.
+            # Les contrôles déterministes de sécurité et les réponses méta
+            # restent ici. La décision métier appartient au planificateur
+            # général plus bas : aucun second classifieur LLM en amont.
             intent_result = await classify_intent(
                 query=data.message,
                 db=db,
                 llm=agent.llm,
                 organisation_id=conversation.organisation_id,
-                use_llm_fallback=not history and not documents,
+                use_llm_fallback=False,
             )
             if intent_result.raw_response:
                 yield _sse_event("chat_search_details", search_feedback({
@@ -1314,12 +1314,6 @@ async def chat_stream(
                 # Persist d'abord pour récupérer les ids — le frontend attend
                 # {message_id, answer_id} dans chat_done pour reconstituer la
                 # conversation côté UI. Émettre vide casse l'écran de chat.
-                meta_user = await service.add_message(
-                    conversation_id=conversation_id,
-                    role="user",
-                    content=data.message,
-                    document_references=references,
-                )
                 meta_assistant = await service.add_message(
                     conversation_id=conversation_id,
                     role="assistant",
@@ -1350,7 +1344,7 @@ async def chat_stream(
                         organisation_id=str(conversation.organisation_id),
                         organisation_name=(org_context or {}).get("nom"),
                         conversation_id=str(conversation_id),
-                        message_id=str(meta_user.id),
+                        message_id=str(user_message.id),
                         detected_via=intent_result.via,
                     )
                 if conversation.title is None:
@@ -1362,7 +1356,7 @@ async def chat_stream(
                 yield _sse_event(
                     "chat_done",
                     {
-                        "message_id": str(meta_user.id),
+                        "message_id": str(user_message.id),
                         "answer_id": str(meta_assistant.id),
                         "fiche_eligible": intent_result.security_event is None,
                     },
@@ -1385,7 +1379,7 @@ async def chat_stream(
                 org_idcc_list = [r[0] for r in idcc_result.all()] or None
 
             # 2b. Send status: analyzing
-            yield _sse_event("chat_status", {"step": "Analyse de votre question..."})
+            yield _sse_event("chat_status", {"step": "Prise en compte de votre situation…"})
 
             # 3. Prepare context (steps 0-5: condensation, reformulation, search, rerank)
             # Generate a per-question UUID used as cost-tracker context_id, so
@@ -1394,89 +1388,236 @@ async def chat_stream(
             # parameter is in fact used as the cost context id.
             question_id = uuid.uuid4()
             async def legal_context(query=data.message, *, search_plan=None):
+                # Each branch owns its mutable search plan, diagnostics and caches.
+                branch_agent = RAGAgent()
+                case_ccn_unknown = search_plan is not None and (
+                    "organisation_convention_not_applicable_to_case" in search_plan.warnings
+                )
+                branch_org_context = org_context
+                if case_ccn_unknown and org_context:
+                    branch_org_context = {
+                        key: value for key, value in org_context.items()
+                        if key not in {"convention_collective", "not_subject_to_ccn"}
+                    }
                 return await prepare_rag_context(
-                    agent, query=query, organisation_id=str(conversation.organisation_id),
-                    org_context=org_context, history=history or None,
-                    cited_sources=cited_sources or None, org_idcc_list=org_idcc_list,
+                    branch_agent, query=query, organisation_id=str(conversation.organisation_id),
+                    org_context=branch_org_context, history=history or None,
+                    cited_sources=cited_sources or None,
+                    org_idcc_list=None if case_ccn_unknown else org_idcc_list,
                     user_id=str(user.id), context_id=str(question_id),
                     **({"search_plan": search_plan} if search_plan is not None else {}),
                 )
-            if documents:
-                from app.rag.config import EXPAND_MODEL
-                agent._org_id = str(conversation.organisation_id)
-                agent._user_id = str(user.id)
-                agent._conversation_id = str(question_id)
+            from app.rag.config import EXPAND_MODEL
+            from app.services.conversation_orchestrator import prepare_conversation_context
+
+            agent._org_id = str(conversation.organisation_id)
+            agent._user_id = str(user.id)
+            agent._conversation_id = str(question_id)
+            agent._is_replay = False
+            progress_queue: asyncio.Queue[str] = asyncio.Queue()
+            progress_task = None
+            current_step = "Prise en compte de votre situation…"
             ctx_task = asyncio.ensure_future(
-                prepare_document_task(agent, query=data.message, documents=documents,
-                    continuity=document_continuity, legal_search=legal_context, model=EXPAND_MODEL,
-                    org_context=org_context, org_idcc_list=org_idcc_list,
-                    cited_sources=cited_sources or None)
-                if documents else legal_context()
+                prepare_conversation_context(
+                    agent,
+                    db=db,
+                    conversation=conversation,
+                    user=user,
+                    query=data.message,
+                    references=references,
+                    documents=documents,
+                    document_continuity=document_continuity,
+                    history=history,
+                    legal_search=legal_context,
+                    model=EXPAND_MODEL,
+                    org_context=org_context,
+                    org_idcc_list=org_idcc_list,
+                    cited_sources=cited_sources or None,
+                    source_message_id=user_message.id,
+                    parallel_legal_search=True,
+                    on_progress=progress_queue.put_nowait,
+                )
             )
             try:
-                try:
-                    # Attente en deux temps : au-delà de RAG_SLOW_NOTICE on
-                    # prévient l'utilisateur (écran jamais figé sans info),
-                    # puis on continue d'attendre jusqu'à la borne globale.
-                    results, reformulated, rag_trace = await asyncio.wait_for(
-                        asyncio.shield(ctx_task),
-                        timeout=RAG_SLOW_NOTICE,
+                # Heartbeats keep the connection alive without imposing a
+                # wall-clock deadline on a valid, potentially long operation.
+                while not ctx_task.done():
+                    if progress_task is None:
+                        progress_task = asyncio.create_task(progress_queue.get())
+                    done, _ = await asyncio.wait(
+                        {ctx_task, progress_task}, timeout=RAG_SLOW_NOTICE,
+                        return_when=asyncio.FIRST_COMPLETED,
                     )
-                except TimeoutError:
-                    yield _sse_event(
-                        "chat_status",
-                        {"step": _SLOW_CONTEXT_NOTICE},
-                    )
-                    # Le reste de la borne globale (le seuil de patience est
-                    # déjà écoulé) : durée totale max = RAG_TIMEOUT_CONTEXT.
-                    results, reformulated, rag_trace = await asyncio.wait_for(
-                        ctx_task,
-                        timeout=max(RAG_TIMEOUT_CONTEXT - RAG_SLOW_NOTICE, 1.0),
-                    )
-            except TimeoutError:
+                    if await request.is_disconnected():
+                        return
+                    if progress_task in done:
+                        current_step = progress_task.result()
+                        progress_task = None
+                        yield _sse_event("chat_status", {"step": current_step})
+                    if not done:
+                        yield _sse_event("chat_status", {
+                            "step": current_step, "notice": _SLOW_CONTEXT_NOTICE,
+                        })
+                prepared_context = await ctx_task
+            except (TimeoutError, APITimeoutError):
                 logger.warning(
-                    "[PERF] prepare_context timed out (%.0fs) for: %s",
-                    RAG_TIMEOUT_CONTEXT,
-                    data.message[:100],
+                    "Context dependency timed out for conversation %s",
+                    conversation_id,
                 )
                 yield _sse_event(
                     "chat_error",
                     {
                         "error": "timeout",
                         "message": (
-                            "Le traitement de votre question a pris trop de temps. "
+                            "La connexion à un service nécessaire a expiré. "
                             "Veuillez réessayer dans quelques instants."
                         ),
                     },
                 )
                 return
 
-            if not documents:
-                rag_trace.router_raw_response = intent_result.raw_response
+            finally:
+                if progress_task is not None:
+                    progress_task.cancel()
+                    await asyncio.gather(progress_task, return_exceptions=True)
+                if not ctx_task.done():
+                    ctx_task.cancel()
+                    await asyncio.gather(ctx_task, return_exceptions=True)
+
+            results = prepared_context.results
+            reformulated = prepared_context.reformulated
+            rag_trace = prepared_context.trace
+            documents = prepared_context.documents
+            references = prepared_context.references
+            if (rag_trace.error != "case_execution_conflict"
+                    and user_message.document_references != references):
+                user_message.document_references = references
+                await db.commit()
+
+            if intent_result.raw_response:
+                rag_trace.search_plan = {
+                    **(rag_trace.search_plan or {}),
+                    "intent_router_raw_response": intent_result.raw_response,
+                }
             yield _sse_event("chat_search_details", search_feedback(rag_trace))
+            if rag_trace.search_plan_validation.get("request_errors"):
+                yield _sse_event("chat_warning", {
+                    "message": "Certaines opérations ou mises à jour du dossier n’ont pas pu être "
+                    "exécutées. Les opérations indépendantes ont été conservées ; les détails "
+                    "et la sortie originale sont consultables dans le dossier.",
+                })
+            case_observation = rag_trace.case_file_observation or {}
+            case_application = case_observation.get("application_result") or {}
+            if rag_trace.error == "case_context_budget_exceeded":
+                yield _sse_event("chat_error", {
+                    "error": rag_trace.error,
+                    "message": "Le contexte dépasse la limite de traitement. Archivez les éléments "
+                    "devenus inutiles ou ouvrez une conversation plus ciblée. "
+                    "Aucun texte n’a été tronqué.",
+                })
+                return
+            if rag_trace.error == "case_execution_conflict":
+                yield _sse_event("chat_error", {
+                    "error": "case_execution_conflict",
+                    "message": "Le dossier a changé ou son enregistrement a échoué. "
+                    "Rechargez-le avant de relancer votre demande ; aucun calcul obsolète "
+                    "n’a été utilisé.",
+                })
+                return
+            if case_application.get("applied") is True:
+                yield _sse_event(
+                    "case_file_updated",
+                    {
+                        "conversation_id": str(conversation_id),
+                        "case_file_id": case_observation.get("case_file_id"),
+                        "version": case_application.get("version"),
+                    },
+                )
             if rag_trace.error in {"search_reranking_error", "search_context_error"}:
                 yield _sse_event("chat_error", {
                     "error": rag_trace.error,
                     "message": (
-                        "Le classement des documents a échoué. Aucun classement de secours n’a été utilisé."
+                        "Le classement des documents a échoué. "
+                        "Aucun classement de secours n’a été utilisé."
                         if rag_trace.error == "search_reranking_error"
-                        else "Le contexte documentaire n’a pas pu être préparé. Aucune réponse n’a été générée."
+                        else "Le contexte documentaire n’a pas pu être préparé. "
+                        "Aucune réponse n’a été générée."
                     ),
                 })
                 return
             if rag_trace.error == "search_retrieval_error":
                 yield _sse_event("chat_error", {
                     "error": "search_retrieval_error",
-                    "message": "Une recherche documentaire a échoué. Aucune réponse n’a été générée à partir des résultats incomplets.",
+                    "message": (
+                        "Une recherche documentaire a échoué. Aucune réponse n’a été "
+                        "générée à partir des résultats incomplets."
+                    ),
                 })
                 return
             if rag_trace.error == "search_planner_error":
                 yield _sse_event("chat_error", {
                     "error": "search_planner_error",
-                    "message": "Le plan de recherche n’a pas pu être exécuté. Aucune recherche de secours n’a été lancée.",
+                    "message": (
+                        "Le plan de recherche n’a pas pu être exécuté. "
+                        "Aucune recherche de secours n’a été lancée."
+                    ),
                 })
                 return
-            if not results:
+            if prepared_context.direct_response is not None:
+                direct_response = prepared_context.direct_response
+                total_latency_ms = int((time.perf_counter() - t_total) * 1000)
+                rag_trace.perf_ms["total"] = float(total_latency_ms)
+                needs_title = conversation.title is None
+                assistant_message = await service.add_message(
+                    conversation_id=conversation_id,
+                    role="assistant",
+                    content=direct_response,
+                )
+                user_message_id = str(user_message.id)
+                assistant_message_id = str(assistant_message.id)
+                if prepared_context.case_context is not None:
+                    version, case_failed = await _finalize_case_answer(
+                        db, conversation_id, user_message_id, assistant_message_id, prepared_context
+                    )
+                    if case_failed:
+                        for instance in (assistant_message, conversation, account):
+                            await db.refresh(instance)
+                        yield _sse_event("chat_warning", {
+                            "message": "La réponse est conservée, mais le dossier a changé ou sa "
+                            "finalisation a échoué. Les tâches n’ont pas été clôturées.",
+                        })
+                    if version is not None:
+                        yield _sse_event("case_file_updated", {
+                            "conversation_id": str(conversation_id), "version": version,
+                        })
+                assistant_message.rag_trace = rag_trace.to_dict()
+                assistant_message.question_id = question_id
+                assistant_message.latency_ms = total_latency_ms
+                await db.commit()
+                try:
+                    await billing.increment_question_count(account)
+                    await db.commit()
+                except Exception:
+                    logger.exception(
+                        "[BILLING] Failed to increment direct-response question count"
+                    )
+                    await db.rollback()
+                if needs_title:
+                    title = data.message[:100].strip()
+                    if len(data.message) > 100:
+                        title = title.rsplit(" ", 1)[0] + "…"
+                    await service.update_title(conversation_id, title)
+                yield _sse_event("chat_delta", {"content": direct_response})
+                yield _sse_event(
+                    "chat_done",
+                    {
+                        "message_id": user_message_id,
+                        "answer_id": assistant_message_id,
+                        "fiche_eligible": False,
+                    },
+                )
+                return
+            if not results and not prepared_context.generate_without_sources:
                 yield _sse_event(
                     "chat_error",
                     {
@@ -1499,7 +1640,8 @@ async def chat_stream(
                 document_task_context = build_document_task_context(documents, results, rag_trace)
 
             # 3. Send status: searching done, preparing response
-            yield _sse_event("chat_status", {"step": "Recherche dans les sources..."})
+            if results:
+                yield _sse_event("chat_status", {"step": "Préparation de la réponse…"})
 
             # 3b. Send sources before generation starts
             sources = agent.format_sources(results)
@@ -1509,7 +1651,11 @@ async def chat_stream(
                     if source.get("document_id") == str(document["document_id"]):
                         source["extraction_id"] = str(document["extraction_id"])
                         source["coverage"] = document["coverage"]
-                        source["selection_kind"] = "explicit_document_reference"
+                        source["selection_kind"] = (
+                            "conversation_document_reference"
+                            if str(document["document_id"]) in initial_reference_ids
+                            else "natural_document_lookup"
+                        )
             yield _sse_event("chat_sources", {"sources": sources_dicts})
 
             # Couche 2 — écarte des sources portées celles déjà présentes dans les
@@ -1545,13 +1691,16 @@ async def chat_stream(
             )
 
             # 4. Stream LLM generation
-            yield _sse_event("chat_status", {"step": "Rédaction de la réponse..."})
+            yield _sse_event("chat_status", {"step": "Rédaction de la réponse…"})
 
             if await request.is_disconnected():
                 return
 
             full_answer = ""
+            generation_metrics = {}
+            rag_trace.search_plan_usage["generation_metrics"] = generation_metrics
             stream_dead = False
+            generation_interrupted = False
             try:
                 # Garde d'inactivité : une réponse qui avance — même très
                 # lentement — n'est JAMAIS coupée. Si rien n'arrive pendant
@@ -1567,6 +1716,8 @@ async def chat_stream(
                         low_confidence=rag_trace.low_confidence,
                         condensed_query=reformulated,
                         carried_sources=carried_sources or None,
+                        case_context=prepared_context.case_context,
+                        generation_metrics=generation_metrics,
                         answer_format=(
                             rag_trace.search_plan.get("answer_format")
                             if rag_trace.search_plan
@@ -1585,15 +1736,21 @@ async def chat_stream(
                     if kind == "slow":
                         yield _sse_event(
                             "chat_status",
-                            {"step": _SLOW_GENERATION_NOTICE},
+                            {"step": "Rédaction de la réponse…", "notice": _SLOW_GENERATION_NOTICE},
                         )
                         continue
                     if kind == "dead":
                         stream_dead = True
                         break
+                    if chunk and not full_answer:
+                        rag_trace.perf_ms["first_text"] = (time.perf_counter() - t_total) * 1000
+                        rag_trace.perf_ms["generation_first_text"] = (
+                            time.perf_counter() - t_sources
+                        ) * 1000
                     full_answer += chunk
                     yield _sse_event("chat_delta", {"content": chunk})
             except Exception as stream_exc:
+                generation_interrupted = True
                 logger.warning(
                     "Stream generation interrupted after %d chars: %s",
                     len(full_answer),
@@ -1632,29 +1789,35 @@ async def chat_stream(
                         },
                     )
                     return
-                # Flux mort avec du contenu déjà émis : on le signale dans la
-                # réponse elle-même, pour l'écran ET pour le message persisté.
-                cut_notice = (
-                    "\n\n*La génération s'est interrompue en cours de route. "
-                    "Reposez la question pour obtenir la suite.*"
-                )
-                full_answer += cut_notice
-                yield _sse_event("chat_delta", {"content": cut_notice})
+                # The incident is separate from the verbatim generated answer.
+                yield _sse_event("chat_warning", {
+                    "error": "generation_interrupted",
+                    "message": "La génération s’est interrompue. Le texte partiel est conservé.",
+                })
 
+            if not full_answer:
+                yield _sse_event("chat_error", {
+                    "error": "empty_generation", "message": "Le modèle a renvoyé une réponse vide.",
+                })
+                return
+            if generation_interrupted and not stream_dead:
+                yield _sse_event("chat_warning", {
+                    "error": "generation_interrupted",
+                    "message": "La génération s’est interrompue. Le texte partiel est conservé.",
+                })
             t_stream_done = time.perf_counter()
+            if stream_dead or generation_interrupted:
+                rag_trace.search_plan = {
+                    **(rag_trace.search_plan or {}), "generation_interrupted": True,
+                }
 
             # Finalize trace : add stream perf + compute total latency
             rag_trace.perf_ms["generate"] = (t_stream_done - t_sources) * 1000
             total_latency_ms = int((t_stream_done - t_total) * 1000)
             rag_trace.perf_ms["total"] = float(total_latency_ms)
 
-            # 5. Save messages to DB (user + assistant)
-            user_message = await service.add_message(
-                conversation_id=conversation_id,
-                role="user",
-                content=data.message,
-                document_references=references,
-            )
+            # 5. Save the assistant message. The user message was persisted
+            # before planning and already carries the final document links.
             assistant_message = await service.add_message(
                 conversation_id=conversation_id,
                 role="assistant",
@@ -1665,6 +1828,25 @@ async def chat_stream(
             # expirerait les instances et l'accès à .id planterait chat_done.
             user_message_id = str(user_message.id)
             assistant_message_id = str(assistant_message.id)
+
+            if (prepared_context.case_context is not None
+                    and not stream_dead and not generation_interrupted):
+                final_case_version, case_failed = await _finalize_case_answer(
+                    db, conversation_id, user_message_id, assistant_message_id, prepared_context
+                )
+                if case_failed:
+                    for instance in (assistant_message, conversation, account):
+                        await db.refresh(instance)
+                    yield _sse_event("chat_warning", {
+                        "message": "La réponse est conservée, mais le dossier a changé ou sa "
+                        "finalisation a échoué. Les tâches n’ont pas été clôturées.",
+                    })
+                if final_case_version is not None:
+                    yield _sse_event("case_file_updated", {
+                        "conversation_id": str(conversation_id),
+                        "case_file_id": (rag_trace.case_file_observation or {}).get("case_file_id"),
+                        "version": final_case_version,
+                    })
 
             # 5b. Persist trace + question_id + latency on the assistant message.
             # The cost is NOT snapshot anymore — it is computed live via JOIN

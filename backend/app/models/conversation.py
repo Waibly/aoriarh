@@ -29,6 +29,14 @@ class Conversation(TimestampMixin, Base):
     messages = relationship(
         "Message", back_populates="conversation", order_by="Message.created_at", lazy="raise"
     )
+    case_file = relationship(
+        "CaseFile",
+        back_populates="conversation",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+        uselist=False,
+        lazy="raise",
+    )
 
 
 class Message(TimestampMixin, Base):

@@ -23,7 +23,7 @@ from app.models.conversation import Conversation, Message
 from app.models.document import Document
 from app.models.membership import Membership
 from app.rag.agent import RAGAgent
-from tests.test_conversation_documents import planner, task_payload
+from tests.test_conversation_documents import planner
 from tests.test_document_extraction_service import dossier as dossier
 
 
@@ -120,7 +120,9 @@ async def test_uploaded_attachment_inherits_then_rechecks_revoked_access(
     monkeypatch,
 ):
     ref = await journey.attach()
-    agent = planner(json.dumps(task_payload("documents")))
+    from tests.test_conversation_requests import request, wire
+
+    agent = planner(wire([request("read", "read_active", source_request_id=None)]))
     seen = []
 
     async def generate(query, results, **kwargs):
@@ -142,6 +144,148 @@ async def test_uploaded_attachment_inherits_then_rechecks_revoked_access(
     response = await client.post(journey.url + "/chat/stream", json={"message": "Et le montant ?"})
     assert response.status_code == 404, response.text
     assert len(seen) == 1
+
+
+async def test_natural_filename_lookup_reads_and_attaches_unique_document(
+    journey,
+    dossier,
+    client,
+    monkeypatch,
+):
+    from tests.test_chat_stream_timeouts import _passthrough_intent
+    from tests.test_conversation_requests import request, wire
+
+    await journey.attach("Compte rendu 22.txt", b"Decision interne : augmentation de 7 pour cent")
+    first_raw = wire(
+        [
+            request(
+                "find",
+                "find_by_name",
+                lookup={
+                    "name": "Compte rendu 22",
+                    "uploaded_from": None,
+                    "uploaded_to": None,
+                    "uploader": "current_user",
+                    "order": "newest",
+                    "limit": 5,
+                },
+            ),
+            request(
+                "read",
+                "read_found",
+                depends_on=["find_by_name"],
+                source_request_id="find_by_name",
+            ),
+        ],
+    )
+    second_raw = wire(
+        [
+            request(
+                "passages",
+                "use_content",
+                question="Résume Compte rendu 22",
+            )
+        ]
+    )
+    agent = planner(first_raw)
+    second_agent = planner(second_raw)
+    agent.llm.chat.completions.create.side_effect = [
+        agent.llm.chat.completions.create.return_value,
+        second_agent.llm.chat.completions.create.return_value,
+    ]
+
+    async def generate(query, results, **kwargs):
+        assert results[0].text == "Decision interne : augmentation de 7 pour cent"
+        yield "Document retrouvé et lu."
+
+    agent.stream_generate = generate
+    monkeypatch.setattr("app.api.conversations.classify_intent", _passthrough_intent)
+    monkeypatch.setattr("app.api.conversations.RAGAgent", lambda: agent)
+
+    response = await client.post(
+        journey.url + "/chat/stream",
+        json={"message": "Résume le document Compte rendu 22"},
+    )
+
+    assert "chat_done" in response.text, response.text
+    messages = (
+        (await dossier.db.execute(select(Message).order_by(Message.created_at))).scalars().all()
+    )
+    user_message = next(message for message in messages if message.role == "user")
+    assert len(user_message.document_references) == 1
+    assert agent.llm.chat.completions.create.await_count == 2
+
+
+async def test_natural_ambiguous_name_asks_user_without_opening_a_file(
+    journey,
+    client,
+    monkeypatch,
+):
+    from tests.test_chat_stream_timeouts import _passthrough_intent
+    from tests.test_conversation_requests import request, wire
+
+    await journey.attach("Entretien annuel 2025.txt", b"Version 2025")
+    await journey.attach("Entretien annuel 2026.txt", b"Version 2026")
+    first_raw = wire(
+        [
+            request(
+                "find",
+                "find_interview",
+                lookup={
+                    "name": "Entretien annuel",
+                    "uploaded_from": None,
+                    "uploaded_to": None,
+                    "uploader": "current_user",
+                    "order": "newest",
+                    "limit": 1,
+                },
+            ),
+            request(
+                "read",
+                "read_interview",
+                depends_on=["find_interview"],
+                source_request_id="find_interview",
+            ),
+        ],
+    )
+    second_raw = wire(
+        [
+            request(
+                "answer",
+                "ask_user",
+                task_type="clarification",
+            )
+        ]
+    )
+    agent = planner(first_raw)
+    second_agent = planner(second_raw)
+    agent.llm.chat.completions.create.side_effect = [
+        agent.llm.chat.completions.create.return_value,
+        second_agent.llm.chat.completions.create.return_value,
+    ]
+
+    async def generate(query, results, **kwargs):
+        assert not results
+        consultations = kwargs["case_context"]["consultations"]
+        assert len(consultations[0]["candidates"]) == 2
+        assert not any(
+            item.get("action") == "read_documents" and item.get("status") == "success"
+            for item in consultations
+        )
+        yield "J’ai trouvé les versions 2025 et 2026. Laquelle souhaitez-vous lire ?"
+
+    agent.stream_generate = generate
+    monkeypatch.setattr("app.api.conversations.classify_intent", _passthrough_intent)
+    monkeypatch.setattr("app.api.conversations.RAGAgent", lambda: agent)
+
+    response = await client.post(
+        journey.url + "/chat/stream",
+        json={"message": "Lis l'entretien annuel"},
+    )
+
+    assert "chat_done" in response.text, response.text
+    assert "versions 2025 et 2026" in response.text
+    assert agent.llm.chat.completions.create.await_count == 1
 
 
 @pytest.mark.skipif(os.environ.get("AORIA_PAID_JOURNEY") != "1", reason="Explicit paid opt-in only")
@@ -254,10 +398,13 @@ async def test_paid_two_uploads_three_turns_raw_stream(journey, dossier, client,
             ]
             record["persisted_answer"] = answer
             record["events"] = events
-            deltas = [json.loads(line[6:])["content"]
-                      for block in record["raw_sse"].split("\n\n")
-                      if block.startswith("event: chat_delta\n")
-                      for line in block.splitlines() if line.startswith("data: ")]
+            deltas = [
+                json.loads(line[6:])["content"]
+                for block in record["raw_sse"].split("\n\n")
+                if block.startswith("event: chat_delta\n")
+                for line in block.splitlines()
+                if line.startswith("data: ")
+            ]
             assert "".join(deltas) == answer
         assert all(len(m.document_references) == 2 for m in messages if m.role == "user")
         (out / "messages.json").write_text(

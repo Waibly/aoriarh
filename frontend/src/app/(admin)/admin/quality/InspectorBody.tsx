@@ -116,7 +116,36 @@ export interface RagTrace {
     retained_after_rerank?: string[];
     retained_in_final_sources?: string[];
   };
+  case_file_observation?: {
+    mode: "observation" | "applied";
+    case_file_id: string | null;
+    case_file_version: number | null;
+    event_ids: string[];
+    technical_errors: string[];
+    application_result?: {
+      applied: boolean;
+      version: number;
+      entries_created: number;
+      entries_changed: number;
+      tasks_created: number;
+      documents_linked: number;
+    } | null;
+  } | null;
   error: string | null;
+}
+
+export interface CaseFileObservation {
+  event_id: string;
+  case_version: number;
+  created_at: string;
+  raw_planner_output: string | null;
+  structured_delta: {
+    planner_pass?: number;
+    case_delta?: { entries?: Record<string, unknown>[] };
+    case_tasks?: Record<string, unknown>[];
+  } | null;
+  technical_error: string | null;
+  organisation_context_snapshot: Record<string, unknown> | null;
 }
 
 export interface CitedSource {
@@ -161,6 +190,7 @@ export interface InspectorPayload {
   org_idccs?: OrgCcnInfo[];
   feedback?: string | null;
   feedback_comment?: string | null;
+  case_file_observations?: CaseFileObservation[];
 }
 
 // ----------------- Helpers -----------------
@@ -180,14 +210,12 @@ function fmtUsd(usd: number | null): string {
 // ----------------- Sub-components -----------------
 
 function PerfBar({ perf }: { perf: { [key: string]: number } }) {
-  const stages = [
-    "condense",
-    "expand_search",
-    "rerank",
-    "parent_expansion",
-    "generate",
-  ];
+  const stages =
+    perf.conversation_preparation !== undefined
+      ? ["conversation_preparation", "generate"]
+      : ["condense", "expand_search", "rerank", "parent_expansion", "generate"];
   const colors: { [key: string]: string } = {
+    conversation_preparation: "bg-purple-500",
     condense: "bg-blue-500",
     expand_search: "bg-purple-500",
     rerank: "bg-amber-500",
@@ -204,6 +232,12 @@ function PerfBar({ perf }: { perf: { [key: string]: number } }) {
     );
   return (
     <div className="space-y-2">
+      {perf.first_text !== undefined && (
+        <p className="text-muted-foreground text-xs">
+          Premier texte : <strong>{fmtMs(perf.first_text)}</strong> après
+          réception de la demande.
+        </p>
+      )}
       <div className="flex h-6 w-full overflow-hidden rounded-md border">
         {present.map((s) => (
           <div
@@ -326,7 +360,9 @@ function SearchPlanPanel({
         </div>
 
         {plan.planner_raw_response && (
-          <pre className="whitespace-pre-wrap break-words">{plan.planner_raw_response}</pre>
+          <pre className="break-words whitespace-pre-wrap">
+            {plan.planner_raw_response}
+          </pre>
         )}
         {plan.standalone_question !== plan.query_original && (
           <div>
@@ -647,6 +683,127 @@ function Section({
   );
 }
 
+function CaseFileObservationPanel({
+  trace,
+  observations,
+}: {
+  trace: NonNullable<RagTrace["case_file_observation"]>;
+  observations: CaseFileObservation[];
+}) {
+  return (
+    <Section
+      title="Dossier conversationnel — observation"
+      icon={<Layers className="h-4 w-4" />}
+      help={
+        <>
+          Ces propositions sont conservées pour inspection mais ne sont pas
+          utilisées pour juger ou réécrire la réponse. Leur état
+          d&apos;application technique au dossier est indiqué séparément.
+        </>
+      }
+    >
+      <div className="space-y-3 rounded-md border bg-violet-50/50 p-3 text-xs dark:bg-violet-950/20">
+        <div className="flex flex-wrap gap-2">
+          <Badge variant="outline">
+            Version {trace.case_file_version ?? "—"}
+          </Badge>
+          <Badge variant="outline">
+            {observations.length} passage{observations.length > 1 ? "s" : ""}
+          </Badge>
+          <Badge variant="secondary">
+            {trace.application_result?.applied ? "Appliqué" : "Non appliqué"}
+          </Badge>
+          {trace.technical_errors.map((error, index) => (
+            <Badge key={`${error}-${index}`} variant="destructive">
+              {error}
+            </Badge>
+          ))}
+        </div>
+
+        {trace.application_result?.applied && (
+          <div className="grid gap-2 sm:grid-cols-4">
+            <div className="bg-background rounded border px-2 py-1.5">
+              <div className="text-muted-foreground">Entrées ajoutées</div>
+              <div className="font-semibold">
+                {trace.application_result.entries_created}
+              </div>
+            </div>
+            <div className="bg-background rounded border px-2 py-1.5">
+              <div className="text-muted-foreground">Entrées modifiées</div>
+              <div className="font-semibold">
+                {trace.application_result.entries_changed}
+              </div>
+            </div>
+            <div className="bg-background rounded border px-2 py-1.5">
+              <div className="text-muted-foreground">Tâches ajoutées</div>
+              <div className="font-semibold">
+                {trace.application_result.tasks_created}
+              </div>
+            </div>
+            <div className="bg-background rounded border px-2 py-1.5">
+              <div className="text-muted-foreground">Pièces reliées</div>
+              <div className="font-semibold">
+                {trace.application_result.documents_linked}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {observations.map((observation) => (
+          <div
+            key={observation.event_id}
+            className="bg-background space-y-2 rounded border p-3"
+          >
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="font-semibold">
+                Passage{" "}
+                {observation.structured_delta?.planner_pass ?? "invalide"}
+              </span>
+              <span className="text-muted-foreground">
+                {new Date(observation.created_at).toLocaleString("fr-FR")}
+              </span>
+              {observation.technical_error && (
+                <Badge variant="destructive">
+                  {observation.technical_error}
+                </Badge>
+              )}
+            </div>
+
+            {observation.structured_delta && (
+              <details open>
+                <summary>Delta et tâches proposés</summary>
+                <pre className="bg-muted/40 mt-2 max-h-96 overflow-auto rounded p-2 break-words whitespace-pre-wrap">
+                  {JSON.stringify(observation.structured_delta, null, 2)}
+                </pre>
+              </details>
+            )}
+
+            <details>
+              <summary>Sortie brute intégrale du planificateur</summary>
+              <pre className="bg-muted/40 mt-2 max-h-96 overflow-auto rounded p-2 break-words whitespace-pre-wrap">
+                {observation.raw_planner_output ?? "(sortie vide)"}
+              </pre>
+            </details>
+
+            {observation.organisation_context_snapshot && (
+              <details>
+                <summary>Contexte organisationnel observé</summary>
+                <pre className="bg-muted/40 mt-2 max-h-64 overflow-auto rounded p-2 break-words whitespace-pre-wrap">
+                  {JSON.stringify(
+                    observation.organisation_context_snapshot,
+                    null,
+                    2
+                  )}
+                </pre>
+              </details>
+            )}
+          </div>
+        ))}
+      </div>
+    </Section>
+  );
+}
+
 // ----------------- Main body component -----------------
 
 export function InspectorBody({ data }: { data: InspectorPayload }) {
@@ -829,9 +986,20 @@ export function InspectorBody({ data }: { data: InspectorPayload }) {
         <details className="rounded border p-3 text-xs">
           <summary>Traçabilité de la sélection documentaire</summary>
           <pre className="mt-2 max-h-96 overflow-auto whitespace-pre-wrap">
-            {JSON.stringify(data.rag_trace.search_plan_validation.selection, null, 2)}
+            {JSON.stringify(
+              data.rag_trace.search_plan_validation.selection,
+              null,
+              2
+            )}
           </pre>
         </details>
+      )}
+
+      {data.rag_trace?.case_file_observation && (
+        <CaseFileObservationPanel
+          trace={data.rag_trace.case_file_observation}
+          observations={data.case_file_observations ?? []}
+        />
       )}
 
       {/* Réponse */}

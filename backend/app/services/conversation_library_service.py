@@ -56,11 +56,24 @@ class ConversationLibraryService:
         return conversation
 
     async def search(
-        self, conversation, *, name="", uploaded_from=None, uploaded_to=None, offset=0, limit=20
+        self,
+        conversation,
+        *,
+        name="",
+        uploaded_from=None,
+        uploaded_to=None,
+        uploaded_by=None,
+        order="newest",
+        offset=0,
+        limit=20,
     ):
         if uploaded_from and uploaded_to and uploaded_from > uploaded_to:
             raise HTTPException(422, "La date de début doit précéder la date de fin")
+        if order not in {"newest", "oldest"}:
+            raise HTTPException(422, "Ordre de recherche invalide")
         query = select(Document).where(Document.organisation_id == conversation.organisation_id)
+        if uploaded_by is not None:
+            query = query.where(Document.uploaded_by == uploaded_by)
         if name:
             # Literal filename substring, not SQL wildcard syntax or semantic scoring.
             literal = name.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
@@ -84,8 +97,11 @@ class ConversationLibraryService:
             (
                 await self.db.execute(
                     query.order_by(
-                        Document.created_at.desc(),
-                        Document.id.desc(),
+                        *(
+                            (Document.created_at.desc(), Document.id.desc())
+                            if order == "newest"
+                            else (Document.created_at.asc(), Document.id.asc())
+                        )
                     )
                     .offset(offset)
                     .limit(limit + 1)
@@ -152,12 +168,14 @@ class ConversationLibraryService:
         from app.services.conversation_document_service import attachment_readiness
 
         manifest = await reader.reference_status(
-            doc.id, conversation.organisation_id, user.id, manifest["extraction_id"],
+            doc.id,
+            conversation.organisation_id,
+            user.id,
+            manifest["extraction_id"],
             verify_artifact=True,
         )
         readiness = attachment_readiness(manifest)
-        if (readiness["reading_mode"] == "targeted"
-                and manifest["indexation_status"] == "pending"):
+        if readiness["reading_mode"] == "targeted" and manifest["indexation_status"] == "pending":
             from app.rag.tasks import enqueue_ingestion
 
             await enqueue_ingestion(str(doc.id), expected_source=doc.storage_path)

@@ -13,6 +13,22 @@ def search_feedback(trace: dict | object | None) -> dict:
     plan = (trace or {}).get("search_plan") or {}
     validation = (trace or {}).get("search_plan_validation") or {}
     warnings = []
+    if validation.get("request_errors"):
+        warnings.append(
+            "Certaines opérations ou mises à jour du dossier sont inexécutables. "
+            "Les opérations indépendantes et la sortie originale sont conservées ; "
+            "les détails sont consultables dans le dossier."
+        )
+    if plan.get("generation_interrupted"):
+        warnings.append("La génération s’est interrompue. Le texte original partiel est conservé.")
+    if plan.get("case_finalization_error"):
+        warnings.append("La réponse est conservée, mais la finalisation des tâches du dossier a échoué.")
+    if any(item.get("status") in {
+        "search_retrieval_error", "search_reranking_error", "search_context_error",
+        "blocked", "action_budget_exceeded", "legal_search_budget_exceeded",
+    } for item in plan.get("tool_results", [])):
+        warnings.append("Certaines actions n’ont pas abouti ou ont atteint leur budget. "
+                        "Les résultats des autres branches sont conservés.")
     if plan.get("planner_status") in {"error", "fallback"}:
         warnings.append("Le plan de recherche n’a pas pu être exécuté ; aucune recherche de secours n’a été lancée.")
     if (plan.get("time_scope") or {}).get("kind") == "application_year":

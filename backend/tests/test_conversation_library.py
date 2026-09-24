@@ -2,7 +2,6 @@
 # ruff: noqa: F401, F811 -- shared pytest fixtures
 
 import hashlib
-import json
 import uuid
 from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock
@@ -15,7 +14,8 @@ from app.models.document_extraction import DocumentExtraction
 from app.models.membership import Membership
 from app.rag.text_extractor import TextExtractor
 from tests.test_chat_document_journey import journey
-from tests.test_conversation_documents import planner, task_payload
+from tests.test_conversation_documents import planner
+from tests.test_conversation_requests import request, wire
 from tests.test_document_extraction_service import dossier
 
 
@@ -74,6 +74,34 @@ async def test_pagination_keeps_ambiguous_names_as_separate_choices(journey, dos
     assert first["has_more"] is True and second["has_more"] is False
     ids = [d["document_id"] for d in first["items"] + second["items"]]
     assert len(ids) == len(set(ids)) == 3
+
+
+async def test_catalogue_can_limit_latest_document_to_current_uploader(journey, dossier):
+    from app.services.conversation_library_service import ConversationLibraryService
+
+    dossier.doc.uploaded_by = dossier.user.id
+    other_user = uuid.uuid4()
+    dossier.db.add(
+        Document(
+            id=uuid.uuid4(),
+            organisation_id=dossier.org.id,
+            name="Document plus récent d'un collègue.txt",
+            source_type="divers",
+            storage_path="other-user/latest.txt",
+            uploaded_by=other_user,
+            created_at=datetime(2026, 9, 20, tzinfo=UTC),
+        )
+    )
+    dossier.doc.created_at = datetime(2026, 9, 19, tzinfo=UTC)
+    await dossier.db.commit()
+
+    result = await ConversationLibraryService(dossier.db).search(
+        journey.conv,
+        uploaded_by=dossier.user.id,
+        limit=1,
+    )
+
+    assert [item["document_id"] for item in result["items"]] == [dossier.doc.id]
 
 
 @pytest.mark.parametrize(
@@ -199,7 +227,7 @@ async def test_library_selection_reaches_chat_and_is_inherited(
     )
     assert response.status_code == 200
     reference = {key: response.json()[key] for key in ("document_id", "extraction_id")}
-    agent = planner(json.dumps(task_payload("documents")))
+    agent = planner(wire([request("read", "read_active", source_request_id=None)]))
     texts = []
 
     async def generate(query, results, **kwargs):

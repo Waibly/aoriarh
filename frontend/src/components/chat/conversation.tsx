@@ -4,22 +4,39 @@ import dynamic from "next/dynamic";
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useSession } from "next-auth/react";
 import { toast } from "sonner";
+import { FolderOpen } from "lucide-react";
 import { ChatInput } from "@/components/chat/chat-input";
+import { CaseFilePanel } from "@/components/chat/case-file-panel";
 import { SearchDetailsPanel } from "@/components/chat/search-details";
 import { DocumentLibrary } from "@/components/chat/document-library";
+import { Button } from "@/components/ui/button";
 import { prepareLibraryDocument } from "@/lib/chat-document-library";
 import { attachmentBlocker } from "@/lib/chat-attachments";
 import { useAttachmentReadiness } from "@/hooks/use-attachment-readiness";
 
-const MessageList = dynamic(() =>
-  import("@/components/chat/message-list").then((mod) => ({ default: mod.MessageList })),
-  { ssr: false },
+const MessageList = dynamic(
+  () =>
+    import("@/components/chat/message-list").then((mod) => ({
+      default: mod.MessageList,
+    })),
+  { ssr: false }
 );
-import { getConversation, streamMessage, updateMessageFeedback, uploadChatDocument, type ChatDocumentReference } from "@/lib/chat-api";
+import {
+  getConversation,
+  streamMessage,
+  updateMessageFeedback,
+  uploadChatDocument,
+  type ChatDocumentReference,
+} from "@/lib/chat-api";
 import type { Message, MessageSource, SearchDetails } from "@/types/api";
 
-export function Conversation({ conversationId, initialQuery = null, initialAttachments,
-  onInitialQueryStarted, onConversationSaved }: {
+export function Conversation({
+  conversationId,
+  initialQuery = null,
+  initialAttachments,
+  onInitialQueryStarted,
+  onConversationSaved,
+}: {
   conversationId: string;
   initialQuery?: string | null;
   initialAttachments?: ChatDocumentReference[];
@@ -30,11 +47,18 @@ export function Conversation({ conversationId, initialQuery = null, initialAttac
   const token = session?.access_token;
 
   const [messages, setMessages] = useState<Message[]>([]);
-  const [attachments, setAttachments] = useState<ChatDocumentReference[]>(initialAttachments ?? []);
+  const [attachments, setAttachments] = useState<ChatDocumentReference[]>(
+    initialAttachments ?? []
+  );
   const [isUploading, setIsUploading] = useState(false);
   const [attachmentsEnabled, setAttachmentsEnabled] = useState(false);
   const [libraryOpen, setLibraryOpen] = useState(false);
-  const [searchDetails, setSearchDetails] = useState<SearchDetails | null>(null);
+  const [caseFileOpen, setCaseFileOpen] = useState(false);
+  const [caseFileEnabled, setCaseFileEnabled] = useState(false);
+  const [caseFileRefreshVersion, setCaseFileRefreshVersion] = useState(0);
+  const [searchDetails, setSearchDetails] = useState<SearchDetails | null>(
+    null
+  );
   const [isStreaming, setIsStreaming] = useState(false);
   const [streamingStatus, setStreamingStatus] = useState<string | null>(null);
   const [streamingContent, setStreamingContent] = useState("");
@@ -58,14 +82,19 @@ export function Conversation({ conversationId, initialQuery = null, initialAttac
     let cancelled = false;
     if (!initialQuery) setAttachments([]);
     setAttachmentsEnabled(false);
+    setCaseFileEnabled(false);
     setIsUploading(false);
     (async () => {
       try {
         const data = await getConversation(conversationId, token);
-        if (!cancelled) setAttachmentsEnabled(data.document_attachments_enabled === true);
+        if (!cancelled) setCaseFileEnabled(data.case_file_enabled === true);
+        if (!cancelled)
+          setAttachmentsEnabled(data.document_attachments_enabled === true);
         if (!cancelled && !isStreamingRef.current && !initialQuery) {
           setMessages(data.messages);
-          const latest = [...data.messages].reverse().find((m) => m.role === "user" && m.document_references != null);
+          const latest = [...data.messages]
+            .reverse()
+            .find((m) => m.role === "user" && m.document_references != null);
           setAttachments(latest?.document_references ?? []);
         }
       } catch {
@@ -82,7 +111,10 @@ export function Conversation({ conversationId, initialQuery = null, initialAttac
     async (content: string) => {
       if (!token || conversationId === "new") return;
       const blocked = attachmentBlocker(attachments ?? []);
-      if (blocked) { toast.error(blocked); return false; }
+      if (blocked) {
+        toast.error(blocked);
+        return false;
+      }
 
       const tempUserMessage: Message = {
         id: `temp-${Date.now()}`,
@@ -134,10 +166,13 @@ export function Conversation({ conversationId, initialQuery = null, initialAttac
               accumulatedContent += delta;
               setStreamingContent((prev) => prev + delta);
             },
+            onCaseFileUpdated: () => {
+              setCaseFileRefreshVersion((version) => version + 1);
+            },
             onDone: (ids) => {
               setMessages((prev) => {
                 const filtered = prev.filter(
-                  (m) => m.id !== tempUserMessage.id,
+                  (m) => m.id !== tempUserMessage.id
                 );
                 return [
                   ...filtered,
@@ -166,13 +201,18 @@ export function Conversation({ conversationId, initialQuery = null, initialAttac
               window.dispatchEvent(new Event("conversation-updated"));
               onConversationSaved?.();
             },
+            onWarning: (message) => toast.warning(message),
             onError: (errorMsg) => {
               // If we already have partial content, keep it as a message
-              if (accumulatedContent || accumulatedDetails?.raw_response || accumulatedDetails?.router_raw_response) {
+              if (
+                accumulatedContent ||
+                accumulatedDetails?.raw_response ||
+                accumulatedDetails?.router_raw_response
+              ) {
                 setSearchDetails(null);
                 setMessages((prev) => {
                   const filtered = prev.filter(
-                    (m) => m.id !== tempUserMessage.id,
+                    (m) => m.id !== tempUserMessage.id
                   );
                   return [
                     ...filtered,
@@ -193,7 +233,7 @@ export function Conversation({ conversationId, initialQuery = null, initialAttac
               } else {
                 // No content at all — remove everything
                 setMessages((prev) =>
-                  prev.filter((m) => m.id !== tempUserMessage.id),
+                  prev.filter((m) => m.id !== tempUserMessage.id)
                 );
               }
               setStreamingContent("");
@@ -203,12 +243,12 @@ export function Conversation({ conversationId, initialQuery = null, initialAttac
             },
           },
           abortController.signal,
-          attachments,
+          attachments
         );
       } catch {
         if (!abortController.signal.aborted) {
           setMessages((prev) =>
-            prev.filter((m) => m.id !== tempUserMessage.id),
+            prev.filter((m) => m.id !== tempUserMessage.id)
           );
           setStreamingContent("");
           setStreamingSources(null);
@@ -217,27 +257,37 @@ export function Conversation({ conversationId, initialQuery = null, initialAttac
         }
       }
     },
-    [conversationId, token, attachments, onConversationSaved],
+    [conversationId, token, attachments, onConversationSaved]
   );
 
   const handleFeedback = useCallback(
-    async (messageId: string, feedback: "up" | "down" | null, comment?: string | null) => {
+    async (
+      messageId: string,
+      feedback: "up" | "down" | null,
+      comment?: string | null
+    ) => {
       if (!token) return;
       setMessages((prev) =>
-        prev.map((m) => (m.id === messageId ? { ...m, feedback, feedback_comment: comment ?? null } : m)),
+        prev.map((m) =>
+          m.id === messageId
+            ? { ...m, feedback, feedback_comment: comment ?? null }
+            : m
+        )
       );
       try {
         await updateMessageFeedback(messageId, feedback, token, comment);
       } catch {
         setMessages((prev) =>
           prev.map((m) =>
-            m.id === messageId ? { ...m, feedback: null, feedback_comment: null } : m,
-          ),
+            m.id === messageId
+              ? { ...m, feedback: null, feedback_comment: null }
+              : m
+          )
         );
         toast.error("Impossible d'enregistrer votre retour.");
       }
     },
-    [token],
+    [token]
   );
 
   // Auto-send initial query from welcome screen
@@ -250,7 +300,20 @@ export function Conversation({ conversationId, initialQuery = null, initialAttac
   }, [initialQuery, token, handleSend, conversationId, onInitialQueryStarted]);
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl bg-white p-4 dark:bg-card">
+    <div className="dark:bg-card flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl bg-white p-4">
+      {caseFileEnabled && (
+        <div className="flex justify-end border-b pb-3">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => setCaseFileOpen(true)}
+          >
+            <FolderOpen />
+            Dossier
+          </Button>
+        </div>
+      )}
       <MessageList
         messages={messages}
         isStreaming={isStreaming}
@@ -259,42 +322,79 @@ export function Conversation({ conversationId, initialQuery = null, initialAttac
         streamingSources={streamingSources}
         onFeedback={handleFeedback}
       />
-      <div className="max-h-64 overflow-auto"><SearchDetailsPanel details={searchDetails} /></div>
-      {attachmentsEnabled && token && <DocumentLibrary key={conversationId}
-        open={libraryOpen} onOpenChange={setLibraryOpen}
-        conversationId={conversationId} token={token}
-        selectedIds={(attachments ?? []).map((doc) => doc.document_id)}
-        disabled={isStreaming || isUploading}
-        onSelect={async (document) => {
-          if (isStreaming || isUploading || (attachments?.length ?? 0) >= 3) return;
-          setIsUploading(true);
-          try {
-            const ref = await prepareLibraryDocument(conversationId, token, document);
-            if (activeConversationRef.current === conversationId) {
-              setAttachments((current) => current.some((d) => d.document_id === ref.document_id)
-                ? current : [...current, ref]);
+      <div className="max-h-64 overflow-auto">
+        <SearchDetailsPanel details={searchDetails} />
+      </div>
+      {attachmentsEnabled && token && (
+        <DocumentLibrary
+          key={conversationId}
+          open={libraryOpen}
+          onOpenChange={setLibraryOpen}
+          conversationId={conversationId}
+          token={token}
+          selectedIds={(attachments ?? []).map((doc) => doc.document_id)}
+          disabled={isStreaming || isUploading}
+          onSelect={async (document) => {
+            if (isStreaming || isUploading || (attachments?.length ?? 0) >= 3)
+              return;
+            setIsUploading(true);
+            try {
+              const ref = await prepareLibraryDocument(
+                conversationId,
+                token,
+                document
+              );
+              if (activeConversationRef.current === conversationId) {
+                setAttachments((current) =>
+                  current.some((d) => d.document_id === ref.document_id)
+                    ? current
+                    : [...current, ref]
+                );
+              }
+            } finally {
+              if (activeConversationRef.current === conversationId)
+                setIsUploading(false);
             }
-          } finally {
-            if (activeConversationRef.current === conversationId) setIsUploading(false);
-          }
-        }} />}
+          }}
+        />
+      )}
       <ChatInput
         onBrowse={attachmentsEnabled ? () => setLibraryOpen(true) : undefined}
         onSend={handleSend}
         disabled={isStreaming || isUploading}
         attachments={attachments}
-        onRemove={(id) => setAttachments((current) => (current ?? []).filter((doc) => doc.document_id !== id))}
-        onAttach={attachmentsEnabled ? async (file) => {
-          if (!token || isUploading || (attachments?.length ?? 0) >= 3) return;
-          if (file.size > 2 * 1024 * 1024) { toast.error("Maximum 2 Mo par pièce jointe"); return; }
-          setIsUploading(true);
-          try {
-            const doc = await uploadChatDocument(conversationId, file, token);
-            setAttachments((current) => [...(current ?? []), doc]);
-          } catch (error) {
-            toast.error(error instanceof Error ? error.message : "Échec du dépôt");
-          } finally { setIsUploading(false); }
-        } : undefined}
+        onRemove={(id) =>
+          setAttachments((current) =>
+            (current ?? []).filter((doc) => doc.document_id !== id)
+          )
+        }
+        onAttach={
+          attachmentsEnabled
+            ? async (file) => {
+                if (!token || isUploading || (attachments?.length ?? 0) >= 3)
+                  return;
+                if (file.size > 2 * 1024 * 1024) {
+                  toast.error("Maximum 2 Mo par pièce jointe");
+                  return;
+                }
+                setIsUploading(true);
+                try {
+                  const doc = await uploadChatDocument(
+                    conversationId,
+                    file,
+                    token
+                  );
+                  setAttachments((current) => [...(current ?? []), doc]);
+                } catch (error) {
+                  toast.error(
+                    error instanceof Error ? error.message : "Échec du dépôt"
+                  );
+                } finally {
+                  setIsUploading(false);
+                }
+              }
+            : undefined
+        }
         onStop={
           isStreaming
             ? () => {
@@ -306,6 +406,24 @@ export function Conversation({ conversationId, initialQuery = null, initialAttac
             : undefined
         }
       />
+      {token && caseFileEnabled && (
+        <CaseFilePanel
+          key={`case-file-${conversationId}`}
+          conversationId={conversationId}
+          token={token}
+          open={caseFileOpen}
+          onOpenChange={setCaseFileOpen}
+          refreshVersion={caseFileRefreshVersion}
+          onOpenMessage={(messageId) => {
+            setCaseFileOpen(false);
+            window.setTimeout(() => {
+              document
+                .getElementById(`message-${messageId}`)
+                ?.scrollIntoView({ behavior: "smooth", block: "center" });
+            }, 250);
+          }}
+        />
+      )}
     </div>
   );
 }

@@ -33,6 +33,7 @@ from app.api import (
     admin_workspaces,
     auth,
     billing,
+    case_files,
     conventions,
     conversations,
     documents,
@@ -289,6 +290,7 @@ app.include_router(conventions.router, prefix="/api/v1/conventions", tags=["conv
 app.include_router(invitations.router, prefix="/api/v1", tags=["invitations"])
 app.include_router(team.router, prefix="/api/v1/team", tags=["team"])
 app.include_router(conversations.router, prefix="/api/v1/conversations", tags=["conversations"])
+app.include_router(case_files.router, prefix="/api/v1/conversations", tags=["case-files"])
 app.include_router(fiches.router, prefix="/api/v1/fiches", tags=["fiches"])
 app.include_router(billing.router, prefix="/api/v1/billing", tags=["billing"])
 app.include_router(

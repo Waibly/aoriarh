@@ -18,6 +18,7 @@ limiter.enabled = False
 # et crée de faux contacts dans la liste de prod à chaque run de pytest.
 settings.brevo_api_key = ""
 settings.brevo_list_id = 0
+settings.case_file_enabled = True
 
 TEST_DATABASE_URL = "sqlite+aiosqlite://"
 

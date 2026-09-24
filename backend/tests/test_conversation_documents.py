@@ -51,6 +51,39 @@ def task_payload(action="documents_and_law"):
     ) if action == "documents_and_law" else None))
 
 
+def orchestration_payload(action="documents_and_law"):
+    actions = [{
+        "id": "read_active",
+        "action": "read_documents",
+        "depends_on": [],
+        "lookup": None,
+        "source": "active",
+        "source_action_id": None,
+        "query": None,
+        "legal_search": None,
+        "response": None,
+    }]
+    if action == "documents_and_law":
+        actions.append({
+            "id": "search_law",
+            "action": "search_legal",
+            "depends_on": ["read_active"],
+            "lookup": None,
+            "source": None,
+            "source_action_id": None,
+            "query": None,
+            "legal_search": task_payload(action)["legal_search"],
+            "response": None,
+        })
+    return {
+        "objective": "Répondre à la demande",
+        "actions": actions,
+        "needs_continuation": False,
+        "case_delta": {"entries": []},
+        "case_tasks": [],
+    }
+
+
 async def conversation(dossier):
     value = Conversation(
         id=uuid.uuid4(),
@@ -327,7 +360,13 @@ async def test_http_second_turn_reads_same_documents_and_keeps_raw_answer(
         "app.services.document_extraction_service.StorageService", lambda: dossier.storage
     )
     monkeypatch.setattr("app.api.conversations.classify_intent", _passthrough_intent)
-    raw_plan = json.dumps(task_payload(action))
+    from tests.test_conversation_requests import request, wire
+
+    requests = [request("read", "read_active", source_request_id=None)]
+    if action == "documents_and_law":
+        requests.append(request("legal", "law", depends_on=["read_active"],
+                                search=task_payload(action)["legal_search"]))
+    raw_plan = wire(requests)
     agent = planner(raw_plan)
     monkeypatch.setattr("app.api.conversations.RAGAgent", lambda: agent)
     async def prepared_legal_context(agent, *, query, search_plan, **kwargs):

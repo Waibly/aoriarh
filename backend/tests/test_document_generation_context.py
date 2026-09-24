@@ -46,6 +46,20 @@ def test_no_document_path_is_byte_identical():
     assert _generation_system_prompt() == _generation_system_prompt(document_task_context=None)
     body = agent._build_context([source("selected")])
     assert body == agent._build_context([source("selected")], document_task_context=None)
+
+
+def test_context_only_deduplicates_identical_blocks_from_the_same_document():
+    from dataclasses import replace
+
+    agent = RAGAgent.__new__(RAGAgent)
+    original = source("selected")
+    distinct = replace(original, text="  Autre passage\n")
+    dated = replace(original, effective_from="2026-10-01")
+    other = source("other")
+    body = agent._build_context([original, original, distinct, dated, other])
+    assert body.count("  Texte original\n") == 3
+    assert "  Autre passage\n" in body
+    assert "2026-10-01" in body
     assert agent._build_user_message("q", body) == agent._build_user_message(
         "q", body, document_task_context=None,
     )

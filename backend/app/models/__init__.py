@@ -5,6 +5,7 @@ from app.models.auth_session import AuthSession
 from app.models.audit_log import AuditLog
 from app.models.base import Base
 from app.models.booster_purchase import BoosterPurchase
+from app.models.case_file import CaseDocumentLink, CaseEntry, CaseEvent, CaseFile, CaseTask
 from app.models.ccn import CcnReference, OrganisationConvention
 from app.models.conversation import Conversation, Message
 from app.models.document import Document
@@ -42,6 +43,11 @@ __all__ = [
     "BoccIssue",
     "BoosterPurchase",
     "CcnReference",
+    "CaseDocumentLink",
+    "CaseEntry",
+    "CaseEvent",
+    "CaseFile",
+    "CaseTask",
     "Conversation",
     "Document",
     "DocumentExtraction",

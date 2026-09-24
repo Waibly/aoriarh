@@ -1,6 +1,7 @@
 import { apiFetch, authFetch } from "@/lib/api";
 import type {
   Conversation,
+  ConversationCaseFile,
   ConversationWithMessages,
   MessageSource,
 } from "@/types/api";
@@ -8,7 +9,7 @@ import type {
 export async function createConversation(
   organisationId: string,
   token: string,
-  title?: string,
+  title?: string
 ): Promise<Conversation> {
   return apiFetch<Conversation>("/conversations/", {
     method: "POST",
@@ -19,27 +20,85 @@ export async function createConversation(
 
 export async function listConversations(
   organisationId: string,
-  token: string,
+  token: string
 ): Promise<Conversation[]> {
   return apiFetch<Conversation[]>(
     `/conversations/?organisation_id=${organisationId}`,
-    { token },
+    { token }
   );
 }
 
 export async function getConversation(
   conversationId: string,
-  token: string,
+  token: string
 ): Promise<ConversationWithMessages> {
   return apiFetch<ConversationWithMessages>(
     `/conversations/${conversationId}`,
-    { token },
+    { token }
+  );
+}
+
+export async function getConversationCaseFile(
+  conversationId: string,
+  token: string
+): Promise<ConversationCaseFile> {
+  return apiFetch<ConversationCaseFile>(
+    `/conversations/${conversationId}/case-file`,
+    { token }
+  );
+}
+
+export type CaseEntryOperation = "confirm" | "correct" | "contest" | "archive";
+
+export function getCaseFileEvents(conversationId: string, token: string, offset = 0) {
+  return apiFetch<{ items: Record<string, unknown>[]; has_more: boolean }>(
+    `/conversations/${conversationId}/case-file/events?offset=${offset}`, { token }
+  );
+}
+
+export async function importCaseHistory(
+  conversationId: string,
+  token: string,
+  messageIds: string[],
+  version: number
+): Promise<ConversationCaseFile> {
+  return apiFetch<ConversationCaseFile>(
+    `/conversations/${conversationId}/case-file/import-history`,
+    {
+      method: "POST",
+      token,
+      body: JSON.stringify({
+        message_ids: messageIds,
+        expected_case_version: version,
+      }),
+    }
+  );
+}
+
+export async function updateConversationCaseEntry(
+  conversationId: string,
+  entryId: string,
+  token: string,
+  data: {
+    operation: CaseEntryOperation;
+    expected_case_version: number;
+    value?: string;
+    comment?: string;
+  }
+): Promise<ConversationCaseFile> {
+  return apiFetch<ConversationCaseFile>(
+    `/conversations/${conversationId}/case-file/entries/${entryId}/revisions`,
+    {
+      method: "POST",
+      body: JSON.stringify(data),
+      token,
+    }
   );
 }
 
 export async function deleteConversation(
   conversationId: string,
-  token: string,
+  token: string
 ): Promise<void> {
   return apiFetch<void>(`/conversations/${conversationId}`, {
     method: "DELETE",
@@ -49,14 +108,14 @@ export async function deleteConversation(
 
 export async function hideAllConversations(
   organisationId: string,
-  token: string,
+  token: string
 ): Promise<{ hidden: number }> {
   return apiFetch<{ hidden: number }>(
     `/conversations/?organisation_id=${organisationId}`,
     {
       method: "DELETE",
       token,
-    },
+    }
   );
 }
 
@@ -70,11 +129,11 @@ export interface SourceFullContent {
 
 export async function getSourceFullContent(
   documentId: string,
-  token: string,
+  token: string
 ): Promise<SourceFullContent> {
   return apiFetch<SourceFullContent>(
     `/conversations/sources/${documentId}/full-content`,
-    { token },
+    { token }
   );
 }
 
@@ -85,12 +144,15 @@ export async function getSourceFullContent(
  */
 export async function downloadFiche(
   messageId: string,
-  token: string,
+  token: string
 ): Promise<void> {
-  const response = await authFetch(`/conversations/messages/${messageId}/fiche`, {
-    method: "POST",
-    token,
-  });
+  const response = await authFetch(
+    `/conversations/messages/${messageId}/fiche`,
+    {
+      method: "POST",
+      token,
+    }
+  );
 
   if (!response.ok) {
     let message = "La génération de la fiche a échoué. Veuillez réessayer.";
@@ -326,7 +388,7 @@ export async function updateMessageFeedback(
   messageId: string,
   feedback: "up" | "down" | null,
   token: string,
-  comment?: string | null,
+  comment?: string | null
 ): Promise<void> {
   await apiFetch(`/conversations/messages/${messageId}/feedback`, {
     method: "PATCH",
@@ -340,12 +402,18 @@ export interface StreamCallbacks {
   onStatus?: (step: string) => void;
   onSources: (sources: MessageSource[]) => void;
   onDelta: (content: string) => void;
+  onCaseFileUpdated?: (event: {
+    conversation_id: string;
+    case_file_id: string;
+    version: number;
+  }) => void;
   onDone: (ids: {
     message_id: string;
     answer_id: string;
     fiche_eligible?: boolean;
   }) => void;
   onError: (message: string) => void;
+  onWarning?: (message: string) => void;
 }
 
 export async function streamMessage(
@@ -354,7 +422,7 @@ export async function streamMessage(
   token: string,
   callbacks: StreamCallbacks,
   signal?: AbortSignal,
-  documentReferences?: ChatDocumentReference[],
+  documentReferences?: ChatDocumentReference[]
 ): Promise<void> {
   // Do NOT pass signal to fetch — React Strict Mode aborts it in dev.
   // Instead we check signal.aborted manually in the read loop.
@@ -363,15 +431,21 @@ export async function streamMessage(
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ message, document_references: documentReferences }),
+      body: JSON.stringify({
+        message,
+        document_references: documentReferences,
+      }),
       token,
-    },
+    }
   );
 
   if (!response.ok) {
     const body = await response.json().catch(() => null);
-    callbacks.onError(typeof body?.detail === "string" ? body.detail :
-      "Une erreur est survenue lors du traitement de votre question.");
+    callbacks.onError(
+      typeof body?.detail === "string"
+        ? body.detail
+        : "Une erreur est survenue lors du traitement de votre question."
+    );
     return;
   }
 
@@ -408,6 +482,9 @@ export async function streamMessage(
           case "chat_delta":
             callbacks.onDelta(parsed.content);
             break;
+          case "case_file_updated":
+            callbacks.onCaseFileUpdated?.(parsed);
+            break;
           case "chat_done":
             callbacks.onDone(parsed);
             // Signal the sidebar (and any other listener) that the monthly
@@ -419,6 +496,9 @@ export async function streamMessage(
             break;
           case "chat_error":
             callbacks.onError(parsed.message);
+            break;
+          case "chat_warning":
+            callbacks.onWarning?.(parsed.message);
             break;
         }
       } catch {
@@ -456,7 +536,7 @@ export async function streamMessage(
   } catch {
     if (signal?.aborted) return;
     callbacks.onError(
-      "La connexion au serveur a été interrompue. Veuillez réessayer.",
+      "La connexion au serveur a été interrompue. Veuillez réessayer."
     );
   } finally {
     reader.releaseLock();
@@ -473,26 +553,42 @@ export interface ChatDocumentReference {
   search_status?: "ready" | "preparing" | "error";
 }
 
-export async function uploadChatDocument(conversationId: string, file: File, token: string): Promise<ChatDocumentReference> {
+export async function uploadChatDocument(
+  conversationId: string,
+  file: File,
+  token: string
+): Promise<ChatDocumentReference> {
   const body = new FormData();
   body.append("file", file);
-  const response = await authFetch(`/conversations/${conversationId}/documents`, {
-    method: "POST", body, token,
-  });
+  const response = await authFetch(
+    `/conversations/${conversationId}/documents`,
+    {
+      method: "POST",
+      body,
+      token,
+    }
+  );
   const result = await response.json();
-  if (!response.ok) throw new Error(typeof result.detail === "string" ? result.detail : "Échec du dépôt du document");
+  if (!response.ok)
+    throw new Error(
+      typeof result.detail === "string"
+        ? result.detail
+        : "Échec du dépôt du document"
+    );
   return result;
 }
 
 export async function getChatDocumentReadiness(
   conversationId: string,
   reference: ChatDocumentReference,
-  token: string,
+  token: string
 ): Promise<ChatDocumentReference> {
-  const params = new URLSearchParams({ extraction_id: reference.extraction_id });
+  const params = new URLSearchParams({
+    extraction_id: reference.extraction_id,
+  });
   const result = await apiFetch<ChatDocumentReference>(
     `/conversations/${conversationId}/documents/${reference.document_id}/readiness?${params}`,
-    { token },
+    { token }
   );
   return { ...reference, ...result };
 }

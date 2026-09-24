@@ -34,6 +34,7 @@ from app.core.plans import (
 )
 from app.models.account import Account
 from app.models.account_member import AccountMember
+from app.models.case_file import CaseFile
 from app.models.ccn import OrganisationConvention
 from app.models.conversation import Conversation, Message
 from app.models.document import Document
@@ -41,6 +42,11 @@ from app.models.invitation import Invitation
 from app.models.membership import Membership
 from app.models.organisation import Organisation
 from app.models.user import User
+from app.services.case_file_service import (
+    CASE_FILE_LOAD_OPTIONS,
+    CaseFileService,
+    delete_case_files_for_conversations,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -217,6 +223,13 @@ class DataRetentionService:
                     }
                     for m in msgs_result.scalars()
                 ]
+                case_file = (
+                    await self.db.execute(
+                        select(CaseFile)
+                        .options(*CASE_FILE_LOAD_OPTIONS)
+                        .where(CaseFile.conversation_id == conv.id)
+                    )
+                ).scalar_one_or_none()
                 conv_rows.append(
                     {
                         "id": str(conv.id),
@@ -224,6 +237,11 @@ class DataRetentionService:
                         "organisation_id": str(conv.organisation_id),
                         "created_at": conv.created_at.isoformat() if conv.created_at else None,
                         "messages": msgs,
+                        "case_file": (
+                            CaseFileService.export_payload(case_file)
+                            if case_file is not None
+                            else None
+                        ),
                     }
                 )
 
@@ -298,6 +316,7 @@ class DataRetentionService:
             "organisations": 0,
             "documents": 0,
             "conversations": 0,
+            "case_files": 0,
             "messages": 0,
             "invitations": 0,
             "members": 0,
@@ -376,6 +395,9 @@ class DataRetentionService:
                     select(Conversation.id).where(Conversation.organisation_id.in_(org_ids))
                 )).scalars().all()
                 if conv_ids:
+                    summary["case_files"] = await delete_case_files_for_conversations(
+                        self.db, list(conv_ids)
+                    )
                     await self.db.execute(
                         delete(Message).where(Message.conversation_id.in_(conv_ids))
                     )

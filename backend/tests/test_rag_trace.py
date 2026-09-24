@@ -35,6 +35,7 @@ class TestRagTrace:
         assert t.search_plan is None
         assert t.search_plan_usage == {}
         assert t.search_plan_validation == {}
+        assert t.case_file_observation is None
         assert t.perf_ms == {}
         assert t.out_of_scope is False
         assert t.no_results is False
@@ -61,6 +62,7 @@ class TestRagTrace:
         assert d["search_plan"] is None
         assert d["search_plan_usage"] == {}
         assert d["search_plan_validation"] == {}
+        assert d["case_file_observation"] is None
 
 
 class TestSerializeChunks:
