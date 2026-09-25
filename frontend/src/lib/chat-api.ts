@@ -426,6 +426,16 @@ export async function streamMessage(
 ): Promise<void> {
   // Do NOT pass signal to fetch — React Strict Mode aborts it in dev.
   // Instead we check signal.aborted manually in the read loop.
+  const started = performance.now();
+  const measured = new Set<string>();
+  const measure = (step: string) => {
+    if (measured.has(step)) return;
+    measured.add(step);
+    // Browser Performance timeline only; no text, token or external telemetry.
+    try {
+      performance.measure(`aoriarh.chat.${step}`, { start: started, end: performance.now() });
+    } catch { /* Observability must never interrupt the stream. */ }
+  };
   const response = await authFetch(
     `/conversations/${conversationId}/chat/stream`,
     {
@@ -439,6 +449,7 @@ export async function streamMessage(
     }
   );
 
+  measure("headers");
   if (!response.ok) {
     const body = await response.json().catch(() => null);
     callbacks.onError(
@@ -471,6 +482,7 @@ export async function streamMessage(
         const parsed = JSON.parse(dataStr);
         switch (eventType) {
           case "chat_status":
+            measure("first_status");
             callbacks.onStatus?.(parsed.step);
             break;
           case "chat_search_details":
@@ -480,12 +492,14 @@ export async function streamMessage(
             callbacks.onSources(parsed.sources);
             break;
           case "chat_delta":
+            if (parsed.content) measure("first_text");
             callbacks.onDelta(parsed.content);
             break;
           case "case_file_updated":
             callbacks.onCaseFileUpdated?.(parsed);
             break;
           case "chat_done":
+            measure("done");
             callbacks.onDone(parsed);
             // Signal the sidebar (and any other listener) that the monthly
             // question counter just changed, so the quota display refreshes
@@ -495,6 +509,7 @@ export async function streamMessage(
             }
             break;
           case "chat_error":
+            measure("error");
             callbacks.onError(parsed.message);
             break;
           case "chat_warning":

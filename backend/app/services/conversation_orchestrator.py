@@ -25,6 +25,7 @@ from app.rag.search_plan import (
     apply_compact_planner_payload,
     build_deterministic_search_plan,
 )
+from app.rag.usage_metrics import usage_details
 from app.services.case_calculation import CalculationSpec, calculate, validate_fact_bindings
 from app.services.conversation_document_service import DocumentLegalSearch
 
@@ -308,6 +309,7 @@ async def plan_conversation(
         trace.search_plan_usage.update({
             "tokens_input": response.usage.prompt_tokens,
             "tokens_output": response.usage.completion_tokens,
+            **usage_details(response.usage),
         })
         from app.services.cost_tracker import cost_tracker
 
@@ -495,6 +497,7 @@ async def prepare_conversation_context(
     library = ConversationLibraryService(db)
     case_service = CaseFileService(db)
     preparation_started = time.perf_counter()
+    case_perf: dict[str, float] = {}
     case_file = None
     case_file_context: dict = {
         "version": 1,
@@ -506,6 +509,7 @@ async def prepare_conversation_context(
     observation_technical_errors: list[str] = []
     try:
         case_file, case_file_context = await case_service.observation_context(conversation)
+        case_perf["case_context_load"] = (time.perf_counter() - preparation_started) * 1000
     except Exception:
         await db.rollback()
         observation_technical_errors.append("case_file_context_error")
@@ -619,6 +623,7 @@ async def prepare_conversation_context(
             observation_payload["case_delta"] = planned.fact_delta.model_dump(mode="json")
         if case_file is not None:
             try:
+                observation_started = time.perf_counter()
                 observation_event = await case_service.record_planner_observation(
                     case_file=case_file,
                     raw_planner_output=planned.raw,
@@ -633,6 +638,9 @@ async def prepare_conversation_context(
                     source_message_id=source_message_id,
                 )
                 observation_event_ids.append(str(observation_event.id))
+                case_perf["case_observation_save"] = case_perf.get("case_observation_save", 0) + (
+                    time.perf_counter() - observation_started
+                ) * 1000
             except Exception:
                 await db.rollback()
                 observation_technical_errors.append("case_file_observation_persistence_error")
@@ -657,6 +665,7 @@ async def prepare_conversation_context(
 
             observation_event_id = observation_event.id
             try:
+                facts_started = time.perf_counter()
                 fact_result = await case_service.apply_planner_delta(
                     case_file=case_file,
                     expected_version=applicable_expected_version,
@@ -667,11 +676,26 @@ async def prepare_conversation_context(
                     user_id=user.id,
                     observation_event_id=observation_event_id,
                 )
-                await db.flush()
-                await db.refresh(case_file)
-                applicable_expected_version = case_file.version
-                _, case_file_context = await case_service.observation_context(conversation)
+                if fact_result["applied"]:
+                    await db.flush()
+                    await db.refresh(case_file)
+                    applicable_expected_version = case_file.version
+                    _, case_file_context = await case_service.observation_context(conversation)
+                else:
+                    # Keep concurrency checks without reloading every entry/task/link.
+                    from sqlalchemy import select
+
+                    from app.models.case_file import CaseFile
+
+                    current_version = await db.scalar(
+                        select(CaseFile.version).where(CaseFile.id == case_file.id)
+                    )
+                    if current_version != applicable_expected_version:
+                        raise CaseFileApplyError("case_version_conflict")
                 application_result = fact_result
+                case_perf["case_facts_apply"] = case_perf.get("case_facts_apply", 0) + (
+                    time.perf_counter() - facts_started
+                ) * 1000
             except CaseFileApplyError as exc:
                 await db.rollback()
                 await db.refresh(case_file)
@@ -1195,6 +1219,7 @@ async def prepare_conversation_context(
                 # Never generate from a snapshot invalidated by a concurrent correction.
                 final_trace.error = "case_execution_conflict"
         final_trace.case_file_observation["execution"] = generation_case_context
+    final_trace.perf_ms.update(case_perf)
     final_trace.perf_ms["conversation_preparation"] = (
         time.perf_counter() - preparation_started
     ) * 1000

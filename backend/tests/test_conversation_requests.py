@@ -221,6 +221,61 @@ async def test_live_contract_uses_one_call_and_preserves_raw():
     }
 
 
+async def test_empty_fact_delta_does_not_reload_dossier_mid_preparation(dossier, monkeypatch):
+    from unittest.mock import AsyncMock
+    from app.services.case_file_service import CaseFileService
+
+    conv, _ = await conversation(dossier)
+    msg = Message(conversation_id=conv.id, role="user", content="Rédige un mail")
+    dossier.db.add(msg)
+    await dossier.db.commit()
+    original = CaseFileService.observation_context
+    calls = []
+
+    async def observed(self, conversation):
+        calls.append(conversation.id)
+        return await original(self, conversation)
+
+    monkeypatch.setattr(CaseFileService, "observation_context", observed)
+    result = await prepare_conversation_context(
+        planner(wire([request()])), db=dossier.db, conversation=conv, user=dossier.user,
+        query=msg.content, references=[], documents=[], document_continuity="", history=[],
+        legal_search=AsyncMock(), model="test", source_message_id=msg.id,
+    )
+    assert result.trace.error is None
+    assert len(calls) == 2  # Initial state and final state; no intermediate full reload.
+
+
+async def test_empty_delta_still_detects_a_concurrent_version_change(dossier, monkeypatch):
+    from unittest.mock import AsyncMock
+    from sqlalchemy import update
+    from app.models.case_file import CaseFile
+    from app.services.case_file_service import CaseFileService
+
+    conv, _ = await conversation(dossier)
+    msg = Message(conversation_id=conv.id, role="user", content="Rédige un mail")
+    dossier.db.add(msg)
+    await dossier.db.commit()
+    original = CaseFileService.apply_planner_delta
+
+    async def concurrent_change(self, **kwargs):
+        result = await original(self, **kwargs)
+        if not result["applied"]:
+            await self.db.execute(update(CaseFile).where(
+                CaseFile.id == kwargs["case_file"].id
+            ).values(version=CaseFile.version + 1))
+            await self.db.commit()
+        return result
+
+    monkeypatch.setattr(CaseFileService, "apply_planner_delta", concurrent_change)
+    result = await prepare_conversation_context(
+        planner(wire([request()])), db=dossier.db, conversation=conv, user=dossier.user,
+        query=msg.content, references=[], documents=[], document_continuity="", history=[],
+        legal_search=AsyncMock(), model="test", source_message_id=msg.id,
+    )
+    assert result.trace.error == "case_execution_conflict"
+
+
 async def test_default_pipeline_persists_facts_even_when_search_fails(dossier):
     conv, _ = await conversation(dossier)
     msg = Message(

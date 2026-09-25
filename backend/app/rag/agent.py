@@ -1073,9 +1073,12 @@ class RAGAgent:
         # Log cost from stream usage
         if stream_usage:
             if generation_metrics is not None:
+                from app.rag.usage_metrics import usage_details
+
                 generation_metrics.update({
                     "tokens_input": stream_usage.prompt_tokens,
                     "tokens_output": stream_usage.completion_tokens,
+                    **usage_details(stream_usage),
                 })
             cost_tracker.log_bg(
                 provider="openai",

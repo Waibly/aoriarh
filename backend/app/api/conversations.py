@@ -1204,6 +1204,8 @@ async def chat_stream(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> StreamingResponse:
+    t_total = time.perf_counter()
+    initial_perf: dict[str, float] = {}
     service = ConversationService(db)
     billing = BillingService(db)
 
@@ -1216,6 +1218,8 @@ async def chat_stream(
     # 1b. Enforce quota / plan lifecycle (raises 402 if expired/suspended).
     account = await billing.get_account_for_organisation(conversation.organisation_id)
     await billing.check_question_quota(account)
+    initial_perf["access_and_quota"] = (time.perf_counter() - t_total) * 1000
+    t_documents = time.perf_counter()
 
     from app.services.conversation_document_service import (
         active_references,
@@ -1226,6 +1230,8 @@ async def chat_stream(
     documents, document_continuity = await read_conversation_documents(
         db, conversation, user, references, query=data.message,
     )
+    initial_perf["initial_documents"] = (time.perf_counter() - t_documents) * 1000
+    t_profile = time.perf_counter()
     if documents:
         references = [{"document_id": str(d["document_id"]),
                        "extraction_id": str(d["extraction_id"]), "name": d["source_name"]}
@@ -1245,10 +1251,11 @@ async def chat_stream(
     org_context = await _load_org_context(db, conversation.organisation_id)
     if org_context is not None:
         org_context["profil_metier"] = user.profil_metier
+    initial_perf["save_user_and_profile"] = (time.perf_counter() - t_profile) * 1000
 
     async def sse_generator():  # noqa: C901
         nonlocal documents, references
-        t_total = time.perf_counter()
+        initial_perf["before_stream"] = (time.perf_counter() - t_total) * 1000
         agent = RAGAgent()
         recent_messages = conversation.messages[-6:]
         history = [{"role": m.role, "content": m.content} for m in recent_messages]
@@ -1379,6 +1386,7 @@ async def chat_stream(
                 org_idcc_list = [r[0] for r in idcc_result.all()] or None
 
             # 2b. Send status: analyzing
+            initial_perf["first_status"] = (time.perf_counter() - t_total) * 1000
             yield _sse_event("chat_status", {"step": "Prise en compte de votre situation…"})
 
             # 3. Prepare context (steps 0-5: condensation, reformulation, search, rerank)
@@ -1487,6 +1495,7 @@ async def chat_stream(
             results = prepared_context.results
             reformulated = prepared_context.reformulated
             rag_trace = prepared_context.trace
+            rag_trace.perf_ms.update(initial_perf)
             documents = prepared_context.documents
             references = prepared_context.references
             if (rag_trace.error != "case_execution_conflict"
@@ -1808,6 +1817,9 @@ async def chat_stream(
             needs_title = conversation.title is None
             trace_failed = False
             try:
+                rag_trace.perf_ms["answer_and_case_save"] = (
+                    time.perf_counter() - t_stream_done
+                ) * 1000
                 assistant_message.rag_trace = rag_trace.to_dict()
                 assistant_message.question_id = question_id
                 assistant_message.latency_ms = total_latency_ms
@@ -1841,6 +1853,10 @@ async def chat_stream(
                 await service.update_title(conversation_id, title)
 
             t_db = time.perf_counter()
+            completion_timings = {
+                "request_to_done_ms": (t_db - t_total) * 1000,
+                "post_generation_ms": (t_db - t_stream_done) * 1000,
+            }
             logger.info(
                 "[PERF] DB save %.0fms",
                 (t_db - t_stream_done) * 1000,
@@ -1853,6 +1869,7 @@ async def chat_stream(
                     "message_id": user_message_id,
                     "answer_id": assistant_message_id,
                     "fiche_eligible": True,
+                    "timings": completion_timings,
                 },
             )
 

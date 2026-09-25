@@ -288,6 +288,15 @@ async def test_orchestrator_can_generate_without_forcing_a_document_search(
     client: AsyncClient, manager_user: dict, monkeypatch,
 ) -> None:
     conv_id = await _make_conversation(client, manager_user)
+    trace = RagTrace(query_original="Rédige un mail", model="test-model")
+    from app.api import conversations as routes
+    original_profile = routes._load_org_context
+
+    async def delayed_profile(*args, **kwargs):
+        await asyncio.sleep(0.03)
+        return await original_profile(*args, **kwargs)
+
+    monkeypatch.setattr(routes, "_load_org_context", delayed_profile)
 
     async def generation_context(*args, **kwargs):
         # Longer than the former simulated global deadline (0.2 seconds).
@@ -295,7 +304,7 @@ async def test_orchestrator_can_generate_without_forcing_a_document_search(
         return PreparedConversation(
             results=[],
             reformulated="Rédiger à partir des faits fournis",
-            trace=RagTrace(query_original="Rédige un mail", model="test-model"),
+            trace=trace,
             documents=[],
             references=[],
             generate_without_sources=True,
@@ -322,6 +331,9 @@ async def test_orchestrator_can_generate_without_forcing_a_document_search(
     assert "chat_error" not in response.text
     assert "chat_done" in response.text
     assert "no_results" not in response.text
+    assert trace.perf_ms["before_stream"] >= 30
+    assert trace.perf_ms["first_text"] >= trace.perf_ms["before_stream"] + 250
+    assert "request_to_done_ms" in response.text
 
 
 async def test_applied_case_delta_emits_case_file_update_event(

@@ -70,6 +70,8 @@ test("sends a case correction to the versioned entry endpoint", async () => {
 });
 
 test("keeps interruption warnings separate from content and completion", async () => {
+  const measure = jest.fn();
+  Object.defineProperty(performance, "measure", { configurable: true, value: measure });
   const bytes = Uint8Array.from(Buffer.from(
     'event: chat_delta\ndata: {"content":"Texte original"}\n\n' +
     'event: chat_warning\ndata: {"message":"Flux interrompu"}\n\n' +
@@ -88,4 +90,7 @@ test("keeps interruption warnings separate from content and completion", async (
   expect(callbacks.onWarning).toHaveBeenCalledWith("Flux interrompu");
   expect(callbacks.onError).not.toHaveBeenCalled();
   expect(callbacks.onDone).toHaveBeenCalledTimes(1);
+  expect(measure.mock.calls.map(([name]) => name)).toEqual([
+    "aoriarh.chat.headers", "aoriarh.chat.first_text", "aoriarh.chat.done",
+  ]);
 });
