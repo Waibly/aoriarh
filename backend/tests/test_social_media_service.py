@@ -215,6 +215,29 @@ async def test_generation_returns_exact_non_empty_llm_output_without_fallback():
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("slide_count", [10, 11])
+async def test_carousel_page_limit_preserves_every_slide_without_retry(slide_count):
+    raw = '  <main class="carousel">' + "".join(
+        f'<section class="slide"><h2>Page {index}</h2>'
+        '<div class="slide-body"><p>Texte intégral.</p></div></section>'
+        for index in range(slide_count)
+    ) + "</main>\n"
+    create = AsyncMock(return_value=_response(raw))
+    with patch("app.services.social_media_service._llm.chat.completions.create", create):
+        generation = await generate_social_media(
+            question="Question", answer_markdown="Réponse", sources=[],
+            linkedin_carousel=True,
+        )
+
+    assert generation.raw_content == raw
+    assert raw in generation.html
+    assert any("plus de 10 slides" in warning for warning in generation.warnings) == (
+        slide_count > 10
+    )
+    create.assert_awaited_once()
+
+
+@pytest.mark.asyncio
 async def test_linkedin_carousel_generation_uses_its_dedicated_prompt():
     create = AsyncMock(return_value=_response(RAW_FRAGMENT))
 

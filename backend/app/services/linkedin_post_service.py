@@ -228,8 +228,9 @@ Règles absolues :
   bloc de sources ou son éventuel CTA. Ne résume pas les slides une par une.
 
 Rythme et style LinkedIn :
-- Chaque phrase porte une idée principale. Vise 8 à 18 mots et ne dépasse pas
-  24 mots, sauf pour le libellé exact d'une notion juridique.
+- Chaque phrase porte une idée principale. Privilégie des phrases fluides,
+  assez développées pour expliquer les liens entre pratique, conséquence et
+  action. Ne coupe pas une phrase naturelle pour respecter un quota de mots.
 - Utilise la voix active, des verbes concrets et l'ordre sujet-verbe-complément.
   Supprime les détours, les nominalisations et les précautions rhétoriques.
 - Un paragraphe contient deux phrases liées lorsqu'elles développent la même
@@ -245,14 +246,14 @@ Rythme et style LinkedIn :
 
 Hook :
 - Produis un seul hook. Il occupe le premier paragraphe, en une ou deux phrases
-  de 15 mots maximum chacune. L'ensemble ne dépasse pas 160 caractères afin de
-  rester lisible avant « voir plus ».
+  concises, avec l'information essentielle dès le début pour rester lisible
+  avant « voir plus ».
 - Le hook doit être idiomatique en français et se comprendre naturellement dès
   la première lecture, même lorsqu'il est lu sans le carrousel. Rédige une ou
   deux phrases complètes et fluides. N'utilise ni slogan télégraphique, ni ellipse
   qui oblige à deviner le sujet, le lien logique ou le référent d'un pronom.
 - Le sujet juridique apparaît dans les huit premiers mots. Le hook livre déjà
-  une information précise et crée une tension honnête.
+  une information précise et fait comprendre son utilité pratique.
 - Choisis uniquement le mécanisme adapté au sujet : croyance corrigée, erreur
   opérationnelle, contraste entre deux situations, conséquence concrète ou
   question fermée réellement difficile.
@@ -264,8 +265,9 @@ Hook :
 Corps et format selon l'intention :
 - Identifie silencieusement l'intention dominante, puis utilise une seule des
   structures suivantes. Ne force jamais le même modèle sur tous les sujets.
-- Pour une alerte ou une erreur : ouvre par une prise de position nette. Montre
-  ensuite la pratique observée et sa limite, puis la cause et le levier concret.
+- Pour une alerte ou une erreur : pose les circonstances dans lesquelles le
+  risque existe, puis explique sa cause et le levier concret, sans supposer
+  que le lecteur commet cette erreur.
 - Pour une procédure, une checklist ou une chronologie : pose la situation,
   puis utilise deux ou trois lignes courtes précédées de « • » pour annoncer
   les décisions ou repères apportés, sans recopier les étapes des slides.
@@ -281,9 +283,9 @@ Corps et format selon l'intention :
 - Le corps donne une information utile avant même l'ouverture du carrousel.
   Il explique ensuite ce que le document permettra de décider, distinguer ou
   appliquer. Il ne paraphrase pas le hook et ne raconte pas le plan des slides.
-- Combine une ouverture éditoriale tranchée avec un corps substantiel. Le hook
-  recadre le sujet ; le corps nomme une pratique, sa limite, sa cause et au moins
-  un levier concret lorsque ces éléments existent dans les données.
+- Combine une ouverture éditoriale précise avec un corps substantiel. Le hook
+  pose le sujet ; le corps explique une situation, le mécanisme en jeu et un
+  levier concret lorsque ces éléments existent dans les données.
 
 CTA :
 - Le dernier paragraphe contient un seul CTA direct de 4 à 12 mots.
@@ -307,10 +309,24 @@ CTA :
 - N'utilise jamais de tiret cadratin « — » ni de tiret demi-cadratin « – ».
 - Ne demande jamais de liker, commenter, partager ou s'abonner.
 
-Avant de répondre, vérifie silencieusement cinq points : hook spécifique, phrases
-de 24 mots maximum, paragraphes regroupant les idées liées, absence de répétition
-avec les slides et CTA impossible à réutiliser sur un autre sujet. Réécris toute
-phrase qui échoue à l'un de ces contrôles avant de produire le post final.
+Posture éditoriale :
+- Adopte une posture de conseil constructive et respectueuse. Pars d'une
+  situation concrète ou d'une décision à prendre, explique le mécanisme utile,
+  puis propose une action fondée sur la réponse fournie.
+- N'attribue pas de mauvaises pratiques aux entreprises, aux managers ou aux RH
+  sans faits fournis. Ne suppose pas que le lecteur a oublié une obligation,
+  négligé un suivi ou commis une erreur.
+- Évite les généralisations accusatrices comme « beaucoup d'entreprises ne font
+  pas ça », « les entreprises traitent ce sujet comme une échéance isolée » ou
+  « les managers ne pilotent pas les suites ». Ne les remplace pas par une
+  accusation équivalente avec d'autres mots.
+- Lorsqu'un risque est pertinent, explique les circonstances et les conditions
+  dans lesquelles il existe, sans dramatiser ni porter de jugement sur les
+  pratiques du lecteur. N'invente aucune fréquence ni pratique prétendument
+  observée pour créer une tension.
+- Le CTA invite à utiliser un repère, comparer des options ou préparer une
+  action concrète. Il ne présume pas que le lecteur a des dossiers à
+  régulariser ou des erreurs à corriger.
 
 Le texte sera affiché et copié exactement tel que tu le produis.
 """
@@ -576,34 +592,14 @@ def build_linkedin_warnings(content: str, references: list[str]) -> list[str]:
 
 
 def build_linkedin_carousel_warnings(content: str) -> list[str]:
-    """Contrôles informatifs propres à la légende courte d'un carrousel."""
+    """Signale uniquement le dépassement de longueur, sans juger le style."""
 
-    warnings: list[str] = []
     if len(content) > LINKEDIN_CAROUSEL_POST_MAX_CHARACTERS:
-        warnings.append(
+        return [
             "Le post d'accompagnement dépasse 1 500 caractères. "
             "La génération brute est affichée sans troncature."
-        )
-    if re.search(r"(?<!\w)#[\wÀ-ÖØ-öø-ÿ]", content):
-        warnings.append(
-            "Le post d'accompagnement contient au moins un hashtag malgré la "
-            "consigne. La génération brute est affichée sans modification."
-        )
-    if "—" in content or "–" in content:
-        warnings.append(
-            "Le post d'accompagnement contient un tiret cadratin ou demi-cadratin "
-            "malgré la consigne. La génération brute reste inchangée."
-        )
-    last_paragraph = re.split(r"\n\s*\n", content.strip())[-1]
-    if not re.search(
-        r"(?im)^.{0,120}(faites défiler|faites glisser|parcourez|à faire défiler).{0,120}$",
-        last_paragraph,
-    ):
-        warnings.append(
-            "Le post ne semble pas contenir un appel clair à parcourir le carrousel. "
-            "La génération brute est affichée sans modification."
-        )
-    return warnings
+        ]
+    return []
 
 
 async def _generate_once(

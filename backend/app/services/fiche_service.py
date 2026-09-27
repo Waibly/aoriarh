@@ -715,10 +715,11 @@ def render_fiche_html(
   tr {{ break-inside:avoid; }}
   th, td {{ border:1px solid #ede9fe; padding:6px 10px; text-align:left; }}
   th {{ background:#f5f3ff; color:{_VIOLET}; }}
-  .fiche-content .warning, .exceptions {{ background:#fff7ed; border:1px solid #fed7aa;
+  .fiche-content .warning, .exceptions {{ background:#fff1f2; border:1px solid #fecdd3;
                 border-radius:8px; padding:12px 16px; margin:0 0 16px;
-                break-inside:avoid; }}
-  .fiche-content .warning h2 {{ color:#b45309; margin:0 0 6px; }}
+                break-inside:avoid; color:#881337; }}
+  .fiche-content .warning strong {{ color:#9f1239; }}
+  .fiche-content .warning h2 {{ color:#9f1239; margin:0 0 6px; }}
   .fiche-content .warning > :last-child {{ margin-bottom:0; }}
   .fiche-content .info {{ background:#f0f9ff; border:1px solid #bae6fd;
                          border-radius:8px; padding:12px 16px; margin:0 0 16px;
@@ -736,12 +737,12 @@ def render_fiche_html(
                                  break-after:avoid; page-break-after:avoid; }}
   .legal-references .reference-topic {{ display:block; color:#52525b;
                                         font-size:11px; margin-top:1px; }}
-  .exceptions strong {{ display:flex; align-items:center; gap:6px; color:#b45309; }}
+  .exceptions strong {{ display:flex; align-items:center; gap:6px; color:#9f1239; }}
   .exceptions ul {{ margin:6px 0 0; }}
   .exceptions li:last-child {{ margin-bottom:0; }}
   .sources {{ font-size:12px; color:#5f6b6a; }}
-  .generation-warning {{ border:1px solid #f59e0b; background:#fffbeb; border-radius:6px;
-                         padding:8px 12px; margin:16px 0; font-size:10px; color:#92400e; }}
+  .generation-warning {{ border:1px solid #fecdd3; background:#fff1f2; border-radius:6px;
+                         padding:8px 12px; margin:16px 0; font-size:10px; color:#881337; }}
   .generation-warning ul {{ margin:4px 0 0; }}
   .footer {{ position:fixed; left:32px; right:32px; bottom:-17mm;
             border-top:1px solid #ede9fe; padding:7px 0 0; font-size:9.5px;

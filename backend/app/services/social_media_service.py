@@ -102,7 +102,10 @@ Règles absolues :
   aucun bloc Markdown et aucune balise html, head, style, script ou iframe.
 - Chaque visuel est une balise <section class="slide ..."> directement enfant
   du main. Une seule image est autorisée si elle suffit. Sinon, choisis librement
-  le nombre de slides utile, sans imposer un plan fixe ni ajouter de remplissage.
+  le nombre de slides utile dans une limite absolue de 10 pages au total,
+  couverture, conclusion et références juridiques comprises. Une slide correspond
+  à une page. Ne dépasse jamais 10 slides et ne vise pas systématiquement ce
+  maximum : aucun plan fixe ni remplissage.
 - Choisis dynamiquement l'ordre et le type des slides selon la nature réelle du
   contenu : réponse courte, procédure, chronologie, comparaison, calcul, liste,
   cas pratique, exception, alerte ou combinaison de plusieurs formes.
@@ -127,8 +130,8 @@ Règles absolues :
 - N'invente aucune règle, statistique, date, décision, source, URL, exemple ou
   résultat absent de la réponse fournie. Ne corrige et ne complète pas le fond.
 - Conserve les conditions, exceptions, réserves, incertitudes, délais et seuils.
-- La fidélité juridique prime toujours sur la brièveté et sur le nombre de
-  slides. Ne transforme jamais une faculté en obligation, une condition en
+- La fidélité juridique prime toujours sur la brièveté des formulations.
+  Ne transforme jamais une faculté en obligation, une condition en
   principe général, une possibilité en certitude ou une exception en règle.
 - Compacte seulement ce qui peut l'être sans perte de portée : supprime les
   redites, factorise les formulations communes et choisis des phrases directes.
@@ -169,8 +172,8 @@ Règles absolues :
   utilisées. Ne crée jamais une slide supplémentaire uniquement pour répéter
   une référence qui figure déjà dans ce bloc final.
 - Si le bloc « Références juridiques » ne tient pas lisiblement sur une slide,
-  poursuis-le sur une autre slide-sources slide-dense. Ne raccourcis, ne fusionne
-  et ne coupe jamais le libellé exact d'une référence pour gagner de la place.
+  poursuis-le sur une autre slide-sources slide-dense dans la limite des 10 pages.
+  Ne raccourcis, ne fusionne et ne coupe jamais le libellé exact d'une référence pour gagner de la place.
 - Le contexte documentaire associé aux références sert uniquement à nommer
   leur objet. Ne l'utilise jamais pour ajouter au média une règle ou une
   précision absente de la réponse source.
@@ -187,14 +190,17 @@ Principes éditoriaux :
   qui doit être dit fidèlement et de ce qui tient réellement dans le gabarit.
 - Aère verticalement les titres, paragraphes, listes et encadrés. Ne compacte
   jamais plusieurs idées pour les faire tenir sur une seule slide. Si le
-  contenu devient dense, répartis-le sur une slide supplémentaire.
+  contenu devient dense, répartis-le sur une slide supplémentaire dans la limite
+  des 10 pages. Prévois la place des références dès la conception du plan. Si
+  nécessaire, resserre le périmètre autour d'un angle autonome, annonce ce
+  périmètre et conserve toutes les conditions et exceptions des règles traitées.
 - Découpe aux frontières du raisonnement : principe, condition, exception,
   conséquence ou référence. Ne coupe jamais une phrase, une énumération
   indissociable ou le fondement d'une affirmation entre deux slides.
 - Utilise la classe slide-compact si une slide contient plusieurs blocs utiles
   mais reste cohérente. Réserve slide-dense aux références longues ou à un bloc
   juridique indivisible ; préfère une slide supplémentaire dès que le contenu
-  peut être séparé proprement.
+  peut être séparé proprement et que le total reste inférieur ou égal à 10 pages.
 - Préserve explicitement les espaces entre les balises HTML inline et le texte
   qui les suit. N'écris jamais <strong>Libellé</strong>Valeur : écris
   <strong>Libellé</strong> <span>Valeur</span>.
@@ -206,6 +212,10 @@ Principes éditoriaux :
 - Adapte le point de vue au profil métier fourni sans transformer la règle.
 - Les contenus pratiques, décisions, étapes, délais et vigilances priment sur
   les formulations scolaires ou promotionnelles.
+- Adopte une posture de conseil constructive, sans jugement sur le lecteur.
+  Ne généralise pas sur les manquements des entreprises, des managers ou des
+  RH. Présente les risques avec leurs conditions, sans présumer une erreur
+  ou une négligence et sans inventer de pratique prétendument fréquente.
 - Adopte un ton direct, factuel et professionnel. N'emploie aucun superlatif,
   aucune exagération, aucune promesse ni dramatisation.
 - Supprime les adverbes quand une formulation factuelle suffit. N'emploie aucun
@@ -461,8 +471,8 @@ def inspect_social_media_fragment(raw_content: str, references: list[str]) -> li
             "slide-body ; leur centrage peut être imparfait. La génération brute reste "
             "inchangée."
         )
-    if inspector.slide_count > 20:
-        warnings.append("Le média contient plus de 20 slides. La génération brute reste inchangée.")
+    if inspector.slide_count > 10:
+        warnings.append("Le média contient plus de 10 slides. La génération brute reste inchangée.")
     if inspector.forbidden_tags:
         tags = ", ".join(dict.fromkeys(inspector.forbidden_tags))
         warnings.append(

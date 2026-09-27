@@ -88,11 +88,7 @@ def test_carousel_post_prompt_is_short_and_forbids_slide_repetition() -> None:
     assert "Ne reprends jamais le titre de la première slide" in prompt
     assert "Ne résume pas les slides une par une" in prompt
     assert "N'insère pas de bloc « Sources »" in LINKEDIN_CAROUSEL_POST_SYSTEM_PROMPT
-    assert "lisible avant « voir plus »" in LINKEDIN_CAROUSEL_POST_SYSTEM_PROMPT
-    assert "160 caractères" in prompt
-    assert "une ou deux phrases de 15 mots maximum" in prompt
-    assert "8 à 18 mots" in prompt
-    assert "ne dépasse pas 24 mots" in prompt
+    assert "lisible avant « voir plus »" in prompt
     assert "voix active" in prompt
     assert "Place une ligne vide entre les idées" in prompt
     assert "trois à cinq paragraphes" in prompt
@@ -111,8 +107,6 @@ def test_carousel_post_prompt_is_short_and_forbids_slide_repetition() -> None:
     assert "Pour une règle ou une clarification" in prompt
     assert "Pour une actualité juridique" in prompt
     assert "N'ajoute jamais une liste par automatisme" in prompt
-    assert "ouverture éditoriale tranchée" in prompt
-    assert "une pratique, sa limite, sa cause" in prompt
     assert "CTA direct de 4 à 12 mots" in prompt
     assert "invitation interchangeable" in prompt
     assert "seul emoji autorisé" in prompt
@@ -249,6 +243,14 @@ def test_warnings_never_transform_content() -> None:
     assert any("tiret cadratin" in warning for warning in warnings)
     assert any("CTA" in warning for warning in warnings)
     assert any("références autorisées" in warning for warning in warnings)
+
+
+@pytest.mark.parametrize("content", [
+    "Utilisez ce document pour préparer votre décision ↓",
+    "Un texte — conservé tel quel. #RH",
+])
+def test_carousel_warnings_do_not_judge_editorial_content(content: str) -> None:
+    assert build_linkedin_carousel_warnings(content) == []
 
 
 def test_carousel_warnings_do_not_require_repeating_references() -> None:
