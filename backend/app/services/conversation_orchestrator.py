@@ -49,6 +49,7 @@ class OrchestratorAction(BaseModel):
         "read_documents",
         "search_documents",
         "search_legal",
+        "read_legal_sources",
     ]
     depends_on: list[str] = Field(max_length=5)
     lookup: DocumentLookup | None
@@ -57,9 +58,12 @@ class OrchestratorAction(BaseModel):
     query: str | None
     legal_search: DocumentLegalSearch | None
     response: str | None
+    document_ids: list[uuid.UUID] | None = Field(default=None, min_length=1, max_length=10)
 
     @model_validator(mode="after")
     def arguments_match_action(self):
+        if self.action != "read_legal_sources" and self.document_ids is not None:
+            raise ValueError("action_arguments_mismatch")
         if self.action == "find_documents":
             valid = self.lookup is not None and all(
                 value is None
@@ -94,6 +98,12 @@ class OrchestratorAction(BaseModel):
                 self.legal_search is not None
                 and source_is_valid
                 and all(value is None for value in (self.lookup, self.response))
+            )
+        elif self.action == "read_legal_sources":
+            valid = bool(self.document_ids) and all(
+                value is None for value in (
+                    self.lookup, self.source, self.source_action_id, self.legal_search, self.response
+                )
             )
         if not valid:
             raise ValueError("action_arguments_mismatch")
@@ -785,6 +795,35 @@ async def prepare_conversation_context(
                 action_outputs[action.id] = output
                 tool_results.append(output)
                 continue
+            if action.action == "read_legal_sources":
+                from app.rag.legal_source_reader import read_legal_sources
+                from app.rag.parent_expansion import RetrievalError
+
+                progress("Lecture des sources juridiques citées…")
+                output = {"action_id": action.id, "action": action.action, "sources": []}
+                try:
+                    read_results, coverage = await read_legal_sources(
+                        db, action.document_ids,
+                        source_exclusions=planned.legal_base.excluded_source_types,
+                        source_restriction=planned.legal_base.exclusive_source_types or None,
+                    )
+                    results.extend(read_results)
+                    output.update(status="success", coverage=coverage, sources=[
+                        {"document_id": item.document_id, "chunk_index": item.chunk_index,
+                         "text": item.text, "name": item.doc_name}
+                        for item in read_results
+                    ])
+                    legal_executed = True
+                except RetrievalError as exc:
+                    output.update(status="search_retrieval_error", error=str(exc))
+                except Exception:
+                    logger.exception("Explicit legal-source reading failed")
+                    output.update(status="search_retrieval_error", error="legal_source_read_failed")
+                action_outputs[action.id] = output
+                tool_results.append(output)
+                branch_results.append({**output, "question": action.query or query})
+                continue
+
             if action.action == "find_documents":
                 progress("Recherche des documents concernés…")
                 lookup = action.lookup

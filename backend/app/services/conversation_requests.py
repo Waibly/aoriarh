@@ -91,9 +91,21 @@ replaces_task_id reprend une tâche ouverte du dossier si la demande la poursuit
   une demande answer/clarification suffit. Ne choisis pas parmi plusieurs candidats.
   « Quels documents faut-il réunir ? » demande une checklist (answer), pas une consultation
   de fichiers. N'exécute une consultation que pour des pièces que l'utilisateur demande de lire.
-- read_existing_document : lit les pièces actives (source_request_id=null) ou un fichier retrouvé.
+- read_existing_document : lit les pièces privées actives (source_request_id=null) ou un fichier
+  retrouvé par find_existing_document. source_request_id est exclusivement l'id de cette
+  demande find_existing_document du passage courant, JAMAIS un document_id ni un ancien id.
   Après découverte/lecture d'une nouvelle pièce, le code fournit son contenu au passage suivant.
   N'anticipe pas son contenu ni les recherches qui en dépendent.
+- read_legal_sources : relit les sources officielles du catalogue juridique avec document_ids
+  (1 à 10 UUID réellement fournis dans les sources de l'historique ou les résultats).
+  Familles prises en charge : jurisprudences, lois, ordonnances, décrets, arrêtés et BOSS.
+  Pour un article de code ou une convention collective, utilise legal avec sa référence.
+  Pour « développe cet arrêt » ou « précise l'objet des décisions du tableau », utilise cette
+  lecture avec les document_id concernés, puis answer dépendant de cette lecture si nécessaire.
+  Elle fournit tous les passages indexés, dans leurs limites techniques, pour la réponse finale.
+  Une référence juridique n'est pas une pièce privée. Sans document_id disponible, utilise legal
+  avec la référence exacte pour retrouver le texte ; n'invente jamais un UUID.
+  depends_on ne contient que des ids de demandes de ce passage, jamais des document_id.
 - search_uploaded_passages : cherche dans une pièce déjà accessible, pas dans son nom.
 - answer : livrable à rédiger, clarification ou question utilisant les sources déjà obtenues.
   Il n'exécute aucun outil. Un e-mail et une checklist peuvent partager les mêmes dépendances.
@@ -153,6 +165,11 @@ class ReadRequest(RequestBase):
     source_request_id: str | None
 
 
+class ReadLegalSourcesRequest(RequestBase):
+    kind: Literal["read_legal_sources"]
+    document_ids: list[uuid.UUID] = Field(min_length=1, max_length=10)
+
+
 class PassageRequest(RequestBase):
     kind: Literal["search_uploaded_passages"]
 
@@ -168,7 +185,8 @@ class CalculationRequest(RequestBase):
 
 
 Request = (
-    LegalRequest | FindRequest | ReadRequest | PassageRequest | AnswerRequest | CalculationRequest
+    LegalRequest | FindRequest | ReadRequest | ReadLegalSourcesRequest
+    | PassageRequest | AnswerRequest | CalculationRequest
 )
 request_adapter = TypeAdapter(Request)
 
@@ -347,7 +365,8 @@ def decode_requests(
     action_ids = {
         item.id
         for item in executable
-        if isinstance(item, (LegalRequest, FindRequest, ReadRequest, PassageRequest))
+        if isinstance(item, (LegalRequest, FindRequest, ReadRequest, ReadLegalSourcesRequest,
+                             PassageRequest))
     }
     for item in executable:
         deps = [dep for dep in item.depends_on if dep in action_ids]
@@ -387,6 +406,12 @@ def decode_requests(
                 },
             )
             task_type = "document_review"
+        elif isinstance(item, ReadLegalSourcesRequest):
+            operation = OrchestratorAction(
+                action="read_legal_sources",
+                **{**kwargs, "document_ids": item.document_ids, "query": item.question},
+            )
+            task_type = "legal_question"
         elif isinstance(item, PassageRequest):
             operation = OrchestratorAction(
                 action="search_documents", **{**kwargs, "source": "active", "query": item.question}

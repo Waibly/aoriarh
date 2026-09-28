@@ -815,7 +815,9 @@ async def sandbox_replay(
         .limit(6)
     )
     recent_messages = list(reversed(hist_q.scalars().all()))
-    history = [{"role": m.role, "content": m.content} for m in recent_messages]
+    from app.services.conversation_history import planner_history
+
+    history = planner_history(recent_messages)
 
     cited_sources: list[str] = []
     for message in recent_messages:

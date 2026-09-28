@@ -1258,14 +1258,9 @@ async def chat_stream(
         initial_perf["before_stream"] = (time.perf_counter() - t_total) * 1000
         agent = RAGAgent()
         recent_messages = conversation.messages[-6:]
-        history = []
-        for message in recent_messages:
-            item = {"role": message.role, "content": message.content,
-                    "created_at": message.created_at.isoformat()}
-            coverage = (message.rag_trace or {}).get("search_plan_validation", {}).get("chronology")
-            if coverage:
-                item["chronology"] = coverage
-            history.append(item)
+        from app.services.conversation_history import planner_history
+
+        history = planner_history(recent_messages)
         # Extract source names from recent assistant messages for condensation
         cited_sources: list[str] = []
         for m in recent_messages:
@@ -1518,9 +1513,9 @@ async def chat_stream(
             yield _sse_event("chat_search_details", search_feedback(rag_trace))
             if rag_trace.search_plan_validation.get("request_errors"):
                 yield _sse_event("chat_warning", {
-                    "message": "Certaines opérations ou mises à jour du dossier n’ont pas pu être "
-                    "exécutées. Les opérations indépendantes ont été conservées ; les détails "
-                    "et la sortie originale sont consultables dans le dossier.",
+                    "message": "Une ou plusieurs opérations n’ont pas pu être exécutées. "
+                    "La réponse peut être incomplète. Les erreurs techniques et la sortie "
+                    "originale sont consultables dans le dossier.",
                 })
             case_observation = rag_trace.case_file_observation or {}
             case_application = case_observation.get("application_result") or {}

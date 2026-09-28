@@ -141,3 +141,41 @@ renseignée alors que `dateTexte` peut contenir cette valeur technique.
 En cas d'échec, arrêter l'étape concernée et diagnostiquer. Aucun rollback ni
 remplacement de données n'est automatique. Une date absente dans la source
 reste inconnue et est comptabilisée dans les limites du catalogue.
+
+## Suivi d'une source citée — correctif du 28 septembre 2026
+
+Une liste chronologique pouvait être suivie d'une demande de lecture utilisant
+un `document_id` comme `source_request_id`. Ce dernier désigne exclusivement une
+opération de découverte de pièce privée ; le contrat rejetait donc la lecture
+et ses dépendances (`invalid_request_dependency`). L'arrêt était pourtant indexé.
+
+Le planificateur dispose désormais de `read_legal_sources`, avec une liste explicite
+de 1 à 10 `document_ids`. L'historique conserve les identifiants et types des
+sources citées, dans le chat et dans la relecture administrative. Sans identifiant
+disponible, le prompt demande une recherche juridique par référence exacte.
+Les anciens plans invalides restent invalides et consultables : aucune conversion
+implicite d'un identifiant ni relance corrective n'est ajoutée.
+
+La lecture contrôle les documents communs indexés des familles du catalogue
+chronologique dans PostgreSQL, puis leur identifiant, origine commune et type dans
+Qdrant. Les pièces privées et les conventions collectives gardent leurs parcours
+existants. Les exclusions explicites restent appliquées. Chaque lecture fournit
+tous les passages indexés, ordonnés, sans découper leur texte ; cela n'atteste pas
+que l'index contient toutes les annexes de la source originale. Le plafond est de
+200 passages par document et 150 000 caractères par opération. Un index incomplet,
+une indisponibilité ou un dépassement produit une erreur technique explicite.
+
+Les résultats de lecture alimentent les sources de la réponse, les tâches
+dépendantes et les traces. Une lecture en échec bloque ses dépendances. Le prompt
+de génération distingue cet échec d'une absence du texte dans la base. Le bandeau
+ne prétend plus que des opérations indépendantes ont nécessairement réussi.
+Les générations originales restent intactes.
+
+Validation : 181 tests passent sur les contrats, l'orchestration, le catalogue,
+les documents, le streaming, la parité administrative et les sources. Le scénario
+liste → objet → détail exécute trois plans déterministes et vérifie le transfert
+des identifiants et des sept passages jusqu'au contexte de génération. Aucun
+jugement automatique de qualité rédactionnelle ni appel LLM d'évaluation.
+La lecture seule des dix arrêts du tableau de l'incident en production a également
+réussi (98 076 caractères de passages indexés). Livraison backend et worker,
+sans migration ni réindexation.
