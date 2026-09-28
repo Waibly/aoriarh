@@ -82,33 +82,23 @@ def test_prompt_requires_hook_body_sources_cta_and_forbids_hashtags() -> None:
     assert "N'en fais jamais un exemple" in LINKEDIN_POST_SYSTEM_PROMPT
 
 
-def test_carousel_post_prompt_is_short_and_forbids_slide_repetition() -> None:
+def test_carousel_post_prompt_defines_readability_and_source_priorities() -> None:
+    # Contrat des consignes envoyées, sans évaluer une génération du modèle.
     prompt = " ".join(LINKEDIN_CAROUSEL_POST_SYSTEM_PROMPT.split())
-    assert "entre 90 et 140 mots" in prompt
-    assert "Ne reprends jamais le titre de la première slide" in prompt
+    assert "Vise 70 à 110 mots, CTA compris" in prompt
+    assert "une seule phrase complète" in prompt
+    assert "Vise 8 à 14 mots et 100 caractères maximum" in prompt
+    assert "deux à quatre blocs courts" in prompt
+    assert "Place une ligne vide entre chaque paragraphe" in prompt
+    assert "une idée essentielle du carrousel dans tes propres mots" in prompt
     assert "Ne résume pas les slides une par une" in prompt
+    assert "paramètre fiable créé par l'application" in prompt
+    assert "La fidélité au fond et la confidentialité priment" in prompt
+    assert "Conserve dans l'accroche toute condition indispensable" in prompt
+    assert "il n'est pas une source juridique indépendante" in prompt
+    assert "N'utilise pas leur situation comme exemple" in prompt
     assert "N'insère pas de bloc « Sources »" in LINKEDIN_CAROUSEL_POST_SYSTEM_PROMPT
-    assert "lisible avant « voir plus »" in prompt
-    assert "voix active" in prompt
-    assert "Place une ligne vide entre les idées" in prompt
-    assert "trois à cinq paragraphes" in prompt
-    assert "succession de slogans isolés" in prompt
-    assert "peut être trop tard" in prompt
-    assert "idiomatique en français" in prompt
-    assert "se comprendre naturellement dès la première lecture" in prompt
-    assert "même lorsqu'il est lu sans le carrousel" in prompt
-    assert "slogan télégraphique" in prompt
-    assert "le référent d'un pronom" in prompt
-    assert "Pour les RH, l'enjeu est de" in prompt
-    assert "format selon l'intention" in prompt
-    assert "Pour une alerte ou une erreur" in prompt
-    assert "Pour une procédure, une checklist ou une chronologie" in prompt
-    assert "Pour une comparaison" in prompt
-    assert "Pour une règle ou une clarification" in prompt
-    assert "Pour une actualité juridique" in prompt
-    assert "N'ajoute jamais une liste par automatisme" in prompt
     assert "CTA direct de 4 à 12 mots" in prompt
-    assert "invitation interchangeable" in prompt
     assert "seul emoji autorisé" in prompt
     assert "uniquement à la fin du CTA" in prompt
 
