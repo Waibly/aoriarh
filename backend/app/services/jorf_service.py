@@ -230,6 +230,7 @@ class JorfText:
     nature: str  # LOI / ORDONNANCE / DECRET / ARRETE
     text: str
     publication_date: date | None = None
+    effective_date: date | None = None
 
 
 @dataclass
@@ -411,6 +412,7 @@ class JorfService:
                         nature=nature,
                         text=full_text,
                         publication_date=pub_date,
+                        effective_date=self._source_date(consult, ("dateEntreeVigueur",)),
                     )
                     doc = await self._create_document(
                         db, jorf_text, user_id, storage
@@ -577,25 +579,25 @@ class JorfService:
         raw_json = _json.dumps(consult, ensure_ascii=False)
         modified_code_ids = {cid for cid in _RELEVANT_CODE_IDS if cid in raw_json}
 
-        pub_date: date | None = None
-        for key in ("dateTexte", "dateParution", "datePublication"):
+        return full_text, modified_code_ids, JorfService._source_date(
+            consult, ("dateParution", "datePublication"),
+        )
+
+    @staticmethod
+    def _source_date(consult: dict, keys: tuple[str, ...]) -> date | None:
+        """Read an explicitly named official metadata date; never infer from text."""
+        for key in keys:
             value = consult.get(key)
             if isinstance(value, bool):
                 continue
-            if isinstance(value, (int, float)) and value:
-                try:
-                    pub_date = datetime.fromtimestamp(value / 1000, UTC).date()
-                    break
-                except (ValueError, OSError):
-                    continue
-            elif isinstance(value, str) and value:
-                try:
-                    pub_date = datetime.strptime(value[:10], "%Y-%m-%d").date()
-                    break
-                except ValueError:
-                    continue
-
-        return full_text, modified_code_ids, pub_date
+            try:
+                if isinstance(value, (int, float)) and value:
+                    return datetime.fromtimestamp(value / 1000, UTC).date()
+                if isinstance(value, str) and value:
+                    return date.fromisoformat(value[:10])
+            except (ValueError, OSError, OverflowError):
+                continue
+        return None
 
     # ---- DB ----
 
@@ -642,7 +644,10 @@ class JorfService:
             file_format="txt",
             file_hash=file_hash,
             numero_pourvoi=jorf_text.cid,  # clé de dédup
-            date_decision=jorf_text.publication_date,
+            date_decision=jorf_text.publication_date,  # Legacy consumers
+            publication_date=jorf_text.publication_date,
+            effective_date=jorf_text.effective_date,
+            source_url=f"https://www.legifrance.gouv.fr/jorf/id/{jorf_text.cid}",
         )
         db.add(doc)
         await db.commit()

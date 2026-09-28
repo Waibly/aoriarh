@@ -1258,7 +1258,14 @@ async def chat_stream(
         initial_perf["before_stream"] = (time.perf_counter() - t_total) * 1000
         agent = RAGAgent()
         recent_messages = conversation.messages[-6:]
-        history = [{"role": m.role, "content": m.content} for m in recent_messages]
+        history = []
+        for message in recent_messages:
+            item = {"role": message.role, "content": message.content,
+                    "created_at": message.created_at.isoformat()}
+            coverage = (message.rag_trace or {}).get("search_plan_validation", {}).get("chronology")
+            if coverage:
+                item["chronology"] = coverage
+            history.append(item)
         # Extract source names from recent assistant messages for condensation
         cited_sources: list[str] = []
         for m in recent_messages:
@@ -1669,6 +1676,11 @@ async def chat_stream(
                         org_context=org_context,
                         history=None if documents else history,
                         low_confidence=rag_trace.low_confidence,
+                        **(
+                            {"chronology_context": rag_trace.search_plan_validation["chronology"]}
+                            if rag_trace.search_plan_validation.get("chronology") is not None
+                            else {}
+                        ),
                         condensed_query=reformulated,
                         carried_sources=carried_sources or None,
                         case_context=prepared_context.case_context,

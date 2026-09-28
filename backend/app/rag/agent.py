@@ -13,6 +13,7 @@ from openai import AsyncOpenAI
 
 import app.rag.config as rag_config
 from app.core.config import settings
+from app.rag.chronology import ChronologyRequest
 from app.rag.config import (
     CCN_FLOOR_TOP,
     CONDENSE_HISTORY_LIMIT,
@@ -185,6 +186,12 @@ class RAGSource:
     legal_status: str | None = None
     corpus_status: str = "available_at_answer_time"
     context_passages: list[dict] | None = None
+    publication_date: str | None = None
+    effective_date: str | None = None
+    source_updated_date: str | None = None
+    source_url: str | None = None
+    chronology_date: str | None = None
+    chronology_date_kind: str | None = None
 
 
 @dataclass
@@ -458,6 +465,25 @@ Choisis le format AVANT d'écrire, selon ce que la question appelle :
 
 → *Question pertinente 1 ?*
 → *Question pertinente 2 ?*
+
+## DEMANDES D'ACTUALITÉS ET DE CHRONOLOGIE
+
+Réponds avec les documents effectivement consultés : ce qui change, les personnes
+concernées, les dates pertinentes et la référence officielle (lien lorsqu'il est fourni).
+Distingue publication, décision, entrée en vigueur et mise à jour. Plusieurs textes peuvent
+concerner la même évolution ; rapproche-les seulement si leur contenu l'établit.
+Les sources sont celles consultées par AORIA RH, pas des documents transmis par l'utilisateur.
+La couverture de recherche décrit les limites réelles : corpus collecté, métadonnées absentes,
+sélection thématique bornée, pagination et passages partiels. Annonce la sélection et ses
+limites sans prétendre à l'exhaustivité. Les dates extrêmes des résultats ne sont pas une
+période imposée par l'utilisateur. N'invente pas sept ou trente jours pour « derniers ».
+Une synchronisation réussie ne prouve pas que tous les textes jusqu'à cette date sont présents.
+Distingue absence de résultats, dates inconnues et erreur technique de collecte/recherche.
+Ne conclus jamais à l'absence d'actualité sur la seule absence de résultats. N'ajoute pas de
+textes hors période pour remplir. Si aucune actualité ne peut être établie, explique brièvement
+la limite de la recherche, sans développement de remplacement ni demande inutile de précision.
+Une recherche chronologique renvoie une liste à présenter, pas des fichiers entre lesquels
+l'utilisateur doit choisir. Une consultation de fichiers personnels reste distincte.
 
 ## EXEMPLES
 
@@ -753,6 +779,32 @@ class RAGAgent:
             query = search_plan.standalone_question
             trace.query_condensed = query
             trace.perf_ms["condense"] = 0.0
+        if search_plan.chronology is not None:
+            from app.rag.legal_catalogue import LegalCatalogueSearch
+
+            spec = ChronologyRequest.model_validate_json(json.dumps(search_plan.chronology))
+            try:
+                results, coverage = await self._step_with_timeout(
+                    LegalCatalogueSearch(self.search_engine, self.reranker).search(
+                        spec, organisation_id, org_idcc_list=org_idcc_list,
+                        cost_ctx=self._cost_ctx,
+                        source_exclusions=search_plan.excluded_source_types,
+                        source_restriction=search_plan.exclusive_source_types or None,
+                    )
+                )
+            except RetrievalError as exc:
+                # Keep this branch's trace local when the orchestrator runs several
+                # searches concurrently on the same agent.
+                trace.error = "search_retrieval_error"
+                trace.search_plan_validation["chronology_error"] = str(exc)
+                trace.perf_ms["total"] = (time.perf_counter() - t0) * 1000
+                return [], query, trace
+            trace.search_plan_validation["chronology"] = coverage
+            trace.no_results = not results
+            trace.parent_groups = _serialize_chunks(results, limit=len(results), text_chars=400)
+            trace.perf_ms["total"] = (time.perf_counter() - t0) * 1000
+            return results, query, trace
+
         # Step 1-2: Execute planned queries + parallel search + RRF
         t_exp_q = time.perf_counter()
         results, variants = await self._search_with_plan(
@@ -924,6 +976,7 @@ class RAGAgent:
         document_task_context: dict | None = None,
         case_context: dict | None = None,
         generation_metrics: dict | None = None,
+        chronology_context: dict | None = None,
     ) -> AsyncGenerator[str, None]:
         """Stream the LLM generation token by token (buffered).
 
@@ -963,6 +1016,11 @@ class RAGAgent:
         system_prompt, max_completion_tokens = _generation_system_prompt(
             document_task_context=document_task_context,
         )
+
+        if chronology_context is not None:
+            user_content += "\n\nCOUVERTURE DE LA RECHERCHE CHRONOLOGIQUE (données) :\n" + json.dumps(
+                chronology_context, ensure_ascii=False, default=str,
+            )
 
         if case_context is not None:
             system_prompt += (
@@ -1865,6 +1923,16 @@ class RAGAgent:
                     juris_parts.append(f"({r.publication})")
                 header += f"Référence : {', '.join(juris_parts)}\n"
 
+            for metadata_field, label in (
+                ("publication_date", "Date de publication officielle"),
+                ("effective_date", "Date d'entrée en vigueur renseignée"),
+                ("source_updated_date", "Date de mise à jour officielle"),
+                ("source_url", "Lien officiel"),
+            ):
+                if getattr(r, metadata_field):
+                    header += f"{label} : {getattr(r, metadata_field)}\n"
+            if r.chronology_date:
+                header += f"Date de classement ({r.chronology_date_kind}) : {r.chronology_date}\n"
             header += f"Contenu :\n{r.text}"
             # Assembly-only deduplication: same document AND byte-identical
             # rendered metadata/content. Never merge different passages or origins.
@@ -2219,6 +2287,12 @@ class RAGAgent:
                     formation=meta.formation,
                     numero_pourvoi=meta.numero_pourvoi,
                     date_decision=meta.date_decision,
+                    publication_date=meta.publication_date,
+                    effective_date=meta.effective_date,
+                    source_updated_date=meta.source_updated_date,
+                    source_url=meta.source_url,
+                    chronology_date=meta.chronology_date,
+                    chronology_date_kind=meta.chronology_date_kind,
                     solution=meta.solution,
                     publication=meta.publication,
                     article_nums=unique_nums or None,

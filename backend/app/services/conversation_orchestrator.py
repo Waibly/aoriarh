@@ -261,6 +261,7 @@ async def plan_conversation(
             "role": "user",
             "content": json.dumps(
                 {
+                    "current_date": date.today().isoformat(),
                     "request": query,
                     "history": history,
                     "active_documents": active_documents,
@@ -983,6 +984,7 @@ async def prepare_conversation_context(
                         "question": action.query or query,
                         "status": legal_trace.error
                         or ("success" if legal_results else "no_results"),
+                        "chronology": legal_trace.search_plan_validation.get("chronology"),
                         "perf_ms": dict(legal_trace.perf_ms),
                         "usage": dict(legal_trace.search_plan_usage),
                         "sources": [
@@ -1005,6 +1007,7 @@ async def prepare_conversation_context(
                     "action_id": action.id,
                     "action": action.action,
                     "status": branch_error or ("success" if legal_results else "no_results"),
+                    "chronology": legal_trace.search_plan_validation.get("chronology"),
                     "result_count": len(legal_results),
                     "sources": branch_results[-1]["sources"],
                 }

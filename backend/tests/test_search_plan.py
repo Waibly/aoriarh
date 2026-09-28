@@ -85,7 +85,7 @@ def test_directed_internal_document_keeps_legislation_as_safety_floor():
     assert plan.legislation is SourceRequirement.SAFETY_FLOOR
 
 
-def test_news_defaults_to_30_days_without_llm_planner():
+def test_news_has_no_invented_period_and_uses_planner():
     plan = build_deterministic_search_plan(
         "Quelles sont les dernières actualités en droit social ?"
     )
@@ -93,12 +93,8 @@ def test_news_defaults_to_30_days_without_llm_planner():
     assert plan.mode is SearchMode.LEGAL_NEWS
     assert plan.answer_intent is AnswerIntent.LEGAL_NEWS
     assert plan.answer_format == "chronological_digest"
-    assert plan.time_scope == {
-        "kind": "rolling_days",
-        "days": 30,
-        "source": "default_news",
-    }
-    assert plan.needs_llm_planner is False
+    assert plan.time_scope is None
+    assert plan.needs_llm_planner is True
 
 
 def test_news_preserves_explicit_rolling_period():
@@ -296,7 +292,8 @@ def test_quoi_de_neuf_is_a_legal_news_request():
     plan = build_deterministic_search_plan("Quoi de neuf en droit social ?")
 
     assert plan.mode is SearchMode.LEGAL_NEWS
-    assert plan.time_scope and plan.time_scope["days"] == 30
+    assert plan.time_scope is None
+    assert plan.needs_llm_planner is True
 
 
 def test_ordinary_30_day_legal_deadline_is_not_a_news_time_scope():
@@ -664,7 +661,7 @@ async def test_exact_reference_uses_direct_lookup_plus_one_general_safety_search
 @pytest.mark.asyncio
 async def test_legal_news_adds_dated_candidates_without_dropping_broad_fallback():
     plan = build_deterministic_search_plan(
-        "Quelles sont les dernières actualités en droit social ?"
+        "Quelles sont les actualités en droit social des 30 derniers jours ?"
     )
     broad = _search_result("broad", 0, source_type="code_travail")
     dated = _search_result("dated", 0, source_type="loi")
@@ -1152,6 +1149,8 @@ async def test_production_adaptive_search_executes_deterministic_plan_without_ll
     with patch("app.rag.agent._search_engine"), patch("app.rag.agent.get_reranker"):
         agent = RAGAgent()
     agent._search_with_plan = AsyncMock(return_value=([], ["question"]))
+    agent.llm = MagicMock()
+    agent._inject_identifier_matches = AsyncMock(return_value=[])
     agent.reranker = MagicMock()
     agent.reranker.rerank = AsyncMock(return_value=[])
 
@@ -1166,7 +1165,7 @@ async def test_production_adaptive_search_executes_deterministic_plan_without_ll
         ),
     ):
         _results, _reformulated, trace = await agent.prepare_context(
-            "Quelles sont les dernières actualités en droit social ?",
+            "Que dit l’article L. 1234-9 du Code du travail ?",
             "org-1",
         )
 
@@ -1174,6 +1173,8 @@ async def test_production_adaptive_search_executes_deterministic_plan_without_ll
     agent._search_with_plan.assert_awaited_once()
     assert trace.search_plan_usage["execution"] == "adaptive"
     assert trace.search_plan_usage["prompt_tokens"] == 0
+
+    agent.llm.chat.completions.create.assert_not_called()
 
 
 @pytest.mark.asyncio

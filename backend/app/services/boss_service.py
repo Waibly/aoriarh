@@ -323,6 +323,9 @@ class BossService:
         doc = existing.scalar_one_or_none()
 
         if doc is not None and doc.file_hash == file_hash:
+            doc.source_updated_date = content_date
+            doc.source_url = f"{BOSS_BASE_URL}{page_path}"
+            await db.commit()
             result.docs_unchanged += 1
             return
 
@@ -342,6 +345,8 @@ class BossService:
                 file_format="md",
                 file_hash=file_hash,
                 date_decision=content_date,
+                source_updated_date=content_date,
+                source_url=f"{BOSS_BASE_URL}{page_path}",
             )
             db.add(doc)
             await db.commit()
@@ -354,6 +359,8 @@ class BossService:
             doc.file_size = len(md_bytes)
             doc.file_hash = file_hash
             doc.date_decision = content_date
+            doc.source_updated_date = content_date
+            doc.source_url = f"{BOSS_BASE_URL}{page_path}"
             doc.indexation_status = "pending"
             await db.commit()
             result.docs_updated += 1

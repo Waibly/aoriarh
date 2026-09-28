@@ -11,6 +11,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, ValidationError
 
+from app.rag.chronology import CHRONOLOGY_PROMPT
 from app.services.case_calculation import CalculationSpec
 from app.services.conversation_document_service import DocumentLegalSearch, LegalSearchArguments
 from app.services.conversation_orchestrator import (
@@ -118,6 +119,9 @@ Exemples de répartition (pas de contenu à recopier) :
 - « Retrouve mon contrat déposé et analyse-le » : find_existing_document puis
   read_existing_document ; les faits de cette pièce seront disponibles au passage suivant.
 """
+
+
+REQUEST_PROMPT += CHRONOLOGY_PROMPT
 
 
 class RequestBase(BaseModel):

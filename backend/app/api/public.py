@@ -448,7 +448,7 @@ async def public_ask(
                         "message": "Le plan de recherche n’a pas pu être exécuté. Aucune recherche de secours n’a été lancée.",
                     })
                     return
-                if not results:
+                if not results and not rag_trace.search_plan_validation.get("chronology"):
                     yield _sse_event(
                         "chat_error",
                         {
@@ -488,6 +488,11 @@ async def public_ask(
                             org_context=None,
                             history=None,
                             low_confidence=rag_trace.low_confidence,
+                            **(
+                                {"chronology_context": rag_trace.search_plan_validation["chronology"]}
+                                if rag_trace.search_plan_validation.get("chronology") is not None
+                                else {}
+                            ),
                             condensed_query=reformulated,
                             model_override=settings.demo_llm_model,
                             answer_format=(

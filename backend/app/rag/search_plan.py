@@ -12,9 +12,11 @@ import asyncio
 import json
 import re
 from dataclasses import asdict, dataclass, field, replace
+from datetime import date
 from enum import StrEnum
 from typing import Any
 
+from app.rag.chronology import CHRONOLOGY_PROMPT, ChronologyRequest
 from app.rag.parent_expansion import detect_identifiers
 from app.rag.source_intent import (
     detect_exclusive_sources,
@@ -200,6 +202,7 @@ class SearchPlan:
     excluded_source_types: list[str] = field(default_factory=list)
     exclusive_source_types: list[str] = field(default_factory=list)
     planner_raw_response: str | None = None
+    chronology: dict | None = None
 
     def to_dict(self) -> dict:
         """Return a JSON-compatible representation for traces and APIs."""
@@ -316,6 +319,11 @@ Schéma JSON exact :
 }"""
 
 
+_COMPACT_PLANNER_PROMPT += (
+    CHRONOLOGY_PROMPT + "\nAjoute chronology (objet ou null) au schéma JSON.\n"
+)
+
+
 def is_legal_news_query(query: str) -> bool:
     """Return whether the question explicitly asks for legal/RH news."""
 
@@ -407,7 +415,7 @@ def _time_scope(query: str, *, legal_news: bool) -> dict[str, int | str] | None:
     if publication and re.search(r"\b(?:ce|du)\s+mois\b", query, re.IGNORECASE):
         return {"kind": "rolling_days", "days": 30, "source": "explicit"}
     if legal_news:
-        return {"kind": "rolling_days", "days": 30, "source": "default_news"}
+        return None
     application = re.search(
         r"\b(?:applicables?|en vigueur|quel [ée]tait|quelle [ée]tait|r[èe]gles?|droit)\b"
         r"[^.?!]{0,80}\ben\s+(20\d{2})\b", query, re.I,
@@ -483,8 +491,15 @@ def apply_compact_planner_payload(
     if hypotheses:
         warnings.append("hypothesized_articles_require_retrieval_validation")
 
+    chronology = payload.get("chronology")
+    if chronology is not None:
+        chronology = ChronologyRequest.model_validate_json(
+            json.dumps(chronology)
+        ).model_dump(mode="json")
+
     return replace(
         plan,
+        chronology=chronology,
         standalone_question=standalone,
         needs_condensation=payload.get("needs_history", plan.needs_condensation) is True,
         planner_status=PlannerStatus.OK,
@@ -513,7 +528,10 @@ def _planner_user_message(
         content = message.get("content")
         if role not in {"user", "assistant"} or not isinstance(content, str):
             continue
-        recent_history.append({"role": role, "content": content})
+        recent_history.append({
+            "role": role, "content": content,
+            **{k: message[k] for k in ("created_at", "chronology") if k in message},
+        })
     safe_org = {}
     for key in (
         "convention_collective",
@@ -539,6 +557,7 @@ def _planner_user_message(
         "query_budget": plan.query_budget,
     }
     data = {
+        "current_date": date.today().isoformat(),
         "constraints": constraints,
         "organisation_context": safe_org,
         "conversation_history": recent_history,
@@ -714,7 +733,6 @@ def build_deterministic_search_plan(
     # one compact planner call before retrieval.
     needs_llm_planner = needs_condensation or mode not in {
         SearchMode.EXACT_REFERENCE,
-        SearchMode.LEGAL_NEWS,
     }
 
     intent = _answer_intent(query, legal_news=legal_news)

@@ -688,7 +688,11 @@ async def _run_sandbox_pipeline(
     answer: str | None = None
     sources_dicts: list[dict] = []
 
-    if not skip_generation and results and not rag_trace.error:
+    if (
+        not skip_generation
+        and (results or rag_trace.search_plan_validation.get("chronology"))
+        and not rag_trace.error
+    ):
         sources = agent.format_sources(results)
         sources_dicts = [dataclasses.asdict(s) for s in sources]
         fresh_keys = {_source_key(source) for source in sources_dicts}
@@ -703,6 +707,11 @@ async def _run_sandbox_pipeline(
             org_context=org_context,
             history=history,
             low_confidence=rag_trace.low_confidence,
+            **(
+                {"chronology_context": rag_trace.search_plan_validation["chronology"]}
+                if rag_trace.search_plan_validation.get("chronology") is not None
+                else {}
+            ),
             condensed_query=reformulated,
             carried_sources=carried_for_generation or None,
             answer_format=(rag_trace.search_plan or {}).get("answer_format"),

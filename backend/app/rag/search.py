@@ -113,6 +113,12 @@ class SearchResult:
     article_status: str | None = None
     article_effective_from: str | None = None
     article_effective_to: str | None = None
+    publication_date: str | None = None
+    effective_date: str | None = None
+    source_updated_date: str | None = None
+    source_url: str | None = None
+    chronology_date: str | None = None
+    chronology_date_kind: str | None = None
 
 
 class HybridSearch:

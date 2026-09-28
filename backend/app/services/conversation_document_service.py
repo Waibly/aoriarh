@@ -14,6 +14,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from app.core.config import settings
 from app.rag.agent import RagTrace
+from app.rag.chronology import ChronologyRequest
 from app.rag.search import HybridSearch, SearchResult
 from app.rag.search_plan import (
     _COMPACT_PLANNER_PROMPT,
@@ -97,6 +98,7 @@ class LegalSearchArguments(BaseModel):
     jurisprudence: Literal["required", "optional"]
     answer_intent: AnswerIntent
     missing_facts: list[str]
+    chronology: ChronologyRequest | None = None
 
 
 class DocumentLegalSearch(LegalSearchArguments):

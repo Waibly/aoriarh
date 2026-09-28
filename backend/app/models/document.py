@@ -40,5 +40,11 @@ class Document(TimestampMixin, Base):
     solution: Mapped[str | None] = mapped_column(String(200))
     publication: Mapped[str | None] = mapped_column(String(50))
 
+    # Source metadata only: never dates inferred from body text or ingestion time.
+    publication_date: Mapped[date | None] = mapped_column(Date, index=True)
+    effective_date: Mapped[date | None] = mapped_column(Date, index=True)
+    source_updated_date: Mapped[date | None] = mapped_column(Date, index=True)
+    source_url: Mapped[str | None] = mapped_column(String(2000))
+
     organisation = relationship("Organisation", back_populates="documents")
     uploader = relationship("User", foreign_keys=[uploaded_by])
