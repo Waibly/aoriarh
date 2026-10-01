@@ -184,6 +184,30 @@ Règles absolues :
 Principes éditoriaux :
 - Donne rapidement l'information utile. Une accroche reste honnête et le contenu
   tient réellement sa promesse.
+- Le titre de la première slide est un hook : il doit arrêter le défilement et
+  donner une raison concrète de lire la suite. Choisis un seul angle utile au
+  lecteur RH : une situation dans laquelle il se reconnaît, une décision à
+  prendre, une limite à comprendre ou une conséquence précise à anticiper.
+- Fais comprendre le sujet dès les premiers mots. Le titre reste autonome sans
+  l'eyebrow, le post ni la question source. Crée la curiosité autour de la réponse
+  à une question précise, jamais autour d'un sujet laissé à deviner. Un seuil ou
+  une durée seuls ne suffisent pas. Si tu évoques un risque, nomme-le ; évite
+  les formulations opaques comme « le risque » ou « attention à cela ».
+- Écris une accroche brève, naturelle et lisible d'un regard sur téléphone.
+  Vise une phrase courte tenant sur deux ou trois lignes dans le gabarit, sans
+  réduire la police. Mets les mots qui identifient le sujet au début et garde
+  une seule tension ou question. Évite d'empiler contexte, règle, exceptions et
+  conclusion dans le titre. L'eyebrow classe le thème ; le lead facultatif apporte
+  une précision distincte, sans répéter le hook ni en expliquer le sujet.
+- Adapte la forme à la source : question concrète, contraste étayé ou conséquence
+  inattendue mais documentée. Ne force pas la même formule sur tous les sujets.
+  La suite doit répondre à l'accroche et apporter rapidement l'explication utile.
+  Tu peux laisser la réponse pour les slides suivantes, sans suspense artificiel,
+  promesse vague, dramatisation, chiffre inventé ni injonction à faire défiler.
+- Si une affirmation exige trop de conditions pour rester courte et exacte,
+  ouvre sur une question précise plutôt que sur une règle trop générale. Les
+  slides suivantes développent la réponse et ses réserves, sans devoir démentir
+  le hook. La fidélité à la source reste prioritaire.
 - Une slide développe une idée principale lisible sur téléphone.
 - Préfère des titres courts et des paragraphes brefs lorsque le sens juridique
   le permet. Ne fixe aucun nombre de mots arbitraire : la longueur découle de ce
@@ -204,7 +228,8 @@ Principes éditoriaux :
 - Préserve explicitement les espaces entre les balises HTML inline et le texte
   qui les suit. N'écris jamais <strong>Libellé</strong>Valeur : écris
   <strong>Libellé</strong> <span>Valeur</span>.
-- Dans les cards, checklist, steps et timeline, place le titre seul dans strong,
+- Dans les encarts card, example (fond bleu), warning et highlight, ainsi que
+  dans les listes cards, checklist, steps et timeline, place le titre seul dans strong,
   sans deux-points ni autre ponctuation finale, puis l'explication dans un span
   distinct : <strong>Libellé</strong><span>Explication.</span>. Le design affiche
   le titre seul sur une ligne et l'explication en dessous. Ne laisse jamais un
@@ -643,6 +668,8 @@ li {{ margin-bottom:22px; padding-left:8px; }}
 .cards li, .checklist li {{ position:relative; margin-bottom:20px; border-radius:22px;
   background:var(--violet-soft); padding:25px 28px 25px 76px; }}
 .cards li > strong:first-child, .checklist li > strong:first-child,
+.card > strong:first-child, .example > strong:first-child,
+.warning > strong:first-child, .highlight > strong:first-child,
 .steps li > strong:first-child, .timeline li > strong:first-child {{
   display:block; margin:0 0 9px; }}
 .cards li::before, .checklist li::before {{ content:'✓'; position:absolute; left:28px;

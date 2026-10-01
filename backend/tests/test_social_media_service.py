@@ -488,6 +488,27 @@ def test_timeline_title_is_alone_and_explanation_starts_on_next_line():
         assert "Enquête active\nVérifier les faits sans inertie." in page.get_text()
 
 
+@pytest.mark.parametrize("density", ["", "slide-compact", "slide-dense"])
+@pytest.mark.parametrize("wrapped", [False, True])
+def test_blue_box_separates_label_from_adjacent_text_without_rewriting(density, wrapped):
+    explanation = "Une explication complète reste visible."
+    body = f"<span>{explanation}</span>" if wrapped else explanation
+    fragment = f'''<main class="carousel">
+      <section class="slide"><h1>Couverture</h1><div class="slide-body"></div></section>
+      <section class="slide {density}"><h2>Exemple</h2><div class="slide-body">
+        <div class="example"><strong>Condition applicable</strong>{body}</div>
+      </div></section>
+    </main>'''
+    html = render_social_media_document(fragment, generated_at=datetime(2026, 10, 2))
+
+    assert fragment in html
+    with fitz.open(stream=render_social_media_pdf(html), filetype="pdf") as document:
+        assert document.page_count == 2
+        label = document[1].search_for("Condition applicable")[0]
+        text = document[1].search_for(explanation)[0]
+        assert text.y0 > label.y1 + 2
+
+
 def test_document_anchors_logo_and_footer_at_the_bottom_of_each_slide():
     html = render_social_media_document(
         RAW_FRAGMENT,
