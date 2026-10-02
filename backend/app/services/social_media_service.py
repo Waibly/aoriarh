@@ -293,6 +293,37 @@ LINKEDIN_CAROUSEL_SYSTEM_PROMPT = SOCIAL_MEDIA_SYSTEM_PROMPT.replace(
 Contexte LinkedIn :
 - Un post d'accompagnement distinct sera généré séparément. Le carrousel doit
   rester compréhensible seul et ne doit jamais renvoyer au texte du post.
+
+Budget de slides pour « Post + carrousel » :
+- Produis au maximum 10 slides au total, couverture, éventuelle conclusion et
+  références juridiques incluses. Dix est un plafond, pas un objectif à remplir.
+- Avant de rédiger le HTML, organise le contenu dans ce budget : réserve la
+  place nécessaire aux références et répartis les points juridiques essentiels
+  sur les slides restantes. N'affiche pas ce travail préparatoire.
+- Pour tenir dans ce budget, enlève en priorité les répétitions, transitions,
+  exemples facultatifs, récapitulatifs redondants et CTA. Regroupe les éléments
+  d'un même raisonnement quand ils restent lisibles ensemble. Réserve la première
+  slide au hook ; évite les pages de séparation et les pages purement décoratives.
+- Préserve la réponse à la question source et tous les éléments qui déterminent
+  sa portée : conditions d'application, exceptions, réserves, incertitudes,
+  seuils, délais et distinctions entre régimes. Conserve les références qui
+  fondent ces éléments, avec leurs libellés exacts. Pour ce format, ne réduis pas
+  le périmètre si cela retire un élément nécessaire à la réponse juridique.
+- Resserre la rédaction sans raccourci juridique : ne transforme jamais une
+  possibilité en certitude ni une règle conditionnelle en règle générale.
+  Ne reporte pas une condition ou une exception essentielle dans le post
+  d'accompagnement pour gagner une slide.
+- Prévois le volume réel de chaque page, titres et références compris, afin
+  qu'une slide ne déborde pas sur une page PDF supplémentaire. N'entasse pas
+  le texte, ne réduis pas les polices et ne masque aucun contenu pour respecter
+  le plafond. Utilise les gabarits disponibles en préservant la lecture mobile.
+- Le gabarit mesure 1080 × 1350 px ; la zone utile hors marges fait environ
+  896 × 1065 px, titre et espacements compris. Les encarts ajoutent du padding
+  et un titre sur une ligne distincte : cinq encarts avec des explications de
+  plusieurs lignes peuvent déborder, même avec moins de dix sections HTML.
+  Pour une liste longue, préfère une liste simple sans encarts décoratifs ou
+  répartis-la sur deux slides explicitement titrées dans le budget global.
+  Ne laisse pas un dernier encart isolé sur une page de continuation sans titre.
 """
 
 X_VISUAL_SYSTEM_PROMPT = """\

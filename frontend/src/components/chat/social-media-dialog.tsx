@@ -94,12 +94,14 @@ export function ExportPreview({
   messageId,
   token,
   active,
+  maxPages,
 }: {
   html: string;
   title: string;
   messageId: string;
   token: string | undefined;
   active: boolean;
+  maxPages?: number;
 }) {
   const [result, setResult] = useState<{
     html: string;
@@ -149,6 +151,13 @@ export function ExportPreview({
       className="h-[58dvh] min-h-96 space-y-4 overflow-auto rounded-lg border bg-neutral-100 p-3 dark:bg-neutral-950"
       aria-busy={!images && !error}
     >
+      {images && maxPages !== undefined && images.length > maxPages && (
+        <p role="alert" className="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950">
+          Le rendu PDF contient {images.length} pages et dépasse la limite de {maxPages} slides.
+          Des blocs peuvent avoir débordé sur des pages supplémentaires. Le contenu
+          reste intégral ; ajustez la répartition avant publication.
+        </p>
+      )}
       {error ? (
         <div role="alert" className="space-y-3 p-4 text-sm">
           <p>
@@ -531,6 +540,7 @@ export function SocialMediaDialog({
                     messageId={messageId}
                     token={token}
                     active={open}
+                    maxPages={includePost ? 10 : undefined}
                     title={
                       includePost
                         ? "Aperçu du carrousel LinkedIn"

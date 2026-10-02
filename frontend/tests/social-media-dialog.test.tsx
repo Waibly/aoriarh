@@ -307,6 +307,41 @@ describe("SocialMediaDialog", () => {
 });
 
 describe("ExportPreview", () => {
+  it.each([10, 12])(
+    "compte les %i pages rendues sans tronquer le contenu ni relancer la génération",
+    async (pageCount) => {
+      mockRender.mockReset();
+      mockRender.mockResolvedValueOnce({
+        images: Array.from({ length: pageCount }, (_, index) => ({
+          filename: `page-${index + 1}.png`,
+          content_base64: "cGFnZQ==",
+        })),
+      });
+      render(
+        <ExportPreview
+          html="une seule section HTML peut déborder"
+          title="Aperçu"
+          messageId="m"
+          token="t"
+          active
+          maxPages={10}
+        />
+      );
+      expect(
+        await screen.findByAltText(`Page ${pageCount} sur ${pageCount}`)
+      ).toBeInTheDocument();
+      expect(screen.getAllByRole("img")).toHaveLength(pageCount);
+      if (pageCount > 10) {
+        expect(screen.getByRole("alert")).toHaveTextContent(
+          "Le rendu PDF contient 12 pages et dépasse la limite de 10 slides."
+        );
+      } else {
+        expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+      }
+      expect(mockRender).toHaveBeenCalledTimes(1);
+    }
+  );
+
   it("ignore une réponse ancienne après modification du HTML", async () => {
     let resolveOld!: (value: {
       images: { filename: string; content_base64: string }[];
