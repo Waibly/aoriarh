@@ -634,7 +634,7 @@ h2 {{ color:var(--violet); font-size:54px; line-height:1.12;
 h3 {{ color:var(--violet); font-size:38px; line-height:1.2; }}
 p, li {{ font-size:34px; line-height:1.4; }}
 strong {{ color:var(--violet-dark); font-weight:780; }}
-.eyebrow {{ margin-bottom:24px; color:#eadcff; font-size:24px; font-weight:800;
+.eyebrow {{ margin-bottom:24px; color:#eadcff; font-size:26px; font-weight:800;
   letter-spacing:.13em; text-transform:uppercase; }}
 .slide-body {{ flex:0 0 auto; min-height:0; display:flex; flex-direction:column;
   justify-content:flex-start; gap:24px; padding-top:30px; }}
