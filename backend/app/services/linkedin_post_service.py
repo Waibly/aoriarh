@@ -429,6 +429,10 @@ def format_linkedin_reference(source: dict) -> str:
     type_label = _single_line(source.get("source_type_label"))
     document_name = _single_line(source.get("document_name"))
     label = type_label or document_name
+    # Pour les textes numérotés, « Loi, art. 48 » est invérifiable : le titre
+    # officiel du document identifie l'instrument lorsque cette métadonnée existe.
+    if source_type in {"loi", "ordonnance", "decret", "arrete"} and document_name:
+        label = document_name
     articles = [
         _single_line(article)
         for article in (source.get("article_nums") or [])

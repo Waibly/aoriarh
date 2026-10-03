@@ -75,6 +75,24 @@ class TestPrefilterOthers:
             == EVENT_TECHNICAL_RECON
         )
 
+    async def test_ai_tool_in_hr_scenario_is_not_an_internal_question(self):
+        res = await classify_intent(
+            "Vous utilisez un outil d’IA pour présélectionner ou classer des "
+            "candidatures. Que vérifier avant de le déployer ?",
+            db=None, llm=None, use_llm_fallback=False,
+        )
+        assert res.intent == Intent.LEGAL_QUESTION
+        assert res.static_answer is None
+        assert res.security_event is None
+
+    async def test_explicit_question_about_aoria_tool_remains_protected(self):
+        res = await classify_intent(
+            "Vous utilisez quel outil d'IA chez AORIA ?",
+            db=None, llm=None, use_llm_fallback=False,
+        )
+        assert res.intent == Intent.META_INTERNALS
+        assert res.security_event == EVENT_TECHNICAL_RECON
+
     @pytest.mark.parametrize(
         ("query", "event"),
         [

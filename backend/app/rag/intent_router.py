@@ -73,9 +73,8 @@ class IntentResult:
 
 
 # ─── Pre-filter patterns (déterministe, ~5ms) ──────────────────────────────
-# Volontairement larges pour attraper les variantes courantes. Les faux
-# positifs ne sont pas dramatiques car les réponses statiques restent
-# cordiales et redirigent vers la valeur produit.
+# Les refus de sécurité doivent rester précis : un faux positif prive une
+# question RH légitime de sa recherche documentaire et de sa réponse.
 
 _PATTERNS_PROTECTED_DATA = [
     r"\b(select|insert|update|delete|drop|truncate)\b[^;\n]{0,100}"
@@ -123,7 +122,7 @@ _PATTERNS_INTERNALS = [
     r"[^.?!]{0,50}\b(utilises?-tu|utilisez-vous|tu utilises|vous utilisez|aoria)\b",
     # 'c'est quoi les techno', 'tu utilises quoi', 'ça tourne avec quoi'
     r"\b(c'est quoi|qu'est[- ]ce que c'est|qu'est[- ]ce que)\s+(ton|ta|tes|votre|vos)\s+(techno|technologie|stack|modèle|llm|ia|outil|moteur|infrastructure|prompt|framework|librairie)\b",
-    r"\b(t['eu]|tu|vous)\s+(utilis\w*|tournes?\s+(avec|sur)|emploies?|fonctionne(s|z)?\s+avec)\s+(quoi|quel|quelle|quels|quelles|un|une|du|de la|des|le|la|les|comme)",
+    r"\b(t['eu]|tu|vous)\s+(utilis\w*|tournes?\s+(avec|sur)|emploies?|fonctionne(s|z)?\s+avec)\s+(quoi|quel|quelle|quels|quelles|comme)\b",
     r"\b(comment|de quelle (façon|manière))\s+(tu|vous)\s+(es codé|fonctionne|fonctionnez|marche|marches|es construit|es entraîné|es développ)",
     r"\bton\s+(prompt|système|architecture|infrastructure|hébergeur)\b",
     r"\b(tu|vous|aoria)\b[^.?!]{0,30}\b(utilises?|utilisez|emploies?|employez|fonctionnes?)\b"
@@ -406,6 +405,7 @@ Exemples :
 social FR de 2017)
 - "tu connais le droit polynésien ?" → meta_scope (droit étranger)
 - "tu utilises quoi comme IA ?" → meta_internals
+- "Vous utilisez un outil d’IA pour classer des candidatures. Que vérifier avant de le déployer ?" → legal_question (situation RH, pas question sur AORIA)
 - "calcul indemnité licenciement économique" → legal_question
 
 Si tu hésites entre legal_question et autre chose, choisis legal_question \

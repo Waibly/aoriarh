@@ -197,6 +197,21 @@ def test_internal_reference_does_not_expose_document_name() -> None:
     assert "ACME" not in reference
 
 
+def test_law_reference_identifies_the_document_before_the_article() -> None:
+    reference = format_linkedin_reference(
+        {
+            "source_type": "loi",
+            "source_type_label": "Loi",
+            "document_name": "Loi n° 78-17 du 6 janvier 1978 relative à l'informatique, aux fichiers et aux libertés",
+            "article_nums": ["48"],
+        }
+    )
+    assert reference == (
+        "Loi n° 78-17 du 6 janvier 1978 relative à l'informatique, "
+        "aux fichiers et aux libertés, art. 48"
+    )
+
+
 def test_publication_references_exclude_organisation_documents() -> None:
     sources = [
         {
