@@ -1,0 +1,40 @@
+name: Documentary source access
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check public official sources
+        shell: python
+        run: |
+          import urllib.request, pathlib, json
+          out = pathlib.Path('source-access'); out.mkdir()
+          urls = {
+            'ameli-at': 'https://www.ameli.fr/entreprise/vos-salaries/accident-travail-trajet/demarches',
+            'ameli-arret': 'https://www.ameli.fr/entreprise/vos-salaries/arret-de-travail/formalites-employeur',
+            'ameli-subrogation': 'https://www.ameli.fr/entreprise/vos-salaries/arret-de-travail/subrogation-salaire',
+            'urssaf-cse': 'https://www.urssaf.fr/files/live/sites/urssaffr/files/outils-documentation/guides/Guide-CSE.pdf',
+            'urssaf-dpae': 'https://www.urssaf.fr/accueil/employeur/embaucher-gerer-salaries/embaucher/declaration-prealable-embauche.html',
+          }
+          results = []
+          for key, url in urls.items():
+            try:
+              req = urllib.request.Request(url, headers={'User-Agent': 'AORIA-documentary-review/1.0'})
+              with urllib.request.urlopen(req, timeout=30) as response:
+                raw = response.read(8000001)
+                if len(raw) > 8000000: raise ValueError('Source too large')
+                (out / (key + '.raw')).write_bytes(raw)
+                results.append({'key': key, 'url': url, 'status': response.status, 'bytes': len(raw)})
+            except Exception as exc:
+              results.append({'key': key, 'url': url, 'error': str(exc)})
+          (out / 'results.json').write_text(json.dumps(results, indent=2))
+          print(json.dumps(results, indent=2))
+      - uses: actions/upload-artifact@v4
+        with:
+          name: documentary-source-access
+          path: source-access/
+          retention-days: 3
