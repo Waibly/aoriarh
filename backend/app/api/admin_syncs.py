@@ -289,3 +289,14 @@ async def trigger_jorf_sync(
     from app.rag.tasks import enqueue_jorf_sync
     await enqueue_jorf_sync(str(user.id))
     return {"detail": "Synchronisation JORF lancée"}
+
+
+@router.get("/curated-sources/status")
+async def read_curated_sources_status(
+    user: User = Depends(require_role(["admin"])),
+) -> dict:
+    """Source-by-source evidence of updates, blocked downloads and pending changes."""
+    import asyncio
+    from app.services.curated_source_service import CuratedSourceService, PREFIX
+    result = await asyncio.to_thread(CuratedSourceService().read_json, PREFIX + "latest.json")
+    return result or {"status": "not_run", "sources": []}

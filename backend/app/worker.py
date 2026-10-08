@@ -1149,50 +1149,7 @@ async def run_scheduled_sync(ctx: dict) -> None:
         # BOCC has its own daily catalog/review job. Do not run a second,
         # weekly admission path as part of the other source synchronizations.
 
-        # --- 4. All legal codes sync (Code travail + civil + pénal + CSS + CASF) ---
-        # The LegiService computes a SHA-256 of the fetched content and skips
-        # ingestion when the hash matches the latest stored version, so this
-        # is safe to run on every cron tick — only actual updates cost
-        # embeddings. One SyncLog row per code is written so the admin
-        # corpus banner can show the status of each code individually.
-        try:
-            from app.services.legi_service import SYNCABLE_CODES, LegiService
-
-            legi_service = LegiService()
-            for code_key, code_def in SYNCABLE_CODES.items():
-                # sync_type = "code_travail" for the labour code, "codes" for others
-                # so the admin SyncBanner can map them correctly.
-                code_log_type = "code_travail" if code_key == "code_travail" else "codes"
-                code_log_id = await _create_sync_log(session_factory, code_log_type)
-                code_t0 = _time.perf_counter()
-                try:
-                    result = await legi_service.sync_code(db, code_key=code_key, user_id=admin_id)
-                    status = "changed" if (result.legislatif_changed or result.reglementaire_changed) else "unchanged"
-                    logger.info(
-                        "Scheduled sync: %s — %s (%d articles, %d errors)",
-                        code_def["name"], status,
-                        result.articles_legislatif + result.articles_reglementaire,
-                        result.errors,
-                    )
-                    changed = result.legislatif_changed or result.reglementaire_changed
-                    await _finish_sync_log(
-                        session_factory, code_log_id,
-                        success=result.errors == 0,
-                        items_fetched=result.articles_legislatif + result.articles_reglementaire,
-                        items_created=1 if changed else 0,
-                        items_skipped=0 if changed else 1,
-                        errors=result.errors,
-                        duration_ms=int((_time.perf_counter() - code_t0) * 1000),
-                    )
-                except Exception as exc:
-                    logger.exception("Scheduled sync: %s failed, continuing", code_def["name"])
-                    await _finish_sync_log(
-                        session_factory, code_log_id,
-                        success=False, errors=1, error_message=str(exc),
-                        duration_ms=int((_time.perf_counter() - code_t0) * 1000),
-                    )
-        except Exception:
-            logger.exception("Scheduled sync: codes sync failed")
+        # Legal codes are maintained by Saturday run_legislation_sync.
 
     logger.info("Worker: scheduled sync completed")
 
@@ -1553,6 +1510,39 @@ async def run_judilibre_ca_collection(ctx: dict) -> dict:
         return await collect_tick(ctx["session_factory"], ctx["redis"])
 
 
+async def run_curated_sources_sync(ctx: dict) -> dict:
+    """Maintain only explicitly admitted guides and CPC articles, with a run budget."""
+    import time as _time
+    from sqlalchemy import text
+    from app.services.curated_source_service import CuratedSourceService
+
+    session_factory = ctx["session_factory"]
+    async with ctx["engine"].begin() as lock_connection:
+        locked = await lock_connection.scalar(text("SELECT pg_try_advisory_xact_lock(20261008, 2)"))
+        if not locked:
+            return {"status": "already_running"}
+        log_id = await _create_sync_log(session_factory, "curated_sources")
+        start = _time.perf_counter()
+        try:
+            async with session_factory() as db:
+                result = await CuratedSourceService().sync(db)
+            problems = [r["key"] + ": " + r.get("error", r["status"])
+                        for r in result["sources"] if r["status"] not in {"updated", "unchanged"}]
+            await _finish_sync_log(
+                session_factory, log_id, success=not problems,
+                items_fetched=result["checked"], items_updated=result["updated"],
+                items_skipped=result["unchanged"], errors=result["errors"],
+                error_message="; ".join(problems)[:1500] or None,
+                duration_ms=int((_time.perf_counter() - start) * 1000),
+            )
+            return result
+        except Exception as exc:
+            await _finish_sync_log(session_factory, log_id, success=False, errors=1,
+                                   error_message=str(exc)[:500],
+                                   duration_ms=int((_time.perf_counter() - start) * 1000))
+            raise
+
+
 class WorkerSettings:
     functions = [
         run_ingestion,
@@ -1579,6 +1569,7 @@ class WorkerSettings:
         run_billing_lifecycle,
         run_data_retention_purge,
         run_daily_bocc_check,
+        run_curated_sources_sync,
         run_emailing_campaigns,
     ]
     cron_jobs = [
@@ -1592,8 +1583,10 @@ class WorkerSettings:
         # Samedi 2h UTC (~3-4h Paris) — groupe « Lois & codes » : 9 codes + JORF.
         cron(run_legislation_sync, weekday="sat", hour=2, minute=0),
         # Dimanche 2h UTC — groupe « Jurisprudence & conventions » :
-        # jurisprudence (Cass + CA + Conseil constit) + rotation CCN + BOCC.
+        # jurisprudence + rotation CCN. BOCC has its own daily inventory.
         cron(run_scheduled_sync, weekday="sun", hour=2, minute=0),
+        # Selected guides and CPC: Saturday, after the main legislation job.
+        cron(run_curated_sources_sync, weekday="sat", hour=6, minute=0),
         # BOCC : vérification quotidienne (DILA peut publier n'importe quand).
         # Si rien de nouveau, sync_log = success / 0 items (pas une erreur).
         cron(run_daily_bocc_check, hour=2, minute=30),

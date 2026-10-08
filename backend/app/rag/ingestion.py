@@ -299,7 +299,8 @@ class IngestionPipeline:
             raise StaleDocumentIngestion("source_version_changed")
 
     async def ingest(self, document_id: uuid.UUID, db: AsyncSession,
-                     expected_source: str | None = None) -> None:
+                     expected_source: str | None = None,
+                     max_embedding_tokens: int | None = None) -> None:
         # 1. Load document from PostgreSQL
         result = await db.execute(select(Document).where(Document.id == document_id))
         doc = result.scalar_one_or_none()
@@ -368,6 +369,13 @@ class IngestionPipeline:
                 total_chars // len(chunks),
             )
             await self._update_progress(doc, db, 15)
+
+            if max_embedding_tokens is not None:
+                import tiktoken
+                encoder = tiktoken.get_encoding("cl100k_base")
+                tokens = sum(len(encoder.encode(c, disallowed_special=())) for c in chunks)
+                if tokens > max_embedding_tokens or max_embedding_tokens < 1:
+                    raise ValueError("Source maintenance embedding budget exceeded")
 
             # 7. Generate embeddings (dense + sparse) — 15% → 80%
             dense_embeddings = await _get_embeddings_with_progress(
