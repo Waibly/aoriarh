@@ -327,46 +327,33 @@ class BoccService:
         return result
 
     def _extract_individual_pdfs(self, archive_bytes: bytes) -> list[tuple[str, bytes]]:
-        """Extract individual avenant PDFs from a .taz archive.
+        """Read tar, gzip tar or historical Unix-compress archives.
 
-        .taz files are .tar.Z (Unix compress format), not .tar.gz.
-        We decompress with subprocess (uncompress/gzip) then open as plain tar.
+        HTTP Content-Encoding may already have been decoded by httpx. Detect
+        the actual bytes instead of inferring compression from the .taz suffix.
+        No member is extracted to the filesystem.
         """
         import subprocess
-        import tempfile
 
-        pdfs = []
         try:
-            # Write to temp file, decompress with gzip (handles .Z format)
-            with tempfile.NamedTemporaryFile(suffix=".Z", delete=False) as tmp:
-                tmp.write(archive_bytes)
-                tmp_path = tmp.name
-
-            # gzip -d can decompress .Z files; output to stdout as tar
-            proc = subprocess.run(
-                ["gzip", "-dc", tmp_path],
-                capture_output=True,
-                timeout=120,
-            )
-            import os
-            os.unlink(tmp_path)
-
-            if proc.returncode != 0:
-                logger.warning("BOCC: gzip decompress failed: %s", proc.stderr[:200])
-                return pdfs
-
-            tar_bytes = proc.stdout
-            with tarfile.open(fileobj=io.BytesIO(tar_bytes), mode="r:") as tar:
-                for member in tar.getmembers():
-                    name = member.name
-                    # Individual avenants: boc_XXXX_0000_NNNN.pdf (not the complete PDF _0001_p000)
-                    if name.endswith(".pdf") and "_0000_" in name:
-                        f = tar.extractfile(member)
-                        if f:
-                            pdfs.append((name, f.read()))
-        except (tarfile.TarError, subprocess.TimeoutExpired, OSError) as exc:
+            if archive_bytes.startswith(b"\x1f\x9d"):
+                proc = subprocess.run(
+                    ["gzip", "-dc"], input=archive_bytes,
+                    capture_output=True, timeout=120, check=True,
+                )
+                archive_bytes = proc.stdout
+            pdfs = []
+            with tarfile.open(fileobj=io.BytesIO(archive_bytes), mode="r:*") as tar:
+                for member in tar:
+                    if (member.isfile() and member.name.endswith(".pdf")
+                            and "_0000_" in member.name):
+                        file = tar.extractfile(member)
+                        if file is not None:
+                            pdfs.append((member.name, file.read()))
+            return pdfs
+        except (tarfile.TarError, subprocess.SubprocessError, OSError) as exc:
             logger.warning("BOCC: failed to extract archive: %s", exc)
-        return pdfs
+            return []
 
     def _parse_avenant_pdf(self, pdf_bytes: bytes) -> dict | None:
         """Parse a single avenant PDF and extract metadata + content.

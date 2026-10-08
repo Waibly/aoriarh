@@ -285,3 +285,30 @@ async def test_review_endpoint_requires_admin_and_valid_issue(
     )
     assert (await client.get('/api/v1/admin/syncs/bocc/review?year=2026&week=0',
                              headers=headers)).status_code == 422
+
+
+def test_archive_reader_handles_gzip_and_http_decoded_tar():
+    import gzip
+    import io
+    import tarfile
+    stream = io.BytesIO()
+    with tarfile.open(fileobj=stream, mode='w') as archive:
+        for name in ['boc_2026_0000_0001.pdf', 'boc_2026_0001_p000.pdf']:
+            data = b'%PDF-1.4 individual source'
+            info = tarfile.TarInfo(name)
+            info.size = len(data)
+            archive.addfile(info, io.BytesIO(data))
+        link = tarfile.TarInfo('boc_2026_0000_link.pdf')
+        link.type = tarfile.SYMTYPE
+        link.linkname = '/etc/passwd'
+        archive.addfile(link)
+    raw_tar = stream.getvalue()
+    service = BoccService()
+    expected = [('boc_2026_0000_0001.pdf', b'%PDF-1.4 individual source')]
+    assert service._extract_individual_pdfs(raw_tar) == expected
+    assert service._extract_individual_pdfs(gzip.compress(raw_tar)) == expected
+    response = httpx.Response(200, content=gzip.compress(raw_tar),
+                              headers={'Content-Encoding': 'gzip'})
+    assert response.content == raw_tar
+    assert service._extract_individual_pdfs(response.content) == expected
+    assert service._extract_individual_pdfs(b'<html>unavailable</html>') == []
