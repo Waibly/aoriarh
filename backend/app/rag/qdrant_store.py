@@ -6,6 +6,7 @@ from qdrant_client.models import (
     Distance,
     PayloadSchemaType,
     SparseVectorParams,
+    SparseIndexParams,
     VectorParams,
 )
 
@@ -66,10 +67,11 @@ def ensure_collection(client: QdrantClient) -> None:
                 "dense": VectorParams(
                     size=DENSE_VECTOR_SIZE,
                     distance=Distance.COSINE,
+                    on_disk=True,
                 ),
             },
             sparse_vectors_config={
-                "sparse-bm25": SparseVectorParams(),
+                "sparse-bm25": SparseVectorParams(index=SparseIndexParams(on_disk=True)),
             },
         )
         # Create payload indexes for efficient filtering

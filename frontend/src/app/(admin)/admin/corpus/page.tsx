@@ -596,26 +596,26 @@ function SyncBanner({ token, onRefresh }: { token: string; onRefresh: () => void
       group: "jurisprudence",
       label: "Jurisprudence",
       auto: true,
-      autoDetail: "6 passes Cass (soc + cr + comm + civ2 + AP + chambre mixte) + CA ch. soc + Conseil constit",
+      autoDetail: "6 passes Cass (soc + cr + comm + civ2 + AP + chambre mixte) + CA toutes chambres + Conseil constit",
       help: (
         <>
           <strong>Au clic :</strong> appelle <code>POST /admin/jurisprudence/sync-all</code>,
           qui lance le job <code>run_full_jurisprudence_sync</code>. Fenêtre 30 jours
           glissants, 8 passes successives :
           <ul className="list-disc pl-4 mt-1">
-            <li>Cass. chambre sociale (au Bulletin)</li>
+            <li>Cass. chambre sociale (toutes publications)</li>
             <li>Cass. chambre criminelle (au Bulletin)</li>
             <li>Cass. chambre commerciale (au Bulletin)</li>
             <li>Cass. 2ᵉ chambre civile, sécu / AT-MP (au Bulletin)</li>
             <li>Cass. Assemblée plénière (au Bulletin)</li>
             <li>Cass. chambre mixte (au Bulletin)</li>
-            <li>Cour d&apos;appel chambre sociale, cap 300 arrêts</li>
+            <li>Cours d’appel, toutes chambres, avec reprise automatique</li>
             <li>Conseil constitutionnel</li>
           </ul>
-          Dédup par numéro de pourvoi (Cass/CA) ou CID (Conseil constit), les
+          Dédup par identifiant Judilibre (CA), numéro de pourvoi (Cass) ou CID (Conseil constit), les
           arrêts déjà en base sont ignorés.<br /><br />
           <strong>Cron auto :</strong> tous les dimanches à 2h UTC (groupe
-          « Jurisprudence & conventions »).
+          « Jurisprudence & conventions »). Les cours d’appel sont suivies en continu, avec un rapprochement mensuel de l’historique 2026.
         </>
       ),
     },
@@ -1168,7 +1168,7 @@ export default function CorpusPage() {
     { value: "cass_civ2", label: "Cass. civ2 (sécurité sociale / AT-MP)" },
     { value: "cass_pl", label: "Cass. AP (Assemblée plénière)" },
     { value: "cass_mi", label: "Cass. mi (Chambre mixte)" },
-    { value: "ca_soc", label: "Cour d'appel — chambre sociale" },
+    { value: "ca_soc", label: "Cours d’appel — toutes les chambres" },
     { value: "conseil_constit", label: "Conseil constitutionnel" },
   ];
 
@@ -1277,9 +1277,9 @@ export default function CorpusPage() {
       !confirm(
         "INITIALISATION du corpus jurisprudence — opération one-shot.\n\n" +
           "• Cass. soc / cr / comm / civ2 publiés sur 1 an (~1 500 arrêts)\n" +
-          "• Cour d'appel chambre sociale sur 3 mois (cap 3 000)\n\n" +
-          "Idempotent (la dédup par numéro de pourvoi évite les doublons).\n" +
-          "Coût embeddings estimé : ~10 $.\n\n" +
+          "• Cours d’appel, toutes chambres, sur 1 an, sans plafond total\n\n" +
+          "Idempotent (identifiant Judilibre pour les cours d’appel).\n" +
+          "L’indexation progresse automatiquement par lots.\n\n" +
           "Continuer ?",
       )
     )

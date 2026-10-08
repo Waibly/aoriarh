@@ -23,6 +23,7 @@ from app.models.emailing import (
     EmailTemplate,
 )
 from app.models.invitation import Invitation
+from app.models.judilibre import JudilibreRecord, JudilibreScan, JudilibreScanItem
 from app.models.membership import Membership
 from app.models.plan_invitation import PlanInvitation, PlanInvitationRedemption
 from app.models.monthly_question_usage import MonthlyQuestionUsage
@@ -63,6 +64,9 @@ __all__ = [
     "EmailTemplate",
     "Fiche",
     "Invitation",
+    "JudilibreRecord",
+    "JudilibreScan",
+    "JudilibreScanItem",
     "Membership",
     "Message",
     "MonthlyQuestionUsage",

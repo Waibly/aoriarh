@@ -178,15 +178,9 @@ async def preview_jurisprudence_sync(
             )
             if spec["service"] == "judilibre_ca":
                 warning = (
-                    "Judilibre ne filtre pas les CA par chambre — environ 80 % "
-                    "de ces arrêts seront écartés à l'ingestion (chambre non sociale). "
-                    "Compte ~20 % d'arrêts réellement ingérés."
+                    "Toutes les chambres sont incluses. La collecte et l’indexation "
+                    "avancent par lots avec reprise automatique, sans plafond total."
                 )
-                if total >= 10000:
-                    warning += (
-                        " De plus, l'API Judilibre plafonne à 10 000 résultats par "
-                        "fenêtre — réduisez la plage de dates ou utilisez un cap."
-                    )
         elif spec["service"] == "conseil_constit":
             from app.services.conseil_constit_service import ConseilConstitService
 
