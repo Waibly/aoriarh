@@ -415,6 +415,7 @@ function SyncBanner({ token, onRefresh }: { token: string; onRefresh: () => void
         if (tt === "codes" || tt === "code_travail") return "code_travail";
         if (tt === "jorf") return "jorf";
         if (tt === "bocc") return "bocc";
+        if (["boss", "curated_sources", "social_ca"].includes(tt)) return tt;
         return null;
       };
       // Group all logs per key, then aggregate the most recent "batch"
@@ -427,7 +428,7 @@ function SyncBanner({ token, onRefresh }: { token: string; onRefresh: () => void
         judilibre: [],
         code_travail: [],
         jorf: [],
-        bocc: [],
+        bocc: [], boss: [], curated_sources: [], social_ca: [],
       };
       for (const log of data.logs) {
         const key = keyOf(log.sync_type);
@@ -439,7 +440,7 @@ function SyncBanner({ token, onRefresh }: { token: string; onRefresh: () => void
         judilibre: null,
         code_travail: null,
         jorf: null,
-        bocc: null,
+        bocc: null, boss: null, curated_sources: null, social_ca: null,
       };
       for (const key of Object.keys(grouped)) {
         const rows = grouped[key];
@@ -450,7 +451,7 @@ function SyncBanner({ token, onRefresh }: { token: string; onRefresh: () => void
         const batch = rows.filter(
           (r) => refMs - new Date(r.started_at).getTime() <= WINDOW_MS,
         );
-        byKey[key] = aggregateBatch(batch);
+        byKey[key] = ["boss", "curated_sources", "social_ca"].includes(key) ? mostRecent : aggregateBatch(batch);
       }
       setLastSyncs(byKey);
     } catch {
@@ -596,26 +597,15 @@ function SyncBanner({ token, onRefresh }: { token: string; onRefresh: () => void
       group: "jurisprudence",
       label: "Jurisprudence",
       auto: true,
-      autoDetail: "6 passes Cass (soc + cr + comm + civ2 + AP + chambre mixte) + CA toutes chambres + Conseil constit",
+      autoDetail: "Cour de cassation et Conseil constitutionnel le dimanche ; cours d’appel sociales suivies séparément chaque jour",
       help: (
         <>
-          <strong>Au clic :</strong> appelle <code>POST /admin/jurisprudence/sync-all</code>,
-          qui lance le job <code>run_full_jurisprudence_sync</code>. Fenêtre 30 jours
-          glissants, 8 passes successives :
-          <ul className="list-disc pl-4 mt-1">
-            <li>Cass. chambre sociale (toutes publications)</li>
-            <li>Cass. chambre criminelle (au Bulletin)</li>
-            <li>Cass. chambre commerciale (au Bulletin)</li>
-            <li>Cass. 2ᵉ chambre civile, sécu / AT-MP (au Bulletin)</li>
-            <li>Cass. Assemblée plénière (au Bulletin)</li>
-            <li>Cass. chambre mixte (au Bulletin)</li>
-            <li>Cours d’appel, toutes chambres, avec reprise automatique</li>
-            <li>Conseil constitutionnel</li>
-          </ul>
-          Dédup par identifiant Judilibre (CA), numéro de pourvoi (Cass) ou CID (Conseil constit), les
-          arrêts déjà en base sont ignorés.<br /><br />
-          <strong>Cron auto :</strong> tous les dimanches à 2h UTC (groupe
-          « Jurisprudence & conventions »). Les cours d’appel sont suivies en continu, avec un rapprochement mensuel de l’historique 2026.
+          <strong>Le dimanche à 02:00 UTC :</strong> suivi de la Cour de cassation
+          (chambre sociale, sélections criminelle, commerciale, deuxième chambre civile,
+          assemblée plénière et chambre mixte) et du Conseil constitutionnel.<br /><br />
+          Les cours d’appel sociales ont un suivi quotidien séparé, présenté ci-dessous.
+          L’ancienne collecte de toutes les matières reste suspendue, y compris après
+          un lancement manuel de la synchronisation générale.
         </>
       ),
     },
@@ -638,21 +628,38 @@ function SyncBanner({ token, onRefresh }: { token: string; onRefresh: () => void
     },
     {
       key: "bocc",
-      group: "jurisprudence",
+      group: "maintenance",
       label: "BOCC",
       auto: true,
-      autoDetail: "Quotidien : balaye une fenêtre de 6 semaines, ingère les nouveaux numéros (cap 6/run)",
+      autoDetail: "Chaque jour à 02:30 UTC : inventaire des publications officielles, cinq numéros maximum par passage",
       help: (
         <>
-          <strong>Au clic :</strong> appelle <code>POST /admin/syncs/bocc</code>,
-          qui lance le job <code>run_bocc_sync</code> pour le dernier numéro publié.
-          Les avenants téléchargés sont mis en réserve ; ils sont ingérés
-          automatiquement lors de l&apos;installation d&apos;une CCN concernée.<br /><br />
-          <strong>Cron auto :</strong> quotidien à 2h30 UTC (filet indépendant des
-          deux crons hebdo, car DILA peut publier n&apos;importe quel jour) ; le
-          rattrapage hebdo a lieu le dimanche.
+          <strong>Chaque jour à 02:30 UTC :</strong> repérage des nouveaux numéros
+          dans les catalogues officiels et inventaire de leurs PDF, y compris sans
+          convention identifiée. Les anciens échecs sont repris.<br /><br />
+          Les textes repérés sont à examiner avant leur ajout au corpus. Ils ne sont
+          pas indexés automatiquement à l’installation d’une convention.
+          Le bouton lance ce contrôle sans attendre le prochain passage.
         </>
       ),
+    },
+    {
+      key: "curated_sources", group: "maintenance", label: "Guides officiels et procédure civile",
+      auto: true, readOnly: true,
+      autoDetail: "Samedi à 06:00 UTC : suivi des sources déjà sélectionnées",
+      help: <>Les guides admis et les 45 articles de procédure civile sont comparés à leur source officielle le samedi. Une source inchangée n’est pas réindexée. Les accès bloqués restent signalés et la version existante est conservée. Les textes européens et les sources Urssaf sont suivis pour examen avant admission.</>,
+    },
+    {
+      key: "social_ca", group: "maintenance", label: "Cours d’appel — affaires sociales",
+      auto: true, readOnly: true,
+      autoDetail: "Chaque jour à 07:00 UTC : affaires sociales selon la classification officielle",
+      help: <>Le suivi repère les décisions publiées ou modifiées, vérifie les doublons et ajoute les nouvelles affaires appartenant aux catégories sociales retenues. Limite : 20 nouveaux documents et 250 000 tokens estimés par jour. Le reliquat reste en attente. Les catégories mixtes et les modifications d’une décision existante nécessitent un examen.</>,
+    },
+    {
+      key: "boss", group: "maintenance", label: "BOSS — évolutions à examiner",
+      auto: true, readOnly: true,
+      autoDetail: "Chaque jour à 05:00 UTC : comparaison avec les textes déjà admis",
+      help: <>Les versions nouvelles et leurs notes officielles sont conservées pour examen. Elles ne remplacent pas automatiquement le texte indexé : une annonce peut concerner une mesure future ou un projet.</>,
     },
   ];
 
@@ -666,7 +673,7 @@ function SyncBanner({ token, onRefresh }: { token: string; onRefresh: () => void
           const isErr = ["error", "failed"].includes(status);
           // "Soft" warnings: unchanged content (hash skip) or upstream-not-ready
           const isUpToDate =
-            ok &&
+            ok && s.key !== "bocc" && s.key !== "boss" &&
             log?.items_skipped !== null &&
             (log?.items_skipped ?? 0) > 0 &&
             (log?.items_created ?? 0) === 0;
@@ -723,7 +730,7 @@ function SyncBanner({ token, onRefresh }: { token: string; onRefresh: () => void
                   )}
                   <InfoTooltip>{s.help}</InfoTooltip>
                 </div>
-                <Button
+                {!s.readOnly && <Button
                   size="sm"
                   variant="outline"
                   disabled={isRunning}
@@ -736,7 +743,7 @@ function SyncBanner({ token, onRefresh }: { token: string; onRefresh: () => void
                   ) : (
                     <RefreshCw className="h-3 w-3" />
                   )}
-                </Button>
+                </Button>}
               </div>
 
               {/* Status line */}
@@ -823,7 +830,7 @@ function SyncBanner({ token, onRefresh }: { token: string; onRefresh: () => void
       id: "jurisprudence",
       title: "Dimanche 02:00 UTC — Jurisprudence & conventions",
       subtitle:
-        "Jurisprudence (Cass + CA + Conseil constit) + rotation CCN + rattrapage BOCC.",
+        "Cour de cassation, Conseil constitutionnel et rotation des 15 conventions les plus anciennes.",
       next: nextCron(0, 2),
     },
   ];
@@ -833,23 +840,10 @@ function SyncBanner({ token, onRefresh }: { token: string; onRefresh: () => void
       <div className="px-4 pt-3 pb-2 border-b flex items-center gap-2 text-xs font-semibold">
         Synchronisations du corpus commun
         <InfoTooltip>
-          <strong>Deux crons hebdomadaires</strong>, répartis sur deux jours pour
-          lisser la charge de l&apos;API PISTE (codes, jurisprudence et CCN
-          partagent le même quota) :
-          <ol className="list-decimal pl-4 mt-1">
-            <li>
-              <strong>Samedi 2h UTC</strong> — Lois &amp; codes : les 9 codes (dont
-              le Code du travail) + le JORF (lois / décrets / arrêtés RH).
-            </li>
-            <li>
-              <strong>Dimanche 2h UTC</strong> — Jurisprudence &amp; conventions :
-              jurisprudence (8 passes), rotation des 15 CCN, rattrapage BOCC.
-            </li>
-          </ol>
-          Le BOCC tourne aussi en filet quotidien (2h30 UTC) car la DILA peut
-          publier n&apos;importe quel jour.<br /><br />
-          Les boutons lancent manuellement <strong>la même opération</strong> que
-          le cron, sans attendre.
+          Les codes et le JO sont suivis le samedi, la jurisprudence de cassation
+          et les conventions le dimanche. Les guides sont suivis le samedi à 06:00 UTC.
+          Le BOCC, le BOSS et les cours d’appel sociales ont un passage quotidien séparé.
+          Un contrôle peut signaler des éléments à examiner sans les ajouter au corpus.
         </InfoTooltip>
       </div>
       {cronGroups.map((g) => (
@@ -871,9 +865,11 @@ function SyncBanner({ token, onRefresh }: { token: string; onRefresh: () => void
           </div>
         </div>
       ))}
-      <div className="px-4 py-2 mt-1 text-[10px] text-muted-foreground border-t">
-        + filet <strong>BOCC quotidien</strong> à 2h30 UTC (indépendant des deux
-        crons hebdo).
+      <div className="px-3 pt-3 pb-3">
+        <div className="text-xs font-semibold mb-2">Suivi complémentaire des sources</div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+          {sources.filter((source) => source.group === "maintenance").map(renderCard)}
+        </div>
       </div>
     </Card>
   );
