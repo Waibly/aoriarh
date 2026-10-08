@@ -29,6 +29,24 @@ def test_capacity_defaults_bound_database_and_worker_concurrency():
     assert configured.worker_max_jobs == 3
 
 
+async def test_worker_warms_sparse_model_outside_event_loop(monkeypatch):
+    import threading
+    from app import worker
+    from app.rag import search
+
+    threads = []
+    monkeypatch.setattr(search, "_get_sparse_model", lambda: threads.append(threading.get_ident()))
+    ctx = {}
+    await worker.on_startup(ctx)
+    try:
+        assert threads and threads[0] != threading.get_ident()
+        assert "session_factory" in ctx
+        redis = worker._parse_redis_settings()
+        assert redis.conn_timeout == 10 and redis.conn_retries == 3
+    finally:
+        await worker.on_shutdown(ctx)
+
+
 def test_final_generation_defaults_to_terra_with_medium_reasoning():
     configured = _settings()
 

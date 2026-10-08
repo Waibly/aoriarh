@@ -4,6 +4,7 @@ Lancer avec :
     arq app.worker.WorkerSettings
 """
 
+import asyncio
 import os
 import uuid
 from datetime import date
@@ -41,6 +42,10 @@ async def on_startup(ctx: dict) -> None:
     ctx["session_factory"] = async_sessionmaker(
         engine, class_=AsyncSession, expire_on_commit=False
     )
+    # Warm the cached BM25 model before polling jobs. Its first load is blocking
+    # and must not delay Redis connection/DNS timeouts during ingestion.
+    from app.rag.search import _get_sparse_model
+    await asyncio.to_thread(_get_sparse_model)
 
 
 async def on_shutdown(ctx: dict) -> None:
@@ -1625,6 +1630,9 @@ def _parse_redis_settings() -> RedisSettings:
         port=parsed.port or 6379,
         password=parsed.password,
         database=int(parsed.path.lstrip("/") or 0),
+        conn_timeout=10,
+        conn_retries=3,
+        conn_retry_delay=1,
     )
 
 
