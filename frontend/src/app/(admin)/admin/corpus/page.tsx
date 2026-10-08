@@ -647,7 +647,7 @@ function SyncBanner({ token, onRefresh }: { token: string; onRefresh: () => void
       key: "curated_sources", group: "maintenance", label: "Guides officiels et procédure civile",
       auto: true, readOnly: true,
       autoDetail: "Samedi à 06:00 UTC : suivi des sources déjà sélectionnées",
-      help: <>Les guides admis et les 45 articles de procédure civile sont comparés à leur source officielle le samedi. Une source inchangée n’est pas réindexée. Les accès bloqués restent signalés et la version existante est conservée. Les textes européens et les sources Urssaf sont suivis pour examen avant admission.</>,
+      help: <>Les guides admis et les 45 articles de procédure civile sont comparés à leur source officielle le samedi. Une source inchangée n’est pas réindexée. Les accès bloqués restent signalés et la version existante est conservée. Les textes européens et les sources encore en attente d’admission sont suivis pour examen.</>,
     },
     {
       key: "social_ca", group: "maintenance", label: "Cours d’appel — affaires sociales",
