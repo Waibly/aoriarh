@@ -1,6 +1,7 @@
 """Admin endpoints for sync monitoring and manual triggers."""
 
 import logging
+import uuid
 
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
@@ -185,6 +186,32 @@ async def read_jorf_review(
     except ClientError as exc:
         if str(exc.response.get("Error", {}).get("Code")) in {"404", "NoSuchKey"}:
             raise HTTPException(status_code=404, detail="Candidat JORF non disponible") from exc
+        raise
+    return json.loads(raw)
+
+
+@router.get("/boss/review")
+async def read_boss_review(
+    source_id: uuid.UUID | None = Query(None),
+    user: User = Depends(require_role(["admin"])),
+) -> dict:
+    """Read the latest BOSS inventory or a candidate; never admit content."""
+    import asyncio
+    import json
+
+    from botocore.exceptions import ClientError
+    from fastapi import HTTPException
+
+    from app.services.storage_service import StorageService
+
+    key = f"common/boss_review/{source_id}.json" if source_id else "common/boss_review/index.json"
+    try:
+        raw = await asyncio.to_thread(
+            StorageService().get_file_bytes_bounded, key, 10_000_000,
+        )
+    except ClientError as exc:
+        if str(exc.response.get("Error", {}).get("Code")) in {"404", "NoSuchKey"}:
+            raise HTTPException(status_code=404, detail="Revue BOSS non disponible") from exc
         raise
     return json.loads(raw)
 

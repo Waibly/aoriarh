@@ -1,40 +1,26 @@
-"""Service de synchronisation du BOSS (Bulletin Officiel de la Sécurité Sociale).
+"""BOSS discovery and documentary review, without automatic admission.
 
-Récupère la doctrine administrative *opposable* en matière de cotisations et
-contributions sociales depuis boss.gouv.fr, la convertit en Markdown et
-l'ingère dans le corpus commun.
-
-Le BOSS n'expose pas d'API : on crawle l'arborescence HTML. Chaque page de
-rubrique liste ses sous-pages côté serveur, et chaque page de contenu porte la
-version en vigueur dans un bloc ``<article id="article">`` (les blocs
-``_vdiff`` / ``_vrecherche`` sont des placeholders remplis en JavaScript, donc
-vides côté serveur — on ne prend que la version en vigueur, cf. décision v1).
-
-Le site est protégé par un WAF qui rejette les requêtes sans en-têtes de
-navigateur : on envoie donc un User-Agent + Accept-Language réalistes.
-
-Idempotent : chaque page a un ``storage_path`` déterministe. Un re-crawl mensuel
-ne ré-indexe que les pages dont le contenu a réellement changé (comparaison de
-hash) ; les pages inchangées ne coûtent rien.
-
-Source : https://boss.gouv.fr/
+A newly published page may describe a draft or future rules. Preserve the
+indexed version and archive changed/new pages with their source HTML for review.
+Identical bodies only refresh technical source metadata; no embedding is queued.
 """
 
 import asyncio
 import hashlib
+import json
 import logging
 import re
 import uuid
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, datetime, timezone
+from html import unescape
+from urllib.parse import urljoin, urlparse
 
 import httpx
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.document import Document
-from app.rag.norme_hierarchy import DOCUMENT_TYPE_HIERARCHY
-from app.rag.tasks import enqueue_ingestion
 from app.services.html_to_markdown import html_to_markdown
 
 logger = logging.getLogger(__name__)
@@ -80,7 +66,7 @@ _HREF_RE = re.compile(r'href="([^"#?]+\.html)"', re.IGNORECASE)
 _ARTICLE_OPEN_RE = re.compile(r'<article\b[^>]*\bid="article"[^>]*>', re.IGNORECASE)
 _ARTICLE_TAG_RE = re.compile(r'<article\b[^>]*>|</article>', re.IGNORECASE)
 _TITLE_RE = re.compile(r"<h1[^>]*>(.*?)</h1>", re.IGNORECASE | re.DOTALL)
-_A_JOUR_RE = re.compile(r"jour\s+au\s+(\d{2})/(\d{2})/(\d{4})", re.IGNORECASE)
+_A_JOUR_RE = re.compile(r"jour\s+(?:au|le)\s+(\d{2})/(\d{2})/(\d{4})", re.IGNORECASE)
 _TAG_RE = re.compile(r"<[^>]+>")
 
 
@@ -92,15 +78,17 @@ class BossSyncResult:
     docs_created: int = 0
     docs_updated: int = 0
     docs_unchanged: int = 0
+    docs_pending: int = 0
+    review_candidates: list[dict] = field(default_factory=list)
     errors: int = 0
     error_messages: list[str] = field(default_factory=list)
 
 
 class BossService:
-    """Crawle et ingère la doctrine du BOSS depuis boss.gouv.fr."""
+    """Inventorie les versions BOSS et conserve les modifications pour revue."""
 
     async def sync(self, db: AsyncSession, user_id: uuid.UUID) -> BossSyncResult:
-        """Crawle les 8 rubriques et (ré)ingère les pages dont le contenu a changé."""
+        """Crawle les 8 rubriques sans modifier le contenu du corpus indexé."""
         from app.services.storage_service import StorageService
 
         result = BossSyncResult()
@@ -136,7 +124,7 @@ class BossService:
                     if child not in visited:
                         queue.append(child)
 
-                # Extrait la version en vigueur et ingère si c'est de la doctrine.
+                # Archive le corps publié avec ses notes avant admission documentaire.
                 article_html = self._slice_article(html)
                 if not article_html:
                     continue
@@ -146,16 +134,32 @@ class BossService:
 
                 try:
                     await self._upsert_document(
-                        db, storage, user_id, path, rubrique, html, markdown, result
+                        db, storage, user_id, path, rubrique, html, markdown, result,
+                        version_notes=await self._fetch_version_notes(client, article_html),
                     )
                 except Exception as exc:
                     result.errors += 1
                     result.error_messages.append(f"{path}: {str(exc)[:120]}")
-                    logger.warning("BOSS: échec ingestion %s: %s", path, exc)
+                    logger.warning("BOSS: échec archivage %s: %s", path, exc)
                     await db.rollback()
 
                 await asyncio.sleep(_CRAWL_DELAY)
 
+        if queue:
+            result.errors += 1
+            result.error_messages.append("Catalogue BOSS incomplet : limite de pages atteinte")
+        storage.put_file_bytes(
+            "common/boss_review/index.json",
+            json.dumps({
+                "captured_at": datetime.now(timezone.utc).isoformat(),
+                "pages_crawled": result.pages_crawled,
+                "pending": result.docs_pending,
+                "errors": result.error_messages,
+                "candidates": result.review_candidates,
+                "automatic_ingestion": False,
+            }, ensure_ascii=False).encode(),
+            content_type="application/json",
+        )
         logger.info(
             "BOSS sync terminée — %d pages crawlées, %d créées, %d mises à jour, "
             "%d inchangées, %d erreurs",
@@ -179,6 +183,26 @@ class BossService:
                 last_exc = exc
                 await asyncio.sleep(1.0 * (attempt + 1))
         raise last_exc  # type: ignore[misc]
+
+    async def _fetch_version_notes(self, client: httpx.AsyncClient, article_html: str) -> list[dict]:
+        """Keep linked publication notes with the page, including future applicability."""
+        blocks = re.findall(
+            r'<div\b[^>]*class=["\'][^"\']*bloc_notes_version[^"\']*["\'][^>]*>(.*?)</div>',
+            article_html, re.IGNORECASE | re.DOTALL,
+        )
+        paths = []
+        for block in blocks:
+            for href in re.findall(r'href=["\']([^"\']+)["\']', block, re.IGNORECASE):
+                url = urljoin(BOSS_BASE_URL, unescape(href))
+                parsed = urlparse(url)
+                if (parsed.scheme == "https" and parsed.netloc == "boss.gouv.fr"
+                        and parsed.path.startswith("/portail/accueil/actualites-boss-et-rescrits/")
+                        and parsed.path not in paths):
+                    paths.append(parsed.path)
+        if len(paths) > 5:
+            raise ValueError("Too many BOSS version notes: review evidence incomplete")
+        return [{"url": BOSS_BASE_URL + path, "source_html": await self._fetch(client, path)}
+                for path in paths]
 
     # ---- Parsing HTML ----
 
@@ -259,7 +283,7 @@ class BossService:
     @staticmethod
     def _parse_a_jour_date(article_html: str) -> date | None:
         """Date « à jour au JJ/MM/AAAA » si présente sur la page."""
-        m = _A_JOUR_RE.search(article_html)
+        m = _A_JOUR_RE.search(unescape(_TAG_RE.sub(" ", article_html)))
         if not m:
             return None
         try:
@@ -303,8 +327,10 @@ class BossService:
         html: str,
         markdown_body: str,
         result: BossSyncResult,
+        *,
+        version_notes: list[dict] | None = None,
     ) -> None:
-        """Crée, met à jour (si le contenu a changé) ou ignore une page BOSS."""
+        """Conserve les corps modifiés pour revue, sans écraser la version admise."""
         title = self._page_title(html)
         full_md = self._format_markdown(title, rubrique, page_path, markdown_body)
         md_bytes = full_md.encode("utf-8")
@@ -312,7 +338,6 @@ class BossService:
         storage_path = self._build_storage_path(page_path)
         content_date = self._parse_a_jour_date(html)
         name = f"BOSS — {rubrique} — {title}" if title else f"BOSS — {rubrique}"
-        hierarchy = DOCUMENT_TYPE_HIERARCHY["boss"]
 
         existing = await db.execute(
             select(Document).where(
@@ -329,40 +354,32 @@ class BossService:
             result.docs_unchanged += 1
             return
 
-        storage.put_file_bytes(storage_path, md_bytes, content_type="text/plain")
-
-        if doc is None:
-            doc = Document(
-                organisation_id=None,
-                name=name[:500],
-                source_type="boss",
-                norme_niveau=hierarchy["niveau"],
-                norme_poids=hierarchy["poids"],
-                storage_path=storage_path,
-                indexation_status="pending",
-                uploaded_by=user_id,
-                file_size=len(md_bytes),
-                file_format="md",
-                file_hash=file_hash,
-                date_decision=content_date,
-                source_updated_date=content_date,
-                source_url=f"{BOSS_BASE_URL}{page_path}",
-            )
-            db.add(doc)
-            await db.commit()
-            await db.refresh(doc)
-            result.docs_created += 1
-        else:
-            # Contenu modifié : on met à jour et on ré-ingère. Le pipeline fait
-            # un insert-then-swap sur document_id → remplace les anciens chunks.
-            doc.name = name[:500]
-            doc.file_size = len(md_bytes)
-            doc.file_hash = file_hash
-            doc.date_decision = content_date
-            doc.source_updated_date = content_date
-            doc.source_url = f"{BOSS_BASE_URL}{page_path}"
-            doc.indexation_status = "pending"
-            await db.commit()
-            result.docs_updated += 1
-
-        await enqueue_ingestion(str(doc.id))
+        source_url = f"{BOSS_BASE_URL}{page_path}"
+        source_id = str(uuid.uuid5(uuid.NAMESPACE_URL, source_url))
+        review_path = f"common/boss_review/{source_id}.json"
+        candidate = {
+            "source_id": source_id, "name": name, "source_url": source_url,
+            "current_document_id": str(doc.id) if doc else None,
+            "current_sha256": doc.file_hash if doc else None,
+            "candidate_sha256": file_hash,
+            "source_updated_date": content_date.isoformat() if content_date else None,
+            "status": "review_pending", "review_path": review_path,
+        }
+        payload = {
+            **candidate,
+            "captured_at": datetime.now(timezone.utc).isoformat(),
+            "candidate_markdown": full_md,
+            "source_html": html,
+            "version_notes": version_notes or [],
+            "automatic_ingestion": False,
+        }
+        raw = json.dumps(payload, ensure_ascii=False).encode()
+        # Keep each observed body revision, as well as the latest review pointer.
+        evidence_hash = hashlib.sha256(json.dumps(
+            {"html": html, "version_notes": version_notes or []}, sort_keys=True,
+        ).encode()).hexdigest()
+        version_path = f"common/boss_review/versions/{source_id}/{file_hash}/{evidence_hash}.json"
+        storage.put_file_bytes(version_path, raw, content_type="application/json")
+        storage.put_file_bytes(review_path, raw, content_type="application/json")
+        result.docs_pending += 1
+        result.review_candidates.append(candidate)
