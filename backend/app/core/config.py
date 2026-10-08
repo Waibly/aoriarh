@@ -26,6 +26,9 @@ class Settings(BaseSettings):
     worker_db_max_overflow: int = Field(default=4, ge=0, le=20)
     worker_max_jobs: int = Field(default=3, ge=1, le=16)
 
+    # Broad CA collection is suspended pending a reviewed RH scope and budget.
+    judilibre_ca_collection_enabled: bool = False
+
     # Qdrant
     qdrant_host: str = "localhost"
     qdrant_port: int = 6333

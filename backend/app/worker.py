@@ -139,6 +139,14 @@ async def run_ingestion(ctx: dict, document_id: str, expected_source: str | None
     session_factory = ctx["session_factory"]
     try:
         async with session_factory() as db:
+            if not settings.judilibre_ca_collection_enabled:
+                from app.models.judilibre import JudilibreRecord
+                registered = await db.scalar(select(JudilibreRecord.source_id).where(
+                    JudilibreRecord.document_id == uuid.UUID(document_id)
+                ))
+                if registered:
+                    logger.info("Worker: Judilibre CA ingestion suspended for %s", document_id)
+                    return
             pipeline = IngestionPipeline()
             await pipeline.ingest(uuid.UUID(document_id), db, expected_source=expected_source)
         logger.info("Worker: ingestion completed for document %s", document_id)
@@ -1650,6 +1658,9 @@ async def run_judilibre_ca_collection(ctx: dict) -> dict:
     """One collector at a time, including across overlapping worker restarts."""
     from sqlalchemy import text
     from app.services.judilibre_ca_sync import collect_tick
+
+    if not settings.judilibre_ca_collection_enabled:
+        return {"status": "paused"}
 
     # Separate transaction: importer commits must not release this lock.
     # The context releases it on success, exception, cancellation or crash.
