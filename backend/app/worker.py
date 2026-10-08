@@ -1087,7 +1087,7 @@ async def run_scheduled_sync(ctx: dict) -> None:
         # run_full_jurisprudence_sync (déclencheur manuel admin).
         date_end = date.today()
         date_start = date_end - timedelta(days=30)
-        await _run_jurisprudence_passes(db, session_factory, admin_id, date_start, date_end)
+        await _run_jurisprudence_passes(db, session_factory, admin_id, date_start, date_end, ca_max_decisions=0)
 
         # --- 2. CCN rotation sync ---
         # Get 10-15 distinct installed CCN, oldest synced first
@@ -1543,6 +1543,38 @@ async def run_curated_sources_sync(ctx: dict) -> dict:
             raise
 
 
+async def run_social_ca_sync(ctx: dict) -> dict:
+    """Daily scoped CA maintenance; the former all-matters collector remains paused."""
+    import time as _time
+    from sqlalchemy import text
+    from app.services.social_ca_service import SocialCaService
+    factory = ctx["session_factory"]
+    async with ctx["engine"].begin() as lock_connection:
+        locked = await lock_connection.scalar(text("SELECT pg_try_advisory_xact_lock(20261008, 3)"))
+        if not locked:
+            return {"status": "already_running"}
+        log_id = await _create_sync_log(factory, "social_ca")
+        start = _time.perf_counter()
+        try:
+            async with factory() as db:
+                result = await SocialCaService().sync(db)
+            pending = result["remaining_eligible"]
+            message = "; ".join(result["errors"])
+            if pending:
+                message += f"; {pending} candidates restent à traiter dans les plafonds quotidiens"
+            await _finish_sync_log(factory, log_id,
+                success=not result["errors"] and not pending,
+                items_fetched=result["inventoried"], items_created=result["created"],
+                items_skipped=result["existing"], errors=len(result["errors"]),
+                error_message=message[:500] or None,
+                duration_ms=int((_time.perf_counter()-start)*1000))
+            return result
+        except Exception as exc:
+            await _finish_sync_log(factory, log_id, success=False, errors=1,
+                error_message=str(exc)[:500], duration_ms=int((_time.perf_counter()-start)*1000))
+            raise
+
+
 class WorkerSettings:
     functions = [
         run_ingestion,
@@ -1570,6 +1602,7 @@ class WorkerSettings:
         run_data_retention_purge,
         run_daily_bocc_check,
         run_curated_sources_sync,
+        run_social_ca_sync,
         run_emailing_campaigns,
     ]
     cron_jobs = [
@@ -1587,6 +1620,8 @@ class WorkerSettings:
         cron(run_scheduled_sync, weekday="sun", hour=2, minute=0),
         # Selected guides and CPC: Saturday, after the main legislation job.
         cron(run_curated_sources_sync, weekday="sat", hour=6, minute=0),
+        # Official social NAC categories only, with daily document/token caps.
+        cron(run_social_ca_sync, hour=7, minute=0),
         # BOCC : vérification quotidienne (DILA peut publier n'importe quand).
         # Si rien de nouveau, sync_log = success / 0 items (pas une erreur).
         cron(run_daily_bocc_check, hour=2, minute=30),

@@ -300,3 +300,14 @@ async def read_curated_sources_status(
     from app.services.curated_source_service import CuratedSourceService, PREFIX
     result = await asyncio.to_thread(CuratedSourceService().read_json, PREFIX + "latest.json")
     return result or {"status": "not_run", "sources": []}
+
+
+@router.get("/social-ca/status")
+async def read_social_ca_status(
+    user: User = Depends(require_role(["admin"])),
+) -> dict:
+    """Inventory, scoped admissions, remaining candidates and technical failures."""
+    import asyncio
+    from app.services.curated_source_service import CuratedSourceService
+    result = await asyncio.to_thread(CuratedSourceService().read_json, "common/social_ca/latest.json")
+    return result or {"status": "not_run"}
