@@ -253,7 +253,6 @@ async def check_ccn_health(
 ) -> CcnHealthResponse:
     """Health check for all installed CCN. Auto-repairs broken indexations."""
     from app.rag.tasks import enqueue_ingestion
-    from app.services.bocc_service import BoccService
     from sqlalchemy import or_
 
     # Get all unique IDCCs with an org_conv
@@ -304,7 +303,6 @@ async def check_ccn_health(
             and len(errored) == 0
             and len(pending) == 0
             and total_chunks > 0
-            and bocc_reserved == 0
         )
 
         repaired = 0
@@ -317,13 +315,7 @@ async def check_ccn_health(
                 await enqueue_ingestion(str(doc.id))
                 repaired += 1
 
-            # Flip reserved BOCC docs to pending
-            if bocc_reserved > 0:
-                try:
-                    count = await BoccService().ingest_bocc_for_idcc(db, idcc)
-                    repaired += count or 0
-                except Exception:
-                    logger.warning("Health check: BOCC ingest failed for IDCC %s", idcc, exc_info=True)
+            # BOCC reserves await documentary admission; they are not repair failures.
 
             # If no KALI docs at all, trigger a full install
             if len(kali_docs) == 0:

@@ -371,7 +371,8 @@ async def list_common_document_groups(
     if bocc_reserve_count > 0:
         groups.append(DocumentGroupItem(
             source_type="bocc_reserve",
-            label=f"BOCC en réserve ({bocc_reserve_count} avenants — ingérés à l'installation d'une CCN)",
+            label=(f"BOCC en réserve ({bocc_reserve_count} avenants "
+                   "— admission documentaire requise)"),
             count=bocc_reserve_count,
             indexed=0,
             pending=0,

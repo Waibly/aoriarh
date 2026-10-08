@@ -1,13 +1,15 @@
 """Service de synchronisation des BOCC (Bulletin Officiel des Conventions Collectives).
 
 Télécharge les archives hebdomadaires depuis l'open data DILA,
-extrait les avenants individuels et les ingère dans le référentiel CCN.
+inventorie les textes individuels dans une file de revue, sans ingestion.
 
 Source : https://echanges.dila.gouv.fr/OPENDATA/BOCC/
 """
 
+import asyncio
 import hashlib
 import io
+import json
 import logging
 import re
 import tarfile
@@ -19,10 +21,7 @@ import httpx
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.ccn import OrganisationConvention
-from app.models.document import Document
-from app.rag.norme_hierarchy import DOCUMENT_TYPE_HIERARCHY
-from app.rag.tasks import enqueue_ingestion
+from app.services.bocc_metadata import extract_metadata
 
 logger = logging.getLogger(__name__)
 
@@ -57,13 +56,14 @@ class BoccSyncResult:
     numero: str = ""
     avenants_found: int = 0
     avenants_ingested: int = 0
-    avenants_stored: int = 0  # stored but not ingested (CCN not installed)
+    avenants_stored: int = 0  # PDF entries saved in a review manifest
     errors: int = 0
     error_messages: list[str] = field(default_factory=list)
     # True quand le BOCC demandé n'existe pas encore côté DILA (404 sur l'archive).
     # C'est l'état normal quand on cron quotidiennement et que DILA n'a pas
     # encore publié — il faut le distinguer d'une vraie erreur.
     not_yet_available: bool = False
+    review_manifest_path: str | None = None
 
 
 @dataclass
@@ -82,16 +82,49 @@ class BoccBackfillResult:
 class BoccService:
     """Downloads and processes BOCC archives from DILA open data."""
 
-    async def check_available_issues(self, year: int) -> list[str]:
-        """List available BOCC issue numbers for a given year."""
-        url = f"{DILA_BASE_URL}/{year}/"
+    async def discover_archives(self, year: int) -> dict[str, str]:
+        """Resolve published archives, including the current-year directory.
+
+        Probe both locations to survive the annual DILA move. Only 404 means
+        an absent directory; transport and server errors must remain visible.
+        """
+        archives: dict[str, str] = {}
         async with httpx.AsyncClient(timeout=30.0) as client:
-            resp = await client.get(url)
-            if resp.status_code != 200:
-                return []
-            # Parse HTML directory listing for .taz files
-            matches = re.findall(r"CCO(\d{8})\.complet\.taz", resp.text)
-            return sorted(matches)
+            for directory in (str(year), "FluxAnneeCourante"):
+                url = f"{DILA_BASE_URL}/{directory}/"
+                resp = await client.get(url)
+                if resp.status_code == 404:
+                    continue
+                resp.raise_for_status()
+                for code in re.findall(r'CCO(\d{8})\.complet\.taz', resp.text):
+                    if int(code[:4]) == year:
+                        archives.setdefault(code, f"{url}CCO{code}.complet.taz")
+        return dict(sorted(archives.items()))
+
+    async def check_available_issues(self, year: int) -> list[str]:
+        """Compatibility API returning unique published issue codes."""
+        return list(await self.discover_archives(year))
+
+    @staticmethod
+    def record_result(db, existing, year: int, week: int, result: BoccSyncResult):
+        """Update a failed attempt in place; partial failures remain retryable."""
+        from app.models.bocc_issue import BoccIssue
+
+        issue = existing if existing is not None else BoccIssue(
+            numero=f"{year}-{week:02d}", year=year, week=week,
+        )
+        issue.avenants_count = result.avenants_found
+        issue.avenants_ingested = (issue.avenants_ingested or 0) + result.avenants_ingested
+        if result.errors:
+            issue.status = "error"
+        elif result.review_manifest_path:
+            issue.status = "review_pending"
+        else:
+            issue.status = "processed"
+        issue.error_message = "; ".join(result.error_messages[:3]) or None
+        issue.processed_at = datetime.now(UTC)
+        db.add(issue)
+        return issue
 
     async def backfill_all(
         self,
@@ -114,8 +147,10 @@ class BoccService:
         for year in range(year_start, year_end + 1):
             # List available issues for this year
             try:
-                issue_codes = await self.check_available_issues(year)
+                archives = await self.discover_archives(year)
+                issue_codes = list(archives)
             except Exception as exc:
+                result.total_errors += 1
                 logger.warning("BOCC backfill: failed to list %d: %s", year, exc)
                 continue
 
@@ -129,7 +164,8 @@ class BoccService:
                 existing = await db.execute(
                     select(BoccIssue).where(BoccIssue.numero == numero)
                 )
-                if existing.scalar_one_or_none():
+                previous = existing.scalar_one_or_none()
+                if previous is not None and previous.status in {"processed", "review_pending"}:
                     result.issues_skipped += 1
                     continue
 
@@ -137,20 +173,16 @@ class BoccService:
                             numero, result.issues_processed + 1, len(issue_codes), year)
 
                 try:
-                    sync_result = await self.process_issue(db, year, week, user_id)
-
-                    # Record in bocc_issues
-                    issue = BoccIssue(
-                        numero=numero,
-                        year=year,
-                        week=week,
-                        avenants_count=sync_result.avenants_found,
-                        avenants_ingested=sync_result.avenants_ingested,
-                        status="error" if sync_result.errors > 0 and sync_result.avenants_found == 0 else "processed",
-                        error_message="; ".join(sync_result.error_messages[:3]) if sync_result.error_messages else None,
-                        processed_at=datetime.now(UTC),
+                    sync_result = await self.process_issue(
+                        db, year, week, user_id, archive_url=archives[code],
                     )
-                    db.add(issue)
+                    if sync_result.not_yet_available:
+                        result.issues_skipped += 1
+                        continue
+
+                    if previous is not None:
+                        await db.refresh(previous)
+                    self.record_result(db, previous, year, week, sync_result)
                     await db.commit()
 
                     result.issues_processed += 1
@@ -180,31 +212,19 @@ class BoccService:
         return result
 
     async def ingest_bocc_for_idcc(self, db: AsyncSession, idcc: str) -> int:
-        """Ingest all reserved BOCC documents for a given IDCC.
+        """Legacy installation hook: BOCC admission requires a reviewed lot.
 
-        Called after a CCN is installed. Flips the 'reserved' avenants
-        for that IDCC to 'pending' and enqueues them. Also catches any
-        legacy 'pending' rows from before the reserved-status migration.
+        Installing a branch must not index old reserves automatically either.
+        Existing reserves remain intact until an explicit admission operation.
         """
-        bocc_docs = await db.execute(
-            select(Document).where(
-                Document.organisation_id.is_(None),
-                Document.storage_path.ilike(f"common/ccn/{idcc}/bocc_%"),
-                Document.indexation_status.in_(["reserved", "pending"]),
-            )
-        )
-        docs = bocc_docs.scalars().all()
+        logger.info("BOCC %s: automatic admission disabled; documentary review required", idcc)
+        return 0
 
-        count = 0
-        for doc in docs:
-            if doc.indexation_status == "reserved":
-                doc.indexation_status = "pending"
-            await enqueue_ingestion(str(doc.id))
-            count += 1
-        if count:
-            await db.commit()
-            logger.info("BOCC: enqueued %d reserved docs for IDCC %s", count, idcc)
-        return count
+    @staticmethod
+    def review_path(year: int, week: int) -> str:
+        if not 1900 <= year <= 2100 or not 1 <= week <= 99:
+            raise ValueError("Invalid BOCC issue")
+        return f"common/bocc_review/{year}-{week:02d}/manifest.json"
 
     async def process_issue(
         self,
@@ -212,15 +232,30 @@ class BoccService:
         year: int,
         week: int,
         user_id: uuid.UUID,
+        *,
+        archive_url: str | None = None,
     ) -> BoccSyncResult:
-        """Download and process a single BOCC issue."""
+        """Inventory a BOCC issue for review; never enqueue or create RAG documents."""
         numero = f"{year}-{week:02d}"
         archive_name = f"CCO{year}{week:04d}"
         result = BoccSyncResult(numero=numero)
 
         try:
             # 1. Download archive
-            url = f"{DILA_BASE_URL}/{year}/{archive_name}.complet.taz"
+            if archive_url is None:
+                archives = await self.discover_archives(year)
+                archive_url = archives.get(f"{year}{week:04d}")
+            if archive_url is None:
+                result.not_yet_available = True
+                return result
+            # Only a canonical DILA archive URL may be downloaded.
+            allowed = {
+                f"{DILA_BASE_URL}/{directory}/{archive_name}.complet.taz"
+                for directory in (str(year), "FluxAnneeCourante")
+            }
+            if archive_url not in allowed:
+                raise ValueError("Invalid BOCC archive URL")
+            url = archive_url
             logger.info("BOCC: downloading %s", url)
 
             async with httpx.AsyncClient(timeout=_REQUEST_TIMEOUT) as client:
@@ -236,81 +271,53 @@ class BoccService:
             # 2. Extract individual PDFs from .taz
             pdfs = self._extract_individual_pdfs(archive_bytes)
             logger.info("BOCC %s: %d PDFs individuels extraits", numero, len(pdfs))
+            if not pdfs:
+                raise ValueError("Archive BOCC sans PDF individuel exploitable")
 
-            # 3. Parse each PDF
+            # Inventory every PDF, even without an IDCC or recognizable header.
+            # This creates no Document, queue job or searchable vector.
+            import pymupdf
+
             from app.services.storage_service import StorageService
-            storage = StorageService()
 
+            entries = []
             for pdf_name, pdf_bytes in pdfs:
+                entry = {
+                    "pdf": pdf_name,
+                    "sha256": hashlib.sha256(pdf_bytes).hexdigest(),
+                    "admission": "review_required",
+                }
                 try:
-                    avenant = self._parse_avenant_pdf(pdf_bytes)
-                    if avenant is None:
-                        continue
-
-                    result.avenants_found += 1
-
-                    # Store in MinIO
-                    md_content = self._format_as_markdown(avenant, numero)
-                    md_bytes = md_content.encode("utf-8")
-                    file_hash = hashlib.sha256(md_bytes).hexdigest()
-
-                    storage_path = f"common/ccn/{avenant['idcc']}/bocc_{numero}_{avenant['nor']}.md"
-
-                    # Check if already exists (dedup by storage_path, which
-                    # contains the NOR — `name` does not, so the previous
-                    # ilike(%NOR%) check never matched and let duplicates in).
-                    existing = await db.execute(
-                        select(Document).where(
-                            Document.organisation_id.is_(None),
-                            Document.storage_path == storage_path,
-                        ).limit(1)
-                    )
-                    if existing.scalar_one_or_none():
-                        continue  # Already processed
-
-                    storage.put_file_bytes(storage_path, md_bytes, content_type="text/plain")
-
-                    # Check if this CCN is installed — drives the initial status
-                    installed = await db.execute(
-                        select(OrganisationConvention).where(
-                            OrganisationConvention.idcc == avenant["idcc"],
-                        ).limit(1)
-                    )
-                    is_installed = installed.scalar_one_or_none() is not None
-
-                    # Create document in DB. We use the 'reserved' status for
-                    # avenants whose CCN is not installed in any org : they are
-                    # NOT actually waiting in the worker queue, just stored for
-                    # later ingestion at install time. Marking them 'pending'
-                    # would inflate the queue counter and never resolve.
-                    hierarchy = DOCUMENT_TYPE_HIERARCHY["convention_collective_nationale"]
-                    doc = Document(
-                        organisation_id=None,  # Common document
-                        name=f"{avenant['titre'][:200]} (IDCC {avenant['idcc']}) — BOCC {numero}",
-                        source_type="convention_collective_nationale",
-                        norme_niveau=hierarchy["niveau"],
-                        norme_poids=hierarchy["poids"],
-                        storage_path=storage_path,
-                        indexation_status="pending" if is_installed else "reserved",
-                        uploaded_by=user_id,
-                        file_size=len(md_bytes),
-                        file_format="md",
-                        file_hash=file_hash,
-                    )
-                    db.add(doc)
-                    await db.commit()
-                    await db.refresh(doc)
-
-                    if is_installed:
-                        await enqueue_ingestion(str(doc.id))
-                        result.avenants_ingested += 1
+                    with pymupdf.open(stream=pdf_bytes, filetype="pdf") as pdf:
+                        raw = "\n".join(page.get_text() for page in pdf)
+                        entry["pages"] = len(pdf)
+                    entry.update(extract_metadata(raw))
+                    if not entry["nor"] or not entry["title"]:
+                        entry["metadata_status"] = "unresolved"
                     else:
-                        result.avenants_stored += 1
-
+                        entry["metadata_status"] = "identified"
                 except Exception as exc:
+                    entry["metadata_status"] = "error"
+                    entry["error"] = str(exc)[:300]
                     result.errors += 1
                     result.error_messages.append(f"{pdf_name}: {str(exc)[:100]}")
-                    logger.warning("BOCC %s: failed to parse %s: %s", numero, pdf_name, exc)
+                entries.append(entry)
+            result.avenants_found = len(entries)
+            manifest = {
+                "schema_version": 1, "numero": numero, "source_url": url,
+                "archive_sha256": hashlib.sha256(archive_bytes).hexdigest(),
+                "captured_at": datetime.now(UTC).isoformat(),
+                "documents": entries, "indexation_requested": False,
+            }
+            path = self.review_path(year, week)
+            storage = StorageService()
+            await asyncio.to_thread(
+                storage.put_file_bytes, path,
+                json.dumps(manifest, ensure_ascii=False, indent=2).encode("utf-8"),
+                content_type="application/json",
+            )
+            result.review_manifest_path = path
+            result.avenants_stored = len(entries)
 
         except Exception as exc:
             result.errors += 1

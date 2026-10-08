@@ -20,6 +20,7 @@ class BoccIssue(Base):
     week: Mapped[int] = mapped_column(Integer, nullable=False)
     avenants_count: Mapped[int] = mapped_column(Integer, default=0)
     avenants_ingested: Mapped[int] = mapped_column(Integer, default=0)
-    status: Mapped[str] = mapped_column(String(20), default="processed")  # processed | error
+    # processed (legacy) | review_pending | error
+    status: Mapped[str] = mapped_column(String(20), default="processed")
     error_message: Mapped[str | None] = mapped_column(Text)
     processed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)

@@ -329,7 +329,6 @@ async def run_bocc_sync(
 ) -> None:
     """Tâche de synchronisation BOCC."""
     import time as _time
-    from datetime import UTC, datetime
     logger.info("Worker: BOCC sync started (year=%s, week=%s)", year, week)
     session_factory = ctx["session_factory"]
     sync_log_id = await _create_sync_log(session_factory, "bocc")
@@ -340,21 +339,23 @@ async def run_bocc_sync(
 
         service = BoccService()
 
-        # If no year/week specified, find the latest not yet processed
         if year is None or week is None:
             import datetime as dt
-            today = dt.date.today()
-            # Current ISO week - 2 (DILA has ~2 week delay)
-            target = today - dt.timedelta(weeks=2)
-            year = target.isocalendar()[0]
-            week = target.isocalendar()[1]
+            published = {}
+            for catalog_year in (dt.date.today().year - 1, dt.date.today().year):
+                published.update(await service.discover_archives(catalog_year))
+            if not published:
+                raise ValueError("Aucune archive BOCC publiée dans les catalogues consultés")
+            code = max(published)
+            year, week = int(code[:4]), int(code[4:])
 
         async with session_factory() as db:
             # Check if already processed
             existing = await db.execute(
                 select(BoccIssue).where(BoccIssue.numero == f"{year}-{week:02d}")
             )
-            if existing.scalar_one_or_none():
+            previous = existing.scalar_one_or_none()
+            if previous is not None and previous.status in {"processed", "review_pending"}:
                 logger.info("BOCC %d-%02d already processed, skipping", year, week)
                 await _finish_sync_log(
                     session_factory, sync_log_id,
@@ -383,18 +384,9 @@ async def run_bocc_sync(
                 )
                 return
 
-            # Record in bocc_issues
-            issue = BoccIssue(
-                numero=f"{year}-{week:02d}",
-                year=year,
-                week=week,
-                avenants_count=result.avenants_found,
-                avenants_ingested=result.avenants_ingested,
-                status="error" if result.errors > 0 and result.avenants_found == 0 else "processed",
-                error_message="; ".join(result.error_messages[:3]) if result.error_messages else None,
-                processed_at=datetime.now(UTC),
-            )
-            db.add(issue)
+            if previous is not None:
+                await db.refresh(previous)
+            service.record_result(db, previous, year, week, result)
             await db.commit()
 
         logger.info(
@@ -404,7 +396,7 @@ async def run_bocc_sync(
         )
         await _finish_sync_log(
             session_factory, sync_log_id,
-            success=result.errors == 0 or result.avenants_found > 0,
+            success=result.errors == 0,
             items_fetched=result.avenants_found,
             items_created=result.avenants_ingested,
             errors=result.errors,
@@ -1154,121 +1146,8 @@ async def run_scheduled_sync(ctx: dict) -> None:
         else:
             logger.info("Scheduled sync: no CCN installed, skipping")
 
-        # --- 3. BOCC weekly sync ---
-        # Catch up ALL un-processed weeks between (today - 12 weeks) and
-        # (today - 2 weeks). DILA publishes one BOCC issue per week with a
-        # ~2 week lag, so the cron previously synced only 1 issue per run
-        # which left 50% of new issues uncovered. We now scan a 10-week
-        # window and ingest every issue not already in BoccIssue, capped
-        # at 6 issues per cron run to keep the worker time bounded.
-        bocc_log_id = await _create_sync_log(session_factory, "bocc")
-        bocc_t0 = _time.perf_counter()
-        try:
-            import datetime as dt
-
-            from app.models.bocc_issue import BoccIssue
-            from app.services.bocc_service import BoccService
-
-            bocc_service = BoccService()
-            today = dt.date.today()
-            window_start = today - dt.timedelta(weeks=12)
-            window_end = today - dt.timedelta(weeks=2)
-
-            # Build the list of (year, week) candidates in the window
-            candidates: list[tuple[int, int]] = []
-            d = window_end
-            while d >= window_start:
-                yw = d.isocalendar()
-                candidates.append((yw[0], yw[1]))
-                d -= dt.timedelta(weeks=1)
-            # candidates ordered most-recent first → process newest first
-
-            BOCC_PER_RUN_CAP = 6
-            total_avenants_found = 0
-            total_avenants_ingested = 0
-            total_errors = 0
-            total_processed = 0
-            total_skipped = 0
-            error_messages: list[str] = []
-
-            for year, week in candidates:
-                if total_processed >= BOCC_PER_RUN_CAP:
-                    break
-                numero = f"{year}-{week:02d}"
-                existing = await db.execute(
-                    select(BoccIssue).where(BoccIssue.numero == numero)
-                )
-                if existing.scalar_one_or_none():
-                    total_skipped += 1
-                    continue
-                try:
-                    res = await bocc_service.process_issue(db, year, week, admin_id)
-                    # DILA n'a pas (encore) publié ce numéro : ne crée pas de
-                    # BoccIssue (rien à enregistrer), ne compte pas d'erreur.
-                    # On log et on passe au suivant — comportement attendu pour
-                    # les semaines récentes pas encore publiées.
-                    if res.not_yet_available:
-                        logger.info(
-                            "Scheduled sync: BOCC %s pas encore publié, skip", numero
-                        )
-                        continue
-                    issue = BoccIssue(
-                        numero=numero,
-                        year=year,
-                        week=week,
-                        avenants_count=res.avenants_found,
-                        avenants_ingested=res.avenants_ingested,
-                        status=(
-                            "error"
-                            if res.errors > 0 and res.avenants_found == 0
-                            else "processed"
-                        ),
-                        error_message=(
-                            "; ".join(res.error_messages[:3])
-                            if res.error_messages else None
-                        ),
-                        processed_at=datetime.now(UTC),
-                    )
-                    db.add(issue)
-                    await db.commit()
-                    total_avenants_found += res.avenants_found
-                    total_avenants_ingested += res.avenants_ingested
-                    total_errors += res.errors
-                    total_processed += 1
-                    if res.error_messages:
-                        error_messages.extend(res.error_messages[:2])
-                    logger.info(
-                        "Scheduled sync: BOCC %s done — %d avenants, %d ingested",
-                        numero, res.avenants_found, res.avenants_ingested,
-                    )
-                except Exception as exc:
-                    logger.exception("Scheduled sync: BOCC %s failed", numero)
-                    total_errors += 1
-                    error_messages.append(f"{numero}: {str(exc)[:120]}")
-
-            await _finish_sync_log(
-                session_factory, bocc_log_id,
-                success=total_errors == 0 or total_avenants_ingested > 0,
-                items_fetched=total_avenants_found,
-                items_created=total_avenants_ingested,
-                items_skipped=total_skipped,
-                errors=total_errors,
-                error_message="; ".join(error_messages[:3]) if error_messages else None,
-                duration_ms=int((_time.perf_counter() - bocc_t0) * 1000),
-            )
-            logger.info(
-                "Scheduled sync: BOCC catch-up done — %d issues processed, "
-                "%d skipped, %d avenants found, %d ingested, %d errors",
-                total_processed, total_skipped,
-                total_avenants_found, total_avenants_ingested, total_errors,
-            )
-        except Exception as exc:
-            logger.exception("Scheduled sync: BOCC sync failed")
-            await _finish_sync_log(
-                session_factory, bocc_log_id,
-                success=False, errors=1, error_message=str(exc),
-                duration_ms=int((_time.perf_counter() - bocc_t0) * 1000),
-            )
+        # BOCC has its own daily catalog/review job. Do not run a second,
+        # weekly admission path as part of the other source synchronizations.
 
         # --- 4. All legal codes sync (Code travail + civil + pénal + CSS + CASF) ---
         # The LegiService computes a SHA-256 of the fetched content and skips
@@ -1508,21 +1387,10 @@ async def run_ccn_blue_green_cleanup(ctx: dict, old_doc_ids: list[str]) -> None:
 
 
 async def run_daily_bocc_check(ctx: dict) -> None:
-    """Cron quotidien : vérifie une FENÊTRE GLISSANTE de semaines récentes.
+    """Scan published BOCC catalogs, including late issues and failed attempts.
 
-    DILA publie les BOCC avec un délai variable (typiquement 2-4 semaines).
-    Si on ne checkait qu'UNE semaine (current ISO - 2), on raterait toute
-    publication tardive : exemple, on check le mardi, DILA publie le jeudi,
-    le lundi suivant on est passé à la semaine ISO suivante et on ne revient
-    plus jamais sur la précédente.
-
-    Solution : on rebalaye les 6 dernières semaines (du W-7 au W-2). Pour
-    chaque semaine :
-    - déjà en BoccIssue → skip silencieux (idempotent)
-    - 404 chez DILA → toujours pas publiée, skip silencieux
-    - 200 → on traite et on enregistre
-    Sortie : sync_log unique avec total_processed / total_skipped /
-    total_errors (vrais erreurs uniquement, pas les 404).
+    At most five issues per daily run, one attempt each; no immediate retry.
+    Successful issues are skipped. A failed attempt waits at least 24 hours.
     """
     import datetime as dt
     import time as _time
@@ -1555,47 +1423,60 @@ async def run_daily_bocc_check(ctx: dict) -> None:
     bocc_service = BoccService()
 
     today = dt.date.today()
-    # Fenêtre [W-7, W-2] — 6 semaines, couvre les publications tardives DILA
-    # tout en restant léger (6 HTTP HEAD/GET maxi par jour).
-    candidates: list[tuple[int, int]] = []
-    d = today - dt.timedelta(weeks=2)
-    while d >= today - dt.timedelta(weeks=7):
-        yw = d.isocalendar()
-        candidates.append((yw[0], yw[1]))
-        d -= dt.timedelta(weeks=1)
-
     total_found = 0
     total_ingested = 0
     total_processed = 0
     total_skipped = 0
     total_errors = 0
     error_messages: list[str] = []
+    candidates: list[tuple[int, int, str]] = []
+    for catalog_year in range(2023, today.year + 1):
+        try:
+            archives = await bocc_service.discover_archives(catalog_year)
+            candidates.extend((int(code[:4]), int(code[4:]), url)
+                              for code, url in archives.items())
+        except Exception as exc:
+            total_errors += 1
+            error_messages.append(f"Catalogue {catalog_year}: {str(exc)[:120]}")
+            logger.exception("Daily BOCC: catalogue %s indisponible", catalog_year)
 
+    attempts = 0
     async with session_factory() as db:
-        for year, week in candidates:
+        history = (await db.execute(select(BoccIssue))).scalars().all()
+        # New publications first, then oldest failed attempts: permanently
+        # broken archives cannot monopolize the daily batch.
+        attempt_dates = {item.numero: item.processed_at.timestamp() for item in history}
+        candidates.sort(key=lambda item: (
+            attempt_dates.get(f"{item[0]}-{item[1]:02d}", float("-inf")),
+            item[0], item[1],
+        ))
+        for year, week, archive_url in candidates:
             numero = f"{year}-{week:02d}"
             existing = await db.execute(
                 select(BoccIssue).where(BoccIssue.numero == numero)
             )
-            if existing.scalar_one_or_none():
-                total_skipped += 1
-                continue
+            previous = existing.scalar_one_or_none()
+            if previous is not None:
+                last_attempt = previous.processed_at
+                if last_attempt.tzinfo is None:
+                    last_attempt = last_attempt.replace(tzinfo=UTC)
+                if (previous.status in {"processed", "review_pending"}
+                        or datetime.now(UTC) - last_attempt < dt.timedelta(hours=24)):
+                    total_skipped += 1
+                    continue
+            if attempts >= 5:
+                break
+            attempts += 1
             try:
-                res = await bocc_service.process_issue(db, year, week, admin_id)
+                res = await bocc_service.process_issue(
+                    db, year, week, admin_id, archive_url=archive_url,
+                )
                 if res.not_yet_available:
                     logger.info("Daily BOCC: %s pas encore publié, skip", numero)
                     continue
-                issue = BoccIssue(
-                    numero=numero, year=year, week=week,
-                    avenants_count=res.avenants_found,
-                    avenants_ingested=res.avenants_ingested,
-                    status=("error" if res.errors > 0 and res.avenants_found == 0
-                            else "processed"),
-                    error_message=("; ".join(res.error_messages[:3])
-                                   if res.error_messages else None),
-                    processed_at=datetime.now(UTC),
-                )
-                db.add(issue)
+                if previous is not None:
+                    await db.refresh(previous)
+                bocc_service.record_result(db, previous, year, week, res)
                 await db.commit()
                 total_found += res.avenants_found
                 total_ingested += res.avenants_ingested
@@ -1608,6 +1489,7 @@ async def run_daily_bocc_check(ctx: dict) -> None:
                     numero, res.avenants_found, res.avenants_ingested,
                 )
             except Exception as exc:
+                await db.rollback()
                 logger.exception("Daily BOCC: %s a échoué", numero)
                 total_errors += 1
                 error_messages.append(f"{numero}: {str(exc)[:120]}")

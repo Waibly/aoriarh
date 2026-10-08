@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import json
 import logging
 import re
 import time
@@ -187,21 +188,8 @@ def _title_matches_keywords(title: str) -> bool:
     return _title_has_rh_keyword(title)
 
 
-# --- Périmètre : deux régimes selon la nature du texte -----------------------
-#
-# LOI / ORDONNANCE / DÉCRET → aucun filtre, on prend tout.
-#   Le tri par mots-clés est une liste blanche : elle ne connaît que ce qu'on a
-#   pensé à y mettre et ne signale jamais ses propres oublis. Impossible d'en
-#   mesurer le rappel de l'intérieur. Cas d'école : la LOI 2023-1107 (partage de
-#   la valeur, obligation pour les entreprises de 11 à 49 salariés) ne tenait
-#   qu'à un mot-clé de titre, et le filet « modifie le Code du travail » ne
-#   l'aurait pas rattrapée — son article 5 est une expérimentation NON codifiée,
-#   elle ne touche pas au code. Le volume est faible (~1 500 textes/an) : le
-#   rappel prime sur le bruit.
-#
-# ARRÊTÉ → filtre conservé. ~29 500 textes sur 2020-2026, pour l'essentiel des
-#   nominations, délégations de signature et agréments d'accords de branche (ces
-#   derniers déjà couverts par l'ingestion des CCN).
+# Consulter largement pour découvrir les textes opaques ; l'admission au
+# corpus reste distincte. Les candidats non admis sont conservés pour revue.
 _NATURES_SANS_FILTRE = frozenset({"LOI", "ORDONNANCE", "DECRET"})
 
 
@@ -215,8 +203,6 @@ def _should_consult(nature: str, title: str) -> bool:
 def _should_keep(nature: str, title: str, modified_code_ids: set[str]) -> bool:
     """Faut-il ingérer ce texte ? Décision APRÈS /consult (les codes modifiés
     ne sont connus qu'une fois le texte consulté)."""
-    if nature in _NATURES_SANS_FILTRE:
-        return True
     return _is_rh_relevant(title, modified_code_ids)
 
 
@@ -382,6 +368,8 @@ class JorfService:
                         continue
 
                     if not _should_consult(nature, title):
+                        self._store_review(storage, cid, title, nature, raw,
+                                           reason="titre_a_qualifier")
                         result.filtered_out += 1
                         continue
 
@@ -400,6 +388,8 @@ class JorfService:
                         consult
                     )
                     if not _should_keep(nature, title, modified_code_ids):
+                        self._store_review(storage, cid, title, nature, raw,
+                                           reason="perimetre_a_qualifier", consult=consult)
                         result.filtered_out += 1
                         continue
                     if not full_text or len(full_text) < 50:
@@ -432,6 +422,25 @@ class JorfService:
             result.filtered_out, result.errors,
         )
         return result
+
+    @staticmethod
+    def _store_review(storage, cid, title, nature, search_result, *, reason, consult=None):
+        """Keep the original source evidence outside the searchable corpus."""
+        if not re.fullmatch(r"JORFTEXT[0-9]+", cid):
+            raise ValueError("Identifiant JORF invalide pour le registre de revue")
+        entry = {
+            "schema_version": 1, "status": "review_pending", "cid": cid,
+            "title": title, "nature": nature, "reason": reason,
+            "source_url": f"https://www.legifrance.gouv.fr/jorf/id/{cid}",
+            "observed_at": datetime.now(UTC).isoformat(),
+            "search_result": search_result, "consult": consult,
+            "indexation_requested": False,
+        }
+        storage.put_file_bytes(
+            f"common/jorf_review/{cid}.json",
+            json.dumps(entry, ensure_ascii=False).encode("utf-8"),
+            content_type="application/json",
+        )
 
     # ---- Search ----
 
@@ -500,6 +509,11 @@ class JorfService:
             results_list.extend(page_results)
             if len(results_list) >= result.total_fetched:
                 break
+        if len(results_list) < result.total_fetched:
+            result.errors += 1
+            result.error_messages.append(
+                f"Inventaire JORF incomplet : {len(results_list)}/{result.total_fetched} textes"
+            )
         return results_list
 
     # ---- Parsing ----

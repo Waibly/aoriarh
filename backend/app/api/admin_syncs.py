@@ -122,7 +122,7 @@ async def trigger_bocc_sync(
     from app.rag.tasks import enqueue_bocc_sync
     await enqueue_bocc_sync(str(user.id), year=year, week=week)
     label = f"{year}-{week:02d}" if year and week else "dernier disponible"
-    return {"detail": f"Synchronisation BOCC lancée ({label})"}
+    return {"detail": f"Veille BOCC lancée ({label}), sans indexation"}
 
 
 @router.post("/bocc/backfill")
@@ -132,7 +132,61 @@ async def trigger_bocc_backfill(
     """Launch full BOCC backfill (3 last years)."""
     from app.rag.tasks import enqueue_bocc_backfill
     await enqueue_bocc_backfill(str(user.id))
-    return {"detail": "Backfill BOCC lancé (2023-2025). Opération longue, voir les logs."}
+    return {"detail": "Inventaire BOCC lancé depuis 2023, sans indexation. Voir les logs."}
+
+
+@router.get("/bocc/review")
+async def read_bocc_review(
+    year: int = Query(..., ge=1900, le=2100),
+    week: int = Query(..., ge=1, le=99),
+    user: User = Depends(require_role(["admin"])),
+) -> dict:
+    """Read a collected manifest; this endpoint cannot admit documents."""
+    import asyncio
+    import json
+
+    from botocore.exceptions import ClientError
+    from fastapi import HTTPException
+
+    from app.services.bocc_service import BoccService
+    from app.services.storage_service import StorageService
+
+    try:
+        raw = await asyncio.to_thread(
+            StorageService().get_file_bytes_bounded,
+            BoccService.review_path(year, week), 10_000_000,
+        )
+    except ClientError as exc:
+        if str(exc.response.get("Error", {}).get("Code")) in {"404", "NoSuchKey"}:
+            raise HTTPException(status_code=404, detail="Inventaire BOCC non disponible") from exc
+        raise
+    return json.loads(raw)
+
+
+@router.get("/jorf/review")
+async def read_jorf_review(
+    cid: str = Query(..., pattern=r"^JORFTEXT[0-9]+$", max_length=40),
+    user: User = Depends(require_role(["admin"])),
+) -> dict:
+    """Read the source evidence retained for documentary qualification."""
+    import asyncio
+    import json
+
+    from botocore.exceptions import ClientError
+    from fastapi import HTTPException
+
+    from app.services.storage_service import StorageService
+
+    try:
+        raw = await asyncio.to_thread(
+            StorageService().get_file_bytes_bounded,
+            f"common/jorf_review/{cid}.json", 10_000_000,
+        )
+    except ClientError as exc:
+        if str(exc.response.get("Error", {}).get("Code")) in {"404", "NoSuchKey"}:
+            raise HTTPException(status_code=404, detail="Candidat JORF non disponible") from exc
+        raise
+    return json.loads(raw)
 
 
 @router.post("/code-travail")

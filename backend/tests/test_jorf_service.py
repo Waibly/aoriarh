@@ -14,13 +14,7 @@ from app.services.jorf_service import (
     _title_matches_keywords,
 )
 
-# --- Périmètre : lois/ordonnances/décrets sans filtre, arrêtés filtrés --------
-#
-# Régression gardée : la LOI 2023-1107 (partage de la valeur) était absente du
-# corpus alors que la question « est-ce obligatoire pour les 11-49 ? » est une
-# vraie question RH. Elle ne modifie pas le Code du travail (article 5 = expéri-
-# mentation non codifiée), donc seul un mot-clé de titre la sauvait. On ne filtre
-# plus les textes substantiels.
+# Consultation large ; admission RH distincte et candidats conservés pour revue.
 
 _LOI_1107 = (
     "LOI n° 2023-1107 du 29 novembre 2023 portant transposition de l'accord "
@@ -35,18 +29,16 @@ def test_loi_consultee_et_gardee_sans_mot_cle_ni_lien_code():
     assert _should_keep("LOI", _LOI_1107, set()) is True
 
 
-def test_decret_au_titre_opaque_est_garde():
+def test_decret_opaque_est_consulte_mais_attend_qualification():
     titre = "Décret n° 2024-1 portant diverses dispositions d'application"
     assert _should_consult("DECRET", titre) is True
-    assert _should_keep("DECRET", titre, set()) is True
+    assert _should_keep("DECRET", titre, set()) is False
 
 
-def test_ordonnance_gardee_meme_si_titre_exclu():
-    """Pas de veto sur les textes substantiels : les exclusions ne s'appliquent
-    qu'aux arrêtés, où elles servent à écarter le bruit administratif."""
+def test_ordonnance_fonction_publique_attend_qualification():
     titre = "Ordonnance n° 2026-1 relative à la fonction publique territoriale"
     assert _should_consult("ORDONNANCE", titre) is True
-    assert _should_keep("ORDONNANCE", titre, set()) is True
+    assert _should_keep("ORDONNANCE", titre, set()) is False
 
 
 def test_arrete_sans_mot_cle_rh_est_ecarte_avant_consultation():
@@ -280,3 +272,70 @@ async def test_run_jorf_sync_writes_synclog(monkeypatch):
     assert rows[0].status == "success"
     assert rows[0].items_created == 2
     assert rows[0].items_fetched == 5
+
+
+async def test_sync_archives_unadmitted_sources_without_indexing(monkeypatch):
+    import json
+    import uuid
+    from unittest.mock import AsyncMock, MagicMock
+    from app.services import jorf_service
+
+    service = JorfService()
+    service._client_id = 'test'
+    service._client_secret = 'test'
+    monkeypatch.setattr(service, '_get_existing_cids', AsyncMock(return_value=set()))
+    monkeypatch.setattr(service, '_search_all', AsyncMock(return_value=[
+        {'id': 'JORFTEXT001', 'title': 'Décret relatif au rhum', 'nature': 'DECRET'},
+        {'id': 'JORFTEXT002', 'title': 'Arrêté portant nomination', 'nature': 'ARRETE'},
+        {'id': 'JORFTEXT003', 'title': _LOI_1107, 'nature': 'LOI'},
+    ]))
+    consult = {'articles': [{'num': '1', 'content': 'Texte officiel intégral. ' * 5}]}
+    monkeypatch.setattr(service, '_api_post', AsyncMock(return_value=consult))
+    create = AsyncMock(return_value=MagicMock(id=uuid.uuid4()))
+    monkeypatch.setattr(service, '_create_document', create)
+    enqueue = AsyncMock()
+    monkeypatch.setattr(jorf_service, 'enqueue_ingestion', enqueue)
+    storage = MagicMock()
+    monkeypatch.setattr('app.services.storage_service.StorageService', lambda: storage)
+    result = await service.sync(MagicMock(), uuid.uuid4())
+    assert result.new_ingested == 1 and result.filtered_out == 2 and result.errors == 0
+    assert create.await_count == enqueue.await_count == 1
+    entries = [json.loads(call.args[1]) for call in storage.put_file_bytes.call_args_list]
+    assert {e['cid'] for e in entries} == {'JORFTEXT001', 'JORFTEXT002'}
+    assert entries[0]['consult'] == consult
+    assert all(e['status'] == 'review_pending' and not e['indexation_requested'] for e in entries)
+
+
+async def test_incomplete_search_is_reported(monkeypatch):
+    from datetime import date
+    from unittest.mock import AsyncMock
+    from app.services import jorf_service
+    service = JorfService()
+    monkeypatch.setattr(jorf_service, '_MAX_PAGES', 1)
+    monkeypatch.setattr(service, '_api_post', AsyncMock(return_value={
+        'totalResultNumber': 120, 'results': [{'id': 'JORFTEXT001'}],
+    }))
+    result = jorf_service.JorfSyncResult()
+    await service._search_all(None, date(2026, 1, 1), date(2026, 1, 2), result)
+    assert result.errors == 1
+    assert '1/120' in result.error_messages[0]
+
+
+async def test_jorf_review_admin_access_and_path_validation(client, admin_user, regular_user, monkeypatch):
+    from unittest.mock import MagicMock
+    storage = MagicMock()
+    storage.get_file_bytes_bounded.return_value = b'{"status":"review_pending"}'
+    monkeypatch.setattr('app.services.storage_service.StorageService', lambda: storage)
+    url = '/api/v1/admin/syncs/jorf/review?cid=JORFTEXT000123'
+    assert (await client.get(url)).status_code in (401, 403)
+    assert (await client.get(url, headers={
+        'Authorization': f"Bearer {regular_user['token']}",
+    })).status_code == 403
+    storage.get_file_bytes_bounded.assert_not_called()
+    headers = {'Authorization': f"Bearer {admin_user['token']}"}
+    assert (await client.get(url, headers=headers)).status_code == 200
+    storage.get_file_bytes_bounded.assert_called_once_with(
+        'common/jorf_review/JORFTEXT000123.json', 10_000_000,
+    )
+    assert (await client.get('/api/v1/admin/syncs/jorf/review?cid=../../secret',
+                            headers=headers)).status_code == 422
