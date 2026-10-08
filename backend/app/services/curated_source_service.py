@@ -59,7 +59,42 @@ def extract_body(spec, raw):
     return body
 
 
+async def fetch_browser_source(spec):
+    """Direct HTTPS with browser-compatible transport, for approved public sources."""
+    from curl_cffi.requests import AsyncSession
+
+    url = spec.get("fetch_url", spec["url"])
+    hosts = set(spec["allowed_hosts"])
+    async with AsyncSession(impersonate="chrome", verify=True, timeout=30) as session:
+        for _ in range(5):
+            parsed = urlsplit(url)
+            if (
+                parsed.scheme != "https"
+                or parsed.hostname not in hosts
+                or parsed.port not in (None, 443)
+                or parsed.username
+                or parsed.password
+            ):
+                raise ValueError("Unapproved source redirect")
+            async with session.stream("GET", url, allow_redirects=False) as response:
+                if response.status_code in {301, 302, 303, 307, 308}:
+                    url = urljoin(url, response.headers["location"])
+                    continue
+                response.raise_for_status()
+                raw = bytearray()
+                async for chunk in response.aiter_content():
+                    raw.extend(chunk)
+                    if len(raw) > MAX_BYTES:
+                        raise ValueError("Source exceeds download budget")
+                if not raw:
+                    raise ValueError("Empty source response")
+                return bytes(raw), url
+    raise ValueError("Too many source redirects")
+
+
 async def fetch_source(client, spec):
+    if spec.get("transport") == "browser_http":
+        return await fetch_browser_source(spec)
     url = spec.get("fetch_url", spec["url"])
     hosts = set(spec["allowed_hosts"])
     for _ in range(5):
@@ -187,6 +222,8 @@ class CuratedSourceService:
             for spec in sources:
                 item = {
                     "key": spec["key"],
+                    "name": spec.get("name", spec["key"]),
+                    "transport": spec.get("transport", "httpx"),
                     "url": spec["url"],
                     "checked_at": datetime.now(timezone.utc).isoformat(),
                 }

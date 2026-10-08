@@ -1526,7 +1526,7 @@ async def run_curated_sources_sync(ctx: dict) -> dict:
         try:
             async with session_factory() as db:
                 result = await CuratedSourceService().sync(db)
-            problems = [r["key"] + ": " + r.get("error", r["status"])
+            problems = [r.get("name", r["key"]) + ": " + r.get("error", r["status"])
                         for r in result["sources"] if r["status"] not in {"updated", "unchanged"}]
             await _finish_sync_log(
                 session_factory, log_id, success=not problems,
