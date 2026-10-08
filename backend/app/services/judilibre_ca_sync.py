@@ -98,7 +98,7 @@ async def schedule_recurring(db: AsyncSession, today: date) -> None:
         )
     # First run also starts the audited 2026 backfill. Later monthly runs
     # reconcile late publications, not just updates of the last 30 days.
-    key = f"ca:history:{today:%Y-%m}"
+    key = f"ca:history:{today:%Y-%m}:"
     active_history = await db.scalar(
         select(JudilibreScan.id)
         .where(
@@ -107,8 +107,17 @@ async def schedule_recurring(db: AsyncSession, today: date) -> None:
         )
         .limit(1)
     )
-    if not active_history and yesterday >= HISTORY_START:
-        await schedule_scan(db, key=key, start=HISTORY_START, end=yesterday)
+    cycle_exists = await db.scalar(
+        select(JudilibreScan.id).where(JudilibreScan.key.like(key + "%")).limit(1)
+    )
+    if not active_history and not cycle_exists and yesterday >= HISTORY_START:
+        # Independent weeks avoid restarting months of work when a late
+        # publication changes one inventory. No gaps or overlapping boundaries.
+        start = HISTORY_START
+        while start <= yesterday:
+            end = min(start + timedelta(days=6), yesterday)
+            await schedule_scan(db, key=key + start.isoformat(), start=start, end=end)
+            start = end + timedelta(days=1)
     await db.commit()
 
 
@@ -386,17 +395,16 @@ async def collect_tick(session_factory, pool) -> dict:
         if backlog >= MAX_PENDING_DOCUMENTS:
             return {"status": "waiting_for_indexing", "pending": backlog}
         # Give recent updates a page, then history a page; neither can starve.
-        scans = (
-            await db.scalars(
-                select(JudilibreScan)
-                .where(JudilibreScan.status == "pending")
-                .order_by(JudilibreScan.created_at)
-                .limit(20)
+        chosen = []
+        for date_type in ("update", "creation"):
+            scan_id = await db.scalar(
+                select(JudilibreScan.id)
+                .where(JudilibreScan.status == "pending", JudilibreScan.date_type == date_type)
+                .order_by(JudilibreScan.date_end.desc(), JudilibreScan.created_at)
+                .limit(1)
             )
-        ).all()
-        updates = [s for s in scans if s.date_type == "update"]
-        history = [s for s in scans if s.date_type != "update"]
-        chosen = [s.id for s in updates[:1] + history[:1]]
+            if scan_id:
+                chosen.append(scan_id)
         async with httpx.AsyncClient(timeout=60) as client:
             for scan_id in chosen:
                 try:

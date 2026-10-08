@@ -239,14 +239,26 @@ async def test_scheduler_recovers_downtime_and_does_not_duplicate_history():
     async with session_factory() as db:
         await schedule_recurring(db, date(2026, 10, 8))
         await schedule_recurring(db, date(2026, 10, 8))
-        assert await db.scalar(select(func.count()).select_from(JudilibreScan)) == 2
+        history = (
+            await db.scalars(
+                select(JudilibreScan)
+                .where(JudilibreScan.date_type == "creation")
+                .order_by(JudilibreScan.date_start)
+            )
+        ).all()
+        assert history[0].date_start == date(2026, 1, 1)
+        assert history[-1].date_end == date(2026, 10, 7)
+        for previous, following in zip(history, history[1:]):
+            assert previous.date_end + timedelta(days=1) == following.date_start
+            assert (previous.date_end - previous.date_start).days == 6
+        assert await db.scalar(select(func.count()).select_from(JudilibreScan)) == len(history) + 1
         await schedule_recurring(db, date(2026, 10, 20))
         s = await db.scalar(
             select(JudilibreScan).where(JudilibreScan.key == "ca:updates:2026-10-19")
         )
         assert s.date_start == date(2026, 10, 5)
         assert s.date_type == "update"
-        assert await db.scalar(select(func.count()).select_from(JudilibreScan)) == 3
+        assert await db.scalar(select(func.count()).select_from(JudilibreScan)) == len(history) + 2
 
 
 def test_cursor_extracts_only_opaque_token():
