@@ -15,6 +15,7 @@ from datetime import date
 from typing import Literal
 
 import httpx
+from sqlalchemy.exc import SQLAlchemyError
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.rag.agent import RagTrace
@@ -62,7 +63,7 @@ class OrchestratorAction(BaseModel):
 
     @model_validator(mode="after")
     def arguments_match_action(self):
-        if self.action != "read_legal_sources" and self.document_ids is not None:
+        if self.action not in {"read_legal_sources", "search_documents"} and self.document_ids is not None:
             raise ValueError("action_arguments_mismatch")
         if self.action == "find_documents":
             valid = self.lookup is not None and all(
@@ -310,7 +311,7 @@ async def plan_conversation(
     trace.router_raw_response = raw
     trace.perf_ms["planner_call"] = (time.perf_counter() - planner_started) * 1000
     trace.search_plan_usage = {
-        "contract": "requests_v2",
+        "contract": "requests_v3",
         "prompt_chars": sum(len(message["content"]) for message in messages),
         "schema_chars": len(json.dumps(schema)),
         "output_chars": len(raw or ""),
@@ -548,7 +549,9 @@ async def prepare_conversation_context(
     tool_results: list[dict] = []
     orchestration_plans: list[dict] = []
     raw_plans: list[str | None] = []
-    results: list[SearchResult] = []
+    # These documents were already authorized and read before planning. Their
+    # contents must reach generation even when no extra read action is requested.
+    results: list[SearchResult] = _document_results(current_documents)
     reformulated = query
     generate_without_sources = False
     legal_executed = False
@@ -924,38 +927,47 @@ async def prepare_conversation_context(
                 continue
 
             if action.action == "search_documents":
-                progress("Recherche dans les documents…")
-                if not current_references:
-                    output = {
-                        "action_id": action.id,
-                        "action": action.action,
-                        "status": "unresolved",
-                        "documents": [],
-                    }
-                else:
-                    current_documents, continuity = await read_conversation_documents(
-                        db,
-                        conversation,
-                        user,
-                        current_references,
-                        query=action.query or query,
-                    )
-                    results.extend(_document_results(current_documents))
-                    output = {
-                        "action_id": action.id,
-                        "action": action.action,
-                        "status": "success",
-                        "documents": [
-                            {
-                                "document_id": str(item["document_id"]),
-                                "name": item["source_name"],
-                                "reading_scope": item.get(
-                                    "transmitted_scope", "full_extracted_text"
-                                ),
-                            }
-                            for item in current_documents
-                        ],
-                    }
+                progress("Recherche des informations nécessaires dans vos documents…")
+                selected_references = current_references
+                if action.document_ids is not None:
+                    wanted = {str(i) for i in action.document_ids}
+                    available = {str(r["document_id"]) for r in current_references}
+                    if not wanted.issubset(available):
+                        request_errors.append({"scope": "document_consultation", "id": action.id,
+                                               "error": "document_access_error"})
+                        output = {"action_id": action.id, "action": action.action,
+                                  "status": "document_access_error", "documents": []}
+                        action_outputs[action.id] = output
+                        tool_results.append(output)
+                        continue
+                    selected_references = [r for r in current_references
+                                           if str(r["document_id"]) in wanted]
+                output = {"action_id": action.id, "action": action.action,
+                          "question": action.query, "status": "unresolved", "documents": []}
+                if selected_references:
+                    try:
+                        consulted, _ = await read_conversation_documents(
+                            db, conversation, user, selected_references, query=action.query or query,
+                        )
+                        # Keep every original excerpt and every newly consulted excerpt.
+                        # Other active documents and their references must remain available.
+                        results.extend(_document_results(consulted))
+                        output.update(
+                            status="success" if any(d.get("text") for d in consulted) else "no_results",
+                            documents=[{"document_id": str(d["document_id"]),
+                                        "name": d["source_name"],
+                                        "reading_scope": d.get("transmitted_scope", "full_extracted_text")}
+                                       for d in consulted],
+                        )
+                        current_documents = [*current_documents, *consulted]
+                    except SQLAlchemyError:
+                        # A failed DB transaction cannot safely continue to generation.
+                        raise
+                    except Exception:
+                        logger.exception("Targeted document consultation failed")
+                        output["status"] = "document_read_error"
+                        request_errors.append({"scope": "document_consultation", "id": action.id,
+                                               "error": "document_read_error"})
                 action_outputs[action.id] = output
                 tool_results.append(output)
                 continue

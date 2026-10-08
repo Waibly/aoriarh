@@ -34,6 +34,7 @@ from app.api import (
     auth,
     billing,
     case_files,
+    dossiers,
     conventions,
     conversations,
     documents,
@@ -291,6 +292,7 @@ app.include_router(invitations.router, prefix="/api/v1", tags=["invitations"])
 app.include_router(team.router, prefix="/api/v1/team", tags=["team"])
 app.include_router(conversations.router, prefix="/api/v1/conversations", tags=["conversations"])
 app.include_router(case_files.router, prefix="/api/v1/conversations", tags=["case-files"])
+app.include_router(dossiers.router, prefix="/api/v1/dossiers", tags=["dossiers"])
 app.include_router(fiches.router, prefix="/api/v1/fiches", tags=["fiches"])
 app.include_router(billing.router, prefix="/api/v1/billing", tags=["billing"])
 app.include_router(

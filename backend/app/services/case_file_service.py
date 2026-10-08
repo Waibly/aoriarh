@@ -5,7 +5,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import HTTPException, status
-from sqlalchemy import delete, select, update
+from sqlalchemy import delete, select, update, or_, and_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -27,6 +27,19 @@ CASE_FILE_LOAD_OPTIONS = (
     selectinload(CaseFile.document_links),
     selectinload(CaseFile.events),
 )
+
+
+def conversation_case_condition(conversation_id):
+    from app.models.dossier import Dossier
+
+    dossier_id = (
+        select(Conversation.dossier_id).where(Conversation.id == conversation_id).scalar_subquery()
+    )
+    shared_id = select(Dossier.case_file_id).where(Dossier.id == dossier_id).scalar_subquery()
+    return or_(
+        CaseFile.id == shared_id,
+        and_(dossier_id.is_(None), CaseFile.conversation_id == conversation_id),
+    )
 
 
 class CaseFileApplyError(RuntimeError):
@@ -59,6 +72,10 @@ class CaseFileService:
         expected_version: int,
     ) -> None:
         case_file, _ = await self.get_case_file(conversation_id, user)
+        conversation = await self.db.get(Conversation, conversation_id)
+        if conversation.dossier_id:
+            from app.services.dossier_service import DossierService
+            await DossierService(self.db).get(conversation.dossier_id, user, write=True)
         messages = (
             (
                 await self.db.execute(
@@ -134,7 +151,7 @@ class CaseFileService:
         """Create the empty dossier and retain the context seen at creation."""
         existing = (
             await self.db.execute(
-                select(CaseFile).where(CaseFile.conversation_id == conversation.id)
+                select(CaseFile).where(conversation_case_condition(conversation.id))
             )
         ).scalar_one_or_none()
         if existing is not None:
@@ -162,7 +179,7 @@ class CaseFileService:
         except IntegrityError:
             concurrent = (
                 await self.db.execute(
-                    select(CaseFile).where(CaseFile.conversation_id == conversation.id)
+                    select(CaseFile).where(conversation_case_condition(conversation.id))
                 )
             ).scalar_one_or_none()
             if concurrent is None:
@@ -193,7 +210,7 @@ class CaseFileService:
         result = await self.db.execute(
             select(CaseFile)
             .options(*CASE_FILE_LOAD_OPTIONS[:3])
-            .where(CaseFile.conversation_id == conversation_id)
+            .where(conversation_case_condition(conversation_id))
             .execution_options(populate_existing=True)
         )
         return result.scalar_one_or_none()
@@ -204,7 +221,7 @@ class CaseFileService:
         """Return the current dossier state without changing its active content."""
         case_file = (
             await self.db.execute(
-                select(CaseFile).where(CaseFile.conversation_id == conversation.id)
+                select(CaseFile).where(conversation_case_condition(conversation.id))
             )
         ).scalar_one_or_none()
         if case_file is None:
@@ -231,6 +248,13 @@ class CaseFileService:
                     select(CaseTask)
                     .where(
                         CaseTask.case_file_id == case_file.id,
+                        (
+                            CaseTask.created_from_message_id.in_(
+                                select(Message.id).where(Message.conversation_id == conversation.id)
+                            )
+                            if conversation.dossier_id
+                            else True
+                        ),
                         CaseTask.status.in_(
                             [
                                 "pending",
@@ -252,14 +276,67 @@ class CaseFileService:
                 )
             ).scalars()
         )
+        dossier_context = {}
+        if conversation.dossier_id:
+            from app.models.dossier import Dossier
+
+            dossier = await self.db.get(Dossier, conversation.dossier_id)
+            dossier_context = {
+                "name": dossier.name,
+                "metadata_version": dossier.version,
+                "description": dossier.description,
+                "instructions": dossier.instructions,
+            }
+        extra_context = {}
+        if conversation.dossier_id:
+            retired = list(
+                (
+                    await self.db.execute(
+                        select(CaseEntry).where(
+                            CaseEntry.case_file_id == case_file.id,
+                            CaseEntry.status.in_(["archived", "superseded"]),
+                        )
+                    )
+                ).scalars()
+            )
+            local_entries = list(
+                (
+                    await self.db.execute(
+                        select(CaseEntry)
+                        .join(CaseFile)
+                        .where(
+                            CaseFile.conversation_id == conversation.id,
+                            CaseEntry.status.in_(["active", "confirmed", "contested"]),
+                        )
+                    )
+                ).scalars()
+            )
+
+            def history_entry(entry):
+                return {
+                    "id": str(entry.id),
+                    "label": entry.label,
+                    "value_text": entry.value_text,
+                    "status": entry.status,
+                    "source_kind": entry.source_kind,
+                }
+
+            extra_context = {
+                "retired_entries": [history_entry(e) for e in retired],
+                "local_conversation_context": [history_entry(e) for e in local_entries],
+            }
         return case_file, {
+            **extra_context,
+            "dossier": dossier_context,
             "version": case_file.version,
             "status": case_file.status,
             "entries": [
                 {
                     "id": str(item.id),
                     "entry_type": item.entry_type,
-                    "key": item.key,
+                    # Legacy/manual facts without a key remain addressable by
+                    # their persistent ID; no generated request is rewritten.
+                    "key": item.key or str(item.id),
                     "label": item.label,
                     "value_text": item.value_text,
                     "value_json": item.value_json,
@@ -366,6 +443,37 @@ class CaseFileService:
             }
             if set(targets) != target_ids:
                 raise CaseFileApplyError("case_entry_target_not_found")
+
+        if case_file.conversation_id is None:
+            from app.models.document import Document
+
+            source_ids = [
+                uuid.UUID(str(p["source_document_id"]))
+                for p in proposals
+                if p.get("source_document_id")
+            ]
+            if (
+                source_ids
+                and (
+                    await self.db.execute(
+                        select(Document.id).where(
+                            Document.id.in_(source_ids),
+                            Document.private_conversation_id.is_not(None),
+                        )
+                    )
+                ).first()
+            ):
+                raise CaseFileApplyError("conversation_document_cannot_update_shared_case")
+        if case_file.conversation_id is None and any(
+            target.status == "confirmed" or target.source_kind in {"user", "user_correction"}
+            for target in targets.values()
+        ):
+            raise CaseFileApplyError("case_entry_requires_user_confirmation")
+
+        # A named dossier receives documents only through explicit user actions.
+        # Reading a conversation attachment must never publish it to sibling chats.
+        if case_file.conversation_id is None:
+            documents = []
 
         existing_links = {
             (str(document_id), str(extraction_id))
@@ -684,7 +792,7 @@ class CaseFileService:
         expected_version: int | None = None,
         used_version: int | None = None,
     ) -> int | None:
-        case_id = select(CaseFile.id).where(CaseFile.conversation_id == conversation_id)
+        case_id = select(CaseFile.id).where(conversation_case_condition(conversation_id))
         task_ids = list(
             (
                 await self.db.execute(
@@ -702,7 +810,7 @@ class CaseFileService:
         version = (
             await self.db.execute(
                 update(CaseFile)
-                .where(CaseFile.conversation_id == conversation_id)
+                .where(conversation_case_condition(conversation_id))
                 .where(
                     CaseFile.version == expected_version if expected_version is not None else True
                 )
@@ -833,11 +941,24 @@ class CaseFileService:
         value_json: dict | list | None = None,
         label: str | None = None,
         comment: str | None = None,
+        dossier_id: uuid.UUID | None = None,
     ) -> CaseEntry:
         """Apply an explicit user decision with optimistic version control."""
         if operation not in {"confirm", "correct", "contest", "archive"}:
             raise HTTPException(status_code=422, detail="Action de dossier non reconnue")
-        case_file, _ = await self.get_case_file(conversation_id, user)
+        if dossier_id is not None:
+            from app.services.dossier_service import DossierService
+
+            dossiers = DossierService(self.db)
+            dossier = await dossiers.get(dossier_id, user, write=True)
+            case_file = await dossiers.case(dossier)
+        else:
+            case_file, _ = await self.get_case_file(conversation_id, user)
+            conversation = await self.db.get(Conversation, conversation_id)
+            if conversation.dossier_id:
+                from app.services.dossier_service import DossierService
+
+                await DossierService(self.db).get(conversation.dossier_id, user, write=True)
         original = (
             await self.db.execute(
                 select(CaseEntry).where(
@@ -889,7 +1010,7 @@ class CaseFileService:
             replacement = CaseEntry(
                 case_file_id=case_file.id,
                 entry_type=original.entry_type,
-                key=original.key,
+                key=original.key or str(original.id),
                 label=label if label is not None else original.label,
                 value_text=value_text,
                 value_json=value_json,
@@ -940,10 +1061,11 @@ class CaseFileService:
     def public_payload(
         case_file: CaseFile,
         inherited_context: dict[str, str | bool | None] | None,
+        conversation_id: uuid.UUID | None = None,
     ) -> dict[str, Any]:
         return {
             "id": case_file.id,
-            "conversation_id": case_file.conversation_id,
+            "conversation_id": conversation_id or case_file.conversation_id,
             "version": case_file.version,
             "status": case_file.status,
             "inherited_context": inherited_context,

@@ -1325,3 +1325,31 @@ async def test_actions_based_on_new_document_content_wait_for_continuation(dossi
     statuses = [item["status"] for item in result.trace.search_plan["tool_results"]]
     assert "deferred_to_continuation" in statuses
     assert result.trace.error is None
+
+
+async def test_already_read_document_reaches_generation_without_read_action(dossier):
+    conv, refs = await conversation(dossier)
+    document = {**refs[0], "text": "Texte intégral fourni\n  sans modification.",
+                "source_name": "Fiche de poste", "coverage": {}}
+    prepared = await prepare_conversation_context(
+        planner(plan([action("generate", "answer")])),
+        db=dossier.db, conversation=conv, user=dossier.user,
+        query="Prépare la checklist", references=refs, documents=[document],
+        document_continuity="", history=[], model="test", legal_search=AsyncMock(),
+    )
+    assert any(r.document_id == str(document["document_id"])
+               and r.text == document["text"] for r in prepared.results)
+
+
+async def test_manual_fact_without_key_has_stable_reference_in_planner_context(dossier):
+    conv, _ = await conversation(dossier)
+    service = CaseFileService(dossier.db)
+    case, _ = await service.observation_context(conv)
+    entry = CaseEntry(case_file_id=case.id, entry_type="fact", key=None,
+                      label="Lieu", value_text="Lyon", status="confirmed", source_kind="user")
+    dossier.db.add(entry)
+    await dossier.db.commit()
+    _, context = await service.observation_context(conv)
+    fact = next(e for e in context['entries'] if e['id'] == str(entry.id))
+    assert fact['key'] == str(entry.id)
+    assert fact['value_text'] == 'Lyon'

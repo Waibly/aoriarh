@@ -64,15 +64,29 @@ class TestCloisonnementDemo:
         # Aucune condition n'autorise un idcc précis (donc aucune CCN admise).
         assert not any(c.key == "idcc" for c in _field_conditions(f))
 
-        # Les types CCN apparaissent bien dans un must_not (exclusion explicite).
-        excluded_types: set[str] = set()
-        for cond in f.should or []:
-            if isinstance(cond, Filter):
-                for mc in cond.must_not or []:
-                    if isinstance(mc, FieldCondition) and mc.key == "source_type":
-                        excluded_types.update(getattr(mc.match, "any", []) or [])
-        assert _CCN in excluded_types
-        assert _ACCORD in excluded_types
+        # Exécuter le filtre sans dépendre de sa structure imbriquée.
+        from qdrant_client import QdrantClient, models
+
+        client = QdrantClient(":memory:")
+        try:
+            client.create_collection(
+                "demo", vectors_config=models.VectorParams(size=2, distance=models.Distance.COSINE)
+            )
+            payloads = [
+                {"organisation_id": "common", "source_type": "code_travail"},
+                {"organisation_id": "common", "source_type": _CCN, "idcc": "1234"},
+                {"organisation_id": "common", "source_type": _ACCORD, "idcc": "1234"},
+                {"organisation_id": _OTHER_ORG, "source_type": "divers"},
+                {"organisation_id": _DEMO_ORG, "source_type": "divers", "private": True},
+            ]
+            client.upsert("demo", [
+                models.PointStruct(id=i, vector=[1.0, 0.0], payload=payload)
+                for i, payload in enumerate(payloads, start=1)
+            ])
+            records, _ = client.scroll("demo", scroll_filter=f)
+            assert [record.id for record in records] == [1]
+        finally:
+            client.close()
 
     def test_org_avec_ccn_autorise_uniquement_ses_idcc(self):
         """Une org avec CCN installée n'autorise les docs CCN que pour SES idcc,

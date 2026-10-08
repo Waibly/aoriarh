@@ -6,6 +6,7 @@ from qdrant_client.models import FieldCondition, Filter, MatchAny, MatchValue
 def build_org_access_filter(
     organisation_id: str | None,
     org_idcc_list: list[str] | None = None,
+    authorized_private_document_ids: list[str] | None = None,
 ) -> Filter | None:
     # Only explicit administrative callers may omit the organisation.
     if not organisation_id:
@@ -29,4 +30,8 @@ def build_org_access_filter(
                     ]
                 )
             )
-    return Filter(should=should)
+    private_exclusion = Filter(must_not=[FieldCondition(key="private", match=MatchValue(value=True))])
+    if authorized_private_document_ids:
+        private_exclusion = Filter(should=[private_exclusion, FieldCondition(
+            key="document_id", match=MatchAny(any=authorized_private_document_ids))])
+    return Filter(must=[Filter(should=should), private_exclusion])

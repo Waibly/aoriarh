@@ -81,6 +81,8 @@ export interface Document {
 }
 
 export interface Conversation {
+  dossier_id?: string | null;
+  dossier_name?: string | null;
   id: string;
   organisation_id: string;
   user_id: string;
@@ -127,7 +129,7 @@ export interface Message {
   role: "user" | "assistant";
   content: string;
   document_references?:
-    | { document_id: string; extraction_id: string; name?: string }[]
+    | { document_id: string; extraction_id: string; name?: string; scope?: "dossier" }[]
     | null;
   sources: MessageSource[] | null;
   feedback: string | null;
@@ -190,7 +192,7 @@ export interface CaseDocumentLink {
 
 export interface ConversationCaseFile {
   id: string;
-  conversation_id: string;
+  conversation_id: string | null;
   version: number;
   status: string;
   inherited_context: Record<string, string | boolean | null> | null;

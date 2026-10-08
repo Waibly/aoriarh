@@ -5,6 +5,7 @@ import json
 import logging
 import time
 import uuid
+from typing import Literal
 from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, UploadFile, status
@@ -32,6 +33,7 @@ from app.rag.config import (
 from app.rag.intent_router import classify_intent, is_security_response
 from app.rag.pipeline import prepare_rag_context
 from app.rag.search_feedback import search_feedback
+from app.schemas.dossier import ConversationRename
 from app.schemas.conversation import (
     ChatRequest,
     ConversationCreate,
@@ -100,6 +102,7 @@ async def prepare_existing_conversation_document(
 @limiter.limit("30/hour")
 async def attach_conversation_document(
     conversation_id: uuid.UUID, request: Request, file: UploadFile,
+    scope: Literal["dossier", "conversation"] = "dossier",
     user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db),
 ):
     from app.core.config import settings
@@ -109,6 +112,9 @@ async def attach_conversation_document(
     from app.services.document_service import DocumentService, storage
 
     conversation = await ConversationService(db).get_conversation(conversation_id, user)
+    if conversation.dossier_id:
+        from app.services.dossier_service import DossierService
+        await DossierService(db).get(conversation.dossier_id, user, write=True)
     from app.core.dependencies import verify_org_membership
     if user.role != "admin" and (
         await verify_org_membership(conversation.organisation_id, user, db) is None
@@ -122,18 +128,57 @@ async def attach_conversation_document(
     org = await db.get(Organisation, conversation.organisation_id)
     await billing.check_document_limit(org)
     doc = await DocumentService(db).upload_document(file, "divers", org.id, user.id,
-                                                   max_file_size=2 * 1024 * 1024)
-    # The company original remains available even if extraction/queue fails.
-    extraction = DocumentExtractionService(db, storage)
+                                                   max_file_size=2 * 1024 * 1024,
+                                                   private_dossier_id=conversation.dossier_id if scope == "dossier" else None,
+                                                   private_conversation_id=conversation.id if conversation.dossier_id and scope == "conversation" else None)
+    dossier_link = None
+    if conversation.dossier_id and scope == "dossier":
+        from app.models.case_file import CaseDocumentLink
+        from app.services.dossier_service import DossierService
+        ds = DossierService(db)
+        uploaded_document_id = doc.id
+        target_dossier_id = conversation.dossier_id
+        try:
+            dossier = await ds.get(target_dossier_id, user, write=True)
+            case = await ds.case(dossier)
+            await ds.bump_case(dossier, case.version, "document_uploaded", {"document_id": str(doc.id)})
+            dossier_link = CaseDocumentLink(case_file_id=case.id, document_id=doc.id,
+                                           document_name=doc.name, source_sha256=doc.file_hash)
+            db.add(dossier_link)
+            await db.commit()
+        except Exception:
+            await db.rollback()
+            try:
+                await ds.discard_unlinked_upload(uploaded_document_id, target_dossier_id)
+            except Exception:
+                logger.exception("Failed to clean up an unlinked chat dossier upload")
+            raise
+    # The original remains available even if extraction/queue fails.
+    extraction = DocumentExtractionService(db, storage, dossier_id=conversation.dossier_id, conversation_id=conversation.id)
     try:
         raw_bytes = await asyncio.to_thread(storage.get_file_bytes, doc.storage_path)
         await extraction.extract(SourceSnapshot.from_document(doc), raw_bytes, TextExtractor())
         manifest = await extraction.status(doc.id, org.id, user.id)
+        if dossier_link:
+            dossier = await ds.get(target_dossier_id, user, write=True)
+            dossier_link = (await db.execute(select(CaseDocumentLink).where(
+                CaseDocumentLink.case_file_id == dossier.case_file_id,
+                CaseDocumentLink.document_id == uploaded_document_id,
+            ))).scalars().first()
+            if dossier_link is None:
+                raise HTTPException(409, "Le document a été retiré pendant sa préparation.")
+            dossier_link.extraction_id = manifest["extraction_id"]
+            await db.commit()
         await enqueue_ingestion(str(doc.id), expected_source=doc.storage_path)
+    except HTTPException:
+        await db.rollback()
+        raise
     except Exception:
+        await db.rollback()
+        logger.exception("Chat document preparation failed")
         raise HTTPException(
             503,
-            "Fichier enregistré dans Documents, mais préparation incomplète ; "
+            "Fichier conservé dans son espace, mais préparation incomplète ; "
             "aucune pièce jointe confirmée",
         ) from None
     from app.services.conversation_document_service import attachment_readiness
@@ -161,7 +206,7 @@ async def conversation_document_readiness(
     from app.services.document_extraction_service import DocumentExtractionService
 
     conversation = await ConversationService(db).get_conversation(conversation_id, user)
-    manifest = await DocumentExtractionService(db).reference_status(
+    manifest = await DocumentExtractionService(db, dossier_id=conversation.dossier_id, conversation_id=conversation.id).reference_status(
         document_id, conversation.organisation_id, user.id, extraction_id
     )
     response.headers["Cache-Control"] = "private, no-store"
@@ -185,6 +230,7 @@ async def create_conversation(
         organisation_id=data.organisation_id,
         user=user,
         title=data.title,
+        dossier_id=data.dossier_id,
     )
     return conversation  # type: ignore[return-value]
 
@@ -215,6 +261,22 @@ async def get_conversation(
         user=user,
     )
     return conversation  # type: ignore[return-value]
+
+
+@router.patch("/{conversation_id}", response_model=ConversationRead)
+async def rename_conversation(conversation_id: uuid.UUID,
+                              data: "ConversationRename",
+                              user: User = Depends(get_current_user),
+                              db: AsyncSession = Depends(get_db)):
+    service = ConversationService(db)
+    conversation = await service.get_conversation(conversation_id, user)
+    if conversation.dossier_id:
+        from app.services.dossier_service import DossierService
+        await DossierService(db).get(conversation.dossier_id, user, write=True)
+    if not data.title.strip():
+        raise HTTPException(422, "Le titre est obligatoire")
+    await service.update_title(conversation.id, data.title)
+    return conversation
 
 
 @router.delete("/", status_code=status.HTTP_200_OK)
@@ -264,6 +326,7 @@ class SourceFullContentResponse(BaseModel):
 )
 async def get_source_full_content(
     document_id: uuid.UUID,
+    conversation_id: uuid.UUID | None = Query(None),
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> SourceFullContentResponse:
@@ -296,6 +359,16 @@ async def get_source_full_content(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Accès non autorisé à ce document",
             )
+
+    from app.services.document_access import authorize_private_document
+    source_conversation = None
+    if conversation_id is not None:
+        source_conversation = await ConversationService(db).get_conversation(conversation_id, user)
+        if doc.organisation_id is not None and source_conversation.organisation_id != doc.organisation_id:
+            raise HTTPException(404, "Document non accessible")
+    await authorize_private_document(db, doc, user,
+        conversation_id=conversation_id,
+        dossier_id=source_conversation.dossier_id if source_conversation else None)
 
     if not doc.storage_path:
         raise HTTPException(
@@ -1215,6 +1288,10 @@ async def chat_stream(
         user=user,
     )
 
+    if conversation.dossier_id:
+        from app.services.dossier_service import DossierService
+        await DossierService(db).get(conversation.dossier_id, user, write=True)
+
     # 1b. Enforce quota / plan lifecycle (raises 402 if expired/suspended).
     account = await billing.get_account_for_organisation(conversation.organisation_id)
     await billing.check_question_quota(account)
@@ -1226,6 +1303,12 @@ async def chat_stream(
         read_conversation_documents,
     )
     references = active_references(conversation.messages, data.document_references)
+    if conversation.dossier_id:
+        from app.services.dossier_service import DossierService
+        dossier_service = DossierService(db)
+        dossier = await dossier_service.get(conversation.dossier_id, user, write=True)
+        references = await dossier_service.conversation_references(dossier, references)
+    shared_reference_ids = {str(ref["document_id"]) for ref in references if ref.get("scope") == "dossier"}
     initial_reference_ids = {str(reference["document_id"]) for reference in references}
     documents, document_continuity = await read_conversation_documents(
         db, conversation, user, references, query=data.message,
@@ -1234,7 +1317,8 @@ async def chat_stream(
     t_profile = time.perf_counter()
     if documents:
         references = [{"document_id": str(d["document_id"]),
-                       "extraction_id": str(d["extraction_id"]), "name": d["source_name"]}
+                       "extraction_id": str(d["extraction_id"]), "name": d["source_name"],
+                       **({"scope": "dossier"} if str(d["document_id"]) in shared_reference_ids else {})}
                       for d in documents]
 
     # Persist the user's exact request before any intent/planning/generation
@@ -1286,6 +1370,23 @@ async def chat_stream(
                 break
             for src in m.sources:
                 if not isinstance(src, dict):
+                    continue
+                # Recheck persisted citations against today's document scope.
+                # This changes retrieval inputs only; historical answers stay intact.
+                try:
+                    source_id = uuid.UUID(str(src.get("document_id")))
+                except (TypeError, ValueError):
+                    continue
+                source_document = await db.get(Document, source_id)
+                if source_document is None:
+                    continue
+                if source_document.organisation_id not in (None, conversation.organisation_id):
+                    continue
+                from app.services.document_access import authorize_private_document
+                try:
+                    await authorize_private_document(db, source_document, user,
+                        dossier_id=conversation.dossier_id, conversation_id=conversation.id)
+                except HTTPException:
                     continue
                 key = _source_key(src)
                 if key in _carried_seen:
@@ -1499,7 +1600,8 @@ async def chat_stream(
             rag_trace = prepared_context.trace
             rag_trace.perf_ms.update(initial_perf)
             documents = prepared_context.documents
-            references = prepared_context.references
+            references = [{**ref, **({"scope": "dossier"} if str(ref["document_id"]) in shared_reference_ids else {})}
+                          for ref in prepared_context.references]
             if (rag_trace.error != "case_execution_conflict"
                     and user_message.document_references != references):
                 user_message.document_references = references
@@ -1586,6 +1688,9 @@ async def chat_stream(
                     },
                 )
                 return
+
+            if conversation.dossier_id:
+                await service.get_conversation(conversation.id, user, include_messages=False)
 
             if documents:
                 # Recheck current ACL/version after the potentially long legal search.
@@ -1888,22 +1993,11 @@ async def chat_stream(
                 (t_db - t_stream_done) * 1000,
             )
 
-        except Exception:
-            logger.exception(
-                "SSE streaming error for conversation %s",
-                conversation_id,
-            )
-            # Generic user-facing message — never expose internal service names
-            error_msg = (
-                "Une erreur est survenue lors du traitement de votre question. Veuillez réessayer."
-            )
-            yield _sse_event(
-                "chat_error",
-                {
-                    "error": "server_error",
-                    "message": error_msg,
-                },
-            )
+        except Exception as exc:
+            logger.exception("SSE streaming error for conversation %s", conversation_id)
+            from app.services.chat_errors import stream_error_payload
+
+            yield _sse_event("chat_error", stream_error_payload(exc))
 
     return StreamingResponse(
         sse_generator(),

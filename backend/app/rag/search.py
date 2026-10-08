@@ -136,6 +136,7 @@ class HybridSearch:
         date_to: datetime.date | None = None,
         excluded_source_types: list[str] | None = None,
         document_ids: list[str] | None = None,
+        authorized_private_document_ids: list[str] | None = None,
     ) -> Filter:
         """Construit le filtre Qdrant de cloisonnement multi-tenant.
 
@@ -147,7 +148,7 @@ class HybridSearch:
         rendre le cloisonnement testable isolément (invariant de sécurité, cf.
         démo publique corpus-commun-only).
         """
-        org_filter = build_org_access_filter(organisation_id, org_idcc_list)
+        org_filter = build_org_access_filter(organisation_id, org_idcc_list, authorized_private_document_ids)
         if org_filter is None:
             raise ValueError("An organisation is required for hybrid search")
 
@@ -214,6 +215,7 @@ class HybridSearch:
         excluded_source_types: list[str] | None = None,
         encoding_cache: dict | None = None,
         document_ids: list[str] | None = None,
+        authorized_private_document_ids: list[str] | None = None,
     ) -> list[SearchResult]:
         """Execute a hybrid search combining dense and sparse vectors.
 
@@ -257,6 +259,7 @@ class HybridSearch:
             date_to,
             excluded_source_types,
             document_ids=document_ids,
+            authorized_private_document_ids=authorized_private_document_ids,
         )
 
         # 3. Hybrid query with RRF fusion via prefetch

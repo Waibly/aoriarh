@@ -131,9 +131,10 @@ async def read_conversation_documents(
         raise HTTPException(
             409, "La lecture des pièces jointes n'est pas activée pour cette organisation"
         )
-    if len(references) > 3 or len({r["document_id"] for r in references}) != len(references):
-        raise HTTPException(422, "Trois documents distincts maximum")
-    reader = reader or DocumentExtractionService(db)
+    maximum = 100 if getattr(conversation, "dossier_id", None) else 3
+    if len(references) > maximum or len({r["document_id"] for r in references}) != len(references):
+        raise HTTPException(422, f"{maximum} documents distincts maximum")
+    reader = reader or DocumentExtractionService(db, dossier_id=getattr(conversation, "dossier_id", None), conversation_id=conversation.id)
     described = []
     for ref in references:
         item = await reader.reference_status(
@@ -199,6 +200,7 @@ async def read_conversation_documents(
                 str(conversation.organisation_id),
                 top_k=TARGETED_CHUNKS_PER_DOCUMENT,
                 document_ids=[str(item["document_id"])],
+                authorized_private_document_ids=[str(item["document_id"])],
                 encoding_cache=encoding_cache,
             )
             if not found:
@@ -217,6 +219,14 @@ async def read_conversation_documents(
         by_id = {str(item["document_id"]): item for item in [*documents, *selected]}
         documents = [by_id[str(ref["document_id"])] for ref in references]
 
+    if getattr(conversation, "dossier_id", None):
+        from app.models.document import Document
+        from sqlalchemy import select
+        scopes = dict((await db.execute(select(Document.id, Document.private_conversation_id).where(
+            Document.id.in_([uuid.UUID(str(d["document_id"])) for d in documents])
+        ))).all())
+        for document in documents:
+            document["sharing_scope"] = "conversation_only" if scopes.get(uuid.UUID(str(document["document_id"]))) else "dossier_or_company"
     history = [{"role": m.role, "content": m.content} for m in conversation.messages]
     history_block = json.dumps(history, ensure_ascii=False)
     if (len(history_block.encode()) + sum(len(d["text"].encode()) for d in documents)
@@ -231,7 +241,7 @@ async def read_conversation_documents(
 
 async def verify_conversation_documents(db, conversation, user, references, *, reader=None):
     """Recheck ACL, source version and extraction identity without another retrieval."""
-    reader = reader or DocumentExtractionService(db)
+    reader = reader or DocumentExtractionService(db, dossier_id=getattr(conversation, "dossier_id", None), conversation_id=conversation.id)
     for ref in references:
         await reader.reference_status(
             uuid.UUID(str(ref["document_id"])),

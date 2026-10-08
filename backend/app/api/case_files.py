@@ -67,7 +67,7 @@ async def import_case_history(
     )
     case_file, inherited_context = await service.get_case_file(conversation_id, user)
     response.headers["Cache-Control"] = "private, no-store"
-    return CaseFileRead.model_validate(service.public_payload(case_file, inherited_context))
+    return CaseFileRead.model_validate(service.public_payload(case_file, inherited_context, conversation_id))
 
 
 @router.get("/{conversation_id}/case-file", response_model=CaseFileRead)
@@ -80,7 +80,7 @@ async def get_case_file(
     service = CaseFileService(db)
     case_file, inherited_context = await service.get_case_file(conversation_id, user)
     response.headers["Cache-Control"] = "private, no-store"
-    return CaseFileRead.model_validate(service.public_payload(case_file, inherited_context))
+    return CaseFileRead.model_validate(service.public_payload(case_file, inherited_context, conversation_id))
 
 
 @router.post(
@@ -107,4 +107,4 @@ async def revise_case_entry(
     )
     case_file, inherited_context = await service.get_case_file(conversation_id, user)
     response.headers["Cache-Control"] = "private, no-store"
-    return CaseFileRead.model_validate(service.public_payload(case_file, inherited_context))
+    return CaseFileRead.model_validate(service.public_payload(case_file, inherited_context, conversation_id))

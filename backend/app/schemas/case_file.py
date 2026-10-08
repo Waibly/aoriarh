@@ -83,7 +83,7 @@ class CaseDocumentLinkRead(BaseModel):
 
 class CaseFileRead(BaseModel):
     id: uuid.UUID
-    conversation_id: uuid.UUID
+    conversation_id: uuid.UUID | None
     version: int
     status: str
     inherited_context: dict[str, str | bool | None] | None

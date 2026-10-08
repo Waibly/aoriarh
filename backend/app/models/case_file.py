@@ -16,9 +16,9 @@ class CaseFile(TimestampMixin, Base):
     __tablename__ = "case_files"
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=generate_uuid)
-    conversation_id: Mapped[uuid.UUID] = mapped_column(
+    conversation_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("conversations.id", ondelete="CASCADE"),
-        nullable=False,
+        nullable=True,
         unique=True,
         index=True,
     )
@@ -145,6 +145,7 @@ class CaseDocumentLink(TimestampMixin, Base):
     )
     role: Mapped[str | None] = mapped_column(String(100), nullable=True)
     document_name: Mapped[str] = mapped_column(String(500), nullable=False)
+    description: Mapped[str] = mapped_column(Text, nullable=False, default="", server_default="")
     source_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
     reading_scope: Mapped[str | None] = mapped_column(Text, nullable=True)
     added_from_message_id: Mapped[uuid.UUID | None] = mapped_column(

@@ -14,6 +14,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.document import Document
+from app.services.document_access import company_document_conditions
 from app.rag.norme_hierarchy import DOCUMENT_TYPE_HIERARCHY
 from app.rag.qdrant_store import COLLECTION_NAME, get_qdrant_client
 from app.services.storage_service import StorageService
@@ -126,6 +127,7 @@ class DocumentService:
         self,
         file_hash: str,
         org_id: uuid.UUID | None,
+        private_dossier_id=None, private_conversation_id=None,
     ) -> None:
         if org_id is not None:
             query = select(Document).where(
@@ -137,7 +139,10 @@ class DocumentService:
                 Document.organisation_id.is_(None),
                 Document.file_hash == file_hash,
             )
-        result = await self.db.execute(query)
+        query = query.where(Document.private_dossier_id == private_dossier_id,
+                            Document.private_conversation_id == private_conversation_id,
+                            Document.retired_at.is_(None))
+        result = await self.db.execute(query.limit(1))
         existing = result.scalar_one_or_none()
         if existing:
             raise HTTPException(
@@ -160,6 +165,7 @@ class DocumentService:
         solution: str | None = None,
         publication: str | None = None,
         max_file_size: int = MAX_FILE_SIZE,
+        private_dossier_id=None, private_conversation_id=None,
     ) -> Document:
         # Validate format
         content_type = file.content_type or ""
@@ -207,7 +213,7 @@ class DocumentService:
 
         file_hash = hashlib.sha256(contents).hexdigest()
 
-        await self._check_duplicate(file_hash, org_id)
+        await self._check_duplicate(file_hash, org_id, private_dossier_id, private_conversation_id)
 
         # Upload to MinIO
         await file.seek(0)
@@ -229,6 +235,7 @@ class DocumentService:
         doc = Document(
             id=document_id,
             organisation_id=org_id,
+            private_dossier_id=private_dossier_id, private_conversation_id=private_conversation_id,
             name=file.filename or "document",
             source_type=source_type,
             norme_niveau=hierarchy["niveau"],
@@ -279,7 +286,9 @@ class DocumentService:
         installed_idccs = [row[0] for row in idcc_result.all()]
 
         # Build filter: org docs + common CCN docs matching installed IDCCs
-        conditions = [Document.organisation_id == org_id]
+        conditions = [((Document.organisation_id == org_id) &
+                       company_document_conditions()[0] & company_document_conditions()[1] &
+                       company_document_conditions()[2])]
         if installed_idccs:
             # Common CCN docs whose name contains any installed IDCC
             idcc_filters = [
@@ -304,6 +313,7 @@ class DocumentService:
             select(Document).where(
                 Document.id == doc_id,
                 Document.organisation_id == org_id,
+                *company_document_conditions(),
             )
         )
         doc = result.scalar_one_or_none()

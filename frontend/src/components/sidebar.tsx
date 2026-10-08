@@ -54,6 +54,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { DossiersSidebar } from "@/components/dossiers/dossiers-sidebar";
 import { OrgSelector } from "./org-selector";
 import { SettingsDialog } from "./settings-dialog";
 import { useOrg } from "@/lib/org-context";
@@ -67,8 +68,11 @@ import type { Conversation } from "@/types/api";
 const navigation = [
   { name: "Nouvelle question", href: "/chat", icon: Scale },
   { name: "Fiches pratiques", href: "/fiches", icon: ClipboardList },
+];
+
+const companyNavigation = [
   { name: "Documents", href: "/documents", icon: Files },
-  { name: "Organisation", href: "/organisation", icon: Building2 },
+  { name: "Informations générales", href: "/organisation", icon: Building2 },
   { name: "Équipe", href: "/team", icon: UsersRound, managerOnly: true },
 ];
 
@@ -105,7 +109,14 @@ function ConversationItem({
             className="flex min-w-0 flex-1 items-center gap-2 px-2 py-1.5"
           >
             <MessageSquare className="size-4 shrink-0 opacity-50" />
-            <span className="flex-1 truncate text-left text-sm">{title}</span>
+            <span className="min-w-0 flex-1 text-left text-sm">
+              <span className="block truncate">{title}</span>
+              {conv.dossier_name && (
+                <span className="text-muted-foreground block truncate text-xs">
+                  {conv.dossier_name}
+                </span>
+              )}
+            </span>
           </Link>
           <button
             onClick={(e) => {
@@ -198,10 +209,7 @@ function ConversationHistory() {
     <>
       {conversations.length === 0 ? null : (
         <>
-          <div className="px-4">
-            <Separator />
-          </div>
-          <div className="space-y-0.5 px-2 py-2">
+          <div className="space-y-0.5 px-2 pt-3 pb-2">
             <div className="flex items-center justify-between px-2 pt-2 pb-1">
               <p className="text-muted-foreground text-xs font-medium">
                 Conversations récentes
@@ -212,7 +220,7 @@ function ConversationHistory() {
                     type="button"
                     onClick={() => setClearAllOpen(true)}
                     className="text-muted-foreground hover:text-destructive hover:bg-muted/60 -m-1 rounded p-1 transition-colors"
-                    aria-label="Effacer tout l'historique"
+                    aria-label="Masquer les conversations récentes"
                   >
                     <Trash2 className="size-3.5" />
                   </button>
@@ -295,11 +303,12 @@ function ConversationHistory() {
       >
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Effacer tout l&apos;historique de chat</DialogTitle>
+            <DialogTitle>Masquer les conversations récentes</DialogTitle>
             <DialogDescription>
-              Toutes vos conversations vont disparaître de votre historique.
-              Cette action concerne uniquement votre vue : les questions restent
-              enregistrées pour le suivi qualité et la facturation.
+              Les raccourcis de vos conversations récentes seront masqués. Les
+              historiques des dossiers restent accessibles. Cette action
+              concerne uniquement votre vue : les questions restent enregistrées
+              pour le suivi qualité et la facturation.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
@@ -315,7 +324,7 @@ function ConversationHistory() {
               onClick={handleConfirmClearAll}
               disabled={clearingAll}
             >
-              {clearingAll ? "Effacement…" : "Tout effacer"}
+              {clearingAll ? "Effacement…" : "Masquer"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -334,6 +343,14 @@ export function Sidebar({
   const { data: session } = useSession();
   const pathname = usePathname();
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const inCompany = companyNavigation.some((item) =>
+    pathname.startsWith(item.href)
+  );
+  const [companyOpen, setCompanyOpen] = useState(inCompany);
+  useEffect(() => {
+    if (companyNavigation.some((item) => pathname.startsWith(item.href)))
+      setCompanyOpen(true);
+  }, [pathname]);
 
   const fullName = session?.user?.full_name ?? "Utilisateur";
   const token = session?.access_token;
@@ -409,7 +426,8 @@ export function Sidebar({
       <aside
         className={cn(
           "bg-sidebar text-sidebar-foreground flex flex-col",
-          variant === "desktop" && "hidden w-64 shrink-0 lg:flex",
+          variant === "desktop" &&
+            "hidden w-64 shrink-0 overflow-y-auto lg:flex",
           variant === "mobile" && "h-full w-full overflow-y-auto"
         )}
         onClick={(e) => {
@@ -418,7 +436,7 @@ export function Sidebar({
           if (target?.closest("a[href]")) onNavigate();
         }}
       >
-        <div className="px-5 pb-5 pt-6">
+        <div className="px-5 pt-6 pb-5">
           <Image
             src="/logo-aoria.svg"
             alt="AORIA RH"
@@ -447,67 +465,114 @@ export function Sidebar({
 
         {/* Navigation principale */}
         <nav aria-label="Navigation principale" className="space-y-1 px-3 py-3">
-          {navigation
-            .filter((item) => {
-              if (item.managerOnly)
-                return (
-                  session?.user?.role === "manager" ||
-                  session?.user?.role === "admin"
-                );
-              return true;
-            })
-            .map((item) => {
-              const isActive =
-                item.href === "/chat"
-                  ? pathname === "/chat"
-                  : pathname.startsWith(item.href);
-              const isChat = item.href === "/chat";
-              return (
-                <div key={item.name} className={cn("flex items-center", isChat && "mb-3")}>
-                  <Button
-                    variant="ghost"
-                    className={cn(
-                      "h-10 flex-1 justify-start rounded-lg px-3 font-normal",
-                      isChat
-                        ? "bg-primary font-medium text-white hover:bg-primary/90 hover:text-white"
-                        : isActive && "bg-accent text-accent-foreground font-medium"
-                    )}
-                    asChild
+          {navigation.map((item) => {
+            const isActive =
+              item.href === "/chat"
+                ? pathname === "/chat"
+                : pathname.startsWith(item.href);
+            const isChat = item.href === "/chat";
+            return (
+              <div
+                key={item.name}
+                className={cn(
+                  "flex items-center",
+                  "flex-col items-stretch",
+                  isChat && "mb-3"
+                )}
+              >
+                <Button
+                  variant="ghost"
+                  className={cn(
+                    "h-10 flex-1 justify-start rounded-lg px-3 font-normal",
+                    isChat
+                      ? "bg-primary hover:bg-primary/90 font-medium text-white hover:text-white"
+                      : isActive &&
+                          "bg-accent text-accent-foreground font-medium"
+                  )}
+                  asChild
+                >
+                  <Link
+                    href={item.href}
+                    aria-current={isActive ? "page" : undefined}
                   >
-                    <Link href={item.href} aria-current={isActive ? "page" : undefined}>
-                      {isChat ? <Plus aria-hidden="true" className="mr-2 size-4" /> : <item.icon aria-hidden="true" className="mr-2 size-4 text-muted-foreground" />}
-                      {item.name}
-                    </Link>
-                  </Button>
-                </div>
-              );
-            })}
-        </nav>
-
-        {/* Accès à l'espace d'administration (shell dédié) */}
-        {session?.user?.role === "admin" && (
-          <>
-            <div className="px-4">
-              <Separator />
-            </div>
-            <nav className="px-2 py-2">
+                    {isChat ? (
+                      <Plus aria-hidden="true" className="mr-2 size-4" />
+                    ) : (
+                      <item.icon
+                        aria-hidden="true"
+                        className="text-muted-foreground mr-2 size-4"
+                      />
+                    )}
+                    {item.name}
+                  </Link>
+                </Button>
+              </div>
+            );
+          })}
+          <Collapsible open={companyOpen} onOpenChange={setCompanyOpen}>
+            <CollapsibleTrigger asChild>
               <Button
                 variant="ghost"
                 className={cn(
-                  "w-full justify-start font-normal",
-                  pathname.startsWith("/admin") &&
+                  "h-10 w-full justify-start rounded-lg px-3 font-normal",
+                  inCompany &&
+                    !companyOpen &&
                     "bg-accent text-accent-foreground font-medium"
                 )}
-                asChild
               >
-                <Link href="/admin/pilotage">
-                  <ShieldCheck className="mr-2 h-5 w-5" />
-                  Administration
-                </Link>
+                <Building2
+                  aria-hidden="true"
+                  className="text-muted-foreground mr-2 size-4"
+                />
+                <span className="flex-1 text-left">Organisation</span>
+                <ChevronRight
+                  aria-hidden="true"
+                  className={cn(
+                    "text-muted-foreground size-3.5 transition-transform",
+                    companyOpen && "rotate-90"
+                  )}
+                />
               </Button>
-            </nav>
-          </>
-        )}
+            </CollapsibleTrigger>
+            <CollapsibleContent>
+              <div className="ml-5 space-y-0.5 border-l py-1 pl-2">
+                {companyNavigation
+                  .filter(
+                    (item) =>
+                      !item.managerOnly ||
+                      session?.user?.role === "manager" ||
+                      session?.user?.role === "admin"
+                  )
+                  .map((item) => {
+                    const active = pathname.startsWith(item.href);
+                    return (
+                      <Button
+                        key={item.href}
+                        variant="ghost"
+                        className={cn(
+                          "h-9 w-full justify-start rounded-lg px-3 font-normal",
+                          active &&
+                            "bg-accent text-accent-foreground font-medium"
+                        )}
+                        asChild
+                      >
+                        <Link
+                          href={item.href}
+                          aria-current={active ? "page" : undefined}
+                        >
+                          <item.icon
+                            aria-hidden="true"
+                            className="text-muted-foreground mr-2 size-4"
+                          />
+                          {item.name}
+                        </Link>
+                      </Button>
+                    );
+                  })}
+              </div>
+            </CollapsibleContent>
+          </Collapsible>
+        </nav>
 
         {/* Historique des conversations.
             Desktop : zone scrollable qui occupe l'espace restant, pour que les
@@ -515,13 +580,35 @@ export function Sidebar({
             s'allonge. Mobile : toute la sidebar défile déjà dans le Sheet. */}
         {variant === "desktop" ? (
           <div className="min-h-0 flex-1 overflow-y-auto">
+            <DossiersSidebar />
             <ConversationHistory />
           </div>
         ) : (
           <>
+            <DossiersSidebar />
             <ConversationHistory />
             <div className="flex-1" />
           </>
+        )}
+
+        {/* Accès à l'espace d'administration (shell dédié) */}
+        {session?.user?.role === "admin" && (
+          <nav aria-label="Administration" className="shrink-0 px-3 pb-2">
+            <Button
+              variant="ghost"
+              className={cn(
+                "h-10 w-full justify-start rounded-lg px-3 font-normal",
+                pathname.startsWith("/admin") &&
+                  "bg-accent text-accent-foreground font-medium"
+              )}
+              asChild
+            >
+              <Link href="/admin/pilotage">
+                <ShieldCheck className="text-muted-foreground mr-2 size-4" />
+                Administration
+              </Link>
+            </Button>
+          </nav>
         )}
 
         {/* Espace de travail + Plan */}

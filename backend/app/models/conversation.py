@@ -16,6 +16,8 @@ class Conversation(TimestampMixin, Base):
         ForeignKey("organisations.id"), nullable=False, index=True
     )
     user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)
+    dossier_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("dossiers.id", use_alter=True, name="fk_conversation_dossier"), index=True)
+    recent_hidden_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     title: Mapped[str | None] = mapped_column(String(500))
     # Soft-delete marker. When set, the conversation is hidden from the
     # chat sidebar but the row + its messages stay in DB so analytics

@@ -77,7 +77,7 @@ async def journey(dossier, client, monkeypatch):
     [
         ("missing_document", 404),
         ("foreign_document", 404),
-        ("revoked", 404),
+        ("revoked", 403),
         ("replacement", 409),
         ("missing_extraction", 503),
     ],
@@ -142,7 +142,7 @@ async def test_uploaded_attachment_inherits_then_rechecks_revoked_access(
     await dossier.db.execute(delete(Membership).where(Membership.user_id == dossier.user.id))
     await dossier.db.commit()
     response = await client.post(journey.url + "/chat/stream", json={"message": "Et le montant ?"})
-    assert response.status_code == 404, response.text
+    assert response.status_code == 403, response.text
     assert len(seen) == 1
 
 

@@ -23,6 +23,7 @@ import {
 } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { useParams } from "next/navigation";
 import { getSourceFullContent } from "@/lib/chat-api";
 import { formatLegalSourceMarkdown } from "@/lib/legal-source-format";
 import { sourceDate, sourceIdcc } from "@/lib/source-evidence";
@@ -70,6 +71,7 @@ export function SourceViewerProvider({
   sources: MessageSource[];
   children: ReactNode;
 }) {
+  const params = useParams<{ conversationId?: string }>();
   const { data: session } = useSession();
   const token = session?.access_token;
   const [selectedSource, setSelectedSource] = useState<MessageSource | null>(
@@ -129,7 +131,8 @@ export function SourceViewerProvider({
     try {
       const data = await getSourceFullContent(
         selectedSource.document_id,
-        token
+        token,
+        params?.conversationId
       );
       setFullContent(data.content);
     } catch (err) {

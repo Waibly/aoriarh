@@ -1,7 +1,7 @@
 import uuid
-from datetime import date
+from datetime import date, datetime
 
-from sqlalchemy import Date, Float, ForeignKey, Integer, String
+from sqlalchemy import DateTime, Date, Float, ForeignKey, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, TimestampMixin, generate_uuid
@@ -14,6 +14,9 @@ class Document(TimestampMixin, Base):
     organisation_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("organisations.id"), nullable=True, index=True
     )
+    private_dossier_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("dossiers.id"), index=True)
+    private_conversation_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("conversations.id"), index=True)
+    retired_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     name: Mapped[str] = mapped_column(String(500), nullable=False)
     source_type: Mapped[str] = mapped_column(String(100), nullable=False)
     norme_niveau: Mapped[int | None] = mapped_column(Integer)

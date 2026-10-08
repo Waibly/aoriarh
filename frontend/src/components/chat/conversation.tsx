@@ -1,5 +1,11 @@
 "use client";
 
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useOrg } from "@/lib/org-context";
+import { getDossier, type DossierDetail } from "@/lib/dossiers-api";
+import { DossierPanel } from "@/components/dossiers/dossier-panel";
+import { CreateDossierDialog } from "@/components/dossiers/create-dossier-dialog";
 import dynamic from "next/dynamic";
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useSession } from "next-auth/react";
@@ -45,6 +51,26 @@ export function Conversation({
 }) {
   const { data: session } = useSession();
   const token = session?.access_token;
+  const router = useRouter();
+  const { currentOrg } = useOrg();
+  const [dossier, setDossier] = useState<DossierDetail | null>(null);
+  const [conversationTitle, setConversationTitle] = useState("");
+  const [conversationOrg, setConversationOrg] = useState<string | null>(null);
+  const [createDossier, setCreateDossier] = useState(false);
+  const [loadError, setLoadError] = useState("");
+  const [sendError, setSendError] = useState("");
+  const [attachmentScope, setAttachmentScope] = useState<
+    "dossier" | "conversation"
+  >("dossier");
+  useEffect(() => {
+    if (conversationOrg && currentOrg && conversationOrg !== currentOrg.id) {
+      abortControllerRef.current?.abort();
+      setMessages([]);
+      setAttachments([]);
+      setDossier(null);
+      router.replace("/chat");
+    }
+  }, [conversationOrg, currentOrg?.id, router]);
 
   const [messages, setMessages] = useState<Message[]>([]);
   const [attachments, setAttachments] = useState<ChatDocumentReference[]>(
@@ -65,6 +91,7 @@ export function Conversation({
     MessageSource[] | null
   >(null);
   const initialQueryProcessed = useRef(false);
+  const sentInConversation = useRef<string | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
   const activeConversationRef = useRef(conversationId);
   activeConversationRef.current = conversationId;
@@ -85,17 +112,44 @@ export function Conversation({
     (async () => {
       try {
         const data = await getConversation(conversationId, token);
+        let loadedDossier: DossierDetail | null = null;
+        if (!cancelled) {
+          setConversationTitle(data.title || "Nouvelle conversation");
+          setConversationOrg(data.organisation_id);
+          if (data.dossier_id) {
+            loadedDossier = await getDossier(data.dossier_id, token);
+            if (!cancelled) setDossier(loadedDossier);
+          } else setDossier(null);
+        }
         if (!cancelled)
           setAttachmentsEnabled(data.document_attachments_enabled === true);
-        if (!cancelled && !isStreamingRef.current && !initialQuery) {
+        if (
+          !cancelled &&
+          !isStreamingRef.current &&
+          !initialQuery &&
+          sentInConversation.current !== conversationId
+        ) {
           setMessages(data.messages);
           const latest = [...data.messages]
             .reverse()
             .find((m) => m.role === "user" && m.document_references != null);
-          setAttachments(latest?.document_references ?? []);
+          const commonIds = new Set(
+            loadedDossier?.documents.map((d) => d.document_id) ?? []
+          );
+          if (!cancelled)
+            setAttachments(
+              (latest?.document_references ?? []).filter(
+                (r) => r.scope !== "dossier" && !commonIds.has(r.document_id)
+              )
+            );
         }
-      } catch {
-        // conversation not found or access denied
+      } catch (error) {
+        if (!cancelled)
+          setLoadError(
+            error instanceof Error
+              ? error.message
+              : "Conversation non accessible"
+          );
       }
     })();
 
@@ -103,6 +157,14 @@ export function Conversation({
       cancelled = true;
     };
   }, [conversationId, token, initialQuery]);
+
+  useEffect(() => {
+    if (messages.length && window.location.hash.startsWith("#message-")) {
+      document
+        .getElementById(window.location.hash.slice(1))
+        ?.scrollIntoView({ block: "center" });
+    }
+  }, [messages]);
 
   const handleSend = useCallback(
     async (content: string) => {
@@ -125,11 +187,13 @@ export function Conversation({
         created_at: new Date().toISOString(),
       };
 
+      sentInConversation.current = conversationId;
       setMessages((prev) => [...prev, tempUserMessage]);
       setIsStreaming(true);
       setStreamingContent("");
       setStreamingSources(null);
       setSearchDetails(null);
+      setSendError("");
 
       // Abort any previous in-progress stream
       abortControllerRef.current?.abort();
@@ -227,16 +291,12 @@ export function Conversation({
                     },
                   ];
                 });
-              } else {
-                // No content at all — remove everything
-                setMessages((prev) =>
-                  prev.filter((m) => m.id !== tempUserMessage.id)
-                );
               }
+              // The user's question remains visible even when the provider fails.
               setStreamingContent("");
               setStreamingSources(null);
               setIsStreaming(false);
-              toast.error(errorMsg);
+              setSendError(errorMsg);
             },
           },
           abortController.signal,
@@ -244,13 +304,28 @@ export function Conversation({
         );
       } catch {
         if (!abortController.signal.aborted) {
-          setMessages((prev) =>
-            prev.filter((m) => m.id !== tempUserMessage.id)
-          );
+          if (accumulatedContent) {
+            setMessages((prev) => [
+              ...prev,
+              {
+                id: `partial-${Date.now()}`,
+                conversation_id: conversationId,
+                role: "assistant",
+                content: accumulatedContent,
+                sources: accumulatedSources,
+                search_details: accumulatedDetails,
+                feedback: null,
+                feedback_comment: null,
+                created_at: new Date().toISOString(),
+              },
+            ]);
+          }
           setStreamingContent("");
           setStreamingSources(null);
           setIsStreaming(false);
-          toast.error("Une erreur est survenue. Veuillez réessayer.");
+          setSendError(
+            "La réponse a été interrompue. Votre question et le texte reçu restent affichés."
+          );
         }
       }
     },
@@ -299,7 +374,31 @@ export function Conversation({
   return (
     <div className="dark:bg-card flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl bg-white p-4">
       {token && conversationId !== "new" && (
-        <div className="flex justify-end border-b pb-3">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b pb-3">
+          {dossier ? (
+            <Link
+              href={`/dossiers/${dossier.id}`}
+              className="text-primary min-w-0 text-sm font-medium"
+            >
+              {dossier.name} / {conversationTitle}
+            </Link>
+          ) : (
+            <Button
+              variant="ghost"
+              size="sm"
+              disabled={isStreaming}
+              onClick={() => setCreateDossier(true)}
+            >
+              Créer un dossier à partir de cet échange
+            </Button>
+          )}
+          {dossier && (
+            <Button size="sm" variant="ghost" asChild>
+              <Link href={`/dossiers/${dossier.id}`}>
+                Nouvelle conversation
+              </Link>
+            </Button>
+          )}
           <Button
             type="button"
             variant="outline"
@@ -307,9 +406,19 @@ export function Conversation({
             onClick={() => setCaseFileOpen(true)}
           >
             <FolderOpen />
-            Dossier
+            {dossier ? "Voir le dossier" : "Contexte de la conversation"}
           </Button>
         </div>
+      )}
+      {loadError && (
+        <p role="alert" className="text-destructive p-3">
+          {loadError}
+        </p>
+      )}
+      {dossier?.archived_at && (
+        <p className="text-muted-foreground p-3 text-sm">
+          Dossier archivé : réactivez-le pour poursuivre cet échange.
+        </p>
       )}
       <MessageList
         messages={messages}
@@ -319,6 +428,14 @@ export function Conversation({
         streamingSources={streamingSources}
         onFeedback={handleFeedback}
       />
+      {sendError && (
+        <p
+          role="alert"
+          className="border-destructive/20 bg-destructive/5 text-destructive mx-auto mb-3 w-full max-w-3xl rounded-lg border px-4 py-3 text-sm"
+        >
+          {sendError}
+        </p>
+      )}
       <div className="max-h-64 overflow-auto">
         <SearchDetailsPanel details={searchDetails} />
       </div>
@@ -330,7 +447,9 @@ export function Conversation({
           conversationId={conversationId}
           token={token}
           selectedIds={(attachments ?? []).map((doc) => doc.document_id)}
-          disabled={isStreaming || isUploading}
+          disabled={
+            isStreaming || isUploading || !!dossier?.archived_at || !!loadError
+          }
           onSelect={async (document) => {
             if (isStreaming || isUploading || (attachments?.length ?? 0) >= 3)
               return;
@@ -356,9 +475,16 @@ export function Conversation({
         />
       )}
       <ChatInput
+        draftKey={conversationId}
+        attachmentScope={dossier ? attachmentScope : "entreprise"}
+        onAttachmentScopeChange={
+          dossier && !dossier.archived_at ? setAttachmentScope : undefined
+        }
         onBrowse={attachmentsEnabled ? () => setLibraryOpen(true) : undefined}
         onSend={handleSend}
-        disabled={isStreaming || isUploading}
+        disabled={
+          isStreaming || isUploading || !!dossier?.archived_at || !!loadError
+        }
         attachments={attachments}
         onRemove={(id) =>
           setAttachments((current) =>
@@ -379,7 +505,8 @@ export function Conversation({
                   const doc = await uploadChatDocument(
                     conversationId,
                     file,
-                    token
+                    token,
+                    dossier ? attachmentScope : undefined
                   );
                   setAttachments((current) => [...(current ?? []), doc]);
                 } catch (error) {
@@ -403,7 +530,30 @@ export function Conversation({
             : undefined
         }
       />
-      {token && conversationId !== "new" && (
+      {token && conversationOrg && !dossier && (
+        <CreateDossierDialog
+          open={createDossier}
+          onOpenChange={setCreateDossier}
+          organisationId={conversationOrg}
+          organisationName={currentOrg?.name}
+          token={token}
+          conversationId={conversationId}
+          onCreated={(d) => {
+            setDossier(d);
+            setCaseFileOpen(false);
+          }}
+        />
+      )}
+      {token && dossier && (
+        <DossierPanel
+          id={dossier.id}
+          token={token}
+          open={caseFileOpen}
+          onOpenChange={setCaseFileOpen}
+          refreshVersion={caseFileRefreshVersion}
+        />
+      )}
+      {token && !dossier && conversationId !== "new" && (
         <CaseFilePanel
           key={`case-file-${conversationId}`}
           conversationId={conversationId}

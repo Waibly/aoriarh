@@ -10,6 +10,7 @@ import {
   RefreshCw,
 } from "lucide-react";
 import { toast } from "sonner";
+import { useUnsavedChanges } from "@/hooks/use-unsaved-changes";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Textarea } from "@/components/ui/textarea";
@@ -68,7 +69,7 @@ function dateLabel(value: string): string {
       }).format(date);
 }
 
-function EntryCard({
+export function EntryCard({
   entry,
   document,
   onOpenMessage,
@@ -86,6 +87,7 @@ function EntryCard({
   const detailsId = useId();
   const [value, setValue] = useState(entry.value_text ?? "");
   const [comment, setComment] = useState("");
+  useUnsavedChanges(editing && (value !== (entry.value_text ?? "") || comment !== ""));
   const uncertain = needsConfirmation(entry);
   const act = async (
     operation: CaseEntryOperation,

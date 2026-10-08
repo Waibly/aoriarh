@@ -124,8 +124,10 @@ def coverage_manifest(file_format: str) -> dict:
 
 
 class DocumentExtractionService:
-    def __init__(self, db: AsyncSession, storage: StorageService | None = None):
+    def __init__(self, db: AsyncSession, storage: StorageService | None = None, *, dossier_id=None, conversation_id=None):
         self.db = db
+        self.dossier_id = dossier_id
+        self.conversation_id = conversation_id
         self.storage = storage if storage is not None else StorageService()
 
     async def _locked_current(self, snapshot: SourceSnapshot) -> None:
@@ -270,6 +272,9 @@ class DocumentExtractionService:
         ).scalar_one_or_none()
         if doc is None:
             raise HTTPException(404, "Document non accessible")
+        from app.services.document_access import authorize_private_document
+        await authorize_private_document(self.db, doc, user, dossier_id=self.dossier_id,
+                                         conversation_id=self.conversation_id)
         return doc
 
     @staticmethod

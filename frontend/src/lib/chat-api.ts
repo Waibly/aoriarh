@@ -9,11 +9,12 @@ import type {
 export async function createConversation(
   organisationId: string,
   token: string,
-  title?: string
+  title?: string,
+  dossierId?: string
 ): Promise<Conversation> {
   return apiFetch<Conversation>("/conversations/", {
     method: "POST",
-    body: JSON.stringify({ organisation_id: organisationId, title }),
+    body: JSON.stringify({ organisation_id: organisationId, title, dossier_id: dossierId }),
     token,
   });
 }
@@ -129,10 +130,11 @@ export interface SourceFullContent {
 
 export async function getSourceFullContent(
   documentId: string,
-  token: string
+  token: string,
+  conversationId?: string
 ): Promise<SourceFullContent> {
   return apiFetch<SourceFullContent>(
-    `/conversations/sources/${documentId}/full-content`,
+    `/conversations/sources/${documentId}/full-content${conversationId ? `?conversation_id=${encodeURIComponent(conversationId)}` : ""}`,
     { token }
   );
 }
@@ -559,6 +561,7 @@ export async function streamMessage(
 }
 
 export interface ChatDocumentReference {
+  scope?: "dossier";
   document_id: string;
   extraction_id: string;
   name?: string;
@@ -571,12 +574,13 @@ export interface ChatDocumentReference {
 export async function uploadChatDocument(
   conversationId: string,
   file: File,
-  token: string
+  token: string,
+  scope?: "dossier" | "conversation"
 ): Promise<ChatDocumentReference> {
   const body = new FormData();
   body.append("file", file);
   const response = await authFetch(
-    `/conversations/${conversationId}/documents`,
+    `/conversations/${conversationId}/documents${scope ? `?scope=${scope}` : ""}`,
     {
       method: "POST",
       body,

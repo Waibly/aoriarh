@@ -19,11 +19,19 @@ class ConversationService:
         organisation_id: uuid.UUID,
         user: User,
         title: str | None = None,
+        dossier_id: uuid.UUID | None = None,
     ) -> Conversation:
         """Create a new conversation scoped to an organisation."""
         await self._check_membership(organisation_id, user)
 
+        if dossier_id:
+            from app.services.dossier_service import DossierService
+
+            dossier = await DossierService(self.db).get(dossier_id, user, write=True)
+            if dossier.organisation_id != organisation_id or dossier.user_id != user.id:
+                raise HTTPException(404, "Dossier non accessible")
         conversation = Conversation(
+            dossier_id=dossier_id,
             organisation_id=organisation_id,
             user_id=user.id,
             title=title,
@@ -31,7 +39,9 @@ class ConversationService:
         self.db.add(conversation)
         await self.db.flush()
         from app.services.case_file_service import CaseFileService
-        await CaseFileService(self.db).create_for_conversation(conversation)
+
+        if not dossier_id:
+            await CaseFileService(self.db).create_for_conversation(conversation)
         await self.db.commit()
         await self.db.refresh(conversation)
         return conversation
@@ -52,11 +62,23 @@ class ConversationService:
                 Conversation.organisation_id == organisation_id,
                 Conversation.user_id == user.id,
                 Conversation.hidden_at.is_(None),
+                Conversation.recent_hidden_at.is_(None),
             )
             .order_by(Conversation.updated_at.desc())
         )
+        from app.models.dossier import Dossier
+        from sqlalchemy import or_
+
+        query = (
+            query.add_columns(Dossier.name)
+            .outerjoin(Dossier, Conversation.dossier_id == Dossier.id)
+            .where(or_(Conversation.dossier_id.is_(None), Dossier.archived_at.is_(None)))
+        )
         result = await self.db.execute(query)
-        return list(result.scalars().all())
+        rows = result.all()
+        for conversation, dossier_name in rows:
+            conversation.dossier_name = dossier_name
+        return [conversation for conversation, _ in rows]
 
     async def get_conversation(
         self,
@@ -95,6 +117,11 @@ class ConversationService:
                 detail="Conversation non trouvée",
             )
 
+        await self._check_membership(conversation.organisation_id, user)
+        if conversation.dossier_id:
+            from app.services.dossier_service import DossierService
+
+            await DossierService(self.db).get(conversation.dossier_id, user)
         return conversation
 
     async def delete_conversation(
@@ -106,7 +133,12 @@ class ConversationService:
         but the row + its messages stay in DB so analytics, cost tracking
         and admin audit keep working."""
         from datetime import UTC, datetime
+
         conversation = await self.get_conversation(conversation_id, user)
+        if conversation.dossier_id:
+            from app.services.dossier_service import DossierService
+
+            await DossierService(self.db).get(conversation.dossier_id, user, write=True)
         conversation.hidden_at = datetime.now(UTC)
         await self.db.commit()
 
@@ -119,6 +151,7 @@ class ConversationService:
         organisation. Returns the number of conversations affected. Used by
         the 'Effacer l'historique' trash icon in the chat sidebar."""
         from datetime import UTC, datetime
+
         await self._check_membership(organisation_id, user)
         result = await self.db.execute(
             select(Conversation).where(
@@ -130,7 +163,7 @@ class ConversationService:
         convs = list(result.scalars().all())
         now = datetime.now(UTC)
         for c in convs:
-            c.hidden_at = now
+            c.recent_hidden_at = now
         await self.db.commit()
         return len(convs)
 
@@ -160,6 +193,19 @@ class ConversationService:
             sources=sources,
             document_references=document_references,
         )
+        from datetime import UTC, datetime
+
+        conversation.updated_at = datetime.now(UTC)
+        conversation.recent_hidden_at = None
+        if conversation.dossier_id:
+            from app.models.dossier import Dossier
+            from sqlalchemy import update
+
+            await self.db.execute(
+                update(Dossier)
+                .where(Dossier.id == conversation.dossier_id)
+                .values(updated_at=datetime.now(UTC))
+            )
         self.db.add(message)
         await self.db.commit()
         await self.db.refresh(message)

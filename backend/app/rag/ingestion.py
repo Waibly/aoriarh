@@ -390,6 +390,7 @@ class IngestionPipeline:
                 payload = {
                     "text": chunk_text,
                     "organisation_id": org_id_str,
+                    "private": bool(doc.private_dossier_id or doc.private_conversation_id),
                     "document_id": str(doc.id),
                     "doc_name": doc.name,
                     "source_type": doc.source_type,

@@ -8,6 +8,7 @@ from app.models.booster_purchase import BoosterPurchase
 from app.models.case_file import CaseDocumentLink, CaseEntry, CaseEvent, CaseFile, CaseTask
 from app.models.ccn import CcnReference, OrganisationConvention
 from app.models.conversation import Conversation, Message
+from app.models.dossier import Dossier
 from app.models.document import Document
 from app.models.document_extraction import DocumentExtraction
 from app.models.storage_operation import StorageOperation
@@ -49,6 +50,7 @@ __all__ = [
     "CaseFile",
     "CaseTask",
     "Conversation",
+    "Dossier",
     "Document",
     "DocumentExtraction",
     "StorageOperation",

@@ -62,7 +62,7 @@ def wire(requests, entries=None):
 
 def test_contract_has_no_terminal_actions_or_continuation_decision():
     schema = request_schema(3)
-    assert set(schema["properties"]) == {"case_delta", "requests"}
+    assert set(schema["properties"]) == {"case_delta", "document_checks", "requests"}
     assert "OrchestratorAction" not in schema["$defs"]
     plan, _, _, errors = decode_requests(
         wire(
@@ -217,6 +217,7 @@ async def test_live_contract_uses_one_call_and_preserves_raw():
     sent = agent.llm.chat.completions.create.await_args.kwargs
     assert set(sent["response_format"]["json_schema"]["schema"]["properties"]) == {
         "case_delta",
+        "document_checks",
         "requests",
     }
 
@@ -374,3 +375,97 @@ async def test_independent_legal_requests_are_parallel_with_drafting(dossier):
     assert len(entered) == 2
     intents = {task["id"]: task.get("answer_intent") for task in result.case_context["tasks"]}
     assert intents == {"law1": "comparison", "law2": "procedure", "email": None}
+
+
+def checked_wire(document_id, checks=None):
+    return json.dumps({"case_delta": {"entries": []}, "requests": [request()],
+        "document_checks": checks if checks is not None else [{"id": "check_clause",
+        "missing_information": "Quelle condition figure dans la clause ?",
+        "document_ids": [str(document_id)]}]})
+
+
+def test_document_checks_scope_budget_and_continuation():
+    import uuid
+    active = uuid.uuid4()
+    raw = checked_wire(active)
+    plan, _, _, errors = decode_requests(raw, previous=[], query="Question", continuation=False,
+                                         documents=[{"document_id": str(active)}])
+    assert not errors
+    assert plan.actions[0].document_ids == [active]
+    assert plan.actions[0].action == "search_documents"
+    assert not plan.needs_continuation
+    for documents, continuation in [([], False), ([{"document_id": str(active)}], True)]:
+        plan, _, _, errors = decode_requests(raw, previous=[], query="Question",
+                                             continuation=continuation, documents=documents)
+        assert errors
+        assert not plan.actions
+    payload = json.loads(raw)
+    payload["document_checks"] *= 3
+    plan, _, _, errors = decode_requests(json.dumps(payload), previous=[], query="Question",
+                                         continuation=False, documents=[{"document_id": str(active)}])
+    assert errors
+    assert not plan.actions
+
+
+async def test_scoped_consultation_keeps_original_documents_and_does_not_replan(dossier, monkeypatch):
+    import uuid
+    from unittest.mock import AsyncMock
+    from app.services import conversation_document_service as docs
+    conv, _ = await conversation(dossier)
+    ids = [dossier.doc.id, uuid.uuid4()]
+    references = [{"document_id": str(i), "extraction_id": str(uuid.uuid4())} for i in ids]
+    documents = [{**r, "source_name": f"Pièce {n}", "text": f"Original {n}",
+                  "coverage": {}, "transmitted_scope": "targeted_passages"}
+                 for n, r in enumerate(references)]
+    extra = {**documents[0], "text": "Nouveau passage"}
+    reader = AsyncMock(return_value=([extra], ""))
+    monkeypatch.setattr(docs, "read_conversation_documents", reader)
+    agent = planner(checked_wire(ids[0]))
+    prepared = await prepare_conversation_context(agent, db=dossier.db, conversation=conv,
+        user=dossier.user, query="Question", references=references, documents=documents,
+        document_continuity="", history=[], legal_search=AsyncMock(), model="test")
+    assert prepared.trace.error is None
+    assert reader.await_args.args[3] == [references[0]]
+    assert prepared.references == references
+    assert [r.text for r in prepared.results] == ["Original 0", "Original 1", "Nouveau passage"]
+    assert agent.llm.chat.completions.create.await_count == 1
+
+
+async def test_failed_consultation_is_reported_without_retry_or_replacement(dossier, monkeypatch):
+    import uuid
+    from unittest.mock import AsyncMock
+    from app.services import conversation_document_service as docs
+    conv, _ = await conversation(dossier)
+    ref = {"document_id": str(dossier.doc.id), "extraction_id": str(uuid.uuid4())}
+    original = {**ref, "source_name": "Pièce", "text": "Original", "coverage": {}}
+    reader = AsyncMock(side_effect=TimeoutError())
+    monkeypatch.setattr(docs, "read_conversation_documents", reader)
+    agent = planner(checked_wire(dossier.doc.id))
+    prepared = await prepare_conversation_context(agent, db=dossier.db, conversation=conv,
+        user=dossier.user, query="Question", references=[ref], documents=[original],
+        document_continuity="", history=[], legal_search=AsyncMock(), model="test")
+    assert reader.await_count == 1
+    assert [r.text for r in prepared.results] == ["Original"]
+    assert prepared.trace.search_plan["tool_results"][0]["status"] == "document_read_error"
+    assert prepared.trace.search_plan_validation["request_errors"] == [{
+        "scope": "document_consultation", "id": "check_clause", "error": "document_read_error"
+    }]
+
+
+async def test_empty_checks_with_partial_document_do_not_trigger_consultation(dossier, monkeypatch):
+    import uuid
+    from unittest.mock import AsyncMock
+    from app.services import conversation_document_service as docs
+    conv, _ = await conversation(dossier)
+    ref = {"document_id": str(dossier.doc.id), "extraction_id": str(uuid.uuid4())}
+    doc = {**ref, "source_name": "Pièce", "text": "Original", "coverage": {},
+           "transmitted_scope": "targeted_passages"}
+    reader = AsyncMock()
+    monkeypatch.setattr(docs, "read_conversation_documents", reader)
+    agent = planner(checked_wire(dossier.doc.id, checks=[]))
+    prepared = await prepare_conversation_context(agent, db=dossier.db, conversation=conv,
+        user=dossier.user, query="Rédige le mail", references=[ref], documents=[doc],
+        document_continuity="", history=[], legal_search=AsyncMock(), model="test")
+    assert prepared.trace.error is None
+    reader.assert_not_called()
+    assert agent.llm.chat.completions.create.await_count == 1

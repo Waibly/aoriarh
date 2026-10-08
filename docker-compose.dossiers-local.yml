@@ -1,0 +1,35 @@
+# Isolated local infrastructure, compatible with other projects using the usual ports.
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: aoriarh
+      POSTGRES_USER: aoriarh
+      POSTGRES_PASSWORD: aoria-local-only
+    ports: ["127.0.0.1:5544:5432"]
+    volumes: ["postgres_data:/var/lib/postgresql/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U aoriarh"]
+      interval: 3s
+      retries: 20
+  qdrant:
+    image: qdrant/qdrant:v1.13.2
+    ports: ["127.0.0.1:6335:6333", "127.0.0.1:6336:6334"]
+    volumes: ["qdrant_data:/qdrant/storage"]
+  redis:
+    image: redis:7-alpine
+    ports: ["127.0.0.1:6382:6379"]
+    volumes: ["redis_data:/data"]
+  minio:
+    image: minio/minio:RELEASE.2025-02-18T16-25-55Z
+    command: server /data --console-address :9001
+    environment:
+      MINIO_ROOT_USER: aoria-local
+      MINIO_ROOT_PASSWORD: aoria-local-storage-only
+    ports: ["127.0.0.1:9100:9000", "127.0.0.1:9101:9001"]
+    volumes: ["minio_data:/data"]
+volumes:
+  postgres_data:
+  qdrant_data:
+  redis_data:
+  minio_data:

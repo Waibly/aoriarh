@@ -11,6 +11,7 @@ from app.rag.search_feedback import search_feedback
 class ConversationCreate(BaseModel):
     organisation_id: uuid.UUID
     title: str | None = None
+    dossier_id: uuid.UUID | None = None
 
 
 class ConversationRead(BaseModel):
@@ -19,7 +20,9 @@ class ConversationRead(BaseModel):
     id: uuid.UUID
     organisation_id: uuid.UUID
     user_id: uuid.UUID
+    dossier_id: uuid.UUID | None = None
     title: str | None
+    dossier_name: str | None = None
     created_at: datetime
     updated_at: datetime
 

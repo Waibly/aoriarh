@@ -23,7 +23,10 @@ const nextConfig = {
             // challenges.cloudflare.com : widget Turnstile de la démo publique (/demo).
             // googletagmanager.com : gtag.js (GA4 + Google Ads), chargé uniquement
             // après consentement (bandeau du site vitrine, cookie .aoriarh.fr).
-            "script-src 'self' 'unsafe-inline' https://challenges.cloudflare.com https://www.googletagmanager.com",
+            // Webpack's development source maps use eval; production must not allow it.
+            "script-src 'self' 'unsafe-inline' " +
+              (process.env.NODE_ENV === "development" ? "'unsafe-eval' " : "") +
+              "https://challenges.cloudflare.com https://www.googletagmanager.com",
             "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
             "img-src 'self' data:",
             "font-src 'self' data: https://fonts.gstatic.com",
