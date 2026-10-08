@@ -61,6 +61,7 @@ DOCUMENT_TYPE_HIERARCHY: dict[str, dict] = {
     "code_penal": {"niveau": 3, "poids": 0.90},
     "code_civil": {"niveau": 3, "poids": 0.90},
     "code_civil_reglementaire": {"niveau": 5, "poids": 0.80},
+    "code_procedure_civile": {"niveau": 5, "poids": 0.80},
     "code_action_sociale": {"niveau": 3, "poids": 0.90},
     "code_action_sociale_reglementaire": {"niveau": 5, "poids": 0.80},
     "code_sante_publique": {"niveau": 3, "poids": 0.90},
@@ -98,6 +99,7 @@ DOCUMENT_TYPE_HIERARCHY: dict[str, dict] = {
     # Niveau 9 — Contrat de travail
     "contrat_travail": {"niveau": 9, "poids": 0.50},
     # Niveau 10 — Divers
+    "documentation_officielle": {"niveau": 10, "poids": 0.40},
     "divers": {"niveau": 10, "poids": 0.40},
 }
 

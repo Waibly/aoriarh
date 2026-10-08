@@ -172,6 +172,7 @@ CODE_SOURCE_LABELS: dict[str, list[str]] = {
         "code_securite_sociale", "code_securite_sociale_reglementaire",
     ],
     r"code\s+civil": ["code_civil", "code_civil_reglementaire"],
+    r"code\s+de\s+proc[ée]dure\s+civile": ["code_procedure_civile"],
     r"code\s+p[ée]nal": ["code_penal"],
     r"code\s+de\s+commerce": ["code_commerce", "code_commerce_reglementaire"],
     r"code\s+de\s+l['’]action\s+sociale(?:\s+et\s+des\s+familles)?": [

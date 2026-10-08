@@ -336,6 +336,8 @@ async def list_common_document_groups(
         "constitution": "Constitution",
         "convention_oit": "Conventions OIT",
         "code_civil": "Code civil (législatif)",
+        "code_procedure_civile": "Code de procédure civile (sélection)",
+        "documentation_officielle": "Documentation pratique officielle",
         "code_civil_reglementaire": "Code civil (réglementaire)",
         "code_penal": "Code pénal",
         "code_securite_sociale": "Code de la sécurité sociale (législatif)",

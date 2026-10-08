@@ -296,6 +296,8 @@ _SOURCE_TYPE_LABELS: dict[str, str] = {
     "code_securite_sociale_reglementaire": "Code de la sécurité sociale (partie réglementaire)",
     "code_penal": "Code pénal",
     "code_civil": "Code civil",
+    "code_procedure_civile": "Code de procédure civile (sélection)",
+    "documentation_officielle": "Documentation pratique officielle",
     "code_civil_reglementaire": "Code civil (partie réglementaire)",
     "code_action_sociale": "Code de l'action sociale et des familles",
     "code_action_sociale_reglementaire": "Code de l'action sociale et des familles (partie réglementaire)",

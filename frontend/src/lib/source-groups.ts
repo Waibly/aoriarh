@@ -4,6 +4,7 @@ export type SourceGroupKey =
   | "legal"
   | "jurisprudence"
   | "conventional"
+  | "practical"
   | "internal";
 
 export interface SourceGroup {
@@ -28,6 +29,7 @@ const LEGAL_TYPES = new Set([
   "code_securite_sociale_reglementaire",
   "code_penal",
   "code_civil",
+  "code_procedure_civile",
   "code_civil_reglementaire",
   "code_action_sociale",
   "code_action_sociale_reglementaire",
@@ -71,6 +73,7 @@ export function getSourceGroup(sourceType: string): SourceGroupKey {
   if (LEGAL_TYPES.has(sourceType)) return "legal";
   if (JURISPRUDENCE_TYPES.has(sourceType)) return "jurisprudence";
   if (CONVENTIONAL_TYPES.has(sourceType)) return "conventional";
+  if (sourceType === "documentation_officielle") return "practical";
   if (INTERNAL_TYPES.has(sourceType)) return "internal";
   return "internal";
 }
@@ -79,6 +82,7 @@ const GROUP_LABELS: Record<SourceGroupKey, string> = {
   legal: "Textes légaux et réglementaires",
   jurisprudence: "Jurisprudence",
   conventional: "Conventions collectives et accords",
+  practical: "Documentation pratique officielle",
   internal: "Sources internes",
 };
 
@@ -86,6 +90,7 @@ const GROUP_ORDER: SourceGroupKey[] = [
   "legal",
   "jurisprudence",
   "conventional",
+  "practical",
   "internal",
 ];
 
@@ -106,6 +111,7 @@ export function groupSources(sources: MessageSource[]): SourceGroup[] {
     legal: [],
     jurisprudence: [],
     conventional: [],
+    practical: [],
     internal: [],
   };
 

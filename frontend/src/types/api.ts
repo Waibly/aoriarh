@@ -332,6 +332,7 @@ export const SOURCE_TYPE_OPTIONS: {
     niveau: 4,
   },
   // Niveau 5 — Réglementaire
+  { value: "code_procedure_civile", label: "Code de procédure civile (sélection)", niveau: 5 },
   { value: "decret", label: "Décret", niveau: 5 },
   { value: "arrete", label: "Arrêté", niveau: 5 },
   { value: "circulaire", label: "Circulaire", niveau: 5 },
@@ -366,6 +367,7 @@ export const SOURCE_TYPE_OPTIONS: {
   // Niveau 9 — Contrat de travail
   { value: "contrat_travail", label: "Contrat de travail", niveau: 9 },
   // Niveau 10 — Divers
+  { value: "documentation_officielle", label: "Documentation pratique officielle", niveau: 10 },
   { value: "divers", label: "Divers", niveau: 10 },
 ];
 

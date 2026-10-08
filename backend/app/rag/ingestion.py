@@ -34,6 +34,7 @@ ARTICLE_AWARE_SOURCE_TYPES = {
     "code_travail_reglementaire",
     "code_civil",
     "code_civil_reglementaire",
+    "code_procedure_civile",
     "code_penal",
     "code_securite_sociale",
     "code_securite_sociale_reglementaire",
