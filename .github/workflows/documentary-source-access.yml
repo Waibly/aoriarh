@@ -43,7 +43,7 @@ jobs:
           import {mkdtempSync,writeFileSync,rmSync} from 'node:fs';
           import {tmpdir} from 'node:os';
           const profile=mkdtempSync(tmpdir()+'/aoria-public-source-');
-          const chrome=spawn('google-chrome',['--headless=new','--no-sandbox','--remote-debugging-port=9358',`--user-data-dir=${profile}`,'--no-first-run','--no-default-browser-check','about:blank'],{stdio:'ignore'});
+          const chrome=spawn('google-chrome',['--no-sandbox','--remote-debugging-port=9358',`--user-data-dir=${profile}`,'--no-first-run','--no-default-browser-check','about:blank'],{stdio:'ignore'});
           const timeout=setTimeout(()=>{chrome.kill();process.exit(1)},50000);
           let ws;
           try {
@@ -53,13 +53,13 @@ jobs:
            const send=(method,params={})=>new Promise((res,rej)=>{pending.set(++id,{res,rej});ws.send(JSON.stringify({id,method,params}));});
            await send('Page.enable');
            const nav=await send('Page.navigate',{url:'https://www.ameli.fr/entreprise/vos-salaries/arret-de-travail/subrogation-salaire'});
-           await new Promise(r=>setTimeout(r,10000));
+           await new Promise(r=>setTimeout(r,20000));
            const result=await send('Runtime.evaluate',{expression:'({url:location.href,title:document.title,html:document.documentElement.outerHTML})',returnByValue:true});
            writeFileSync('source-access/ameli-browser.json',JSON.stringify(result.result.value));
            console.log(JSON.stringify({navigationError:nav.errorText,title:result.result.value?.title,bytes:result.result.value?.html.length}));
           } finally {clearTimeout(timeout);ws?.close();chrome.kill();await new Promise(r=>chrome.once('exit',r));rmSync(profile,{recursive:true,force:true});}
           JAVASCRIPT
-          node /tmp/browser.mjs
+          xvfb-run -a node /tmp/browser.mjs
       - uses: actions/upload-artifact@v4
         with:
           name: documentary-source-access
