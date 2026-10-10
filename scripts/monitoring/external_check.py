@@ -41,7 +41,7 @@ def send_slack(text):
 
 def main():
     failures = []
-    checks = {**CHECKS, 'incident_delivery': ('GET','https://api.aoriarh.fr/api/v1/telemetry/health',200,None)}
+    checks = {**CHECKS, 'incident_delivery': ('https://api.aoriarh.fr/api/v1/telemetry/health',None,200)}
     for name,args in checks.items():
         try:
             success = check(*args)

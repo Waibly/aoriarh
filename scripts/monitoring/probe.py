@@ -4,6 +4,7 @@ import threading
 import time
 import urllib.error
 import urllib.request
+from urllib.parse import urlsplit
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
 CHECKS = {
@@ -31,7 +32,7 @@ def check(url, payload, expected):
         status, body = error.code, error.read(1048576)
     if status != expected:
         return False
-    if url.endswith('/health'):
+    if urlsplit(url).path == '/health':
         return json.loads(body).get('status') == 'ok'
     return True
 
