@@ -1211,8 +1211,7 @@ async def run_billing_lifecycle(ctx: dict) -> None:
 
     from sqlalchemy import select
 
-    from app.observability.jobs import observed_job
-from app.core.config import settings as app_settings
+    from app.core.config import settings as app_settings
     from app.models.account import Account
     from app.models.user import User
     from app.services.email.sender import send_email
