@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
 import Image from "next/image";
 import { Menu } from "lucide-react";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { Sidebar } from "@/components/sidebar";
 import { TrialBanner } from "@/components/trial-banner";
 import { CcnInstallBanner } from "@/components/ccn-install-banner";

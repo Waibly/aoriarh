@@ -1,4 +1,4 @@
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { apiFetch, authFetch } from "@/lib/api";
 
 export interface BulkResult {

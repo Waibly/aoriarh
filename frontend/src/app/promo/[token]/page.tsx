@@ -1,5 +1,7 @@
 "use client";
 
+import { useErrorState } from "@/hooks/use-error-state";
+
 import { useEffect, useState, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { signIn, useSession } from "next-auth/react";
@@ -53,7 +55,7 @@ export default function PromoPage() {
 
   const [pageState, setPageState] = useState<PageState>("loading");
   const [promoData, setPromoData] = useState<ValidateResponse | null>(null);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [errorMessage, setErrorMessage] = useErrorState<string | null>(null);
   const redeemAttempted = useRef(false);
 
   useEffect(() => {
@@ -75,7 +77,7 @@ export default function PromoPage() {
       }
     }
     validate();
-  }, [token]);
+  }, [token, setErrorMessage]);
 
   useEffect(() => {
     if (pageState !== "valid") return;
@@ -111,7 +113,7 @@ export default function PromoPage() {
           err instanceof Error ? err.message : "Erreur réseau",
         );
       });
-  }, [pageState, sessionStatus, session, token]);
+  }, [pageState, sessionStatus, session, token, setErrorMessage]);
 
   function handleSignup() {
     setCookie("aoria_plan_invite_token", token, 600);

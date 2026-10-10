@@ -1,5 +1,7 @@
 "use client";
 
+import { useErrorState } from "@/hooks/use-error-state";
+
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertTriangle,
@@ -218,8 +220,8 @@ export function SocialMediaDialog({
   const [rendering, setRendering] = useState(false);
   const [pdfDownloading, setPdfDownloading] = useState(false);
   const [postCopied, setPostCopied] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [exportError, setExportError] = useState<string | null>(null);
+  const [error, setError] = useErrorState<string | null>(null);
+  const [exportError, setExportError] = useErrorState<string | null>(null);
   const inFlightRef = useRef(false);
 
   const requestGeneration = useCallback(async () => {
@@ -251,7 +253,7 @@ export function SocialMediaDialog({
       inFlightRef.current = false;
       setLoading(false);
     }
-  }, [includePost, messageId, token]);
+  }, [includePost, messageId, token, setError, setExportError]);
 
   useEffect(() => {
     if (open && !generation && !error && !inFlightRef.current) {
@@ -264,7 +266,7 @@ export function SocialMediaDialog({
   const handleRetry = useCallback(() => {
     setError(null);
     void requestGeneration();
-  }, [requestGeneration]);
+  }, [requestGeneration, setError]);
 
   const handleRegenerate = useCallback(() => {
     if (
@@ -281,7 +283,7 @@ export function SocialMediaDialog({
     setExportError(null);
     setPostCopied(false);
     void requestGeneration();
-  }, [htmlModified, requestGeneration]);
+  }, [htmlModified, requestGeneration, setError, setExportError]);
 
   const handleResetHtml = useCallback(() => {
     if (!generation) return;
@@ -299,7 +301,7 @@ export function SocialMediaDialog({
         "Impossible de copier le post. Sélectionnez son texte manuellement."
       );
     }
-  }, [generation]);
+  }, [generation, setExportError]);
 
   const handleDownloadHtml = useCallback(() => {
     downloadBlob(
@@ -324,7 +326,7 @@ export function SocialMediaDialog({
     } finally {
       setRendering(false);
     }
-  }, [html, messageId, rendering, token]);
+  }, [html, messageId, rendering, token, setExportError]);
 
   const handleDownloadPdf = useCallback(async () => {
     if (!token || !html || pdfDownloading) return;
@@ -345,7 +347,7 @@ export function SocialMediaDialog({
     } finally {
       setPdfDownloading(false);
     }
-  }, [html, includePost, messageId, pdfDownloading, token]);
+  }, [html, includePost, messageId, pdfDownloading, token, setExportError]);
 
   const warnings = useMemo(
     () => [

@@ -63,6 +63,7 @@ const GROUPS: NavGroup[] = [
     items: [
       { name: "Santé technique", href: "/admin/home", icon: Gauge },
       { name: "Qualité & conversations", href: "/admin/quality", icon: Gauge },
+      { name: "Incidents & Slack", href: "/admin/incidents", icon: Gauge },
       { name: "Corpus juridique", href: "/admin/corpus", icon: Library },
       { name: "Index Qdrant", href: "/admin/qdrant", icon: Database },
       { name: "Recherche documentaire", href: "/recherche", icon: Search },

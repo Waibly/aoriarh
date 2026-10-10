@@ -8,7 +8,7 @@ import {
   type ComponentProps,
 } from "react";
 import { useSession } from "next-auth/react";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import ReactMarkdown from "react-markdown";
 import rehypeSanitize from "rehype-sanitize";
 import remarkGfm from "remark-gfm";

@@ -1,5 +1,7 @@
 "use client";
 
+import { useErrorState } from "@/hooks/use-error-state";
+
 import { useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
 import ReactMarkdown from "react-markdown";
@@ -532,13 +534,13 @@ function CitedSourceItem({ source }: { source: CitedSource }) {
   const [open, setOpen] = useState(false);
   const [fullContent, setFullContent] = useState<string | null>(null);
   const [fullContentLoading, setFullContentLoading] = useState(false);
-  const [fullContentError, setFullContentError] = useState<string | null>(null);
+  const [fullContentError, setFullContentError] = useErrorState<string | null>(null);
 
   // Reset when the source changes (e.g. re-run of the sandbox)
   useEffect(() => {
     setFullContent(null);
     setFullContentError(null);
-  }, [source.document_id]);
+  }, [source.document_id, setFullContentError]);
 
   const displayedText = fullContent ?? source.full_text ?? "";
   const isTruncated =

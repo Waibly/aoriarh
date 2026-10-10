@@ -1,8 +1,10 @@
 "use client";
 
+import { useErrorState } from "@/hooks/use-error-state";
+
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AlertTriangle, Check, Copy, Loader2, RefreshCw } from "lucide-react";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -30,7 +32,7 @@ export function LinkedInPostDialog({
 }: LinkedInPostDialogProps) {
   const [post, setPost] = useState<LinkedInPostResult | null>(null);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useErrorState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const inFlightRef = useRef(false);
 
@@ -58,7 +60,7 @@ export function LinkedInPostDialog({
       inFlightRef.current = false;
       setLoading(false);
     }
-  }, [messageId, token]);
+  }, [messageId, token, setError]);
 
   useEffect(() => {
     if (open && !post && !error && !inFlightRef.current) {
@@ -69,7 +71,7 @@ export function LinkedInPostDialog({
   const handleRetry = useCallback(() => {
     setError(null);
     void requestPost();
-  }, [requestPost]);
+  }, [requestPost, setError]);
 
   const handleCopy = useCallback(async () => {
     if (!post) return;

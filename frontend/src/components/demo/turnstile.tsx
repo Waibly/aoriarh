@@ -1,5 +1,6 @@
 "use client";
 
+import { reportIncident } from "@/lib/incidents";
 import {
   forwardRef,
   useEffect,
@@ -88,6 +89,9 @@ export const Turnstile = forwardRef<TurnstileHandle, TurnstileProps>(
     useEffect(() => {
       if (!TURNSTILE_ENABLED) return;
       let cancelled = false;
+      const loadingTimer = window.setTimeout(() => {
+        if (!cancelled && !widgetIdRef.current) reportIncident("turnstile_timeout");
+      }, 20000);
       loadScript()
         .then(() => {
           if (cancelled) return;
@@ -97,15 +101,17 @@ export const Turnstile = forwardRef<TurnstileHandle, TurnstileProps>(
           widgetIdRef.current = w.turnstile.render(containerRef.current, {
             sitekey: TURNSTILE_SITE_KEY,
             callback: (token: string) => onVerify(token),
+            "error-callback": () => reportIncident("turnstile_error"),
             "expired-callback": () => onExpire?.(),
             theme: "light",
             size: "flexible",
           });
         })
         .catch(() => {
-          /* échec de chargement — la page gère l'absence de jeton */
+          reportIncident("turnstile_error");
         });
       return () => {
+        window.clearTimeout(loadingTimer);
         cancelled = true;
       };
       // eslint-disable-next-line react-hooks/exhaustive-deps

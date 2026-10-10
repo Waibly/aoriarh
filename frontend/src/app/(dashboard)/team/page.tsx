@@ -1,5 +1,7 @@
 "use client";
 
+import { useErrorState } from "@/hooks/use-error-state";
+
 import { useCallback, useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
 import {
@@ -13,7 +15,7 @@ import {
   Crown,
   Info,
 } from "lucide-react";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { apiFetch } from "@/lib/api";
 import type { AccountMember, Invitation, Organisation } from "@/types/api";
 import {
@@ -488,7 +490,7 @@ function InviteTeamDialog({
   const [accessAll, setAccessAll] = useState(true);
   const [selectedOrgIds, setSelectedOrgIds] = useState<string[]>([]);
   const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useErrorState<string | null>(null);
 
   useEffect(() => {
     if (!open) {
@@ -498,7 +500,7 @@ function InviteTeamDialog({
       setSelectedOrgIds([]);
       setError(null);
     }
-  }, [open]);
+  }, [open, setError]);
 
   function toggleOrg(orgId: string) {
     setSelectedOrgIds((prev) =>

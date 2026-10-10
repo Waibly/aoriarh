@@ -142,7 +142,12 @@ services:
     restart: unless-stopped
     labels:
       logging: "promtail"
+    volumes:
+      - incident_data:/var/lib/aoria-incidents
     environment:
+      INCIDENT_DB: /var/lib/aoria-incidents/incidents.sqlite3
+      INCIDENT_SOURCE: backend
+      APP_RELEASE: ${APP_RELEASE:-unknown}
       POSTGRES_HOST: postgres
       APP_ENV: production
       POSTGRES_PORT: 5432
@@ -235,7 +240,12 @@ services:
     command: ["python", "-m", "arq", "app.worker.WorkerSettings"]
     labels:
       logging: "promtail"
+    volumes:
+      - incident_data:/var/lib/aoria-incidents
     environment:
+      INCIDENT_DB: /var/lib/aoria-incidents/incidents.sqlite3
+      INCIDENT_SOURCE: worker
+      APP_RELEASE: ${APP_RELEASE:-unknown}
       POSTGRES_HOST: postgres
       POSTGRES_PORT: 5432
       POSTGRES_DB: ${POSTGRES_DB}
@@ -344,6 +354,33 @@ services:
 
   # --- Monitoring ---
 
+  incident-notifier:
+    image: aoriarh-backend
+    restart: unless-stopped
+    command: ["python", "-m", "app.observability.notifier"]
+    read_only: true
+    cap_drop: ["ALL"]
+    security_opt: ["no-new-privileges:true"]
+    volumes:
+      - incident_data:/var/lib/aoria-incidents
+    environment:
+      INCIDENT_DB: /var/lib/aoria-incidents/incidents.sqlite3
+      INCIDENT_SOURCE: notifier
+      APP_RELEASE: ${APP_RELEASE:-unknown}
+      AORIA_SLACK_WEBHOOK_URL: ${AORIA_SLACK_WEBHOOK_URL:-}
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    deploy:
+      resources:
+        limits:
+          cpus: "0.25"
+          memory: 256M
+    networks:
+      - aoriarh
+
   public-probe:
     image: aoriarh-backend
     restart: unless-stopped
@@ -444,6 +481,7 @@ services:
       - aoriarh
 
 volumes:
+  incident_data:
   caddy_data:
   caddy_config:
   postgres_data:

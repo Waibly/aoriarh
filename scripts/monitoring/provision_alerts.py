@@ -38,6 +38,15 @@ def api_client():
 
 def definitions():
     return [
+        ('aoria-incidents-delivery', 'Incidents : livraison Slack défaillante', 'Prometheus',
+         '(aoria_incidents_failed > 0) or (aoria_incidents_oldest_pending_seconds > 120) or ((aoria_incidents_slack_configured == 0) + 1) or vector(0)',
+         '1m', 'Des incidents attendent ou ont épuisé les tentatives. Consulter /admin/incidents.'),
+        ('aoria-incidents-monitor', 'Incidents : surveillance indisponible', 'Prometheus',
+         '(up{job="incident-notifier"} == 0) + 1 or absent(up{job="incident-notifier"}) or (time() - aoria_incidents_loop_timestamp > 60) or (time() - aoria_incidents_watchdog_timestamp > 180) or (time() - aoria_incidents_worker_timestamp > 90) or vector(0)',
+         '1m', 'La collecte documentaire ou la livraison des incidents ne fonctionne plus.'),
+        ('aoria-incidents-persistence', 'Incidents : écriture locale impossible', 'Loki',
+         'sum(count_over_time({service=~"backend|worker"} |= "aoria_incident_persistence_failed" [5m])) or vector(0)',
+         '0s', 'Vérifier le volume des incidents et l’espace disque.'),
         ('aoria-public-probe', 'Parcours public : sonde en échec', 'Prometheus',
          '(1 - aoria_public_probe_success) or absent(aoria_public_probe_success)',
          '1m', 'Une page publique, la santé API ou le contrat de la démo ne répond plus comme attendu.'),

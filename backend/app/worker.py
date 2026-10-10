@@ -20,6 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 from sqlalchemy import select
 
+from app.observability.jobs import observed_job
 from app.core.config import settings
 from app.models.document import Document
 from app.rag.ingestion import IngestionPipeline
@@ -46,11 +47,20 @@ async def on_startup(ctx: dict) -> None:
     # and must not delay Redis connection/DNS timeouts during ingestion.
     from app.rag.search import _get_sparse_model
     await asyncio.to_thread(_get_sparse_model)
+    from app.observability.jobs import heartbeat
+    ctx["incident_heartbeat"] = asyncio.create_task(heartbeat())
 
 
 async def on_shutdown(ctx: dict) -> None:
     """Dispose DB engine on worker shutdown."""
     logger.info("Worker shutdown: disposing DB engine")
+    heartbeat_task = ctx.get("incident_heartbeat")
+    if heartbeat_task:
+        heartbeat_task.cancel()
+        try:
+            await heartbeat_task
+        except asyncio.CancelledError:
+            pass
     engine = ctx.get("engine")
     if engine:
         await engine.dispose()
@@ -118,6 +128,9 @@ async def _finish_sync_log(
         if duration_ms is not None:
             row.duration_ms = duration_ms
         await db.commit()
+    if not success or errors:
+        from app.observability.store import capture
+        capture("sync_failed", sync_id=sync_log_id, items_failed=errors)
 
 
 async def run_storage_recovery(ctx: dict) -> dict:
@@ -149,7 +162,13 @@ async def run_ingestion(ctx: dict, document_id: str, expected_source: str | None
                     return
             pipeline = IngestionPipeline()
             await pipeline.ingest(uuid.UUID(document_id), db, expected_source=expected_source)
-        logger.info("Worker: ingestion completed for document %s", document_id)
+            document = await db.get(Document, uuid.UUID(document_id))
+            if document is not None and document.indexation_status == "error":
+                from app.observability.store import capture
+                capture("document_indexation_failed", document_id=document_id)
+                logger.error("Worker: ingestion ended in error for document %s", document_id)
+                return
+        logger.info("Worker: ingestion finished for document %s", document_id)
     except Exception:
         logger.exception("Worker: ingestion failed for document %s", document_id)
 
@@ -1192,7 +1211,8 @@ async def run_billing_lifecycle(ctx: dict) -> None:
 
     from sqlalchemy import select
 
-    from app.core.config import settings as app_settings
+    from app.observability.jobs import observed_job
+from app.core.config import settings as app_settings
     from app.models.account import Account
     from app.models.user import User
     from app.services.email.sender import send_email
@@ -1573,6 +1593,12 @@ async def run_social_ca_sync(ctx: dict) -> dict:
             await _finish_sync_log(factory, log_id, success=False, errors=1,
                 error_message=str(exc)[:500], duration_ms=int((_time.perf_counter()-start)*1000))
             raise
+
+
+# Apply before cron construction so scheduled and manually queued jobs use the same observer.
+for _job_name, _job_function in list(globals().items()):
+    if _job_name.startswith("run_") and asyncio.iscoroutinefunction(_job_function):
+        globals()[_job_name] = observed_job(_job_function)
 
 
 class WorkerSettings:

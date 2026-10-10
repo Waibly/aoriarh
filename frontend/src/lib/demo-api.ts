@@ -1,3 +1,4 @@
+import { reportIncident } from "@/lib/incidents";
 import { API_BASE_URL } from "@/lib/api";
 import type { MessageSource } from "@/types/api";
 
@@ -73,6 +74,7 @@ export async function streamPublicAsk(
   let eventType = "";
   let dataStr = "";
   let terminal = false;
+  const incidentOptions = { request_id: response.headers?.get("X-Request-ID") };
 
   function processLine(line: string) {
     if (line.startsWith("event: ")) {
@@ -103,11 +105,13 @@ export async function streamPublicAsk(
             callbacks.onDone(parsed);
             break;
           case "chat_error":
+            reportIncident("stream_error", incidentOptions);
             terminal = true;
             callbacks.onError(parsed.message);
             break;
         }
       } catch {
+        reportIncident("stream_parse_error", incidentOptions);
         throw new Error("Événement SSE illisible");
       }
       eventType = "";
@@ -139,6 +143,7 @@ export async function streamPublicAsk(
       }
     }
     if (!terminal && !signal?.aborted) {
+      reportIncident("stream_incomplete", incidentOptions);
       callbacks.onError("La connexion s’est terminée avant la fin de la réponse.");
     }
   } catch {

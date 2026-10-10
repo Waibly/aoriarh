@@ -14,7 +14,7 @@ import {
   Trash2,
   Users,
 } from "lucide-react";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { apiFetch } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import {

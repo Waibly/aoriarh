@@ -1,0 +1,27 @@
+name: AORIA external availability
+on:
+  schedule:
+    - cron: '*/5 * * * *'
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: aoria-external-availability
+  cancel-in-progress: false
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Previous completed check
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          previous=$(gh run list --workflow availability.yml --status completed --limit 1 --json conclusion --jq '.[0].conclusion // ""')
+          echo "PREVIOUS_CONCLUSION=$previous" >> "$GITHUB_ENV"
+      - name: Check public service and notify Slack
+        env:
+          AORIA_SLACK_WEBHOOK_URL: ${{ secrets.AORIA_SLACK_WEBHOOK_URL }}
+        run: python3 scripts/monitoring/external_check.py

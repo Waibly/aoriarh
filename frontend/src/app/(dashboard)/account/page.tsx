@@ -1,9 +1,11 @@
 "use client";
 
+import { useErrorState } from "@/hooks/use-error-state";
+
 import { useEffect, useState } from "react";
 import { useSession, signOut } from "next-auth/react";
 import { Pencil, KeyRound, Briefcase, Trash2 } from "lucide-react";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { apiFetch } from "@/lib/api";
 import { useOrg } from "@/lib/org-context";
 import type { User } from "@/types/api";
@@ -286,7 +288,7 @@ function EditProfileDialog({
   const [email, setEmail] = useState(user.email);
   const [profilMetier, setProfilMetier] = useState(user.profil_metier ?? "");
   const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useErrorState<string | null>(null);
 
   useEffect(() => {
     if (open) {
@@ -295,7 +297,7 @@ function EditProfileDialog({
       setProfilMetier(user.profil_metier ?? "");
       setError(null);
     }
-  }, [open, user]);
+  }, [open, user, setError, setError, setError, setError]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -396,7 +398,7 @@ function ChangePasswordDialog({
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useErrorState<string | null>(null);
 
   useEffect(() => {
     if (open) {
@@ -405,7 +407,7 @@ function ChangePasswordDialog({
       setConfirmPassword("");
       setError(null);
     }
-  }, [open]);
+  }, [open, setError, setError, setError, setError]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -513,14 +515,14 @@ function RenameWorkspaceDialog({
 }: RenameWorkspaceDialogProps) {
   const [name, setName] = useState(currentName);
   const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useErrorState<string | null>(null);
 
   useEffect(() => {
     if (open) {
       setName(currentName);
       setError(null);
     }
-  }, [open, currentName]);
+  }, [open, currentName, setError, setError, setError, setError]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -597,7 +599,7 @@ function DeleteAccountDialog({
 }: DeleteAccountDialogProps) {
   const [confirmation, setConfirmation] = useState("");
   const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useErrorState<string | null>(null);
 
   useEffect(() => {
     if (!open) {
@@ -605,7 +607,7 @@ function DeleteAccountDialog({
       setError(null);
       setSubmitting(false);
     }
-  }, [open]);
+  }, [open, setError, setError, setError, setError]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();

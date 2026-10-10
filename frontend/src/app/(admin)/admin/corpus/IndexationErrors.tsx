@@ -1,5 +1,7 @@
 "use client";
 
+import { useErrorState } from "@/hooks/use-error-state";
+
 import { useCallback, useEffect, useState } from "react";
 import { apiFetch } from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -21,7 +23,7 @@ interface ErrorPage {
 export function IndexationErrors({ token }: { token: string }) {
   const [data, setData] = useState<ErrorPage | null>(null);
   const [page, setPage] = useState(1);
-  const [error, setError] = useState(false);
+  const [error, setError] = useErrorState(false);
   const [loading, setLoading] = useState(false);
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -40,7 +42,7 @@ export function IndexationErrors({ token }: { token: string }) {
     } finally {
       setLoading(false);
     }
-  }, [token, page]);
+  }, [token, page, setError]);
 
   useEffect(() => {
     void refresh();

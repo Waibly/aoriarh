@@ -1,5 +1,7 @@
 "use client";
 
+import { useErrorState } from "@/hooks/use-error-state";
+
 import {
   createContext,
   useCallback,
@@ -81,14 +83,14 @@ export function SourceViewerProvider({
   // retrieval excerpt with the full text fetched from the storage.
   const [fullContent, setFullContent] = useState<string | null>(null);
   const [fullContentLoading, setFullContentLoading] = useState(false);
-  const [fullContentError, setFullContentError] = useState<string | null>(null);
+  const [fullContentError, setFullContentError] = useErrorState<string | null>(null);
 
   // Reset the expanded full-content view each time we open a new source.
   useEffect(() => {
     setFullContent(null);
     setFullContentLoading(false);
     setFullContentError(null);
-  }, [selectedSource]);
+  }, [selectedSource, setFullContentError]);
 
   const openSource = useCallback((source: MessageSource) => {
     setSelectedSource(source);

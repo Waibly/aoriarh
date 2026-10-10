@@ -1,5 +1,7 @@
 "use client";
 
+import { useErrorState } from "@/hooks/use-error-state";
+
 import { useCallback, useEffect, useId, useState } from "react";
 import Link from "next/link";
 import { useRouter, usePathname } from "next/navigation";
@@ -28,7 +30,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 
 export function DossiersSidebar() {
   const { currentOrg } = useOrg();
@@ -43,7 +45,7 @@ export function DossiersSidebar() {
   const [expanded, setExpanded] = useState(true);
   const [create, setCreate] = useState(false);
   const [activeId, setActiveId] = useState<string | null>(null);
-  const [error, setError] = useState(false);
+  const [error, setError] = useErrorState(false);
   const [revision, setRevision] = useState(0);
   const reload = useCallback(() => setRevision((v) => v + 1), []);
   useEffect(() => {
@@ -79,7 +81,7 @@ export function DossiersSidebar() {
     return () => {
       cancelled = true;
     };
-  }, [organisationId, token, path, revision]);
+  }, [organisationId, token, path, revision, setError]);
   if (!token || !currentOrg) return null;
   return (
     <section

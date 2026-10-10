@@ -13,7 +13,7 @@ import {
   Trash2,
   TriangleAlert,
 } from "lucide-react";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { useOrg } from "@/lib/org-context";
 import {
   listFiches,

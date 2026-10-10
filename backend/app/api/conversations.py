@@ -1,3 +1,4 @@
+from app.observability.streams import observe_stream
 import asyncio
 import base64
 import dataclasses
@@ -2000,7 +2001,7 @@ async def chat_stream(
             yield _sse_event("chat_error", stream_error_payload(exc))
 
     return StreamingResponse(
-        sse_generator(),
+        observe_stream(sse_generator(), request),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",

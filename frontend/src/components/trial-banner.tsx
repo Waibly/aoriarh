@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useSession } from "next-auth/react";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { Clock, AlertTriangle, Zap, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {

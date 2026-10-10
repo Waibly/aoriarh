@@ -48,10 +48,12 @@ from app.api import (
     public,
     public_tools,
     support,
+    telemetry,
     team,
     users,
     webhooks,
 )
+from app.observability.middleware import IncidentMiddleware
 from app.core.config import settings
 from app.core.database import async_session_factory, get_db
 from app.core.limiter import limiter
@@ -210,10 +212,23 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_handler)
 
 async def _unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
     """Catch-all for unhandled exceptions: never expose internal details."""
-    logger.exception("Unhandled exception on %s %s", request.method, request.url.path)
+    from app.observability.store import context
+    request_id = getattr(request.state, "request_id", None)
+    token = context.set({"incident_key": "request:" + request_id, "request_id": request_id}
+                        if request_id else None)
+    try:
+        logger.exception("Unhandled exception on %s %s", request.method, request.url.path)
+    finally:
+        context.reset(token)
+    headers = {"X-Request-ID": getattr(request.state, "request_id", "")}
+    origin = request.headers.get("origin")
+    if origin in settings.cors_origins:
+        headers.update({"Access-Control-Allow-Origin": origin,
+                        "Access-Control-Expose-Headers": "X-Request-ID", "Vary": "Origin"})
     return JSONResponse(
         status_code=500,
         content={"detail": "Une erreur interne est survenue. Veuillez réessayer."},
+        headers=headers,
     )
 
 
@@ -235,7 +250,7 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["Content-Type", "Authorization"],
-    expose_headers=["Content-Disposition"],
+    expose_headers=["Content-Disposition", "X-Request-ID"],
     max_age=3600,
 )
 
@@ -378,3 +393,8 @@ async def health_check(db: AsyncSession = Depends(get_db)) -> JSONResponse:
     overall = "ok" if all(v == "ok" for v in checks.values()) else "degraded"
     code = 200 if overall == "ok" else 503
     return JSONResponse({"status": overall, **checks}, status_code=code)
+
+
+# Outermost application middleware: observe exceptions before HTTP logging fails.
+app.include_router(telemetry.router, prefix="/api/v1/telemetry", tags=["telemetry"])
+app.add_middleware(IncidentMiddleware)

@@ -3,6 +3,9 @@ global:
   evaluation_interval: 15s
 
 scrape_configs:
+  - job_name: "incident-notifier"
+    static_configs:
+      - targets: ["incident-notifier:9117"]
   - job_name: "public-probe"
     static_configs:
       - targets: ["public-probe:9116"]

@@ -1,5 +1,7 @@
 "use client";
 
+import { useErrorState } from "@/hooks/use-error-state";
+
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { apiFetch } from "@/lib/api";
@@ -36,7 +38,7 @@ export function CreateDossierDialog({
 }) {
   const router = useRouter();
   const [name, setName] = useState("");
-  const [error, setError] = useState("");
+  const [error, setError] = useErrorState("");
   const [busy, setBusy] = useState(false);
   const [context, setContext] = useState<ConversationCaseFile | null>(null);
   const [entries, setEntries] = useState<string[]>([]);
@@ -78,7 +80,7 @@ export function CreateDossierDialog({
     return () => {
       cancelled = true;
     };
-  }, [open, conversationId, token, organisationId]);
+  }, [open, conversationId, token, organisationId, setError]);
   const toggle = (id: string, values: string[], set: (v: string[]) => void) =>
     set(values.includes(id) ? values.filter((v) => v !== id) : [...values, id]);
   async function submit() {

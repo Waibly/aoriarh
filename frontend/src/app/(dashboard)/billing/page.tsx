@@ -1,9 +1,11 @@
 "use client";
 
+import { useErrorState } from "@/hooks/use-error-state";
+
 import { useCallback, useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
 import { Loader2, ExternalLink, Zap, Check, CreditCard, FileText, Download } from "lucide-react";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -111,7 +113,7 @@ export default function BillingPage() {
   } | null>(null);
   const [changePlanPreview, setChangePlanPreview] = useState<ChangePlanPreview | null>(null);
   const [changePlanLoading, setChangePlanLoading] = useState(false);
-  const [changePlanError, setChangePlanError] = useState<string | null>(null);
+  const [changePlanError, setChangePlanError] = useErrorState<string | null>(null);
 
   const loadData = useCallback(async () => {
     if (!token) return;

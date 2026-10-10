@@ -1,5 +1,7 @@
 "use client";
 
+import { useErrorState } from "@/hooks/use-error-state";
+
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useOrg } from "@/lib/org-context";
@@ -9,7 +11,7 @@ import { CreateDossierDialog } from "@/components/dossiers/create-dossier-dialog
 import dynamic from "next/dynamic";
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useSession } from "next-auth/react";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { FolderOpen } from "lucide-react";
 import { ChatInput } from "@/components/chat/chat-input";
 import { CaseFilePanel } from "@/components/chat/case-file-panel";
@@ -57,8 +59,8 @@ export function Conversation({
   const [conversationTitle, setConversationTitle] = useState("");
   const [conversationOrg, setConversationOrg] = useState<string | null>(null);
   const [createDossier, setCreateDossier] = useState(false);
-  const [loadError, setLoadError] = useState("");
-  const [sendError, setSendError] = useState("");
+  const [loadError, setLoadError] = useErrorState("");
+  const [sendError, setSendError] = useErrorState("");
   const [attachmentScope, setAttachmentScope] = useState<
     "dossier" | "conversation"
   >("dossier");
@@ -156,7 +158,7 @@ export function Conversation({
     return () => {
       cancelled = true;
     };
-  }, [conversationId, token, initialQuery]);
+  }, [conversationId, token, initialQuery, setLoadError]);
 
   useEffect(() => {
     if (messages.length && window.location.hash.startsWith("#message-")) {
@@ -329,7 +331,7 @@ export function Conversation({
         }
       }
     },
-    [conversationId, token, attachments, onConversationSaved]
+    [conversationId, token, attachments, onConversationSaved, setSendError]
   );
 
   const handleFeedback = useCallback(

@@ -1,5 +1,7 @@
 "use client";
 
+import { useErrorState } from "@/hooks/use-error-state";
+
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useSession } from "next-auth/react";
@@ -22,7 +24,7 @@ export default function DossiersPage() {
   const [offset, setOffset] = useState(0);
   const [more, setMore] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
+  const [error, setError] = useErrorState("");
   const [revision, setRevision] = useState(0);
   useEffect(() => {
     setOffset(0);
@@ -49,7 +51,7 @@ export default function DossiersPage() {
     return () => {
       cancelled = true;
     };
-  }, [token, organisationId, search, offset, revision]);
+  }, [token, organisationId, search, offset, revision, setError]);
   if (!currentOrg)
     return <p>Sélectionnez une organisation pour accéder à vos dossiers.</p>;
   return (

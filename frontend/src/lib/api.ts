@@ -1,3 +1,4 @@
+import { reportIncident } from "@/lib/incidents";
 import { getSession, signOut } from "next-auth/react";
 
 export const API_BASE_URL =
@@ -23,6 +24,7 @@ async function fetchWithTimeout(
     return await fetch(input, { ...init, signal: controller.signal });
   } catch (e) {
     if ((e as Error)?.name === "AbortError") {
+      reportIncident("request_timeout");
       throw new Error(
         "La requête a expiré. Votre connexion est peut-être instable, réessayez.",
       );
@@ -164,9 +166,8 @@ export async function authFetch(
     ...headers,
   });
 
-  // NB: no timeout here on purpose — authFetch handles SSE chat streams
-  // whose body stays open for much longer than the 30 s REST default.
-  const response = await fetch(`${API_BASE_URL}${path}`, {
+  // The timer ends when headers arrive; it never limits the SSE response body.
+  const response = await fetchWithTimeout(`${API_BASE_URL}${path}`, {
     headers: buildHeaders(token),
     ...rest,
   });

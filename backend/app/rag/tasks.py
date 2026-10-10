@@ -28,6 +28,8 @@ async def get_arq_pool() -> ArqRedis:
     global _pool
     if _pool is None:
         _pool = await create_pool(_parse_redis_settings())
+        from app.observability.jobs import track_queue
+        track_queue(_pool)
     return _pool
 
 

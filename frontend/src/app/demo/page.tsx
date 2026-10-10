@@ -1,5 +1,7 @@
 "use client";
 
+import { useErrorState } from "@/hooks/use-error-state";
+
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useRef, useState } from "react";
@@ -51,7 +53,7 @@ function DemoClient() {
   const [streamingSources, setStreamingSources] = useState<MessageSource[]>([]);
   const [status, setStatus] = useState<string | null>(null);
   const [isStreaming, setIsStreaming] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useErrorState<string | null>(null);
   const [done, setDone] = useState(false);
   const [draft, setDraft] = useState("");
   const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
@@ -115,7 +117,7 @@ function DemoClient() {
         },
       );
     },
-    [isStreaming, turnstileToken],
+    [isStreaming, turnstileToken, setError],
   );
 
   // Lance automatiquement la question venue du hero (?q=), une seule fois.

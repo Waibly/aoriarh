@@ -1,3 +1,4 @@
+import { reportIncident } from "@/lib/incidents";
 import { apiFetch, authFetch } from "@/lib/api";
 import type {
   Conversation,
@@ -473,6 +474,8 @@ export async function streamMessage(
   // Persist across reads so split events are reassembled correctly
   let eventType = "";
   let dataStr = "";
+  let terminal = false;
+  const incidentOptions = { request_id: response.headers?.get("X-Request-ID") };
 
   function processLine(line: string) {
     if (line.startsWith("event: ")) {
@@ -501,6 +504,7 @@ export async function streamMessage(
             callbacks.onCaseFileUpdated?.(parsed);
             break;
           case "chat_done":
+            terminal = true;
             measure("done");
             callbacks.onDone(parsed);
             // Signal the sidebar (and any other listener) that the monthly
@@ -511,6 +515,8 @@ export async function streamMessage(
             }
             break;
           case "chat_error":
+            terminal = true;
+            reportIncident("stream_error", incidentOptions);
             measure("error");
             callbacks.onError(parsed.message);
             break;
@@ -519,7 +525,8 @@ export async function streamMessage(
             break;
         }
       } catch {
-        // Malformed JSON — skip
+        reportIncident("stream_parse_error", incidentOptions);
+        throw new Error("Événement SSE illisible");
       }
       eventType = "";
       dataStr = "";
@@ -550,8 +557,13 @@ export async function streamMessage(
         processLine("");
       }
     }
+    if (!terminal && !signal?.aborted) {
+      reportIncident("stream_incomplete", incidentOptions);
+      callbacks.onError("La connexion s’est terminée avant la fin de la réponse.");
+    }
   } catch {
     if (signal?.aborted) return;
+    reportIncident("stream_error", incidentOptions);
     callbacks.onError(
       "La connexion au serveur a été interrompue. Veuillez réessayer."
     );

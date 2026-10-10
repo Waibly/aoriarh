@@ -1,5 +1,7 @@
 "use client";
 
+import { useErrorState } from "@/hooks/use-error-state";
+
 import { useState, Suspense } from "react";
 import { signIn } from "next-auth/react";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -24,7 +26,7 @@ function LoginForm() {
   const callbackUrl = rawCallback?.startsWith("/") ? rawCallback : null;
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useErrorState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
 
   async function handleSubmit(e: React.FormEvent) {

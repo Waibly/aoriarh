@@ -1,5 +1,7 @@
 "use client";
 
+import { useErrorState } from "@/hooks/use-error-state";
+
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { getDossier, type DossierDetail } from "@/lib/dossiers-api";
@@ -27,7 +29,7 @@ export function DossierPanel({
   refreshVersion: number;
 }) {
   const [d, setD] = useState<DossierDetail | null>(null);
-  const [error, setError] = useState("");
+  const [error, setError] = useErrorState("");
   const [tab, setTab] = useState<"informations" | "documents">("informations");
   const [retry, setRetry] = useState(0);
   useEffect(() => {
@@ -45,7 +47,7 @@ export function DossierPanel({
     return () => {
       cancelled = true;
     };
-  }, [id, token, open, refreshVersion, retry]);
+  }, [id, token, open, refreshVersion, retry, setError]);
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent className="w-full gap-0 overflow-y-auto p-0 sm:max-w-xl">

@@ -1,5 +1,7 @@
 "use client";
 
+import { useErrorState } from "@/hooks/use-error-state";
+
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -23,7 +25,7 @@ export function DocumentLibrary({ conversationId, token, selectedIds, disabled, 
   const [hasMore, setHasMore] = useState(false);
   const [loading, setLoading] = useState(false);
   const [preparing, setPreparing] = useState(false);
-  const [error, setError] = useState("");
+  const [error, setError] = useErrorState("");
   const sequence = useRef(0);
   const selecting = useRef(false);
   useEffect(() => () => { sequence.current += 1; }, []);

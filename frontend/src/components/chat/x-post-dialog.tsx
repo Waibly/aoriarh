@@ -1,5 +1,7 @@
 "use client";
 
+import { useErrorState } from "@/hooks/use-error-state";
+
 import { useCallback, useRef, useState } from "react";
 import {
   AlertTriangle,
@@ -15,7 +17,7 @@ import {
   RotateCcw,
   Sparkles,
 } from "lucide-react";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -95,8 +97,8 @@ export function XPostDialog({
   const [html, setHtml] = useState("");
   const [loading, setLoading] = useState(false);
   const [rendering, setRendering] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [exportError, setExportError] = useState<string | null>(null);
+  const [error, setError] = useErrorState<string | null>(null);
+  const [exportError, setExportError] = useErrorState<string | null>(null);
   const [copiedPost, setCopiedPost] = useState<number | null>(null);
   const inFlightRef = useRef(false);
 
@@ -126,7 +128,7 @@ export function XPostDialog({
       inFlightRef.current = false;
       setLoading(false);
     }
-  }, [format, messageId, token]);
+  }, [format, messageId, token, setError, setExportError]);
 
   const handleFormatChange = useCallback((value: XPostFormat) => {
     setFormat(value);
@@ -135,7 +137,7 @@ export function XPostDialog({
     setError(null);
     setExportError(null);
     setCopiedPost(null);
-  }, []);
+  }, [setError, setExportError]);
 
   const handleCopy = useCallback(async (content: string, index: number) => {
     try {
@@ -198,7 +200,7 @@ export function XPostDialog({
     } finally {
       setRendering(false);
     }
-  }, [html, messageId, rendering, token]);
+  }, [html, messageId, rendering, token, setExportError]);
 
   const details = FORMAT_DETAILS[format];
   const displayPosts = post

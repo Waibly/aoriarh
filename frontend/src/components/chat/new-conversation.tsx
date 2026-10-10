@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { WelcomeScreen } from "@/components/chat/welcome-screen";
 import { Conversation } from "@/components/chat/conversation";
 import { DocumentLibrary } from "@/components/chat/document-library";

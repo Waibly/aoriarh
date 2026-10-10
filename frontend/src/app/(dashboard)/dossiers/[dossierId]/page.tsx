@@ -1,5 +1,7 @@
 "use client";
 
+import { useErrorState } from "@/hooks/use-error-state";
+
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
@@ -60,7 +62,7 @@ function DossierWorkspace({ dossierId }: { dossierId: string }) {
   const { data: session } = useSession();
   const token = session?.access_token;
   const [d, setD] = useState<DossierDetail | null>(null);
-  const [error, setError] = useState("");
+  const [error, setError] = useErrorState("");
   const [revision, setRevision] = useState(0);
   const [tab, setTab] = useState<
     "conversations" | "informations" | "documents"
@@ -102,7 +104,7 @@ function DossierWorkspace({ dossierId }: { dossierId: string }) {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [dossierId, token, organisationId, revision, query, router]);
+  }, [dossierId, token, organisationId, revision, query, router, setError]);
   useEffect(() => {
     if (editRequested) setEdit(true);
   }, [editRequested]);

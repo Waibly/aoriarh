@@ -1,5 +1,7 @@
 "use client";
 
+import { useErrorState } from "@/hooks/use-error-state";
+
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import {
   FileText,
@@ -9,7 +11,7 @@ import {
   Pencil,
   RefreshCw,
 } from "lucide-react";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { useUnsavedChanges } from "@/hooks/use-unsaved-changes";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -324,7 +326,7 @@ export function CaseFilePanel({
     null
   );
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(false);
+  const [error, setError] = useErrorState(false);
   const [actingEntryId, setActingEntryId] = useState<string | null>(null);
   const sequence = useRef(0);
   const caseFile =
@@ -341,7 +343,7 @@ export function CaseFilePanel({
     } finally {
       if (request === sequence.current) setLoading(false);
     }
-  }, [conversationId, token]);
+  }, [conversationId, token, setError]);
   useEffect(() => {
     if (!open) return;
     void load();

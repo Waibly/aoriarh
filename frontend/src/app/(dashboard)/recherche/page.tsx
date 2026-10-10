@@ -1,5 +1,7 @@
 "use client";
 
+import { useErrorState } from "@/hooks/use-error-state";
+
 import { useCallback, useMemo, useState } from "react";
 import Link from "next/link";
 import { useSession } from "next-auth/react";
@@ -233,7 +235,7 @@ export default function RechercheDocumentairePage() {
 
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useErrorState<string | null>(null);
   const [data, setData] = useState<DocSearchResponse | null>(null);
 
   // Drawer document complet
@@ -303,7 +305,7 @@ export default function RechercheDocumentairePage() {
         setLoading(false);
       }
     },
-    [session, currentOrg, query],
+    [session, currentOrg, query, setError],
   );
 
   const openFullDocument = useCallback(

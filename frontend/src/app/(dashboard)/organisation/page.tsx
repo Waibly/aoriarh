@@ -10,7 +10,7 @@ import {
   Plus,
   Users,
 } from "lucide-react";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { useOrg } from "@/lib/org-context";
 import { apiFetch } from "@/lib/api";
 import type { Organisation } from "@/types/api";

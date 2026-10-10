@@ -1,5 +1,7 @@
 "use client";
 
+import { useErrorState } from "@/hooks/use-error-state";
+
 import { useEffect, useState, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { signIn, useSession } from "next-auth/react";
@@ -25,7 +27,7 @@ export default function AcceptInvitationPage() {
 
   const [pageState, setPageState] = useState<PageState>("loading");
   const [invitation, setInvitation] = useState<InvitationValidateResponse | null>(null);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [errorMessage, setErrorMessage] = useErrorState<string | null>(null);
   const acceptAttempted = useRef(false);
 
   // Step 1: Validate the invitation token
@@ -55,7 +57,7 @@ export default function AcceptInvitationPage() {
     }
 
     validateToken();
-  }, [token]);
+  }, [token, setErrorMessage]);
 
   // Step 2: Auto-accept as soon as user is authenticated
   useEffect(() => {
@@ -92,7 +94,7 @@ export default function AcceptInvitationPage() {
     }
 
     autoAccept();
-  }, [pageState, sessionStatus, session, token, router]);
+  }, [pageState, sessionStatus, session, token, router, setErrorMessage]);
 
   const callbackUrl = `/invite/accept/${token}`;
   const isLoggedIn = sessionStatus === "authenticated";

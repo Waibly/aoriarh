@@ -1,5 +1,7 @@
 "use client";
 
+import { useErrorState } from "@/hooks/use-error-state";
+
 import { useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
 import { Building2, UserCog, ArrowRight, ArrowLeft, Check } from "lucide-react";
@@ -69,7 +71,7 @@ export function OrgFormDialog({
   const [profilMetier, setProfilMetier] = useState("");
 
   const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useErrorState<string | null>(null);
 
   useEffect(() => {
     if (open) {
@@ -85,7 +87,7 @@ export function OrgFormDialog({
       setProfilMetier("");
       setError(null);
     }
-  }, [open, org]);
+  }, [open, org, setError]);
 
   async function handleFinalSubmit() {
     if (!orgValues.name.trim()) return;

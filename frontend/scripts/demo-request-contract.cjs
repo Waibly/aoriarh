@@ -7,6 +7,7 @@ const source = fs.readFileSync(path.join(__dirname, '../src/lib/demo-api.ts'), '
 const compiled = ts.transpileModule(source, {compilerOptions: {module:ts.ModuleKind.CommonJS, target:ts.ScriptTarget.ES2022}}).outputText;
 let payload;
 const sandbox = { exports: {}, require: (name) => {
+  if(name === '@/lib/incidents') return {reportIncident:()=>{}};
   if(name !== '@/lib/api') throw Error('Unexpected runtime import: '+name);
   return {API_BASE_URL:'https://api.example.test/api/v1'};
 }, fetch: async (_url, init) => { payload=JSON.parse(init.body);return {ok:false,json:async()=>({detail:'contract capture'})};} };

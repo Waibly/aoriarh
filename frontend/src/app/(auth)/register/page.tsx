@@ -1,5 +1,7 @@
 "use client";
 
+import { useErrorState } from "@/hooks/use-error-state";
+
 import { useState, useEffect, Suspense } from "react";
 import { signIn, useSession } from "next-auth/react";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -131,7 +133,7 @@ function RegisterForm() {
   const [orgValues, setOrgValues] =
     useState<OrgFormFieldsValues>(emptyOrgFormFields());
 
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useErrorState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
 
   // Onboarding mode: pre-fill the profil from the cookie set by /register

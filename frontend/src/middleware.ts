@@ -62,6 +62,7 @@ export default auth((req) => {
       "/admin/plan-invitations",
     ];
     const techOnly = [
+      "/admin/incidents",
       "/admin/home",
       "/admin/quality",
       "/admin/corpus",
@@ -90,6 +91,6 @@ export const config = {
   // Skip API, Next internals, and any file with a static-asset extension
   // (svg, png, jpg, jpeg, gif, webp, ico, woff, woff2, ttf, eot, txt).
   matcher: [
-    "/((?!api|_next/static|_next/image|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico|woff|woff2|ttf|eot|txt)$).*)",
+    "/((?!api|_next/static|_next/image|incident-client\\.js$|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico|woff|woff2|ttf|eot|txt)$).*)",
   ],
 };

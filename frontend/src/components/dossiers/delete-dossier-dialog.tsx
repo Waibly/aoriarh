@@ -1,5 +1,7 @@
 "use client";
 
+import { useErrorState } from "@/hooks/use-error-state";
+
 import { useEffect, useRef, useState } from "react";
 import { apiFetch } from "@/lib/api";
 import { dossierChanged, type Dossier } from "@/lib/dossiers-api";
@@ -26,10 +28,10 @@ export function DeleteDossierDialog({
 }) {
   const [busy, setBusy] = useState(false);
   const deleting = useRef(false);
+  const [error, setError] = useErrorState("");
   useEffect(() => {
     setError("");
-  }, [dossier?.id]);
-  const [error, setError] = useState("");
+  }, [dossier?.id, setError]);
   return (
     <Dialog
       open={!!dossier}

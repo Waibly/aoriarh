@@ -1,8 +1,10 @@
 "use client";
 
+import { useErrorState } from "@/hooks/use-error-state";
+
 import { useEffect, useRef, useState } from "react";
 import { Check, ChevronsUpDown, FileText, FileType2, File as FileIcon, X } from "lucide-react";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { authFetch } from "@/lib/api";
 import { SOURCE_TYPE_OPTIONS, NORME_POIDS } from "@/types/api";
 import { fetchSubscription, fetchUsageSummary } from "@/lib/billing-api";
@@ -132,7 +134,7 @@ export function UploadDialog({
   const [files, setFiles] = useState<File[]>([]);
   const [sourceType, setSourceType] = useState("");
   const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useErrorState<string | null>(null);
   const [docLimit, setDocLimit] = useState<{
     open: boolean;
     plan: string;
@@ -175,7 +177,7 @@ export function UploadDialog({
       setTypeSearchOpen(false);
       if (fileRef.current) fileRef.current.value = "";
     }
-  }, [open, initialSourceType]);
+  }, [open, initialSourceType, setError]);
 
   // Listen for dropped files from drag & drop zone
   useEffect(() => {

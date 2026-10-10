@@ -1,5 +1,6 @@
 "use client";
 
+import { reportIncident } from "@/lib/incidents";
 import { useEffect } from "react";
 import { AlertTriangle, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -12,6 +13,7 @@ export default function ChatError({
   reset: () => void;
 }) {
   useEffect(() => {
+    reportIncident("react_error");
     console.error("Chat error:", error);
   }, [error]);
 

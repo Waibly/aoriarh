@@ -1,5 +1,7 @@
 "use client";
 
+import { useErrorState } from "@/hooks/use-error-state";
+
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useSession } from "next-auth/react";
@@ -12,7 +14,7 @@ import {
   ThumbsUp,
   MessageSquare,
 } from "lucide-react";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { apiFetch } from "@/lib/api";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -146,7 +148,7 @@ export default function AdminPilotagePage() {
   const token = session?.access_token;
   const [data, setData] = useState<Overview | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(false);
+  const [error, setError] = useErrorState(false);
 
   const load = useCallback(async () => {
     if (!token) return;
@@ -161,7 +163,7 @@ export default function AdminPilotagePage() {
     } finally {
       setLoading(false);
     }
-  }, [token]);
+  }, [token, setError]);
 
   useEffect(() => {
     load();

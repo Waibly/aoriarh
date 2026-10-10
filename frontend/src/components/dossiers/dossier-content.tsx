@@ -1,5 +1,7 @@
 "use client";
 
+import { useErrorState } from "@/hooks/use-error-state";
+
 import { useEffect, useRef, useState } from "react";
 import {
   Download,
@@ -10,7 +12,7 @@ import {
   Trash2,
   Replace,
 } from "lucide-react";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { useUnsavedChanges } from "@/hooks/use-unsaved-changes";
 import { apiFetch } from "@/lib/api";
 import {
@@ -48,7 +50,7 @@ export function DossierContent({
 }) {
   const [busy, setBusy] = useState(false);
   const working = useRef(false);
-  const [error, setError] = useState("");
+  const [error, setError] = useErrorState("");
   const [editing, setEditing] = useState(false);
   const [description, setDescription] = useState(d.description);
   const [instructions, setInstructions] = useState(d.instructions);

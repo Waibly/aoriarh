@@ -1,0 +1,240 @@
+"""Technical delivery/security contracts; never evaluate LLM content."""
+
+import asyncio
+import json
+import logging
+import time
+import uuid
+from datetime import UTC, datetime
+
+import httpx
+import pytest
+from fastapi import FastAPI, HTTPException
+from httpx import ASGITransport, AsyncClient
+
+from app.api import telemetry
+from app.observability import store
+from app.observability.jobs import observed_job
+from app.observability.middleware import IncidentMiddleware
+from app.observability.notifier import deliver_one, expected_start
+from app.observability.streams import observe_stream
+
+
+@pytest.fixture
+def spool(tmp_path, monkeypatch):
+    monkeypatch.setenv("INCIDENT_DB", str(tmp_path / "incidents.sqlite3"))
+    telemetry._buckets.clear()
+    token = store.context.set(None)
+    yield
+    store.context.reset(token)
+
+
+def records():
+    with store.connection() as db:
+        return [dict(r) for r in db.execute("SELECT * FROM incidents")]
+
+
+def test_privacy_and_deduplication(spool):
+    token = store.context.set({"incident_key": "request:test", "request_id": str(uuid.uuid4())})
+    store.capture(
+        "http_error", status=500, message="secret RH", location="/demo?q=private", token="secret"
+    )
+    store.capture("ui_error", status=500)
+    store.context.reset(token)
+    rows = records()
+    assert len(rows) == 1
+    assert "secret" not in rows[0]["payload"] and "private" not in rows[0]["payload"]
+    assert json.loads(rows[0]["payload"])["code"] == "http_error"
+
+
+def test_logging_does_not_copy_message_or_exception(spool):
+    record = logging.LogRecord(
+        "app.example", logging.ERROR, "/private/path", 42, "RH %s", ("secret",), None
+    )
+    store.IncidentLogHandler().emit(record)
+    assert "secret" not in records()[0]["payload"]
+    assert json.loads(records()[0]["payload"])["line"] == 42
+
+
+async def test_http_exception_and_response_have_request_id(spool):
+    from app.main import _unhandled_exception_handler
+
+    app = FastAPI()
+    app.add_exception_handler(Exception, _unhandled_exception_handler)
+
+    @app.get("/handled")
+    async def handled():
+        raise HTTPException(422, "private payload")
+
+    @app.get("/crash")
+    async def crash():
+        raise RuntimeError("private exception")
+
+    app.add_middleware(IncidentMiddleware)
+    async with AsyncClient(
+        transport=ASGITransport(app=app, raise_app_exceptions=False), base_url="http://test"
+    ) as client:
+        response = await client.get("/handled")
+        assert response.status_code == 422
+        assert response.headers["x-request-id"]
+        crash = await client.get("/crash")
+        assert crash.status_code == 500
+        assert crash.headers["x-request-id"]
+    assert len(records()) == 2
+    assert "private" not in str(records())
+
+
+async def test_public_collector_rejects_secrets_and_deduplicates(spool):
+    app = FastAPI()
+    app.include_router(telemetry.router)
+    data = {"id": str(uuid.uuid4()), "source": "site", "code": "network_error", "location": "/demo"}
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        assert (await client.post("/incidents", json=data)).status_code == 403
+        headers = {"Origin": "https://aoriarh.fr"}
+        assert (
+            await client.post("/incidents", json={**data, "message": "private"}, headers=headers)
+        ).status_code == 422
+        assert (
+            await client.post("/incidents", content="x" * 2049, headers=headers)
+        ).status_code == 413
+        assert (await client.post("/incidents", json=data, headers=headers)).status_code == 202
+        assert (await client.post("/incidents", json=data, headers=headers)).status_code == 202
+    assert len(records()) == 1
+
+
+async def test_stream_preserves_every_frame_and_reports_failure(spool):
+    frames = [
+        'event: chat_delta\ndata: {"content":"  original text  "}\n\n',
+        'event: chat_error\ndata: {"message":"technical error"}\n\n',
+    ]
+
+    async def generator():
+        for frame in frames:
+            yield frame
+
+    class Request:
+        async def is_disconnected(self):
+            return False
+
+    assert [frame async for frame in observe_stream(generator(), Request())] == frames
+    assert len(records()) == 1
+    assert "original text" not in records()[0]["payload"]
+
+
+async def test_swallowed_job_error_is_recorded_and_results_unchanged(spool):
+    @observed_job
+    async def run_example(ctx):
+        store.capture("document_failed")
+        return {"errors": 1}
+
+    assert await run_example({"job_id": "job-1"}) == {"errors": 1}
+    assert json.loads(records()[0]["payload"])["job_id"] == "job-1"
+
+
+async def test_delivery_retry_and_acceptance(spool):
+    store.capture("test_incident")
+    with store.connection() as db:
+        db.execute("UPDATE incidents SET created=?", (time.time() - 10,))
+    calls = 0
+
+    def handler(request):
+        nonlocal calls
+        calls += 1
+        return (
+            httpx.Response(429, headers={"Retry-After": "60"})
+            if calls == 1
+            else httpx.Response(200, text="ok")
+        )
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        await deliver_one(client, "https://hooks.slack.com/services/test")
+        row = records()[0]
+        assert row["state"] == "pending" and row["attempts"] == 1
+        assert row["next_attempt"] >= time.time() + 58
+        store.set_state("slack_backoff", 0)
+        with store.connection() as db:
+            db.execute("UPDATE incidents SET next_attempt=0")
+        await deliver_one(client, "https://hooks.slack.com/services/test")
+        assert records()[0]["state"] == "delivered"
+        assert calls == 2
+
+
+async def test_permanent_delivery_error_retained_without_retry(spool):
+    store.capture("test_incident")
+    with store.connection() as db:
+        db.execute("UPDATE incidents SET created=?", (time.time() - 10,))
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(lambda _: httpx.Response(403, text="private"))
+    ) as client:
+        await deliver_one(client, "https://hooks.slack.com/services/test")
+        assert records()[0]["state"] == "failed"
+        assert records()[0]["last_error"] == "http_403"
+        assert await deliver_one(client, "https://hooks.slack.com/services/test") is False
+
+
+def test_schedule_uses_calendar_not_time_since_last_run():
+    sunday = datetime(2026, 10, 11, 3, 0, tzinfo=UTC)
+    assert expected_start(sunday, (6, 2, 0, None)) == sunday.replace(hour=2)
+    assert expected_start(sunday, (5, 2, 0, None)).day == 10
+
+
+async def test_admin_incidents_denies_anonymous(client, spool):
+    assert (await client.get("/api/v1/telemetry/admin/incidents")).status_code == 401
+    assert (
+        await client.post("/api/v1/telemetry/admin/incidents/" + str(uuid.uuid4()) + "/retry")
+    ).status_code == 401
+
+
+async def test_retry_budget_is_bounded(spool):
+    store.capture("test_incident")
+    with store.connection() as db:
+        db.execute("UPDATE incidents SET created=?,attempts=7", (time.time() - 10,))
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(lambda _: httpx.Response(503))
+    ) as client:
+        await deliver_one(client, "https://hooks.slack.com/services/test")
+        assert records()[0]["state"] == "failed"
+        assert records()[0]["attempts"] == 8
+
+
+async def test_collector_cannot_impersonate_authenticated_user(spool):
+    app = FastAPI()
+    app.include_router(telemetry.router)
+    data = {
+        "id": str(uuid.uuid4()),
+        "source": "app",
+        "code": "ui_error",
+        "user_id": str(uuid.uuid4()),
+    }
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        assert (
+            await client.post("/incidents", json=data, headers={"Origin": "https://app.aoriarh.fr"})
+        ).status_code == 422
+    assert records() == []
+
+
+async def test_queue_tracks_only_successfully_enqueued_jobs(spool):
+    from app.observability.jobs import track_queue
+
+    class Job:
+        job_id = "queued-1"
+
+    class Pool:
+        async def enqueue_job(self, name, *args, **kwargs):
+            return Job()
+
+    pool = Pool()
+    track_queue(pool)
+    await pool.enqueue_job("run_ingestion", "doc-1")
+    assert store.get_state("job:queued-1")["status"] == "queued"
+
+
+async def test_cancelled_job_remains_visible(spool):
+    @observed_job
+    async def run_cancelled(ctx):
+        raise asyncio.CancelledError()
+
+    with pytest.raises(asyncio.CancelledError):
+        await run_cancelled({"job_id": "cancelled-1"})
+    assert store.get_state("job:cancelled-1")["status"] == "cancelled"
+    assert json.loads(records()[0]["payload"])["code"] == "job_cancelled"
