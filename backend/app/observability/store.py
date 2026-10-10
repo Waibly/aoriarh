@@ -18,6 +18,7 @@ from contextlib import contextmanager
 context = contextvars.ContextVar("incident_context", default=None)
 FIELDS = {
     "source",
+    "reason",
     "code",
     "request_id",
     "job_id",

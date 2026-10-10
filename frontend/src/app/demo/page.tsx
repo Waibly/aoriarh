@@ -53,7 +53,7 @@ function DemoClient() {
   const [streamingSources, setStreamingSources] = useState<MessageSource[]>([]);
   const [status, setStatus] = useState<string | null>(null);
   const [isStreaming, setIsStreaming] = useState(false);
-  const [error, setError] = useErrorState<string | null>(null);
+  const [error, setError, setReportedError] = useErrorState<string | null>(null);
   const [done, setDone] = useState(false);
   const [draft, setDraft] = useState("");
   const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
@@ -109,7 +109,7 @@ function DemoClient() {
             if (TURNSTILE_ENABLED) turnstileRef.current?.reset();
           },
           onError: (msg) => {
-            setError(msg);
+            setReportedError(msg);
             setStatus(null);
             setIsStreaming(false);
             if (TURNSTILE_ENABLED) turnstileRef.current?.reset();
@@ -117,7 +117,7 @@ function DemoClient() {
         },
       );
     },
-    [isStreaming, turnstileToken, setError],
+    [isStreaming, turnstileToken, setError, setReportedError],
   );
 
   // Lance automatiquement la question venue du hero (?q=), une seule fois.

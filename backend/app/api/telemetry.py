@@ -41,6 +41,9 @@ class IncidentInput(BaseModel):
     location: str = Field(
         default="unknown", max_length=180, pattern=r"^[a-zA-Z0-9_./:{}@\[\]()-]+$"
     )
+    reason: Literal[
+        "provider_quota_exhausted", "provider_rate_limited", "server_error"
+    ] | None = None
     request_id: uuid.UUID | None = None
     visitor_id: uuid.UUID | None = None
     status: int | None = Field(default=None, ge=400, le=599)

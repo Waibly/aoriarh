@@ -52,6 +52,7 @@ from app.models.api_usage import ApiUsageLog
 from app.models.conversation import Conversation
 from app.models.organisation import Organisation
 from app.models.user import User
+from app.observability.streams import observe_stream
 from app.rag.agent import (
     RAGAgent,
 )
@@ -63,6 +64,7 @@ from app.rag.config import (
 from app.rag.intent_router import classify_intent
 from app.rag.pipeline import prepare_rag_context
 from app.rag.search_feedback import search_feedback
+from app.services.chat_errors import stream_error_payload
 from app.services.conversation_service import ConversationService
 from app.services.demo_observability import observe_demo_stream
 from app.services.security_alert_service import send_security_alert_bg
@@ -585,18 +587,12 @@ async def public_ask(
 
                 yield _sse_event("chat_done", {"upsell": _DEMO_UPSELL})
 
-            except Exception:
+            except Exception as exc:
                 logger.exception("Démo: erreur SSE")
-                yield _sse_event(
-                    "chat_error",
-                    {
-                        "error": "server_error",
-                        "message": "Une erreur est survenue lors du traitement. Réessayez.",
-                    },
-                )
+                yield _sse_event("chat_error", stream_error_payload(exc))
 
     return StreamingResponse(
-        observe_demo_stream(sse_generator(), request),
+        observe_stream(observe_demo_stream(sse_generator(), request), request),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",

@@ -33,6 +33,7 @@
     options = options || {};
     var event = { id: options.id || crypto.randomUUID(), source: source, code: code,
       location: safeLocation(), visitor_id: visitor };
+    if (['provider_quota_exhausted','provider_rate_limited','server_error'].indexOf(options.reason) >= 0) event.reason = options.reason;
     if (options.request_id) event.request_id = options.request_id;
     if (options.status >= 400 && options.status <= 599) event.status = options.status;
     // No event sampling. Bound browser memory; disclose overflow as its own incident.

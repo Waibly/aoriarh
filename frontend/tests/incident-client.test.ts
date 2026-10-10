@@ -47,3 +47,15 @@ it("does not report explicit cancellation or third-party analytics requests", as
   await expect(win.fetch('https://analytics.example/event')).rejects.toBeDefined();
   expect(fetcher).toHaveBeenCalledTimes(2);
 });
+
+it("sends allowlisted technical reasons but never arbitrary error text", async () => {
+  const fetcher = jest.fn(async (_url:string,_options?:any)=>({status:202,ok:true}));
+  const {win}=runtime(fetcher);
+  win.aoriaReportIncident('stream_error',{reason:'provider_quota_exhausted'});
+  win.aoriaReportIncident('stream_error',{reason:'PRIVATE_MESSAGE'});
+  await new Promise(resolve=>setTimeout(resolve,0));
+  const sent=fetcher.mock.calls.map(args=>JSON.parse(args[1].body));
+  expect(sent[0].reason).toBe('provider_quota_exhausted');
+  expect(sent[1]).not.toHaveProperty('reason');
+  expect(JSON.stringify(sent)).not.toContain('PRIVATE_MESSAGE');
+});

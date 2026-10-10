@@ -299,3 +299,84 @@ async def test_slack_batch_failure_preserves_each_incident_retry_budget(spool):
     ) as client:
         assert await deliver_one(client, 'https://hooks.slack.com/services/test')
     assert sorted((r['state'], r['attempts']) for r in records()) == [('failed', 8), ('pending', 1)]
+
+
+@pytest.mark.parametrize('reason,label', [
+    ('provider_quota_exhausted', 'Crédits OpenAI épuisés'),
+    ('provider_rate_limited', 'Limite de débit du service IA atteinte'),
+    ('server_error', 'Erreur technique du service IA'),
+])
+async def test_server_and_browser_share_one_incident_with_cause(spool, reason, label):
+    request_id = str(uuid.uuid4())
+    token = store.context.set({'incident_key': 'request:' + request_id,
+                               'request_id': request_id, 'source': 'backend'})
+    # The server log may precede the protocol error. Its cause must still be enriched.
+    store.capture('python_error', exception_type='RateLimitError')
+    frame = (
+        'event: chat_error\ndata: '
+        + json.dumps({'error': reason, 'message': 'PRIVATE'}) + '\n\n'
+    )
+
+    async def frames():
+        yield frame
+
+    class Request:
+        async def is_disconnected(self):
+            return False
+
+    assert [f async for f in observe_stream(frames(), Request())] == [frame]
+    store.context.reset(token)
+    app = FastAPI()
+    app.include_router(telemetry.router)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url='http://test') as client:
+        response = await client.post('/incidents', headers={'Origin': 'https://app.aoriarh.fr'},
+                                     json={'id': str(uuid.uuid4()), 'source': 'app',
+                                           'code': 'stream_error', 'reason': reason,
+                                           'request_id': request_id})
+        assert response.status_code == 202
+    assert len(records()) == 1
+    assert json.loads(records()[0]['payload'])['reason'] == reason
+    assert 'PRIVATE' not in records()[0]['payload']
+    with store.connection() as db:
+        db.execute('UPDATE incidents SET created=?', (time.time() - 10,))
+    messages = []
+
+    def accept(request):
+        messages.append(json.loads(request.content))
+        return httpx.Response(200, text='ok')
+
+    async with AsyncClient(transport=httpx.MockTransport(accept)) as client:
+        assert await deliver_one(client, 'https://hooks.slack.com/services/test')
+        assert not await deliver_one(client, 'https://hooks.slack.com/services/test')
+    assert len(messages) == 1
+    assert label in messages[0]['text']
+    assert records()[0]['state'] == 'delivered'
+
+
+async def test_collector_rejects_arbitrary_reason_text(spool):
+    app = FastAPI()
+    app.include_router(telemetry.router)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url='http://test') as client:
+        response = await client.post('/incidents', headers={'Origin': 'https://app.aoriarh.fr'},
+                                     json={'id': str(uuid.uuid4()), 'source': 'app',
+                                           'code': 'stream_error', 'reason': 'PRIVATE'})
+    assert response.status_code == 422
+    assert records() == []
+
+
+async def test_distinct_causes_are_not_grouped_together(spool):
+    for reason in ('provider_quota_exhausted', 'provider_rate_limited'):
+        store.capture('stream_error', source='app', reason=reason)
+    with store.connection() as db:
+        db.execute('UPDATE incidents SET created=?', (time.time() - 10,))
+    messages = []
+
+    def accept(request):
+        messages.append(json.loads(request.content))
+        return httpx.Response(200, text='ok')
+
+    async with AsyncClient(transport=httpx.MockTransport(accept)) as client:
+        assert await deliver_one(client, 'https://hooks.slack.com/services/test')
+        assert await deliver_one(client, 'https://hooks.slack.com/services/test')
+    assert len(messages) == 2
+    assert messages[0]['text'] != messages[1]['text']

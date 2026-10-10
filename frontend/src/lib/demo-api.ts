@@ -1,4 +1,4 @@
-import { reportIncident } from "@/lib/incidents";
+import { reportIncident, incidentReason } from "@/lib/incidents";
 import { API_BASE_URL } from "@/lib/api";
 import type { MessageSource } from "@/types/api";
 
@@ -65,6 +65,7 @@ export async function streamPublicAsk(
 
   const reader = response.body?.getReader();
   if (!reader) {
+    reportIncident("stream_error", { request_id: response.headers?.get("X-Request-ID") });
     callbacks.onError("Streaming non supporté par le navigateur.");
     return;
   }
@@ -74,7 +75,7 @@ export async function streamPublicAsk(
   let eventType = "";
   let dataStr = "";
   let terminal = false;
-  const incidentOptions = { request_id: response.headers?.get("X-Request-ID") };
+  const incidentOptions = { request_id: response.headers?.get("X-Request-ID"), id: globalThis.crypto?.randomUUID?.() };
 
   function processLine(line: string) {
     if (line.startsWith("event: ")) {
@@ -105,7 +106,7 @@ export async function streamPublicAsk(
             callbacks.onDone(parsed);
             break;
           case "chat_error":
-            reportIncident("stream_error", incidentOptions);
+            reportIncident("stream_error", { ...incidentOptions, reason: incidentReason(parsed.error) });
             terminal = true;
             callbacks.onError(parsed.message);
             break;
@@ -148,6 +149,7 @@ export async function streamPublicAsk(
     }
   } catch {
     if (signal?.aborted) return;
+    reportIncident("stream_error", incidentOptions);
     callbacks.onError(
       "La connexion au serveur a été interrompue. Veuillez réessayer.",
     );

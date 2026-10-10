@@ -60,7 +60,7 @@ export function Conversation({
   const [conversationOrg, setConversationOrg] = useState<string | null>(null);
   const [createDossier, setCreateDossier] = useState(false);
   const [loadError, setLoadError] = useErrorState("");
-  const [sendError, setSendError] = useErrorState("");
+  const [sendError, setSendError, setReportedSendError] = useErrorState("");
   const [attachmentScope, setAttachmentScope] = useState<
     "dossier" | "conversation"
   >("dossier");
@@ -298,7 +298,7 @@ export function Conversation({
               setStreamingContent("");
               setStreamingSources(null);
               setIsStreaming(false);
-              setSendError(errorMsg);
+              setReportedSendError(errorMsg);
             },
           },
           abortController.signal,
@@ -331,7 +331,7 @@ export function Conversation({
         }
       }
     },
-    [conversationId, token, attachments, onConversationSaved, setSendError]
+    [conversationId, token, attachments, onConversationSaved, setSendError, setReportedSendError]
   );
 
   const handleFeedback = useCallback(

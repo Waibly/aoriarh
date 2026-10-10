@@ -94,3 +94,24 @@ test("keeps interruption warnings separate from content and completion", async (
     "aoriarh.chat.headers", "aoriarh.chat.first_text", "aoriarh.chat.done",
   ]);
 });
+
+test.each(['provider_quota_exhausted', 'provider_rate_limited', 'server_error'])(
+  'reports %s once with the request id while keeping the displayed error unchanged', async (reason) => {
+    const report = jest.fn();
+    window.aoriaReportIncident = report;
+    const bytes = Uint8Array.from(Buffer.from(
+      `event: chat_error\ndata: ${JSON.stringify({error:reason,message:'Original error'})}\n\n`
+    ));
+    const read = jest.fn().mockResolvedValueOnce({done:false,value:bytes}).mockResolvedValue({done:true});
+    fetchWithAuth.mockResolvedValue({ok:true,headers:{get:()=> 'request-1'},body:{
+      getReader:()=>({read,releaseLock:jest.fn()}),
+    }});
+    const callbacks = {onSources:jest.fn(),onDelta:jest.fn(),onDone:jest.fn(),onError:jest.fn()};
+    await streamMessage('conversation-1','Question','token',callbacks);
+    expect(report).toHaveBeenCalledTimes(1);
+    expect(report).toHaveBeenCalledWith('stream_error',expect.objectContaining({request_id:'request-1',reason}));
+    expect(callbacks.onError).toHaveBeenCalledWith('Original error');
+    expect(callbacks.onDone).not.toHaveBeenCalled();
+    delete window.aoriaReportIncident;
+  }
+);

@@ -21,7 +21,7 @@ GROUP_INTERVAL = 60
 MAX_BATCH = 1000
 # Stable technical fields only. Identities remain on individual incident records.
 GROUP_FIELDS = (
-    "source", "code", "location", "status", "method", "exception_type",
+    "source", "code", "reason", "location", "status", "method", "exception_type",
     "job_name", "sync_type", "release",
 )
 GROUP_SQL = "json_array(" + ",".join(
@@ -31,8 +31,15 @@ GROUP_SQL = "json_array(" + ",".join(
 
 def slack_message(row, batch=None):
     data = json.loads(row["payload"])
+    labels = {
+        "provider_quota_exhausted": "Crédits OpenAI épuisés",
+        "provider_rate_limited": "Limite de débit du service IA atteinte",
+        "server_error": "Erreur technique du service IA",
+    }
+    cause = labels.get(data.get("reason"))
+    title = "AORIA RH — " + cause if cause else "AORIA RH — incident de production"
     lines = [
-        "AORIA RH — incident de production",
+        title,
         "Incident : " + row["id"],
         "Date UTC : " + datetime.fromtimestamp(row["created"], UTC).isoformat(),
     ]
@@ -48,7 +55,7 @@ def slack_message(row, batch=None):
     lines.append("Suivi : https://app.aoriarh.fr/admin/incidents")
     # plain_text prevents mentions, links or formatting supplied by a public client.
     return {
-        "text": "AORIA RH — incident " + row["id"],
+        "text": title + " — incident " + row["id"],
         "blocks": [{"type": "section", "text": {"type": "plain_text", "text": "\n".join(lines)}}],
     }
 

@@ -1,4 +1,4 @@
-import { reportIncident } from "@/lib/incidents";
+import { reportIncident, incidentReason } from "@/lib/incidents";
 import { apiFetch, authFetch } from "@/lib/api";
 import type {
   Conversation,
@@ -465,6 +465,7 @@ export async function streamMessage(
 
   const reader = response.body?.getReader();
   if (!reader) {
+    reportIncident("stream_error", { request_id: response.headers?.get("X-Request-ID") });
     callbacks.onError("Streaming non supporté par le navigateur.");
     return;
   }
@@ -475,7 +476,7 @@ export async function streamMessage(
   let eventType = "";
   let dataStr = "";
   let terminal = false;
-  const incidentOptions = { request_id: response.headers?.get("X-Request-ID") };
+  const incidentOptions = { request_id: response.headers?.get("X-Request-ID"), id: globalThis.crypto?.randomUUID?.() };
 
   function processLine(line: string) {
     if (line.startsWith("event: ")) {
@@ -516,7 +517,7 @@ export async function streamMessage(
             break;
           case "chat_error":
             terminal = true;
-            reportIncident("stream_error", incidentOptions);
+            reportIncident("stream_error", { ...incidentOptions, reason: incidentReason(parsed.error) });
             measure("error");
             callbacks.onError(parsed.message);
             break;
