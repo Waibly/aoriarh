@@ -7,7 +7,7 @@ import type { MessageSource } from "@/types/api";
  * Copie volontaire du parseur de `streamMessage` (chat-api.ts) mais :
  *  - fetch DIRECT, sans token ni logique de refresh (endpoint public) ;
  *  - vise `POST ${API_BASE_URL}/public/ask` ;
- *  - gère l'event `chat_meta` (conversation_id, pour les relances) et l'`upsell`
+ *  - gère l'event `chat_meta` (identifiant de la conversation créée) et l'`upsell`
  *    renvoyé dans `chat_done`.
  */
 export interface DemoStreamCallbacks {
@@ -23,11 +23,10 @@ export interface DemoStreamCallbacks {
 export interface DemoAskParams {
   message: string;
   turnstileToken?: string | null;
-  conversationId?: string | null;
 }
 
 export async function streamPublicAsk(
-  { message, turnstileToken, conversationId }: DemoAskParams,
+  { message, turnstileToken }: DemoAskParams,
   callbacks: DemoStreamCallbacks,
   signal?: AbortSignal,
 ): Promise<void> {
@@ -39,7 +38,6 @@ export async function streamPublicAsk(
       body: JSON.stringify({
         message,
         turnstile_token: turnstileToken ?? null,
-        conversation_id: conversationId ?? null,
       }),
     });
   } catch {
