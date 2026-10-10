@@ -20,7 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 from sqlalchemy import select
 
-from app.observability.jobs import observed_job
+from app.observability.jobs import observed_job  # noqa: E402 - initialize logging before app imports
 from app.core.config import settings
 from app.models.document import Document
 from app.rag.ingestion import IngestionPipeline

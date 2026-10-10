@@ -53,7 +53,7 @@ from app.api import (
     users,
     webhooks,
 )
-from app.observability.middleware import IncidentMiddleware
+from app.observability.middleware import IncidentMiddleware  # noqa: E402 - initialize logging before app imports
 from app.core.config import settings
 from app.core.database import async_session_factory, get_db
 from app.core.limiter import limiter
