@@ -8,6 +8,8 @@ setup_logging(json_output=os.getenv("LOG_FORMAT", "json") == "json")
 
 import structlog
 from fastapi import Depends, FastAPI, Request, Response
+from fastapi.exception_handlers import request_validation_exception_handler
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from prometheus_fastapi_instrumentator import Instrumentator
@@ -216,6 +218,16 @@ async def _unhandled_exception_handler(request: Request, exc: Exception) -> JSON
 
 
 app.add_exception_handler(Exception, _unhandled_exception_handler)
+
+
+@app.exception_handler(RequestValidationError)
+async def public_demo_validation_error(request: Request, exc: RequestValidationError) -> Response:
+    if request.url.path == "/api/v1/public/ask":
+        # Ne jamais journaliser la question, les jetons ni les valeurs rejetées.
+        logger.error("demo_request_validation_failed", error_types=[
+            error["type"] for error in exc.errors()
+        ])
+    return await request_validation_exception_handler(request, exc)
 
 app.add_middleware(
     CORSMiddleware,

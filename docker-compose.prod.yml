@@ -344,6 +344,23 @@ services:
 
   # --- Monitoring ---
 
+  public-probe:
+    image: aoriarh-backend
+    restart: unless-stopped
+    command: ["python", "-B", "/monitor/probe.py"]
+    read_only: true
+    cap_drop: ["ALL"]
+    security_opt: ["no-new-privileges:true"]
+    volumes:
+      - ./scripts/monitoring/probe.py:/monitor/probe.py:ro
+    deploy:
+      resources:
+        limits:
+          cpus: "0.1"
+          memory: 64M
+    networks:
+      - aoriarh
+
   prometheus:
     image: prom/prometheus:v2.51.0
     restart: unless-stopped

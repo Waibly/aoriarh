@@ -64,6 +64,7 @@ from app.rag.intent_router import classify_intent
 from app.rag.pipeline import prepare_rag_context
 from app.rag.search_feedback import search_feedback
 from app.services.conversation_service import ConversationService
+from app.services.demo_observability import observe_demo_stream
 from app.services.security_alert_service import send_security_alert_bg
 
 logger = logging.getLogger(__name__)
@@ -522,15 +523,11 @@ async def public_ask(
                     logger.warning(
                         "Démo: streaming interrompu (%d car.): %s", len(full_answer), stream_exc
                     )
-                    if not full_answer:
-                        yield _sse_event(
-                            "chat_error",
-                            {
-                                "error": "server_error",
-                                "message": "Une erreur est survenue. Veuillez réessayer.",
-                            },
-                        )
-                        return
+                    yield _sse_event("chat_error", {
+                        "error": "server_error",
+                        "message": "La génération a été interrompue par une erreur technique.",
+                    })
+                    return
 
                 if stream_dead:
                     logger.warning(
@@ -547,9 +544,18 @@ async def public_ask(
                             },
                         )
                         return
-                    cut_notice = "\n\n*La génération s'est interrompue en cours de route.*"
-                    full_answer += cut_notice
-                    yield _sse_event("chat_delta", {"content": cut_notice})
+                    yield _sse_event("chat_error", {
+                        "error": "timeout",
+                        "message": "La génération s'est interrompue en cours de route.",
+                    })
+                    return
+
+                if not full_answer:
+                    yield _sse_event("chat_error", {
+                        "error": "empty_response",
+                        "message": "Le service de génération a renvoyé une réponse vide.",
+                    })
+                    return
 
                 # 7. Persistance (pour analytics prospect + claim futur au signup).
                 await service.add_message(
@@ -590,7 +596,7 @@ async def public_ask(
                 )
 
     return StreamingResponse(
-        sse_generator(),
+        observe_demo_stream(sse_generator(), request),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",

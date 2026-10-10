@@ -214,16 +214,17 @@ function DemoClient() {
           )}
 
           {isStreaming && !streamingContent && <StatusIndicator step={status} />}
-          {isStreaming && streamingContent && (
+          {streamingContent && (
             <StreamingBubble
               content={streamingContent}
               sources={streamingSources}
+              streaming={isStreaming}
             />
           )}
 
           <SearchDetailsPanel details={searchDetails} />
           {error && (
-            <div className="rounded-xl border border-destructive/30 bg-destructive/5 p-4 text-sm text-foreground">
+            <div role="alert" className="rounded-xl border border-destructive/30 bg-destructive/5 p-4 text-sm text-foreground">
               {error}
             </div>
           )}

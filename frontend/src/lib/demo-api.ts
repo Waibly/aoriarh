@@ -39,8 +39,10 @@ export async function streamPublicAsk(
         message,
         turnstile_token: turnstileToken ?? null,
       }),
+      signal,
     });
   } catch {
+    if (signal?.aborted) return;
     callbacks.onError("Connexion impossible. Vérifiez votre réseau et réessayez.");
     return;
   }
@@ -52,6 +54,7 @@ export async function streamPublicAsk(
     try {
       const data = await response.json();
       if (typeof data?.detail === "string") message = data.detail;
+      else if (response.status === 422) message = "La demande n’a pas pu être transmise au service de démonstration (erreur 422).";
     } catch {
       // pas de corps JSON — message générique
     }
@@ -69,6 +72,7 @@ export async function streamPublicAsk(
   let buffer = "";
   let eventType = "";
   let dataStr = "";
+  let terminal = false;
 
   function processLine(line: string) {
     if (line.startsWith("event: ")) {
@@ -95,14 +99,16 @@ export async function streamPublicAsk(
             callbacks.onDelta(parsed.content);
             break;
           case "chat_done":
+            terminal = true;
             callbacks.onDone(parsed);
             break;
           case "chat_error":
+            terminal = true;
             callbacks.onError(parsed.message);
             break;
         }
       } catch {
-        // JSON malformé — on ignore
+        throw new Error("Événement SSE illisible");
       }
       eventType = "";
       dataStr = "";
@@ -131,6 +137,9 @@ export async function streamPublicAsk(
       if (eventType && dataStr) {
         processLine("");
       }
+    }
+    if (!terminal && !signal?.aborted) {
+      callbacks.onError("La connexion s’est terminée avant la fin de la réponse.");
     }
   } catch {
     if (signal?.aborted) return;

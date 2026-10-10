@@ -3,6 +3,9 @@ global:
   evaluation_interval: 15s
 
 scrape_configs:
+  - job_name: "public-probe"
+    static_configs:
+      - targets: ["public-probe:9116"]
   - job_name: "backend"
     metrics_path: /metrics
     static_configs:
