@@ -238,3 +238,64 @@ async def test_cancelled_job_remains_visible(spool):
         await run_cancelled({"job_id": "cancelled-1"})
     assert store.get_state("job:cancelled-1")["status"] == "cancelled"
     assert json.loads(records()[0]["payload"])["code"] == "job_cancelled"
+
+
+async def test_slack_groups_occurrences_but_keeps_individual_records(spool):
+    for number in range(281):
+        store.capture('http_error', source='backend', status=404,
+                      location='unmatched_route', request_id=str(uuid.uuid4()))
+    with store.connection() as db:
+        db.execute('UPDATE incidents SET created=?', (time.time() - 10,))
+    messages = []
+
+    def handler(request):
+        messages.append(json.loads(request.content))
+        return httpx.Response(200, text='ok')
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        assert await deliver_one(client, 'https://hooks.slack.com/services/test')
+        assert not await deliver_one(client, 'https://hooks.slack.com/services/test')
+    assert len(messages) == 1
+    assert 'Occurrences regroupées : 281' in messages[0]['blocks'][0]['text']['text']
+    assert len(records()) == 281
+    assert all(row['state'] == 'delivered' and row['attempts'] == 1 for row in records())
+
+
+async def test_slack_cooldown_survives_new_events_and_does_not_block_other_groups(spool):
+    def add(source):
+        store.capture('ui_error', source=source)
+        with store.connection() as db:
+            db.execute("UPDATE incidents SET created=? WHERE state='pending'", (time.time() - 10,))
+
+    messages = []
+
+    def handler(request):
+        messages.append(json.loads(request.content))
+        return httpx.Response(200, text='ok')
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        add('site')
+        assert await deliver_one(client, 'https://hooks.slack.com/services/test')
+        add('site')
+        assert not await deliver_one(client, 'https://hooks.slack.com/services/test')
+        add('app')
+        assert await deliver_one(client, 'https://hooks.slack.com/services/test')
+        assert sum(r['state'] == 'pending' for r in records()) == 1
+        with store.connection() as db:
+            db.execute("UPDATE state SET value='0' WHERE key LIKE 'slack_group:%'")
+        assert await deliver_one(client, 'https://hooks.slack.com/services/test')
+    assert len(messages) == 3
+    assert all(r['state'] == 'delivered' for r in records())
+
+
+async def test_slack_batch_failure_preserves_each_incident_retry_budget(spool):
+    store.capture('document_failed', document_id=str(uuid.uuid4()))
+    store.capture('document_failed', document_id=str(uuid.uuid4()))
+    with store.connection() as db:
+        db.execute('UPDATE incidents SET created=?', (time.time() - 10,))
+        db.execute('UPDATE incidents SET attempts=7 WHERE id=?', (records()[0]['id'],))
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(lambda _: httpx.Response(503))
+    ) as client:
+        assert await deliver_one(client, 'https://hooks.slack.com/services/test')
+    assert sorted((r['state'], r['attempts']) for r in records()) == [('failed', 8), ('pending', 1)]

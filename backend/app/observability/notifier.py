@@ -17,15 +17,33 @@ import httpx
 from app.observability.store import capture, connection, get_state, set_state
 
 MAX_ATTEMPTS = 8
+GROUP_INTERVAL = 60
+MAX_BATCH = 1000
+# Stable technical fields only. Identities remain on individual incident records.
+GROUP_FIELDS = (
+    "source", "code", "location", "status", "method", "exception_type",
+    "job_name", "sync_type", "release",
+)
+GROUP_SQL = "json_array(" + ",".join(
+    f"json_extract(i.payload, '$.{field}')" for field in GROUP_FIELDS
+) + ")"
 
 
-def slack_message(row):
+def slack_message(row, batch=None):
     data = json.loads(row["payload"])
     lines = [
         "AORIA RH — incident de production",
         "Incident : " + row["id"],
         "Date UTC : " + datetime.fromtimestamp(row["created"], UTC).isoformat(),
     ]
+    if batch and len(batch) > 1:
+        lines += [
+            f"Occurrences regroupées : {len(batch)}",
+            "Dernière occurrence UTC : "
+            + datetime.fromtimestamp(batch[-1]["created"], UTC).isoformat(),
+            "Détail ci-dessous : premier incident du groupe.",
+            "Chaque occurrence reste consultable individuellement dans l’administration.",
+        ]
     lines += [f"{key} : {value}" for key, value in data.items()]
     lines.append("Suivi : https://app.aoriarh.fr/admin/incidents")
     # plain_text prevents mentions, links or formatting supplied by a public client.
@@ -40,15 +58,25 @@ async def deliver_one(client, webhook):
     if now < get_state("slack_backoff", 0):
         return False
     with connection() as db:
+        # A cooldown suppresses repeated Slack messages, never incident collection.
+        # SQL skips cooling groups so another category is not blocked behind them.
         row = db.execute(
-            "SELECT * FROM incidents WHERE state='pending' AND next_attempt<=? "
-            "AND created<=? ORDER BY created LIMIT 1",
-            (now, now - 2),
+            "SELECT i.*, " + GROUP_SQL + " AS group_key FROM incidents i "
+            "LEFT JOIN state s ON s.key='slack_group:' || " + GROUP_SQL + " "
+            "WHERE i.state='pending' AND i.next_attempt<=? AND i.created<=? "
+            "AND COALESCE(CAST(s.value AS REAL),0)<=? ORDER BY i.created LIMIT 1",
+            (now, now - 2, now),
         ).fetchone()
-    if row is None:
-        return False
+        if row is None:
+            return False
+        batch = db.execute(
+            "SELECT i.* FROM incidents i WHERE i.state='pending' "
+            "AND i.next_attempt<=? AND i.created<=? AND " + GROUP_SQL + "=? "
+            "ORDER BY i.created LIMIT ?",
+            (now, now - 2, row["group_key"], MAX_BATCH),
+        ).fetchall()
     try:
-        response = await client.post(webhook, json=slack_message(row))
+        response = await client.post(webhook, json=slack_message(row, batch))
         success = response.status_code == 200 and response.text.strip() == "ok"
         retryable = response.status_code == 429 or response.status_code >= 500
         error = "http_" + str(response.status_code)
@@ -60,26 +88,27 @@ async def deliver_one(client, webhook):
             set_state("slack_backoff", now + delay)
     except (httpx.TransportError, httpx.TimeoutException):
         success, retryable, error, delay = False, True, "transport_error", 0
-    attempts = row["attempts"] + 1
-    state = (
-        "delivered"
-        if success
-        else ("pending" if retryable and attempts < MAX_ATTEMPTS else "failed")
-    )
     with connection() as db:
-        db.execute(
-            "UPDATE incidents SET "
-            "state=?,attempts=?,next_attempt=?,delivered=?,last_error=? WHERE "
-            "id=?",
-            (
-                state,
-                attempts,
-                now + max(delay, min(3600, 15 * 2 ** (attempts - 1))),
-                now if success else None,
-                None if success else error,
-                row["id"],
-            ),
-        )
+        for incident in batch:
+            attempts = incident["attempts"] + 1
+            state = (
+                "delivered" if success
+                else ("pending" if retryable and attempts < MAX_ATTEMPTS else "failed")
+            )
+            db.execute(
+                "UPDATE incidents SET "
+                "state=?,attempts=?,next_attempt=?,delivered=?,last_error=? WHERE id=?",
+                (
+                    state, attempts,
+                    now + max(delay, min(3600, 15 * 2 ** (attempts - 1))),
+                    now if success else None, None if success else error, incident["id"],
+                ),
+            )
+        if success:
+            db.execute(
+                "INSERT OR REPLACE INTO state VALUES(?,?)",
+                ("slack_group:" + row["group_key"], json.dumps(time.time() + GROUP_INTERVAL)),
+            )
     set_state(
         "slack_last_result", {"at": now, "success": success, "error": None if success else error}
     )
