@@ -200,6 +200,8 @@ function aggregateBatch(batch: SyncLogItem[]): SyncLogItem {
   let status: string;
   if (statuses.some((s) => s === "running")) status = "running";
   else if (statuses.some((s) => ["error", "failed"].includes(s))) status = "error";
+  else if (statuses.includes("interrupted")) status = "interrupted";
+  else if (statuses.includes("deferred")) status = "deferred";
   else status = "success";
   const sum = (key: keyof SyncLogItem) =>
     batch.reduce((acc, r) => acc + ((r[key] as number | null) ?? 0), 0);
@@ -484,7 +486,7 @@ function SyncBanner({ token, onRefresh }: { token: string; onRefresh: () => void
       const log = lastSyncs[key];
       if (!log) return;
       const status = (log.status ?? "").toLowerCase();
-      const finished = ["ok", "success", "completed", "error", "failed"].includes(status);
+      const finished = ["ok", "success", "completed", "error", "failed", "interrupted", "deferred"].includes(status);
       if (finished) {
         setPollingIds((prev) => ({ ...prev, [key]: null }));
         const isOk = ["ok", "success", "completed"].includes(status);
@@ -494,6 +496,8 @@ function SyncBanner({ token, onRefresh }: { token: string; onRefresh: () => void
               log.items_fetched ?? 0
             } récupéré(s)`,
           );
+        } else if (status === "deferred") {
+          toast.info(`Sync ${key} : suite reportée par les quotas quotidiens`);
         } else {
           toast.error(`Sync ${key} échouée : ${log.error_message ?? "erreur"}`);
         }
@@ -670,7 +674,8 @@ function SyncBanner({ token, onRefresh }: { token: string; onRefresh: () => void
           const isRunning = isPolling || isTriggering;
           const status = log?.status?.toLowerCase() ?? "";
           const ok = ["ok", "success", "completed"].includes(status);
-          const isErr = ["error", "failed"].includes(status);
+          const isErr = ["error", "failed", "interrupted"].includes(status);
+          const isDeferred = status === "deferred";
           // "Soft" warnings: unchanged content (hash skip) or upstream-not-ready
           const isUpToDate =
             ok && s.key !== "bocc" && s.key !== "boss" &&
@@ -683,7 +688,7 @@ function SyncBanner({ token, onRefresh }: { token: string; onRefresh: () => void
             isErr && (log?.error_message ?? "").toLowerCase().includes("introuvable");
           const cardBorder = isRunning
             ? "border-blue-300 bg-blue-50/50 dark:bg-blue-950/20"
-            : isUpstreamMissing
+            : isUpstreamMissing || isDeferred
             ? "border-amber-300 bg-amber-50/50 dark:bg-amber-950/20"
             : "";
 
@@ -701,12 +706,14 @@ function SyncBanner({ token, onRefresh }: { token: string; onRefresh: () => void
                   ) : log ? (
                     ok ? (
                       <CheckCircle2 className="h-3 w-3 text-green-600" />
-                    ) : isUpstreamMissing ? (
+                    ) : isUpstreamMissing || isDeferred ? (
                       <AlertCircle className="h-3 w-3 text-amber-600" />
                     ) : isErr ? (
                       <AlertCircle className="h-3 w-3 text-red-600" />
-                    ) : (
+                    ) : status === "running" ? (
                       <Loader2 className="h-3 w-3 text-blue-600 animate-spin" />
+                    ) : (
+                      <span className="h-3 w-3 inline-block rounded-full bg-muted-foreground/30" />
                     )
                   ) : (
                     <span className="h-3 w-3 inline-block rounded-full bg-muted-foreground/30" />
@@ -809,9 +816,18 @@ function SyncBanner({ token, onRefresh }: { token: string; onRefresh: () => void
                 </div>
               )}
 
+              {isDeferred && (
+                <div className="text-[10px] text-amber-700 dark:text-amber-400">
+                  Passage terminé — suite reportée par les quotas quotidiens.
+                  {log?.error_message && <p>{log.error_message}</p>}
+                </div>
+              )}
+              {status === "interrupted" && (
+                <div className="text-[10px] text-red-600">Interrompue — fin non enregistrée</div>
+              )}
               {/* Hard error message */}
               {isErr && !isUpstreamMissing && log?.error_message && (
-                <div className="text-[10px] text-red-600 dark:text-red-400 truncate" title={log.error_message}>
+                <div className="text-[10px] text-red-600 dark:text-red-400 break-words" title={log.error_message}>
                   {log.error_message}
                 </div>
               )}

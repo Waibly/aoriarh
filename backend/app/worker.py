@@ -106,8 +106,9 @@ async def _finish_sync_log(
     errors: int = 0,
     error_message: str | None = None,
     duration_ms: int | None = None,
+    deferred: bool = False,
 ) -> None:
-    """Mark a SyncLog row as completed (success or error)."""
+    """Record completion; quota deferral is distinct from a technical failure."""
     from datetime import UTC, datetime
     from app.models.sync_log import SyncLog
     import uuid as _uuid
@@ -116,14 +117,14 @@ async def _finish_sync_log(
         row = await db.get(SyncLog, _uuid.UUID(sync_log_id))
         if row is None:
             return
-        row.status = "success" if success else "error"
+        row.status = "error" if not success or errors else ("deferred" if deferred else "success")
         row.items_fetched = items_fetched
         row.items_created = items_created
         row.items_updated = items_updated
         row.items_skipped = items_skipped
         row.errors = errors
         if error_message:
-            row.error_message = error_message[:500]
+            row.error_message = error_message[:4000]
         row.completed_at = datetime.now(UTC)
         if duration_ms is not None:
             row.duration_ms = duration_ms
@@ -1580,9 +1581,12 @@ async def run_social_ca_sync(ctx: dict) -> dict:
             pending = result["remaining_eligible"]
             message = "; ".join(result["errors"])
             if pending:
-                message += f"; {pending} candidates restent à traiter dans les plafonds quotidiens"
+                message = "; ".join(filter(None, [
+                    message, f"{pending} décisions en attente des prochains passages quotidiens "
+                    "(plafonds de documents et de tokens).",
+                ]))
             await _finish_sync_log(factory, log_id,
-                success=not result["errors"] and not pending,
+                success=not result["errors"], deferred=bool(pending),
                 items_fetched=result["inventoried"], items_created=result["created"],
                 items_skipped=result["existing"], errors=len(result["errors"]),
                 error_message=message[:500] or None,

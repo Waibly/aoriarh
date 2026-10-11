@@ -319,3 +319,19 @@ async def test_status_reports_blocked_sources_without_triggering_import(client, 
     assert response.status_code == 200
     assert response.json() == report
     sync.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_forbidden_source_is_explicit_and_preserves_document():
+    service, db, doc = setup_service()
+    response = httpx.Response(403, request=httpx.Request("GET", SPEC["url"]))
+    with patch("app.services.curated_source_service.fetch_source", new=AsyncMock(
+        side_effect=httpx.HTTPStatusError("Forbidden", request=response.request, response=response)
+    )):
+        result = await service.sync(db, sources=[SPEC])
+    assert result["errors"] == 1
+    assert result["sources"][0]["status"] == "access_blocked"
+    assert result["sources"][0]["http_status"] == 403
+    assert "HTTP 403" in result["sources"][0]["error"]
+    assert doc.file_hash == "old"
+    service.replace.assert_not_awaited()

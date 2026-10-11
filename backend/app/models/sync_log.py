@@ -21,7 +21,7 @@ class SyncLog(Base):
     idcc: Mapped[str | None] = mapped_column(String(4))  # For CCN syncs
     status: Mapped[str] = mapped_column(
         String(20), nullable=False
-    )  # "success" | "error" | "skipped" | "no_change"
+    )  # "running" | "success" | "error" | "deferred" | "interrupted" | "skipped" | "no_change"
     items_fetched: Mapped[int] = mapped_column(Integer, default=0)
     items_created: Mapped[int] = mapped_column(Integer, default=0)
     items_updated: Mapped[int] = mapped_column(Integer, default=0)

@@ -361,6 +361,13 @@ class CuratedSourceService:
                 except Exception as exc:
                     await db.rollback()
                     item.update(status="error", error=type(exc).__name__ + ": " + str(exc)[:300])
+                    if isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code == 403:
+                        item.update(
+                            status="access_blocked", http_status=403,
+                            error=("Accès refusé par la source (HTTP 403) ; mise à jour bloquée, "
+                                   "document existant conservé."),
+                            technical_error=type(exc).__name__ + ": " + str(exc)[:1000],
+                        )
                     result["errors"] += 1
                 result["sources"].append(item)
                 self.save_json(PREFIX + "latest.json", result)

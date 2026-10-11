@@ -69,7 +69,7 @@ async def get_corpus_health(
     status_rows = (
         await db.execute(
             select(Document.indexation_status, func.count(Document.id))
-            .where(Document.organisation_id.is_(None))
+            .where(Document.organisation_id.is_(None), Document.retired_at.is_(None))
             .group_by(Document.indexation_status)
         )
     ).all()
@@ -79,7 +79,7 @@ async def get_corpus_health(
     type_rows = (
         await db.execute(
             select(Document.source_type, func.count(Document.id))
-            .where(Document.organisation_id.is_(None))
+            .where(Document.organisation_id.is_(None), Document.retired_at.is_(None))
             .group_by(Document.source_type)
             .order_by(desc(func.count(Document.id)))
         )

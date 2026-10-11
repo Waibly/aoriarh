@@ -313,7 +313,7 @@ async def list_common_document_groups(
             ).label("pending"),
             func.coalesce(func.sum(Document.chunk_count), 0).label("total_chunks"),
         )
-        .where(Document.organisation_id.is_(None), ~is_bocc_reserve)
+        .where(Document.organisation_id.is_(None), Document.retired_at.is_(None), ~is_bocc_reserve)
         .group_by(Document.source_type)
         .order_by(func.count().desc())
     )
@@ -321,7 +321,9 @@ async def list_common_document_groups(
 
     # Count BOCC reserve separately
     bocc_q = await db.execute(
-        select(func.count()).select_from(Document).where(is_bocc_reserve)
+        select(func.count()).select_from(Document).where(
+            is_bocc_reserve, Document.retired_at.is_(None)
+        )
     )
     bocc_reserve_count = bocc_q.scalar() or 0
 
@@ -415,12 +417,14 @@ async def list_common_documents_by_type(
     if source_type == "bocc_reserve":
         base = select(Document).where(
             Document.organisation_id.is_(None),
+            Document.retired_at.is_(None),
             Document.storage_path.ilike("common/ccn/%/bocc_%"),
             Document.indexation_status == "pending",
         )
     else:
         base = select(Document).where(
             Document.organisation_id.is_(None),
+            Document.retired_at.is_(None),
             Document.source_type == source_type,
         )
         if source_type == "convention_collective_nationale":

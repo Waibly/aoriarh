@@ -104,7 +104,7 @@ async def trigger_scheduled_sync(
             SyncLog.status == "running",
         )
     )
-    if running.scalar_one_or_none():
+    if running.scalars().first():
         from fastapi import HTTPException
         raise HTTPException(status_code=409, detail="Une synchronisation est déjà en cours")
 
@@ -230,7 +230,7 @@ async def trigger_code_travail_sync(
             SyncLog.status == "running",
         )
     )
-    if running.scalar_one_or_none():
+    if running.scalars().first():
         from fastapi import HTTPException
         raise HTTPException(status_code=409, detail="Une synchronisation du Code du travail est déjà en cours")
 
@@ -251,7 +251,7 @@ async def trigger_boss_sync(
             SyncLog.status == "running",
         )
     )
-    if running.scalar_one_or_none():
+    if running.scalars().first():
         from fastapi import HTTPException
         raise HTTPException(status_code=409, detail="Une synchronisation BOSS est déjà en cours")
 
@@ -282,7 +282,7 @@ async def trigger_jorf_sync(
             SyncLog.status == "running",
         )
     )
-    if running.scalar_one_or_none():
+    if running.scalars().first():
         from fastapi import HTTPException
         raise HTTPException(status_code=409, detail="Une synchronisation JORF est déjà en cours")
 

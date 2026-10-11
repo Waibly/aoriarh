@@ -134,7 +134,7 @@ async def deliver_one(client, webhook):
 
 
 async def documentary_watchdog():
-    """Read committed states, including errors swallowed by service functions."""
+    """Monitor results and close orphaned sync states beyond the worker timeout."""
     import asyncpg
 
     since = get_state("watchdog_cursor", time.time())
@@ -205,9 +205,13 @@ async def documentary_watchdog():
                 organisation_id=str(row["organisation_id"]) if row["organisation_id"] else None,
             )
         for row in await db.fetch(
-            "SELECT id,sync_type FROM sync_logs WHERE status='running' AND "
-            "started_at > $1 AND started_at < now()-interval '5 hours'",
-            activated,
+            # ARQ enforces a four-hour job timeout. An extra hour allows cleanup;
+            # preserve the unknown completion time instead of inventing one.
+            "UPDATE sync_logs SET status='interrupted', errors=GREATEST(errors,1), "
+            "error_message=concat_ws('; ', NULLIF(error_message,''), "
+            "'Fin non enregistrée après le délai maximal du worker ; exécution interrompue.') "
+            "WHERE status='running' AND completed_at IS NULL "
+            "AND started_at < now()-interval '5 hours' RETURNING id,sync_type",
         ):
             capture(
                 "sync_stalled",
