@@ -29,6 +29,34 @@ def digest(raw):
     return hashlib.sha256(raw).hexdigest()
 
 
+def validate_browser_capture(spec, capture):
+    """Bind an explicit operator capture to the approved public HTML source.
+
+    This validates provenance metadata/structure, not semantic content. It does
+    not authenticate the publisher: the SSH operator must capture the real page.
+    """
+    source_url = capture.get("source_url", capture["url"])
+    parsed = urlsplit(capture["url"])
+    if (spec["format"] != "html" or source_url != spec["url"]
+            or parsed.scheme != "https" or parsed.hostname not in spec["allowed_hosts"]
+            or parsed.port not in (None, 443) or parsed.username or parsed.password):
+        raise ValueError("Capture does not match the approved HTML source")
+    captured_at = datetime.fromisoformat(capture["captured_at"])
+    if captured_at.tzinfo is None:
+        raise ValueError("Capture timestamp must include timezone")
+    age = (datetime.now(timezone.utc) - captured_at).total_seconds()
+    if age < -60 or age > 86400:
+        raise ValueError("Capture must be less than 24 hours old")
+    raw = capture["html"].encode("utf-8")
+    if not raw or len(raw) > MAX_BYTES or digest(raw) != capture["sha256"]:
+        raise ValueError("Invalid capture size or hash")
+    tree = html.fromstring(raw)
+    if tree.xpath('//link[@rel="canonical"]/@href') != [spec["url"]]:
+        raise ValueError("Capture canonical URL does not match the source")
+    extract_body(spec, raw)  # Same structural and non-empty contract as normal retrieval.
+    return raw, capture["url"]
+
+
 def extract_body(spec, raw):
     """Technical source-format contract, not a semantic/LLM quality check."""
     if spec["format"] == "pdf":
@@ -198,11 +226,15 @@ class CuratedSourceService:
         if self.storage.get_file_bytes_bounded(key, len(raw) + 1) != raw:
             raise ValueError("Source archive verification failed")
 
-    async def sync(self, db, *, apply=True, sources=None):
+    async def sync(self, db, *, apply=True, sources=None, captures=None):
         from app.services.curated_source_registry import SOURCES
 
         sources = SOURCES if sources is None else sources
+        if captures is not None and set(captures) != {s["key"] for s in sources}:
+            raise ValueError("Every selected source must have an explicit browser capture")
+        report_path = PREFIX + ("manual/latest.json" if captures is not None else "latest.json")
         result = {
+            "mode": "manual_browser_capture" if captures is not None else "automatic",
             "checked": 0,
             "updated": 0,
             "unchanged": 0,
@@ -228,7 +260,13 @@ class CuratedSourceService:
                     "checked_at": datetime.now(timezone.utc).isoformat(),
                 }
                 try:
-                    if spec["format"] == "cpc":
+                    if captures is not None:
+                        capture = captures[spec["key"]]
+                        raw, final_url = validate_browser_capture(spec, capture)
+                        item.update(transport="manual_browser_capture",
+                                    captured_at=capture["captured_at"])
+                        body = extract_body(spec, raw)
+                    elif spec["format"] == "cpc":
                         body, raw = await fetch_cpc(spec, date.today())
                         final_url = spec["url"]
                     else:
@@ -370,7 +408,7 @@ class CuratedSourceService:
                         )
                     result["errors"] += 1
                 result["sources"].append(item)
-                self.save_json(PREFIX + "latest.json", result)
+                self.save_json(report_path, result)
         return result
 
     async def replace(self, db, doc, text, pipeline, tokens, *, name):

@@ -125,7 +125,10 @@ async def test_retired_decision_is_not_reintroduced():
 
 
 @pytest.mark.asyncio
-async def test_daily_budget_survives_multiple_runs():
+async def test_daily_budget_survives_multiple_runs(monkeypatch):
+    from app.core.config import settings
+    monkeypatch.setattr(settings, "social_ca_max_documents_per_day", 20)
+    monkeypatch.setattr(settings, "social_ca_max_tokens_per_day", 250_000)
     service, memory = service_with_memory([{"total": 1, "results": [META], "next_batch": None}])
     memory[PREFIX + "budgets/2026-10-08.json"] = {
         "tokens_reserved": 250000,
@@ -230,4 +233,81 @@ async def test_new_admission_reserves_budget_before_embedding(monkeypatch):
     assert result["remaining_eligible"] == 0
     assert doc_holder[0].source_type == "arret_cour_appel"
     assert doc_holder[0].organisation_id is None
+    pipeline.ingest.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('limit_kind', ['documents', 'tokens', 'details'])
+async def test_internal_limits_defer_without_paid_call(monkeypatch, limit_kind):
+    from app.core.config import settings
+
+    service, memory = service_with_memory([
+        {'total': 1, 'results': [META], 'next_batch': None},
+    ])
+    monkeypatch.setattr(settings, 'social_ca_max_documents_per_day', 200)
+    monkeypatch.setattr(settings, 'social_ca_max_tokens_per_day', 2_000_000)
+    if limit_kind == 'details':
+        # An existing decision uses the one allowed detail check first.
+        service.api._api_get.side_effect = [
+            {'total': 2, 'results': [dict(META, id=B), META], 'next_batch': None},
+            dict(META, id=B, text='current'),
+        ]
+        monkeypatch.setattr(settings, 'social_ca_max_detail_checks', 1)
+        import hashlib
+        doc = SimpleNamespace(private_dossier_id=None, private_conversation_id=None,
+                              retired_at=None, indexation_status='indexed',
+                              file_hash=hashlib.sha256(b'current').hexdigest())
+        db = SimpleNamespace(scalars=AsyncMock(side_effect=[
+            Mock(all=Mock(return_value=[doc])), Mock(all=Mock(return_value=[])),
+            Mock(all=Mock(return_value=[])),
+        ]), add=Mock())
+    else:
+        memory[PREFIX + 'budgets/2026-10-11.json'] = {
+            'documents_reserved': 200 if limit_kind == 'documents' else 20,
+            'tokens_reserved': 2_000_000 if limit_kind == 'tokens' else 100_420,
+        }
+        db = SimpleNamespace(scalars=AsyncMock(return_value=Mock(all=Mock(return_value=[]))),
+                             add=Mock())
+    result = await service.sync(db, today=date(2026, 10, 11))
+    assert result['created'] == 0 and not result['errors']
+    assert result['remaining_eligible'] == result['budget_pending'] == 1
+    assert result['limits']['documents_per_day'] == 200
+    assert result['limits']['estimated_tokens_per_day'] == 2_000_000
+    db.add.assert_not_called()
+    assert A in memory[PREFIX + 'state.json']['pending']
+
+
+@pytest.mark.asyncio
+async def test_raised_budget_resumes_existing_daily_ledger(monkeypatch):
+    from app.core.config import settings
+
+    body = 'Texte officiel de la décision.'
+    service, memory = service_with_memory([
+        {'total': 1, 'results': [META], 'next_batch': None}, dict(META, text=body),
+    ])
+    ledger_key = PREFIX + 'budgets/2026-10-11.json'
+    memory[ledger_key] = {'documents_reserved': 20, 'tokens_reserved': 100_420}
+    monkeypatch.setattr(settings, 'social_ca_max_documents_per_day', 200)
+    monkeypatch.setattr(settings, 'social_ca_max_tokens_per_day', 2_000_000)
+    docs = []
+    db = SimpleNamespace(scalars=AsyncMock(return_value=Mock(all=Mock(return_value=[]))),
+                         add=docs.append, commit=AsyncMock(), refresh=AsyncMock(),
+                         rollback=AsyncMock())
+    pipeline = Mock()
+    pipeline.jurisprudence_chunker.chunk.return_value = [body]
+    pipeline._build_jurisprudence_header.return_value = ''
+
+    async def ingest(*args, **kwargs):
+        assert memory[ledger_key]['documents_reserved'] == 21
+        assert memory[ledger_key]['tokens_reserved'] > 100_420
+        docs[0].indexation_status = 'indexed'
+        docs[0].chunk_count = 1
+
+    pipeline.ingest = AsyncMock(side_effect=ingest)
+    monkeypatch.setattr('app.rag.ingestion.IngestionPipeline', lambda: pipeline)
+    service.archive.storage.get_file_bytes_bounded.return_value = body.encode()
+    result = await service.sync(db, today=date(2026, 10, 11))
+    assert result['created'] == 1 and result['remaining_eligible'] == 0
+    assert not result['errors']
+    assert result['daily_documents_reserved'] == 21
     pipeline.ingest.assert_awaited_once()

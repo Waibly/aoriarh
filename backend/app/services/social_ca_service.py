@@ -13,6 +13,7 @@ from datetime import date, datetime, timedelta, timezone
 import httpx
 from sqlalchemy import select
 
+from app.core.config import settings
 from app.models.document import Document
 from app.services.curated_source_service import CuratedSourceService
 from app.services.judilibre_ca_sync import next_cursor
@@ -21,10 +22,7 @@ from app.services.social_ca_scope import ADMITTED_NAC
 
 PREFIX = "common/social_ca/"
 MAX_PAGES = 20
-MAX_NEW_DOCUMENTS = 20
-MAX_TOKENS_PER_DAY = 250_000
 MAX_DOCUMENT_TOKENS = 50_000
-MAX_DETAIL_CHECKS = 100
 
 
 def admitted(metadata):
@@ -107,6 +105,11 @@ class SocialCaService:
             "errors": [],
             "documents": [],
             "apply": apply,
+            "limits": {
+                "documents_per_day": settings.social_ca_max_documents_per_day,
+                "estimated_tokens_per_day": settings.social_ca_max_tokens_per_day,
+                "detail_checks_per_run": settings.social_ca_max_detail_checks,
+            },
         }
         async with httpx.AsyncClient(timeout=60) as client:
             records = await self.inventory(client, start, end)
@@ -158,7 +161,7 @@ class SocialCaService:
                     if not apply:
                         result["existing"] += 1
                         continue
-                    if detail_checks >= MAX_DETAIL_CHECKS:
+                    if detail_checks >= settings.social_ca_max_detail_checks:
                         result["budget_pending"] += 1
                         continue
                     detail_checks += 1
@@ -215,9 +218,9 @@ class SocialCaService:
                     )
                     continue
                 if (
-                    detail_checks >= MAX_DETAIL_CHECKS
-                    or ledger["documents_reserved"] >= MAX_NEW_DOCUMENTS
-                    or ledger["tokens_reserved"] >= MAX_TOKENS_PER_DAY
+                    detail_checks >= settings.social_ca_max_detail_checks
+                    or ledger["documents_reserved"] >= settings.social_ca_max_documents_per_day
+                    or ledger["tokens_reserved"] >= settings.social_ca_max_tokens_per_day
                 ):
                     result["budget_pending"] += 1
                     continue
@@ -284,7 +287,7 @@ class SocialCaService:
                     if (
                         not chunks
                         or tokens > MAX_DOCUMENT_TOKENS
-                        or ledger["tokens_reserved"] + tokens > MAX_TOKENS_PER_DAY
+                        or ledger["tokens_reserved"] + tokens > settings.social_ca_max_tokens_per_day
                     ):
                         result["budget_pending"] += 1
                         continue
@@ -332,5 +335,6 @@ class SocialCaService:
             self.archive.save_json(PREFIX + "state.json", state)
         result["remaining_eligible"] = len(state["pending"])
         result["daily_tokens_reserved"] = ledger["tokens_reserved"]
+        result["daily_documents_reserved"] = ledger["documents_reserved"]
         self.archive.save_json(PREFIX + "latest.json", result)
         return result

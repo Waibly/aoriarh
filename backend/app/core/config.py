@@ -28,6 +28,10 @@ class Settings(BaseSettings):
 
     # Broad CA collection is suspended pending a reviewed RH scope and budget.
     judilibre_ca_collection_enabled: bool = False
+    # Internal daily admission budgets, distinct from provider rate limits.
+    social_ca_max_documents_per_day: int = Field(default=200, ge=1, le=5000)
+    social_ca_max_tokens_per_day: int = Field(default=2_000_000, ge=50_000, le=50_000_000)
+    social_ca_max_detail_checks: int = Field(default=500, ge=1, le=5000)
 
     # Qdrant
     qdrant_host: str = "localhost"
