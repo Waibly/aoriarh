@@ -158,7 +158,7 @@ export function SourceViewerProvider({
           if (!open) setSelectedSource(null);
         }}
       >
-        <DialogContent className="flex max-h-[85vh] flex-col overflow-hidden sm:max-w-5xl">
+        <DialogContent className="flex max-h-[calc(var(--app-viewport-height,100dvh)*0.85)] flex-col overflow-hidden sm:max-w-5xl">
           <DialogHeader className="border-border shrink-0 border-b pb-4">
             <div className="flex items-center gap-3">
               <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-[#652bb0]/10 dark:bg-[#652bb0]/20">

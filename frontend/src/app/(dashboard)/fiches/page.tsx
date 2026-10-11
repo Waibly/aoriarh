@@ -254,7 +254,7 @@ export default function FichesPage() {
                 </div>
 
                 <div className="overflow-hidden rounded-lg border">
-                  <Table>
+                  <Table mobileCards>
                     <TableHeader className="bg-muted/40">
                       <TableRow>
                         <TableHead>Titre</TableHead>
@@ -283,7 +283,7 @@ export default function FichesPage() {
 
                           return (
                             <TableRow key={fiche.id}>
-                              <TableCell className="min-w-[280px] whitespace-normal">
+                              <TableCell className="min-w-0 whitespace-normal sm:min-w-[280px]">
                                 <div className="flex items-center gap-3">
                                   <div className="bg-primary/10 flex size-9 shrink-0 items-center justify-center rounded-lg">
                                     <ClipboardList className="text-primary size-5" />
@@ -298,10 +298,10 @@ export default function FichesPage() {
                                   </button>
                                 </div>
                               </TableCell>
-                              <TableCell className="text-muted-foreground">
+                              <TableCell data-label="Mise à jour" className="text-muted-foreground">
                                 {formatDate(fiche.updated_at)}
                               </TableCell>
-                              <TableCell>
+                              <TableCell data-label="Statut">
                                 {stale ? (
                                   <Badge
                                     variant="outline"
@@ -319,8 +319,8 @@ export default function FichesPage() {
                                   </Badge>
                                 )}
                               </TableCell>
-                              <TableCell className="text-right">
-                                <div className="flex items-center justify-end gap-0.5">
+                              <TableCell data-label="Actions" className="text-right">
+                                <div className="flex flex-wrap items-center justify-start gap-0.5 sm:justify-end">
                                   <Tooltip>
                                     <TooltipTrigger asChild>
                                       {fiche.conversation_id ? (

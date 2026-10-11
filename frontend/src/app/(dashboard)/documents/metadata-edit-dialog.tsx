@@ -104,7 +104,7 @@ export function MetadataEditDialog({
 
           {isJurisprudence && (
             <>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <div>
                   <Label htmlFor="meta-juridiction">Juridiction</Label>
                   <Input
@@ -124,7 +124,7 @@ export function MetadataEditDialog({
                   />
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <div>
                   <Label htmlFor="meta-formation">Formation</Label>
                   <Input
@@ -142,7 +142,7 @@ export function MetadataEditDialog({
                   />
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <div>
                   <Label htmlFor="meta-date">Date de décision</Label>
                   <Input

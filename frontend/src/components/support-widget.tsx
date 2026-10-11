@@ -27,7 +27,7 @@ function getBrowserName(): string {
   return ua.slice(0, 80);
 }
 
-export function SupportWidget() {
+export function SupportWidget({ variant = "desktop" }: { variant?: "desktop" | "mobile" }) {
   const { data: session } = useSession();
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
@@ -92,12 +92,13 @@ export function SupportWidget() {
   if (!isLoggedIn) return null;
 
   return (
-    <>
+    <div className={variant === "mobile" ? "ml-auto lg:hidden" : "hidden lg:block"}>
       {/* Floating button */}
       {!open && (
         <button
           onClick={() => setOpen(true)}
-          className="fixed bottom-6 right-6 z-50 flex h-12 w-12 items-center justify-center rounded-full bg-[#652bb0] text-white shadow-lg transition-transform hover:scale-105 active:scale-95"
+          className={cn("flex size-11 items-center justify-center rounded-full bg-[#652bb0] text-white shadow-lg transition-transform hover:scale-105 active:scale-95", variant === "desktop" && "fixed bottom-6 right-6 z-40 size-12")}
+          aria-label="Contacter le support"
           title="Contacter le support"
         >
           <Headset className="h-5 w-5" />
@@ -108,14 +109,15 @@ export function SupportWidget() {
       {open && (
         <div
           ref={panelRef}
-          className="fixed bottom-6 right-6 z-50 w-[340px] rounded-xl border bg-card shadow-2xl ring-1 ring-black/5"
+          className="fixed bottom-[max(1rem,env(safe-area-inset-bottom))] right-4 z-40 max-h-[calc(var(--app-viewport-height,100dvh)-2rem)] max-lg:top-[calc(var(--app-viewport-top,0px)+1rem)] max-lg:bottom-auto w-[340px] max-w-[calc(100vw-2rem)] overflow-y-auto lg:bottom-6 lg:right-6 rounded-xl border bg-card shadow-2xl ring-1 ring-black/5"
         >
           {/* Header */}
           <div className="flex items-center justify-between border-b px-4 py-3">
             <h3 className="text-sm font-semibold">Comment pouvons-nous vous aider ?</h3>
             <button
               onClick={() => setOpen(false)}
-              className="rounded-md p-1 hover:bg-muted"
+              aria-label="Fermer le support"
+              className="flex size-11 shrink-0 items-center justify-center rounded-md hover:bg-muted"
             >
               <X className="h-4 w-4" />
             </button>
@@ -149,7 +151,7 @@ export function SupportWidget() {
                 placeholder={placeholder}
                 rows={4}
                 maxLength={2000}
-                className="w-full resize-none rounded-lg border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
+                className="w-full resize-none rounded-lg border bg-background px-3 py-2 text-base sm:text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
               />
               <p className="text-right text-xs text-muted-foreground">
                 {message.length}/2000
@@ -173,6 +175,6 @@ export function SupportWidget() {
           </div>
         </div>
       )}
-    </>
+    </div>
   );
 }

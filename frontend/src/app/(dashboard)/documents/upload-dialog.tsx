@@ -519,7 +519,7 @@ export function UploadDialog({
             <div className="space-y-3 rounded-md border border-border bg-muted/50 p-4">
               <p className="text-sm font-medium">Métadonnées jurisprudence</p>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <div className="space-y-1">
                   <Label htmlFor="juridiction" className="text-xs">Juridiction</Label>
                   <Select value={juridiction} onValueChange={setJuridiction}>

@@ -90,7 +90,7 @@ export function LinkedInPostDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="flex h-[92dvh] max-h-[92dvh] flex-col sm:h-[88vh] sm:max-h-[88vh] sm:max-w-3xl">
+      <DialogContent className="flex h-[92dvh] max-h-[calc(var(--app-viewport-height,100dvh)*0.92)] flex-col sm:h-[88vh] sm:max-h-[calc(var(--app-viewport-height,100dvh)*0.88)] sm:max-w-3xl">
         <DialogHeader>
           <DialogTitle>Brouillon de post LinkedIn</DialogTitle>
           <DialogDescription>

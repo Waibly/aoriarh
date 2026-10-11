@@ -359,7 +359,7 @@ export function SocialMediaDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="flex h-[94dvh] max-h-[94dvh] w-[96vw] max-w-[96vw] flex-col sm:max-w-[96vw] xl:max-w-[1800px]">
+      <DialogContent className="flex h-[94dvh] max-h-[calc(var(--app-viewport-height,100dvh)*0.94)] w-[96vw] max-w-[96vw] flex-col sm:max-w-[96vw] xl:max-w-[1800px]">
         <DialogHeader>
           <DialogTitle>
             {includePost ? "Post + carrousel LinkedIn" : "Générer un média"}

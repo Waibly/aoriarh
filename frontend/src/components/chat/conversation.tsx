@@ -374,7 +374,7 @@ export function Conversation({
   }, [initialQuery, token, handleSend, conversationId, onInitialQueryStarted]);
 
   return (
-    <div className="dark:bg-card flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl bg-white p-4">
+    <div className="dark:bg-card flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl bg-white p-2 sm:p-4">
       {token && conversationId !== "new" && (
         <div className="flex flex-wrap items-center justify-between gap-2 border-b pb-3">
           {dossier ? (

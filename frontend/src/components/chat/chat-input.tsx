@@ -73,7 +73,7 @@ export function ChatInput({
   }, [value, disabled, onSend, draftKey]);
 
   return (
-    <div className={cn("w-full", variant === "default" && "px-1 pt-3 sm:px-3")}>
+    <div className={cn("w-full shrink-0", variant === "default" && "px-1 pt-3 sm:px-3")}>
       <div className="mx-auto max-w-3xl">
         <div
           data-slot="chat-input"
@@ -164,7 +164,7 @@ export function ChatInput({
             className="text-foreground placeholder:text-muted-foreground/75 block min-h-20 w-full resize-none border-0 bg-transparent px-5 pt-4 pb-2 text-base leading-relaxed outline-none disabled:cursor-wait sm:text-[15px]"
           />
           <div className="flex items-center justify-between gap-3 px-3 pt-1 pb-3">
-            <div className="flex min-h-9 items-center gap-2">
+            <div className="flex min-h-9 min-w-0 flex-wrap items-center gap-2">
               {(onAttach || onBrowse) && (
                 <Popover open={menuOpen} onOpenChange={setMenuOpen}>
                   <PopoverTrigger asChild>

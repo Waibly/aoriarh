@@ -176,9 +176,9 @@ export function OrgFormDialog({
   // --- Create mode: 2-step wizard ---
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-xl gap-0 p-0 overflow-hidden max-h-[90vh] flex flex-col">
+      <DialogContent className="sm:max-w-xl gap-0 p-0 sm:p-0 overflow-hidden max-h-[calc(var(--app-viewport-height,100dvh)*0.90)] flex flex-col">
         {/* Wizard stepper bar */}
-        <div className="flex items-center border-b bg-muted/30 px-6 py-4 shrink-0">
+        <div className="flex flex-wrap items-center gap-y-2 border-b bg-muted/30 px-4 py-4 pr-12 shrink-0 sm:px-6 sm:pr-12">
           <StepBadge step={1} current={step} icon={<Building2 className="h-3.5 w-3.5" />} label="Organisation" />
           <div className="mx-3 h-px w-8 bg-border" />
           <StepBadge step={2} current={step} icon={<UserCog className="h-3.5 w-3.5" />} label="Votre profil" />

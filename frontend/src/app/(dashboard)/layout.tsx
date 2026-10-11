@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
 import Image from "next/image";
+import { SupportWidget } from "@/components/support-widget";
 import { Menu } from "lucide-react";
 import { toast } from "@/lib/toast";
 import { Sidebar } from "@/components/sidebar";
@@ -23,6 +24,17 @@ export default function DashboardLayout({
 }) {
   const [open, setOpen] = useState(false);
   const pathname = usePathname();
+
+  // Close the mobile dialog before switching to the desktop sidebar;
+  // hiding its content alone would leave the overlay and focus trap active.
+  useEffect(() => {
+    const desktop = window.matchMedia("(min-width: 1024px)");
+    const closeOnDesktop = () => {
+      if (desktop.matches) setOpen(false);
+    };
+    desktop.addEventListener("change", closeOnDesktop);
+    return () => desktop.removeEventListener("change", closeOnDesktop);
+  }, []);
 
   useEffect(() => {
     setOpen(false);
@@ -51,7 +63,7 @@ export default function DashboardLayout({
 
   return (
     <Sheet open={open} onOpenChange={setOpen}>
-      <div className="flex h-screen">
+      <div className="flex h-[var(--app-viewport-height,100dvh)]">
         <Sidebar />
         <SheetContent
           side="left"
@@ -62,9 +74,9 @@ export default function DashboardLayout({
           <Sidebar variant="mobile" onNavigate={() => setOpen(false)} />
         </SheetContent>
         <div className="flex min-w-0 min-h-0 flex-1 flex-col overflow-y-auto">
-          <header className="lg:hidden flex items-center gap-3 border-b bg-background px-4 py-3 shrink-0">
+          <header className="sticky top-0 z-30 lg:hidden flex items-center gap-3 border-b bg-background px-4 py-3 shrink-0">
             <SheetTrigger asChild>
-              <Button variant="ghost" size="icon" aria-label="Ouvrir le menu">
+              <Button variant="ghost" size="icon" className="size-11 shrink-0" aria-label="Ouvrir le menu">
                 <Menu className="h-5 w-5" />
               </Button>
             </SheetTrigger>
@@ -84,10 +96,11 @@ export default function DashboardLayout({
               priority
               className="hidden dark:block"
             />
+            <SupportWidget variant="mobile" />
           </header>
           <TrialBanner />
           <CcnInstallBanner />
-          <main className="flex min-h-0 flex-1 flex-col p-4 sm:p-6 md:p-8 lg:px-10 lg:py-8">
+          <main className={`flex min-h-0 min-w-0 flex-1 flex-col sm:p-6 md:p-8 lg:px-10 lg:py-8 ${pathname.startsWith("/chat") ? "p-2" : "p-4"}`}>
             {children}
           </main>
         </div>

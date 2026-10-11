@@ -25,7 +25,7 @@ export function ChatWelcomeLayout({
         </div>
       )}
       <div className="min-h-0 flex-1 overflow-y-auto [scrollbar-gutter:stable]">
-        <div className="flex min-h-full flex-col items-center px-4 py-8 sm:px-8 sm:py-12 lg:py-14">
+        <div className="flex min-h-full flex-col items-center px-3 py-5 sm:px-8 sm:py-12 lg:py-14">
           <div
             className={cn("w-full max-w-3xl", verticallyCentered && "my-auto")}
           >
@@ -33,7 +33,7 @@ export function ChatWelcomeLayout({
           </div>
         </div>
       </div>
-      <p className="text-muted-foreground shrink-0 pt-4 pr-16 pb-3 pl-4 text-center text-[11px] leading-relaxed sm:px-8">
+      <p className="text-muted-foreground shrink-0 px-3 pt-2 pb-3 text-center text-[11px] leading-relaxed sm:px-8">
         Les réponses d’AORIA RH vous accompagnent dans votre analyse et restent
         à vérifier selon votre situation.
       </p>

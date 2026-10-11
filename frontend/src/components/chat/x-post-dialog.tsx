@@ -216,8 +216,8 @@ export function XPostDialog({
         className={cn(
           "flex w-[96vw] flex-col",
           post
-            ? "h-[94dvh] max-h-[94dvh] max-w-[96vw] sm:max-w-[96vw] xl:max-w-[1800px]"
-            : "max-h-[90dvh] max-w-3xl sm:max-w-3xl"
+            ? "h-[94dvh] max-h-[calc(var(--app-viewport-height,100dvh)*0.94)] max-w-[96vw] sm:max-w-[96vw] xl:max-w-[1800px]"
+            : "max-h-[calc(var(--app-viewport-height,100dvh)*0.90)] max-w-3xl sm:max-w-3xl"
         )}
       >
         <DialogHeader>

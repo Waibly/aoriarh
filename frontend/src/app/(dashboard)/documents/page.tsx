@@ -538,12 +538,12 @@ export default function DocumentsPage() {
               value={activeCcnIdcc ?? conventions[0].idcc}
               onValueChange={setActiveCcnIdcc}
             >
-              <TabsList className="flex w-full flex-col items-stretch !h-auto p-1 gap-1 sm:inline-flex sm:w-fit sm:flex-row sm:items-center sm:!h-9 sm:p-[3px] sm:gap-0">
+              <TabsList className="flex !h-auto w-full flex-col items-stretch gap-1 p-1 sm:flex-row sm:flex-wrap sm:items-center">
                 {conventions.map((c) => (
                   <TabsTrigger
                     key={c.id}
                     value={c.idcc}
-                    className="w-full justify-start gap-1.5 !h-auto !flex-none px-3 py-2 sm:w-auto sm:justify-center sm:!h-[calc(100%-1px)] sm:!flex-1 sm:px-2 sm:py-1"
+                    className="!h-auto w-full !flex-none justify-start gap-1.5 px-3 py-2 sm:w-auto sm:justify-center"
                   >
                     {c.status === "ready" ? (
                       <CheckCircle2 className="h-3.5 w-3.5 text-green-600" />
@@ -596,7 +596,7 @@ export default function DocumentsPage() {
         </CardHeader>
         <CardContent>
           <Tabs value={activeCategoryKey} onValueChange={setActiveCategoryKey}>
-            <TabsList className="flex w-full flex-col items-stretch !h-auto p-1 gap-1 sm:inline-flex sm:w-fit sm:flex-row sm:items-center sm:!h-9 sm:p-[3px] sm:gap-0">
+            <TabsList className="flex !h-auto w-full flex-col items-stretch gap-1 p-1 sm:flex-row sm:flex-wrap sm:items-center">
               {CATEGORIES.map((cat) => {
                 const Icon = cat.icon;
                 const count = categoryCounts[cat.key] ?? 0;
@@ -604,7 +604,7 @@ export default function DocumentsPage() {
                   <TabsTrigger
                     key={cat.key}
                     value={cat.key}
-                    className="w-full justify-start gap-1.5 !h-auto !flex-none px-3 py-2 sm:w-auto sm:justify-center sm:!h-[calc(100%-1px)] sm:!flex-1 sm:px-2 sm:py-1"
+                    className="!h-auto w-full !flex-none justify-start gap-1.5 px-3 py-2 sm:w-auto sm:justify-center"
                   >
                     <Icon className="h-3.5 w-3.5" />
                     {cat.label}
@@ -823,7 +823,7 @@ function CcnDetailPane({
 
       {/* Tabs : contenu consolidé vs nouveautés BOCC */}
       <Tabs defaultValue="consolidated">
-        <TabsList className="flex w-full flex-col items-stretch !h-auto p-1 gap-1 sm:inline-flex sm:w-fit sm:flex-row sm:items-center sm:!h-9 sm:p-[3px] sm:gap-0">
+        <TabsList className="flex !h-auto w-full flex-col items-stretch gap-1 p-1 sm:flex-row sm:flex-wrap sm:items-center">
           <TabsTrigger
             value="consolidated"
             className="w-full justify-start !h-auto !flex-none px-3 py-2 sm:w-auto sm:justify-center sm:!h-[calc(100%-1px)] sm:!flex-1 sm:px-2 sm:py-1"
@@ -1178,7 +1178,7 @@ function CategoryPane({
 
   return (
     <Card>
-      <CardHeader>
+      <CardHeader className="px-3 sm:px-6">
         <div className="flex items-start justify-between gap-3 flex-wrap">
           <div className="min-w-0">
             <CardTitle className="text-base flex items-center gap-2 flex-wrap">
@@ -1204,7 +1204,7 @@ function CategoryPane({
           )}
         </div>
       </CardHeader>
-      <CardContent>
+      <CardContent className="px-3 sm:px-6">
         <div className="relative mb-3">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
@@ -1293,8 +1293,8 @@ function CategoryPane({
               </div>
             )}
 
-            <Table>
-              <TableHeader>
+            <Table mobileCards>
+              <TableHeader data-mobile-sort>
                 <TableRow>
                   {isManager && (
                     <TableHead className="w-[40px]">
@@ -1306,7 +1306,7 @@ function CategoryPane({
                           if (el) el.indeterminate = someVisibleChecked;
                         }}
                         onChange={toggleAllVisible}
-                        className="h-4 w-4 cursor-pointer accent-primary"
+                        className="h-5 w-5 cursor-pointer accent-primary sm:h-4 sm:w-4"
                       />
                     </TableHead>
                   )}
@@ -1349,7 +1349,7 @@ function CategoryPane({
 
             {/* Pagination */}
             {totalPages > 1 && (
-              <div className="flex items-center justify-between mt-4 text-sm">
+              <div className="mt-4 flex flex-wrap items-center justify-between gap-3 text-sm">
                 <span className="text-muted-foreground">
                   {(currentPage - 1) * PAGE_SIZE + 1}–{Math.min(currentPage * PAGE_SIZE, sortedFiltered.length)} sur {sortedFiltered.length}
                 </span>
@@ -1408,7 +1408,7 @@ function SortableHead({
         type="button"
         onClick={() => onSort(sortKey)}
         className={cn(
-          "inline-flex items-center gap-1 hover:text-foreground transition",
+          "inline-flex min-h-11 items-center gap-1 hover:text-foreground transition sm:min-h-0",
           active ? "text-foreground font-semibold" : "text-muted-foreground",
           align === "right" && "justify-end w-full",
         )}
@@ -1448,21 +1448,21 @@ function DocRow({
   return (
     <TableRow className={isSelected ? "bg-primary/5" : undefined}>
       {isManager && onToggleSelect && (
-        <TableCell className="w-[40px]">
+        <TableCell data-label="Sélection" className="w-[40px]">
           <input
             type="checkbox"
             aria-label={`Sélectionner ${doc.name}`}
             checked={isSelected}
             onChange={() => onToggleSelect(doc.id)}
-            className="h-4 w-4 cursor-pointer accent-primary"
+            className="h-5 w-5 cursor-pointer accent-primary sm:h-4 sm:w-4"
           />
         </TableCell>
       )}
-      <TableCell className="max-w-[300px] font-medium">
+      <TableCell data-label="Nom" className="max-w-[300px] font-medium">
         <span className="line-clamp-2 break-words text-sm">{cleanDocName(doc.name)}</span>
       </TableCell>
-      <TableCell className="text-xs text-muted-foreground">{sourceLabel}</TableCell>
-      <TableCell>
+      <TableCell data-label="Type" className="text-xs text-muted-foreground">{sourceLabel}</TableCell>
+      <TableCell data-label="Statut">
         <Badge
           variant="outline"
           className={STATUS_CLASSES[doc.indexation_status] ?? "rounded-full"}
@@ -1475,14 +1475,14 @@ function DocRow({
           </span>
         </Badge>
       </TableCell>
-      <TableCell className="text-xs text-right text-muted-foreground">
+      <TableCell data-label="Taille" className="text-xs text-right text-muted-foreground">
         {formatFileSize(doc.file_size)}
       </TableCell>
-      <TableCell className="text-xs text-right text-muted-foreground">
+      <TableCell data-label="Date" className="text-xs text-right text-muted-foreground">
         {new Date(doc.created_at).toLocaleDateString("fr-FR")}
       </TableCell>
-      <TableCell>
-        <div className="flex items-center justify-end gap-1">
+      <TableCell data-label="Actions">
+        <div className="flex flex-wrap items-center justify-start gap-1 sm:justify-end">
           <Button variant="ghost" size="sm" onClick={() => onDownload(doc.id)} title="Télécharger">
             <Download className="h-3.5 w-3.5" />
           </Button>

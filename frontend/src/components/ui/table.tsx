@@ -3,16 +3,22 @@
 import * as React from "react"
 
 import { cn } from "@/lib/utils"
+import styles from "./table.module.css"
 
-function Table({ className, ...props }: React.ComponentProps<"table">) {
+function Table({
+  className,
+  mobileCards = false,
+  ...props
+}: React.ComponentProps<"table"> & { mobileCards?: boolean }) {
   return (
     <div
       data-slot="table-container"
-      className="relative w-full overflow-x-auto"
+      className="relative min-w-0 w-full overflow-x-auto"
     >
       <table
         data-slot="table"
-        className={cn("w-full caption-bottom text-sm", className)}
+        role="table"
+        className={cn("w-full caption-bottom text-sm", mobileCards && styles.cards, className)}
         {...props}
       />
     </div>
@@ -23,6 +29,7 @@ function TableHeader({ className, ...props }: React.ComponentProps<"thead">) {
   return (
     <thead
       data-slot="table-header"
+      role="rowgroup"
       className={cn("[&_tr]:border-b", className)}
       {...props}
     />
@@ -33,6 +40,7 @@ function TableBody({ className, ...props }: React.ComponentProps<"tbody">) {
   return (
     <tbody
       data-slot="table-body"
+      role="rowgroup"
       className={cn("[&_tr:last-child]:border-0", className)}
       {...props}
     />
@@ -56,6 +64,7 @@ function TableRow({ className, ...props }: React.ComponentProps<"tr">) {
   return (
     <tr
       data-slot="table-row"
+      role="row"
       className={cn(
         "hover:bg-muted/50 data-[state=selected]:bg-muted border-b transition-colors",
         className
@@ -69,6 +78,7 @@ function TableHead({ className, ...props }: React.ComponentProps<"th">) {
   return (
     <th
       data-slot="table-head"
+      role="columnheader"
       className={cn(
         "text-foreground h-10 px-2 text-left align-middle font-medium whitespace-nowrap [&:has([role=checkbox])]:pr-0 [&>[role=checkbox]]:translate-y-[2px]",
         className
@@ -82,6 +92,7 @@ function TableCell({ className, ...props }: React.ComponentProps<"td">) {
   return (
     <td
       data-slot="table-cell"
+      role="cell"
       className={cn(
         "p-2 align-middle whitespace-nowrap [&:has([role=checkbox])]:pr-0 [&>[role=checkbox]]:translate-y-[2px]",
         className
