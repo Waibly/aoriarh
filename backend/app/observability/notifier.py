@@ -60,7 +60,17 @@ def slack_message(row, batch=None):
     }
 
 
+def exclude_site_incidents():
+    """Retain historical records, but never send/retry marketing-site incidents."""
+    with connection() as db:
+        db.execute(
+            "UPDATE incidents SET state='ignored',last_error='site_notifications_disabled' "
+            "WHERE state IN ('pending','failed') AND json_extract(payload, '$.source')='site'"
+        )
+
+
 async def deliver_one(client, webhook):
+    exclude_site_incidents()
     now = time.time()
     if now < get_state("slack_backoff", 0):
         return False
@@ -71,6 +81,7 @@ async def deliver_one(client, webhook):
             "SELECT i.*, " + GROUP_SQL + " AS group_key FROM incidents i "
             "LEFT JOIN state s ON s.key='slack_group:' || " + GROUP_SQL + " "
             "WHERE i.state='pending' AND i.next_attempt<=? AND i.created<=? "
+            "AND COALESCE(json_extract(i.payload, '$.source'), '') != 'site' "
             "AND COALESCE(CAST(s.value AS REAL),0)<=? ORDER BY i.created LIMIT 1",
             (now, now - 2, now),
         ).fetchone()
@@ -313,8 +324,7 @@ class Metrics(BaseHTTPRequestHandler):
 
 
 async def main():
-    with connection():
-        pass
+    exclude_site_incidents()
     if get_state("activated_at") is None:
         set_state("activated_at", time.time())
         set_state("watchdog_cursor", time.time())

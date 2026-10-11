@@ -46,3 +46,10 @@ def test_unhealthy_delivery_still_triggers_an_alert():
         assert external_check.main() == 1
         slack.assert_called_once()
         assert 'incident_delivery' in slack.call_args.args[0]
+
+
+def test_marketing_homepage_is_outside_alert_scope():
+    from probe import CHECKS
+    assert 'homepage' not in CHECKS
+    assert all('://aoriarh.fr/' not in value[0] for value in CHECKS.values())
+    assert 'api_health' in CHECKS and 'demo_page' in CHECKS

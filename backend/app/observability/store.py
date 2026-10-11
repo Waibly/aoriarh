@@ -136,7 +136,9 @@ class IncidentLogHandler(logging.Handler):
         if not enabled() or record.name.startswith("app.observability"):
             return
         fields = {
-            "source": os.environ.get("INCIDENT_SOURCE", "backend"),
+            "source": (context.get() or {}).get(
+                "source", os.environ.get("INCIDENT_SOURCE", "backend")
+            ),
             "location": record.name,
             "line": record.lineno,
         }

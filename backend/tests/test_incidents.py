@@ -87,10 +87,10 @@ async def test_http_exception_and_response_have_request_id(spool):
 async def test_public_collector_rejects_secrets_and_deduplicates(spool):
     app = FastAPI()
     app.include_router(telemetry.router)
-    data = {"id": str(uuid.uuid4()), "source": "site", "code": "network_error", "location": "/demo"}
+    data = {"id": str(uuid.uuid4()), "source": "app", "code": "network_error", "location": "/demo"}
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         assert (await client.post("/incidents", json=data)).status_code == 403
-        headers = {"Origin": "https://aoriarh.fr"}
+        headers = {"Origin": "https://app.aoriarh.fr"}
         assert (
             await client.post("/incidents", json={**data, "message": "private"}, headers=headers)
         ).status_code == 422
@@ -274,9 +274,9 @@ async def test_slack_cooldown_survives_new_events_and_does_not_block_other_group
         return httpx.Response(200, text='ok')
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
-        add('site')
+        add('nextjs')
         assert await deliver_one(client, 'https://hooks.slack.com/services/test')
-        add('site')
+        add('nextjs')
         assert not await deliver_one(client, 'https://hooks.slack.com/services/test')
         add('app')
         assert await deliver_one(client, 'https://hooks.slack.com/services/test')
@@ -380,3 +380,65 @@ async def test_distinct_causes_are_not_grouped_together(spool):
         assert await deliver_one(client, 'https://hooks.slack.com/services/test')
     assert len(messages) == 2
     assert messages[0]['text'] != messages[1]['text']
+
+
+@pytest.mark.parametrize('origin,source', [
+    ('https://aoriarh.fr', 'site'),
+    ('https://www.aoriarh.fr', 'site'),
+    ('https://aoriarh.fr', 'app'),
+    ('https://app.aoriarh.fr', 'site'),
+])
+async def test_marketing_events_are_acknowledged_without_recording(spool, origin, source):
+    app = FastAPI()
+    app.include_router(telemetry.router)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url='http://test') as client:
+        response = await client.post('/incidents', headers={'Origin': origin}, json={
+            'id': str(uuid.uuid4()), 'source': source, 'code': 'resource_error', 'location': '/',
+        })
+    assert response.status_code == 202
+    assert response.json()['ignored'] is True
+    assert records() == []
+
+
+async def test_old_site_backlog_is_never_delivered_but_app_errors_are(spool):
+    for state in ('pending', 'failed'):
+        incident_id = store.capture('resource_error', source='site')
+        with store.connection() as db:
+            db.execute('UPDATE incidents SET state=? WHERE id=?', (state, incident_id))
+    store.capture('stream_error', source='app', reason='provider_quota_exhausted')
+    with store.connection() as db:
+        db.execute('UPDATE incidents SET created=?', (time.time() - 10,))
+    messages = []
+
+    def accept(request):
+        messages.append(json.loads(request.content))
+        return httpx.Response(200, text='ok')
+
+    async with AsyncClient(transport=httpx.MockTransport(accept)) as client:
+        assert await deliver_one(client, 'https://hooks.slack.com/services/test')
+        assert not await deliver_one(client, 'https://hooks.slack.com/services/test')
+    assert len(messages) == 1
+    assert 'Crédits OpenAI épuisés' in messages[0]['text']
+    assert sorted(r['state'] for r in records()) == ['delivered', 'ignored', 'ignored']
+
+
+async def test_marketing_tool_api_errors_keep_site_scope(spool):
+    app = FastAPI()
+
+    @app.get('/api/v1/public/tools/test')
+    async def tool():
+        store.IncidentLogHandler().emit(logging.LogRecord(
+            'app.public_tools', logging.ERROR, '/private', 1, 'private message', (), None,
+        ))
+        raise HTTPException(500, 'technical error')
+
+    app.add_middleware(IncidentMiddleware)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url='http://test') as client:
+        assert (await client.get('/api/v1/public/tools/test')).status_code == 500
+    assert len(records()) == 1
+    assert json.loads(records()[0]['payload'])['source'] == 'site'
+    async with AsyncClient(transport=httpx.MockTransport(
+        lambda _: pytest.fail('Site incident must not reach Slack')
+    )) as client:
+        assert not await deliver_one(client, 'https://hooks.slack.com/services/test')
+    assert records()[0]['state'] == 'ignored'

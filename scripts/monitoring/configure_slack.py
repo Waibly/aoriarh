@@ -64,7 +64,7 @@ def main():
     subprocess.run(['gh','workflow','run','availability.yml','--repo','Waibly/aoriarh'],check=True,cwd=root)
     procedure = """AORIA RH — procédure de suivi des erreurs
 
-Ce canal reçoit les incidents du site, de la démo, de l’application, des documents et des synchronisations, ainsi que les alertes de disponibilité.
+Ce canal reçoit uniquement les incidents de l’application (démo comprise), de son API, des documents et des synchronisations, ainsi que les alertes de disponibilité de l’application. Le site vitrine aoriarh.fr est exclu.
 
 1. À réception, relever l’origine, la catégorie et l’identifiant de l’incident.
 2. Ouvrir https://app.aoriarh.fr/admin/incidents avec un compte administrateur technique ou complet. Retrouver la requête, la tâche ou le document à l’aide de son identifiant.

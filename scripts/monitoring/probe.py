@@ -8,7 +8,6 @@ from urllib.parse import urlsplit
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
 CHECKS = {
-    'homepage': ('https://aoriarh.fr/', None, 200),
     'demo_page': ('https://app.aoriarh.fr/demo', None, 200),
     'api_health': ('https://api.aoriarh.fr/health', None, 200),
     # Jeton absent : le schéma doit être accepté, puis Turnstile doit refuser.

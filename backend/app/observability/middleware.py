@@ -21,7 +21,7 @@ class IncidentMiddleware:
         fields = {
             "request_id": request_id,
             "incident_key": "request:" + request_id,
-            "source": "backend",
+            "source": "site" if scope["path"].startswith("/api/v1/public/tools/") else "backend",
             "method": scope["method"],
         }
         token = context.set(fields)

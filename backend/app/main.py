@@ -214,7 +214,9 @@ async def _unhandled_exception_handler(request: Request, exc: Exception) -> JSON
     """Catch-all for unhandled exceptions: never expose internal details."""
     from app.observability.store import context
     request_id = getattr(request.state, "request_id", None)
-    token = context.set({"incident_key": "request:" + request_id, "request_id": request_id}
+    token = context.set({"incident_key": "request:" + request_id, "request_id": request_id,
+                         "source": "site" if request.url.path.startswith("/api/v1/public/tools/")
+                         else "backend"}
                         if request_id else None)
     try:
         logger.exception("Unhandled exception on %s %s", request.method, request.url.path)

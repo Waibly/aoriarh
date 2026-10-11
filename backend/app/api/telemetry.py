@@ -13,7 +13,9 @@ from app.core.dependencies import require_role
 from app.observability.store import capture, connection, enabled, get_state
 
 router = APIRouter()
-ORIGINS = {"https://aoriarh.fr", "https://www.aoriarh.fr", "https://app.aoriarh.fr"}
+SITE_ORIGINS = {"https://aoriarh.fr", "https://www.aoriarh.fr"}
+ORIGINS = SITE_ORIGINS | {"https://app.aoriarh.fr"}
+APP_ONLY = "COALESCE(json_extract(payload, '$.source'), '') != 'site'"
 _buckets = OrderedDict()
 
 
@@ -65,6 +67,9 @@ def allow_client(ip):
 async def receive_incident(request: Request):
     if request.headers.get("origin") not in ORIGINS:
         raise HTTPException(403, "Origin not allowed")
+    # Acknowledge cached marketing clients without recording or retrying their events.
+    if request.headers.get("origin") in SITE_ORIGINS:
+        return {"ignored": True, "reason": "site_notifications_disabled"}
     if not allow_client(request.client.host if request.client else "unknown"):
         raise HTTPException(429, "Telemetry rate limit", headers={"Retry-After": "60"})
     size = 0
@@ -78,6 +83,8 @@ async def receive_incident(request: Request):
         incident = IncidentInput.model_validate_json(b"".join(parts))
     except ValidationError:
         raise HTTPException(422, "Invalid incident metadata") from None
+    if incident.source == "site":
+        return {"ignored": True, "reason": "site_notifications_disabled"}
     if not enabled():
         raise HTTPException(503, "Incident collector not configured")
     data = incident.model_dump(mode="json", exclude_none=True)
@@ -104,13 +111,16 @@ async def list_incidents(
     if not enabled():
         return {"configured": False, "items": [], "counts": {}}
     with connection() as db:
-        where, args = (" WHERE state=?", [state]) if state else ("", [])
+        where, args = (" AND state=?", [state]) if state else ("", [])
         rows = db.execute(
-            "SELECT * FROM incidents" + where + " ORDER BY created DESC LIMIT 100 OFFSET ?",
+            "SELECT * FROM incidents WHERE " + APP_ONLY + where
+            + " ORDER BY created DESC LIMIT 100 OFFSET ?",
             [*args, offset],
         ).fetchall()
         counts = {
-            r[0]: r[1] for r in db.execute("SELECT state,count(*) FROM incidents GROUP BY state")
+            r[0]: r[1] for r in db.execute(
+                "SELECT state,count(*) FROM incidents WHERE " + APP_ONLY + " GROUP BY state"
+            )
         }
     return {
         "configured": True,
@@ -126,7 +136,7 @@ async def retry_incident(incident_id: uuid.UUID, _user=Depends(require_role(["ad
         result = db.execute(
             "UPDATE incidents SET "
             "state='pending',attempts=0,next_attempt=0,last_error=NULL WHERE "
-            "id=? AND state='failed'",
+            "id=? AND state='failed' AND " + APP_ONLY,
             (str(incident_id),),
         )
     if not result.rowcount:
