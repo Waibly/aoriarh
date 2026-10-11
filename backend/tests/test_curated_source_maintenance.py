@@ -338,10 +338,10 @@ async def test_forbidden_source_is_explicit_and_preserves_document():
 
 
 def browser_capture(spec=SPEC):
-    from datetime import datetime, timezone
+    from datetime import UTC, datetime
     raw = (f'<html><head><link rel="canonical" href="{spec["url"]}"></head>'
            '<body><article>Official source text.</article></body></html>')
-    return {'url': spec['url'], 'html': raw, 'captured_at': datetime.now(timezone.utc).isoformat(),
+    return {'url': spec['url'], 'html': raw, 'captured_at': datetime.now(UTC).isoformat(),
             'sha256': hashlib.sha256(raw.encode()).hexdigest()}
 
 

@@ -287,7 +287,8 @@ class SocialCaService:
                     if (
                         not chunks
                         or tokens > MAX_DOCUMENT_TOKENS
-                        or ledger["tokens_reserved"] + tokens > settings.social_ca_max_tokens_per_day
+                        or (ledger["tokens_reserved"] + tokens
+                            > settings.social_ca_max_tokens_per_day)
                     ):
                         result["budget_pending"] += 1
                         continue

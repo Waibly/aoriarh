@@ -7,7 +7,7 @@ Other legal publications are archived for review. No generated text is processed
 import hashlib
 import json
 import uuid
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime, timezone
 from urllib.parse import urljoin, urlsplit
 
 import httpx
@@ -44,7 +44,7 @@ def validate_browser_capture(spec, capture):
     captured_at = datetime.fromisoformat(capture["captured_at"])
     if captured_at.tzinfo is None:
         raise ValueError("Capture timestamp must include timezone")
-    age = (datetime.now(timezone.utc) - captured_at).total_seconds()
+    age = (datetime.now(UTC) - captured_at).total_seconds()
     if age < -60 or age > 86400:
         raise ValueError("Capture must be less than 24 hours old")
     raw = capture["html"].encode("utf-8")
