@@ -467,15 +467,16 @@ function SyncBanner({ token, onRefresh }: { token: string; onRefresh: () => void
     loadLastSyncs();
   }, [loadLastSyncs]);
 
-  // Poll while at least one job is being tracked
+  // Also follow automatic jobs discovered when opening the page.
+  const hasRunningSync = Object.values(lastSyncs).some((log) => log?.status === "running");
   useEffect(() => {
     const trackedKeys = Object.entries(pollingIds).filter(([, id]) => id !== null);
-    if (trackedKeys.length === 0) return;
+    if (trackedKeys.length === 0 && !hasRunningSync) return;
     const interval = setInterval(() => {
       loadLastSyncs();
     }, 3000);
     return () => clearInterval(interval);
-  }, [pollingIds, loadLastSyncs]);
+  }, [pollingIds, loadLastSyncs, hasRunningSync]);
 
   // Detect when a tracked job finishes. We poll on the aggregated status:
   // a multi-pass batch (e.g. jurisprudence × 6) is "running" until none of
@@ -671,8 +672,8 @@ function SyncBanner({ token, onRefresh }: { token: string; onRefresh: () => void
           const log = lastSyncs[s.key];
           const isPolling = pollingIds[s.key] !== null && pollingIds[s.key] !== undefined;
           const isTriggering = running[s.key] === true;
-          const isRunning = isPolling || isTriggering;
           const status = log?.status?.toLowerCase() ?? "";
+          const isRunning = isPolling || isTriggering || status === "running";
           const ok = ["ok", "success", "completed"].includes(status);
           const isErr = ["error", "failed", "interrupted"].includes(status);
           const isDeferred = status === "deferred";
