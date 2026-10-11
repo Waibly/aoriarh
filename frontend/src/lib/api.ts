@@ -42,45 +42,46 @@ async function fetchWithTimeout(
   }
 }
 
-let isRefreshing = false;
+// Concurrent expired requests share a refresh, then each retries once.
+let refreshSession: ReturnType<typeof getSession> | null = null;
 
-/**
- * On 401, try refreshing the NextAuth session (which triggers the JWT callback
- * and calls /auth/refresh on the backend). If refresh succeeds, retry the
- * original request with the new token. If it fails, sign out.
- */
 async function handleUnauthorized(
   path: string,
   options: FetchOptions,
   buildHeaders: (token?: string) => HeadersInit,
-): Promise<Response | null> {
-  // Avoid concurrent refresh attempts
-  if (isRefreshing) return null;
-  isRefreshing = true;
-
+  originalResponse: Response,
+): Promise<Response> {
+  let failureResponse = originalResponse;
   try {
-    // Force NextAuth to refresh the session (triggers jwt callback → refreshAccessToken)
-    const newSession = await getSession();
+    if (!refreshSession) {
+      refreshSession = getSession().finally(() => { refreshSession = null; });
+    }
+    const newSession = await refreshSession;
     if (newSession?.access_token && !newSession.error) {
-      // Retry the original request with the refreshed token
       const { headers: _, token: _t, ...rest } = options;
+      // No deferral header on the final attempt: all failures are reported.
       const retryResponse = await fetchWithTimeout(`${API_BASE_URL}${path}`, {
-        headers: buildHeaders(newSession.access_token),
         ...rest,
+        headers: buildHeaders(newSession.access_token),
       });
-      if (retryResponse.status !== 401) {
-        return retryResponse;
-      }
+      if (retryResponse.status !== 401) return retryResponse;
+      failureResponse = retryResponse;
     }
   } catch {
-    // Refresh failed
-  } finally {
-    isRefreshing = false;
+    // The first 401 was deferred; a failed refresh must still be reported.
   }
-
-  // Refresh failed or retry still 401 — sign out
-  signOut({ callbackUrl: "/login" });
+  reportIncident("http_error", {
+    status: 401,
+    request_id: failureResponse.headers.get("X-Request-ID"),
+  });
+  void signOut({ callbackUrl: "/login" });
   throw new Error("Session expirée");
+}
+
+function initialAuthHeaders(headers: HeadersInit): Headers {
+  const result = new Headers(headers);
+  result.set("X-Aoria-Auth-Retry", "managed");
+  return result;
 }
 
 export async function apiFetch<T>(
@@ -96,12 +97,12 @@ export async function apiFetch<T>(
   });
 
   const response = await fetchWithTimeout(`${API_BASE_URL}${path}`, {
-    headers: buildHeaders(token),
+    headers: initialAuthHeaders(buildHeaders(token)),
     ...rest,
   });
 
   if (response.status === 401) {
-    const retryResponse = await handleUnauthorized(path, options, buildHeaders);
+    const retryResponse = await handleUnauthorized(path, options, buildHeaders, response);
     if (retryResponse) {
       if (!retryResponse.ok) {
         const errorData = await retryResponse.json().catch(() => null);
@@ -168,12 +169,12 @@ export async function authFetch(
 
   // The timer ends when headers arrive; it never limits the SSE response body.
   const response = await fetchWithTimeout(`${API_BASE_URL}${path}`, {
-    headers: buildHeaders(token),
+    headers: initialAuthHeaders(buildHeaders(token)),
     ...rest,
   });
 
   if (response.status === 401) {
-    const retryResponse = await handleUnauthorized(path, options, buildHeaders);
+    const retryResponse = await handleUnauthorized(path, options, buildHeaders, response);
     if (retryResponse) return retryResponse;
   }
 

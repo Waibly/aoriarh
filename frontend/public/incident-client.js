@@ -86,7 +86,9 @@
     if (!owned || url.pathname === '/api/v1/telemetry/incidents') return nativeFetch(input, init);
     try {
       var response = await nativeFetch(input, init);
-      if (!response.ok) report('http_error', {status:response.status, request_id:response.headers.get('X-Request-ID')});
+      var requestHeaders = new Headers((init && init.headers) || (typeof input === 'object' && input.headers) || {});
+      var managed401 = response.status === 401 && requestHeaders.get('X-Aoria-Auth-Retry') === 'managed';
+      if (!response.ok && !managed401) report('http_error', {status:response.status, request_id:response.headers.get('X-Request-ID')});
       return response;
     } catch (error) {
       var signal = (init && init.signal) || (typeof input === 'object' && input.signal);

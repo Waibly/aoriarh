@@ -39,8 +39,22 @@ class IncidentMiddleware:
                 route = scope.get("route")
                 # Route templates exclude user input and tokens in URL parameters.
                 fields["location"] = getattr(route, "path", "unmatched_route")
-                if message["status"] >= 400:
-                    headers = dict(scope.get("headers", []))
+                # Outside the API namespace, unmatched paths are scanner/landing
+                # traffic. Browser failures are independently reported by the app.
+                unmatched_probe = (
+                    message["status"] == 404
+                    and fields["location"] == "unmatched_route"
+                    and not scope["path"].startswith("/api/")
+                )
+                headers = dict(scope.get("headers", []))
+                # Only the first attempt of our bounded browser auth retry defers
+                # a 401. The final attempt and refresh failures remain observable.
+                auth_retry = (
+                    message["status"] == 401
+                    and headers.get(b"x-aoria-auth-retry") == b"managed"
+                    and scope["path"].startswith("/api/v1/")
+                )
+                if message["status"] >= 400 and not (unmatched_probe or auth_retry):
                     # Existing unauthenticated contract probe expects this exact 403.
                     probe = headers.get(b"user-agent", b"").startswith(b"Aoria-Technical-Monitor/")
                     if not (

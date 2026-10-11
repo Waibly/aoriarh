@@ -24,7 +24,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.plans import (
@@ -38,9 +38,12 @@ from app.models.case_file import CaseFile
 from app.models.ccn import OrganisationConvention
 from app.models.conversation import Conversation, Message
 from app.models.document import Document
+from app.models.dossier import Dossier
+from app.models.fiche import Fiche
 from app.models.invitation import Invitation
 from app.models.membership import Membership
 from app.models.organisation import Organisation
+from app.models.plan_invitation import PlanInvitation, PlanInvitationRedemption
 from app.models.user import User
 from app.services.case_file_service import (
     CASE_FILE_LOAD_OPTIONS,
@@ -302,11 +305,12 @@ class DataRetentionService:
         Returns a summary dict of counts deleted per entity, useful for
         admin logs and compliance trails.
         """
-        from app.models.subscription import Subscription
+        from qdrant_client.models import FieldCondition, Filter, FilterSelector, MatchValue
+
         from app.models.ccn import OrganisationConvention as OrgConv
+        from app.models.subscription import Subscription
         from app.rag.qdrant_store import COLLECTION_NAME, get_qdrant_client
         from app.services.storage_service import StorageService
-        from qdrant_client.models import FieldCondition, Filter, FilterSelector, MatchValue
 
         account = await self.db.get(Account, account_id)
         if account is None:
@@ -314,6 +318,9 @@ class DataRetentionService:
 
         summary = {
             "organisations": 0,
+            "fiches": 0,
+            "dossiers": 0,
+            "owner_retained": 0,
             "documents": 0,
             "conversations": 0,
             "case_files": 0,
@@ -332,28 +339,6 @@ class DataRetentionService:
         orgs = list(orgs_result.scalars())
         org_ids = [o.id for o in orgs]
 
-        # Qdrant: remove all points scoped to these organisations
-        if org_ids:
-            try:
-                client = get_qdrant_client()
-                for org_id in org_ids:
-                    client.delete(
-                        collection_name=COLLECTION_NAME,
-                        points_selector=FilterSelector(
-                            filter=Filter(
-                                must=[
-                                    FieldCondition(
-                                        key="organisation_id",
-                                        match=MatchValue(value=str(org_id)),
-                                    )
-                                ]
-                            )
-                        ),
-                    )
-                    summary["qdrant_collections_cleaned"] += 1
-            except Exception:
-                logger.exception("Purge: Qdrant cleanup failed for account %s", account_id)
-
         # MinIO: delete every document file owned by these orgs
         if org_ids:
             docs_result = await self.db.execute(
@@ -370,6 +355,37 @@ class DataRetentionService:
             for doc in docs:
                 if doc.storage_path:
                     await queue_storage_delete(self.db, storage, doc.id, doc.storage_path)
+
+            # Private documents reference conversations and dossiers: delete them
+            # before those parents. Physical storage deletion waits for commit.
+            summary["documents"] = len(docs)
+            await self.db.execute(
+                delete(Document).where(Document.organisation_id.in_(org_ids))
+            )
+            fiches = await self.db.execute(
+                delete(Fiche).where(Fiche.organisation_id.in_(org_ids))
+            )
+            summary["fiches"] = fiches.rowcount
+            # Break the conversation/dossier/case-file cycle explicitly.
+            await self.db.execute(
+                update(Conversation).where(Conversation.organisation_id.in_(org_ids))
+                .values(dossier_id=None)
+            )
+            dossier_case_ids = list((await self.db.execute(
+                select(Dossier.case_file_id).where(Dossier.organisation_id.in_(org_ids))
+            )).scalars())
+            dossiers = await self.db.execute(
+                delete(Dossier).where(Dossier.organisation_id.in_(org_ids))
+            )
+            summary["dossiers"] = dossiers.rowcount
+            # Some dossiers have no conversation yet; include their case files.
+            from app.models.case_file import CaseDocumentLink, CaseEntry, CaseEvent, CaseTask
+            for model in (CaseDocumentLink, CaseTask, CaseEntry, CaseEvent):
+                await self.db.execute(delete(model).where(model.case_file_id.in_(dossier_case_ids)))
+            detached_cases = await self.db.execute(
+                delete(CaseFile).where(CaseFile.id.in_(dossier_case_ids))
+            )
+            summary["case_files"] += detached_cases.rowcount
 
             # Conversations + messages (no cascade from Account)
             if org_ids:
@@ -395,7 +411,7 @@ class DataRetentionService:
                     select(Conversation.id).where(Conversation.organisation_id.in_(org_ids))
                 )).scalars().all()
                 if conv_ids:
-                    summary["case_files"] = await delete_case_files_for_conversations(
+                    summary["case_files"] += await delete_case_files_for_conversations(
                         self.db, list(conv_ids)
                     )
                     await self.db.execute(
@@ -404,12 +420,6 @@ class DataRetentionService:
                     await self.db.execute(
                         delete(Conversation).where(Conversation.id.in_(conv_ids))
                     )
-
-            # Documents (DB)
-            summary["documents"] = len(docs)
-            await self.db.execute(
-                delete(Document).where(Document.organisation_id.in_(org_ids))
-            )
 
             # OrganisationConventions, Memberships, Invitations (no cascade on all)
             await self.db.execute(
@@ -423,19 +433,26 @@ class DataRetentionService:
                 delete(Membership).where(Membership.organisation_id.in_(org_ids))
             )
 
-        # Invitations for this account (account-level)
+        # Include legacy organisation invitations without an account_id.
+        invitation_scope = or_(
+            Invitation.account_id == account_id, Invitation.organisation_id.in_(org_ids)
+        )
         inv_result = await self.db.execute(
-            select(Invitation).where(Invitation.account_id == account_id)
+            select(Invitation).where(invitation_scope)
         )
         summary["invitations"] = len(list(inv_result.scalars()))
         await self.db.execute(
-            delete(Invitation).where(Invitation.account_id == account_id)
+            delete(Invitation).where(invitation_scope)
         )
 
         # Organisations (parent of memberships we just removed)
         summary["organisations"] = len(orgs)
-        for org in orgs:
-            await self.db.delete(org)
+        await self.db.execute(delete(Organisation).where(Organisation.id.in_(org_ids)))
+        await self.db.execute(
+            delete(PlanInvitationRedemption).where(
+                PlanInvitationRedemption.account_id == account_id
+            )
+        )
 
         # Account members (access grants from other users)
         members_result = await self.db.execute(
@@ -456,7 +473,55 @@ class DataRetentionService:
         # because they may be owners of other accounts.
         owner = await self.db.get(User, owner_id)
         if owner is not None:
-            await self.db.delete(owner)
+            # Erasing one account must not erase another tenant's records or
+            # remove access there. Keep an identity still referenced elsewhere.
+            references = (
+                (AccountMember, AccountMember.user_id),
+                (Membership, Membership.user_id),
+                (Conversation, Conversation.user_id),
+                (Fiche, Fiche.user_id),
+                (Dossier, Dossier.user_id),
+                (Invitation, Invitation.invited_by),
+                (PlanInvitation, PlanInvitation.created_by),
+                (PlanInvitationRedemption, PlanInvitationRedemption.user_id),
+            )
+            retained = False
+            for model, column in references:
+                if (await self.db.execute(
+                    select(model.id).where(column == owner_id).limit(1)
+                )).first():
+                    retained = True
+                    break
+            if retained:
+                summary["owner_retained"] = 1
+            else:
+                await self.db.execute(delete(User).where(User.id == owner_id))
+
+        # Validate relational constraints before touching the external index.
+        await self.db.flush()
+
+        # Qdrant: remove all points scoped to these organisations
+        if org_ids:
+            try:
+                client = get_qdrant_client()
+                for org_id in org_ids:
+                    client.delete(
+                        collection_name=COLLECTION_NAME,
+                        points_selector=FilterSelector(
+                            filter=Filter(
+                                must=[
+                                    FieldCondition(
+                                        key="organisation_id",
+                                        match=MatchValue(value=str(org_id)),
+                                    )
+                                ]
+                            )
+                        ),
+                    )
+                    summary["qdrant_collections_cleaned"] += 1
+            except Exception:
+                logger.exception("Purge: Qdrant cleanup failed for account %s", account_id)
+                raise
 
         await self.db.commit()
 

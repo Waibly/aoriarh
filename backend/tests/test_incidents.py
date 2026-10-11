@@ -442,3 +442,45 @@ async def test_marketing_tool_api_errors_keep_site_scope(spool):
     )) as client:
         assert not await deliver_one(client, 'https://hooks.slack.com/services/test')
     assert records()[0]['state'] == 'ignored'
+
+
+async def test_unmatched_scans_ignored_but_api_and_product_404_remain(spool):
+    app = FastAPI()
+    @app.get('/known')
+    async def known():
+        raise HTTPException(404)
+    app.add_middleware(IncidentMiddleware)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url='http://test') as client:
+        for path in ('/', '/wp-freya.php', '/.env'):
+            assert (await client.get(path)).status_code == 404
+        assert records() == []
+        for path in ('/api/v1/missing', '/known'):
+            assert (await client.get(path)).status_code == 404
+    assert len(records()) == 2
+
+
+async def test_only_managed_first_401_is_deferred(spool):
+    app = FastAPI()
+    @app.get('/api/v1/protected/{status}')
+    async def protected(status: int):
+        raise HTTPException(status)
+    app.add_middleware(IncidentMiddleware)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url='http://test') as client:
+        headers = {'X-Aoria-Auth-Retry': 'managed'}
+        assert (await client.get('/api/v1/protected/401', headers=headers)).status_code == 401
+        assert records() == []
+        await client.get('/api/v1/protected/401')  # final retry still denied
+        await client.get('/api/v1/protected/403', headers=headers)
+        await client.get('/api/v1/protected/500', headers=headers)
+    assert sorted(json.loads(r['payload'])['status'] for r in records()) == [401, 403, 500]
+
+
+async def test_auth_retry_header_is_allowed_by_cors(client):
+    from app.core.config import settings
+    response = await client.options('/api/v1/users/me', headers={
+        'Origin': settings.cors_origins[0],
+        'Access-Control-Request-Method': 'GET',
+        'Access-Control-Request-Headers': 'authorization,x-aoria-auth-retry',
+    })
+    assert response.status_code == 200
+    assert 'x-aoria-auth-retry' in response.headers['access-control-allow-headers'].lower()

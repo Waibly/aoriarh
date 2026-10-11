@@ -8,7 +8,7 @@ function runtime(fetcher: jest.Mock) {
   const saved = new Map<string,string>();
   const win: any = {fetch:fetcher,addEventListener:(name:string,fn:Function) => handlers[name]=fn,setInterval:jest.fn()};
   const sandbox: any = {window:win,document:{addEventListener:jest.fn()},location:{hostname:"app.aoriarh.fr",origin:"https://app.aoriarh.fr",href:"https://app.aoriarh.fr/demo?q=RH_SECRET",pathname:"/demo"},
-    navigator:{onLine:true},crypto:{randomUUID},URL,AbortSignal,
+    navigator:{onLine:true},crypto:{randomUUID},URL,Headers,AbortSignal,
     sessionStorage:{getItem:(key:string) => saved.get(key),setItem:(key:string,value:string) => saved.set(key,value)},
     setTimeout,clearTimeout,Date,JSON};
   vm.runInNewContext(fs.readFileSync("public/incident-client.js","utf8"),sandbox);
@@ -58,4 +58,19 @@ it("sends allowlisted technical reasons but never arbitrary error text", async (
   expect(sent[0].reason).toBe('provider_quota_exhausted');
   expect(sent[1]).not.toHaveProperty('reason');
   expect(JSON.stringify(sent)).not.toContain('PRIVATE_MESSAGE');
+});
+
+
+it("defers only the managed first 401 and still reports final or server failures", async () => {
+  const fetcher = jest.fn(async (url: string, _options?: any) => url.includes('/telemetry/')
+    ? {status:202,ok:true}
+    : {status:url.includes('server') ? 500 : 401,ok:false,headers:new Headers()});
+  const {win} = runtime(fetcher);
+  await win.fetch('https://api.aoriarh.fr/api/v1/private', {headers:{'X-Aoria-Auth-Retry':'managed'}});
+  expect(fetcher).toHaveBeenCalledTimes(1);
+  await win.fetch('https://api.aoriarh.fr/api/v1/private');
+  await win.fetch('https://api.aoriarh.fr/api/v1/server', {headers:{'X-Aoria-Auth-Retry':'managed'}});
+  await new Promise(resolve => setTimeout(resolve,0));
+  const reports = fetcher.mock.calls.filter(args => String(args[0]).includes('/telemetry/'));
+  expect(reports.map(args => JSON.parse(args[1].body).status)).toEqual([401,500]);
 });
