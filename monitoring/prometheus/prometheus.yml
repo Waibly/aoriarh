@@ -3,6 +3,9 @@ global:
   evaluation_interval: 15s
 
 scrape_configs:
+  - job_name: "promtail"
+    static_configs:
+      - targets: ["promtail:9080"]
   - job_name: "incident-notifier"
     static_configs:
       - targets: ["incident-notifier:9117"]

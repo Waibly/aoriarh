@@ -2,7 +2,7 @@ server:
   http_listen_port: 9080
 
 positions:
-  filename: /tmp/positions.yaml
+  filename: /var/lib/promtail/positions.yaml
 
 clients:
   - url: http://loki:3100/loki/api/v1/push
@@ -12,11 +12,14 @@ scrape_configs:
     docker_sd_configs:
       - host: unix:///var/run/docker.sock
         refresh_interval: 5s
+        # Promtail 3.0's Docker reader ignores the relabel keep result and sends
+        # excluded containers with empty labels. Filter before creating readers.
+        filters:
+          - name: label
+            values: ["logging=promtail", "com.docker.compose.project=aoriarh"]
     relabel_configs:
-      # Garder uniquement les conteneurs avec le label logging=promtail
-      - source_labels: ["__meta_docker_container_label_logging"]
-        regex: "promtail"
-        action: keep
+      - target_label: job
+        replacement: aoriarh-docker
       # Nom du service comme label
       - source_labels: ["__meta_docker_container_name"]
         regex: "/(.*)"
@@ -29,8 +32,7 @@ scrape_configs:
       - json:
           expressions:
             level: level
-            event: event
-            timestamp: timestamp
       - labels:
           level:
-          event:
+      # Keep event in the original log, not in the stream labels: it may contain
+      # arbitrary messages/IDs and would create unbounded stream cardinality.

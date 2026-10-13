@@ -444,6 +444,7 @@ services:
     restart: unless-stopped
     volumes:
       - ./monitoring/promtail/promtail-config.yml:/etc/promtail/config.yml:ro
+      - promtail_positions:/var/lib/promtail
       - /var/run/docker.sock:/var/run/docker.sock:ro
     command: -config.file=/etc/promtail/config.yml
     depends_on:
@@ -468,6 +469,9 @@ services:
       GF_SERVER_ROOT_URL: https://monitoring.aoriarh.fr
     volumes:
       - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      # Grafana 11.0's shipped error view accesses Assets, absent from its
+      # error model. Keep the error response renderable without asset lookups.
+      - ./monitoring/grafana/error.html:/usr/share/grafana/public/views/error.html:ro
       - grafana_data:/var/lib/grafana
     deploy:
       resources:
@@ -493,6 +497,7 @@ volumes:
   redis_data:
   prometheus_data:
   loki_data:
+  promtail_positions:
   grafana_data:
 
 networks:

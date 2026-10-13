@@ -102,6 +102,24 @@ async def test_public_collector_rejects_secrets_and_deduplicates(spool):
     assert len(records()) == 1
 
 
+@pytest.mark.parametrize("reason", [
+    "resource_next_script", "resource_next_stylesheet", "resource_turnstile",
+    "resource_analytics", "resource_image", "resource_stylesheet",
+    "resource_script", "resource_frame", "resource_other",
+])
+async def test_resource_diagnostic_is_allowlisted_and_persisted(spool, reason):
+    app = FastAPI()
+    app.include_router(telemetry.router)
+    data = {"id": str(uuid.uuid4()), "source": "app", "code": "resource_error",
+            "location": "/demo", "reason": reason}
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        headers = {"Origin": "https://app.aoriarh.fr"}
+        assert (await client.post("/incidents", json=data, headers=headers)).status_code == 202
+        assert (await client.post("/incidents", json={**data, "reason": "https://private/SECRET"}, headers=headers)).status_code == 422
+    assert json.loads(records()[0]["payload"])["reason"] == reason
+    assert "SECRET" not in str(records())
+
+
 async def test_stream_preserves_every_frame_and_reports_failure(spool):
     frames = [
         'event: chat_delta\ndata: {"content":"  original text  "}\n\n',

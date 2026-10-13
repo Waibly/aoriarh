@@ -27,6 +27,23 @@ it("reports errors without request body, query, error text or credentials", asyn
   expect(fetcher.mock.calls[0][1].credentials).toBe("omit");
 });
 
+it.each([
+  [{tagName:'SCRIPT',src:'https://app.aoriarh.fr/_next/static/chunks/PRIVATE.js?token=SECRET'}, 'resource_next_script'],
+  [{tagName:'LINK',rel:'stylesheet',href:'https://app.aoriarh.fr/_next/static/css/PRIVATE.css'}, 'resource_next_stylesheet'],
+  [{tagName:'SCRIPT',src:'https://challenges.cloudflare.com/turnstile/v0/api.js?secret=SECRET'}, 'resource_turnstile'],
+  [{tagName:'SCRIPT',src:'https://www.googletagmanager.com/gtag/js?id=SECRET'}, 'resource_analytics'],
+  [{tagName:'IMG',src:'https://app.aoriarh.fr/private/SECRET.png'}, 'resource_image'],
+  [{tagName:'SCRIPT',src:'https://other.example/_next/static/SECRET.js'}, 'resource_script'],
+])("classifies a failed resource without sending its URL", async (target, reason) => {
+  const fetcher = jest.fn(async (_url:string,_options?:any)=>({status:202,ok:true}));
+  const {handlers} = runtime(fetcher);
+  handlers.error({target});
+  await new Promise(resolve => setTimeout(resolve,0));
+  const report = JSON.parse(fetcher.mock.calls[0][1].body);
+  expect(report).toMatchObject({code:'resource_error',location:'/demo',reason});
+  expect(JSON.stringify(report)).not.toMatch(/SECRET|PRIVATE|https:/);
+});
+
 it("returns the original failed response and correlates its server request", async () => {
   const requestId = randomUUID();
   const response = {ok:false,status:500,headers:{get:() => requestId}};

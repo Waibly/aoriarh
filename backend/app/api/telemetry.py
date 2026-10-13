@@ -44,7 +44,10 @@ class IncidentInput(BaseModel):
         default="unknown", max_length=180, pattern=r"^[a-zA-Z0-9_./:{}@\[\]()-]+$"
     )
     reason: Literal[
-        "provider_quota_exhausted", "provider_rate_limited", "server_error"
+        "provider_quota_exhausted", "provider_rate_limited", "server_error",
+        "resource_next_script", "resource_next_stylesheet", "resource_turnstile",
+        "resource_analytics", "resource_image", "resource_stylesheet",
+        "resource_script", "resource_frame", "resource_other",
     ] | None = None
     request_id: uuid.UUID | None = None
     visitor_id: uuid.UUID | None = None

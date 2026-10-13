@@ -38,6 +38,12 @@ def api_client():
 
 def definitions():
     return [
+        ('aoria-log-delivery', 'Logs : collecte ou livraison défaillante', 'Prometheus',
+         'sum(increase(promtail_dropped_entries_total[5m])) or vector(0)',
+         '0s', 'Promtail perd des logs. Vérifier ses erreurs et la réception dans Loki.'),
+        ('aoria-log-collector', 'Logs : collecteur indisponible', 'Prometheus',
+         '(1 - up{job="promtail"}) or absent(up{job="promtail"})',
+         '1m', 'Prometheus ne peut plus joindre Promtail.'),
         ('aoria-incidents-delivery', 'Incidents : livraison Slack défaillante', 'Prometheus',
          '(aoria_incidents_failed > 0) or (aoria_incidents_oldest_pending_seconds > 120) or ((aoria_incidents_slack_configured == 0) + 1) or vector(0)',
          '1m', 'Des incidents attendent ou ont épuisé les tentatives. Consulter /admin/incidents.'),
@@ -63,7 +69,7 @@ def definitions():
          'sum(count_over_time({service="backend"} | json | event="http_request" | status >= 500 | path !~ "/api/v1/public/tools/.*" [5m])) or vector(0)',
          '0s', 'Une requête API a reçu une erreur HTTP 5xx.'),
         ('aoria-backend-down', 'API : backend indisponible', 'Prometheus',
-         '(1 - up{job="backend"}) or absent(up{job="backend"})',
+         'max without (service) ((1 - up{job="backend"}) or absent(up{job="backend"}))',
          '1m', 'Prometheus ne peut plus joindre le backend AORIA.'),
     ]
 

@@ -1,0 +1,16 @@
+<!DOCTYPE html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>[[.AppTitle]] — Erreur</title>
+  </head>
+  <body>
+    <main>
+      <h1>[[.Title]]</h1>
+      [[if .ErrorMsg]]<pre>[[.ErrorMsg]]</pre>[[end]]
+      <p>Consultez les journaux Grafana pour le détail de cette erreur.</p>
+      <a href="[[.AppSubUrl]]/login">Retour à la connexion</a>
+    </main>
+  </body>
+</html>

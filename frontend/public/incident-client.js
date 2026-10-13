@@ -33,7 +33,10 @@
     options = options || {};
     var event = { id: options.id || crypto.randomUUID(), source: source, code: code,
       location: safeLocation(), visitor_id: visitor };
-    if (['provider_quota_exhausted','provider_rate_limited','server_error'].indexOf(options.reason) >= 0) event.reason = options.reason;
+    if (['provider_quota_exhausted','provider_rate_limited','server_error',
+      'resource_next_script','resource_next_stylesheet','resource_turnstile',
+      'resource_analytics','resource_image','resource_stylesheet','resource_script',
+      'resource_frame','resource_other'].indexOf(options.reason) >= 0) event.reason = options.reason;
     if (options.request_id) event.request_id = options.request_id;
     if (options.status >= 400 && options.status <= 599) event.status = options.status;
     // No event sampling. Bound browser memory; disclose overflow as its own incident.
@@ -70,8 +73,28 @@
     } finally { flushing = false; }
   }
   window.aoriaReportIncident = report;
+  function resourceReason(target) {
+    // Classify locally. Never transmit URLs, query strings, filenames, or DOM text.
+    var tag = String(target.tagName || '').toLowerCase();
+    try {
+      var url = new URL(target.currentSrc || target.src || target.href, location.href);
+      if (url.hostname === 'challenges.cloudflare.com') return 'resource_turnstile';
+      if (url.hostname === 'www.googletagmanager.com') return 'resource_analytics';
+      if (url.origin === location.origin && url.pathname.indexOf('/_next/static/') === 0) {
+        if (tag === 'script') return 'resource_next_script';
+        if (tag === 'link' && target.rel === 'stylesheet') return 'resource_next_stylesheet';
+      }
+    } catch (_) {}
+    if (tag === 'img') return 'resource_image';
+    if (tag === 'script') return 'resource_script';
+    if (tag === 'link' && target.rel === 'stylesheet') return 'resource_stylesheet';
+    if (tag === 'iframe') return 'resource_frame';
+    return 'resource_other';
+  }
   window.addEventListener('error', function (event) {
-    report(event.target && event.target !== window ? 'resource_error' : 'javascript_error');
+    var resource = event.target && event.target !== window;
+    report(resource ? 'resource_error' : 'javascript_error',
+      resource ? {reason: resourceReason(event.target)} : {});
   }, true);
   window.addEventListener('unhandledrejection', function () { report('unhandled_rejection'); });
   document.addEventListener('invalid', function () { report('form_invalid'); }, true);

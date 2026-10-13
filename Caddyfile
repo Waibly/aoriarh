@@ -1,8 +1,18 @@
 # AORIA RH — Reverse proxy production
 # Caddy obtient et renouvelle les certificats SSL automatiquement via Let's Encrypt.
 
+# These paths are never public resources of AORIA. Reject before proxying;
+# keep normal application 404s observable and preserve /.well-known/ for ACME.
+(reject_aoria_scans) {
+	@private_files path_regexp private_files (?i)(^|/)(\.env([./]|$)|\.git(/|$)|wp-admin(/|$)|wp-includes(/|$)|wp-json(/|$)|wp-login\.php$|xmlrpc\.php$|cgi-bin(/|$))
+	respond @private_files 404
+	@internal_middleware header X-Middleware-Subrequest *
+	respond @internal_middleware 400
+}
+
 # Site marketing (apex + www → apex)
 aoriarh.fr, www.aoriarh.fr {
+	import reject_aoria_scans
 	encode zstd gzip
 	header {
 		Strict-Transport-Security "max-age=31536000; includeSubDomains"
@@ -16,12 +26,26 @@ aoriarh.fr, www.aoriarh.fr {
 }
 
 app.aoriarh.fr {
+	import reject_aoria_scans
+	# Auth.js actions only; provider suffixes belong to these three actions.
+	@unknown_auth_action {
+		path /api/auth /api/auth/*
+		not path_regexp auth_action ^/api/auth/((providers|session|csrf|signout|verify-request|error)/?|(signin|callback|webauthn-options)(/[^/]+)?/?)$
+	}
+	respond @unknown_auth_action 404
+	# Next 15.5 uses 42 hexadecimal characters for Server Action references.
+	@invalid_action {
+		header Next-Action *
+		not header_regexp Next-Action ^[0-9a-fA-F]{42}$
+	}
+	respond @invalid_action 400
 	header X-Robots-Tag "noindex, nofollow"
 	header Strict-Transport-Security "max-age=31536000; includeSubDomains"
 	reverse_proxy frontend:3000
 }
 
 api.aoriarh.fr {
+	import reject_aoria_scans
 	header X-Robots-Tag "noindex, nofollow"
 	header Strict-Transport-Security "max-age=31536000; includeSubDomains"
 	@internal path /metrics /docs /openapi.json /redoc
@@ -30,6 +54,7 @@ api.aoriarh.fr {
 }
 
 monitoring.aoriarh.fr {
+	import reject_aoria_scans
 	header Strict-Transport-Security "max-age=31536000; includeSubDomains"
 	reverse_proxy grafana:3000
 }
