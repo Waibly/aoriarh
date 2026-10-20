@@ -3,6 +3,7 @@
 SOURCES = [
     {
         "key": "N06",
+        "automatic_enabled": False,
         "document_id": "d43d6006-a899-59f1-999b-6df7e67e5ba1",
         "name": "Ameli — démarches accident du travail",
         "url": "https://www.ameli.fr/entreprise/vos-salaries/accident-travail-trajet/demarches",
@@ -112,6 +113,7 @@ SOURCES = [
     },
     {
         "key": "N16",
+        "automatic_enabled": False,
         "document_id": "df0c63a0-68ab-5417-ad62-23508f642192",
         "name": "Ameli — formalités arrêt maladie",
         "url": "https://www.ameli.fr/entreprise/vos-salaries/arret-de-travail/formalites-employeur",
@@ -126,6 +128,7 @@ SOURCES = [
     },
     {
         "key": "N17",
+        "automatic_enabled": False,
         "document_id": "0add5d97-1681-5708-9345-afc512e69ae9",
         "name": "Ameli — subrogation de salaire",
         "url": "https://www.ameli.fr/entreprise/vos-salaries/arret-de-travail/subrogation-salaire",

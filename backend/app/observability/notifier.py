@@ -71,6 +71,23 @@ def exclude_site_incidents():
 
 async def deliver_one(client, webhook):
     exclude_site_incidents()
+    # Worker and watchdog retain separate evidence, but one sync run only needs
+    # one notification. Keep the earliest record as the durable delivery owner.
+    with connection() as db:
+        db.execute("""
+            UPDATE incidents AS duplicate
+            SET state='ignored', last_error='duplicate_sync_notification'
+            WHERE duplicate.state IN ('pending','failed')
+              AND json_extract(duplicate.payload, '$.sync_id') IS NOT NULL
+              AND EXISTS (
+                SELECT 1 FROM incidents AS original
+                WHERE json_extract(original.payload, '$.sync_id')
+                    = json_extract(duplicate.payload, '$.sync_id')
+                  AND original.state != 'ignored'
+                  AND (original.created < duplicate.created OR
+                    (original.created = duplicate.created AND original.id < duplicate.id))
+              )
+        """)
     now = time.time()
     if now < get_state("slack_backoff", 0):
         return False

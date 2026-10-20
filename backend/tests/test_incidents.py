@@ -190,6 +190,44 @@ async def test_permanent_delivery_error_retained_without_retry(spool):
         assert await deliver_one(client, "https://hooks.slack.com/services/test") is False
 
 
+async def test_sync_worker_and_later_watchdog_send_one_notification(spool):
+    sync_id = str(uuid.uuid4())
+    store.capture("sync_failed", source="worker", sync_id=sync_id)
+    with store.connection() as db:
+        db.execute("UPDATE incidents SET created=?", (time.time() - 10,))
+    requests = []
+
+    def handler(request):
+        requests.append(request)
+        return httpx.Response(200, text="ok")
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        assert await deliver_one(client, "https://hooks.slack.com/services/test")
+        store.capture("sync_result_failed", source="watchdog", sync_id=sync_id)
+        assert not await deliver_one(client, "https://hooks.slack.com/services/test")
+        # A different sync must still be notified, even with the same error.
+        store.capture("sync_result_failed", source="watchdog", sync_id=str(uuid.uuid4()))
+        with store.connection() as db:
+            db.execute("UPDATE incidents SET created=? WHERE state='pending'", (time.time() - 5,))
+        assert await deliver_one(client, "https://hooks.slack.com/services/test")
+    assert len(requests) == 2
+    assert sorted(row["state"] for row in records()) == ["delivered", "delivered", "ignored"]
+
+
+async def test_sync_duplicate_does_not_discard_delivery_retries(spool):
+    sync_id = str(uuid.uuid4())
+    store.capture("sync_failed", source="worker", sync_id=sync_id)
+    store.capture("sync_result_failed", source="watchdog", sync_id=sync_id)
+    with store.connection() as db:
+        db.execute("UPDATE incidents SET created=?", (time.time() - 10,))
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(lambda _: httpx.Response(503))
+    ) as client:
+        await deliver_one(client, "https://hooks.slack.com/services/test")
+    assert sorted(row["state"] for row in records()) == ["ignored", "pending"]
+    assert sum(row["attempts"] for row in records()) == 1
+
+
 def test_schedule_uses_calendar_not_time_since_last_run():
     sunday = datetime(2026, 10, 11, 3, 0, tzinfo=UTC)
     assert expected_start(sunday, (6, 2, 0, None)) == sunday.replace(hour=2)

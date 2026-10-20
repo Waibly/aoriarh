@@ -969,7 +969,8 @@ class JudilibreService:
                     return None
 
                 response.raise_for_status()
-                return response.json()
+                from app.services.source_diagnostics import source_json
+                return source_json(response)
 
             except httpx.TimeoutException:
                 if attempt < _MAX_RETRIES - 1:

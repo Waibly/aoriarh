@@ -68,6 +68,37 @@ async def test_empty_download_is_failure():
             await fetch_source(client, SPEC)
 
 
+@pytest.mark.asyncio
+async def test_redirect_diagnostic_excludes_credentials_path_and_query():
+    def handler(request):
+        return httpx.Response(302, headers={
+            "Location": "https://user:password@other.example:8443/private?token=secret",
+        })
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        with pytest.raises(ValueError) as error:
+            await fetch_source(client, SPEC)
+    message = str(error.value)
+    assert "other.example" in message and "8443" in message
+    assert all(value not in message for value in ["password", "private", "secret", "user:"])
+
+
+@pytest.mark.asyncio
+async def test_disabled_ameli_sources_never_download_or_touch_documents():
+    from app.services.curated_source_registry import SOURCES
+
+    sources = [s for s in SOURCES if s["key"] in {"N06", "N16", "N17"}]
+    assert len(sources) == 3
+    service, db, doc = setup_service()
+    with patch("app.services.curated_source_service.fetch_source", new_callable=AsyncMock) as fetch:
+        result = await service.sync(db, sources=sources)
+    fetch.assert_not_awaited()
+    service.replace.assert_not_awaited()
+    assert result["errors"] == 0 and result["checked"] == 0
+    assert all(s["status"] == "disabled" for s in result["sources"])
+    assert doc.file_hash == "old"
+
+
 def setup_service():
     storage = Mock()
     service = CuratedSourceService(storage)

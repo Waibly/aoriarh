@@ -103,7 +103,8 @@ async def fetch_browser_source(spec):
                 or parsed.username
                 or parsed.password
             ):
-                raise ValueError("Unapproved source redirect")
+                from app.services.source_diagnostics import redirect_error
+                raise redirect_error(url)
             async with session.stream("GET", url, allow_redirects=False) as response:
                 if response.status_code in {301, 302, 303, 307, 308}:
                     url = urljoin(url, response.headers["location"])
@@ -132,7 +133,8 @@ async def fetch_source(client, spec):
             or parsed.hostname not in hosts
             or parsed.port not in (None, 443)
         ):
-            raise ValueError("Unapproved source redirect")
+            from app.services.source_diagnostics import redirect_error
+            raise redirect_error(url)
         async with client.stream("GET", url) as response:
             if response.is_redirect:
                 url = urljoin(url, response.headers["location"])
@@ -259,6 +261,11 @@ class CuratedSourceService:
                     "url": spec["url"],
                     "checked_at": datetime.now(timezone.utc).isoformat(),
                 }
+                if captures is None and not spec.get("automatic_enabled", True):
+                    item.update(status="disabled", reason="automatic_collection_disabled")
+                    result["sources"].append(item)
+                    self.save_json(report_path, result)
+                    continue
                 try:
                     if captures is not None:
                         capture = captures[spec["key"]]

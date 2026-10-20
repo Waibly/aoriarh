@@ -459,6 +459,7 @@ async def run_code_travail_sync(ctx: dict, user_id: str) -> None:
             items_created=1 if changed else 0,
             items_skipped=0 if changed else 1,
             errors=result.errors,
+            error_message="; ".join(result.error_messages) or None,
             duration_ms=int((_time.perf_counter() - t0) * 1000),
         )
     except Exception as exc:
@@ -503,6 +504,7 @@ async def run_all_codes_sync(ctx: dict, user_id: str) -> None:
     total_articles = 0
     total_changed = 0
     total_errors = 0
+    error_messages = []
     try:
         from app.services.legi_service import SYNCABLE_CODES, LegiService
 
@@ -521,15 +523,18 @@ async def run_all_codes_sync(ctx: dict, user_id: str) -> None:
                 if result.legislatif_changed or result.reglementaire_changed:
                     total_changed += 1
                 total_errors += result.errors
-            except Exception:
+                error_messages.extend(f"{code_key}: {message}" for message in result.error_messages)
+            except Exception as exc:
                 logger.exception("Worker: %s sync failed, continuing", code_key)
                 total_errors += 1
+                error_messages.append(f"{code_key}: {type(exc).__name__}: {exc}")
         await _finish_sync_log(
             session_factory, sync_log_id,
             success=total_errors == 0,
             items_fetched=total_articles,
             items_created=total_changed,
             errors=total_errors,
+            error_message="; ".join(error_messages) or None,
             duration_ms=int((_time.perf_counter() - t0) * 1000),
         )
     except Exception as exc:
@@ -1547,7 +1552,7 @@ async def run_curated_sources_sync(ctx: dict) -> dict:
             async with session_factory() as db:
                 result = await CuratedSourceService().sync(db)
             problems = [r.get("name", r["key"]) + ": " + r.get("error", r["status"])
-                        for r in result["sources"] if r["status"] not in {"updated", "unchanged"}]
+                        for r in result["sources"] if r["status"] not in {"updated", "unchanged", "disabled"}]
             await _finish_sync_log(
                 session_factory, log_id, success=not problems,
                 items_fetched=result["checked"], items_updated=result["updated"],
