@@ -26,6 +26,7 @@ from app.models.document import Document
 from app.rag.norme_hierarchy import DOCUMENT_TYPE_HIERARCHY
 from app.rag.tasks import enqueue_ingestion
 from app.services.dila_cass_service import SOURCE_PREFIX, number_aliases
+from app.services.jurisprudence_publication import judilibre_publication_label
 
 if TYPE_CHECKING:
     from app.services.storage_service import StorageService
@@ -834,11 +835,7 @@ class JudilibreService:
             decision_date = date.today()
 
         # Map publication codes
-        pub_raw = raw.get("publication", [])
-        if isinstance(pub_raw, list):
-            pub_str = "Publié au Bulletin" if "b" in pub_raw else "Inédit"
-        else:
-            pub_str = str(pub_raw)
+        pub_str = judilibre_publication_label(raw.get("publication", []))
 
         # Map chamber code to label
         chambre_raw = raw.get("chamber", "")

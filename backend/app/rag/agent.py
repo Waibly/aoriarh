@@ -43,6 +43,7 @@ from app.rag.search_plan import (
 )
 from app.rag.source_intent import detect_source_intent
 from app.services.cost_tracker import CostContext, compute_cost, cost_tracker
+from app.services.jurisprudence_publication import publication_significance
 
 logger = logging.getLogger(__name__)
 
@@ -1929,6 +1930,10 @@ class RAGAgent:
                 if r.publication:
                     juris_parts.append(f"({r.publication})")
                 header += f"Référence : {', '.join(juris_parts)}\n"
+
+            significance = publication_significance(r.publication, r.source_type)
+            if significance:
+                header += f"Portée jurisprudentielle officielle : {significance}\n"
 
             for metadata_field, label in (
                 ("publication_date", "Date de publication officielle"),
