@@ -1,6 +1,8 @@
+import base64
 import hashlib
 import io
 import json
+import struct
 import tarfile
 import uuid
 from datetime import date
@@ -174,6 +176,36 @@ def test_scope_uses_official_headings_and_retains_ambiguous_records_for_review()
     )
 
 
+@pytest.mark.parametrize(
+    "topic",
+    [
+        "ELECTIONS - Comités d'entreprise - Représentativité",
+        "ELECTIONS - Délégués du personnel - Désignation",
+        "AGRICULTURE - ACCIDENT DU TRAVAIL - Indemnisation",
+        "QUESTION PRIORITAIRE DE CONSTITUTIONNALITE - Code du travail - Article L. 2314-3",
+        "CHEMIN DE FER - S N C F - PERSONNEL - Discipline",
+    ],
+)
+def test_explicit_historical_employment_headings_remain_admitted(topic):
+    assert topic_scope((topic,)) == "admitted"
+
+
+def test_unrelated_elections_and_rural_matters_are_not_employment_headings():
+    assert topic_scope(("ELECTIONS - MUTUALITE - ASSEMBLEE GENERALE",)).startswith("review")
+    assert topic_scope(("AGRICULTURE - BAIL A FERME - REPRISE",)).startswith("review")
+
+
+def test_embedding_transport_preserves_float32_and_rejects_invalid_vectors():
+    from scripts.maintenance.import_dila_cass import decode_embedding
+
+    vector = [0.125, -0.5, 0.0, 1.0] * 256
+    assert decode_embedding(base64.b64encode(struct.pack("<1024f", *vector)).decode()) == vector
+    with pytest.raises(ValueError, match="byte count"):
+        decode_embedding(base64.b64encode(b"short").decode())
+    with pytest.raises(ValueError, match="Non-finite"):
+        decode_embedding(base64.b64encode(struct.pack("<1024f", *([float("nan")] * 1024))).decode())
+
+
 class Tokenizer:
     def encode_batch(self, texts):
         return [SimpleNamespace(ids=list(range(len(value)))) for value in texts]
@@ -185,10 +217,18 @@ async def test_embedding_cache_prevents_second_paid_call_and_disables_truncation
 ):
     state = state_db(tmp_path)
     embedder = Embeddings(tmp_path, state, Tokenizer(), 100000, 1000)
-    vectors = [[0.1] * 1024]
+    vectors = [[0.125] * 1024]
     response = httpx.Response(
         200,
-        json={"data": [{"index": 0, "embedding": vectors[0]}], "usage": {"total_tokens": 4}},
+        json={
+            "data": [
+                {
+                    "index": 0,
+                    "embedding": base64.b64encode(struct.pack("<1024f", *vectors[0])).decode(),
+                }
+            ],
+            "usage": {"total_tokens": 4},
+        },
         request=httpx.Request("POST", "https://example.test"),
     )
     embedder.client.post = AsyncMock(return_value=response)
@@ -198,6 +238,7 @@ async def test_embedding_cache_prevents_second_paid_call_and_disables_truncation
     assert first == second == vectors
     assert embedder.client.post.await_count == 1
     assert embedder.client.post.call_args.kwargs["json"]["truncation"] is False
+    assert embedder.client.post.call_args.kwargs["json"]["encoding_format"] == "base64"
     assert state.execute("SELECT sum(actual) FROM requests").fetchone()[0] == 4
     await embedder.client.aclose()
 
@@ -261,10 +302,17 @@ async def test_reconciliation_keeps_different_decision_dates_and_isolates_duplic
     tmp_path, monkeypatch
 ):
     from app.models.document import Document
+    from scripts.maintenance.import_dila_cass import doc_for
     from tests.conftest import test_session_factory
 
     existing_id = uuid.uuid4()
+    resumable_raw = (
+        xml()
+        .replace(b"JURITEXT000007046800", b"JURITEXT000007046804")
+        .replace(b"2002-01-31", b"2004-01-31")
+    )
     async with test_session_factory() as session:
+        session.add(doc_for(parse_cass_xml(resumable_raw)))
         session.add(
             Document(
                 id=existing_id,
@@ -293,6 +341,7 @@ async def test_reconciliation_keeps_different_decision_dates_and_isolates_duplic
         .replace(b"JURITEXT000007046800", b"JURITEXT000007046802")
         .replace(b"2002-01-31", b"2003-01-31"),
         xml(body="").replace(b"JURITEXT000007046800", b"JURITEXT000007046803"),
+        resumable_raw,
     ]
     with tarfile.open(package, "w:gz") as archive:
         for raw in decisions:
@@ -308,6 +357,7 @@ async def test_reconciliation_keeps_different_decision_dates_and_isolates_duplic
     assert rows["JURITEXT000007046801"]["disposition"] == "new"
     assert rows["JURITEXT000007046802"]["disposition"] == "review_archive_identity_conflict"
     assert rows["JURITEXT000007046803"]["disposition"] == "review_source_body_missing"
+    assert rows["JURITEXT000007046804"]["disposition"] == "new"
     assert json.loads((tmp_path / "plan.json").read_text())["parser_errors"] == []
 
 

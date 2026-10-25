@@ -8,6 +8,7 @@ one-off worker container. No automatic LLM evaluation or generation is used.
 
 import argparse
 import asyncio
+import base64
 import gzip
 import hashlib
 import json
@@ -15,6 +16,7 @@ import math
 import re
 import shutil
 import sqlite3
+import struct
 import tarfile
 import time
 import uuid
@@ -67,6 +69,19 @@ def state_db(folder):
 
 def identities(numbers, day):
     return {(str(day), key) for value in numbers for key in number_aliases(value)}
+
+
+def decode_embedding(encoded):
+    """Decode the provider's lossless float32 transport representation."""
+    if not isinstance(encoded, str):
+        raise ValueError("Expected a base64 float32 embedding")
+    raw = base64.b64decode(encoded, validate=True)
+    if len(raw) != 1024 * 4:
+        raise ValueError("Invalid float32 embedding byte count")
+    vector = list(struct.unpack("<1024f", raw))
+    if not all(math.isfinite(value) for value in vector):
+        raise ValueError("Non-finite float32 embedding")
+    return vector
 
 
 def doc_for(decision):
@@ -225,11 +240,17 @@ async def plan(folder, package, db, tokenizer):
             elif matches:
                 match_id = next(iter(matches))
                 matched = by_id[match_id]
-                disposition = (
-                    "existing"
-                    if (matched.retired_at is None and matched.indexation_status == "indexed")
-                    else "review_existing_state"
-                )
+                if matched.retired_at is None and matched.indexation_status == "indexed":
+                    disposition = "existing"
+                elif (
+                    matched.retired_at is None
+                    and matched.id == doc.id
+                    and matched.file_hash == decision.xml_sha256
+                    and matched.storage_path == doc.storage_path
+                ):
+                    disposition = "new"
+                else:
+                    disposition = "review_existing_state"
                 doc.id = matched.id
             elif conflicts:
                 disposition = "review_archive_identity_conflict"
@@ -410,7 +431,12 @@ class Embeddings:
                 response = await self.client.post(
                     "https://api.voyageai.com/v1/embeddings",
                     headers={"Authorization": "Bearer " + settings.voyage_api_key},
-                    json={"input": texts, "model": EMBEDDING_MODEL, "truncation": False},
+                    json={
+                        "input": texts,
+                        "model": EMBEDDING_MODEL,
+                        "truncation": False,
+                        "encoding_format": "base64",
+                    },
                 )
                 if response.status_code == 429:
                     self.state.execute(
@@ -433,7 +459,7 @@ class Embeddings:
                 entries = sorted(data["data"], key=lambda entry: entry["index"])
                 if [entry["index"] for entry in entries] != list(range(len(texts))):
                     raise ValueError("Incomplete or duplicated embedding response")
-                vectors = [entry["embedding"] for entry in entries]
+                vectors = [decode_embedding(entry["embedding"]) for entry in entries]
                 if any(
                     len(vector) != 1024 or not all(math.isfinite(v) for v in vector)
                     for vector in vectors
@@ -795,6 +821,15 @@ async def verify(folder, db, limit=None):
         ).fetchone()[0],
     }
     report["embedding_usd"] = round(report["provider_tokens"] * 0.12 / 1_000_000, 6)
+    report["unconfirmed_provider_tokens_upper_bound"] = db.execute(
+        "SELECT coalesce(sum(reserved),0) FROM requests WHERE actual IS NULL"
+    ).fetchone()[0]
+    report["embedding_usd_upper_bound"] = round(
+        (report["provider_tokens"] + report["unconfirmed_provider_tokens_upper_bound"])
+        * 0.12
+        / 1_000_000,
+        6,
+    )
     report["pilot_only"] = limit is not None
     dump(folder / ("verification-pilot.json" if limit is not None else "verification.json"), report)
     print(json.dumps(report), flush=True)

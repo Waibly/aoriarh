@@ -244,6 +244,8 @@ def topic_scope(topics: tuple[str, ...]) -> str:
         "CONFLITS COLLECTIFS DU TRAVAIL",
         "STATUTS PROFESSIONNELS PARTICULIERS",
         "COMITE D ENTREPRISE",
+        "COMITES D ENTREPRISE",
+        "COMITES D ENTREPRISES",
         "DELEGUES DU PERSONNEL",
         "DELEGUE DU PERSONNEL",
         "EMPLOI",
@@ -257,6 +259,10 @@ def topic_scope(topics: tuple[str, ...]) -> str:
         "CONGES PAYES",
         "CONSEIL DE PRUD HOMMES",
         "COMITE D ETABLISSEMENT",
+        "COMITES D ETABLISSEMENT",
+        "SYNDICATS PROFESSIONNELS",
+        "CODE DU TRAVAIL",
+        "MEDECINE DU TRAVAIL",
         "JOURNALISTE PROFESSIONNEL",
         "AGRICULTURE ACCIDENT DU TRAVAIL",
         "AGRICULTURE ACCIDENTS DU TRAVAIL",
@@ -288,12 +294,29 @@ def topic_scope(topics: tuple[str, ...]) -> str:
         "CONSEIL DE PRUD HOMMES",
         "COMITE SOCIAL ET ECONOMIQUE",
         "JOURNALISTE PROFESSIONNEL",
+        "COMITE D ENTREPRISE",
+        "COMITES D ENTREPRISE",
+        "COMITES D ENTREPRISES",
+        "COMITE D ETABLISSEMENT",
+        "COMITES D ETABLISSEMENT",
+        "DELEGUES DU PERSONNEL",
+        "DELEGUE DU PERSONNEL",
+        "SYNDICATS PROFESSIONNELS",
+        "SYNDICAT PROFESSIONNEL",
+        "CODE DU TRAVAIL",
+        "CONGES PAYES",
+        "MEDECINE DU TRAVAIL",
+        "MEDECIN DU TRAVAIL",
+        "STATUT DU PERSONNEL",
+        "PERSONNEL",
+        "GERANT SALARIE",
     )
 
     def belongs(heading, family):
         return heading == family or heading.startswith(family + " ")
 
-    if any(belongs(root, family) for root in roots for family in families) or any(
+    root_paths = roots + [" ".join(segments[:2]) for segments in hierarchies]
+    if any(belongs(root, family) for root in root_paths for family in families) or any(
         belongs(heading, family)
         for segments in hierarchies
         for heading in segments[1:]
@@ -308,7 +331,9 @@ def topic_scope(topics: tuple[str, ...]) -> str:
         for heading in segments
     ):
         return "review_outside_or_mixed_scope"
-    if any(root.startswith("SECURITE SOCIALE") for root in roots):
+    if any(
+        heading.startswith("SECURITE SOCIALE") for segments in hierarchies for heading in segments
+    ):
         return "admitted"
     return "review_generic_or_missing_topic"
 
