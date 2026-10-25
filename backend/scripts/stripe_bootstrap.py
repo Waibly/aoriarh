@@ -8,7 +8,7 @@ of products and recurring/one-shot prices used by the commercial offer:
   - 1 one-shot price (booster +500 questions)
 
 The script is idempotent: it uses metadata.aoria_code to match existing
-products/prices, so running it twice is safe. It never archives or
+products/prices and syncs product descriptions. It never archives or
 mutates an existing price — if an amount has changed on Stripe's side,
 the script prints a warning and keeps the old price.
 
@@ -40,7 +40,7 @@ PRODUCTS: list[dict] = [
     {
         "aoria_code": "solo",
         "name": "AORIA RH — Solo",
-        "description": "Plan Solo · 1 utilisateur · 1 organisation · 300 questions / mois",
+        "description": "Plan Solo · 2 utilisateurs inclus · 1 organisation · 300 questions / mois partagées",
         "prices": [
             {
                 "aoria_code": "solo_monthly",
@@ -165,6 +165,10 @@ def _search_price(aoria_code: str):
 def find_or_create_product(aoria_code: str, name: str, description: str):
     existing = _search_product(aoria_code)
     if existing is not None:
+        if existing["description"] != description:
+            existing = stripe.Product.modify(existing["id"], description=description)
+            print(f"  ✓ Product description updated: {name} ({existing['id']})")
+            return existing
         print(f"  ✓ Product exists: {name} ({existing['id']})")
         return existing
     product = stripe.Product.create(

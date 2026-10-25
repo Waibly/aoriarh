@@ -23,9 +23,8 @@ class PlanLimits:
 # --- Plan limits -----------------------------------------------------------
 
 # Technical plans (not sold, assigned manually by admins)
-# gratuit = trial plan (14 days). Aligné sur les limites Solo pour que
-# l'utilisateur puisse tester le produit dans des conditions réalistes,
-# tout en gardant un périmètre réduit (1 user / 1 org).
+# gratuit = trial plan (14 days). Mêmes quotas documentaires et questions
+# que Solo, avec un périmètre réduit (1 user / 1 org).
 LIMITS_GRATUIT = PlanLimits(
     users_included=1,
     orgs_included=1,
@@ -52,7 +51,7 @@ LIMITS_VIP = PlanLimits(
 
 # Commercial plans (Stripe)
 LIMITS_SOLO = PlanLimits(
-    users_included=1,
+    users_included=2,
     max_extra_users=3,
     orgs_included=1,
     docs_per_org=100,
@@ -128,7 +127,7 @@ PLAN_FEATURES: dict[str, list[str]] = {
         "2 400 questions / mois",
     ],
     "solo": [
-        "1 utilisateur (jusqu'à 3 utilisateurs additionnels via add-on)",
+        "2 utilisateurs inclus (jusqu'à 3 utilisateurs additionnels via add-on)",
         "1 organisation",
         "100 documents par organisation",
         "1 convention collective installable",

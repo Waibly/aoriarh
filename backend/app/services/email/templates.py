@@ -196,7 +196,7 @@ TRIAL_REMINDER_CONTENT = """\
   Pour rappel, nos offres commerciales :
 </p>
 <ul style="color:#3f3f46; line-height:1.8; padding-left:20px;">
-  <li><strong>Solo</strong> — 79 €/mois · 1 utilisateur, 300 questions / mois</li>
+  <li><strong>Solo</strong> — 79 €/mois · 2 utilisateurs inclus, 300 questions / mois partagées</li>
   <li><strong>Équipe</strong> — 149 €/mois · 5 utilisateurs, 900 questions / mois</li>
   <li><strong>Groupe</strong> — 279 €/mois · 10 utilisateurs, 2 400 questions / mois</li>
 </ul>

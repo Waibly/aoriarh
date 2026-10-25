@@ -90,7 +90,7 @@ export const PLANS: Record<AnyPlanCode, PlanMeta> = {
     commercial: true,
     badgeClassName: "border-primary bg-primary/10 text-primary",
     features: [
-      "1 utilisateur (jusqu'à 3 add-ons)",
+      "2 utilisateurs inclus (jusqu'à 3 add-ons)",
       "1 organisation",
       "100 documents / organisation",
       "1 convention collective",

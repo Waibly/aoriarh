@@ -10,6 +10,7 @@ import uuid
 from datetime import UTC, datetime, timedelta
 
 import pytest
+from fastapi import HTTPException
 from httpx import AsyncClient
 from sqlalchemy import update
 
@@ -184,6 +185,44 @@ async def test_booster_consumed_only_after_monthly_quota(
 # ---------------------------------------------------------------------------
 # Hard limits: users, orgs
 # ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_solo_includes_two_users_with_shared_question_quota(
+    client: AsyncClient, manager_user: dict[str, str]
+) -> None:
+    await _force_plan(manager_user["email"], "solo")
+    account = await _get_account_for_email(manager_user["email"])
+
+    async with test_session_factory() as session:
+        billing = BillingService(session)
+        # The owner occupies the first seat; the second is included.
+        await billing.check_user_limit(account)
+        member = User(email="solo-member@test.com", full_name="Solo member")
+        session.add(member)
+        await session.flush()
+        member_id = member.id
+        session.add(AccountMember(account_id=account.id, user_id=member_id))
+        await session.commit()
+
+        # A third user requires an add-on.
+        with pytest.raises(HTTPException) as exc_info:
+            await billing.check_user_limit(account)
+        assert exc_info.value.status_code == 403
+        assert "2 utilisateurs maximum" in exc_info.value.detail
+
+    async with test_session_factory() as session:
+        billing = BillingService(session)
+        member = await session.get(User, member_id)
+        member_account = await billing.get_primary_account_for_user(member)
+        assert member_account.id == account.id
+
+        await billing.increment_question_count(account)
+        await billing.increment_question_count(member_account)
+        quota = await billing.check_question_quota(member_account)
+        assert quota.quota == 300
+        assert quota.used == 2
+        assert quota.remaining == 298
 
 
 @pytest.mark.asyncio
