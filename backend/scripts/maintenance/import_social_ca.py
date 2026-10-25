@@ -11,6 +11,7 @@ import asyncio
 import gzip
 import hashlib
 import json
+import os
 import shutil
 import sqlite3
 import uuid
@@ -555,6 +556,7 @@ async def verify(root, db, limit=None):
 
 
 async def main(args):
+    os.umask(0o007)
     if args.tokens_per_minute < 1 or args.max_total_tokens < 1:
         raise ValueError("Provider pacing and total token budget must be positive")
     root = args.folder.resolve()

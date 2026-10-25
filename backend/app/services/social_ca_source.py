@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from datetime import date
 
 from app.models.document import Document
+from app.rag.norme_hierarchy import DOCUMENT_TYPE_HIERARCHY
 from app.services.dila_cass_service import source_chunks
 from app.services.judilibre_service import _CHAMBER_MAP
 from app.services.social_ca_scope import SCOPE_POLICY_VERSION, classify_ca_scope
@@ -40,6 +41,7 @@ class CaSource:
         return f"{CA_SOURCE_PREFIX}{self.source_id}/{self.text_sha256}.{self.source_sha256}.txt"
 
     def document(self):
+        hierarchy = DOCUMENT_TYPE_HIERARCHY["arret_cour_appel"]
         location = self.raw["location"].removeprefix("ca_").replace("_", " ").title()
         court = f"Cour d'appel de {location}"
         chamber = _CHAMBER_MAP.get(self.raw.get("chamber", ""), self.raw.get("chamber", ""))
@@ -47,8 +49,8 @@ class CaSource:
             id=uuid.uuid5(uuid.NAMESPACE_URL, self.url),
             organisation_id=None,
             source_type="arret_cour_appel",
-            norme_niveau=4,
-            norme_poids=0.85,
+            norme_niveau=hierarchy["niveau"],
+            norme_poids=hierarchy["poids"],
             name=f"{court}, {chamber}, {self.day:%d/%m/%Y}, n° {self.numbers[0]}",
             storage_path=self.storage_path,
             file_format="txt",

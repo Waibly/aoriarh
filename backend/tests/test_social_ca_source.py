@@ -47,6 +47,14 @@ def test_original_text_references_and_tables_are_lossless():
     assert verified_ca_source(doc, raw["text"].encode(), source.source_bytes) == source
 
 
+def test_ca_documents_use_configured_court_authority_weight():
+    from app.rag.norme_hierarchy import DOCUMENT_TYPE_HIERARCHY
+
+    doc = parse_ca_source(raw_source()).document()
+    assert doc.norme_poids == DOCUMENT_TYPE_HIERARCHY["arret_cour_appel"]["poids"]
+    assert doc.norme_poids < DOCUMENT_TYPE_HIERARCHY["arret_cour_cassation"]["poids"]
+
+
 @pytest.mark.parametrize(
     "changes",
     [
