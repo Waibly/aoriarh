@@ -10,6 +10,7 @@ from app.models.ccn import CcnReference, OrganisationConvention
 from app.models.conversation import Conversation, Message
 from app.models.dossier import Dossier
 from app.models.document import Document
+from app.models.document_case_reference import DocumentCaseReference
 from app.models.document_extraction import DocumentExtraction
 from app.models.storage_operation import StorageOperation
 from app.models.fiche import Fiche
@@ -53,6 +54,7 @@ __all__ = [
     "Conversation",
     "Dossier",
     "Document",
+    "DocumentCaseReference",
     "DocumentExtraction",
     "StorageOperation",
     "EmailCampaign",

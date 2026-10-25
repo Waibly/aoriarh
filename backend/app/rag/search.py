@@ -89,6 +89,8 @@ class SearchResult:
     date_decision: str | None = None
     solution: str | None = None
     publication: str | None = None
+    numero_pourvois: list[str] | None = None
+    documentary_topics: list[str] | None = None
     # Recency metadata (optional, for CCN/code du travail)
     content_date: str | None = None
     idcc: str | None = None
@@ -325,6 +327,9 @@ class HybridSearch:
                     date_decision=payload.get("date_decision"),
                     solution=payload.get("solution"),
                     publication=payload.get("publication"),
+                    numero_pourvois=payload.get("numero_pourvois"),
+                    documentary_topics=payload.get("documentary_topics"),
+                    source_url=payload.get("source_url"),
                     content_date=payload.get("content_date"),
                     idcc=payload.get("idcc"),
                     article_nums=payload.get("article_nums"),

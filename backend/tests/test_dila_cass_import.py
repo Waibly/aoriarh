@@ -400,7 +400,8 @@ def test_exact_duplicate_reconciliation_preserves_distinct_cases_and_batch_slots
 
 
 @pytest.mark.asyncio
-async def test_actual_pipeline_preserves_xml_numbers_and_table_chunks(monkeypatch):
+@pytest.mark.parametrize("publication", ["oui", "non"])
+async def test_actual_pipeline_preserves_xml_numbers_and_table_chunks(monkeypatch, publication):
     from app.models.document import Document
     from app.rag.ingestion import IngestionPipeline
     from scripts.maintenance.import_dila_cass import doc_for
@@ -408,9 +409,11 @@ async def test_actual_pipeline_preserves_xml_numbers_and_table_chunks(monkeypatc
 
     raw = xml(
         "<p>123</p><table><tr><th>Année</th><th>Montant</th></tr>"
-        "<tr><td>2026</td><td>1 234,56 €</td></tr></table>"
+        "<tr><td>2026</td><td>1 234,56 €</td></tr></table>", bulletin=publication
     )
-    decision = parse_cass_xml(raw)
+    from app.services.dila_cass_service import parse_social_xml
+
+    decision = parse_social_xml(raw)
     doc = doc_for(decision)
     async with test_session_factory() as session:
         session.add(doc)
@@ -444,3 +447,6 @@ async def test_actual_pipeline_preserves_xml_numbers_and_table_chunks(monkeypatc
     assert any(point.payload["has_table"] for point in points)
     assert all(point.payload["organisation_id"] == "common" for point in points)
     assert all(point.payload["private"] is False for point in points)
+    assert all(point.payload["source_xml_sha256"] == doc.file_hash for point in points)
+    assert all(point.payload["numero_pourvois"] == ["00-12431"] for point in points)
+    assert all(point.payload["source_url"] == doc.source_url for point in points)

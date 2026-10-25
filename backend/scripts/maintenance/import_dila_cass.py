@@ -31,16 +31,24 @@ from tokenizers import Tokenizer
 from app.core.config import settings
 from app.core.database import async_session_factory, engine
 from app.models.document import Document
+from app.models.document_case_reference import DocumentCaseReference
 from app.rag.config import EMBEDDING_MODEL
 from app.rag.ingestion import IngestionPipeline
 from app.rag.qdrant_store import COLLECTION_NAME, ensure_collection, get_qdrant_client
 from app.services.cost_tracker import cost_tracker
 from app.services.dila_cass_service import (
+    INCA_SOURCE_PREFIX,
     SOURCE_PREFIX,
     number_aliases,
     parse_cass_xml,
+    parse_inca_xml,
     source_chunks,
     topic_scope,
+)
+from app.services.document_case_references import (
+    find_existing_social_case,
+    lock_case_references,
+    store_case_references,
 )
 from app.services.storage_service import StorageService
 
@@ -85,6 +93,7 @@ def decode_embedding(encoded):
 
 
 def doc_for(decision):
+    prefix = INCA_SOURCE_PREFIX if decision.publication == "Inédit" else SOURCE_PREFIX
     return Document(
         id=uuid.uuid5(
             uuid.NAMESPACE_URL, "https://www.legifrance.gouv.fr/juri/id/" + decision.source_id
@@ -94,7 +103,7 @@ def doc_for(decision):
         norme_niveau=4,
         norme_poids=0.85,
         name=decision.title,
-        storage_path=f"{SOURCE_PREFIX}{decision.source_id}/{decision.xml_sha256}.xml",
+        storage_path=f"{prefix}{decision.source_id}/{decision.xml_sha256}.xml",
         file_format="xml",
         file_hash=decision.xml_sha256,
         juridiction="Cour de cassation",
@@ -103,7 +112,7 @@ def doc_for(decision):
         numero_pourvoi=decision.numbers[0] if decision.numbers else None,
         date_decision=decision.decision_date,
         solution=decision.solution[:200],
-        publication="Publié au Bulletin",
+        publication=decision.publication,
         indexation_status="pending",
         source_url="https://www.legifrance.gouv.fr/juri/id/" + decision.source_id,
     )
@@ -117,7 +126,7 @@ def prepared_chunks(decision, doc):
     return [header + part for part in bodies]
 
 
-async def plan(folder, package, db, tokenizer):
+async def plan(folder, package, db, tokenizer, *, source_parser=parse_cass_xml, selection=None):
     async with async_session_factory() as session:
         existing = (
             await session.scalars(
@@ -130,6 +139,7 @@ async def plan(folder, package, db, tokenizer):
                 )
             )
         ).all()
+        registered = (await session.execute(select(DocumentCaseReference))).scalars().all()
     by_url = defaultdict(set)
     by_alias = defaultdict(set)
     by_id = {str(doc.id): doc for doc in existing}
@@ -138,6 +148,10 @@ async def plan(folder, package, db, tokenizer):
             by_url[doc.source_url.rstrip("/")].add(str(doc.id))
         for key in identities([doc.numero_pourvoi or ""], doc.date_decision):
             by_alias[key].add(str(doc.id))
+    for reference in registered:
+        if str(reference.document_id) in by_id:
+            key = (str(reference.decision_date), reference.number)
+            by_alias[key].add(str(reference.document_id))
     dump(
         folder / "baseline-documents.json",
         [
@@ -170,7 +184,7 @@ async def plan(folder, package, db, tokenizer):
                 raise ValueError("Selected package must contain regular XML files only")
             raw = archive.extractfile(member).read()
             try:
-                decision = parse_cass_xml(raw)
+                decision = source_parser(raw)
             except Exception as exc:
                 if isinstance(exc, ValueError) and str(exc) == "dila_empty_decision_body":
                     root = etree.fromstring(
@@ -234,6 +248,14 @@ async def plan(folder, package, db, tokenizer):
             for key in aliases:
                 matches.update(by_alias.get(key, set()))
             scope = topic_scope(decision.topics)
+            evidence = None
+            if source_parser is parse_inca_xml:
+                evidence = (selection or {}).get(decision.source_id)
+                if not evidence or evidence.get("xml_sha256") != decision.xml_sha256:
+                    raise ValueError("INCA admission requires immutable source qualification")
+                if evidence.get("scope") != "admitted":
+                    raise ValueError("INCA source was not qualified for this selection")
+                scope = "admitted"
             conflicts = {seen_aliases[key] for key in aliases if key in seen_aliases}
             if len(matches) > 1:
                 disposition = "review_existing_identity_conflict"
@@ -277,6 +299,8 @@ async def plan(folder, package, db, tokenizer):
                 "estimated_tokens": estimate,
                 "chunk_sha256": [hashlib.sha256(c.encode()).hexdigest() for c in chunks],
                 "alias_conflicts": sorted(conflicts),
+                "selection_evidence": evidence,
+                "source_metadata_version": 1,
             }
             db.execute(
                 "INSERT INTO items VALUES (?,?,?,?,?,?,NULL)",
@@ -364,22 +388,32 @@ def reconcile_exact_duplicates(folder, db):
 
 
 class Embeddings:
-    def __init__(self, folder, state, tokenizer, tokens_per_minute, max_total_tokens):
+    def __init__(
+        self, folder, state, tokenizer, tokens_per_minute, max_total_tokens, *, input_type=None
+    ):
         self.folder, self.state, self.tokenizer = folder, state, tokenizer
         self.tokens_per_minute = tokens_per_minute
         self.max_total_tokens = max_total_tokens
+        self.input_type = input_type
         self.next_request = 0.0
         self.pacing_lock = asyncio.Lock()
         self.client = httpx.AsyncClient(timeout=90)
         (folder / "embedding-cache").mkdir(exist_ok=True)
 
     async def get(self, texts, owners):
-        digest = hashlib.sha256(json.dumps(texts, ensure_ascii=False).encode()).hexdigest()
+        cache_input = (
+            texts if self.input_type is None
+            else {"texts": texts, "input_type": self.input_type}
+        )
+        digest = hashlib.sha256(json.dumps(cache_input, ensure_ascii=False).encode()).hexdigest()
         cache = self.folder / "embedding-cache" / (digest + ".json.gz")
         if cache.exists():
             with gzip.open(cache, "rt") as handle:
                 saved = json.load(handle)
-            if saved.get("input_digest") != digest or saved.get("model") != EMBEDDING_MODEL:
+            if (
+                saved.get("input_digest") != digest or saved.get("model") != EMBEDDING_MODEL
+                or saved.get("input_type") != self.input_type
+            ):
                 raise ValueError("Paid embedding cache source mismatch")
             vectors = saved["vectors"]
             if len(vectors) != len(texts) or any(
@@ -398,7 +432,7 @@ class Embeddings:
             raise ValueError("Embedding request exceeds the importer batch contract")
         for attempt in range(3):
             reserved = self.state.execute(
-                "SELECT coalesce(sum(reserved),0) FROM requests"
+                "SELECT coalesce(sum(coalesce(actual,reserved)),0) FROM requests"
             ).fetchone()[0]
             if reserved + estimated > self.max_total_tokens:
                 raise ValueError("Explicit import token budget reached; state is preserved")
@@ -411,7 +445,7 @@ class Embeddings:
                 # Other concurrent groups may have reserved their request while
                 # this group waited for its provider slot.
                 reserved = self.state.execute(
-                    "SELECT coalesce(sum(reserved),0) FROM requests"
+                    "SELECT coalesce(sum(coalesce(actual,reserved)),0) FROM requests"
                 ).fetchone()[0]
                 if reserved + estimated > self.max_total_tokens:
                     raise ValueError("Explicit import token budget reached; state is preserved")
@@ -436,6 +470,7 @@ class Embeddings:
                         "model": EMBEDDING_MODEL,
                         "truncation": False,
                         "encoding_format": "base64",
+                        **({"input_type": self.input_type} if self.input_type else {}),
                     },
                 )
                 if response.status_code == 429:
@@ -466,6 +501,8 @@ class Embeddings:
                 ):
                     raise ValueError("Invalid embedding dimensions or values")
                 actual = data["usage"]["total_tokens"]
+                if type(actual) is not int or actual < 0:
+                    raise ValueError("Invalid provider token usage")
                 temporary = cache.with_suffix(".tmp")
                 with gzip.open(temporary, "wt") as handle:
                     json.dump(
@@ -475,6 +512,7 @@ class Embeddings:
                             "input_digest": digest,
                             "model": EMBEDDING_MODEL,
                             "request_id": request_id,
+                            "input_type": self.input_type,
                         },
                         handle,
                     )
@@ -555,10 +593,14 @@ async def run_batches(groups, handler, concurrency):
 
 
 async def apply(folder, db, tokenizer, args):
+    source_parser = parse_inca_xml if getattr(args, "corpus", "cass") == "inca" else parse_cass_xml
     storage = StorageService()
     qdrant = get_qdrant_client()
     ensure_collection(qdrant)
-    embedder = Embeddings(folder, db, tokenizer, args.tokens_per_minute, args.max_total_tokens)
+    embedder = Embeddings(
+        folder, db, tokenizer, args.tokens_per_minute, args.max_total_tokens,
+        input_type="document" if getattr(args, "corpus", "cass") == "inca" else None,
+    )
     stats = Counter()
     if shutil.disk_usage(folder).free < 20 * 2**30:
         raise ValueError("Insufficient disk reserve for import")
@@ -571,7 +613,7 @@ async def apply(folder, db, tokenizer, args):
             # Keep paid batches stable across restarts, including a partially
             # published group. Completed groups are skipped without paid calls.
             rows = db.execute(
-                "SELECT * FROM items WHERE disposition IN "
+                "SELECT id,disposition,status FROM items WHERE disposition IN "
                 "('new','review_exact_duplicate','review_scope',"
                 "'duplicate_existing','review_alias_collision') "
                 "ORDER BY id"
@@ -581,6 +623,10 @@ async def apply(folder, db, tokenizer, args):
             semaphore = asyncio.Semaphore(6)
 
             async def process_group(group):
+                group = [
+                    db.execute("SELECT * FROM items WHERE id=?", (row["id"],)).fetchone()
+                    for row in group
+                ]
                 if (folder / "STOP").exists():
                     raise ValueError("Operator stop requested; in-flight batches will settle")
                 if all(row["status"] in {"indexed", "excluded"} for row in group):
@@ -589,7 +635,7 @@ async def apply(folder, db, tokenizer, args):
                 for row in group:
                     if row["disposition"] != "new":
                         continue
-                    decision = parse_cass_xml(row["xml"])
+                    decision = source_parser(row["xml"])
                     doc = doc_for(decision)
                     if str(doc.id) != row["document_id"]:
                         raise ValueError("Planned document identity changed")
@@ -600,6 +646,9 @@ async def apply(folder, db, tokenizer, args):
                     ]:
                         raise ValueError("Source representation changed after planning")
                     async with async_session_factory() as session:
+                        await lock_case_references(
+                            session, decision.decision_date, decision.numbers
+                        )
                         current = await session.get(Document, doc.id)
                         if current is None:
                             # Recheck exact source and case/date against current public documents.
@@ -614,7 +663,9 @@ async def apply(folder, db, tokenizer, args):
                                 )
                             ).all()
                             keys = identities(decision.numbers, decision.decision_date)
-                            if any(
+                            if await find_existing_social_case(
+                                session, decision.decision_date, decision.numbers
+                            ) or any(
                                 candidate.source_url == doc.source_url
                                 or keys
                                 & identities(
@@ -633,6 +684,8 @@ async def apply(folder, db, tokenizer, args):
                                 raise ValueError("Original XML archive verification failed")
                             doc.file_size = len(row["xml"])
                             session.add(doc)
+                            await session.flush()
+                            await store_case_references(session, doc, decision.numbers)
                             await session.commit()
                         else:
                             if (
@@ -640,6 +693,8 @@ async def apply(folder, db, tokenizer, args):
                                 or current.retired_at is not None
                             ):
                                 raise ValueError("Existing source changed or retired")
+                            await store_case_references(session, current, decision.numbers)
+                            await session.commit()
                     prepared.append((row, chunks, []))
                 # Provider batches are limited by its tokenizer as well as input count.
                 requests = []
@@ -735,7 +790,8 @@ async def verify(folder, db, limit=None):
     counts = Counter()
     failures = []
     rows = db.execute(
-        "SELECT * FROM items WHERE disposition IN ('new','existing','duplicate_existing') "
+        "SELECT id,document_id,disposition,status FROM items "
+        "WHERE disposition IN ('new','existing','duplicate_existing') "
         "ORDER BY id"
     ).fetchall()
     if limit is not None:
@@ -743,7 +799,10 @@ async def verify(folder, db, limit=None):
             :limit
         ]
     for offset in range(0, len(rows), 64):
-        group = rows[offset : offset + 64]
+        group = [
+            db.execute("SELECT * FROM items WHERE id=?", (row["id"],)).fetchone()
+            for row in rows[offset : offset + 64]
+        ]
         ids = [row["document_id"] for row in group]
         async with async_session_factory() as session:
             docs = (
@@ -751,7 +810,15 @@ async def verify(folder, db, limit=None):
                     select(Document).where(Document.id.in_([uuid.UUID(i) for i in ids]))
                 )
             ).all()
+            reference_rows = (await session.execute(
+                select(DocumentCaseReference).where(
+                    DocumentCaseReference.document_id.in_([uuid.UUID(i) for i in ids])
+                )
+            )).scalars().all()
         by_id = {str(doc.id): doc for doc in docs}
+        registered_aliases = defaultdict(set)
+        for reference in reference_rows:
+            registered_aliases[str(reference.document_id)].add(reference.number)
         points = defaultdict(list)
         cursor = None
         while True:
@@ -791,10 +858,33 @@ async def verify(folder, db, limit=None):
                 error = "invalid_vector_scope"
             elif row["disposition"] == "new":
                 expected = json.loads(row["meta"])
+                from app.services.dila_jurisprudence_metadata import source_metadata
+
+                expected_metadata = (
+                    source_metadata(row["xml"])
+                    if expected.get("source_metadata_version") == 1 else {}
+                )
                 if [
                     hashlib.sha256(point["text"].encode()).hexdigest() for point in found
                 ] != expected["chunk_sha256"]:
                     error = "source_passage_content_mismatch"
+                elif any(
+                    point.get(key) != value
+                    for point in found
+                    for key, value in expected_metadata.items()
+                ):
+                    error = "source_retrieval_metadata_mismatch"
+                elif expected_metadata and registered_aliases[row["document_id"]] != set(
+                    expected_metadata["numero_pourvoi_aliases"]
+                ):
+                    error = "source_case_reference_registry_mismatch"
+                elif any(
+                    point.get("publication") != doc.publication
+                    or point.get("date_decision") != str(doc.date_decision)
+                    or point.get("chambre") != doc.chambre
+                    for point in found
+                ):
+                    error = "decision_metadata_mismatch"
                 elif (
                     storage.get_file_bytes_bounded(doc.storage_path, len(row["xml"]) + 1)
                     != row["xml"]
@@ -858,7 +948,14 @@ async def main(args):
     else:
         if db.execute("SELECT 1 FROM requests LIMIT 1").fetchone():
             raise ValueError("The source plan is immutable once paid indexing has begun")
-        await plan(folder, folder / "selected-social-bulletin.tar.gz", db, tokenizer)
+        source_parser = parse_inca_xml if args.corpus == "inca" else parse_cass_xml
+        selection = None
+        if args.corpus == "inca":
+            selection = json.loads((folder / "selection-manifest.json").read_text())["items"]
+        await plan(
+            folder, folder / args.package, db, tokenizer,
+            source_parser=source_parser, selection=selection,
+        )
     db.close()
     await engine.dispose()
 
@@ -866,6 +963,8 @@ async def main(args):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--workdir", required=True)
+    parser.add_argument("--corpus", choices=["cass", "inca"], default="cass")
+    parser.add_argument("--package", default="selected-social-bulletin.tar.gz")
     modes = parser.add_mutually_exclusive_group()
     modes.add_argument("--apply", action="store_true")
     modes.add_argument("--verify", action="store_true")

@@ -26,6 +26,7 @@ from app.rag.article_reference import normalize_article_reference
 from app.rag.qdrant_store import COLLECTION_NAME
 from app.rag.search import SearchResult
 from app.rag.source_intent import CODE_SOURCE_LABELS
+from app.services.dila_cass_service import number_aliases
 
 logger = logging.getLogger(__name__)
 
@@ -213,7 +214,17 @@ async def fetch_by_identifiers(
         else reference_source_types(reference_query or "")
     )
     conditions: list[list] = [
-        [FieldCondition(key="numero_pourvoi", match=MatchValue(value=pourvoi))]
+        [Filter(should=[
+            FieldCondition(key="numero_pourvoi", match=MatchAny(any=list(dict.fromkeys([
+                pourvoi,
+                pourvoi.replace(".", ""),
+                "".join(c for c in pourvoi if c.isdigit()),
+            ])))),
+            FieldCondition(
+                key="numero_pourvoi_aliases",
+                match=MatchAny(any=sorted(number_aliases(pourvoi))),
+            ),
+        ])]
         for pourvoi in identifiers.get("numero_pourvoi", [])
     ] + [
         [FieldCondition(key="article_nums", match=MatchAny(any=article_lookup_keys(article)))]
@@ -266,6 +277,9 @@ def _payload_to_result(payload: dict, *, score: float = 0.0) -> SearchResult:
         date_decision=payload.get("date_decision"),
         solution=payload.get("solution"),
         publication=payload.get("publication"),
+        numero_pourvois=payload.get("numero_pourvois"),
+        documentary_topics=payload.get("documentary_topics"),
+        source_url=payload.get("source_url"),
         content_date=payload.get("content_date"),
         idcc=payload.get("idcc"),
         article_nums=payload.get("article_nums"),

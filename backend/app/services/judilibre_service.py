@@ -23,9 +23,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.models.document import Document
+from app.models.document_case_reference import DocumentCaseReference
 from app.rag.norme_hierarchy import DOCUMENT_TYPE_HIERARCHY
 from app.rag.tasks import enqueue_ingestion
-from app.services.dila_cass_service import SOURCE_PREFIX, number_aliases
+from app.services.dila_cass_service import SOURCE_PREFIXES, number_aliases
+from app.services.document_case_references import (
+    ExistingSocialDecisionError,
+    find_existing_social_case,
+    lock_case_references,
+    store_case_references,
+)
 from app.services.jurisprudence_publication import judilibre_publication_label
 
 if TYPE_CHECKING:
@@ -456,6 +463,7 @@ class JudilibreService:
                             storage,
                             source_type=source_type,
                             source_url=source_url,
+                            case_numbers=list(raw.get("numbers") or []) + [decision.numero_pourvoi],
                         )
                         existing_pourvois.add(decision.numero_pourvoi)
                         existing_keys.update(keys)
@@ -464,6 +472,10 @@ class JudilibreService:
                         await enqueue_ingestion(str(doc.id))
                         result.new_ingested += 1
 
+                    except ExistingSocialDecisionError:
+                        await db.rollback()
+                        existing_keys.update(keys)
+                        result.already_exists += 1
                     except Exception as exc:
                         result.errors += 1
                         pourvoi = raw.get("number", raw.get("id", "?"))
@@ -638,7 +650,10 @@ class JudilibreService:
                     Document.retired_at.is_(None),
                     # A DILA publication is audited against its own source.
                     # Its absence from Judilibre cannot establish a withdrawal.
-                    Document.storage_path.not_like(SOURCE_PREFIX + "%"),
+                    *(
+                        Document.storage_path.not_like(prefix + "%")
+                        for prefix in SOURCE_PREFIXES
+                    ),
                 )
             )
         ).all()
@@ -899,9 +914,16 @@ class JudilibreService:
         *,
         source_type: str = "arret_cour_cassation",
         source_url: str | None = None,
+        case_numbers: list[str] | None = None,
     ) -> Document:
         """Create a Document record from a Judilibre decision."""
         hierarchy = DOCUMENT_TYPE_HIERARCHY[source_type]
+        social = source_type == "arret_cour_cassation" and decision.chambre == "Chambre sociale"
+        numbers = case_numbers or [decision.numero_pourvoi]
+        if social:
+            await lock_case_references(db, decision.date_decision, numbers)
+            if await find_existing_social_case(db, decision.date_decision, numbers):
+                raise ExistingSocialDecisionError("Public social case already exists")
 
         # Build display name based on source type
         if source_type == "arret_cour_cassation":
@@ -959,6 +981,9 @@ class JudilibreService:
             source_url=source_url,
         )
         db.add(doc)
+        if social:
+            await db.flush()
+            await store_case_references(db, doc, numbers)
         await db.commit()
         await db.refresh(doc)
         return doc
@@ -986,6 +1011,16 @@ class JudilibreService:
             keys.update(self._social_case_keys([number or ""], day))
             if source_url:
                 urls.add(source_url)
+        references = (await db.execute(
+            select(DocumentCaseReference.number, DocumentCaseReference.decision_date)
+            .join(Document).where(
+                Document.source_type == "arret_cour_cassation",
+                Document.chambre == "Chambre sociale", Document.organisation_id.is_(None),
+                Document.private_dossier_id.is_(None), Document.private_conversation_id.is_(None),
+                Document.retired_at.is_(None),
+            )
+        )).all()
+        keys.update((str(day), number) for number, day in references)
         return keys, urls
 
     async def _get_existing_pourvois(

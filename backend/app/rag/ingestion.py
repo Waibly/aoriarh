@@ -112,6 +112,7 @@ async def _get_embeddings_batch(
     organisation_id: str | None = None,
     document_id: str | None = None,
     user_id: str | None = None,
+    input_type: str | None = None,
 ) -> list[list[float]]:
     """Get dense embeddings for a single batch (max 128 texts) with retry on 429."""
     url = "https://api.voyageai.com/v1/embeddings"
@@ -121,7 +122,10 @@ async def _get_embeddings_batch(
         response = await client.post(
             url,
             headers=headers,
-            json={"input": texts, "model": EMBEDDING_MODEL},
+            json={
+                "input": texts, "model": EMBEDDING_MODEL,
+                **({"input_type": input_type} if input_type else {}),
+            },
             timeout=60.0,
         )
         if response.status_code == 429 and attempt < MAX_RETRIES - 1:
@@ -221,6 +225,9 @@ async def _get_embeddings_with_progress(
                 organisation_id=org_id_str,
                 document_id=doc_id_str,
                 user_id=user_id_str,
+                input_type=(
+                    "document" if doc.storage_path.startswith("common/dila/inca/") else None
+                ),
             )
         async with db_lock:
             done_count += 1
@@ -332,15 +339,25 @@ class IngestionPipeline:
             await self._update_progress(doc, db, 10)
 
             # 5. Clean text
-            from app.services.dila_cass_service import SOURCE_PREFIX, source_chunks
+            from app.services.dila_cass_service import SOURCE_PREFIXES, source_chunks
 
             dila_source = (
                 doc.organisation_id is None
                 and doc.source_type == "arret_cour_cassation"
                 and doc.file_format == "xml"
-                and doc.storage_path.startswith(SOURCE_PREFIX)
+                and doc.storage_path.startswith(SOURCE_PREFIXES)
             )
             cleaned_text = raw_text if dila_source else clean_text(raw_text)
+            dila_metadata = {}
+            if dila_source:
+                from app.services.dila_jurisprudence_metadata import source_metadata
+
+                dila_metadata = source_metadata(file_bytes)
+                if dila_metadata["source_xml_sha256"] != doc.file_hash:
+                    raise ValueError("DILA source hash differs from document metadata")
+                from app.services.document_case_references import store_case_references
+
+                await store_case_references(db, doc, dila_metadata["numero_pourvois"])
 
             if not cleaned_text.strip():
                 logger.warning("Document %s: no text extracted", document_id)
@@ -427,6 +444,8 @@ class IngestionPipeline:
                         dila_source and "<table" in chunk_text
                     ),
                 }
+                if dila_source:
+                    payload.update(dila_metadata)
                 # Propagate CCN IDCC + article metadata into Qdrant payload
                 if doc.source_type in ARTICLE_AWARE_SOURCE_TYPES:
                     idcc_match = re.search(r"IDCC\s+(\d{4})", doc.name)

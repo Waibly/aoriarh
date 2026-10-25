@@ -1930,6 +1930,11 @@ class RAGAgent:
                 if r.publication:
                     juris_parts.append(f"({r.publication})")
                 header += f"Référence : {', '.join(juris_parts)}\n"
+            if r.numero_pourvois and len(r.numero_pourvois) > 1:
+                header += f"Pourvois renseignés par la source : {', '.join(r.numero_pourvois)}\n"
+            if r.documentary_topics:
+                topics = " ; ".join(r.documentary_topics)
+                header += f"Rubriques documentaires officielles : {topics}\n"
 
             significance = publication_significance(r.publication, r.source_type)
             if significance:

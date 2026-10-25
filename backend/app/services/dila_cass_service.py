@@ -18,6 +18,8 @@ import tiktoken
 from lxml import etree
 
 SOURCE_PREFIX = "common/dila/cass/"
+INCA_SOURCE_PREFIX = "common/dila/inca/"
+SOURCE_PREFIXES = (SOURCE_PREFIX, INCA_SOURCE_PREFIX)
 MAX_XML_BYTES = 16 * 1024 * 1024
 _IDENTIFIER = re.compile(r"JURITEXT\d{12}\Z")
 _TABLE_TAG = re.compile(r"</?table(?:\s[^>]*)?>", re.IGNORECASE)
@@ -83,6 +85,7 @@ class CassDecision:
     visible_source_sha256: str
     table_count: int
     topics: tuple[str, ...]
+    publication: str = "Publié au Bulletin"
 
 
 def canonical_number(value: str) -> str | None:
@@ -180,6 +183,27 @@ def render_decision_text(root) -> tuple[str, str, int]:
 
 
 def parse_cass_xml(raw: bytes) -> CassDecision:
+    return _parse_social_xml(raw, published=True)
+
+
+def parse_inca_xml(raw: bytes) -> CassDecision:
+    return _parse_social_xml(raw, published=False)
+
+
+def parse_social_xml(raw: bytes) -> CassDecision:
+    """Read a social XML source; never infer its publication status from prose."""
+    parser = etree.XMLParser(resolve_entities=False, no_network=True, load_dtd=False)
+    if not raw or len(raw) > MAX_XML_BYTES:
+        raise ValueError("dila_invalid_xml_size")
+    root = etree.fromstring(raw, parser)
+    node = root.find("META/META_SPEC/META_JURI_JUDI/PUBLI_BULL")
+    status = node.get("publie") if node is not None else None
+    if status not in {"oui", "non"}:
+        raise ValueError("dila_unknown_publication")
+    return _parse_social_xml(raw, published=status == "oui")
+
+
+def _parse_social_xml(raw: bytes, *, published: bool) -> CassDecision:
     if not raw or len(raw) > MAX_XML_BYTES:
         raise ValueError("dila_invalid_xml_size")
     parser = etree.XMLParser(resolve_entities=False, no_network=True, load_dtd=False)
@@ -192,8 +216,8 @@ def parse_cass_xml(raw: bytes) -> CassDecision:
     ):
         raise ValueError("dila_out_of_social_cassation_scope")
     bulletin = root.find("META/META_SPEC/META_JURI_JUDI/PUBLI_BULL")
-    if bulletin is None or bulletin.get("publie") != "oui":
-        raise ValueError("dila_not_published_in_bulletin")
+    if bulletin is None or bulletin.get("publie") != ("oui" if published else "non"):
+        raise ValueError("dila_not_published_in_bulletin" if published else "dila_not_unpublished")
     primary = root.find("TEXTE/BLOC_TEXTUEL/CONTENU")
     if primary is None or not "".join(primary.itertext()).strip():
         raise ValueError("dila_empty_decision_body")
@@ -219,6 +243,7 @@ def parse_cass_xml(raw: bytes) -> CassDecision:
         visible_source_sha256=visible_digest,
         table_count=table_count,
         topics=tuple("".join(node.itertext()) for node in root.findall("TEXTE/SOMMAIRE/SCT")),
+        publication="Publié au Bulletin" if published else "Inédit",
     )
 
 

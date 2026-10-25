@@ -91,11 +91,12 @@ async def test_enqueue_failure_cannot_create_another_copy_in_the_same_batch(monk
 
 
 @pytest.mark.asyncio
-async def test_judilibre_withdrawal_audit_does_not_treat_dila_absence_as_withdrawal():
+@pytest.mark.parametrize("prefix", ["common/dila/cass/", "common/dila/inca/"])
+async def test_judilibre_withdrawal_audit_does_not_treat_dila_absence_as_withdrawal(prefix):
     async with test_session_factory() as db:
         db.add_all(
             [
-                doc("00-12431", "2002-01-31"),
+                doc("00-12431", "2002-01-31", prefix + "source.xml"),
                 doc("24-12.345", "2026-10-20", "common/judilibre/source.txt"),
             ]
         )
