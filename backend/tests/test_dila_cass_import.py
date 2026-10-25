@@ -450,3 +450,52 @@ async def test_actual_pipeline_preserves_xml_numbers_and_table_chunks(monkeypatc
     assert all(point.payload["source_xml_sha256"] == doc.file_hash for point in points)
     assert all(point.payload["numero_pourvois"] == ["00-12431"] for point in points)
     assert all(point.payload["source_url"] == doc.source_url for point in points)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("failure", [httpx.ConnectError, httpx.ConnectTimeout])
+async def test_pre_send_connection_failure_retries_without_paid_reservation(
+    tmp_path, monkeypatch, failure
+):
+    state = state_db(tmp_path)
+    embedder = Embeddings(tmp_path, state, Tokenizer(), 100000, 1000)
+    response = httpx.Response(
+        200,
+        json={
+            "data": [{"index": 0, "embedding": base64.b64encode(
+                struct.pack("<1024f", *([0.125] * 1024))
+            ).decode()}],
+            "usage": {"total_tokens": 4},
+        },
+        request=httpx.Request("POST", "https://example.test"),
+    )
+    embedder.client.post = AsyncMock(side_effect=[failure("connection failed"), response])
+    monkeypatch.setattr("scripts.maintenance.import_dila_cass.cost_tracker.log", AsyncMock())
+    sleep = AsyncMock(side_effect=lambda _: setattr(embedder, "next_request", 0))
+    monkeypatch.setattr("scripts.maintenance.import_dila_cass.asyncio.sleep", sleep)
+    assert await embedder.get(["text"], ["owner"]) == [[0.125] * 1024]
+    assert embedder.client.post.await_count == 2
+    assert [tuple(row) for row in state.execute(
+        "SELECT status,reserved,actual FROM requests ORDER BY id"
+    )] == [("not_sent", 0, 0), ("success", 4, 4)]
+    await embedder.client.aclose()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("failure", [httpx.ConnectError, httpx.ConnectTimeout])
+async def test_pre_send_connection_retries_stop_after_three_attempts(
+    tmp_path, monkeypatch, failure
+):
+    state = state_db(tmp_path)
+    embedder = Embeddings(tmp_path, state, Tokenizer(), 100000, 1000)
+    embedder.client.post = AsyncMock(side_effect=failure("connection failed"))
+    sleep = AsyncMock(side_effect=lambda _: setattr(embedder, "next_request", 0))
+    monkeypatch.setattr("scripts.maintenance.import_dila_cass.asyncio.sleep", sleep)
+    with pytest.raises(RuntimeError, match="three bounded attempts"):
+        await embedder.get(["text"], ["owner"])
+    assert embedder.client.post.await_count == 3
+    assert tuple(state.execute(
+        "SELECT count(*),sum(reserved),sum(actual) FROM requests"
+    ).fetchone()) == (3, 0, 0)
+    assert set(row[0] for row in state.execute("SELECT status FROM requests")) == {"not_sent"}
+    await embedder.client.aclose()

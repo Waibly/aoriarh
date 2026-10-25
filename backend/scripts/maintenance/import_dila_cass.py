@@ -569,6 +569,23 @@ class Embeddings:
                     flush=True,
                 )
                 return vectors
+            except (httpx.ConnectError, httpx.ConnectTimeout) as exc:
+                # Connection establishment failed before any request body was sent.
+                # Only these pre-send failures retry, within the same three-attempt
+                # bound as 429 responses. Read/write failures remain uncertain below.
+                self.state.execute(
+                    "UPDATE requests SET status='not_sent',reserved=0,actual=0,error=? WHERE id=?",
+                    (type(exc).__name__, request_id),
+                )
+                self.state.commit()
+                print(json.dumps({
+                    "provider_connection_not_sent": True,
+                    "attempt": attempt + 1,
+                    "max_attempts": 3,
+                }), flush=True)
+                if attempt < 2:
+                    await asyncio.sleep(2 * (attempt + 1))
+                continue
             except Exception as exc:
                 self.state.execute(
                     "UPDATE requests SET status=?,error=? WHERE id=?",
@@ -580,7 +597,7 @@ class Embeddings:
                 )
                 self.state.commit()
                 raise
-        raise RuntimeError("Voyage rate limit persisted after three bounded attempts")
+        raise RuntimeError("Voyage request retry limit reached after three bounded attempts")
 
 
 async def run_batches(groups, handler, concurrency):
