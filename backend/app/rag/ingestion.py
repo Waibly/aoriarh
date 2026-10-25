@@ -262,13 +262,16 @@ def _get_sparse_vectors(texts: list[str]) -> list[dict]:
 class IngestionPipeline:
     """Pipeline d'ingestion de documents dans Qdrant."""
 
-    def __init__(self) -> None:
+    embedding_provider = None
+
+    def __init__(self, embedding_provider=None) -> None:
         self.extractor = TextExtractor()
         self.chunker = LegalChunker()
         self.article_chunker = ArticleChunker()
         self.jurisprudence_chunker = JurisprudenceChunker()
         self.storage = StorageService()
         self.qdrant = get_qdrant_client()
+        self.embedding_provider = embedding_provider
         ensure_collection(self.qdrant)
 
     async def _update_progress(self, doc: Document, db: AsyncSession, progress: int) -> None:
@@ -328,7 +331,15 @@ class IngestionPipeline:
             await self._update_progress(doc, db, 10)
 
             # 5. Clean text
-            cleaned_text = clean_text(raw_text)
+            from app.services.dila_cass_service import SOURCE_PREFIX, source_chunks
+
+            dila_source = (
+                doc.organisation_id is None
+                and doc.source_type == "arret_cour_cassation"
+                and doc.file_format == "xml"
+                and doc.storage_path.startswith(SOURCE_PREFIX)
+            )
+            cleaned_text = raw_text if dila_source else clean_text(raw_text)
 
             if not cleaned_text.strip():
                 logger.warning("Document %s: no text extracted", document_id)
@@ -339,7 +350,11 @@ class IngestionPipeline:
 
             # 6. Chunk (route to specialized chunker by source type)
             chunks_meta: list[ChunkWithMeta] | None = None
-            if doc.source_type in JURISPRUDENCE_SOURCE_TYPES:
+            if dila_source:
+                # All source characters and complete table structures survive reindexing.
+                header = self._build_jurisprudence_header(doc) + "\n\n"
+                chunks = [header + part for part in source_chunks(cleaned_text)]
+            elif doc.source_type in JURISPRUDENCE_SOURCE_TYPES:
                 metadata_header = self._build_jurisprudence_header(doc)
                 chunks = self.jurisprudence_chunker.chunk(
                     cleaned_text,
@@ -378,7 +393,8 @@ class IngestionPipeline:
                     raise ValueError("Source maintenance embedding budget exceeded")
 
             # 7. Generate embeddings (dense + sparse) — 15% → 80%
-            dense_embeddings = await _get_embeddings_with_progress(
+            embedding_provider = self.embedding_provider or _get_embeddings_with_progress
+            dense_embeddings = await embedding_provider(
                 chunks, settings.voyage_api_key, doc, db,
                 progress_callback=lambda progress: self._update_progress(doc, db, progress),
             )
@@ -406,7 +422,9 @@ class IngestionPipeline:
                     "norme_niveau": doc.norme_niveau,
                     "norme_poids": doc.norme_poids,
                     "chunk_index": i,
-                    "has_table": contains_markdown_table(chunk_text),
+                    "has_table": contains_markdown_table(chunk_text) or (
+                        dila_source and "<table" in chunk_text
+                    ),
                 }
                 # Propagate CCN IDCC + article metadata into Qdrant payload
                 if doc.source_type in ARTICLE_AWARE_SOURCE_TYPES:

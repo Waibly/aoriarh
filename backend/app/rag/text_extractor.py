@@ -58,11 +58,17 @@ class TextExtractor:
             "docx": self._extract_docx,
             "txt": self._extract_txt,
             "md": self._extract_txt,
+            "xml": self._extract_dila_cass_xml,
         }
         extractor = extractors.get(file_format)
         if not extractor:
             raise ValueError(f"Format non supporté : {file_format}")
         return extractor(file_bytes)
+
+    def _extract_dila_cass_xml(self, file_bytes: bytes) -> str:
+        from app.services.dila_cass_service import parse_cass_xml
+
+        return parse_cass_xml(file_bytes).text
 
     # Above this threshold (in bytes), use fast text extraction instead of layout analysis
     _LARGE_PDF_THRESHOLD = 5 * 1024 * 1024  # 5 MB
