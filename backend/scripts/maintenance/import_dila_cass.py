@@ -327,6 +327,40 @@ async def plan(folder, package, db, tokenizer):
         raise ValueError("Source parsing errors require investigation")
 
 
+def reconcile_exact_duplicates(folder, db):
+    """Hold redundant publications, retaining distinct case references or dates.
+
+    Keep their slots in paid batch ordering so a resumed batch has the same
+    inputs. Never remove or silently rewrite a previously indexed document.
+    """
+    seen = {}
+    duplicates = []
+    rows = db.execute(
+        "SELECT id,meta,status,disposition FROM items "
+        "WHERE disposition IN ('new','review_exact_duplicate') ORDER BY id"
+    ).fetchall()
+    for row in rows:
+        meta = json.loads(row["meta"])
+        references = tuple(
+            sorted({alias for number in meta["numbers"] for alias in number_aliases(number)})
+        )
+        key = (meta["date"], references, meta["text_sha256"])
+        previous = seen.get(key)
+        if previous is None:
+            seen[key] = row["id"]
+            continue
+        if row["status"] == "indexed":
+            raise ValueError("An indexed exact duplicate requires explicit investigation")
+        duplicates.append({"source_id": row["id"], "same_text_and_identity_as": previous})
+        db.execute(
+            "UPDATE items SET disposition='review_exact_duplicate',status='excluded' WHERE id=?",
+            (row["id"],),
+        )
+    db.commit()
+    dump(folder / "exact-duplicates.json", duplicates)
+    return duplicates
+
+
 class Embeddings:
     def __init__(self, folder, state, tokenizer, tokens_per_minute, max_total_tokens):
         self.folder, self.state, self.tokenizer = folder, state, tokenizer
@@ -486,17 +520,23 @@ async def apply(folder, db, tokenizer, args):
         if not locked:
             raise ValueError("A CASS backfill is already active")
         try:
+            reconcile_exact_duplicates(folder, db)
             # Keep paid batches stable across restarts, including a partially
             # published group. Completed groups are skipped without paid calls.
-            rows = db.execute("SELECT * FROM items WHERE disposition='new' ORDER BY id").fetchall()
+            rows = db.execute(
+                "SELECT * FROM items WHERE disposition IN ('new','review_exact_duplicate') "
+                "ORDER BY id"
+            ).fetchall()
             if args.limit:
                 rows = rows[: args.limit]
             for offset in range(0, len(rows), 32):
                 group = rows[offset : offset + 32]
-                if all(row["status"] == "indexed" for row in group):
+                if all(row["status"] in {"indexed", "excluded"} for row in group):
                     continue
                 prepared = []
                 for row in group:
+                    if row["disposition"] == "review_exact_duplicate":
+                        continue
                     decision = parse_cass_xml(row["xml"])
                     doc = doc_for(decision)
                     if str(doc.id) != row["document_id"]:

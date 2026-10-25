@@ -240,6 +240,44 @@ async def test_reconciliation_keeps_different_decision_dates_and_isolates_duplic
     assert json.loads((tmp_path / "plan.json").read_text())["parser_errors"] == []
 
 
+def test_exact_duplicate_reconciliation_preserves_distinct_cases_and_batch_slots(tmp_path):
+    from scripts.maintenance.import_dila_cass import reconcile_exact_duplicates
+
+    state = state_db(tmp_path)
+    for identifier, day, numbers in [
+        ("a", "1967-10-04", []),
+        ("b", "1967-10-04", []),
+        ("c", "1967-10-04", ["79-15.417"]),
+        ("d", "1967-10-04", ["79-15.735"]),
+        ("e", "1968-10-04", []),
+    ]:
+        state.execute(
+            "INSERT INTO items VALUES (?,?,?,?,?,?,NULL)",
+            (
+                identifier,
+                b"xml",
+                json.dumps({"date": day, "numbers": numbers, "text_sha256": "same"}),
+                identifier,
+                "new",
+                "pending",
+            ),
+        )
+    state.commit()
+    assert reconcile_exact_duplicates(tmp_path, state) == [
+        {"source_id": "b", "same_text_and_identity_as": "a"}
+    ]
+    assert state.execute("SELECT disposition FROM items WHERE id='b'").fetchone()[0] == (
+        "review_exact_duplicate"
+    )
+    assert [
+        row[0]
+        for row in state.execute(
+            "SELECT id FROM items WHERE disposition IN ('new','review_exact_duplicate') ORDER BY id"
+        )
+    ] == list("abcde")
+    assert len(reconcile_exact_duplicates(tmp_path, state)) == 1
+
+
 @pytest.mark.asyncio
 async def test_actual_pipeline_preserves_xml_numbers_and_table_chunks(monkeypatch):
     from app.models.document import Document
