@@ -25,7 +25,8 @@ dependencies = [
     "python-multipart>=0.0.31",
     "httpx>=0.28.0",
     "curl_cffi==0.16.3",
-    "pymupdf4llm>=0.0.17",
+    # 2.x is an empty compatibility package; keep the production-tested PDF stack.
+    "pymupdf4llm==1.28.2",
     "python-docx>=1.1.0",
     "fastembed>=0.8.0",
     "pillow>=12.3.0",

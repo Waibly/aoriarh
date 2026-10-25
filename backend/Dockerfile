@@ -11,7 +11,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 COPY pyproject.toml .
 RUN python -m pip install --no-cache-dir --upgrade "pip>=26.1.2" "setuptools>=83.0" \
-    && pip install --no-cache-dir .
+    && pip install --no-cache-dir . \
+    && python -c "import pymupdf; import pymupdf4llm"
 
 # Pre-download the BM25 model so the worker never depends on HuggingFace
 # being reachable at runtime. fastembed caches under ~/.cache/fastembed
