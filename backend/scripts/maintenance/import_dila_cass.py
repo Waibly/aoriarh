@@ -1032,7 +1032,7 @@ if __name__ == "__main__":
     parser.add_argument("--max-total-tokens", type=int, default=250_000_000)
     args = parser.parse_args()
     if (
-        not 1 <= args.concurrency <= 4
+        not 1 <= args.concurrency <= 8
         or args.tokens_per_minute < 1
         or args.max_total_tokens < 1
         or (args.limit is not None and args.limit < 1)
