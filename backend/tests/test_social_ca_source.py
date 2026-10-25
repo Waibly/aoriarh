@@ -82,6 +82,7 @@ def test_source_contract_errors_never_fabricate_a_date_reference_or_body(changes
         ("source_url", "https://example.invalid/other"),
         ("file_hash", "0" * 64),
         ("chambre", "Other chamber"),
+        ("solution", "Changed source solution"),
         ("id", uuid.UUID(int=1)),
         ("private_conversation_id", uuid.UUID(int=2)),
     ],

@@ -148,6 +148,11 @@ def verified_ca_source(doc, body, sidecar):
         "juridiction",
         "chambre",
         "numero_pourvoi",
+        "formation",
+        "solution",
+        "publication",
+        "file_format",
+        "file_size",
     ]:
         if getattr(doc, field) != getattr(expected, field):
             raise ValueError("CA document identity differs from source: " + field)

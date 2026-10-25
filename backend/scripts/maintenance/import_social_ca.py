@@ -366,7 +366,13 @@ async def apply(root, db, tokenizer, args):
                             session.add(doc)
                             await session.commit()
                         else:
-                            verified_ca_source(current, source.text.encode(), source.source_bytes)
+                            current_body = storage.get_file_bytes_bounded(
+                                current.storage_path, len(source.text.encode()) + 1
+                            )
+                            current_sidecar = storage.get_file_bytes_bounded(
+                                current.storage_path + ".source.json", len(source.source_bytes) + 1
+                            )
+                            verified_ca_source(current, current_body, current_sidecar)
                             if current.retired_at is not None:
                                 raise ValueError("CA source was retired during import")
                     prepared.append((row, chunks, []))
