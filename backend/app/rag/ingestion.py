@@ -264,15 +264,16 @@ class IngestionPipeline:
 
     embedding_provider = None
 
-    def __init__(self, embedding_provider=None) -> None:
+    def __init__(self, embedding_provider=None, *, storage=None, qdrant_client=None) -> None:
         self.extractor = TextExtractor()
         self.chunker = LegalChunker()
         self.article_chunker = ArticleChunker()
         self.jurisprudence_chunker = JurisprudenceChunker()
-        self.storage = StorageService()
-        self.qdrant = get_qdrant_client()
+        self.storage = storage if storage is not None else StorageService()
+        self.qdrant = qdrant_client if qdrant_client is not None else get_qdrant_client()
         self.embedding_provider = embedding_provider
-        ensure_collection(self.qdrant)
+        if qdrant_client is None:
+            ensure_collection(self.qdrant)
 
     async def _update_progress(self, doc: Document, db: AsyncSession, progress: int) -> None:
         await self._update_current(doc, db, indexation_progress=progress)

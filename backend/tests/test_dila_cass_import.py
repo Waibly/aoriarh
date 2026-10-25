@@ -186,6 +186,47 @@ async def test_budget_is_reserved_before_call_and_survives_restart(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_transport_timeout_requires_investigation_before_another_paid_call(tmp_path):
+    state = state_db(tmp_path)
+    embedder = Embeddings(tmp_path, state, Tokenizer(), 100000, 1000)
+    embedder.client.post = AsyncMock(side_effect=httpx.ReadTimeout("timeout"))
+    with pytest.raises(httpx.ReadTimeout):
+        await embedder.get(["text"], ["owner"])
+    assert state.execute("SELECT status FROM requests").fetchone()[0] == "uncertain"
+    embedder.next_request = 0
+    with pytest.raises(ValueError, match="uncertain paid request"):
+        await embedder.get(["text"], ["owner"])
+    assert embedder.client.post.await_count == 1
+    await embedder.client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_concurrent_batches_settle_in_flight_work_and_stop_after_failure():
+    import asyncio
+
+    from scripts.maintenance.import_dila_cass import run_batches
+
+    started = []
+    settled = []
+    both_started = asyncio.Event()
+
+    async def handler(group):
+        started.append(group)
+        if len(started) == 2:
+            both_started.set()
+        await both_started.wait()
+        if group == 0:
+            raise ValueError("technical failure")
+        await asyncio.sleep(0)
+        settled.append(group)
+
+    with pytest.raises(ValueError, match="technical failure"):
+        await run_batches(range(10), handler, 2)
+    assert started == [0, 1]
+    assert settled == [1]
+
+
+@pytest.mark.asyncio
 async def test_reconciliation_keeps_different_decision_dates_and_isolates_duplicates(
     tmp_path, monkeypatch
 ):

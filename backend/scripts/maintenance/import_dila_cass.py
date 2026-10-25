@@ -31,7 +31,7 @@ from app.core.database import async_session_factory, engine
 from app.models.document import Document
 from app.rag.config import EMBEDDING_MODEL
 from app.rag.ingestion import IngestionPipeline
-from app.rag.qdrant_store import COLLECTION_NAME, get_qdrant_client
+from app.rag.qdrant_store import COLLECTION_NAME, ensure_collection, get_qdrant_client
 from app.services.cost_tracker import cost_tracker
 from app.services.dila_cass_service import (
     SOURCE_PREFIX,
@@ -367,6 +367,7 @@ class Embeddings:
         self.tokens_per_minute = tokens_per_minute
         self.max_total_tokens = max_total_tokens
         self.next_request = 0.0
+        self.pacing_lock = asyncio.Lock()
         self.client = httpx.AsyncClient(timeout=90)
         (folder / "embedding-cache").mkdir(exist_ok=True)
 
@@ -399,14 +400,25 @@ class Embeddings:
             ).fetchone()[0]
             if reserved + estimated > self.max_total_tokens:
                 raise ValueError("Explicit import token budget reached; state is preserved")
-            await asyncio.sleep(max(0, self.next_request - time.monotonic()))
-            self.next_request = time.monotonic() + max(2, 60 * estimated / self.tokens_per_minute)
+            async with self.pacing_lock:
+                while self.next_request > time.monotonic():
+                    await asyncio.sleep(self.next_request - time.monotonic())
+                self.next_request = time.monotonic() + max(
+                    2, 60 * estimated / self.tokens_per_minute
+                )
+                # Other concurrent groups may have reserved their request while
+                # this group waited for its provider slot.
+                reserved = self.state.execute(
+                    "SELECT coalesce(sum(reserved),0) FROM requests"
+                ).fetchone()[0]
+                if reserved + estimated > self.max_total_tokens:
+                    raise ValueError("Explicit import token budget reached; state is preserved")
             request_id = digest + ":" + str(attempt)
             previous = self.state.execute(
                 "SELECT status FROM requests WHERE id=?", (request_id,)
             ).fetchone()
             if previous is not None:
-                if previous[0] in {"in_flight", "success"}:
+                if previous[0] in {"in_flight", "success", "uncertain"}:
                     raise ValueError("Uncached or uncertain paid request requires investigation")
                 continue
             self.state.execute(
@@ -501,16 +513,44 @@ class Embeddings:
                 return vectors
             except Exception as exc:
                 self.state.execute(
-                    "UPDATE requests SET status='error',error=? WHERE id=?",
-                    (type(exc).__name__, request_id),
+                    "UPDATE requests SET status=?,error=? WHERE id=?",
+                    (
+                        "error" if isinstance(exc, httpx.HTTPStatusError) else "uncertain",
+                        type(exc).__name__,
+                        request_id,
+                    ),
                 )
                 self.state.commit()
                 raise
         raise RuntimeError("Voyage rate limit persisted after three bounded attempts")
 
 
+async def run_batches(groups, handler, concurrency):
+    """Stop taking work after an error, allowing paid in-flight work to settle."""
+    pending = iter(groups)
+    failed = asyncio.Event()
+
+    async def worker():
+        while not failed.is_set():
+            group = next(pending, None)
+            if group is None:
+                return
+            try:
+                await handler(group)
+            except Exception:
+                failed.set()
+                raise
+
+    results = await asyncio.gather(*(worker() for _ in range(concurrency)), return_exceptions=True)
+    for result in results:
+        if isinstance(result, Exception):
+            raise result
+
+
 async def apply(folder, db, tokenizer, args):
     storage = StorageService()
+    qdrant = get_qdrant_client()
+    ensure_collection(qdrant)
     embedder = Embeddings(folder, db, tokenizer, args.tokens_per_minute, args.max_total_tokens)
     stats = Counter()
     if shutil.disk_usage(folder).free < 20 * 2**30:
@@ -529,10 +569,11 @@ async def apply(folder, db, tokenizer, args):
             ).fetchall()
             if args.limit:
                 rows = rows[: args.limit]
-            for offset in range(0, len(rows), 32):
-                group = rows[offset : offset + 32]
+            semaphore = asyncio.Semaphore(6)
+
+            async def process_group(group):
                 if all(row["status"] in {"indexed", "excluded"} for row in group):
-                    continue
+                    return
                 prepared = []
                 for row in group:
                     if row["disposition"] == "review_exact_duplicate":
@@ -611,7 +652,6 @@ async def apply(folder, db, tokenizer, args):
                     vectors = await embedder.get(texts, owners)
                     for vector, location in zip(vectors, locations, strict=True):
                         prepared[location][2].append(vector)
-                semaphore = asyncio.Semaphore(3)
 
                 async def publish(item):
                     row, chunks, vectors = item
@@ -624,7 +664,9 @@ async def apply(folder, db, tokenizer, args):
                         return vectors
 
                     async with semaphore, async_session_factory() as session:
-                        pipeline = IngestionPipeline(embedding_provider=cached)
+                        pipeline = IngestionPipeline(
+                            embedding_provider=cached, storage=storage, qdrant_client=qdrant
+                        )
                         doc = await session.get(Document, uuid.UUID(row["document_id"]))
                         await pipeline.ingest(doc.id, session, expected_source=doc.storage_path)
                         await session.refresh(doc)
@@ -650,14 +692,15 @@ async def apply(folder, db, tokenizer, args):
                         )
                         stats["indexed"] += 1
                 db.commit()
+                remaining = db.execute(
+                    "SELECT count(*) FROM items WHERE disposition='new' AND status!='indexed'"
+                ).fetchone()[0]
                 dump(
                     folder / "progress.json",
-                    {"counts": dict(stats), "remaining": len(rows) - offset - len(group)},
+                    {"counts": dict(stats), "remaining": remaining},
                 )
                 print(
-                    json.dumps(
-                        {"published": dict(stats), "remaining": len(rows) - offset - len(group)}
-                    ),
+                    json.dumps({"published": dict(stats), "remaining": remaining}),
                     flush=True,
                 )
                 if stats["errors"]:
@@ -666,6 +709,9 @@ async def apply(folder, db, tokenizer, args):
                     )
                 if shutil.disk_usage(folder).free < 20 * 2**30:
                     raise ValueError("Import paused before disk reserve was exhausted")
+
+            groups = [rows[offset : offset + 32] for offset in range(0, len(rows), 32)]
+            await run_batches(groups, process_group, args.concurrency)
         finally:
             await embedder.client.aclose()
 
@@ -803,11 +849,13 @@ if __name__ == "__main__":
     modes.add_argument("--apply", action="store_true")
     modes.add_argument("--verify", action="store_true")
     parser.add_argument("--limit", type=int)
+    parser.add_argument("--concurrency", type=int, default=3)
     parser.add_argument("--tokens-per-minute", type=int, default=300_000)
     parser.add_argument("--max-total-tokens", type=int, default=250_000_000)
     args = parser.parse_args()
     if (
-        args.tokens_per_minute < 1
+        not 1 <= args.concurrency <= 4
+        or args.tokens_per_minute < 1
         or args.max_total_tokens < 1
         or (args.limit is not None and args.limit < 1)
     ):
