@@ -257,29 +257,55 @@ def topic_scope(topics: tuple[str, ...]) -> str:
         "AGRICULTURE ACCIDENT DU TRAVAIL",
         "AGRICULTURE ACCIDENTS DU TRAVAIL",
     )
-    normalized = []
+    hierarchies = []
     for topic in topics:
-        # Formatting of the publisher's headings: bullets, 1°, 2), line breaks.
-        for segment in topic.split(" - "):
+        segments = []
+        # Retain the publisher's hierarchy: a leaf mentioning a profession or
+        # work does not turn a housing or rural-lease case into employment law.
+        for segment in re.split(r"\s+-\s+", topic):
             heading = "".join(
                 character
                 for character in unicodedata.normalize("NFKD", segment.upper())
                 if not unicodedata.combining(character)
             )
             heading = " ".join(re.findall(r"[A-Z]+", heading))
-            heading = re.sub(r"^(?:(?:O|ER|DEG) )+", "", heading)
-            normalized.append(heading)
-    for heading in normalized:
-        if any(heading == family or heading.startswith(family + " ") for family in families):
-            return "admitted"
-        if heading.startswith("SECURITE SOCIALE") and "NON SALARIE" not in heading:
-            return "admitted"
+            heading = re.sub(r"^(?:(?:O|ER|EME|DEG) )+", "", heading)
+            segments.append(heading)
+        if segments:
+            hierarchies.append(segments)
+    roots = [segments[0] for segments in hierarchies]
+    strong_nested_families = (
+        "CONTRAT DE TRAVAIL",
+        "CONVENTIONS COLLECTIVES",
+        "PRUD HOMMES",
+        "REPRESENTATION DES SALARIES",
+        "STATUT COLLECTIF DU TRAVAIL",
+        "ELECTIONS PROFESSIONNELLES",
+        "CONSEIL DE PRUD HOMMES",
+        "COMITE SOCIAL ET ECONOMIQUE",
+        "JOURNALISTE PROFESSIONNEL",
+    )
+
+    def belongs(heading, family):
+        return heading == family or heading.startswith(family + " ")
+
+    if any(belongs(root, family) for root in roots for family in families) or any(
+        belongs(heading, family)
+        for segments in hierarchies
+        for heading in segments[1:]
+        for family in strong_nested_families
+    ):
+        return "admitted"
     if any(
-        heading.startswith(("BAIL ", "BAUX ", "JUGE DES LOYERS", "METAYAGE"))
-        or "NON SALARIE" in heading
-        for heading in normalized
+        root.startswith(("BAIL ", "BAUX ", "JUGE DES LOYERS", "METAYAGE")) for root in roots
+    ) or any(
+        "NON SALARIE" in heading or "PROFESSIONS LIBERALES" in heading
+        for segments in hierarchies
+        for heading in segments
     ):
         return "review_outside_or_mixed_scope"
+    if any(root.startswith("SECURITE SOCIALE") for root in roots):
+        return "admitted"
     return "review_generic_or_missing_topic"
 
 

@@ -142,6 +142,32 @@ def test_scope_uses_official_headings_and_retains_ambiguous_records_for_review()
     assert topic_scope(()) == "review_generic_or_missing_topic"
     assert topic_scope(("BAIL A LOYER", "CONTRAT DE TRAVAIL")) == "admitted"
     assert topic_scope(("FRANCE D'OUTRE-MER - TERRITOIRES - CONTRAT DE TRAVAIL",)) == "admitted"
+    assert (
+        topic_scope(("BAIL A FERME - REPRISE - TRAVAIL DE SURVEILLANCE ET DE DIRECTION",))
+        == "review_outside_or_mixed_scope"
+    )
+    assert (
+        topic_scope(("BAIL A LOYER - BESOINS PROFESSIONNELS - REPRESENTANT DE COMMERCE",))
+        == "review_outside_or_mixed_scope"
+    )
+    assert (
+        topic_scope(
+            (
+                "SECURITE SOCIALE - PENSION - NON-SALARIES",
+                "SECURITE SOCIALE CONTENTIEUX",
+            )
+        )
+        == "review_outside_or_mixed_scope"
+    )
+    assert (
+        topic_scope(
+            (
+                "SECURITE SOCIALE, ASSURANCES DES NON-SALARIES - PENSION",
+                "CONTRAT DE TRAVAIL - ASSUJETTISSEMENT",
+            )
+        )
+        == "admitted"
+    )
 
 
 class Tokenizer:

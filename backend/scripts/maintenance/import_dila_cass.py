@@ -139,19 +139,6 @@ async def plan(folder, package, db, tokenizer):
             for doc in existing
         ],
     )
-    source_aliases = set()
-    source_file = folder / "source-inventory.sqlite3"
-    if source_file.exists():
-        source = sqlite3.connect(source_file)
-        complete = source.execute("SELECT value FROM state WHERE key='complete'").fetchone()
-        if complete is None or complete[0] != "1":
-            raise ValueError("Official source inventory is incomplete")
-        for (meta,) in source.execute("SELECT meta FROM items WHERE chamber='soc'"):
-            row = json.loads(meta)
-            source_aliases.update(
-                identities(row.get("numbers") or [row.get("number") or ""], row["decision_date"])
-            )
-        source.close()
     counts = Counter()
     topics = Counter()
     tokens = 0
@@ -232,12 +219,6 @@ async def plan(folder, package, db, tokenizer):
             for key in aliases:
                 matches.update(by_alias.get(key, set()))
             scope = topic_scope(decision.topics)
-            if (
-                scope == "review_generic_or_missing_topic"
-                and aliases & source_aliases
-                and decision.decision_date.year >= 1970
-            ):
-                scope = "admitted_reconciled_official_social"
             conflicts = {seen_aliases[key] for key in aliases if key in seen_aliases}
             if len(matches) > 1:
                 disposition = "review_existing_identity_conflict"
@@ -337,7 +318,7 @@ def reconcile_exact_duplicates(folder, db):
     duplicates = []
     rows = db.execute(
         "SELECT id,meta,status,disposition FROM items "
-        "WHERE disposition IN ('new','review_exact_duplicate') ORDER BY id"
+        "WHERE disposition IN ('new','review_exact_duplicate','review_scope') ORDER BY id"
     ).fetchall()
     for row in rows:
         meta = json.loads(row["meta"])
@@ -564,7 +545,8 @@ async def apply(folder, db, tokenizer, args):
             # Keep paid batches stable across restarts, including a partially
             # published group. Completed groups are skipped without paid calls.
             rows = db.execute(
-                "SELECT * FROM items WHERE disposition IN ('new','review_exact_duplicate') "
+                "SELECT * FROM items WHERE disposition IN "
+                "('new','review_exact_duplicate','review_scope') "
                 "ORDER BY id"
             ).fetchall()
             if args.limit:
@@ -572,11 +554,13 @@ async def apply(folder, db, tokenizer, args):
             semaphore = asyncio.Semaphore(6)
 
             async def process_group(group):
+                if (folder / "STOP").exists():
+                    raise ValueError("Operator stop requested; in-flight batches will settle")
                 if all(row["status"] in {"indexed", "excluded"} for row in group):
                     return
                 prepared = []
                 for row in group:
-                    if row["disposition"] == "review_exact_duplicate":
+                    if row["disposition"] in {"review_exact_duplicate", "review_scope"}:
                         continue
                     decision = parse_cass_xml(row["xml"])
                     doc = doc_for(decision)
