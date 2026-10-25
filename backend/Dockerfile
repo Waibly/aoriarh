@@ -26,7 +26,7 @@ COPY . .
 RUN useradd --create-home --uid 10001 aoria \
     && mkdir -p /home/aoria/.cache /var/lib/aoria-incidents \
     && cp -a /root/.cache/. /home/aoria/.cache/ \
-    && chown -R aoria:aoria /app /home/aoria/.cache /var/lib/aoria-incidents
+    && chown -R aoria:aoria /app /home/aoria/.cache /tmp/fastembed_cache /var/lib/aoria-incidents
 
 USER aoria
 
