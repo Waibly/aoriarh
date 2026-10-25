@@ -15,6 +15,7 @@ import time
 import uuid
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
+from typing import TYPE_CHECKING
 
 import httpx
 from sqlalchemy import select
@@ -24,6 +25,10 @@ from app.core.config import settings
 from app.models.document import Document
 from app.rag.norme_hierarchy import DOCUMENT_TYPE_HIERARCHY
 from app.rag.tasks import enqueue_ingestion
+from app.services.dila_cass_service import SOURCE_PREFIX, number_aliases
+
+if TYPE_CHECKING:
+    from app.services.storage_service import StorageService
 
 logger = logging.getLogger(__name__)
 
@@ -40,7 +45,9 @@ _API_THROTTLE = 0.3
 # Valid Cour de cassation chamber codes per Judilibre API
 # (the API rejects anything else with 400). Source: live probe of /export
 # error response → "[pl,mi,civ1,civ2,civ3,comm,soc,cr,creun,ordo,allciv,other]"
-CC_CHAMBERS = {"pl", "mi", "civ1", "civ2", "civ3", "comm", "soc", "cr", "creun", "ordo", "allciv", "other"}
+CC_CHAMBERS = {
+    "pl", "mi", "civ1", "civ2", "civ3", "comm", "soc", "cr", "creun", "ordo", "allciv", "other"
+}
 
 # Sources sélectionnables depuis l'UI admin pour la sync personnalisée.
 # Chaque entrée porte tout ce dont l'API et le worker ont besoin pour
@@ -307,8 +314,7 @@ class JudilibreService:
         if jurisdiction == "cc" and chamber not in CC_CHAMBERS:
             result.errors = 1
             result.error_messages = [
-                f"Code de chambre invalide pour Cass : '{chamber}'. "
-                f"Valides : {sorted(CC_CHAMBERS)}"
+                f"Code de chambre invalide pour Cass : '{chamber}'. Valides : {sorted(CC_CHAMBERS)}"
             ]
             return result
         if jurisdiction not in {"cc", "ca", "tj", "tcom"}:
@@ -326,7 +332,17 @@ class JudilibreService:
             date_start = date(date_end.year - 3, date_end.month, date_end.day)
 
         # Load existing pourvois for deduplication (per source_type)
-        existing_pourvois = await self._get_existing_pourvois(db, source_type=source_type)
+        social_cassation = (
+            jurisdiction == "cc" and chamber == "soc" and source_type == "arret_cour_cassation"
+        )
+        existing_keys, existing_urls = (
+            await self._get_existing_social_cassation(db) if social_cassation else (set(), set())
+        )
+        existing_pourvois = (
+            set()
+            if social_cassation
+            else await self._get_existing_pourvois(db, source_type=source_type)
+        )
 
         # Lazy-init storage service once
         from app.services.storage_service import StorageService
@@ -369,13 +385,22 @@ class JudilibreService:
                     result.total_fetched = total
                     if jurisdiction == "cc":
                         logger.info(
-                            "Judilibre sync: %d decisions found (%s → %s, juri=cc, chamber=%s, pub=%s)",
-                            total, date_start, date_end, chamber, publication,
+                            "Judilibre sync: %d decisions found "
+                            "(%s → %s, juri=cc, chamber=%s, pub=%s)",
+                            total,
+                            date_start,
+                            date_end,
+                            chamber,
+                            publication,
                         )
                     else:
                         logger.info(
                             "Judilibre sync: %d decisions found (%s → %s, juri=%s, pub=%s)",
-                            total, date_start, date_end, jurisdiction, publication,
+                            total,
+                            date_start,
+                            date_end,
+                            jurisdiction,
+                            publication,
                         )
 
                 items = data.get("results", [])
@@ -387,6 +412,11 @@ class JudilibreService:
                         break
 
                     try:
+                        if social_cassation and (
+                            raw.get("jurisdiction") != "cc" or raw.get("chamber") != "soc"
+                        ):
+                            result.filtered_out += 1
+                            continue
                         decision = self._parse_decision(raw)
                         if decision is None:
                             result.errors += 1
@@ -399,15 +429,38 @@ class JudilibreService:
                             result.errors += 1
                             continue
 
-                        if decision.numero_pourvoi in existing_pourvois:
+                        source_url = None
+                        keys = set()
+                        if social_cassation:
+                            keys = self._social_case_keys(
+                                list(raw.get("numbers") or []) + [decision.numero_pourvoi],
+                                decision.date_decision,
+                            )
+                            identifier = raw.get("id") or ""
+                            if re.fullmatch(r"[0-9a-fA-F]{24}", identifier):
+                                source_url = "https://www.courdecassation.fr/decision/" + identifier
+                        duplicate = (
+                            bool(keys & existing_keys) or source_url in existing_urls
+                            if social_cassation
+                            else decision.numero_pourvoi in existing_pourvois
+                        )
+                        if duplicate:
                             result.already_exists += 1
                             continue
 
                         doc = await self._create_document(
-                            db, decision, user_id, storage, source_type=source_type
+                            db,
+                            decision,
+                            user_id,
+                            storage,
+                            source_type=source_type,
+                            source_url=source_url,
                         )
-                        await enqueue_ingestion(str(doc.id))
                         existing_pourvois.add(decision.numero_pourvoi)
+                        existing_keys.update(keys)
+                        if source_url:
+                            existing_urls.add(source_url)
+                        await enqueue_ingestion(str(doc.id))
                         result.new_ingested += 1
 
                     except Exception as exc:
@@ -427,8 +480,10 @@ class JudilibreService:
 
         logger.info(
             "Judilibre sync completed: %d total, %d new, %d existing, %d errors",
-            result.total_fetched, result.new_ingested,
-            result.already_exists, result.errors,
+            result.total_fetched,
+            result.new_ingested,
+            result.already_exists,
+            result.errors,
         )
         return result
 
@@ -574,20 +629,22 @@ class JudilibreService:
                     Document.juridiction,
                 ).where(
                     Document.organisation_id.is_(None),
-                    Document.source_type.in_(
-                        ["arret_cour_cassation", "arret_cour_appel"]
-                    ),
+                    Document.source_type.in_(["arret_cour_cassation", "arret_cour_appel"]),
                     Document.numero_pourvoi.isnot(None),
                     Document.numero_pourvoi != "",
+                    Document.private_dossier_id.is_(None),
+                    Document.private_conversation_id.is_(None),
+                    Document.retired_at.is_(None),
+                    # A DILA publication is audited against its own source.
+                    # Its absence from Judilibre cannot establish a withdrawal.
+                    Document.storage_path.not_like(SOURCE_PREFIX + "%"),
                 )
             )
         ).all()
 
         cass = [r for r in rows if r.source_type == "arret_cour_cassation"]
         ca = [r for r in rows if r.source_type == "arret_cour_appel"]
-        logger.info(
-            "find_deleted_decisions: %d Cass + %d CA à vérifier", len(cass), len(ca)
-        )
+        logger.info("find_deleted_decisions: %d Cass + %d CA à vérifier", len(cass), len(ca))
 
         async with httpx.AsyncClient(timeout=_REQUEST_TIMEOUT) as client:
             # === Cour de cassation : recherche par numéro de pourvoi ===
@@ -642,7 +699,10 @@ class JudilibreService:
         logger.info(
             "find_deleted_decisions terminé : %d vérifiées, %d présentes, "
             "%d disparues, %d indéterminées",
-            result.checked, result.present, len(result.gone), result.unknown,
+            result.checked,
+            result.present,
+            len(result.gone),
+            result.unknown,
         )
         return result
 
@@ -841,10 +901,9 @@ class JudilibreService:
         storage: "StorageService",
         *,
         source_type: str = "arret_cour_cassation",
+        source_url: str | None = None,
     ) -> Document:
         """Create a Document record from a Judilibre decision."""
-        from app.services.storage_service import StorageService  # noqa: F811
-
         hierarchy = DOCUMENT_TYPE_HIERARCHY[source_type]
 
         # Build display name based on source type
@@ -864,9 +923,7 @@ class JudilibreService:
             )
         elif source_type == "arret_conseil_etat":
             name = (
-                f"CE, "
-                f"{decision.date_decision.strftime('%d/%m/%Y')}, "
-                f"n° {decision.numero_pourvoi}"
+                f"CE, {decision.date_decision.strftime('%d/%m/%Y')}, n° {decision.numero_pourvoi}"
             )
         else:
             name = (
@@ -902,11 +959,37 @@ class JudilibreService:
             date_decision=decision.date_decision,
             solution=decision.solution,
             publication=decision.publication,
+            source_url=source_url,
         )
         db.add(doc)
         await db.commit()
         await db.refresh(doc)
         return doc
+
+    @staticmethod
+    def _social_case_keys(numbers, day):
+        return {(str(day), alias) for number in numbers for alias in number_aliases(number)}
+
+    async def _get_existing_social_cassation(self, db: AsyncSession):
+        rows = (
+            await db.execute(
+                select(Document.numero_pourvoi, Document.date_decision, Document.source_url).where(
+                    Document.source_type == "arret_cour_cassation",
+                    Document.chambre == "Chambre sociale",
+                    Document.organisation_id.is_(None),
+                    Document.private_dossier_id.is_(None),
+                    Document.private_conversation_id.is_(None),
+                    Document.retired_at.is_(None),
+                )
+            )
+        ).all()
+        keys = set()
+        urls = set()
+        for number, day, source_url in rows:
+            keys.update(self._social_case_keys([number or ""], day))
+            if source_url:
+                urls.add(source_url)
+        return keys, urls
 
     async def _get_existing_pourvois(
         self, db: AsyncSession, *, source_type: str = "arret_cour_cassation"
