@@ -311,3 +311,101 @@ async def test_raised_budget_resumes_existing_daily_ledger(monkeypatch):
     assert not result['errors']
     assert result['daily_documents_reserved'] == 21
     pipeline.ingest.assert_awaited_once()
+
+
+@pytest.mark.parametrize(
+    "nac", ["80A", "80B", "80C", "80D", "80E", "80F", "80G", "80H", "80I",
+            "80X", "82K", "83D", "83E", "83F", "84F", "84G", "84H", "84I", "87X"]
+)
+def test_historical_and_additional_official_employment_codes_remain_admitted(nac):
+    assert admitted(dict(META, nac=nac, chamber="1re chambre"))
+
+
+@pytest.mark.parametrize("nac", [None, "", [], {}, "88C", "89H", "80UNKNOWN", "14G"])
+def test_ambiguous_sources_stay_in_review_without_keyword_admission(nac):
+    from app.services.social_ca_scope import classify_ca_scope
+
+    raw = dict(META, nac=nac, text="Contrat de travail, salaire, licenciement", chamber="Sociale")
+    original = copy.deepcopy(raw)
+    result = classify_ca_scope(raw)
+    assert result["status"] == "review"
+    assert result["reason"]
+    assert raw == original
+    assert not admitted(raw)
+
+
+@pytest.mark.asyncio
+async def test_inventory_completes_beyond_twenty_pages_without_any_admission():
+    responses = [
+        {"total": 23, "results": [dict(META, id=f"{n:024x}", nac="80A")],
+         "next_batch": f"https://ignored.example/scan?searchAfter=cursor{n}" if n < 22 else None}
+        for n in range(23)
+    ]
+    service, memory = service_with_memory(responses)
+    records = await service.inventory(Mock(), date(2026, 10, 1), date(2026, 10, 7))
+    assert len(records) == 23
+    assert service.api._api_get.await_count == 23
+    assert not memory
+
+
+@pytest.mark.asyncio
+async def test_inventory_rejects_cursor_cycles_even_with_distinct_records():
+    responses = [
+        {"total": 4, "results": [dict(META, id=f"{n:024x}")],
+         "next_batch": f"https://ignored.example/scan?searchAfter={cursor}"}
+        for n, cursor in enumerate(["first", "second", "first"])
+    ]
+    service, memory = service_with_memory(responses)
+    with pytest.raises(ValueError, match="cursor did not progress"):
+        await service.inventory(Mock(), date(2026, 10, 1), date(2026, 10, 7))
+    assert not memory
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("total", [True, False])
+async def test_inventory_rejects_boolean_source_totals(total):
+    service, memory = service_with_memory(
+        [{"total": total, "results": [META], "next_batch": None}]
+    )
+    with pytest.raises(ValueError, match="inventory changed"):
+        await service.inventory(Mock(), date(2026, 10, 1), date(2026, 10, 7))
+    assert not memory
+
+
+@pytest.mark.asyncio
+async def test_inventory_rejects_unexpected_source_jurisdiction_before_admission():
+    service, memory = service_with_memory([
+        {"total": 1, "results": [dict(META, jurisdiction="cc")], "next_batch": None}
+    ])
+    with pytest.raises(ValueError, match="Unexpected jurisdiction"):
+        await service.inventory(Mock(), date(2026, 10, 1), date(2026, 10, 7))
+    assert not memory
+
+
+@pytest.mark.asyncio
+async def test_inventory_rejects_inverted_dates_without_request():
+    service, memory = service_with_memory([])
+    with pytest.raises(ValueError, match="date range"):
+        await service.inventory(Mock(), date(2026, 10, 7), date(2026, 10, 1))
+    service.api._api_get.assert_not_called()
+    assert not memory
+
+
+@pytest.mark.asyncio
+async def test_inventory_rejects_continuation_after_claimed_total():
+    service, memory = service_with_memory([
+        {"total": 1, "results": [META],
+         "next_batch": "https://ignored.example/scan?searchAfter=unexpected"}
+    ])
+    with pytest.raises(ValueError, match="total was exceeded"):
+        await service.inventory(Mock(), date(2026, 10, 1), date(2026, 10, 7))
+    assert not memory
+
+
+@pytest.mark.parametrize("nac", ["86H", "86I"])
+def test_codes_without_checked_publisher_mapping_remain_for_review(nac):
+    from app.services.social_ca_scope import classify_ca_scope
+
+    result = classify_ca_scope(dict(META, nac=nac))
+    assert result["status"] == "review"
+    assert result["reason"] == "nac_not_confirmed_in_checked_publisher_catalogue"

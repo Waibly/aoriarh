@@ -337,7 +337,24 @@ class IngestionPipeline:
             await self._update_progress(doc, db, 5)
 
             # 4. Extract text
-            raw_text = await self._extract_document_text(doc, file_bytes, db)
+            from app.services.social_ca_source import CA_SOURCE_PREFIX, verified_ca_source
+
+            ca_source = (
+                doc.organisation_id is None
+                and doc.source_type == "arret_cour_appel"
+                and doc.file_format == "txt"
+                and doc.storage_path.startswith(CA_SOURCE_PREFIX)
+            )
+            ca_metadata = {}
+            if ca_source:
+                sidecar = self.storage.get_file_bytes_bounded(
+                    doc.storage_path + ".source.json", 64 * 1024 * 1024
+                )
+                sealed_source = verified_ca_source(doc, file_bytes, sidecar)
+                raw_text = sealed_source.text
+                ca_metadata = sealed_source.metadata()
+            else:
+                raw_text = await self._extract_document_text(doc, file_bytes, db)
             await self._update_progress(doc, db, 10)
 
             # 5. Clean text
@@ -349,7 +366,8 @@ class IngestionPipeline:
                 and doc.file_format == "xml"
                 and doc.storage_path.startswith(SOURCE_PREFIXES)
             )
-            cleaned_text = raw_text if dila_source else clean_text(raw_text)
+            lossless_source = dila_source or ca_source
+            cleaned_text = raw_text if lossless_source else clean_text(raw_text)
             dila_metadata = {}
             if dila_source:
                 from app.services.dila_cass_service import INCA_RECONCILED_PREFIX
@@ -382,7 +400,7 @@ class IngestionPipeline:
 
             # 6. Chunk (route to specialized chunker by source type)
             chunks_meta: list[ChunkWithMeta] | None = None
-            if dila_source:
+            if lossless_source:
                 # All source characters and complete table structures survive reindexing.
                 header = self._build_jurisprudence_header(doc) + "\n\n"
                 chunks = [header + part for part in source_chunks(cleaned_text)]
@@ -455,11 +473,13 @@ class IngestionPipeline:
                     "norme_poids": doc.norme_poids,
                     "chunk_index": i,
                     "has_table": contains_markdown_table(chunk_text) or (
-                        dila_source and "<table" in chunk_text
+                        lossless_source and "<table" in chunk_text
                     ),
                 }
                 if dila_source:
                     payload.update(dila_metadata)
+                if ca_source:
+                    payload.update(ca_metadata)
                 # Propagate CCN IDCC + article metadata into Qdrant payload
                 if doc.source_type in ARTICLE_AWARE_SOURCE_TYPES:
                     idcc_match = re.search(r"IDCC\s+(\d{4})", doc.name)

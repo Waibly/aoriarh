@@ -18,15 +18,14 @@ from app.models.document import Document
 from app.services.curated_source_service import CuratedSourceService
 from app.services.judilibre_ca_sync import next_cursor
 from app.services.judilibre_service import JudilibreService
-from app.services.social_ca_scope import ADMITTED_NAC
+from app.services.social_ca_scope import classify_ca_scope
 
 PREFIX = "common/social_ca/"
-MAX_PAGES = 20
 MAX_DOCUMENT_TOKENS = 50_000
 
 
 def admitted(metadata):
-    return metadata.get("jurisdiction") == "ca" and metadata.get("nac") in ADMITTED_NAC
+    return classify_ca_scope(metadata)["status"] == "admitted"
 
 
 def source_id(metadata):
@@ -42,8 +41,11 @@ class SocialCaService:
         self.api = api or JudilibreService()
 
     async def inventory(self, client, start, end):
+        if start > end:
+            raise ValueError("Invalid Judilibre inventory date range")
         records, cursor, expected = {}, None, None
-        for _ in range(MAX_PAGES):
+        visited_cursors = set()
+        while True:
             params = {
                 "jurisdiction": "ca",
                 "date_start": start.isoformat(),
@@ -59,13 +61,15 @@ class SocialCaService:
                 raise ValueError("Invalid Judilibre inventory response")
             total = data.get("total")
             if (
-                not isinstance(total, int)
+                type(total) is not int
                 or total < 0
                 or (expected is not None and total != expected)
             ):
                 raise ValueError("Judilibre inventory changed during pagination")
             expected = total
             for metadata in data["results"]:
+                if metadata.get("jurisdiction") != "ca":
+                    raise ValueError("Unexpected jurisdiction in Judilibre CA inventory")
                 key = source_id(metadata)
                 if key in records:
                     raise ValueError("Repeated Judilibre source across pages")
@@ -75,10 +79,13 @@ class SocialCaService:
                 if len(records) != expected:
                     raise ValueError("Incomplete Judilibre inventory")
                 return records
-            if following == cursor or not data["results"]:
-                raise ValueError("Judilibre cursor did not progress")
+            if (
+                following == cursor or following in visited_cursors
+                or not data["results"] or len(records) >= expected
+            ):
+                raise ValueError("Judilibre cursor did not progress or total was exceeded")
+            visited_cursors.add(following)
             cursor = following
-        raise ValueError("Judilibre inventory page limit reached; no admission")
 
     async def sync(self, db, *, apply=True, today=None):
         today = today or datetime.now(timezone.utc).date()

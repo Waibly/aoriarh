@@ -1,9 +1,12 @@
-"""Official NAC categories reviewed for RH admission on 2026-10-08.
+"""Official NAC categories reviewed for RH admission on 2026-10-25.
 
 Mixed protection-sociale category 88 and non-salaried agricultural category 89H
 remain review-only. Unknown categories are inventoried, never discarded.
-Source: Judilibre /taxonomy NAC, archived in the documentary audit.
+Source: official judilibre-search src/taxons/ca/theme.js, cross-checked
+against /taxonomy?id=theme&context_value=ca. Historical codes stay explicit.
 """
+
+SCOPE_POLICY_VERSION = "ca-rh-nac-2026-10-25-v3"
 
 ADMITTED_NAC = {
     "80J": "Contestation du motif non économique de la rupture du contrat de travail",
@@ -132,3 +135,78 @@ ADMITTED_NAC = {
     "89R": "Tarification - Autres demandes ou contestations relatives au taux de cotisation",
     "89Z": "Autres demandes en matière de risques professionnels",
 }
+
+# Superseded and general employment entries remain valid source identities.
+HISTORICAL_AND_ADDITIONAL_NAC = {
+    "80A": (
+        "Demande d'indemnités liées à la rupture du contrat de travail CDI ou CDD, son "
+        "exécution ou inexécution"
+    ),
+    "80B": (
+        "Demande d'indemnités liées à la rupture du contrat de travail pour motif économique"
+    ),
+    "80C": "Demande d'indemnités ou de salaires",
+    "80D": "Demande d'annulation d'une sanction disciplinaire",
+    "80E": "Demande d'autorisation judiciaire de congé particulier",
+    "80F": "Demande de remise de documents",
+    "80G": (
+        "Demande en paiement de créances salariales en l'absence de rupture du contrat de "
+        "travail"
+    ),
+    "80H": (
+        "Demande présentée par un employeur liée à la rupture du contrat de travail ou à des "
+        "créances salariales"
+    ),
+    "80I": "Demande dirigée par un salarié contre un autre salarié",
+    "80X": "Autres demandes du salarié",
+    "82K": "Demande relative à un plan de sauvegarde de l'emploi",
+    "83D": (
+        "Demande en résiliation du contrat de travail d'un administrateur salarié de société"
+    ),
+    "83E": "Autres demandes d'un salarié protégé",
+    "83F": "Demande d'un employeur contre un salarié protégé",
+    "84F": (
+        "Demande d'indemnités ou de salaires liée ou non à la rupture du contrat de travail, "
+        "présentée après l'ouverture d'une procédure collective"
+    ),
+    "84G": "Demande en relevé de forclusion opposable à un salarié",
+    "84H": (
+        "Demande de l'A.G.S. en paiement des cotisations contre un employeur soumis à "
+        "l'obligation d'assurance des créances salariales"
+    ),
+    "84I": (
+        "Demande de l'A.G.S. d'un administrateur judiciaire, d'un représentant des "
+        "créanciers, ou mandataire liquidateur contre un salarié"
+    ),
+    "87X": (
+        "Demande relative à la formation et l'insertion professionnelles sans autre indication"
+    ),
+}
+
+ADMITTED_NAC.update(HISTORICAL_AND_ADDITIONAL_NAC)
+
+# These pre-existing draft entries are absent from both checked publisher catalogues.
+# Keep their labels for review until a publisher source confirms their code mapping.
+UNVERIFIED_NAC = {code: ADMITTED_NAC.pop(code) for code in ("86H", "86I")}
+
+
+def classify_ca_scope(metadata):
+    """Classify documentary metadata only; unrecognised matters stay reviewable.
+
+    The original metadata is never mutated. Chamber names and incidental body
+    words cannot establish admission in the absence of an explicit official code.
+    """
+    nac = metadata.get("nac")
+    result = {"policy": SCOPE_POLICY_VERSION, "status": "review", "nac": nac}
+    if metadata.get("jurisdiction") != "ca":
+        return {**result, "reason": "other_jurisdiction"}
+    if not isinstance(nac, str) or not nac:
+        return {**result, "reason": "missing_or_invalid_nac"}
+    if nac in UNVERIFIED_NAC:
+        return {**result, "reason": "nac_not_confirmed_in_checked_publisher_catalogue"}
+    if nac in ADMITTED_NAC:
+        return {**result, "status": "admitted", "reason": "official_rh_nac",
+                "official_label": ADMITTED_NAC[nac]}
+    if nac.startswith("88") or nac == "89H":
+        return {**result, "reason": "mixed_social_protection_requires_review"}
+    return {**result, "reason": "outside_explicit_admission_list"}
