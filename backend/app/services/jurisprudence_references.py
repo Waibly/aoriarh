@@ -3,6 +3,22 @@
 import re
 from datetime import date
 
+CASE_REFERENCES_CONTEXT_LIMIT = 20
+
+
+def case_reference_context_metadata(numbers: list[str] | None) -> dict:
+    """Describe large joined-case sets without repeating hundreds of IDs per passage.
+
+    The complete list remains in source/index metadata and exact-ID lookup.
+    Original passage text and model outputs are never changed.
+    """
+    if numbers is None:
+        return {}
+    if len(numbers) <= CASE_REFERENCES_CONTEXT_LIMIT:
+        return {"numero_pourvois": numbers}
+    return {"nombre_references_pourvoi_renseignees": len(numbers)}
+
+
 MONTHS = {
     "janvier": 1, "février": 2, "fevrier": 2, "mars": 3, "avril": 4,
     "mai": 5, "juin": 6, "juillet": 7, "août": 8, "aout": 8,

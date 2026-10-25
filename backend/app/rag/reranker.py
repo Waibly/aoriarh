@@ -16,6 +16,7 @@ from app.services.jurisprudence_publication import (
     PUBLICATION_GUIDANCE,
     publication_significance,
 )
+from app.services.jurisprudence_references import case_reference_context_metadata
 
 logger = logging.getLogger(__name__)
 
@@ -52,8 +53,9 @@ def document_rerank_input(result: SearchResult) -> str:
         "instrument_title", "instrument_status", "effective_from", "effective_to",
         "article_title", "article_status", "article_effective_from", "article_effective_to",
         "date_decision", "juridiction", "chambre", "formation", "numero_pourvoi", "publication",
-        "numero_pourvois", "documentary_topics", "source_url",
+        "documentary_topics", "source_url",
     ) if getattr(result, key) is not None}
+    metadata.update(case_reference_context_metadata(result.numero_pourvois))
     significance = publication_significance(result.publication, result.source_type)
     if significance:
         metadata["portee_jurisprudentielle"] = significance

@@ -1,4 +1,6 @@
 import asyncio
+import hashlib
+import json
 import logging
 import math
 import re
@@ -350,9 +352,21 @@ class IngestionPipeline:
             cleaned_text = raw_text if dila_source else clean_text(raw_text)
             dila_metadata = {}
             if dila_source:
+                from app.services.dila_cass_service import INCA_RECONCILED_PREFIX
                 from app.services.dila_jurisprudence_metadata import source_metadata
 
-                dila_metadata = source_metadata(file_bytes)
+                reference_reconciliation = None
+                if doc.storage_path.startswith(INCA_RECONCILED_PREFIX):
+                    identity_bytes = self.storage.get_file_bytes_bounded(
+                        doc.storage_path + ".identity.json", 256 * 1024
+                    )
+                    expected_identity_hash = doc.storage_path.rsplit("/", 1)[-1][:-4].split(".")[-1]
+                    if hashlib.sha256(identity_bytes).hexdigest() != expected_identity_hash:
+                        raise ValueError("Source-reference reconciliation artifact changed")
+                    reference_reconciliation = json.loads(identity_bytes)
+                dila_metadata = source_metadata(
+                    file_bytes, reference_reconciliation=reference_reconciliation
+                )
                 if dila_metadata["source_xml_sha256"] != doc.file_hash:
                     raise ValueError("DILA source hash differs from document metadata")
                 from app.services.document_case_references import store_case_references

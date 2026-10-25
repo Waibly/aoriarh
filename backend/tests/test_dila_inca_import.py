@@ -11,7 +11,12 @@ import pytest
 from app.rag.parent_expansion import _payload_to_result, fetch_by_identifiers
 from app.rag.reranker import document_rerank_input
 from app.rag.text_extractor import TextExtractor
-from app.services.dila_cass_service import parse_cass_xml, parse_inca_xml
+from app.services.dila_cass_service import (
+    parse_cass_xml,
+    parse_inca_xml,
+    reconcile_source_references,
+    reconciliation_bytes,
+)
 from app.services.dila_jurisprudence_metadata import source_metadata
 from app.services.jurisprudence_references import social_case_references
 from scripts.maintenance.import_dila_cass import doc_for, plan, prepared_chunks, state_db
@@ -91,6 +96,21 @@ def test_official_metadata_reaches_reranker_with_original_body_intact():
     supplied = document_rerank_input(result)
     assert supplied.endswith(body)
     assert "07-44781" in supplied
+
+
+def test_large_joined_case_sets_keep_exact_identifiers_without_bloating_model_metadata():
+    numbers = [f"10-{12000 + i}" for i in range(920)]
+    result = _payload_to_result({
+        "text": "Texte original intégral.", "source_type": "arret_cour_cassation",
+        "numero_pourvois": numbers, "numero_pourvoi": numbers[0],
+    })
+    supplied = document_rerank_input(result)
+    meta = json.loads(supplied.split("\n\nPassage original :\n", 1)[0])
+    assert meta["nombre_references_pourvoi_renseignees"] == 920
+    assert meta["numero_pourvoi"] == numbers[0]
+    assert "numero_pourvois" not in meta
+    assert result.numero_pourvois == numbers
+    assert supplied.endswith(result.text)
 
 
 @pytest.mark.asyncio
@@ -182,3 +202,80 @@ async def test_reference_registry_cannot_publish_private_document_identity():
     async with test_session_factory() as session:
         with pytest.raises(ValueError, match="only accepts public"):
             await store_case_references(session, document, decision.numbers)
+
+
+def reconciliation(decision):
+    return {
+        "schema": "official-case-reference-reconciliation-v1",
+        "source_identifier": decision.source_id, "source_xml_sha256": decision.xml_sha256,
+        "decision_date": str(decision.decision_date),
+        "verified_numbers": [decision.numbers[0]],
+        "verified_title": "Official primary case reference",
+        "official_decision_url": "https://www.courdecassation.fr/decision/" + "f" * 24,
+        "reason": "Explicit source reconciliation fixture, no generated text",
+    }
+
+
+def test_explicit_reference_reconciliation_preserves_original_source_and_declared_numbers():
+    raw = source()
+    original = parse_inca_xml(raw)
+    proof = reconciliation(original)
+    corrected = reconcile_source_references(original, proof)
+    assert corrected.text == original.text and corrected.xml_sha256 == original.xml_sha256
+    assert corrected.numbers == ("07-44780",)
+    meta = source_metadata(raw, reference_reconciliation=proof)
+    assert meta["numero_pourvois"] == ["07-44780"]
+    assert meta["source_declared_case_numbers"] == ["07-44780", "07-44781"]
+    assert meta["case_reference_reconciliation"] == proof
+    assert doc_for(corrected).storage_path.startswith("common/dila/inca/reconciled/")
+    with pytest.raises(ValueError, match="Invalid explicit"):
+        reconcile_source_references(original, {**proof, "source_xml_sha256": "0" * 64})
+    with pytest.raises(ValueError, match="Invalid explicit"):
+        reconcile_source_references(original, {**proof, "verified_numbers": ["99-99999"]})
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("tampered", [False, True])
+async def test_pipeline_checks_sealed_reference_reconciliation_before_any_embedding(
+    monkeypatch, tampered
+):
+    from unittest.mock import AsyncMock
+
+    from app.rag.ingestion import IngestionPipeline
+    from tests.conftest import test_session_factory
+
+    raw = source()
+    original = parse_inca_xml(raw)
+    proof = reconciliation(original)
+    corrected = reconcile_source_references(original, proof)
+    document = doc_for(corrected)
+    storage = MagicMock()
+    storage.get_file_bytes.return_value = raw
+    identity = reconciliation_bytes(proof)
+    storage.get_file_bytes_bounded.return_value = identity + (b" " if tampered else b"")
+    client = MagicMock()
+    client.scroll.return_value = ([], None)
+    embeddings = AsyncMock(return_value=[[0.1] * 1024] * len(prepared_chunks(corrected, document)))
+    monkeypatch.setattr("app.rag.ingestion.clean_text", MagicMock(side_effect=AssertionError()))
+    monkeypatch.setattr(
+        "app.rag.ingestion._get_sparse_vectors",
+        lambda texts: [{"indices": [1], "values": [1.0]} for _ in texts],
+    )
+    async with test_session_factory() as session:
+        session.add(document)
+        await session.commit()
+        pipeline = IngestionPipeline(embeddings, storage=storage, qdrant_client=client)
+        await pipeline.ingest(document.id, session)
+        await session.refresh(document)
+        if tampered:
+            assert document.indexation_status == "error"
+            embeddings.assert_not_called()
+            client.upsert.assert_not_called()
+        else:
+            assert document.indexation_status == "indexed"
+            points = [p for call in client.upsert.call_args_list for p in call.kwargs["points"]]
+            assert all(p.payload["numero_pourvois"] == ["07-44780"] for p in points)
+            assert all(
+                p.payload["source_declared_case_numbers"] == ["07-44780", "07-44781"]
+                for p in points
+            )

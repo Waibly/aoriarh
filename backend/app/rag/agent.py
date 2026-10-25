@@ -44,6 +44,7 @@ from app.rag.search_plan import (
 from app.rag.source_intent import detect_source_intent
 from app.services.cost_tracker import CostContext, compute_cost, cost_tracker
 from app.services.jurisprudence_publication import publication_significance
+from app.services.jurisprudence_references import CASE_REFERENCES_CONTEXT_LIMIT
 
 logger = logging.getLogger(__name__)
 
@@ -1931,7 +1932,14 @@ class RAGAgent:
                     juris_parts.append(f"({r.publication})")
                 header += f"Référence : {', '.join(juris_parts)}\n"
             if r.numero_pourvois and len(r.numero_pourvois) > 1:
-                header += f"Pourvois renseignés par la source : {', '.join(r.numero_pourvois)}\n"
+                if len(r.numero_pourvois) <= CASE_REFERENCES_CONTEXT_LIMIT:
+                    numbers = ", ".join(r.numero_pourvois)
+                    header += f"Pourvois renseignés par la source : {numbers}\n"
+                else:
+                    header += (
+                        "Nombre de références de pourvoi renseignées par la source : "
+                        f"{len(r.numero_pourvois)}\n"
+                    )
             if r.documentary_topics:
                 topics = " ; ".join(r.documentary_topics)
                 header += f"Rubriques documentaires officielles : {topics}\n"

@@ -9,9 +9,10 @@ from __future__ import annotations
 
 import hashlib
 import html
+import json
 import re
 import unicodedata
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date
 
 import tiktoken
@@ -19,6 +20,7 @@ from lxml import etree
 
 SOURCE_PREFIX = "common/dila/cass/"
 INCA_SOURCE_PREFIX = "common/dila/inca/"
+INCA_RECONCILED_PREFIX = INCA_SOURCE_PREFIX + "reconciled/"
 SOURCE_PREFIXES = (SOURCE_PREFIX, INCA_SOURCE_PREFIX)
 MAX_XML_BYTES = 16 * 1024 * 1024
 _IDENTIFIER = re.compile(r"JURITEXT\d{12}\Z")
@@ -86,6 +88,43 @@ class CassDecision:
     table_count: int
     topics: tuple[str, ...]
     publication: str = "Publié au Bulletin"
+    reference_reconciliation: dict | None = None
+
+
+def reconciliation_bytes(value: dict) -> bytes:
+    return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode()
+
+
+def reconcile_source_references(decision: CassDecision, evidence: dict | None) -> CassDecision:
+    """Apply an explicit, versioned operator reconciliation; never edit source text.
+
+    The raw source keeps all publisher-declared numbers. Effective identifiers
+    must be a nonempty subset backed by the source and an official Court page.
+    This is not an automated legal/content assessment.
+    """
+    if evidence is None:
+        return decision
+    numbers = evidence.get("verified_numbers")
+    url = evidence.get("official_decision_url", "")
+    if (
+        evidence.get("schema") != "official-case-reference-reconciliation-v1"
+        or evidence.get("source_identifier") != decision.source_id
+        or evidence.get("source_xml_sha256") != decision.xml_sha256
+        or evidence.get("decision_date") != str(decision.decision_date)
+        or not re.fullmatch(r"https://www\.courdecassation\.fr/decision/[0-9a-f]{24}", url)
+        or not isinstance(numbers, list) or not numbers
+        or any(not isinstance(number, str) for number in numbers)
+        or len(set(numbers)) != len(numbers)
+        or not set(numbers) <= set(decision.numbers)
+        or not decision.numbers or numbers[0] != decision.numbers[0]
+        or not isinstance(evidence.get("verified_title"), str)
+        or not 1 <= len(evidence["verified_title"]) <= 500
+    ):
+        raise ValueError("Invalid explicit source-reference reconciliation")
+    return replace(
+        decision, numbers=tuple(numbers), title=evidence["verified_title"],
+        reference_reconciliation=evidence,
+    )
 
 
 def canonical_number(value: str) -> str | None:

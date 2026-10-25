@@ -1,7 +1,7 @@
 import uuid
 from datetime import date, datetime
 
-from sqlalchemy import DateTime, Date, Float, ForeignKey, Integer, String
+from sqlalchemy import Date, DateTime, Float, ForeignKey, Index, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, TimestampMixin, generate_uuid
@@ -9,6 +9,9 @@ from app.models.base import Base, TimestampMixin, generate_uuid
 
 class Document(TimestampMixin, Base):
     __tablename__ = "documents"
+    __table_args__ = (
+        Index("ix_documents_jurisprudence_date", "source_type", "chambre", "date_decision"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=generate_uuid)
     organisation_id: Mapped[uuid.UUID | None] = mapped_column(

@@ -4,12 +4,18 @@ import hashlib
 
 from lxml import etree
 
-from app.services.dila_cass_service import number_aliases, parse_social_xml
+from app.services.dila_cass_service import (
+    number_aliases,
+    parse_social_xml,
+    reconcile_source_references,
+)
 from app.services.jurisprudence_references import social_case_references
 
 
-def source_metadata(raw: bytes) -> dict:
+def source_metadata(raw: bytes, *, reference_reconciliation: dict | None = None) -> dict:
     decision = parse_social_xml(raw)
+    declared_numbers = list(decision.numbers)
+    decision = reconcile_source_references(decision, reference_reconciliation)
     root = etree.fromstring(
         raw, etree.XMLParser(resolve_entities=False, no_network=True, load_dtd=False)
     )
@@ -30,6 +36,9 @@ def source_metadata(raw: bytes) -> dict:
             "".join(primary.itertext()).encode()
         ).hexdigest(),
     }
+    if reference_reconciliation is not None:
+        result["source_declared_case_numbers"] = declared_numbers
+        result["case_reference_reconciliation"] = reference_reconciliation
     for key, path in {
         "appealed_court": "META/META_SPEC/META_JURI_JUDI/FORM_DEC_ATT",
         "appealed_decision_date": "META/META_SPEC/META_JURI_JUDI/DATE_DEC_ATT",

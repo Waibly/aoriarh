@@ -37,11 +37,14 @@ from app.rag.ingestion import IngestionPipeline
 from app.rag.qdrant_store import COLLECTION_NAME, ensure_collection, get_qdrant_client
 from app.services.cost_tracker import cost_tracker
 from app.services.dila_cass_service import (
+    INCA_RECONCILED_PREFIX,
     INCA_SOURCE_PREFIX,
     SOURCE_PREFIX,
     number_aliases,
     parse_cass_xml,
     parse_inca_xml,
+    reconcile_source_references,
+    reconciliation_bytes,
     source_chunks,
     topic_scope,
 )
@@ -94,6 +97,12 @@ def decode_embedding(encoded):
 
 def doc_for(decision):
     prefix = INCA_SOURCE_PREFIX if decision.publication == "Inédit" else SOURCE_PREFIX
+    suffix = decision.xml_sha256
+    if decision.reference_reconciliation is not None:
+        prefix = INCA_RECONCILED_PREFIX
+        suffix += "." + hashlib.sha256(
+            reconciliation_bytes(decision.reference_reconciliation)
+        ).hexdigest()
     return Document(
         id=uuid.uuid5(
             uuid.NAMESPACE_URL, "https://www.legifrance.gouv.fr/juri/id/" + decision.source_id
@@ -103,7 +112,7 @@ def doc_for(decision):
         norme_niveau=4,
         norme_poids=0.85,
         name=decision.title,
-        storage_path=f"{prefix}{decision.source_id}/{decision.xml_sha256}.xml",
+        storage_path=f"{prefix}{decision.source_id}/{suffix}.xml",
         file_format="xml",
         file_hash=decision.xml_sha256,
         juridiction="Cour de cassation",
@@ -242,12 +251,6 @@ async def plan(folder, package, db, tokenizer, *, source_parser=parse_cass_xml, 
                     raise ValueError("Source version changed; prepare a separate immutable plan")
                 counts["already_planned"] += 1
                 continue
-            doc = doc_for(decision)
-            aliases = identities(decision.numbers, decision.decision_date)
-            matches = set(by_url.get(doc.source_url, set()))
-            for key in aliases:
-                matches.update(by_alias.get(key, set()))
-            scope = topic_scope(decision.topics)
             evidence = None
             if source_parser is parse_inca_xml:
                 evidence = (selection or {}).get(decision.source_id)
@@ -255,6 +258,16 @@ async def plan(folder, package, db, tokenizer, *, source_parser=parse_cass_xml, 
                     raise ValueError("INCA admission requires immutable source qualification")
                 if evidence.get("scope") != "admitted":
                     raise ValueError("INCA source was not qualified for this selection")
+                decision = reconcile_source_references(
+                    decision, evidence.get("reference_reconciliation")
+                )
+            doc = doc_for(decision)
+            aliases = identities(decision.numbers, decision.decision_date)
+            matches = set(by_url.get(doc.source_url, set()))
+            for key in aliases:
+                matches.update(by_alias.get(key, set()))
+            scope = topic_scope(decision.topics)
+            if source_parser is parse_inca_xml:
                 scope = "admitted"
             conflicts = {seen_aliases[key] for key in aliases if key in seen_aliases}
             if len(matches) > 1:
@@ -635,12 +648,17 @@ async def apply(folder, db, tokenizer, args):
                 for row in group:
                     if row["disposition"] != "new":
                         continue
-                    decision = source_parser(row["xml"])
+                    expected = json.loads(row["meta"])
+                    reference_reconciliation = (expected.get("selection_evidence") or {}).get(
+                        "reference_reconciliation"
+                    )
+                    decision = reconcile_source_references(
+                        source_parser(row["xml"]), reference_reconciliation
+                    )
                     doc = doc_for(decision)
                     if str(doc.id) != row["document_id"]:
                         raise ValueError("Planned document identity changed")
                     chunks = prepared_chunks(decision, doc)
-                    expected = json.loads(row["meta"])
                     if [hashlib.sha256(c.encode()).hexdigest() for c in chunks] != expected[
                         "chunk_sha256"
                     ]:
@@ -675,6 +693,16 @@ async def apply(folder, db, tokenizer, args):
                             ):
                                 raise ValueError("Concurrent or unresolved duplicate identity")
                             storage.put_file_bytes(doc.storage_path, row["xml"], "application/xml")
+                            if reference_reconciliation is not None:
+                                identity_path = doc.storage_path + ".identity.json"
+                                identity_bytes = reconciliation_bytes(reference_reconciliation)
+                                storage.put_file_bytes(
+                                    identity_path, identity_bytes, "application/json"
+                                )
+                                if storage.get_file_bytes_bounded(
+                                    identity_path, len(identity_bytes) + 1
+                                ) != identity_bytes:
+                                    raise ValueError("Reference reconciliation artifact mismatch")
                             if (
                                 storage.get_file_bytes_bounded(
                                     doc.storage_path, len(row["xml"]) + 1
@@ -691,6 +719,7 @@ async def apply(folder, db, tokenizer, args):
                             if (
                                 current.file_hash != decision.xml_sha256
                                 or current.retired_at is not None
+                                or current.storage_path != doc.storage_path
                             ):
                                 raise ValueError("Existing source changed or retired")
                             await store_case_references(session, current, decision.numbers)
@@ -861,7 +890,11 @@ async def verify(folder, db, limit=None):
                 from app.services.dila_jurisprudence_metadata import source_metadata
 
                 expected_metadata = (
-                    source_metadata(row["xml"])
+                    source_metadata(
+                        row["xml"], reference_reconciliation=(
+                            expected.get("selection_evidence") or {}
+                        ).get("reference_reconciliation"),
+                    )
                     if expected.get("source_metadata_version") == 1 else {}
                 )
                 if [
@@ -890,6 +923,14 @@ async def verify(folder, db, limit=None):
                     != row["xml"]
                 ):
                     error = "original_xml_content_mismatch"
+                elif expected_metadata.get("case_reference_reconciliation") is not None:
+                    identity_bytes = reconciliation_bytes(
+                        expected_metadata["case_reference_reconciliation"]
+                    )
+                    if storage.get_file_bytes_bounded(
+                        doc.storage_path + ".identity.json", len(identity_bytes) + 1
+                    ) != identity_bytes:
+                        error = "source_reference_reconciliation_mismatch"
             if error:
                 failures.append(
                     {"id": row["id"], "document_id": row["document_id"], "error": error}
