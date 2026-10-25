@@ -36,7 +36,7 @@ async def create_invitation(
         billing = BillingService(db)
         account = await billing.get_account_for_organisation(organisation_id)
         billing.ensure_plan_active(account)
-        await billing.check_user_limit(account)
+        await billing.check_user_limit(account, email=data.email)
 
     service = InvitationService(db)
     invitation = await service.create_invitation(organisation_id, data, user)

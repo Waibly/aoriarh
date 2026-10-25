@@ -3,7 +3,7 @@ import uuid
 
 from fastapi import HTTPException, status
 from qdrant_client.models import FieldCondition, Filter, FilterSelector, MatchValue
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -73,37 +73,22 @@ class OrganisationService:
 
     async def list_organisations(self, user: User) -> list[Organisation]:
         from app.models.account import Account
-        from app.models.account_member import AccountMember
 
-        # Find the user's account(s): either as owner or as member
-        account_ids: list[uuid.UUID] = []
-
-        # Accounts owned by the user
-        owned = await self.db.execute(
-            select(Account.id).where(Account.owner_id == user.id)
+        # Team invitations also create Memberships for the authorised orgs.
+        # Include these alongside owned orgs, even when the user has a personal
+        # account. Account membership alone does not grant access to every org.
+        owned_accounts = select(Account.id).where(Account.owner_id == user.id)
+        member_orgs = select(Membership.organisation_id).where(
+            Membership.user_id == user.id
         )
-        account_ids.extend(row[0] for row in owned.all())
-
-        # Accounts where the user is a member
-        member_of = await self.db.execute(
-            select(AccountMember.account_id).where(AccountMember.user_id == user.id)
-        )
-        account_ids.extend(row[0] for row in member_of.all())
-
-        if account_ids:
-            # Return orgs belonging to the user's account(s)
-            result = await self.db.execute(
-                select(Organisation).where(
-                    Organisation.account_id.in_(account_ids)
-                )
-            )
-            return list(result.scalars().all())
-
-        # Fallback: orgs where the user has a direct membership
         result = await self.db.execute(
             select(Organisation)
-            .join(Membership, Membership.organisation_id == Organisation.id)
-            .where(Membership.user_id == user.id)
+            .where(
+                or_(
+                    Organisation.account_id.in_(owned_accounts),
+                    Organisation.id.in_(member_orgs),
+                )
+            )
         )
         return list(result.scalars().all())
 

@@ -272,7 +272,7 @@ class InvitationService:
             invitation.organisation_id
         )
         billing.ensure_plan_active(org_account)
-        await billing.check_user_limit(org_account)
+        await billing.check_user_limit(org_account, email=user.email)
 
         membership = Membership(
             user_id=user.id,

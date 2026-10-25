@@ -17,6 +17,7 @@ from datetime import UTC, datetime
 from fastapi import HTTPException, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.sql.selectable import Subquery
 
 from app.core.config import settings as app_settings
 from app.core.plans import PLAN_LABELS as _PLAN_LABELS, get_limits, is_commercial
@@ -28,6 +29,7 @@ from app.models.account_member import AccountMember
 from app.models.booster_purchase import BoosterPurchase
 from app.models.ccn import OrganisationConvention
 from app.models.document import Document
+from app.models.membership import Membership
 from app.models.monthly_question_usage import MonthlyQuestionUsage
 from app.models.organisation import Organisation
 from app.models.subscription import Subscription
@@ -302,18 +304,7 @@ class BillingService:
         """
         limits = await self.get_effective_limits(account)
 
-        # Users (owner + members)
-        members_count = int(
-            (
-                await self.db.execute(
-                    select(func.count())
-                    .select_from(AccountMember)
-                    .where(AccountMember.account_id == account.id)
-                )
-            ).scalar()
-            or 0
-        )
-        total_users = members_count + 1
+        total_users = await self.count_users_on_account(account.id)
 
         # Organisations
         orgs_count = int(
@@ -438,19 +429,45 @@ class BillingService:
     # Hard limits (block creation with 403 when exceeded)
     # ------------------------------------------------------------------
 
-    async def _count_users_on_account(self, account_id: uuid.UUID) -> int:
-        """Owner + every row in account_members."""
-        result = await self.db.execute(
-            select(func.count())
-            .select_from(AccountMember)
-            .where(AccountMember.account_id == account_id)
+    def _account_user_ids(self, account_id: uuid.UUID) -> Subquery:
+        """Distinct users with any access to the account."""
+        return (
+            select(Account.owner_id.label("user_id"))
+            .where(Account.id == account_id)
+            .union(
+                select(AccountMember.user_id).where(
+                    AccountMember.account_id == account_id
+                ),
+                select(Membership.user_id)
+                .join(Organisation, Organisation.id == Membership.organisation_id)
+                .where(Organisation.account_id == account_id),
+            )
+            .subquery()
         )
-        members = int(result.scalar() or 0)
-        return members + 1  # +1 for the account owner (not in account_members)
 
-    async def check_user_limit(self, account: Account) -> None:
+    async def count_users_on_account(self, account_id: uuid.UUID) -> int:
+        """Count each owner, team member and direct org member once."""
+        result = await self.db.execute(
+            select(func.count()).select_from(self._account_user_ids(account_id))
+        )
+        return int(result.scalar() or 0)
+
+    async def check_user_limit(self, account: Account, *, email: str | None = None) -> None:
+        # Giving an existing account user access to another org (or moving
+        # from a direct invitation to team access) does not consume a new seat.
+        if email is not None:
+            account_users = self._account_user_ids(account.id)
+            existing_user = await self.db.scalar(
+                select(User.id).where(
+                    User.id.in_(select(account_users.c.user_id)),
+                    func.lower(User.email) == email.lower(),
+                )
+            )
+            if existing_user is not None:
+                return
+
         limits = await self.get_effective_limits(account)
-        current = await self._count_users_on_account(account.id)
+        current = await self.count_users_on_account(account.id)
         cap = int(limits["users_included"] or 0)
         if current >= cap:
             plan_label = _PLAN_LABELS.get(account.plan, account.plan)

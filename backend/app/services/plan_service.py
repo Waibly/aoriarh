@@ -6,12 +6,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.plans import TECHNICAL_PLANS, get_limits
 from app.models.account import Account
-from app.models.account_member import AccountMember
 from app.models.ccn import OrganisationConvention
 from app.models.document import Document
 from app.models.monthly_question_usage import MonthlyQuestionUsage
 from app.models.organisation import Organisation
 from app.models.subscription import Subscription
+from app.services.billing_service import BillingService
 
 
 class PlanOverflowError(Exception):
@@ -50,18 +50,7 @@ async def _validate_plan_fits_existing_data(
     limits = get_limits(plan)
     reasons: list[str] = []
 
-    # Users (owner + account_members)
-    members_count = int(
-        (
-            await db.execute(
-                select(func.count())
-                .select_from(AccountMember)
-                .where(AccountMember.account_id == account_id)
-            )
-        ).scalar()
-        or 0
-    )
-    total_users = members_count + 1  # +1 owner
+    total_users = await BillingService(db).count_users_on_account(account_id)
     if total_users > limits.users_included:
         reasons.append(
             f"utilisateurs actifs : {total_users} (plan {plan} en autorise {limits.users_included})"

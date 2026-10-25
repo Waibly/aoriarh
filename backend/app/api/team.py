@@ -63,7 +63,7 @@ async def invite_team_member(
     if user.role != "admin":
         billing = BillingService(db)
         billing.ensure_plan_active(account)
-        await billing.check_user_limit(account)
+        await billing.check_user_limit(account, email=data.email)
 
     service = AccountMemberService(db)
     invitation = await service.invite_member(account.id, data, user)

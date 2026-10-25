@@ -97,7 +97,7 @@ class AccountMemberService:
             from app.services.billing_service import BillingService
             billing = BillingService(self.db)
             billing.ensure_plan_active(account)
-            await billing.check_user_limit(account)
+            await billing.check_user_limit(account, email=data.email)
 
         # Check if already an account member
         existing_member = await self.db.execute(
@@ -332,7 +332,7 @@ class AccountMemberService:
         from app.services.billing_service import BillingService
         billing = BillingService(self.db)
         billing.ensure_plan_active(account_for_limit)
-        await billing.check_user_limit(account_for_limit)
+        await billing.check_user_limit(account_for_limit, email=user.email)
 
         account_member = AccountMember(
             account_id=invitation.account_id,

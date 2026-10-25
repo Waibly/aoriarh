@@ -1,3 +1,5 @@
+from uuid import UUID
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy import select
@@ -20,7 +22,7 @@ router = APIRouter()
 async def get_me(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
-    organisation_id: str | None = Query(None, description="Current org to resolve plan/workspace"),
+    organisation_id: UUID | None = Query(None, description="Current org to resolve plan/workspace"),
 ) -> UserRead:
     # Resolve plan and workspace from the current organisation's Account
     plan = None
