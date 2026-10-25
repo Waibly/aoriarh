@@ -318,7 +318,7 @@ def reconcile_exact_duplicates(folder, db):
     duplicates = []
     rows = db.execute(
         "SELECT id,meta,status,disposition FROM items "
-        "WHERE disposition IN ('new','review_exact_duplicate','review_scope') ORDER BY id"
+        "WHERE disposition IN ('new','review_exact_duplicate') ORDER BY id"
     ).fetchall()
     for row in rows:
         meta = json.loads(row["meta"])
@@ -546,7 +546,8 @@ async def apply(folder, db, tokenizer, args):
             # published group. Completed groups are skipped without paid calls.
             rows = db.execute(
                 "SELECT * FROM items WHERE disposition IN "
-                "('new','review_exact_duplicate','review_scope') "
+                "('new','review_exact_duplicate','review_scope',"
+                "'duplicate_existing','review_alias_collision') "
                 "ORDER BY id"
             ).fetchall()
             if args.limit:
@@ -560,7 +561,7 @@ async def apply(folder, db, tokenizer, args):
                     return
                 prepared = []
                 for row in group:
-                    if row["disposition"] in {"review_exact_duplicate", "review_scope"}:
+                    if row["disposition"] != "new":
                         continue
                     decision = parse_cass_xml(row["xml"])
                     doc = doc_for(decision)
@@ -708,7 +709,8 @@ async def verify(folder, db, limit=None):
     counts = Counter()
     failures = []
     rows = db.execute(
-        "SELECT * FROM items WHERE disposition IN ('new','existing') ORDER BY id"
+        "SELECT * FROM items WHERE disposition IN ('new','existing','duplicate_existing') "
+        "ORDER BY id"
     ).fetchall()
     if limit is not None:
         rows = [row for row in rows if row["disposition"] == "new" and row["status"] == "indexed"][

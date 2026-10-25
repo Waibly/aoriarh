@@ -99,6 +99,10 @@ def number_aliases(value: str) -> set[str]:
     seven-digit numbers; it never edits the stored source or an identifier.
     """
     result = {key} if (key := canonical_number(value)) else set()
+    # Published references also contain ranges, "et autres" or "bis". Match
+    # the explicit modern references without inventing the unspecified cases.
+    for match in re.finditer(r"(?<!\d)(\d{2})\s*-\s*(\d{2})[\s.,]*(\d{3})(?!\d)", value):
+        result.add("".join(match.groups()))
     if re.fullmatch(r"[\d\s.,;/\-]+", value):
         digits = "".join(character for character in value if character.isdigit())
         if len(digits) >= 14 and len(digits) % 7 == 0:

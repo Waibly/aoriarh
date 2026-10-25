@@ -127,6 +127,10 @@ def test_identity_normalization_does_not_make_placeholder_a_case_number(value, e
 
 def test_joined_official_case_references_are_matched_without_changing_sources():
     assert {"0444103", "0444507"} <= number_aliases("04-44.1030444507")
+    assert "1427266" in number_aliases("14-27266 et autres")
+    assert {"0444103", "0444507"} <= number_aliases("04-44103 à 04-44507")
+    assert "6240650" in number_aliases("62-40650 bis")
+    assert "0444104" not in number_aliases("04-44103 à 04-44507")
     assert number_aliases("N°") == set()
 
 
