@@ -9,10 +9,12 @@ from unittest.mock import AsyncMock, Mock
 
 import httpx
 import pytest
+from lxml import etree
 
 from app.rag.text_extractor import TextExtractor
 from app.services.dila_cass_service import (
     canonical_number,
+    number_aliases,
     parse_cass_xml,
     source_chunks,
     topic_scope,
@@ -123,12 +125,23 @@ def test_identity_normalization_does_not_make_placeholder_a_case_number(value, e
     assert canonical_number(value) == expected
 
 
+def test_joined_official_case_references_are_matched_without_changing_sources():
+    assert {"0444103", "0444507"} <= number_aliases("04-44.1030444507")
+    assert number_aliases("N°") == set()
+
+
+def test_empty_original_body_cannot_be_replaced_by_an_official_summary():
+    with pytest.raises(ValueError, match="empty_decision_body"):
+        parse_cass_xml(xml(body=""))
+
+
 def test_scope_uses_official_headings_and_retains_ambiguous_records_for_review():
     assert topic_scope(("1°\n CONTRAT DE TRAVAIL, EXECUTION - Salaire",)) == "admitted"
     assert topic_scope(("BAIL A FERME - Résiliation",)) == "review_outside_or_mixed_scope"
     assert topic_scope(("CASSATION - Moyen",)) == "review_generic_or_missing_topic"
     assert topic_scope(()) == "review_generic_or_missing_topic"
     assert topic_scope(("BAIL A LOYER", "CONTRAT DE TRAVAIL")) == "admitted"
+    assert topic_scope(("FRANCE D'OUTRE-MER - TERRITOIRES - CONTRAT DE TRAVAIL",)) == "admitted"
 
 
 class Tokenizer:
@@ -208,11 +221,12 @@ async def test_reconciliation_keeps_different_decision_dates_and_isolates_duplic
         xml()
         .replace(b"JURITEXT000007046800", b"JURITEXT000007046802")
         .replace(b"2002-01-31", b"2003-01-31"),
+        xml(body="").replace(b"JURITEXT000007046800", b"JURITEXT000007046803"),
     ]
     with tarfile.open(package, "w:gz") as archive:
         for raw in decisions:
-            decision = parse_cass_xml(raw)
-            member = tarfile.TarInfo(decision.source_id + ".xml")
+            identifier = etree.fromstring(raw).findtext("META/META_COMMUN/ID")
+            member = tarfile.TarInfo(identifier + ".xml")
             member.size = len(raw)
             archive.addfile(member, io.BytesIO(raw))
     state = state_db(tmp_path)
@@ -222,6 +236,7 @@ async def test_reconciliation_keeps_different_decision_dates_and_isolates_duplic
     assert rows["JURITEXT000007046800"]["document_id"] == str(existing_id)
     assert rows["JURITEXT000007046801"]["disposition"] == "new"
     assert rows["JURITEXT000007046802"]["disposition"] == "review_archive_identity_conflict"
+    assert rows["JURITEXT000007046803"]["disposition"] == "review_source_body_missing"
     assert json.loads((tmp_path / "plan.json").read_text())["parser_errors"] == []
 
 

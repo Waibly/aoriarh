@@ -12,6 +12,7 @@ import gzip
 import hashlib
 import json
 import math
+import re
 import shutil
 import sqlite3
 import tarfile
@@ -21,6 +22,7 @@ from collections import Counter, defaultdict
 from pathlib import Path
 
 import httpx
+from lxml import etree
 from sqlalchemy import select, text
 from tokenizers import Tokenizer
 
@@ -33,7 +35,7 @@ from app.rag.qdrant_store import COLLECTION_NAME, get_qdrant_client
 from app.services.cost_tracker import cost_tracker
 from app.services.dila_cass_service import (
     SOURCE_PREFIX,
-    canonical_number,
+    number_aliases,
     parse_cass_xml,
     source_chunks,
     topic_scope,
@@ -64,7 +66,7 @@ def state_db(folder):
 
 
 def identities(numbers, day):
-    return {(str(day), key) for value in numbers if (key := canonical_number(value))}
+    return {(str(day), key) for value in numbers for key in number_aliases(value)}
 
 
 def doc_for(decision):
@@ -154,6 +156,10 @@ async def plan(folder, package, db, tokenizer):
     topics = Counter()
     tokens = 0
     seen_aliases = {}
+    for identifier, metadata in db.execute("SELECT id,meta FROM items WHERE disposition='new'"):
+        previous = json.loads(metadata)
+        for key in identities(previous["numbers"], previous["date"]):
+            seen_aliases[key] = identifier
     source_ids = set()
     parser_errors = []
     with tarfile.open(package, mode="r|gz") as archive:
@@ -164,12 +170,60 @@ async def plan(folder, package, db, tokenizer):
             try:
                 decision = parse_cass_xml(raw)
             except Exception as exc:
+                if isinstance(exc, ValueError) and str(exc) == "dila_empty_decision_body":
+                    root = etree.fromstring(
+                        raw,
+                        etree.XMLParser(
+                            resolve_entities=False,
+                            no_network=True,
+                            load_dtd=False,
+                        ),
+                    )
+                    identifier = root.findtext("META/META_COMMUN/ID") or ""
+                    if (
+                        not re.fullmatch(r"JURITEXT\d{12}", identifier)
+                        or member.name != identifier + ".xml"
+                        or identifier in source_ids
+                    ):
+                        raise ValueError("Invalid technical-review source identity") from exc
+                    source_ids.add(identifier)
+                    metadata = {
+                        "source_id": identifier,
+                        "date": root.findtext("META/META_SPEC/META_JURI/DATE_DEC"),
+                        "numbers": [],
+                        "technical_error": str(exc),
+                        "xml_sha256": hashlib.sha256(raw).hexdigest(),
+                    }
+                    db.execute(
+                        "INSERT OR IGNORE INTO items VALUES (?,?,?,?,?,?,?)",
+                        (
+                            identifier,
+                            raw,
+                            json.dumps(metadata),
+                            str(
+                                uuid.uuid5(
+                                    uuid.NAMESPACE_URL,
+                                    "https://www.legifrance.gouv.fr/juri/id/" + identifier,
+                                )
+                            ),
+                            "review_source_body_missing",
+                            "error",
+                            str(exc),
+                        ),
+                    )
+                    counts["review_source_body_missing"] += 1
+                    continue
                 parser_errors.append({"member": member.name, "error": str(exc)})
                 continue
             if member.name != decision.source_id + ".xml" or decision.source_id in source_ids:
                 raise ValueError("Invalid or repeated package identity")
             source_ids.add(decision.source_id)
-            if db.execute("SELECT 1 FROM items WHERE id=?", (decision.source_id,)).fetchone():
+            previous = db.execute(
+                "SELECT xml FROM items WHERE id=?", (decision.source_id,)
+            ).fetchone()
+            if previous:
+                if previous[0] != raw:
+                    raise ValueError("Source version changed; prepare a separate immutable plan")
                 counts["already_planned"] += 1
                 continue
             doc = doc_for(decision)
@@ -247,8 +301,13 @@ async def plan(folder, package, db, tokenizer):
                     flush=True,
                 )
     db.commit()
+    actual_counts = dict(db.execute("SELECT disposition,count(*) FROM items GROUP BY disposition"))
+    tokens = db.execute(
+        "SELECT coalesce(sum(json_extract(meta,'$.estimated_tokens')),0) "
+        "FROM items WHERE disposition='new'"
+    ).fetchone()[0]
     summary = {
-        "counts": dict(counts),
+        "counts": actual_counts,
         "new_estimated_provider_tokens": tokens,
         "new_estimated_usd": round(tokens * 0.12 / 1_000_000, 4),
         "review_topics": topics.most_common(),
@@ -257,7 +316,13 @@ async def plan(folder, package, db, tokenizer):
         "model": EMBEDDING_MODEL,
     }
     dump(folder / "plan.json", summary)
-    print(json.dumps(summary, ensure_ascii=False), flush=True)
+    print(
+        json.dumps(
+            {key: value for key, value in summary.items() if key != "review_topics"},
+            ensure_ascii=False,
+        ),
+        flush=True,
+    )
     if parser_errors:
         raise ValueError("Source parsing errors require investigation")
 
@@ -421,13 +486,15 @@ async def apply(folder, db, tokenizer, args):
         if not locked:
             raise ValueError("A CASS backfill is already active")
         try:
-            rows = db.execute(
-                "SELECT * FROM items WHERE disposition='new' AND status!='indexed' ORDER BY id"
-            ).fetchall()
+            # Keep paid batches stable across restarts, including a partially
+            # published group. Completed groups are skipped without paid calls.
+            rows = db.execute("SELECT * FROM items WHERE disposition='new' ORDER BY id").fetchall()
             if args.limit:
                 rows = rows[: args.limit]
             for offset in range(0, len(rows), 32):
                 group = rows[offset : offset + 32]
+                if all(row["status"] == "indexed" for row in group):
+                    continue
                 prepared = []
                 for row in group:
                     decision = parse_cass_xml(row["xml"])
@@ -508,6 +575,8 @@ async def apply(folder, db, tokenizer, args):
 
                 async def publish(item):
                     row, chunks, vectors = item
+                    if row["status"] == "indexed":
+                        return row["id"]
 
                     async def cached(texts, api_key, doc, session, **kwargs):
                         if texts != chunks or len(vectors) != len(texts):
@@ -680,6 +749,8 @@ async def main(args):
             raise ValueError("Source parsing errors must be resolved before importing")
         await apply(folder, db, tokenizer, args)
     else:
+        if db.execute("SELECT 1 FROM requests LIMIT 1").fetchone():
+            raise ValueError("The source plan is immutable once paid indexing has begun")
         await plan(folder, folder / "selected-social-bulletin.tar.gz", db, tokenizer)
     db.close()
     await engine.dispose()

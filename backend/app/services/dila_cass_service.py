@@ -91,6 +91,21 @@ def canonical_number(value: str) -> str | None:
     return key if any(character.isdigit() for character in key) else None
 
 
+def number_aliases(value: str) -> set[str]:
+    """Preserve joined legacy references while matching each seven-digit pourvoi.
+
+    Some official records concatenate several modern-format case numbers. This
+    only expands a numeric reference whose entire digit string partitions into
+    seven-digit numbers; it never edits the stored source or an identifier.
+    """
+    result = {key} if (key := canonical_number(value)) else set()
+    if re.fullmatch(r"[\d\s.,;/\-]+", value):
+        digits = "".join(character for character in value if character.isdigit())
+        if len(digits) >= 14 and len(digits) % 7 == 0:
+            result.update(digits[i : i + 7] for i in range(0, len(digits), 7))
+    return result
+
+
 def _tag(node) -> str:
     if not isinstance(node.tag, str):
         raise ValueError("dila_non_element_node")
@@ -175,6 +190,9 @@ def parse_cass_xml(raw: bytes) -> CassDecision:
     bulletin = root.find("META/META_SPEC/META_JURI_JUDI/PUBLI_BULL")
     if bulletin is None or bulletin.get("publie") != "oui":
         raise ValueError("dila_not_published_in_bulletin")
+    primary = root.find("TEXTE/BLOC_TEXTUEL/CONTENU")
+    if primary is None or not "".join(primary.itertext()).strip():
+        raise ValueError("dila_empty_decision_body")
     source_id = root.findtext("META/META_COMMUN/ID") or ""
     if not _IDENTIFIER.fullmatch(source_id):
         raise ValueError("dila_invalid_source_id")
@@ -232,19 +250,25 @@ def topic_scope(topics: tuple[str, ...]) -> str:
         "COMITE SOCIAL ET ECONOMIQUE",
         "GREVE",
         "ASSURANCE ACCIDENT DU TRAVAIL",
+        "CONGES PAYES",
+        "CONSEIL DE PRUD HOMMES",
+        "COMITE D ETABLISSEMENT",
+        "JOURNALISTE PROFESSIONNEL",
+        "AGRICULTURE ACCIDENT DU TRAVAIL",
+        "AGRICULTURE ACCIDENTS DU TRAVAIL",
     )
     normalized = []
     for topic in topics:
         # Formatting of the publisher's headings: bullets, 1°, 2), line breaks.
-        heading = topic.split(" - ")[0]
-        heading = "".join(
-            character
-            for character in unicodedata.normalize("NFKD", heading.upper())
-            if not unicodedata.combining(character)
-        )
-        heading = " ".join(re.findall(r"[A-Z]+", heading))
-        heading = re.sub(r"^(?:(?:O|ER|DEG) )+", "", heading)
-        normalized.append(heading)
+        for segment in topic.split(" - "):
+            heading = "".join(
+                character
+                for character in unicodedata.normalize("NFKD", segment.upper())
+                if not unicodedata.combining(character)
+            )
+            heading = " ".join(re.findall(r"[A-Z]+", heading))
+            heading = re.sub(r"^(?:(?:O|ER|DEG) )+", "", heading)
+            normalized.append(heading)
     for heading in normalized:
         if any(heading == family or heading.startswith(family + " ") for family in families):
             return "admitted"
