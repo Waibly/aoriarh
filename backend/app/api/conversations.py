@@ -1,4 +1,3 @@
-from app.observability.streams import observe_stream
 import asyncio
 import base64
 import dataclasses
@@ -6,8 +5,8 @@ import json
 import logging
 import time
 import uuid
-from typing import Literal
 from datetime import date
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, UploadFile, status
 from fastapi.responses import Response, StreamingResponse
@@ -23,6 +22,7 @@ from app.models.conversation import Message
 from app.models.document import Document
 from app.models.organisation import Organisation
 from app.models.user import User
+from app.observability.streams import observe_stream
 from app.rag.agent import (
     _SOURCE_TYPE_LABELS,
     RAGAgent,
@@ -34,7 +34,6 @@ from app.rag.config import (
 from app.rag.intent_router import classify_intent, is_security_response
 from app.rag.pipeline import prepare_rag_context
 from app.rag.search_feedback import search_feedback
-from app.schemas.dossier import ConversationRename
 from app.schemas.conversation import (
     ChatRequest,
     ConversationCreate,
@@ -50,6 +49,7 @@ from app.schemas.conversation import (
     XPostRequest,
     XPostResponse,
 )
+from app.schemas.dossier import ConversationRename
 from app.services.billing_service import BillingService
 from app.services.conversation_service import ConversationService
 from app.services.security_alert_service import send_security_alert_bg
@@ -1669,6 +1669,18 @@ async def chat_stream(
                 })
                 return
             if rag_trace.error == "search_planner_error":
+                if (
+                    rag_trace.search_plan_validation.get("technical_error")
+                    == "planner_json_contains_nul"
+                ):
+                    yield _sse_event("chat_error", {
+                        "error": "search_planner_error",
+                        "technical_error": "planner_json_contains_nul",
+                        "message": "Le plan reçu contient un caractère incompatible avec "
+                        "l’enregistrement. Il n’a pas été exécuté. Sa sortie originale "
+                        "est consultable dans le dossier.",
+                    })
+                    return
                 yield _sse_event("chat_error", {
                     "error": "search_planner_error",
                     "message": (

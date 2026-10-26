@@ -246,7 +246,34 @@ class RequestPlan(BaseModel):
     requests: list[Request] = Field(max_length=12)
 
 
-def request_schema(query_budget: int, *, continuation: bool = False) -> dict:
+def legal_source_document_ids(history, tool_results: list[dict]) -> list[str]:
+    """Read structured source references, never UUID-like text in generated prose.
+
+    These are planner choices, not access grants. The source reader still checks
+    SQL and index permissions independently before returning any content.
+    """
+    messages = history if isinstance(history, list) else []
+    ids = set()
+    for item in [*messages, *tool_results]:
+        if not isinstance(item, dict):
+            continue
+        for source in item.get("sources") or []:
+            if not isinstance(source, dict) or not source.get("document_id"):
+                continue
+            try:
+                ids.add(str(uuid.UUID(str(source["document_id"]))))
+            except ValueError:
+                continue
+    return sorted(ids)
+
+
+def request_schema(
+    query_budget: int,
+    *,
+    continuation: bool = False,
+    active_document_ids: list[str] | None = None,
+    legal_source_ids: list[str] | None = None,
+) -> dict:
     schema = RequestPlan.model_json_schema()
 
     # SDK strict schemas require all properties, including nullable defaults.
@@ -263,22 +290,85 @@ def request_schema(query_budget: int, *, continuation: bool = False) -> dict:
                 strict(value)
 
     strict(schema)
+    unavailable = set()
+    if active_document_ids is not None:
+        ids = sorted({str(uuid.UUID(str(value))) for value in active_document_ids})
+        if ids:
+            for name in ("DocumentCheck", "PassageRequest"):
+                document_ids = schema["$defs"][name]["properties"]["document_ids"]
+                # PassageRequest also permits null, meaning all active pieces.
+                array = next(
+                    choice for choice in document_ids.get("anyOf", [document_ids])
+                    if choice.get("type") == "array"
+                )
+                array["items"]["enum"] = ids
+        else:
+            schema["properties"]["document_checks"]["maxItems"] = 0
+            unavailable.add("#/$defs/PassageRequest")
+    if legal_source_ids is not None:
+        ids = sorted({str(uuid.UUID(str(value))) for value in legal_source_ids})
+        if ids:
+            schema["$defs"]["ReadLegalSourcesRequest"]["properties"]["document_ids"][
+                "items"
+            ]["enum"] = ids
+        else:
+            unavailable.add("#/$defs/ReadLegalSourcesRequest")
     if continuation:
         schema["properties"]["document_checks"]["maxItems"] = 0
         # The discovery phase is finished. This is an executable capability
         # boundary, not a semantic judgement on the proposed questions.
-        schema["properties"]["requests"]["items"]["anyOf"] = [
-            choice
-            for choice in schema["properties"]["requests"]["items"]["anyOf"]
-            if choice.get("$ref") not in {"#/$defs/FindRequest", "#/$defs/ReadRequest"}
-        ]
+        unavailable.update({"#/$defs/FindRequest", "#/$defs/ReadRequest"})
+    schema["properties"]["requests"]["items"]["anyOf"] = [
+        choice for choice in schema["properties"]["requests"]["items"]["anyOf"]
+        if choice.get("$ref") not in unavailable
+    ]
     schema["$defs"]["RequestLegalSearch"]["properties"]["search_queries"]["maxItems"] = (
         query_budget
     )
     return schema
 
 
+def _contains_nul(value) -> bool:
+    """PostgreSQL JSONB cannot store NUL in a decoded string or object key."""
+    if isinstance(value, str):
+        return "\x00" in value
+    if isinstance(value, dict):
+        return any(_contains_nul(key) or _contains_nul(item) for key, item in value.items())
+    if isinstance(value, (list, tuple)):
+        return any(_contains_nul(item) for item in value)
+    return False
+
+
 def decode_requests(
+    raw: str,
+    *,
+    previous: list[dict],
+    query: str,
+    continuation: bool,
+    case_file: dict | None = None,
+    documents: list[dict] | None = None,
+):
+    """Check executable/persisted structures without altering the original JSON.
+
+    An invalid request's discarded values need not block independent operations.
+    Its error details, compiled requests and facts must still be JSONB-storable.
+    """
+    decoded = _decode_requests(
+        raw, previous=previous, query=query, continuation=continuation,
+        case_file=case_file, documents=documents,
+    )
+    plan, delta, requests, errors = decoded
+    if _contains_nul({
+        "plan": plan.model_dump(mode="json") if plan is not None else None,
+        "case_delta": delta.model_dump(mode="json") if delta is not None else None,
+        "requests": requests,
+        "errors": errors,
+    }):
+        raise ValueError("planner_json_contains_nul")
+    return decoded
+
+
+def _decode_requests(
     raw: str,
     *,
     previous: list[dict],

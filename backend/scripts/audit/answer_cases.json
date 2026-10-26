@@ -1,0 +1,259 @@
+{
+  "version": 2,
+  "purpose": "Référence technique isolée et situations pour une revue humaine ultérieure des réponses.",
+  "limitations": [
+    "Les captures initiales simulent les transports LLM, embeddings et reranking. Elles ne mesurent ni justesse juridique, ni pertinence réelle, ni coût ou latence fournisseur.",
+    "La base SQLite et Qdrant sont en mémoire ; les autorisations, quotas, orchestration, recherches, expansion, génération SSE et sauvegardes passent par le code applicatif.",
+    "Le corpus de capture est synthétique. Une campagne sur un instantané autorisé du corpus réel reste nécessaire avant de modifier le comportement du chat.",
+    "Les questions de revue ne sont jamais exécutées comme validateurs automatiques et ne conditionnent aucune réponse."
+  ],
+  "profile": {
+    "nom": "Entreprise synthétique de référence",
+    "taille": "42",
+    "convention_collective": "Syntec (IDCC 1486)",
+    "secteur_activite": "Conseil",
+    "forme_juridique": "SAS",
+    "profil_metier": "drh",
+    "not_subject_to_ccn": false
+  },
+  "cases": [
+    {
+      "id": "direct",
+      "category": "Question simple",
+      "question": "Quel préavis légal s'applique à une démission ?",
+      "review_points": [
+        "La réponse traite-t-elle la question sans développer des sujets voisins ?",
+        "Les conditions et sources sont-elles explicites ?"
+      ]
+    },
+    {
+      "id": "checklist",
+      "category": "Checklist à une date donnée",
+      "question": "Entretiens professionnels : que vérifier avant le 1er octobre 2026 ?",
+      "review_points": [
+        "Les contrôles sont-ils utilisables et conditionnels lorsque nécessaire ?",
+        "La recherche présuppose-t-elle des périodicités non établies ?"
+      ]
+    },
+    {
+      "id": "multi",
+      "category": "Plusieurs livrables sans calcul",
+      "question": "CDI depuis le 15 mars 2018, salaire mensuel brut 3 200 €, treizième mois et prime de 8 000 € pour une mission d'avril à juin 2026. Nature de la prime et CCN inconnues. Licenciement économique envisagé : quelles pièces réunir, comment traiter les primes, et prépare un mail à la paie. Aucun calcul.",
+      "review_points": [
+        "Les livrables demandés sont-ils tous couverts ?",
+        "La nature de la prime et la CCN restent-elles inconnues ?",
+        "L'exclusion des calculs est-elle respectée ?"
+      ]
+    },
+    {
+      "id": "ccn_unknown",
+      "category": "Convention inconnue",
+      "question": "La convention collective applicable au salarié est inconnue. Quelles informations réunir pour déterminer son préavis ?",
+      "review_points": [
+        "La convention du profil est-elle imposée au cas ?",
+        "Les informations demandées permettraient-elles de trancher ?"
+      ]
+    },
+    {
+      "id": "ccn_contested",
+      "category": "Convention du profil contestée",
+      "question": "Le profil indique Syntec mais elle ne s'applique pas à ce salarié. Quelle règle rechercher pour sa période d'essai ?",
+      "review_points": [
+        "L'exclusion factuelle est-elle conservée dans la recherche et la réponse ?"
+      ]
+    },
+    {
+      "id": "internal",
+      "category": "Articulation des sources internes",
+      "question": "Notre accord d'entreprise prévoit une règle différente de la branche pour le temps de travail. Quelle disposition appliquer ?",
+      "review_points": [
+        "Les deux textes et leur champ sont-ils réellement consultés ?",
+        "L'articulation est-elle fondée sur les sources ?"
+      ]
+    },
+    {
+      "id": "historical",
+      "category": "Droit applicable à une date passée",
+      "question": "Quelle règle était applicable en 2022 à la période d'essai d'un cadre ?",
+      "review_points": [
+        "La date des faits gouverne-t-elle le choix des versions ?",
+        "Une version actuelle remplace-t-elle indûment le droit historique ?"
+      ]
+    },
+    {
+      "id": "news",
+      "category": "Actualités bornées",
+      "question": "Quels textes ont été publiés en septembre 2026 en droit social ?",
+      "review_points": [
+        "Publication et entrée en vigueur sont-elles distinguées ?",
+        "Les limites de collecte et de sélection sont-elles lisibles ?"
+      ]
+    },
+    {
+      "id": "exact_reference",
+      "category": "Référence exacte",
+      "question": "Explique l'article L.1234-9 du Code du travail.",
+      "review_points": [
+        "La référence exacte est-elle retrouvée dans le bon code ?",
+        "Son contenu est-il vérifié avant interprétation ?"
+      ]
+    },
+    {
+      "id": "followup",
+      "category": "Relance contextuelle",
+      "question": "Et pour les cadres ?",
+      "history": [
+        {
+          "role": "user",
+          "content": "Quel préavis s'applique à une démission dans la convention collective concernée ?"
+        }
+      ],
+      "review_points": [
+        "Le sujet et le statut sont-ils conservés sans inventer de fait ?"
+      ]
+    },
+    {
+      "id": "topic_change",
+      "category": "Changement de sujet",
+      "question": "Nouvelle question : comment organiser les élections du CSE ?",
+      "history": [
+        {
+          "role": "user",
+          "content": "Quel préavis en cas de démission ?"
+        }
+      ],
+      "review_points": [
+        "L'ancien sujet contamine-t-il la nouvelle recherche ?"
+      ]
+    },
+    {
+      "id": "calculation",
+      "category": "Calcul demandé",
+      "question": "Calcule l'indemnité légale de licenciement : CDI depuis le 15 mars 2018, rupture le 30 septembre 2026, salaire fixe mensuel brut 3 200 €, aucun bonus. CCN à confirmer.",
+      "review_points": [
+        "La formule et l'assiette sont-elles sourcées avant l'arithmétique ?",
+        "Les données, unités et hypothèses sont-elles conservées ?"
+      ]
+    },
+    {
+      "id": "email_only",
+      "category": "Rédaction seule",
+      "question": "Rédige uniquement un mail à la paie pour demander les bulletins et le détail des primes, sans analyse et sans calcul.",
+      "review_points": [
+        "Le mail est-il utilisable seul ?",
+        "Des recherches ou livrables superflus sont-ils ajoutés ?"
+      ]
+    },
+    {
+      "id": "edit_long_mail",
+      "category": "Correction d'un document long",
+      "question": "Dans le mail précédent, remplace uniquement le salaire mensuel brut de 3 200 € par 3 450 €. Conserve le reste.",
+      "review_points": [
+        "La fin du document et ses réserves restent-elles disponibles ?",
+        "Le document est-il conservé intégralement hors correction demandée ?"
+      ]
+    },
+    {
+      "id": "document",
+      "category": "Lecture d'une pièce",
+      "question": "À partir du contrat joint, indique la date d'entrée et les éléments de rémunération.",
+      "review_points": [
+        "La pièce est-elle lue avec ses droits et sa version ?",
+        "Les données proviennent-elles de la pièce plutôt que d'une supposition ?"
+      ]
+    },
+    {
+      "id": "missing_source",
+      "category": "Source absente des passages",
+      "question": "La convention collective ne ressort pas dans les passages consultés. Peut-on conclure qu'elle ne prévoit aucune règle sur cette prime ?",
+      "review_points": [
+        "Absence de résultat et absence de disposition sont-elles distinguées ?"
+      ]
+    },
+    {
+      "id": "fact_correction",
+      "category": "Correction d'un fait du dossier",
+      "question": "Correction : mon salaire mensuel brut est de 3 450 €, et non 3 200 €. Mets le dossier à jour, sans calcul.",
+      "review_points": [
+        "La correction remplace-t-elle le fait actif avec sa provenance ?",
+        "Les anciennes réponses sont-elles subordonnées au dossier corrigé ?"
+      ]
+    },
+    {
+      "id": "empty_planner",
+      "category": "Sortie structurée inexécutable",
+      "question": "Quelles règles rechercher pour le télétravail ?",
+      "review_points": [
+        "La sortie brute reste-t-elle consultable avec une erreur technique séparée ?",
+        "Une réparation ou recherche de remplacement est-elle déclenchée ?"
+      ]
+    },
+    {
+      "id": "retrieval_error",
+      "category": "Panne de recherche",
+      "question": "Quelle procédure suivre pour organiser le temps de travail ?",
+      "review_points": [
+        "La panne est-elle signalée sans devenir une absence de règle ?"
+      ]
+    },
+    {
+      "id": "partial_generation",
+      "category": "Génération interrompue",
+      "question": "Explique la procédure de demande de télétravail.",
+      "review_points": [
+        "Le texte émis est-il conservé intégralement ?",
+        "L'interruption est-elle signalée séparément ?"
+      ]
+    },
+    {
+      "id": "capability_drafting",
+      "category": "Demande concrète introduite par une capacité",
+      "question": "Es tu capable de rédiger un accord sur le temps de travail ? Nous souhaitons mettre en place un accord d'entreprise indiquant que les heures supplémentaires au-delà de la durée légale sont majorées à 10 %.",
+      "review_points": [
+        "La demande complète atteint-elle le planificateur sans réponse de présentation intermédiaire ?",
+        "Le livrable de rédaction et les conditions juridiques nécessaires restent-ils pris en compte ?"
+      ]
+    }
+  ],
+  "technical_scenarios": {
+    "direct": {
+      "case_id": "direct",
+      "planner": "legal"
+    },
+    "multi": {
+      "case_id": "multi",
+      "planner": "two_legal"
+    },
+    "email_only": {
+      "case_id": "email_only",
+      "planner": "answer"
+    },
+    "edit_long_mail": {
+      "case_id": "edit_long_mail",
+      "planner": "answer",
+      "history_fixture": "long_mail"
+    },
+    "fact_correction": {
+      "case_id": "fact_correction",
+      "planner": "fact_revision"
+    },
+    "empty_planner": {
+      "case_id": "empty_planner",
+      "planner": "invalid"
+    },
+    "retrieval_error": {
+      "case_id": "retrieval_error",
+      "planner": "legal",
+      "fault": "search"
+    },
+    "partial_generation": {
+      "case_id": "partial_generation",
+      "planner": "legal",
+      "fault": "stream"
+    },
+    "capability_drafting": {
+      "case_id": "capability_drafting",
+      "planner": "legal"
+    }
+  }
+}

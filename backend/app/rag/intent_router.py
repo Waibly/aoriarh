@@ -77,6 +77,11 @@ class IntentResult:
 # question RH légitime de sa recherche documentaire et de sa réponse.
 
 _PATTERNS_PROTECTED_DATA = [
+    r"\b(?:peux[- ]tu|pouvez[- ]vous|(?:es[- ]tu|êtes[- ]vous)\s+capable\s+de)\s+"
+    r"(?:(?:me|nous)\s+|m['’])?(?:donner|r[ée]v[ée]ler|afficher|montrer|exporter|extraire)"
+    r"\b[^.?!]{0,50}"
+    r"\b(tes|vos|ton|votre)\s+(secrets?|cl[ée]s?\s*api|tokens?|"
+    r"variables? d['’]environnement)\b",
     r"\b(select|insert|update|delete|drop|truncate)\b[^;\n]{0,100}"
     r"\b(from|into|table|users?|clients?|messages?|conversations?)\b",
     r"\b(tables?|sch[ée]ma)\b[^.?!]{0,70}\b(base de donn[ée]es|database|bdd)\b",
@@ -159,7 +164,12 @@ _PATTERNS_SCOPE = [
     # légitimes ("tu connais les ordonnances Macron ?", "tu connais l'arrêt
     # du 25/03/2024 ?"). En cas d'ambiguïté on laisse le LLM classifier
     # trancher (cf. _CLASSIFIER_PROMPT) ou on tombe en RAG par défaut.
-    r"\b(es-tu|êtes-vous|es tu)\s+(spécialisé|expert|capable)\b",
+    # Only a standalone question about expertise belongs to the product scope.
+    # A concrete task after "capable de…", or in a following sentence, must
+    # reach the planner with its full original wording. Security checks run first.
+    r"^\s*(?:es[- ]tu|êtes[- ]vous)\s+(?:spécialisée?|experte?|capable)"
+    r"(?:\s+en\s+(?:droit\s+(?:social|du\s+travail)|ressources\s+humaines|rh))?"
+    r"\s*[?!.]*\s*$",
     r"\b(quelles?\s+convention(s)?\s+collectives?)\s+(tu|vous|que tu|que vous)\s+(connais|connaissez|maîtris|couvr|gèr)",
     r"\b(quelles?\s+(idcc|ccn))\s+(tu|vous)\b",
     # Droits ÉTRANGERS uniquement (catch direct). Les autres branches du droit

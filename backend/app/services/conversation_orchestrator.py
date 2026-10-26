@@ -15,8 +15,8 @@ from datetime import date
 from typing import Literal
 
 import httpx
-from sqlalchemy.exc import SQLAlchemyError
 from pydantic import BaseModel, ConfigDict, Field, model_validator
+from sqlalchemy.exc import SQLAlchemyError
 
 from app.rag.agent import RagTrace
 from app.rag.search import SearchResult
@@ -237,6 +237,7 @@ async def plan_conversation(
     cited_sources=None,
     case_file_context=None,
     previous_requests=None,
+    source_history=None,
 ) -> PlannedConversation:
     """Return one raw, typed plan. Invalid output is exposed and never repaired."""
     base = build_deterministic_search_plan(
@@ -258,10 +259,22 @@ async def plan_conversation(
     from app.services.conversation_requests import (
         REQUEST_PROMPT,
         compact_case_context,
+        legal_source_document_ids,
         request_schema,
     )
 
-    schema = request_schema(base.query_budget, continuation=continuation)
+    schema = request_schema(
+        base.query_budget,
+        continuation=continuation,
+        active_document_ids=[
+            str(item["document_id"])
+            for item in [*active_documents, *documents]
+            if item.get("document_id")
+        ],
+        legal_source_ids=legal_source_document_ids(
+            history if source_history is None else source_history, tool_results,
+        ),
+    )
     # The question is already supplied once; keep only search constraints here.
     search_context.pop("query", None)
     search_context.pop("query_original", None)
@@ -275,6 +288,14 @@ async def plan_conversation(
                     "current_date": date.today().isoformat(),
                     "request": query,
                     "history": history,
+                    # Attachment continuity carries the original text history,
+                    # but not its structured source references. Keep the latter
+                    # available without parsing generated prose or duplicating it.
+                    **({"history_source_references": [
+                        {"sources": item["sources"]}
+                        for item in source_history
+                        if isinstance(item, dict) and item.get("sources")
+                    ]} if source_history is not None and not isinstance(history, list) else {}),
                     "active_documents": active_documents,
                     "documents_read": documents,
                     "tool_results": tool_results,
@@ -590,6 +611,7 @@ async def prepare_conversation_context(
                 cited_sources=cited_sources,
                 case_file_context=case_file_context,
                 previous_requests=previous_requests,
+                source_history=history,
             )
         except Exception:
             if case_file is not None:
@@ -629,7 +651,12 @@ async def prepare_conversation_context(
             observation_error = (
                 "empty_planner_output" if not planned.raw else "invalid_planner_output"
             )
-            if planned.trace.error == "case_context_budget_exceeded":
+            if (
+                planned.trace.search_plan_validation.get("technical_error")
+                == "planner_json_contains_nul"
+            ):
+                observation_error = "planner_json_contains_nul"
+            elif planned.trace.error == "case_context_budget_exceeded":
                 observation_error = planned.trace.error
             observation_technical_errors.append(observation_error)
         if planned.fact_delta is not None:
@@ -1230,6 +1257,9 @@ async def prepare_conversation_context(
                 task.task_type in {"legal_question", "document_review"}
                 and not task.action_ids
                 and not task.depends_on
+                # Authorised attachments read before planning already supply
+                # a direct review; no extra read action is required.
+                and (task.task_type != "document_review" or not current_documents)
             ):
                 output["status"] = "blocked"
             by_task[task.id] = output

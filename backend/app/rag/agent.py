@@ -1119,28 +1119,36 @@ class RAGAgent:
         first_token_logged = False
         total_tokens = 0
         stream_usage = None
-        async for chunk in response:
-            # Capture usage from the final chunk (stream_options.include_usage)
-            if chunk.usage is not None:
-                stream_usage = chunk.usage
-            if chunk.choices:
-                delta = chunk.choices[0].delta
-                if delta.content:
-                    if not first_token_logged:
-                        logger.info(
-                            "[PERF] Step 6 — First token %.0fms",
-                            (time.perf_counter() - t_start) * 1000,
-                        )
-                        first_token_logged = True
-                        # Display the first fragment immediately; batch only subsequent ones.
+        try:
+            async for chunk in response:
+                # Capture usage from the final chunk (stream_options.include_usage)
+                if chunk.usage is not None:
+                    stream_usage = chunk.usage
+                if chunk.choices:
+                    delta = chunk.choices[0].delta
+                    if delta.content:
+                        if not first_token_logged:
+                            logger.info(
+                                "[PERF] Step 6 — First token %.0fms",
+                                (time.perf_counter() - t_start) * 1000,
+                            )
+                            first_token_logged = True
+                            # Display the first fragment immediately; batch only subsequent ones.
+                            total_tokens += 1
+                            yield delta.content
+                            continue
                         total_tokens += 1
-                        yield delta.content
-                        continue
-                    total_tokens += 1
-                    token_buffer.append(delta.content)
-                    if len(token_buffer) >= buffer_size:
-                        yield "".join(token_buffer)
-                        token_buffer = []
+                        token_buffer.append(delta.content)
+                        if len(token_buffer) >= buffer_size:
+                            yield "".join(token_buffer)
+                            token_buffer = []
+        except Exception:
+            # These fragments were already received from the provider. Forward
+            # them verbatim before propagating the transport error, so callers
+            # can persist the entire partial answer and report the error separately.
+            if token_buffer:
+                yield "".join(token_buffer)
+            raise
 
         # Flush remaining buffer
         if token_buffer:

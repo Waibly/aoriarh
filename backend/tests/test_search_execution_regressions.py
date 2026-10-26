@@ -107,7 +107,9 @@ def test_explicit_document_filter_cannot_return_another_tenant_document(corpus):
     assert corpus.scroll(COLLECTION_NAME, scroll_filter=foreign)[0] == []
 
 
-async def test_successful_floor_survives_failed_main_branches():
+async def test_successful_floor_does_not_hide_failed_main_branches():
+    from app.rag.parent_expansion import RetrievalError
+
     obj = agent()
 
     async def search(query, org, **kwargs):
@@ -116,8 +118,8 @@ async def test_successful_floor_survives_failed_main_branches():
         raise RuntimeError("simulated main branch outage")
 
     obj.search_engine.search.side_effect = search
-    found = await obj._run_variant_searches(["question"], "ancre", "org")
-    assert [r.document_id for r in found] == ["code"]
+    with pytest.raises(RetrievalError, match="search_branch_failed"):
+        await obj._run_variant_searches(["question"], "ancre", "org")
     assert {b["status"] for b in obj._branch_diagnostics} == {"ok", "error"}
 
 
@@ -315,7 +317,9 @@ def test_model_can_flag_a_missed_anaphora_without_rewriting_autonomous_questions
     assert enriched.query_original == autonomous.query_original
 
 
-async def test_timeout_of_main_search_keeps_successful_floor(monkeypatch):
+async def test_timeout_of_main_search_is_not_hidden_by_successful_floor(monkeypatch):
+    from app.rag.parent_expansion import RetrievalError
+
     monkeypatch.setattr("app.rag.agent.RAG_TIMEOUT_PER_STEP", 0.01)
     obj = agent()
 
@@ -325,7 +329,8 @@ async def test_timeout_of_main_search_keeps_successful_floor(monkeypatch):
         await asyncio.Event().wait()
 
     obj.search_engine.search.side_effect = search
-    assert await obj._run_variant_searches(["question"], "ancre", "org")
+    with pytest.raises(RetrievalError, match="search_branch_failed"):
+        await obj._run_variant_searches(["question"], "ancre", "org")
     assert {b["status"] for b in obj._branch_diagnostics} == {"ok", "error"}
 
 
