@@ -1,3 +1,4 @@
+from typing import Literal
 from uuid import UUID
 
 from pydantic import Field, field_validator, model_validator
@@ -37,6 +38,9 @@ class Settings(BaseSettings):
     qdrant_host: str = "localhost"
     qdrant_port: int = 6333
     qdrant_api_key: str = ""
+    qdrant_collection_name: str = "aoriarh_documents"
+    # Activate french-v1 only after the separate vector build and coverage check.
+    rag_lexical_profile: Literal["legacy-en", "french-v1"] = "legacy-en"
 
     # MinIO
     minio_endpoint: str = "localhost:9000"

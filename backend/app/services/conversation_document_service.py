@@ -16,6 +16,7 @@ from app.core.config import settings
 from app.rag.agent import RagTrace
 from app.rag.chronology import ChronologyRequest
 from app.rag.decision_period import DecisionPeriod
+from app.rag.planner_schema import strict_planner_schema
 from app.rag.search import HybridSearch, SearchResult
 from app.rag.search_plan import (
     _COMPACT_PLANNER_PROMPT,
@@ -23,6 +24,10 @@ from app.rag.search_plan import (
     _planner_user_message,
     apply_compact_planner_payload,
     build_deterministic_search_plan,
+)
+from app.rag.temporal_parameters import (
+    constrain_period_parameters,
+    user_period_parameters_available,
 )
 from app.services.document_extraction_service import DocumentExtractionService
 
@@ -228,8 +233,9 @@ async def read_conversation_documents(
         documents = [by_id[str(ref["document_id"])] for ref in references]
 
     if getattr(conversation, "dossier_id", None):
-        from app.models.document import Document
         from sqlalchemy import select
+
+        from app.models.document import Document
         scopes = dict((await db.execute(select(Document.id, Document.private_conversation_id).where(
             Document.id.in_([uuid.UUID(str(d["document_id"])) for d in documents])
         ))).all())
@@ -274,6 +280,20 @@ def task_messages(query, documents, continuity, *, search_context=None):
     ]
 
 
+def continuity_history(continuity: str | None) -> list[dict]:
+    """Read the application-owned history envelope; leave all stored text intact."""
+    if not isinstance(continuity, str):
+        return []
+    _, marker, encoded = continuity.partition("Historique original (JSON) :")
+    if not marker:
+        return []
+    try:
+        history = json.loads(encoded)
+    except (ValueError, TypeError):
+        return []
+    return history if isinstance(history, list) else []
+
+
 async def prepare_document_task(
     agent, *, query, documents, continuity, legal_search, model,
     org_context=None, org_idcc_list=None, cited_sources=None,
@@ -288,9 +308,13 @@ async def prepare_document_task(
     search_context = json.loads(_planner_user_message(
         base, history=None, org_context=org_context, cited_sources=cited_sources,
     ))
-    schema = DocumentTask.model_json_schema()
+    schema = strict_planner_schema(DocumentTask.model_json_schema())
     schema["$defs"]["DocumentLegalSearch"]["properties"]["search_queries"]["maxItems"] = (
         base.query_budget
+    )
+    constrain_period_parameters(
+        schema, available=user_period_parameters_available(query, continuity_history(continuity)),
+        legal_search_type="DocumentLegalSearch",
     )
     trace = RagTrace(query_original=query)
     response = await agent.llm.with_options(max_retries=0, timeout=30).chat.completions.create(

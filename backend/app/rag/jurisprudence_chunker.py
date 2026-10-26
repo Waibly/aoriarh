@@ -19,6 +19,9 @@ _HEADER_PATTERNS = [
 
 # --- Structural sections of a decision ---
 _SECTION_MARKERS = [
+    (re.compile(r"(?mi)^Sommaire officiel\s*$"), "sommaire"),
+    (re.compile(r"(?mi)^Titres officiels\s*$"), "titres"),
+    (re.compile(r"(?mi)^Texte de la décision\s*$"), "en-tete"),
     # Facts and procedure
     (re.compile(r"(?mi)^(?:FAITS\s+ET\s+PROC[EÉ]DURE|Faits\s+et\s+proc[eé]dure)\s*$"), "faits"),
     (re.compile(r"(?mi)^(?:Sur\s+le\s+rapport\s+de\s+)"), "faits"),
@@ -123,7 +126,7 @@ class JurisprudenceChunker:
                 continue
 
             detected = _classify_line(line)
-            if detected and detected != current_label:
+            if detected and (detected != current_label or detected in {"sommaire", "titres"}):
                 # Flush previous section
                 if current_lines:
                     sections.append((current_label, "\n".join(current_lines)))
@@ -206,6 +209,8 @@ class JurisprudenceChunker:
     @staticmethod
     def _section_label_fr(label: str) -> str:
         labels = {
+            "sommaire": "[Sommaire officiel]",
+            "titres": "[Titres officiels]",
             "en-tete": "[En-tête]",
             "faits": "[Faits et procédure]",
             "moyens": "[Moyens du pourvoi]",

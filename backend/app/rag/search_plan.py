@@ -19,10 +19,16 @@ from typing import Any
 from app.rag.chronology import CHRONOLOGY_PROMPT, ChronologyRequest
 from app.rag.decision_period import DECISION_PERIOD_PROMPT, DecisionPeriod
 from app.rag.parent_expansion import detect_identifiers
+from app.rag.planner_schema import strict_planner_schema
+from app.rag.search_instructions import LEGAL_RETRIEVAL_INSTRUCTIONS
 from app.rag.source_intent import (
     detect_exclusive_sources,
     detect_source_exclusions,
     detect_source_intent,
+)
+from app.rag.temporal_parameters import (
+    constrain_period_parameters,
+    user_period_parameters_available,
 )
 
 
@@ -322,7 +328,7 @@ Schéma JSON exact :
 
 
 _COMPACT_PLANNER_PROMPT += (
-    CHRONOLOGY_PROMPT + DECISION_PERIOD_PROMPT
+    LEGAL_RETRIEVAL_INSTRUCTIONS + CHRONOLOGY_PROMPT + DECISION_PERIOD_PROMPT
     + "\nAjoute chronology et decision_period (objets ou null) au schéma JSON.\n"
 )
 
@@ -608,6 +614,15 @@ async def run_compact_search_planner(
         )
 
     try:
+        # Lazy import avoids the agent/document-service import cycle. The same
+        # argument contract and date capabilities apply to the direct route.
+        from app.services.conversation_document_service import DocumentLegalSearch
+
+        schema = strict_planner_schema(DocumentLegalSearch.model_json_schema())
+        schema["properties"]["search_queries"]["maxItems"] = plan.query_budget
+        constrain_period_parameters(
+            schema, available=user_period_parameters_available(plan.query_original, history),
+        )
         response = await asyncio.wait_for(
             llm.chat.completions.create(
                 model=model,
@@ -623,7 +638,9 @@ async def run_compact_search_planner(
                         ),
                     },
                 ],
-                response_format={"type": "json_object"},
+                response_format={"type": "json_schema", "json_schema": {
+                    "name": "legal_search_plan", "strict": True, "schema": schema,
+                }},
                 max_completion_tokens=2400,
                 reasoning_effort="minimal",
             ),

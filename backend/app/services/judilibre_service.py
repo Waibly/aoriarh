@@ -9,6 +9,7 @@ Utilise l'endpoint /export qui retourne les décisions complètes
 
 import asyncio
 import hashlib
+import json
 import logging
 import re
 import time
@@ -23,6 +24,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.models.document import Document
+from app.services.judilibre_source import official_summaries, render_judilibre_source
 from app.models.document_case_reference import DocumentCaseReference
 from app.rag.norme_hierarchy import DOCUMENT_TYPE_HIERARCHY
 from app.rag.tasks import enqueue_ingestion
@@ -181,6 +183,7 @@ class JudilibreDecision:
     themes: list[str]
     sommaire: str | None
     textes_appliques: list[str]
+    raw_source: dict | None = None
 
 
 @dataclass
@@ -875,11 +878,8 @@ class JudilibreService:
             juridiction_label = jurisdiction_raw.upper()
 
         # Extract summary from titlesAndSummaries or summary field
-        sommaire = raw.get("summary")
-        if not sommaire:
-            tas = raw.get("titlesAndSummaries", [])
-            if tas and isinstance(tas, list) and tas[0].get("summary"):
-                sommaire = tas[0]["summary"]
+        summaries = official_summaries(raw)
+        sommaire = "\n\n".join(summaries) if summaries else None
 
         # Extract visa texts
         textes_appliques = []
@@ -903,6 +903,7 @@ class JudilibreService:
             themes=raw.get("themes", []),
             sommaire=sommaire,
             textes_appliques=textes_appliques,
+            raw_source=raw,
         )
 
     async def _create_document(
@@ -954,8 +955,13 @@ class JudilibreService:
         file_id = uuid.uuid4()
         safe_pourvoi = decision.numero_pourvoi.replace(" ", "_").replace("/", "-")
         storage_path = f"common/judilibre/{file_id}_{safe_pourvoi}.txt"
-        text_bytes = decision.text.encode("utf-8")
+        source = decision.raw_source or {"text": decision.text, "summary": decision.sommaire}
+        text_bytes = render_judilibre_source(source).encode("utf-8")
         storage.put_file_bytes(storage_path, text_bytes, content_type="text/plain")
+        storage.put_file_bytes(
+            storage_path + ".source.json", json.dumps(source, ensure_ascii=False).encode("utf-8"),
+            content_type="application/json",
+        )
 
         file_hash = hashlib.sha256(text_bytes).hexdigest()
 

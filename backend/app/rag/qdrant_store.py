@@ -4,17 +4,19 @@ import threading
 from qdrant_client import QdrantClient
 from qdrant_client.models import (
     Distance,
+    Modifier,
     PayloadSchemaType,
-    SparseVectorParams,
     SparseIndexParams,
+    SparseVectorParams,
     VectorParams,
 )
 
 from app.core.config import settings
+from app.rag.lexical_profile import lexical_profile
 
 logger = logging.getLogger(__name__)
 
-COLLECTION_NAME = "aoriarh_documents"
+COLLECTION_NAME = settings.qdrant_collection_name
 DENSE_VECTOR_SIZE = 1024  # Voyage AI voyage-law-2 dimension
 
 
@@ -71,7 +73,9 @@ def ensure_collection(client: QdrantClient) -> None:
                 ),
             },
             sparse_vectors_config={
-                "sparse-bm25": SparseVectorParams(index=SparseIndexParams(on_disk=True)),
+                name: SparseVectorParams(
+                    index=SparseIndexParams(on_disk=True), modifier=Modifier.IDF,
+                ) for name in {"sparse-bm25", lexical_profile().vector_name}
             },
         )
         # Create payload indexes for efficient filtering

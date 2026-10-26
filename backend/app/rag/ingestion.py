@@ -23,6 +23,7 @@ from app.rag.article_chunker import ArticleChunker, ChunkWithMeta
 from app.rag.chunker import LegalChunker
 from app.rag.config import EMBEDDING_MODEL
 from app.rag.jurisprudence_chunker import JurisprudenceChunker
+from app.rag.lexical_profile import LEXICAL_PROFILES
 from app.rag.norme_hierarchy import JURISPRUDENCE_SOURCE_TYPES
 from app.rag.qdrant_store import COLLECTION_NAME, ensure_collection, get_qdrant_client
 from app.rag.text_cleaner import clean_text
@@ -251,11 +252,11 @@ async def _get_embeddings_with_progress(
     return all_embeddings
 
 
-def _get_sparse_vectors(texts: list[str]) -> list[dict]:
+def _get_sparse_vectors(texts: list[str], profile_name: str = "legacy-en") -> list[dict]:
     """Get BM25 sparse vectors using fastembed (cached singleton model)."""
     from app.rag.search import _get_sparse_model
 
-    model = _get_sparse_model()
+    model = _get_sparse_model(profile_name)
     results = list(model.embed(texts))
     sparse_vectors = []
     for embedding in results:
@@ -449,6 +450,17 @@ class IngestionPipeline:
                 progress_callback=lambda progress: self._update_progress(doc, db, progress),
             )
             sparse_vectors = _get_sparse_vectors(chunks)
+            # When both fields exist in the destination, keep both profiles
+            # available after cutover. No query vector is compared against a
+            # corpus encoded in a different language.
+            sparse_fields = self.qdrant.get_collection(
+                COLLECTION_NAME,
+            ).config.params.sparse_vectors or {}
+            extra_sparse = {
+                profile.vector_name: _get_sparse_vectors(chunks, name)
+                for name, profile in LEXICAL_PROFILES.items()
+                if name != "legacy-en" and profile.vector_name in sparse_fields
+            }
             await self._update_progress(doc, db, 85)
 
             # 8. Build Qdrant points with metadata
@@ -533,6 +545,7 @@ class IngestionPipeline:
                         vector={
                             "dense": dense_emb,
                             "sparse-bm25": sparse_vec,
+                            **{name: vectors[i] for name, vectors in extra_sparse.items()},
                         },
                         payload=payload,
                     )

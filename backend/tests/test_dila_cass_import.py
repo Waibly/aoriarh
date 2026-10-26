@@ -491,6 +491,9 @@ async def test_actual_pipeline_preserves_xml_numbers_and_table_chunks(monkeypatc
     storage = Mock()
     storage.get_file_bytes.return_value = raw
     qdrant = Mock()
+    qdrant.get_collection.return_value = SimpleNamespace(
+        config=SimpleNamespace(params=SimpleNamespace(sparse_vectors={})),
+    )
     qdrant.scroll.return_value = ([], None)
     monkeypatch.setattr("app.rag.ingestion.StorageService", lambda: storage)
     monkeypatch.setattr("app.rag.ingestion.get_qdrant_client", lambda: qdrant)

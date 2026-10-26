@@ -21,6 +21,7 @@ from app.core.http_client import get_shared_async_client
 from app.rag.access_filter import build_org_access_filter
 from app.rag.config import EMBEDDING_MODEL, TOP_K
 from app.rag.decision_period import decision_period_filter
+from app.rag.lexical_profile import lexical_profile
 from app.rag.qdrant_store import COLLECTION_NAME, get_qdrant_client
 from app.services.cost_tracker import CostContext, cost_tracker
 
@@ -28,7 +29,7 @@ logger = logging.getLogger(__name__)
 
 # --- Singletons (loaded once at module level) ---
 
-_sparse_model = None
+_sparse_models = {}
 _SPARSE_LOCK = threading.Lock()
 
 # Retry config for Voyage AI
@@ -56,18 +57,20 @@ def _recency_boost(content_date: str) -> float:
     return 1.0 + (_RECENCY_MAX_BOOST - 1.0) * (1.0 - age_days / max_days)
 
 
-def _get_sparse_model():
+def _get_sparse_model(profile_name: str | None = None):
     """Return a module-level singleton BM25 model (thread-safe)."""
-    global _sparse_model
-    if _sparse_model is not None:
-        return _sparse_model
+    profile = lexical_profile(profile_name)
+    if profile.vector_name in _sparse_models:
+        return _sparse_models[profile.vector_name]
     with _SPARSE_LOCK:
         # Double-checked locking: re-check after acquiring lock
-        if _sparse_model is None:
+        if profile.vector_name not in _sparse_models:
             from fastembed import SparseTextEmbedding
 
-            _sparse_model = SparseTextEmbedding(model_name="Qdrant/bm25")
-    return _sparse_model
+            _sparse_models[profile.vector_name] = SparseTextEmbedding(
+                model_name="Qdrant/bm25", language=profile.language,
+            )
+    return _sparse_models[profile.vector_name]
 
 
 @dataclass
@@ -224,6 +227,7 @@ class HybridSearch:
         document_ids: list[str] | None = None,
         authorized_private_document_ids: list[str] | None = None,
         decision_period: dict | None = None,
+        candidate_pool: bool = False,
     ) -> list[SearchResult]:
         """Execute a hybrid search combining dense and sparse vectors.
 
@@ -283,7 +287,7 @@ class HybridSearch:
                 indices=sparse_vector["indices"],
                 values=sparse_vector["values"],
             ),
-            using="sparse-bm25",
+            using=lexical_profile().vector_name,
             limit=top_k * 2,
             filter=org_filter,
         )
@@ -298,6 +302,31 @@ class HybridSearch:
             limit=top_k,
             with_payload=True,
         )
+        if candidate_pool:
+            # Preserve the existing hybrid results AND each channel's own top
+            # candidates. This prevents fusion from hiding a strong one-channel
+            # match before the common reranker can read it. Every query uses the
+            # exact same access, source and date filter.
+            dense_results, sparse_results = await asyncio.gather(
+                asyncio.to_thread(
+                    self.qdrant.query_points, collection_name=COLLECTION_NAME,
+                    query=dense_embedding, using="dense", query_filter=org_filter,
+                    limit=top_k, with_payload=True,
+                ),
+                asyncio.to_thread(
+                    self.qdrant.query_points, collection_name=COLLECTION_NAME,
+                    query=SparseVector(**sparse_vector), using=lexical_profile().vector_name,
+                    query_filter=org_filter, limit=top_k, with_payload=True,
+                ),
+            )
+            points, scores = {}, {}
+            for channel in (results.points, dense_results.points, sparse_results.points):
+                for rank, point in enumerate(channel, 1):
+                    points.setdefault(point.id, point)
+                    scores[point.id] = scores.get(point.id, 0.0) + 1.0 / (60 + rank)
+            results.points = [
+                point.model_copy(update={"score": scores[key]}) for key, point in points.items()
+            ]
 
         t2 = time.perf_counter()
         logger.info("[PERF] Qdrant query %.0fms (%d points)", (t2 - t1) * 1000, len(results.points))
@@ -356,7 +385,7 @@ class HybridSearch:
 
         # 5. Re-sort by weighted score and return top_k
         search_results.sort(key=lambda r: r.score, reverse=True)
-        return search_results[:top_k]
+        return search_results if candidate_pool else search_results[:top_k]
 
     async def _encode_dense(
         self,
@@ -435,7 +464,7 @@ class HybridSearch:
         t_start = time.perf_counter()
         model = _get_sparse_model()
         t_model = time.perf_counter()
-        results = list(model.embed([text]))
+        results = list(model.query_embed([text]))
         t_end = time.perf_counter()
         logger.info(
             "[PERF]   └─ Sparse embedding (BM25) %.0fms (model load %.0fms, encode %.0fms)",

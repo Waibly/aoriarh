@@ -23,6 +23,8 @@ logger = logging.getLogger(__name__)
 
 _MAX_RETRIES = 3
 _RETRY_BASE_DELAY = 2.0
+_MAX_BATCH_BYTES = 400_000  # Conservative bound below the provider's 600k-token ceiling.
+_MAX_BATCH_DOCUMENTS = 64
 
 
 class RerankingError(RuntimeError):
@@ -77,6 +79,32 @@ class VoyageReranker:
             return []
         if top_k is not None and (type(top_k) is not int or top_k < 0):
             raise ValueError("top_k must be a non-negative integer")
+        # Larger candidate unions are split by a transport budget, never by
+        # semantic score. All candidates are scored; no text is truncated.
+        query_bytes = len(query.encode("utf-8"))
+        batches, batch, batch_bytes = [], [], 0
+        for result in results:
+            size = query_bytes + len(document_rerank_input(result).encode("utf-8"))
+            if size > _MAX_BATCH_BYTES:
+                raise RerankingError("reranker_pair_budget_exceeded")
+            if batch and (len(batch) >= _MAX_BATCH_DOCUMENTS
+                          or batch_bytes + size > _MAX_BATCH_BYTES):
+                batches.append(batch)
+                batch, batch_bytes = [], 0
+            batch.append(result)
+            batch_bytes += size
+        batches.append(batch)
+        if len(batches) > 1:
+            semaphore = asyncio.Semaphore(2)
+
+            async def score(items):
+                async with semaphore:
+                    return await self.rerank(query, items, cost_ctx=cost_ctx)
+
+            scored = await asyncio.gather(*(score(items) for items in batches))
+            ranked = sorted((r for items in scored for r in items),
+                            key=lambda r: r.score, reverse=True)
+            return ranked if top_k is None else ranked[:top_k]
         t0 = time.perf_counter()
         try:
             response = await self._call_api(query, [document_rerank_input(r) for r in results])

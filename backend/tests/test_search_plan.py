@@ -462,7 +462,10 @@ async def test_compact_planner_returns_validated_plan_and_usage():
     assert result.prompt_tokens == 321
     assert result.completion_tokens == 87
     call = llm.chat.completions.create.call_args.kwargs
-    assert call["response_format"] == {"type": "json_object"}
+    assert call["response_format"]["type"] == "json_schema"
+    schema = call["response_format"]["json_schema"]["schema"]
+    assert schema["properties"]["decision_period"] == {"type": "null"}
+    assert schema["properties"]["search_queries"]["maxItems"] == plan.query_budget
     assert call["reasoning_effort"] == "minimal"
 
 
@@ -569,6 +572,7 @@ async def test_adaptive_search_uses_queries_but_never_guessed_article_identifier
     )
 
     assert variants == [
+        plan.query_original,
         plan.standalone_question,
         "préavis démission cadre Syntec",
     ]
@@ -612,7 +616,7 @@ async def test_adaptive_search_executes_all_four_multi_issue_queries():
         "org-1",
     )
 
-    assert variants == [plan.standalone_question, *queries]
+    assert variants == [plan.query_original, plan.standalone_question, *queries]
     agent._run_variant_searches.assert_awaited_once()
 
 

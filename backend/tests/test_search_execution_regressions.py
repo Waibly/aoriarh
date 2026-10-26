@@ -392,7 +392,10 @@ async def test_generated_queries_are_executed_without_cleanup_or_truncation():
     assert plan.search_queries == queries
     assert plan.legal_topics == payload["legal_topics"]
     _, variants = await obj._search_with_plan(plan, plan.query_original, "org")
-    assert variants == [payload["standalone_question"], *queries]
+    assert variants == list(dict.fromkeys([
+        plan.query_original, payload["standalone_question"], *queries,
+    ]))
+    assert plan.search_queries == queries  # Raw duplicates remain in the model output.
 
 
 def test_identical_generated_question_does_not_trigger_semantic_warning():

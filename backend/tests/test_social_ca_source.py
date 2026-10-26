@@ -2,6 +2,7 @@ import copy
 import json
 import stat
 import uuid
+from types import SimpleNamespace
 from unittest.mock import Mock
 
 import pytest
@@ -139,6 +140,9 @@ async def test_real_pipeline_keeps_every_character_and_source_metadata(monkeypat
     storage.get_file_bytes.side_effect = files.__getitem__
     storage.get_file_bytes_bounded.side_effect = lambda path, limit: files[path]
     qdrant = Mock()
+    qdrant.get_collection.return_value = SimpleNamespace(
+        config=SimpleNamespace(params=SimpleNamespace(sparse_vectors={})),
+    )
     qdrant.scroll.return_value = ([], None)
     monkeypatch.setattr(
         "app.rag.ingestion.clean_text",

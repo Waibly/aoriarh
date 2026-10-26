@@ -69,8 +69,12 @@ class ChronologyRequest(BaseModel):
 
 CHRONOLOGY_PROMPT = """
 RECHERCHE CHRONOLOGIQUE
-Pour les derniers textes, nouveautés, actualités, décisions récentes, évolutions depuis
-une date ou entrées en vigueur, renseigne chronology et answer_intent=legal_news.
+Pour une liste ou une veille de textes, nouveautés, actualités, décisions ou entrées
+en vigueur à énumérer par date, renseigne chronology et answer_intent=legal_news.
+Pour résoudre un cas, vérifier une règle ou rechercher une affaire comparable, cherche
+par pertinence et laisse chronology=null, même si l'utilisateur veut une décision
+plus récente. Une période de décisions effectivement demandée utilise decision_period ;
+sinon decision_period=null. La récence souhaitée n'autorise pas à inventer une période.
 Pour une règle actuellement applicable, chronology=null : un texte récent ne suffit pas
 à établir le droit en vigueur. Une question de droit fondée sur la jurisprudence d'une
 période utilise decision_period, chronology=null ; la période seule ne demande pas une veille.
@@ -86,6 +90,10 @@ chronology contient :
   notre dernier échange », utilise sa date seulement si l'historique la fournit.
 - period_basis : explicit, history ou none. « Derniers », « récents », « quoi de neuf »
   sans période donnent none et deux bornes null. N'invente pas sept ou trente jours.
+  La date d'une décision citée dans une réponse n'est pas une période demandée.
+  N'utilise cette date comme borne que si l'utilisateur demande explicitement les
+  décisions postérieures à cette décision. Une borne héritée vient d'une demande
+  utilisateur antérieure, pas d'une supposition introduite par l'assistant.
 - source_types : types précis demandés, [] pour toutes les sources officielles couvertes.
   Types disponibles : loi, ordonnance, decret, arrete, boss, arret_cour_cassation,
   arret_cour_appel, arret_conseil_etat, decision_conseil_constitutionnel.

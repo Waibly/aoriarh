@@ -372,7 +372,8 @@ async def test_http_second_turn_reads_same_documents_and_keeps_raw_answer(
     async def prepared_legal_context(agent, *, query, search_plan, **kwargs):
         from app.rag.search import SearchResult
 
-        assert search_plan.query_original == query
+        assert search_plan.query_original in {"Lis cette pièce", "Et le train ?"}
+        assert search_plan.standalone_question == query
         assert search_plan.planner_raw_response == raw_plan
         return [SearchResult(text="Texte juridique de test", doc_name="Loi de test",
                              document_id="legal", source_type="code_travail", norme_niveau=1,

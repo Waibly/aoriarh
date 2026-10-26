@@ -718,7 +718,10 @@ class RAGAgent:
             org_idcc_list = None
         t0 = time.perf_counter()
 
-        trace = RagTrace(query_original=query, model=rag_config.LLM_MODEL)
+        trace = RagTrace(
+            query_original=search_plan.query_original if search_plan is not None else query,
+            model=rag_config.LLM_MODEL,
+        )
         self._retrieval_trace = trace
         search_plan_trace: SearchPlan
         if search_plan is None:
@@ -1420,7 +1423,9 @@ class RAGAgent:
         self._active_search_plan = plan
         if plan.planner_status.value == "ok":
             query = plan.standalone_question
-        variants = [query, *plan.search_queries]
+        # Retain the user's own wording alongside every generated query. Exact
+        # duplicates share one retrieval, without editing the stored generation.
+        variants = list(dict.fromkeys([plan.query_original, query, *plan.search_queries]))
         date_from, date_to = _plan_time_bounds(plan)
 
         # Direct matches are additive; they must not bypass required branches.
@@ -1670,6 +1675,7 @@ class RAGAgent:
                 variant,
                 organisation_id,
                 top_k=TOP_K,
+                candidate_pool=True,
                 org_idcc_list=org_idcc_list,
                 source_type_filter=source_type_filter,
                 cost_ctx=self._cost_ctx,
@@ -1745,7 +1751,9 @@ class RAGAgent:
         # CCN). Both are injected rather than RRF-fused: fusing them in would
         # dilute them, since the near-duplicate variants out-vote them.
         fused = self._reciprocal_rank_fusion(valid_results)
-        pool = fused[:TOP_K]
+        # Each branch is already bounded. Re-ranking must see their full union:
+        # agreement between similar variants must not erase a one-branch match.
+        pool = fused
         seen = {(r.document_id, r.chunk_index) for r in pool}
 
         def _inject(candidates: list[SearchResult], cap: int, label: str) -> None:

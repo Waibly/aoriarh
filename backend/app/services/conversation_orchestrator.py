@@ -26,6 +26,7 @@ from app.rag.search_plan import (
     apply_compact_planner_payload,
     build_deterministic_search_plan,
 )
+from app.rag.temporal_parameters import user_period_parameters_available
 from app.rag.usage_metrics import usage_details
 from app.services.case_calculation import CalculationSpec, calculate, validate_fact_bindings
 from app.services.conversation_document_service import DocumentLegalSearch
@@ -274,6 +275,9 @@ async def plan_conversation(
         legal_source_ids=legal_source_document_ids(
             history if source_history is None else source_history, tool_results,
         ),
+        period_parameters_available=user_period_parameters_available(
+            query, history if isinstance(history, list) else source_history,
+        ),
     )
     # The question is already supplied once; keep only search constraints here.
     search_context.pop("query", None)
@@ -467,7 +471,6 @@ def legal_plan(planned: PlannedConversation, action: OrchestratorAction):
         replace(
             base,
             planner_raw_response=planned.raw,
-            query_original=action.query or planned.legal_base.query_original,
         ),
         action.legal_search.model_dump(mode="json"),
     )
