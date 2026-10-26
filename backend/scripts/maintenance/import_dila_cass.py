@@ -502,6 +502,33 @@ class Embeddings:
                         flush=True,
                     )
                     continue
+                if response.status_code in {500, 502, 503, 504}:
+                    # Retry only explicit server/transport failures, never a
+                    # successful generation judged unsatisfactory. Keep the
+                    # full reservation: failed-request billing is not assumed.
+                    errors = self.folder / "provider-errors"
+                    errors.mkdir(exist_ok=True)
+                    dump(errors / (digest + f"-{attempt}.json"), {
+                        "request_id": request_id,
+                        "http_status": response.status_code,
+                        "response_body": response.text,
+                        "provider_request_id": response.headers.get("x-request-id"),
+                        "reserved_tokens_upper_bound": estimated,
+                    })
+                    self.state.execute(
+                        "UPDATE requests SET status='server_error',error=? WHERE id=?",
+                        (f"HTTP {response.status_code}", request_id),
+                    )
+                    self.state.commit()
+                    delay = 2 ** (attempt + 1)
+                    self.next_request = max(self.next_request, time.monotonic() + delay)
+                    print(json.dumps({
+                        "provider_server_error": response.status_code,
+                        "attempt": attempt + 1,
+                        "max_attempts": 3,
+                        "reservation_preserved": True,
+                    }), flush=True)
+                    continue
                 response.raise_for_status()
                 data = response.json()
                 entries = sorted(data["data"], key=lambda entry: entry["index"])
@@ -571,8 +598,8 @@ class Embeddings:
                 return vectors
             except (httpx.ConnectError, httpx.ConnectTimeout) as exc:
                 # Connection establishment failed before any request body was sent.
-                # Only these pre-send failures retry, within the same three-attempt
-                # bound as 429 responses. Read/write failures remain uncertain below.
+                # These failures share the three-attempt bound with explicit
+                # 429/5xx responses. Read/write failures remain uncertain below.
                 self.state.execute(
                     "UPDATE requests SET status='not_sent',reserved=0,actual=0,error=? WHERE id=?",
                     (type(exc).__name__, request_id),

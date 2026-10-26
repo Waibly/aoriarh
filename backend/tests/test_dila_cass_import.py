@@ -272,6 +272,76 @@ async def test_transport_timeout_requires_investigation_before_another_paid_call
 
 
 @pytest.mark.asyncio
+async def test_server_error_retry_keeps_billing_upper_bound_and_successful_cache(
+    tmp_path, monkeypatch
+):
+    state = state_db(tmp_path)
+    embedder = Embeddings(tmp_path, state, Tokenizer(), 100000, 1000)
+    failed = httpx.Response(500, json={"error": "temporary"},
+                            request=httpx.Request("POST", "https://example.test"))
+    success = httpx.Response(200, json={
+        "data": [{"index": 0, "embedding": base64.b64encode(
+            struct.pack("<1024f", *([0.125] * 1024))
+        ).decode()}], "usage": {"total_tokens": 4},
+    }, request=httpx.Request("POST", "https://example.test"))
+    embedder.client.post = AsyncMock(side_effect=[failed, success])
+    monkeypatch.setattr("scripts.maintenance.import_dila_cass.cost_tracker.log", AsyncMock())
+    sleep = AsyncMock(side_effect=lambda _: setattr(embedder, "next_request", 0))
+    monkeypatch.setattr("scripts.maintenance.import_dila_cass.asyncio.sleep", sleep)
+    assert await embedder.get(["text"], ["owner"]) == [[0.125] * 1024]
+    assert await embedder.get(["text"], ["owner"]) == [[0.125] * 1024]
+    assert embedder.client.post.await_count == 2
+    assert [tuple(r) for r in state.execute(
+        "SELECT status,reserved,actual FROM requests ORDER BY id"
+    )] == [("server_error", 4, None), ("success", 4, 4)]
+    assert json.loads(next((tmp_path / "provider-errors").glob("*.json")).read_text())[
+        "http_status"
+    ] == 500
+    await embedder.client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_server_errors_stop_at_three_attempts_and_keep_all_reservations(
+    tmp_path, monkeypatch
+):
+    state = state_db(tmp_path)
+    embedder = Embeddings(tmp_path, state, Tokenizer(), 100000, 1000)
+    response = httpx.Response(503, json={"error": "unavailable"},
+                              request=httpx.Request("POST", "https://example.test"))
+    embedder.client.post = AsyncMock(return_value=response)
+    monkeypatch.setattr("scripts.maintenance.import_dila_cass.asyncio.sleep",
+                        AsyncMock(side_effect=lambda _: setattr(embedder, "next_request", 0)))
+    with pytest.raises(RuntimeError, match="three bounded attempts"):
+        await embedder.get(["text"], ["owner"])
+    assert embedder.client.post.await_count == 3
+    assert tuple(state.execute(
+        "SELECT count(*),sum(reserved),sum(actual) FROM requests"
+    ).fetchone()) == (3, 12, None)
+    with pytest.raises(RuntimeError, match="three bounded attempts"):
+        await embedder.get(["text"], ["owner"])
+    assert embedder.client.post.await_count == 3
+    await embedder.client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_potential_server_error_charge_remains_in_total_budget(tmp_path, monkeypatch):
+    state = state_db(tmp_path)
+    embedder = Embeddings(tmp_path, state, Tokenizer(), 100000, 5)
+    response = httpx.Response(500, json={"error": "temporary"},
+                              request=httpx.Request("POST", "https://example.test"))
+    embedder.client.post = AsyncMock(return_value=response)
+    monkeypatch.setattr("scripts.maintenance.import_dila_cass.asyncio.sleep",
+                        AsyncMock(side_effect=lambda _: setattr(embedder, "next_request", 0)))
+    with pytest.raises(ValueError, match="token budget"):
+        await embedder.get(["text"], ["owner"])
+    assert embedder.client.post.await_count == 1
+    assert tuple(state.execute(
+        "SELECT status,reserved,actual FROM requests"
+    ).fetchone()) == ("server_error", 4, None)
+    await embedder.client.aclose()
+
+
+@pytest.mark.asyncio
 async def test_concurrent_batches_settle_in_flight_work_and_stop_after_failure():
     import asyncio
 
