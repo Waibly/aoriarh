@@ -17,6 +17,7 @@ from enum import StrEnum
 from typing import Any
 
 from app.rag.chronology import CHRONOLOGY_PROMPT, ChronologyRequest
+from app.rag.decision_period import DECISION_PERIOD_PROMPT, DecisionPeriod
 from app.rag.parent_expansion import detect_identifiers
 from app.rag.source_intent import (
     detect_exclusive_sources,
@@ -203,6 +204,7 @@ class SearchPlan:
     exclusive_source_types: list[str] = field(default_factory=list)
     planner_raw_response: str | None = None
     chronology: dict | None = None
+    decision_period: dict | None = None
 
     def to_dict(self) -> dict:
         """Return a JSON-compatible representation for traces and APIs."""
@@ -320,7 +322,8 @@ Schéma JSON exact :
 
 
 _COMPACT_PLANNER_PROMPT += (
-    CHRONOLOGY_PROMPT + "\nAjoute chronology (objet ou null) au schéma JSON.\n"
+    CHRONOLOGY_PROMPT + DECISION_PERIOD_PROMPT
+    + "\nAjoute chronology et decision_period (objets ou null) au schéma JSON.\n"
 )
 
 
@@ -496,10 +499,18 @@ def apply_compact_planner_payload(
         chronology = ChronologyRequest.model_validate_json(
             json.dumps(chronology)
         ).model_dump(mode="json")
+    decision_period = payload.get("decision_period")
+    if decision_period is not None:
+        decision_period = DecisionPeriod.model_validate_json(
+            json.dumps(decision_period)
+        ).model_dump(mode="json")
+    if chronology is not None and decision_period is not None:
+        raise ValueError("conflicting_search_operations")
 
     return replace(
         plan,
         chronology=chronology,
+        decision_period=decision_period,
         standalone_question=standalone,
         needs_condensation=payload.get("needs_history", plan.needs_condensation) is True,
         planner_status=PlannerStatus.OK,

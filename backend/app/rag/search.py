@@ -20,6 +20,7 @@ from app.core.config import settings
 from app.core.http_client import get_shared_async_client
 from app.rag.access_filter import build_org_access_filter
 from app.rag.config import EMBEDDING_MODEL, TOP_K
+from app.rag.decision_period import decision_period_filter
 from app.rag.qdrant_store import COLLECTION_NAME, get_qdrant_client
 from app.services.cost_tracker import CostContext, cost_tracker
 
@@ -139,6 +140,7 @@ class HybridSearch:
         excluded_source_types: list[str] | None = None,
         document_ids: list[str] | None = None,
         authorized_private_document_ids: list[str] | None = None,
+        decision_period: dict | None = None,
     ) -> Filter:
         """Construit le filtre Qdrant de cloisonnement multi-tenant.
 
@@ -198,6 +200,9 @@ class HybridSearch:
                 ],
             )
 
+        if decision_period is not None:
+            org_filter = Filter(must=[org_filter, decision_period_filter(decision_period)])
+
         if excluded_source_types:
             org_filter = Filter(must=[org_filter], must_not=[
                 FieldCondition(key="source_type", match=MatchAny(any=excluded_source_types)),
@@ -218,6 +223,7 @@ class HybridSearch:
         encoding_cache: dict | None = None,
         document_ids: list[str] | None = None,
         authorized_private_document_ids: list[str] | None = None,
+        decision_period: dict | None = None,
     ) -> list[SearchResult]:
         """Execute a hybrid search combining dense and sparse vectors.
 
@@ -262,6 +268,7 @@ class HybridSearch:
             excluded_source_types,
             document_ids=document_ids,
             authorized_private_document_ids=authorized_private_document_ids,
+            decision_period=decision_period,
         )
 
         # 3. Hybrid query with RRF fusion via prefetch

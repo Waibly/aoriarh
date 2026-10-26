@@ -72,7 +72,9 @@ RECHERCHE CHRONOLOGIQUE
 Pour les derniers textes, nouveautés, actualités, décisions récentes, évolutions depuis
 une date ou entrées en vigueur, renseigne chronology et answer_intent=legal_news.
 Pour une règle actuellement applicable, chronology=null : un texte récent ne suffit pas
-à établir le droit en vigueur. Le catalogue est celui des sources officielles collectées
+à établir le droit en vigueur. Une question de droit fondée sur la jurisprudence d'une
+période utilise decision_period, chronology=null ; la période seule ne demande pas une veille.
+Le catalogue est celui des sources officielles collectées
 par AORIA RH ; il ne couvre pas intégralement le Journal officiel ou toutes les juridictions.
 chronology contient :
 - date_kind : publication (publication officielle), decision (date d'arrêt), effective

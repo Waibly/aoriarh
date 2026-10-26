@@ -23,6 +23,7 @@ from qdrant_client.models import (
 
 from app.rag.access_filter import build_org_access_filter
 from app.rag.article_reference import normalize_article_reference
+from app.rag.decision_period import decision_period_filter
 from app.rag.qdrant_store import COLLECTION_NAME
 from app.rag.search import SearchResult
 from app.rag.source_intent import CODE_SOURCE_LABELS
@@ -161,6 +162,7 @@ async def fetch_by_identifiers(
     excluded_source_types: list[str] | None = None,
     diagnostics: list[dict] | None = None,
     article_source_filters: dict[str, list[str]] | None = None,
+    decision_period: dict | None = None,
 ) -> list[SearchResult]:
     """Fetch chunks matching identifiers via Qdrant scroll, respecting org access.
 
@@ -183,6 +185,8 @@ async def fetch_by_identifiers(
             # Nest the org access filter inside `must` so its `should` clauses
             # remain a required disjunction (multi-tenant safety).
             must.append(org_filter)
+        if decision_period is not None:
+            must.append(decision_period_filter(decision_period))
         if source_type_filter is not None:
             must.append(FieldCondition(key="source_type", match=MatchAny(any=source_type_filter)))
         flt = Filter(

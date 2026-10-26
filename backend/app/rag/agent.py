@@ -148,6 +148,10 @@ def _plan_time_bounds(
 ) -> tuple[datetime.date | None, datetime.date | None]:
     """Translate the validated plan period into inclusive date bounds."""
 
+    # The typed decision period is applied in Qdrant to decisions only. Legacy
+    # whole-source date branches must not also filter supporting legislation.
+    if plan.decision_period is not None:
+        return None, None
     scope = plan.time_scope or {}
     kind = scope.get("kind")
     if kind == "rolling_days":
@@ -626,6 +630,9 @@ class RAGAgent:
         self._branch_diagnostics.append(diagnostic)
         plan = getattr(self, "_active_search_plan", None)
         if plan:
+            if plan.decision_period is not None:
+                kwargs["decision_period"] = plan.decision_period
+                diagnostic["decision_period"] = plan.decision_period
             excluded = set(plan.excluded_source_types)
             allowed = kwargs.get("source_type_filter")
             if plan.exclusive_source_types:
@@ -664,6 +671,8 @@ class RAGAgent:
         if plan:
             original_scopes = reference_source_types(plan.query_original)
             kwargs["article_source_filters"] = original_scopes
+            if plan.decision_period is not None:
+                kwargs["decision_period"] = plan.decision_period
             if plan.excluded_source_types:
                 kwargs["excluded_source_types"] = plan.excluded_source_types
             if plan.exclusive_source_types:
@@ -925,7 +934,7 @@ class RAGAgent:
 
         # Explicit publication period is a query constraint, not a score bonus.
         # Never substitute out-of-period documents when the requested period is empty.
-        if search_plan.mode.value == "legal_news":
+        if search_plan.mode.value == "legal_news" and search_plan.decision_period is None:
             results, excluded = self._filter_publication_period(results, search_plan)
             selection["excluded_by_publication_period"] = excluded
 

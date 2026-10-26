@@ -10,11 +10,12 @@ from dataclasses import replace
 from typing import Literal
 
 from fastapi import HTTPException
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.core.config import settings
 from app.rag.agent import RagTrace
 from app.rag.chronology import ChronologyRequest
+from app.rag.decision_period import DecisionPeriod
 from app.rag.search import HybridSearch, SearchResult
 from app.rag.search_plan import (
     _COMPACT_PLANNER_PROMPT,
@@ -99,6 +100,13 @@ class LegalSearchArguments(BaseModel):
     answer_intent: AnswerIntent
     missing_facts: list[str]
     chronology: ChronologyRequest | None = None
+    decision_period: DecisionPeriod | None = None
+
+    @model_validator(mode="after")
+    def distinct_search_operations(self):
+        if self.chronology is not None and self.decision_period is not None:
+            raise ValueError("conflicting_search_operations")
+        return self
 
 
 class DocumentLegalSearch(LegalSearchArguments):

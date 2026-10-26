@@ -12,6 +12,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, ValidationError
 
 from app.rag.chronology import CHRONOLOGY_PROMPT
+from app.rag.decision_period import DECISION_PERIOD_PROMPT
 from app.services.case_calculation import CalculationSpec
 from app.services.conversation_document_service import DocumentLegalSearch, LegalSearchArguments
 from app.services.conversation_orchestrator import (
@@ -162,7 +163,7 @@ Exemples de répartition (pas de contenu à recopier) :
 """
 
 
-REQUEST_PROMPT += CHRONOLOGY_PROMPT
+REQUEST_PROMPT += CHRONOLOGY_PROMPT + DECISION_PERIOD_PROMPT
 
 
 class RequestBase(BaseModel):
