@@ -1,5 +1,6 @@
 import copy
 import json
+import stat
 import uuid
 from unittest.mock import Mock
 
@@ -8,7 +9,7 @@ from qdrant_client.models import SparseVector
 
 from app.rag.ingestion import IngestionPipeline
 from app.services.social_ca_source import parse_ca_source, prepared_ca_chunks, verified_ca_source
-from scripts.maintenance.import_social_ca import case_keys, read_source
+from scripts.maintenance.import_social_ca import case_keys, read_source, state_db
 from tests.conftest import test_session_factory
 
 
@@ -115,6 +116,15 @@ def test_deduplication_requires_court_date_and_case_number():
 def test_source_archive_cannot_escape_operator_directory(tmp_path):
     with pytest.raises(ValueError, match="Unsafe"):
         read_source(tmp_path, {"path": "../outside.json.gz"})
+
+
+def test_import_state_permissions_prevent_operator_journal_from_blocking_writer(tmp_path):
+    db = state_db(tmp_path)
+    try:
+        assert stat.S_IMODE((tmp_path / "ca-import.sqlite3").stat().st_mode) == 0o660
+        assert stat.S_IMODE((tmp_path / "ca-import.sqlite3-wal").stat().st_mode) == 0o660
+    finally:
+        db.close()
 
 
 @pytest.mark.asyncio

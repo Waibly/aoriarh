@@ -37,7 +37,11 @@ from scripts.maintenance.import_dila_cass import Embeddings, dump, run_batches
 
 
 def state_db(root):
-    db = sqlite3.connect(root / "ca-import.sqlite3")
+    path = root / "ca-import.sqlite3"
+    db = sqlite3.connect(path)
+    # SQLite defaults to 0644 independently of the process umask. Journals
+    # inherit this mode, including those created by an operator's reader.
+    path.chmod(0o660)
     db.row_factory = sqlite3.Row
     db.execute("PRAGMA journal_mode=WAL")
     db.execute(
@@ -578,9 +582,14 @@ async def main(args):
         if args.verify:
             await verify(root, db, args.verify_limit)
     finally:
-        db.execute("PRAGMA wal_checkpoint(TRUNCATE)")
-        db.close()
-        await engine.dispose()
+        db.rollback()
+        try:
+            db.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+        except sqlite3.Error as exc:
+            print(json.dumps({"checkpoint_error": str(exc)}), flush=True)
+        finally:
+            db.close()
+            await engine.dispose()
 
 
 if __name__ == "__main__":
