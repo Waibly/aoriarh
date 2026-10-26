@@ -48,7 +48,7 @@ export default function AccountPage() {
   const { data: session, update: updateSession } = useSession();
   const token = session?.access_token;
 
-  const { workspaceName, setWorkspaceName } = useOrg();
+  const { workspaceName, setWorkspaceName, setProfilMetier } = useOrg();
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [editOpen, setEditOpen] = useState(false);
@@ -240,6 +240,7 @@ export default function AccountPage() {
         token={token}
         onSaved={async (updated) => {
           setUser(updated);
+          setProfilMetier(updated.profil_metier);
           await updateSession({
             user: { full_name: updated.full_name, email: updated.email },
           });

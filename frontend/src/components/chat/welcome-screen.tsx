@@ -8,8 +8,9 @@ import {
   HeartPulse,
 } from "lucide-react";
 import { ChatInput, type ChatInputProps } from "@/components/chat/chat-input";
+import { useOrg } from "@/lib/org-context";
 
-const suggestions = [
+const defaultSuggestions = [
   {
     icon: CalendarDays,
     question:
@@ -31,7 +32,61 @@ const suggestions = [
   },
 ];
 
+const payrollSuggestions = [
+  {
+    icon: HeartPulse,
+    question:
+      "Arrêt maladie : quelles règles de maintien de salaire prévoit la convention collective de cette entreprise ?",
+  },
+  {
+    icon: CalendarDays,
+    question:
+      "Quels frais professionnels peuvent être remboursés avec une exonération de cotisations, et sous quelles conditions ?",
+  },
+  {
+    icon: BriefcaseBusiness,
+    question:
+      "Comment vérifier si une prime d’ancienneté est due dans cette entreprise ?",
+  },
+  {
+    icon: Clock3,
+    question:
+      "Départ d’un salarié : quelles règles de préavis et quelles indemnités faut-il examiner ?",
+  },
+];
+
+const accountingFirmSuggestions = [
+  {
+    icon: HeartPulse,
+    question:
+      "Mon client prépare la paie d’un salarié en arrêt maladie : quelles règles et informations faut-il examiner ?",
+  },
+  {
+    icon: CalendarDays,
+    question:
+      "Prépare une explication pour mon client sur les conditions d’exonération des remboursements de frais professionnels.",
+  },
+  {
+    icon: BriefcaseBusiness,
+    question:
+      "Mon client doit-il verser une prime d’ancienneté au regard de sa convention collective ?",
+  },
+  {
+    icon: Clock3,
+    question:
+      "Mon client prépare le départ d’un salarié : quelles règles et formalités faut-il lui expliquer ?",
+  },
+];
+
 export function WelcomeScreen(inputProps: ChatInputProps) {
+  const { profilMetier } = useOrg();
+  const suggestions =
+    profilMetier === "comptable_paie"
+      ? payrollSuggestions
+      : profilMetier === "expert_comptable"
+        ? accountingFirmSuggestions
+        : defaultSuggestions;
+
   return (
     <ChatWelcomeLayout>
       <ChatWelcomeHeading

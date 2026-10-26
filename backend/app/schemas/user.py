@@ -1,6 +1,5 @@
 import uuid
 from datetime import datetime
-
 from enum import StrEnum
 
 from pydantic import BaseModel, EmailStr, Field
@@ -13,6 +12,8 @@ class ProfilMetier(StrEnum):
     DIRIGEANT = "dirigeant"
     JURISTE = "juriste"
     CONSULTANT_RH = "consultant_rh"
+    COMPTABLE_PAIE = "comptable_paie"
+    EXPERT_COMPTABLE = "expert_comptable"
 
 
 class UserCreate(BaseModel):

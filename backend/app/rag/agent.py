@@ -2001,6 +2001,8 @@ class RAGAgent:
         "dirigeant": "Dirigeant / Gérant",
         "juriste": "Juriste d'entreprise",
         "consultant_rh": "Consultant RH / Cabinet RH",
+        "comptable_paie": "Comptable / Gestionnaire de paie",
+        "expert_comptable": "Expert-comptable / Cabinet comptable",
     }
 
     _PROFIL_METIER_INSTRUCTIONS: dict[str, str] = {
@@ -2030,6 +2032,22 @@ class RAGAgent:
             "L'utilisateur est consultant RH / cabinet RH : réponds avec un niveau d'expertise élevé, "
             "en couvrant les différents cas de figure et les recommandations à formuler à ses clients."
         ),
+        "comptable_paie": (
+            "L'utilisateur est comptable ou gestionnaire de paie, en entreprise ou en cabinet : "
+            "privilégie les conséquences pratiques pour la paie et l'administration du personnel. "
+            "Précise les conditions d'application, les dates, les informations nécessaires au "
+            "dossier et les références disponibles. Distingue la règle juridique de sa mise en "
+            "œuvre dans le logiciel de paie. Ne présume pas que l'entreprise concernée est "
+            "son employeur : elle peut être une entreprise cliente."
+        ),
+        "expert_comptable": (
+            "L'utilisateur est expert-comptable ou collaborateur de cabinet comptable : "
+            "réponds pour l'aider à préparer le conseil et les explications à son client. "
+            "Expose les règles de droit social applicables, les conséquences en paie, les "
+            "conditions, les informations à examiner et les références disponibles. "
+            "L'entreprise concernée est le dossier sélectionné ; ne lui applique pas la "
+            "convention collective du cabinet au seul motif du métier de l'utilisateur."
+        ),
     }
 
     def _build_org_context_block(self, org_context: dict[str, str | None]) -> str:
@@ -2038,7 +2056,12 @@ class RAGAgent:
         profil = org_context.get("profil_metier")
         not_subject_to_ccn = bool(org_context.get("not_subject_to_ccn"))
 
-        lines = [f"## Entreprise de l'utilisateur : {nom}\n"]
+        lines = [f"## Entreprise concernée par la conversation : {nom}\n"]
+        lines.append(
+            "Les informations ci-dessous décrivent l'entreprise sélectionnée pour cette "
+            "conversation. Le métier de l'utilisateur ne détermine ni son secteur ni sa "
+            "convention collective.\n"
+        )
 
         # Profil métier
         if profil and profil in self._PROFIL_METIER_LABELS:
@@ -2046,7 +2069,6 @@ class RAGAgent:
             lines.append(self._PROFIL_METIER_INSTRUCTIONS[profil] + "\n")
         else:
             lines.append(
-                "L'utilisateur travaille dans cette entreprise. "
                 "Adapte systématiquement tes réponses à ce contexte "
                 "(seuils d'effectifs, obligations légales, dispositions conventionnelles).\n"
             )
@@ -2072,9 +2094,10 @@ class RAGAgent:
         if not_subject_to_ccn:
             lines.append(
                 "- Convention collective : **aucune** — cette organisation "
-                "n'est pas soumise à une CCN. Réponds en t'appuyant uniquement "
-                "sur le Code du travail, les accords interprofessionnels et la "
-                "jurisprudence applicable. N'invoque aucune CCN ; si la question "
+                "n'est pas soumise à une CCN. Réponds en t'appuyant "
+                "sur les sources légales, réglementaires et administratives pertinentes, "
+                "les accords interprofessionnels et la jurisprudence applicable. "
+                "N'invoque aucune CCN ; si la question "
                 "porte explicitement sur une CCN, indique qu'elle ne s'applique pas."
             )
         lines.append(

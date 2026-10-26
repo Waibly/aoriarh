@@ -17,7 +17,7 @@ from html import unescape
 from urllib.parse import urljoin, urlparse
 
 import httpx
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.document import Document
@@ -336,13 +336,21 @@ class BossService:
         md_bytes = full_md.encode("utf-8")
         file_hash = hashlib.sha256(md_bytes).hexdigest()
         storage_path = self._build_storage_path(page_path)
+        source_url = f"{BOSS_BASE_URL}{page_path}"
         content_date = self._parse_a_jour_date(html)
         name = f"BOSS — {rubrique} — {title}" if title else f"BOSS — {rubrique}"
 
         existing = await db.execute(
             select(Document).where(
                 Document.organisation_id.is_(None),
-                Document.storage_path == storage_path,
+                Document.private_dossier_id.is_(None),
+                Document.private_conversation_id.is_(None),
+                Document.retired_at.is_(None),
+                Document.source_type == "boss",
+                or_(
+                    Document.storage_path == storage_path,
+                    Document.source_url == source_url,
+                ),
             ).limit(1)
         )
         doc = existing.scalar_one_or_none()
@@ -354,7 +362,6 @@ class BossService:
             result.docs_unchanged += 1
             return
 
-        source_url = f"{BOSS_BASE_URL}{page_path}"
         source_id = str(uuid.uuid5(uuid.NAMESPACE_URL, source_url))
         review_path = f"common/boss_review/{source_id}.json"
         candidate = {

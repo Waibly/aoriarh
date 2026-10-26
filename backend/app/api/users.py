@@ -6,7 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.core.dependencies import get_current_user
+from app.core.dependencies import get_current_user, verify_org_membership
 from app.models.account import Account
 from app.models.organisation import Organisation
 from app.models.user import User
@@ -32,6 +32,12 @@ async def get_me(
 
     # If an organisation is specified, find its parent Account
     if organisation_id:
+        membership = await verify_org_membership(organisation_id, user, db)
+        if user.role != "admin" and membership is None:
+            raise HTTPException(
+                status_code=403,
+                detail="Vous n'êtes pas membre de cette organisation",
+            )
         org_result = await db.execute(
             select(Organisation).where(Organisation.id == organisation_id)
         )

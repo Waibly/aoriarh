@@ -112,6 +112,102 @@ async def test_update_name(client: AsyncClient, regular_user: dict[str, str]):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("profile", ["comptable_paie", "expert_comptable"])
+async def test_accounting_profile_is_personal_and_persisted(
+    client: AsyncClient, regular_user: dict[str, str], second_user: dict[str, str],
+    profile: str,
+):
+    headers = auth_header(regular_user["token"])
+    response = await client.patch(
+        "/api/v1/users/me", headers=headers, json={"profil_metier": profile},
+    )
+    assert response.status_code == 200
+    assert response.json()["profil_metier"] == profile
+    assert response.json()["role"] == "user"
+    persisted = await client.get("/api/v1/users/me", headers=headers)
+    assert persisted.json()["profil_metier"] == profile
+    other = await client.get(
+        "/api/v1/users/me", headers=auth_header(second_user["token"]),
+    )
+    assert other.json()["profil_metier"] is None
+    invalid = await client.patch(
+        "/api/v1/users/me", headers=headers, json={"profil_metier": "unknown_profile"},
+    )
+    assert invalid.status_code == 422
+    persisted = await client.get("/api/v1/users/me", headers=headers)
+    assert persisted.json()["profil_metier"] == profile
+
+
+@pytest.mark.asyncio
+async def test_client_workspace_context_requires_membership(
+    client: AsyncClient, manager_user: dict[str, str], regular_user: dict[str, str],
+):
+    response = await client.post(
+        "/api/v1/organisations/", json={"name": "Client du cabinet"},
+        headers=auth_header(manager_user["token"]),
+    )
+    assert response.status_code == 201
+    org_id = response.json()["id"]
+    for profile in ("comptable_paie", "expert_comptable"):
+        await client.patch(
+            "/api/v1/users/me", headers=auth_header(regular_user["token"]),
+            json={"profil_metier": profile},
+        )
+        denied = await client.get(
+            f"/api/v1/users/me?organisation_id={org_id}",
+            headers=auth_header(regular_user["token"]),
+        )
+        assert denied.status_code == 403
+        assert "workspace_name" not in denied.json()
+    allowed = await client.get(
+        f"/api/v1/users/me?organisation_id={org_id}",
+        headers=auth_header(manager_user["token"]),
+    )
+    assert allowed.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_accountants_profile_is_independent_from_selected_client_workspace(
+    client: AsyncClient, regular_user: dict[str, str], manager_user: dict[str, str],
+    second_user: dict[str, str],
+):
+    headers = auth_header(regular_user["token"])
+    response = await client.patch(
+        "/api/v1/users/me", headers=headers, json={"profil_metier": "expert_comptable"},
+    )
+    assert response.status_code == 200
+    async with db_session_factory() as db:
+        accountant = (
+            await db.execute(select(User).where(User.email == regular_user["email"]))
+        ).scalar_one()
+        clients = []
+        for owner_email, workspace in (
+            (manager_user["email"], "Espace client A"),
+            (second_user["email"], "Espace client B"),
+        ):
+            owner = (
+                await db.execute(select(User).where(User.email == owner_email))
+            ).scalar_one()
+            owner.owned_account.name = workspace
+            org = Organisation(name=workspace, account_id=owner.owned_account.id)
+            db.add(org)
+            await db.flush()
+            db.add(Membership(
+                user_id=accountant.id, organisation_id=org.id, role_in_org="user",
+            ))
+            clients.append((org.id, workspace, str(owner.owned_account.id)))
+        await db.commit()
+    for org_id, workspace, account_id in clients:
+        response = await client.get(
+            f"/api/v1/users/me?organisation_id={org_id}", headers=headers,
+        )
+        assert response.status_code == 200
+        assert response.json()["workspace_name"] == workspace
+        assert response.json()["workspace_id"] == account_id
+        assert response.json()["profil_metier"] == "expert_comptable"
+
+
+@pytest.mark.asyncio
 async def test_update_email_conflict(
     client: AsyncClient, regular_user: dict[str, str], second_user: dict[str, str]
 ):

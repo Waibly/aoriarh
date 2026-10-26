@@ -24,6 +24,7 @@ from app.core.config import settings
 from app.models.document import Document
 from app.rag.norme_hierarchy import DOCUMENT_TYPE_HIERARCHY
 from app.rag.tasks import enqueue_ingestion
+from app.services.source_diagnostics import SourceJSONError, source_json
 
 logger = logging.getLogger(__name__)
 
@@ -378,6 +379,7 @@ class LegiService:
         existing_result = await db.execute(
             select(Document).where(
                 Document.organisation_id.is_(None),
+                Document.retired_at.is_(None),
                 Document.source_type == source_type,
                 Document.name == doc_name,
             )
@@ -515,7 +517,11 @@ class LegiService:
         path: str,
         json_body: dict,
     ) -> dict | None:
-        """Make a POST request to the Légifrance API."""
+        """Read LEGI, with at most 3 attempts for transport/auth/rate-limit errors.
+
+        Invalid JSON is a technical source-response failure. Retry the original
+        request within the same limit, never repair or ingest a partial response.
+        """
         url = f"{self.base_url}{path}"
 
         for attempt in range(_MAX_RETRIES):
@@ -542,8 +548,16 @@ class LegiService:
                     return None
 
                 response.raise_for_status()
-                from app.services.source_diagnostics import source_json
                 return source_json(response)
+
+            except SourceJSONError:
+                if attempt >= _MAX_RETRIES - 1:
+                    raise
+                logger.warning(
+                    "LEGI returned invalid JSON for %s; retry %d/%d",
+                    path, attempt + 2, _MAX_RETRIES,
+                )
+                await asyncio.sleep(_RETRY_DELAY * (2 ** attempt))
 
             except httpx.TimeoutException:
                 if attempt < _MAX_RETRIES - 1:

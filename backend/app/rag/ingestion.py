@@ -215,6 +215,10 @@ async def _get_embeddings_with_progress(
     org_id_str = str(doc.organisation_id) if doc.organisation_id else None
     doc_id_str = str(doc.id)
     user_id_str = str(doc.uploaded_by) if doc.uploaded_by else None
+    # Progress commits refresh the ORM object while other batches are running.
+    # Snapshot source metadata before concurrency; an expired attribute cannot
+    # be loaded implicitly from an async SQLAlchemy session.
+    input_type = "document" if doc.storage_path.startswith("common/dila/inca/") else None
 
     async def _process_batch(batch_idx: int, client: httpx.AsyncClient) -> None:
         nonlocal done_count
@@ -228,9 +232,7 @@ async def _get_embeddings_with_progress(
                 organisation_id=org_id_str,
                 document_id=doc_id_str,
                 user_id=user_id_str,
-                input_type=(
-                    "document" if doc.storage_path.startswith("common/dila/inca/") else None
-                ),
+                input_type=input_type,
             )
         async with db_lock:
             done_count += 1

@@ -82,6 +82,20 @@ _LINKEDIN_PROFILE_CONTEXTS: dict[str, tuple[str, str]] = {
         "les différents cas de figure et les recommandations qu'il peut formuler à "
         "ses clients, sans l'interpeller comme s'il était le salarié concerné.",
     ),
+    "comptable_paie": (
+        "Comptable / Gestionnaire de paie",
+        "Écris pour un comptable ou un gestionnaire de paie, en entreprise ou en cabinet. "
+        "Mets en avant les conséquences pratiques en paie et en administration du personnel, "
+        "les conditions d'application et les points à examiner dans le dossier. "
+        "Ne suppose pas que le lecteur est le salarié ou l'employeur concerné.",
+    ),
+    "expert_comptable": (
+        "Expert-comptable / Cabinet comptable",
+        "Écris pour un professionnel de cabinet qui conseille des entreprises clientes. "
+        "Mets en avant les règles de droit social, les conséquences en paie et les "
+        "explications qu'il peut transmettre à ses clients. Ne suppose pas que le "
+        "lecteur est personnellement l'employeur ou le salarié concerné.",
+    ),
 }
 
 _LINKEDIN_DEFAULT_PROFILE_CONTEXT = (

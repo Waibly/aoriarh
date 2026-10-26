@@ -8,7 +8,7 @@ import {
   useState,
 } from "react";
 import { useSession } from "next-auth/react";
-import type { Organisation, CcnReference } from "@/types/api";
+import type { Organisation, CcnReference, User } from "@/types/api";
 import { apiFetch } from "@/lib/api";
 
 export interface CreateOrgData {
@@ -30,6 +30,8 @@ interface OrgContextValue {
   refetchOrgs: () => Promise<void>;
   workspaceName: string | null;
   setWorkspaceName: (name: string) => void;
+  profilMetier: string | null;
+  setProfilMetier: (profile: string | null) => void;
   createOrganisation: (data: CreateOrgData) => Promise<Organisation>;
 }
 
@@ -41,6 +43,8 @@ const OrgContext = createContext<OrgContextValue>({
   refetchOrgs: async () => {},
   workspaceName: null,
   setWorkspaceName: () => {},
+  profilMetier: null,
+  setProfilMetier: () => {},
   createOrganisation: async () => {
     throw new Error("OrgContext not initialised");
   },
@@ -54,6 +58,7 @@ export function OrgProvider({ children }: { children: React.ReactNode }) {
   const [currentOrgId, setCurrentOrgIdState] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [workspaceName, setWorkspaceNameState] = useState<string | null>(null);
+  const [profilMetier, setProfilMetier] = useState<string | null>(null);
 
   const token = session?.access_token;
 
@@ -61,8 +66,9 @@ export function OrgProvider({ children }: { children: React.ReactNode }) {
     if (!token) return;
     try {
       const params = orgId ? `?organisation_id=${orgId}` : "";
-      const data = await apiFetch<{ workspace_name: string | null }>(`/users/me${params}`, { token });
+      const data = await apiFetch<User>(`/users/me${params}`, { token });
       setWorkspaceNameState(data.workspace_name);
+      setProfilMetier(data.profil_metier);
     } catch {
       // Non-blocking: workspace name is optional, continue without it
     }
@@ -128,6 +134,7 @@ export function OrgProvider({ children }: { children: React.ReactNode }) {
           token,
           body: JSON.stringify({ profil_metier }),
         });
+        setProfilMetier(profil_metier);
       }
       if (!not_subject_to_ccn && selectedCcn && selectedCcn.length > 0) {
         for (const ccn of selectedCcn) {
@@ -162,6 +169,8 @@ export function OrgProvider({ children }: { children: React.ReactNode }) {
         refetchOrgs: fetchOrgs,
         workspaceName,
         setWorkspaceName: setWorkspaceNameState,
+        profilMetier,
+        setProfilMetier,
         createOrganisation,
       }}
     >

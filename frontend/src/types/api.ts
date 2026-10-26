@@ -18,6 +18,8 @@ export const PROFIL_METIER_OPTIONS = [
   { value: "dirigeant", label: "Dirigeant / Gérant" },
   { value: "juriste", label: "Juriste d'entreprise" },
   { value: "consultant_rh", label: "Consultant RH / Cabinet RH" },
+  { value: "comptable_paie", label: "Comptable / Gestionnaire de paie" },
+  { value: "expert_comptable", label: "Expert-comptable / Cabinet comptable" },
 ] as const;
 
 export interface Organisation {

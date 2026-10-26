@@ -5,6 +5,10 @@ import json
 from urllib.parse import urlsplit
 
 
+class SourceJSONError(ValueError):
+    """Invalid JSON received from an official source, with technical evidence only."""
+
+
 def redirect_error(url):
     parsed = urlsplit(url)
     # A redirect can contain signed queries, credentials or private path segments.
@@ -30,4 +34,4 @@ def source_json(response):
             "json_error": exc.msg,
             "position": exc.pos,
         }
-        raise ValueError("Invalid source JSON: " + json.dumps(metadata)) from exc
+        raise SourceJSONError("Invalid source JSON: " + json.dumps(metadata)) from exc
