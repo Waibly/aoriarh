@@ -69,6 +69,10 @@ services:
   qdrant:
     image: qdrant/qdrant:v1.13.2
     restart: unless-stopped
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
     # Pas de ports exposés — accès interne uniquement
     volumes:
       - qdrant_data:/qdrant/storage
