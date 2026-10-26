@@ -534,7 +534,9 @@ function CitedSourceItem({ source }: { source: CitedSource }) {
   const [open, setOpen] = useState(false);
   const [fullContent, setFullContent] = useState<string | null>(null);
   const [fullContentLoading, setFullContentLoading] = useState(false);
-  const [fullContentError, setFullContentError] = useErrorState<string | null>(null);
+  const [fullContentError, setFullContentError] = useErrorState<string | null>(
+    null
+  );
 
   // Reset when the source changes (e.g. re-run of the sandbox)
   useEffect(() => {
@@ -976,34 +978,6 @@ export function InspectorBody({ data }: { data: InspectorPayload }) {
           )}
       </div>
 
-      {data.rag_trace?.search_plan && (
-        <SearchPlanPanel
-          plan={data.rag_trace.search_plan}
-          usage={data.rag_trace.search_plan_usage}
-          validation={data.rag_trace.search_plan_validation}
-        />
-      )}
-
-      {data.rag_trace?.search_plan_validation?.selection && (
-        <details className="rounded border p-3 text-xs">
-          <summary>Traçabilité de la sélection documentaire</summary>
-          <pre className="mt-2 max-h-96 overflow-auto whitespace-pre-wrap">
-            {JSON.stringify(
-              data.rag_trace.search_plan_validation.selection,
-              null,
-              2
-            )}
-          </pre>
-        </details>
-      )}
-
-      {data.rag_trace?.case_file_observation && (
-        <CaseFileObservationPanel
-          trace={data.rag_trace.case_file_observation}
-          observations={data.case_file_observations ?? []}
-        />
-      )}
-
       {/* Réponse */}
       {data.answer && (
         <div>
@@ -1055,176 +1029,213 @@ export function InspectorBody({ data }: { data: InspectorPayload }) {
         </div>
       )}
 
-      {/* Performance */}
-      {data.rag_trace &&
-        Object.keys(data.rag_trace.perf_ms || {}).length > 0 && (
-          <Section
-            title="Performance"
-            icon={<Clock className="h-4 w-4" />}
-            help={
-              <>
-                Temps passé dans chaque étape du pipeline RAG.
-                <br />• <strong>condense</strong> : reformulation multi-tour
-                <br />• <strong>expand_search</strong> : génération des
-                variantes + recherche hybride parallèle
-                <br />• <strong>rerank</strong> : tri par cross-encoder
-                <br />• <strong>parent_expansion</strong> : élargissement aux
-                chunks frères
-                <br />• <strong>generate</strong> : appel LLM final
-              </>
-            }
-          >
-            <PerfBar perf={data.rag_trace.perf_ms} />
-          </Section>
-        )}
-
-      {/* Trace details */}
-      {!data.rag_trace ? (
-        <div className="border-t pt-4">
-          <div className="text-muted-foreground text-xs italic">
-            Trace non disponible (question antérieure à la mise en place du
-            tracing).
-          </div>
-        </div>
-      ) : (
-        <>
-          {data.rag_trace.variants.length > 0 && (
-            <Section
-              title="Reformulation pour la recherche"
-              help={
-                <>
-                  Variantes de la question utilisées pour la recherche. La{" "}
-                  <strong>1ère est la question originale</strong> (recherche
-                  texte exact via BM25). Les suivantes sont générées par un
-                  petit LLM pour couvrir l&apos;intention sémantique, la
-                  terminologie juridique et des mots-clés.
-                </>
-              }
-            >
-              <ol className="space-y-1 text-xs">
-                {data.rag_trace.variants.map((v, i) => (
-                  <li key={i} className="flex gap-2">
-                    <span className="text-muted-foreground font-mono">
-                      {i + 1}.
-                    </span>
-                    <span>{v}</span>
-                  </li>
-                ))}
-              </ol>
-            </Section>
+      <details className="rounded-xl border p-4">
+        <summary className="cursor-pointer text-sm font-semibold">
+          Diagnostic technique et traces
+        </summary>
+        <div className="mt-4 space-y-4">
+          {data.rag_trace?.search_plan && (
+            <SearchPlanPanel
+              plan={data.rag_trace.search_plan}
+              usage={data.rag_trace.search_plan_usage}
+              validation={data.rag_trace.search_plan_validation}
+            />
           )}
 
-          {data.rag_trace.identifiers_detected.numero_pourvoi?.length ||
-          data.rag_trace.identifiers_detected.article_nums?.length ? (
-            <Section
-              title="Identifiants détectés dans la query"
-              help={
-                <>
-                  Numéros d&apos;article ou de pourvoi trouvés dans la question
-                  via regex. Pour ces identifiants, on cherche directement dans
-                  Qdrant via filtre payload (boost) pour garantir que les chunks
-                  correspondants remontent, même si leur contenu est
-                  sémantiquement éloigné de la query.
-                </>
-              }
-            >
-              <div className="flex flex-wrap gap-2">
-                {data.rag_trace.identifiers_detected.numero_pourvoi?.map(
-                  (p) => (
-                    <Badge key={p} variant="secondary">
-                      Pourvoi {p}
-                    </Badge>
-                  )
+          {data.rag_trace?.search_plan_validation?.selection && (
+            <details className="rounded border p-3 text-xs">
+              <summary>Traçabilité de la sélection documentaire</summary>
+              <pre className="mt-2 max-h-96 overflow-auto whitespace-pre-wrap">
+                {JSON.stringify(
+                  data.rag_trace.search_plan_validation.selection,
+                  null,
+                  2
                 )}
-                {data.rag_trace.identifiers_detected.article_nums?.map((a) => (
-                  <Badge key={a} variant="secondary">
-                    Article {a}
-                  </Badge>
-                ))}
-                {data.rag_trace.boost_injected > 0 && (
-                  <Badge className="border-0 bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">
-                    +{data.rag_trace.boost_injected} chunks injectés
-                  </Badge>
-                )}
+              </pre>
+            </details>
+          )}
+
+          {data.rag_trace?.case_file_observation && (
+            <CaseFileObservationPanel
+              trace={data.rag_trace.case_file_observation}
+              observations={data.case_file_observations ?? []}
+            />
+          )}
+
+          {/* Performance */}
+          {data.rag_trace &&
+            Object.keys(data.rag_trace.perf_ms || {}).length > 0 && (
+              <Section
+                title="Performance"
+                icon={<Clock className="h-4 w-4" />}
+                help={
+                  <>
+                    Temps passé dans chaque étape du pipeline RAG.
+                    <br />• <strong>condense</strong> : reformulation multi-tour
+                    <br />• <strong>expand_search</strong> : génération des
+                    variantes + recherche hybride parallèle
+                    <br />• <strong>rerank</strong> : tri par cross-encoder
+                    <br />• <strong>parent_expansion</strong> : élargissement
+                    aux chunks frères
+                    <br />• <strong>generate</strong> : appel LLM final
+                  </>
+                }
+              >
+                <PerfBar perf={data.rag_trace.perf_ms} />
+              </Section>
+            )}
+
+          {/* Trace details */}
+          {!data.rag_trace ? (
+            <div className="border-t pt-4">
+              <div className="text-muted-foreground text-xs italic">
+                Trace non disponible (question antérieure à la mise en place du
+                tracing).
               </div>
-            </Section>
-          ) : null}
-
-          <Section
-            title={`Sources finales envoyées au LLM (${data.rag_trace.parent_groups.length})`}
-            icon={<Layers className="h-4 w-4" />}
-            help={
-              <>
-                Liste finale des chunks que le LLM a réellement reçus pour
-                rédiger sa réponse, après élargissement aux chunks frères
-                (small-to-big). Chaque ligne représente un parent group (souvent
-                plusieurs chunks fusionnés en un seul contexte).
-              </>
-            }
-          >
-            <div className="space-y-2">
-              {data.rag_trace.parent_groups.length === 0 ? (
-                <div className="text-muted-foreground text-xs">
-                  Aucune source remontée
-                </div>
-              ) : (
-                data.rag_trace.parent_groups.map((c, i) => (
-                  <ChunkRow
-                    key={`${c.document_id}-${c.chunk_index}`}
-                    chunk={c}
-                    rank={i + 1}
-                  />
-                ))
+            </div>
+          ) : (
+            <>
+              {data.rag_trace.variants.length > 0 && (
+                <Section
+                  title="Reformulation pour la recherche"
+                  help={
+                    <>
+                      Variantes de la question utilisées pour la recherche. La{" "}
+                      <strong>1ère est la question originale</strong> (recherche
+                      texte exact via BM25). Les suivantes sont générées par un
+                      petit LLM pour couvrir l&apos;intention sémantique, la
+                      terminologie juridique et des mots-clés.
+                    </>
+                  }
+                >
+                  <ol className="space-y-1 text-xs">
+                    {data.rag_trace.variants.map((v, i) => (
+                      <li key={i} className="flex gap-2">
+                        <span className="text-muted-foreground font-mono">
+                          {i + 1}.
+                        </span>
+                        <span>{v}</span>
+                      </li>
+                    ))}
+                  </ol>
+                </Section>
               )}
-            </div>
-          </Section>
 
-          <Section
-            title={`Chunks après rerank (${data.rag_trace.rerank_results.length})`}
-            icon={<FileSearch className="h-4 w-4" />}
-            help={
-              <>
-                Top chunks après tri par cross-encoder Voyage rerank-2. Le
-                rerank prend les ~30 candidats du pool initial et les trie selon
-                la pertinence réelle (modèle plus précis mais plus coûteux que
-                la recherche initiale).
-              </>
-            }
-          >
-            <div className="space-y-2">
-              {data.rag_trace.rerank_results.map((c, i) => (
-                <ChunkRow
-                  key={`r-${c.document_id}-${c.chunk_index}-${i}`}
-                  chunk={c}
-                  rank={i + 1}
-                />
-              ))}
-            </div>
-          </Section>
+              {data.rag_trace.identifiers_detected.numero_pourvoi?.length ||
+              data.rag_trace.identifiers_detected.article_nums?.length ? (
+                <Section
+                  title="Identifiants détectés dans la query"
+                  help={
+                    <>
+                      Numéros d&apos;article ou de pourvoi trouvés dans la
+                      question via regex. Pour ces identifiants, on cherche
+                      directement dans Qdrant via filtre payload (boost) pour
+                      garantir que les chunks correspondants remontent, même si
+                      leur contenu est sémantiquement éloigné de la query.
+                    </>
+                  }
+                >
+                  <div className="flex flex-wrap gap-2">
+                    {data.rag_trace.identifiers_detected.numero_pourvoi?.map(
+                      (p) => (
+                        <Badge key={p} variant="secondary">
+                          Pourvoi {p}
+                        </Badge>
+                      )
+                    )}
+                    {data.rag_trace.identifiers_detected.article_nums?.map(
+                      (a) => (
+                        <Badge key={a} variant="secondary">
+                          Article {a}
+                        </Badge>
+                      )
+                    )}
+                    {data.rag_trace.boost_injected > 0 && (
+                      <Badge className="border-0 bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">
+                        +{data.rag_trace.boost_injected} chunks injectés
+                      </Badge>
+                    )}
+                  </div>
+                </Section>
+              ) : null}
 
-          <Section
-            title={`Pool initial avant rerank (${data.rag_trace.hybrid_results.length})`}
-            help={
-              <>
-                Candidats remontés par la recherche hybride (dense Voyage law-2
-                + sparse BM25, fusion RRF), avant le rerank. C&apos;est à cette
-                étape que tu vois si le bon document a au moins été trouvé par
-                le moteur de recherche.
-              </>
-            }
-          >
-            <div className="space-y-2">
-              {data.rag_trace.hybrid_results.map((c, i) => (
-                <ChunkRow
-                  key={`h-${c.document_id}-${c.chunk_index}-${i}`}
-                  chunk={c}
-                  rank={i + 1}
-                />
-              ))}
-            </div>
-          </Section>
-        </>
-      )}
+              <Section
+                title={`Sources finales envoyées au LLM (${data.rag_trace.parent_groups.length})`}
+                icon={<Layers className="h-4 w-4" />}
+                help={
+                  <>
+                    Liste finale des chunks que le LLM a réellement reçus pour
+                    rédiger sa réponse, après élargissement aux chunks frères
+                    (small-to-big). Chaque ligne représente un parent group
+                    (souvent plusieurs chunks fusionnés en un seul contexte).
+                  </>
+                }
+              >
+                <div className="space-y-2">
+                  {data.rag_trace.parent_groups.length === 0 ? (
+                    <div className="text-muted-foreground text-xs">
+                      Aucune source remontée
+                    </div>
+                  ) : (
+                    data.rag_trace.parent_groups.map((c, i) => (
+                      <ChunkRow
+                        key={`${c.document_id}-${c.chunk_index}`}
+                        chunk={c}
+                        rank={i + 1}
+                      />
+                    ))
+                  )}
+                </div>
+              </Section>
+
+              <Section
+                title={`Chunks après rerank (${data.rag_trace.rerank_results.length})`}
+                icon={<FileSearch className="h-4 w-4" />}
+                help={
+                  <>
+                    Top chunks après tri par cross-encoder Voyage rerank-2. Le
+                    rerank prend les ~30 candidats du pool initial et les trie
+                    selon la pertinence réelle (modèle plus précis mais plus
+                    coûteux que la recherche initiale).
+                  </>
+                }
+              >
+                <div className="space-y-2">
+                  {data.rag_trace.rerank_results.map((c, i) => (
+                    <ChunkRow
+                      key={`r-${c.document_id}-${c.chunk_index}-${i}`}
+                      chunk={c}
+                      rank={i + 1}
+                    />
+                  ))}
+                </div>
+              </Section>
+
+              <Section
+                title={`Pool initial avant rerank (${data.rag_trace.hybrid_results.length})`}
+                help={
+                  <>
+                    Candidats remontés par la recherche hybride (dense Voyage
+                    law-2 + sparse BM25, fusion RRF), avant le rerank.
+                    C&apos;est à cette étape que tu vois si le bon document a au
+                    moins été trouvé par le moteur de recherche.
+                  </>
+                }
+              >
+                <div className="space-y-2">
+                  {data.rag_trace.hybrid_results.map((c, i) => (
+                    <ChunkRow
+                      key={`h-${c.document_id}-${c.chunk_index}-${i}`}
+                      chunk={c}
+                      rank={i + 1}
+                    />
+                  ))}
+                </div>
+              </Section>
+            </>
+          )}
+        </div>
+      </details>
     </div>
   );
 }

@@ -1,10 +1,11 @@
 """Admin endpoint for workspace/client overview."""
 
 import logging
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
-from sqlalchemy import func, select, distinct, case
+from sqlalchemy import distinct, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -79,17 +80,19 @@ class WorkspacesResponse(BaseModel):
 @router.get("/", response_model=WorkspacesResponse)
 async def list_workspaces(
     search: str | None = Query(None),
+    account_id: UUID | None = Query(None),
     _user: User = Depends(require_role(["admin"])),
     db: AsyncSession = Depends(get_db),
 ) -> WorkspacesResponse:
     """List all workspaces with their orgs, members, and usage stats."""
 
     # 1. Fetch all accounts with owners
-    accounts_q = await db.execute(
-        select(Account)
-        .options(selectinload(Account.owner))
-        .order_by(Account.created_at.desc())
+    accounts_query = (
+        select(Account).options(selectinload(Account.owner)).order_by(Account.created_at.desc())
     )
+    if account_id:
+        accounts_query = accounts_query.where(Account.id == account_id)
+    accounts_q = await db.execute(accounts_query)
     accounts = list(accounts_q.scalars().all())
 
     workspaces: list[WorkspaceOverview] = []
@@ -116,7 +119,8 @@ async def list_workspaces(
                 if not any(q in name for name in org_names):
                     # Check member emails
                     members_check = await db.execute(
-                        select(User.email).join(AccountMember, AccountMember.user_id == User.id)
+                        select(User.email)
+                        .join(AccountMember, AccountMember.user_id == User.id)
                         .where(AccountMember.account_id == account.id)
                     )
                     member_emails = [r[0].lower() for r in members_check.all()]
@@ -124,9 +128,7 @@ async def list_workspaces(
                         continue
 
         # Organisations
-        orgs_q = await db.execute(
-            select(Organisation).where(Organisation.account_id == account.id)
-        )
+        orgs_q = await db.execute(select(Organisation).where(Organisation.account_id == account.id))
         orgs = list(orgs_q.scalars().all())
 
         org_items: list[WorkspaceOrg] = []
@@ -162,13 +164,15 @@ async def list_workspaces(
                 for oc, titre_court, titre in ccns_q.all()
             ]
 
-            org_items.append(WorkspaceOrg(
-                id=str(org.id),
-                name=org.name,
-                documents_count=doc_count,
-                members_count=member_count,
-                idccs=org_ccns,
-            ))
+            org_items.append(
+                WorkspaceOrg(
+                    id=str(org.id),
+                    name=org.name,
+                    documents_count=doc_count,
+                    members_count=member_count,
+                    idccs=org_ccns,
+                )
+            )
 
         # Members (account_members + owner)
         am_q = await db.execute(
@@ -180,14 +184,16 @@ async def list_workspaces(
 
         member_items: list[WorkspaceMember] = []
         # Add owner first
-        member_items.append(WorkspaceMember(
-            user_id=str(owner.id),
-            email=owner.email,
-            full_name=owner.full_name,
-            role=owner.role,
-            role_in_workspace="owner",
-            is_owner=True,
-        ))
+        member_items.append(
+            WorkspaceMember(
+                user_id=str(owner.id),
+                email=owner.email,
+                full_name=owner.full_name,
+                role=owner.role,
+                role_in_workspace="owner",
+                is_owner=True,
+            )
+        )
         # Add other members
         seen_ids = {str(owner.id)}
         for am in account_members:
@@ -197,38 +203,48 @@ async def list_workspaces(
             seen_ids.add(uid)
             u = am.user
             if u:
-                member_items.append(WorkspaceMember(
-                    user_id=uid,
-                    email=u.email,
-                    full_name=u.full_name,
-                    role=u.role,
-                    role_in_workspace=am.role_in_org,
-                    is_owner=False,
-                ))
+                member_items.append(
+                    WorkspaceMember(
+                        user_id=uid,
+                        email=u.email,
+                        full_name=u.full_name,
+                        role=u.role,
+                        role_in_workspace=am.role_in_org,
+                        is_owner=False,
+                    )
+                )
 
         # Question count (excludes sandbox replays)
         question_q = await db.execute(
             select(func.count(distinct(ApiUsageLog.context_id))).where(
                 ApiUsageLog.context_type == "question",
                 ApiUsageLog.is_replay.is_(False),
-                ApiUsageLog.organisation_id.in_([o.id for o in orgs]) if orgs else ApiUsageLog.id.is_(None),
+                ApiUsageLog.organisation_id.in_([o.id for o in orgs])
+                if orgs
+                else ApiUsageLog.id.is_(None),
             )
         )
         total_questions = question_q.scalar() or 0
 
-        workspaces.append(WorkspaceOverview(
-            account_id=str(account.id),
-            name=account.name,
-            plan=account.plan,
-            plan_expires_at=account.plan_expires_at.isoformat() if account.plan_expires_at else None,
-            created_at=account.created_at.isoformat() if hasattr(account, 'created_at') and account.created_at else "",
-            owner_email=owner.email,
-            owner_name=owner.full_name,
-            organisations=org_items,
-            members=member_items,
-            total_documents=total_docs,
-            total_questions=total_questions,
-        ))
+        workspaces.append(
+            WorkspaceOverview(
+                account_id=str(account.id),
+                name=account.name,
+                plan=account.plan,
+                plan_expires_at=account.plan_expires_at.isoformat()
+                if account.plan_expires_at
+                else None,
+                created_at=account.created_at.isoformat()
+                if hasattr(account, "created_at") and account.created_at
+                else "",
+                owner_email=owner.email,
+                owner_name=owner.full_name,
+                organisations=org_items,
+                members=member_items,
+                total_documents=total_docs,
+                total_questions=total_questions,
+            )
+        )
 
     # 2. Orphan users (no owned_account, no account_memberships)
     orphan_q = await db.execute(
@@ -238,7 +254,7 @@ async def list_workspaces(
             ~User.id.in_(select(AccountMember.user_id)),
         )
     )
-    orphans = list(orphan_q.scalars().all())
+    orphans = [] if account_id else list(orphan_q.scalars().all())
 
     if search:
         q = search.lower()
@@ -258,7 +274,9 @@ async def list_workspaces(
     # 3. Totals
     total_users = await db.execute(select(func.count(User.id)).where(User.role != "admin"))
     total_orgs = await db.execute(select(func.count(Organisation.id)))
-    total_docs = await db.execute(select(func.count(Document.id)).where(Document.organisation_id.isnot(None)))
+    total_docs = await db.execute(
+        select(func.count(Document.id)).where(Document.organisation_id.isnot(None))
+    )
 
     totals = {
         "users": total_users.scalar() or 0,

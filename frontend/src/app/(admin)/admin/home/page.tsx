@@ -7,9 +7,6 @@ import {
   Users,
   Library,
   RefreshCw,
-  AlertTriangle,
-  AlertOctagon,
-  CheckCircle2,
   Clock,
   Database,
   Cpu,
@@ -18,24 +15,22 @@ import {
   DollarSign,
   Activity,
   ArrowRight,
-  X,
 } from "lucide-react";
-import { toast } from "@/lib/toast";
 import { apiFetch } from "@/lib/api";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  AdminLoadError,
+  AdminPageHeader,
+} from "@/components/admin/page-header";
+import {
+  IncidentsBanner,
+  type Incident,
+} from "@/components/admin/incidents-banner";
+import { ServiceNav } from "@/components/admin/section-nav";
 import { InfoTooltip } from "@/components/admin/info-tooltip";
-
-interface Incident {
-  id: string;
-  severity: "critical" | "warning" | "info";
-  title: string;
-  detail: string | null;
-  action_label: string;
-  action_href: string;
-}
 
 interface QualityHealth {
   feedback_negative_rate_7d: number;
@@ -105,11 +100,6 @@ function fmtRelativeDate(iso: string | null): string {
   return `il y a ${days} j`;
 }
 
-function projectedMonthlyCost(cost30d: number): number {
-  // Linear projection for the current month
-  return cost30d * (30 / 30);
-}
-
 // ----------------- KPI Card -----------------
 
 function KpiCard({
@@ -130,17 +120,19 @@ function KpiCard({
   help?: React.ReactNode;
 }) {
   const bgClass = {
-    green: "bg-green-50 dark:bg-green-950/30 border-green-200 dark:border-green-900 hover:bg-green-100 dark:hover:bg-green-950/50",
-    orange: "bg-orange-50 dark:bg-orange-950/30 border-orange-200 dark:border-orange-900 hover:bg-orange-100 dark:hover:bg-orange-950/50",
+    green:
+      "bg-muted/40 border-border hover:bg-green-100 dark:hover:bg-green-950/50",
+    orange:
+      "bg-orange-50 dark:bg-orange-950/30 border-orange-200 dark:border-orange-900 hover:bg-orange-100 dark:hover:bg-orange-950/50",
     red: "bg-red-50 dark:bg-red-950/30 border-red-200 dark:border-red-900 hover:bg-red-100 dark:hover:bg-red-950/50",
     neutral: "hover:bg-muted/50",
   }[severity];
 
   return (
     <Link href={href}>
-      <Card className={`${bgClass} cursor-pointer transition-colors h-full`}>
-        <CardHeader className="pb-2 flex flex-row items-center justify-between space-y-0">
-          <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+      <Card className={`${bgClass} h-full cursor-pointer transition-colors`}>
+        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+          <CardTitle className="text-muted-foreground flex items-center gap-2 text-sm font-medium">
             {icon}
             {title}
             {help && (
@@ -149,142 +141,16 @@ function KpiCard({
               </span>
             )}
           </CardTitle>
-          <ArrowRight className="h-4 w-4 text-muted-foreground" />
+          <ArrowRight className="text-muted-foreground h-4 w-4" />
         </CardHeader>
         <CardContent>
           <div className="text-3xl font-bold">{value}</div>
           {subValue && (
-            <div className="text-xs text-muted-foreground mt-1">{subValue}</div>
+            <div className="text-muted-foreground mt-1 text-xs">{subValue}</div>
           )}
         </CardContent>
       </Card>
     </Link>
-  );
-}
-
-// ----------------- Incident banner -----------------
-
-const DISMISS_KEY = "aoria.dashboard.dismissed_incidents";
-
-/** Compute a stable fingerprint for an incident so the dismissal
- *  re-appears automatically when the situation changes (e.g. error
- *  count goes from 3 to 5). */
-function incidentFingerprint(inc: Incident): string {
-  return `${inc.id}|${inc.title}|${inc.detail ?? ""}`;
-}
-
-function readDismissed(): Set<string> {
-  if (typeof window === "undefined") return new Set();
-  try {
-    const raw = window.localStorage.getItem(DISMISS_KEY);
-    if (!raw) return new Set();
-    const parsed = JSON.parse(raw);
-    return new Set(Array.isArray(parsed) ? parsed : []);
-  } catch {
-    return new Set();
-  }
-}
-
-function writeDismissed(s: Set<string>): void {
-  if (typeof window === "undefined") return;
-  try {
-    window.localStorage.setItem(DISMISS_KEY, JSON.stringify(Array.from(s)));
-  } catch {
-    // localStorage full / blocked — silent fallback, dismissal lasts only this session
-  }
-}
-
-function IncidentsBanner({ incidents }: { incidents: Incident[] }) {
-  const [dismissed, setDismissed] = useState<Set<string>>(new Set());
-
-  // Hydrate from localStorage on mount
-  useEffect(() => {
-    setDismissed(readDismissed());
-  }, []);
-
-  // Garbage-collect dismissals that no longer match any current incident
-  // so we don't accumulate stale entries forever.
-  useEffect(() => {
-    if (dismissed.size === 0) return;
-    const live = new Set(incidents.map(incidentFingerprint));
-    const cleaned = new Set([...dismissed].filter((fp) => live.has(fp)));
-    if (cleaned.size !== dismissed.size) {
-      setDismissed(cleaned);
-      writeDismissed(cleaned);
-    }
-  }, [incidents, dismissed]);
-
-  const dismiss = (inc: Incident) => {
-    const next = new Set(dismissed);
-    next.add(incidentFingerprint(inc));
-    setDismissed(next);
-    writeDismissed(next);
-  };
-
-  const visible = incidents.filter((inc) => !dismissed.has(incidentFingerprint(inc)));
-
-  if (visible.length === 0) {
-    return (
-      <Card className="bg-green-50 dark:bg-green-950/30 border-green-200 dark:border-green-900">
-        <CardContent className="p-4 flex items-center gap-3">
-          <CheckCircle2 className="h-5 w-5 text-green-600 dark:text-green-400" />
-          <div className="text-sm font-medium text-green-700 dark:text-green-300">
-            Aucun incident en cours.
-          </div>
-        </CardContent>
-      </Card>
-    );
-  }
-  return (
-    <Card>
-      <CardHeader className="pb-2">
-        <CardTitle className="text-base font-semibold flex items-center gap-2">
-          <AlertOctagon className="h-4 w-4" />
-          Incidents en cours ({visible.length})
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-2">
-        {visible.map((inc) => {
-          const colors =
-            inc.severity === "critical"
-              ? "bg-red-50 dark:bg-red-950/30 border-red-200 dark:border-red-900 text-red-700 dark:text-red-300"
-              : inc.severity === "warning"
-              ? "bg-orange-50 dark:bg-orange-950/30 border-orange-200 dark:border-orange-900 text-orange-700 dark:text-orange-300"
-              : "bg-blue-50 dark:bg-blue-950/30 border-blue-200 dark:border-blue-900 text-blue-700 dark:text-blue-300";
-          const Icon = inc.severity === "critical" ? AlertOctagon : AlertTriangle;
-          return (
-            <div
-              key={inc.id}
-              className={`border rounded-md p-3 flex flex-wrap items-start gap-3 ${colors}`}
-            >
-              <Icon className="h-4 w-4 mt-0.5 shrink-0" />
-              <div className="flex-1 min-w-0 basis-full sm:basis-0">
-                <div className="font-medium text-sm">{inc.title}</div>
-                {inc.detail && (
-                  <div className="text-xs opacity-80 mt-0.5">{inc.detail}</div>
-                )}
-              </div>
-              <div className="flex items-center gap-2 shrink-0 ml-auto sm:ml-0">
-                <Link href={inc.action_href}>
-                  <Button size="sm" variant="outline" className="bg-background">
-                    {inc.action_label}
-                  </Button>
-                </Link>
-                <Button
-                  size="icon"
-                  variant="ghost"
-                  className="h-7 w-7 hover:bg-background/60"
-                  title="Masquer (réapparaît si la situation change)"
-                  onClick={() => dismiss(inc)}
-                >
-                  <X className="h-3.5 w-3.5" />
-                </Button>
-              </div>
-            </div>
-          );
-        })}
-      </CardContent>
-    </Card>
   );
 }
 
@@ -293,7 +159,7 @@ function IncidentsBanner({ incidents }: { incidents: Incident[] }) {
 function TimelineChart({ data }: { data: TimeseriesPoint[] }) {
   if (data.length === 0) {
     return (
-      <div className="text-xs text-muted-foreground py-12 text-center">
+      <div className="text-muted-foreground py-12 text-center text-xs">
         Pas de données sur les 30 derniers jours.
       </div>
     );
@@ -308,7 +174,7 @@ function TimelineChart({ data }: { data: TimeseriesPoint[] }) {
   const step = chartW / data.length;
 
   return (
-    <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-40">
+    <svg viewBox={`0 0 ${width} ${height}`} className="h-40 w-full">
       {/* Y-axis lines */}
       {[0, 0.25, 0.5, 0.75, 1].map((p) => {
         const y = padding.top + chartH - chartH * p;
@@ -361,7 +227,10 @@ function TimelineChart({ data }: { data: TimeseriesPoint[] }) {
         if (i < 0 || i >= data.length) return null;
         const x = padding.left + i * step + step / 2;
         const date = new Date(data[i].date);
-        const label = date.toLocaleDateString("fr-FR", { day: "2-digit", month: "short" });
+        const label = date.toLocaleDateString("fr-FR", {
+          day: "2-digit",
+          month: "short",
+        });
         return (
           <text
             key={i}
@@ -387,14 +256,20 @@ export default function AdminHomePage() {
   const token = session?.access_token;
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
+  const [updatedAt, setUpdatedAt] = useState<Date | null>(null);
 
   const fetchStats = useCallback(async () => {
     if (!token) return;
     try {
-      const data = await apiFetch<DashboardStats>("/admin/dashboard/", { token });
+      const data = await apiFetch<DashboardStats>("/admin/dashboard/", {
+        token,
+      });
       setStats(data);
+      setError(false);
+      setUpdatedAt(new Date());
     } catch {
-      toast.error("Erreur lors du chargement du tableau de bord");
+      setError(true);
     } finally {
       setLoading(false);
     }
@@ -413,100 +288,122 @@ export default function AdminHomePage() {
   if (loading) {
     return (
       <div className="space-y-6">
-        <h1 className="text-2xl font-bold tracking-tight">Vue d&apos;ensemble</h1>
+        <h1 className="text-2xl font-bold tracking-tight">État du service</h1>
         <Skeleton className="h-20 w-full" />
         <div className="grid gap-4 md:grid-cols-4">
-          {[1, 2, 3, 4].map((i) => <Skeleton key={i} className="h-32" />)}
+          {[1, 2, 3, 4].map((i) => (
+            <Skeleton key={i} className="h-32" />
+          ))}
         </div>
         <Skeleton className="h-40 w-full" />
       </div>
     );
   }
 
-  if (!stats) return null;
+  if (!stats) return <AdminLoadError onRetry={fetchStats} />;
 
   // Severity logic for the 4 main cards
   const ragSeverity: "green" | "orange" | "red" =
     stats.quality_health.feedback_negative_rate_7d > 0.15
       ? "red"
       : stats.quality_health.feedback_negative_rate_7d > 0.05 ||
-        stats.quality_health.no_sources_rate_7d > 0.05
-      ? "orange"
-      : "green";
+          stats.quality_health.no_sources_rate_7d > 0.05
+        ? "orange"
+        : "green";
 
   const corpusSeverity: "green" | "orange" | "red" =
     stats.error_documents > 0
       ? "red"
       : stats.pending_documents > 10
-      ? "orange"
-      : "green";
-
-  const projection = projectedMonthlyCost(stats.cost_30d);
+        ? "orange"
+        : "green";
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">Vue d&apos;ensemble</h1>
-          <p className="text-sm text-muted-foreground">
-            État de santé d&apos;AORIA RH en temps réel.
-          </p>
-        </div>
-        <Button variant="outline" size="sm" onClick={fetchStats}>
-          <RefreshCw className="h-4 w-4" />
-        </Button>
-      </div>
-
+      <AdminPageHeader
+        section="Exploitation"
+        title="État du service"
+        description="Repérez les alertes et accédez aux conversations ou documents concernés."
+        actions={
+          <Button variant="outline" size="sm" onClick={fetchStats}>
+            <RefreshCw className="size-4" />
+            Actualiser
+          </Button>
+        }
+      />
+      <ServiceNav />
+      {error && (
+        <AdminLoadError
+          message="L’actualisation a échoué. Les données affichées peuvent être anciennes."
+          onRetry={fetchStats}
+        />
+      )}
+      <p className="text-muted-foreground text-xs">
+        Actualisation toutes les 30 secondes
+        {updatedAt &&
+          ` · Dernière mise à jour à ${updatedAt.toLocaleTimeString("fr-FR")}`}
+      </p>
       {/* Incidents banner */}
       <IncidentsBanner incidents={stats.incidents} />
 
       {/* 4 main KPI cards (clickable) */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
         <KpiCard
           href="/admin/quality"
-          title="Santé RAG"
+          title="Retours négatifs (7 j)"
           icon={<Gauge className="h-4 w-4" />}
           value={fmtPct(stats.quality_health.feedback_negative_rate_7d)}
           subValue={`${fmtPct(stats.quality_health.no_sources_rate_7d)} sans réponse trouvée · cas le plus lent ${fmtMs(stats.quality_health.latency_p95_ms_7d)}`}
           severity={ragSeverity}
           help={
             <>
-              Indicateur de santé du moteur RAG sur les 7 derniers jours.
-              Valeur affichée = taux de feedback négatif.
-              Sous-info = % de questions RH sans réponse trouvée + temps
-              de réponse du cas le plus lent (5% des questions).
-              Cliquez pour ouvrir la page Qualité.
+              Indicateur de santé du moteur RAG sur les 7 derniers jours. Valeur
+              affichée = taux de feedback négatif. Sous-info = % de questions RH
+              sans réponse trouvée + temps de réponse du cas le plus lent (5%
+              des questions). Cliquez pour ouvrir la page Qualité.
             </>
           }
         />
-        <KpiCard
-          href="/admin/costs"
-          title="Coût (30j)"
-          icon={<DollarSign className="h-4 w-4" />}
-          value={fmtCost(stats.cost_30d)}
-          subValue={`projection mensuelle ~ ${fmtCost(projection)}`}
-          severity="neutral"
-          help={
-            <>
-              Coût total des appels API (OpenAI + Voyage AI) sur 30 jours,
-              uniquement pour les questions utilisateurs (les ingestions et
-              le bac à sable admin sont exclus).
-            </>
-          }
-        />
+        {session?.user?.staff_role !== "tech" ? (
+          <>
+            <KpiCard
+              href="/admin/tools?tab=costs"
+              title="Coût des questions (30 j)"
+              icon={<DollarSign className="h-4 w-4" />}
+              value={fmtCost(stats.cost_30d)}
+              subValue="Hors ingestions et tests manuels"
+              severity="neutral"
+              help={
+                <>
+                  Coût total des appels API (OpenAI + Voyage AI) sur 30 jours,
+                  uniquement pour les questions utilisateurs (les ingestions et
+                  le bac à sable admin sont exclus).
+                </>
+              }
+            />
+          </>
+        ) : (
+          <KpiCard
+            href="/admin/corpus?tab=updates"
+            title="Mises à jour"
+            icon={<RefreshCw className="size-4" />}
+            value={String(stats.failed_syncs_24h)}
+            subValue="Synchronisation(s) en échec sur 24 h"
+            severity={stats.failed_syncs_24h > 0 ? "orange" : "neutral"}
+          />
+        )}
         <KpiCard
           href="/admin/corpus"
-          title="Corpus juridique"
+          title="Documents juridiques"
           icon={<Library className="h-4 w-4" />}
           value={`${stats.indexed_documents.toLocaleString("fr-FR")}`}
           subValue={`${stats.error_documents} erreur · ${stats.pending_documents} en attente`}
           severity={corpusSeverity}
           help={
             <>
-              Nombre de documents communs indexés et interrogeables par le
-              RAG (codes, conventions collectives, jurisprudence). Carte
-              orange si docs en attente, rouge si docs en erreur.
+              Nombre de documents communs indexés et interrogeables par le RAG
+              (codes, conventions collectives, jurisprudence). Carte orange si
+              docs en attente, rouge si docs en erreur.
             </>
           }
         />
@@ -519,9 +416,9 @@ export default function AdminHomePage() {
           severity="neutral"
           help={
             <>
-              Nombre de questions posées dans le chat sur 7 jours, hors
-              tests admin. <strong>Utilisateurs actifs</strong> = comptes
-              ayant posé au moins 1 question récemment.
+              Nombre de questions posées dans le chat sur 7 jours, hors tests
+              admin. <strong>Utilisateurs actifs</strong> = comptes ayant posé
+              au moins 1 question récemment.
             </>
           }
         />
@@ -530,7 +427,7 @@ export default function AdminHomePage() {
       {/* Timeline chart */}
       <Card>
         <CardHeader className="pb-2">
-          <CardTitle className="text-base font-semibold flex items-center gap-2">
+          <CardTitle className="flex items-center gap-2 text-base font-semibold">
             <TrendingUp className="h-4 w-4" />
             Questions par jour (30 jours)
           </CardTitle>
@@ -540,83 +437,108 @@ export default function AdminHomePage() {
         </CardContent>
       </Card>
 
-      {/* Secondary info row */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-xs uppercase font-medium text-muted-foreground flex items-center gap-2">
-              <Clock className="h-3 w-3" />
-              Dernière sync
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-sm font-medium">
-              {stats.last_sync_type ?? "—"}
-            </div>
-            <div className="text-xs text-muted-foreground mt-1">
-              {fmtRelativeDate(stats.last_sync_at)}
-              {stats.last_sync_status && (
-                <Badge
-                  variant="outline"
-                  className={`ml-2 text-[10px] h-4 ${
-                    ["ok", "success", "completed"].includes(stats.last_sync_status.toLowerCase())
-                      ? "border-green-300 text-green-700 dark:text-green-400"
-                      : "border-red-300 text-red-700 dark:text-red-400"
-                  }`}
+      <details className="bg-card rounded-xl border p-5">
+        <summary className="cursor-pointer text-sm font-semibold">
+          Informations techniques et comptes
+        </summary>
+        <div className="mt-5">
+          {/* Secondary info row */}
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-muted-foreground flex items-center gap-2 text-xs font-medium uppercase">
+                  <Clock className="h-3 w-3" />
+                  Dernière sync
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-sm font-medium">
+                  {stats.last_sync_type ?? "—"}
+                </div>
+                <div className="text-muted-foreground mt-1 text-xs">
+                  {fmtRelativeDate(stats.last_sync_at)}
+                  {stats.last_sync_status && (
+                    <Badge
+                      variant="outline"
+                      className={`ml-2 h-4 text-[10px] ${
+                        ["ok", "success", "completed"].includes(
+                          stats.last_sync_status.toLowerCase()
+                        )
+                          ? "border-green-300 text-green-700 dark:text-green-400"
+                          : "border-red-300 text-red-700 dark:text-red-400"
+                      }`}
+                    >
+                      {stats.last_sync_status}
+                    </Badge>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-muted-foreground flex items-center gap-2 text-xs font-medium uppercase">
+                  <Cpu className="h-3 w-3" />
+                  Modèle LLM
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="font-mono text-sm font-medium">
+                  {stats.current_model}
+                </div>
+                {session?.user?.staff_role !== "tech" && (
+                  <Link
+                    href="/admin/tools?tab=costs"
+                    className="text-muted-foreground mt-1 block text-xs hover:underline"
+                  >
+                    Réglages →
+                  </Link>
+                )}
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-muted-foreground flex items-center gap-2 text-xs font-medium uppercase">
+                  <Database className="h-3 w-3" />
+                  Index Qdrant
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-sm font-medium">
+                  {stats.total_chunks.toLocaleString("fr-FR")} chunks
+                </div>
+                <Link
+                  href="/admin/tools?tab=index"
+                  className="text-muted-foreground mt-1 block text-xs hover:underline"
                 >
-                  {stats.last_sync_status}
-                </Badge>
-              )}
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-xs uppercase font-medium text-muted-foreground flex items-center gap-2">
-              <Cpu className="h-3 w-3" />
-              Modèle LLM
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-sm font-mono font-medium">{stats.current_model}</div>
-            <Link href="/admin/costs" className="text-xs text-muted-foreground hover:underline mt-1 block">
-              Changer →
-            </Link>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-xs uppercase font-medium text-muted-foreground flex items-center gap-2">
-              <Database className="h-3 w-3" />
-              Index Qdrant
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-sm font-medium">
-              {stats.total_chunks.toLocaleString("fr-FR")} chunks
-            </div>
-            <Link href="/admin/qdrant" className="text-xs text-muted-foreground hover:underline mt-1 block">
-              Inspecter →
-            </Link>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-xs uppercase font-medium text-muted-foreground flex items-center gap-2">
-              <Users className="h-3 w-3" />
-              Comptes
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-sm font-medium">
-              {stats.total_organisations} orgs · {stats.total_users} users
-            </div>
-            <Link href="/admin/users" className="text-xs text-muted-foreground hover:underline mt-1 block">
-              Gérer →
-            </Link>
-          </CardContent>
-        </Card>
-      </div>
+                  Inspecter →
+                </Link>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-muted-foreground flex items-center gap-2 text-xs font-medium uppercase">
+                  <Users className="h-3 w-3" />
+                  Comptes
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-sm font-medium">
+                  {stats.total_organisations} organisations ·{" "}
+                  {stats.total_users} utilisateurs
+                </div>
+                {session?.user?.staff_role !== "tech" && (
+                  <Link
+                    href="/admin/users"
+                    className="text-muted-foreground mt-1 block text-xs hover:underline"
+                  >
+                    Gérer →
+                  </Link>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+        </div>
+      </details>
     </div>
   );
 }

@@ -15,6 +15,7 @@ stored in USD are converted to EUR via ``settings.usd_eur_rate``.
 import logging
 from datetime import UTC, datetime, timedelta
 from typing import Any, Literal
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
@@ -497,6 +498,10 @@ async def get_clients(
     ),
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=200),
+    direction: Literal["asc", "desc"] | None = Query(None),
+    q: str | None = Query(None, max_length=255),
+    status: Literal["active", "trialing", "past_due", "suspended", "canceled"] | None = Query(None),
+    account_id: UUID | None = Query(None),
     _: User = Depends(require_role(["admin"])),
     db: AsyncSession = Depends(get_db),
 ) -> ClientsResponse:
@@ -504,7 +509,12 @@ async def get_clients(
     now = datetime.now(UTC)
     d30 = now - timedelta(days=30)
 
-    accounts = list((await db.execute(select(Account))).scalars())
+    accounts_query = select(Account)
+    if status:
+        accounts_query = accounts_query.where(Account.status == status)
+    if account_id:
+        accounts_query = accounts_query.where(Account.id == account_id)
+    accounts = list((await db.execute(accounts_query)).scalars())
     usage = await _usage_by_account(db, d30)
     mrr_cents = await _mrr_by_account(db)
 
@@ -514,6 +524,8 @@ async def get_clients(
         cost_eur = _usd_to_eur(u.get("cost_usd", 0.0))
         mrr_eur = round(mrr_cents.get(acc.id, 0) / 100, 2)
         owner = await db.get(User, acc.owner_id)
+        if q and q.casefold() not in f"{acc.name} {owner.email if owner else ''}".casefold():
+            continue
         last = u.get("last_activity")
         rows.append(
             ClientRow(
@@ -539,7 +551,7 @@ async def get_clients(
         "activity": lambda r: r.last_activity_at or "",
         "name": lambda r: (r.account_name or "").lower(),
     }
-    reverse = sort != "name"
+    reverse = direction == "desc" if direction else sort != "name"
     rows.sort(key=sort_keys[sort], reverse=reverse)
 
     total = len(rows)

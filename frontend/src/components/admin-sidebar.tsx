@@ -13,8 +13,8 @@ import {
   Gift,
   Gauge,
   Library,
-  Database,
-  Search,
+  Wrench,
+  MessageSquare,
   ArrowLeft,
   ChevronsUpDown,
   User,
@@ -40,10 +40,14 @@ const GROUPS: NavGroup[] = [
     key: "pilotage",
     label: "Pilotage",
     items: [
-      { name: "Tableau de bord", href: "/admin/pilotage", icon: TrendingUp },
+      { name: "Vue d’ensemble", href: "/admin/pilotage", icon: TrendingUp },
       { name: "Clients", href: "/admin/clients", icon: Users },
-      { name: "Facturation", href: "/admin/billing", icon: CreditCard },
-      { name: "Coûts & marge", href: "/admin/costs", icon: DollarSign },
+      {
+        name: "Abonnements & paiements",
+        href: "/admin/billing",
+        icon: CreditCard,
+      },
+      { name: "Rentabilité", href: "/admin/costs", icon: DollarSign },
     ],
   },
   {
@@ -61,12 +65,14 @@ const GROUPS: NavGroup[] = [
     key: "exploitation",
     label: "Exploitation",
     items: [
-      { name: "Santé technique", href: "/admin/home", icon: Gauge },
-      { name: "Qualité & conversations", href: "/admin/quality", icon: Gauge },
-      { name: "Incidents & Slack", href: "/admin/incidents", icon: Gauge },
-      { name: "Corpus juridique", href: "/admin/corpus", icon: Library },
-      { name: "Index Qdrant", href: "/admin/qdrant", icon: Database },
-      { name: "Recherche documentaire", href: "/recherche", icon: Search },
+      { name: "État du service", href: "/admin/home", icon: Gauge },
+      {
+        name: "Conversations & retours",
+        href: "/admin/quality",
+        icon: MessageSquare,
+      },
+      { name: "Documents juridiques", href: "/admin/corpus", icon: Library },
+      { name: "Outils techniques", href: "/admin/tools", icon: Wrench },
     ],
   },
 ];
@@ -81,7 +87,11 @@ function getInitials(name: string) {
 }
 
 function isItemActive(pathname: string, href: string) {
-  if (href === "/admin/home") return pathname === "/admin/home";
+  if (href === "/admin/home")
+    return ["/admin/home", "/admin/incidents"].includes(pathname);
+  if (href === "/admin/tools")
+    return pathname.startsWith("/admin/tools") || pathname === "/admin/qdrant";
+  if (href === "/admin/clients" && pathname === "/admin/users") return true;
   return pathname === href || pathname.startsWith(`${href}/`);
 }
 
@@ -97,8 +107,9 @@ export function AdminSidebar({
   const fullName = session?.user?.full_name ?? "Utilisateur";
   const staffRole = session?.user?.staff_role ?? null;
 
-  const orderedGroups =
-    staffRole === "tech"
+  const orderedGroups = !session?.user
+    ? []
+    : staffRole === "tech"
       ? GROUPS.filter((group) => group.key === "exploitation")
       : staffRole === "business"
         ? GROUPS.filter((group) => group.key !== "exploitation")
@@ -108,7 +119,7 @@ export function AdminSidebar({
     <aside
       className={cn(
         "bg-sidebar text-sidebar-foreground flex flex-col",
-        variant === "desktop" && "hidden w-64 shrink-0 lg:flex",
+        variant === "desktop" && "hidden w-64 shrink-0 border-r lg:flex",
         variant === "mobile" && "h-full w-full overflow-y-auto"
       )}
       onClick={(e) => {
@@ -157,7 +168,10 @@ export function AdminSidebar({
         <Separator />
       </div>
 
-      <nav className="flex-1 space-y-4 overflow-y-auto px-2 py-3">
+      <nav
+        aria-label="Administration"
+        className="flex-1 space-y-6 overflow-y-auto px-3 py-4"
+      >
         {orderedGroups.map((group) => (
           <div key={group.key} className="space-y-1">
             <p className="text-muted-foreground px-2 text-xs font-semibold tracking-wide uppercase">
@@ -171,12 +185,15 @@ export function AdminSidebar({
                   variant="ghost"
                   size="sm"
                   className={cn(
-                    "w-full justify-start font-normal",
-                    active && "bg-accent text-accent-foreground font-medium"
+                    "h-auto min-h-10 w-full justify-start rounded-lg px-3 py-2 text-left text-[13px] font-normal whitespace-normal transition-colors",
+                    active && "bg-primary/10 text-primary font-semibold"
                   )}
                   asChild
                 >
-                  <Link href={item.href}>
+                  <Link
+                    href={item.href}
+                    aria-current={active ? "page" : undefined}
+                  >
                     <item.icon className="mr-2 h-4 w-4" />
                     {item.name}
                   </Link>

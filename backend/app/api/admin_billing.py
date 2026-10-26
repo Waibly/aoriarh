@@ -167,15 +167,24 @@ async def list_subscriptions(
     ),
     plan: str | None = Query(None, description="Filter by plan (solo, equipe, groupe)"),
     limit: int = Query(100, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+    account_id: uuid.UUID | None = Query(None),
     _: User = Depends(require_role(["admin"])),
     db: AsyncSession = Depends(get_db),
 ) -> list[dict[str, Any]]:
     """Return the subscription list with optional filters."""
-    stmt = select(Subscription).order_by(Subscription.created_at.desc()).limit(limit)
+    stmt = (
+        select(Subscription)
+        .order_by(Subscription.created_at.desc())
+        .limit(limit)
+        .offset(offset)
+    )
     if status_filter:
         stmt = stmt.where(Subscription.status == status_filter)
     if plan:
         stmt = stmt.where(Subscription.plan == plan)
+    if account_id:
+        stmt = stmt.where(Subscription.account_id == account_id)
 
     result = await db.execute(stmt)
     subs = list(result.scalars())

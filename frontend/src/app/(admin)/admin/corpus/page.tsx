@@ -2,6 +2,13 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSession } from "next-auth/react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Suspense } from "react";
+import {
+  AdminLoadError,
+  AdminPageHeader,
+} from "@/components/admin/page-header";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "@/lib/toast";
 import {
   RefreshCw,
@@ -20,12 +27,7 @@ import {
 } from "lucide-react";
 import { apiFetch, authFetch } from "@/lib/api";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -54,7 +56,12 @@ import {
 } from "@/components/ui/table";
 import { InfoTooltip } from "@/components/admin/info-tooltip";
 import { IndexationErrors } from "./IndexationErrors";
-import { InspectorBody, type InspectorPayload, type RagTrace, type CitedSource } from "../quality/InspectorBody";
+import {
+  InspectorBody,
+  type InspectorPayload,
+  type RagTrace,
+  type CitedSource,
+} from "../quality/InspectorBody";
 
 // ----------------- Types -----------------
 
@@ -152,9 +159,16 @@ function fmtRelative(iso: string | null): string {
  */
 function nextCron(weekday: number, hourUtc: number): string {
   const now = new Date();
-  const candidate = new Date(Date.UTC(
-    now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), hourUtc, 0, 0,
-  ));
+  const candidate = new Date(
+    Date.UTC(
+      now.getUTCFullYear(),
+      now.getUTCMonth(),
+      now.getUTCDate(),
+      hourUtc,
+      0,
+      0
+    )
+  );
   const daysUntil = (weekday - candidate.getUTCDay() + 7) % 7;
   candidate.setUTCDate(candidate.getUTCDate() + daysUntil);
   if (candidate.getTime() <= now.getTime()) {
@@ -186,7 +200,8 @@ function fmtSize(bytes: number | null): string {
 function aggregateBatch(batch: SyncLogItem[]): SyncLogItem {
   if (batch.length === 1) return batch[0];
   const sortedByStart = [...batch].sort(
-    (a, b) => new Date(a.started_at).getTime() - new Date(b.started_at).getTime(),
+    (a, b) =>
+      new Date(a.started_at).getTime() - new Date(b.started_at).getTime()
   );
   const earliest = sortedByStart[0];
   const completedTimes = batch
@@ -199,7 +214,8 @@ function aggregateBatch(batch: SyncLogItem[]): SyncLogItem {
   const statuses = batch.map((r) => (r.status ?? "").toLowerCase());
   let status: string;
   if (statuses.some((s) => s === "running")) status = "running";
-  else if (statuses.some((s) => ["error", "failed"].includes(s))) status = "error";
+  else if (statuses.some((s) => ["error", "failed"].includes(s)))
+    status = "error";
   else if (statuses.includes("interrupted")) status = "interrupted";
   else if (statuses.includes("deferred")) status = "deferred";
   else status = "success";
@@ -241,7 +257,15 @@ interface CorpusHealth {
     error_message: string | null;
     duration_ms: number | null;
   }[];
-  last_sync_per_type: { [t: string]: { status: string; started_at: string; items_created: number; items_fetched: number; errors: number } | null };
+  last_sync_per_type: {
+    [t: string]: {
+      status: string;
+      started_at: string;
+      items_created: number;
+      items_fetched: number;
+      errors: number;
+    } | null;
+  };
   is_busy: boolean;
 }
 
@@ -255,7 +279,9 @@ function IngestionProgressBanner({ token }: { token: string }) {
 
   const fetchHealth = useCallback(async () => {
     try {
-      const data = await apiFetch<CorpusHealth>("/admin/corpus/health", { token });
+      const data = await apiFetch<CorpusHealth>("/admin/corpus/health", {
+        token,
+      });
       setHealth(data);
     } catch {
       // silent — don't spam toasts on transient errors
@@ -320,39 +346,59 @@ function IngestionProgressBanner({ token }: { token: string }) {
     <Card
       className={`border-2 ${isFinished ? "border-green-400 bg-green-50/60 dark:bg-green-950/20" : "border-blue-400 bg-blue-50/60 dark:bg-blue-950/20"}`}
     >
-      <CardContent className="p-3 space-y-2">
+      <CardContent className="space-y-2 p-3">
         <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-2 text-sm font-medium">
             {isFinished ? (
               <CheckCircle2 className="h-4 w-4 text-green-600" />
             ) : (
-              <Loader2 className="h-4 w-4 text-blue-600 animate-spin" />
+              <Loader2 className="h-4 w-4 animate-spin text-blue-600" />
             )}
             {isFinished
               ? "Indexation terminée"
               : `Indexation en cours… ${done.toLocaleString("fr-FR")} / ${total.toLocaleString("fr-FR")}`}
           </div>
-          <div className="flex items-center gap-3 text-xs text-muted-foreground">
+          <div className="text-muted-foreground flex items-center gap-3 text-xs">
             {!isFinished && etaLabel && <span>ETA {etaLabel}</span>}
             <span className="font-mono">{pct}%</span>
           </div>
         </div>
-        <div className="h-2 rounded bg-muted overflow-hidden">
+        <div className="bg-muted h-2 overflow-hidden rounded">
           <div
             className={`h-full transition-all ${isFinished ? "bg-green-500" : "bg-blue-500"}`}
             style={{ width: `${pct}%` }}
           />
         </div>
-        <div className="text-[10px] text-muted-foreground flex flex-wrap gap-x-3 gap-y-0.5">
-          <span>en file : <span className="font-mono text-foreground">{health.pending_count}</span></span>
-          <span>en cours : <span className="font-mono text-foreground">{health.indexing_count}</span></span>
-          <span>indexés : <span className="font-mono text-foreground">{health.indexed_count.toLocaleString("fr-FR")}</span></span>
+        <div className="text-muted-foreground flex flex-wrap gap-x-3 gap-y-0.5 text-[10px]">
+          <span>
+            en file :{" "}
+            <span className="text-foreground font-mono">
+              {health.pending_count}
+            </span>
+          </span>
+          <span>
+            en cours :{" "}
+            <span className="text-foreground font-mono">
+              {health.indexing_count}
+            </span>
+          </span>
+          <span>
+            indexés :{" "}
+            <span className="text-foreground font-mono">
+              {health.indexed_count.toLocaleString("fr-FR")}
+            </span>
+          </span>
           {health.error_count > 0 && (
             <span className="text-red-600 dark:text-red-400">
               erreurs : <span className="font-mono">{health.error_count}</span>
             </span>
           )}
-          <span>en réserve : <span className="font-mono text-foreground">{health.reserved_count.toLocaleString("fr-FR")}</span></span>
+          <span>
+            en réserve :{" "}
+            <span className="text-foreground font-mono">
+              {health.reserved_count.toLocaleString("fr-FR")}
+            </span>
+          </span>
         </div>
       </CardContent>
     </Card>
@@ -362,12 +408,11 @@ function IngestionProgressBanner({ token }: { token: string }) {
 function StatusBadge({ status }: { status: string }) {
   if (status === "indexed")
     return (
-      <Badge className="bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 border-0">
+      <Badge className="border-0 bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400">
         indexé
       </Badge>
     );
-  if (status === "pending")
-    return <Badge variant="outline">en attente</Badge>;
+  if (status === "pending") return <Badge variant="outline">en attente</Badge>;
   if (status === "reserved")
     return (
       <Badge
@@ -380,13 +425,13 @@ function StatusBadge({ status }: { status: string }) {
     );
   if (status === "indexing")
     return (
-      <Badge className="bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400 border-0">
-        <Loader2 className="h-3 w-3 mr-1 animate-spin" /> indexation
+      <Badge className="border-0 bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">
+        <Loader2 className="mr-1 h-3 w-3 animate-spin" /> indexation
       </Badge>
     );
   if (status === "error")
     return (
-      <Badge className="bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400 border-0">
+      <Badge className="border-0 bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400">
         erreur
       </Badge>
     );
@@ -395,19 +440,29 @@ function StatusBadge({ status }: { status: string }) {
 
 // ----------------- Sync banner -----------------
 
-function SyncBanner({ token, onRefresh }: { token: string; onRefresh: () => void }) {
-  const [lastSyncs, setLastSyncs] = useState<{ [key: string]: SyncLogItem | null }>({});
+function SyncBanner({
+  token,
+  onRefresh,
+}: {
+  token: string;
+  onRefresh: () => void;
+}) {
+  const [lastSyncs, setLastSyncs] = useState<{
+    [key: string]: SyncLogItem | null;
+  }>({});
   const [loading, setLoading] = useState(true);
   // running[key] = true while we wait for the trigger HTTP call to return
   const [running, setRunning] = useState<{ [key: string]: boolean }>({});
   // pollingIds[key] = id of the SyncLog row we're tracking (created right after trigger)
-  const [pollingIds, setPollingIds] = useState<{ [key: string]: string | null }>({});
+  const [pollingIds, setPollingIds] = useState<{
+    [key: string]: string | null;
+  }>({});
 
   const loadLastSyncs = useCallback(async () => {
     try {
       const data = await apiFetch<{ logs: SyncLogItem[]; total: number }>(
         "/admin/syncs/logs?page=1&page_size=50",
-        { token },
+        { token }
       );
       // Map sync_type string -> UI key
       const keyOf = (t: string): string | null => {
@@ -430,7 +485,10 @@ function SyncBanner({ token, onRefresh }: { token: string; onRefresh: () => void
         judilibre: [],
         code_travail: [],
         jorf: [],
-        bocc: [], boss: [], curated_sources: [], social_ca: [],
+        bocc: [],
+        boss: [],
+        curated_sources: [],
+        social_ca: [],
       };
       for (const log of data.logs) {
         const key = keyOf(log.sync_type);
@@ -442,7 +500,10 @@ function SyncBanner({ token, onRefresh }: { token: string; onRefresh: () => void
         judilibre: null,
         code_travail: null,
         jorf: null,
-        bocc: null, boss: null, curated_sources: null, social_ca: null,
+        bocc: null,
+        boss: null,
+        curated_sources: null,
+        social_ca: null,
       };
       for (const key of Object.keys(grouped)) {
         const rows = grouped[key];
@@ -451,9 +512,11 @@ function SyncBanner({ token, onRefresh }: { token: string; onRefresh: () => void
         const mostRecent = rows[0];
         const refMs = new Date(mostRecent.started_at).getTime();
         const batch = rows.filter(
-          (r) => refMs - new Date(r.started_at).getTime() <= WINDOW_MS,
+          (r) => refMs - new Date(r.started_at).getTime() <= WINDOW_MS
         );
-        byKey[key] = ["boss", "curated_sources", "social_ca"].includes(key) ? mostRecent : aggregateBatch(batch);
+        byKey[key] = ["boss", "curated_sources", "social_ca"].includes(key)
+          ? mostRecent
+          : aggregateBatch(batch);
       }
       setLastSyncs(byKey);
     } catch {
@@ -468,9 +531,13 @@ function SyncBanner({ token, onRefresh }: { token: string; onRefresh: () => void
   }, [loadLastSyncs]);
 
   // Also follow automatic jobs discovered when opening the page.
-  const hasRunningSync = Object.values(lastSyncs).some((log) => log?.status === "running");
+  const hasRunningSync = Object.values(lastSyncs).some(
+    (log) => log?.status === "running"
+  );
   useEffect(() => {
-    const trackedKeys = Object.entries(pollingIds).filter(([, id]) => id !== null);
+    const trackedKeys = Object.entries(pollingIds).filter(
+      ([, id]) => id !== null
+    );
     if (trackedKeys.length === 0 && !hasRunningSync) return;
     const interval = setInterval(() => {
       loadLastSyncs();
@@ -487,7 +554,15 @@ function SyncBanner({ token, onRefresh }: { token: string; onRefresh: () => void
       const log = lastSyncs[key];
       if (!log) return;
       const status = (log.status ?? "").toLowerCase();
-      const finished = ["ok", "success", "completed", "error", "failed", "interrupted", "deferred"].includes(status);
+      const finished = [
+        "ok",
+        "success",
+        "completed",
+        "error",
+        "failed",
+        "interrupted",
+        "deferred",
+      ].includes(status);
       if (finished) {
         setPollingIds((prev) => ({ ...prev, [key]: null }));
         const isOk = ["ok", "success", "completed"].includes(status);
@@ -495,7 +570,7 @@ function SyncBanner({ token, onRefresh }: { token: string; onRefresh: () => void
           toast.success(
             `Sync ${key} terminée — ${log.items_created ?? 0} créé(s), ${
               log.items_fetched ?? 0
-            } récupéré(s)`,
+            } récupéré(s)`
           );
         } else if (status === "deferred") {
           toast.info(`Sync ${key} : suite reportée par les quotas quotidiens`);
@@ -528,13 +603,15 @@ function SyncBanner({ token, onRefresh }: { token: string; onRefresh: () => void
       // Find the most recent log for this key (just created) and start tracking it
       const fresh = await apiFetch<{ logs: SyncLogItem[]; total: number }>(
         "/admin/syncs/logs?page=1&page_size=10",
-        { token },
+        { token }
       );
       const matcher = (t: string) => {
         const tt = t.toLowerCase();
         if (key === "kali") return tt === "kali" || tt === "ccn";
-        if (key === "judilibre") return tt === "jurisprudence" || tt === "judilibre";
-        if (key === "code_travail") return tt === "codes" || tt === "code_travail";
+        if (key === "judilibre")
+          return tt === "jurisprudence" || tt === "judilibre";
+        if (key === "code_travail")
+          return tt === "codes" || tt === "code_travail";
         if (key === "jorf") return tt === "jorf";
         if (key === "bocc") return tt === "bocc";
         return false;
@@ -560,16 +637,20 @@ function SyncBanner({ token, onRefresh }: { token: string; onRefresh: () => void
       group: "legislation",
       label: "Codes",
       auto: true,
-      autoDetail: "9 codes (travail, civil, pénal, CSS, action sociale, santé publique, commerce, monétaire et financier, CGI)",
+      autoDetail:
+        "9 codes (travail, civil, pénal, CSS, action sociale, santé publique, commerce, monétaire et financier, CGI)",
       help: (
         <>
-          <strong>Au clic :</strong> appelle <code>POST /admin/syncs/codes</code>,
-          qui lance le job <code>run_all_codes_sync</code>. Pour chacun des 9 codes,
-          télécharge le texte complet depuis Légifrance, calcule un hash SHA-256
-          et compare avec la version stockée. Si identique → aucune action
-          (zéro coût d&apos;embeddings). Si différent → réingestion complète.<br /><br />
-          <strong>Cron auto :</strong> tous les samedis à 2h UTC (groupe « Lois &
-          codes »).
+          <strong>Au clic :</strong> appelle{" "}
+          <code>POST /admin/syncs/codes</code>, qui lance le job{" "}
+          <code>run_all_codes_sync</code>. Pour chacun des 9 codes, télécharge
+          le texte complet depuis Légifrance, calcule un hash SHA-256 et compare
+          avec la version stockée. Si identique → aucune action (zéro coût
+          d&apos;embeddings). Si différent → réingestion complète.
+          <br />
+          <br />
+          <strong>Cron auto :</strong> tous les samedis à 2h UTC (groupe « Lois
+          & codes »).
         </>
       ),
     },
@@ -578,22 +659,29 @@ function SyncBanner({ token, onRefresh }: { token: string; onRefresh: () => void
       group: "legislation",
       label: "JORF",
       auto: true,
-      autoDetail: "Lois / ordonnances / décrets / arrêtés RH publiés au Journal officiel (30 derniers jours)",
+      autoDetail:
+        "Lois / ordonnances / décrets / arrêtés RH publiés au Journal officiel (30 derniers jours)",
       help: (
         <>
-          <strong>Au clic :</strong> appelle <code>POST /admin/syncs/jorf</code>,
-          qui lance le job <code>run_jorf_sync</code>. Interroge le fond LODA de
-          Légifrance sur les 30 derniers jours (lois, ordonnances, décrets,
-          arrêtés).<br /><br />
+          <strong>Au clic :</strong> appelle <code>POST /admin/syncs/jorf</code>
+          , qui lance le job <code>run_jorf_sync</code>. Interroge le fond LODA
+          de Légifrance sur les 30 derniers jours (lois, ordonnances, décrets,
+          arrêtés).
+          <br />
+          <br />
           <strong>Filtre RH :</strong> on ne garde un texte que si son titre
           contient des mots-clés RH (travail, salarié, licenciement, risques
-          professionnels, DUERP…) <em>ou</em> s&apos;il modifie le Code du travail
-          ou le Code de la sécurité sociale. Dédup par identifiant de texte
-          (CID).<br /><br />
+          professionnels, DUERP…) <em>ou</em> s&apos;il modifie le Code du
+          travail ou le Code de la sécurité sociale. Dédup par identifiant de
+          texte (CID).
+          <br />
+          <br />
           Permet de capter une nouvelle loi <em>dès sa publication au JO</em>,
-          sans attendre sa consolidation dans le Code du travail.<br /><br />
-          <strong>Cron auto :</strong> tous les samedis à 2h UTC (groupe « Lois &
-          codes »).
+          sans attendre sa consolidation dans le Code du travail.
+          <br />
+          <br />
+          <strong>Cron auto :</strong> tous les samedis à 2h UTC (groupe « Lois
+          & codes »).
         </>
       ),
     },
@@ -602,15 +690,20 @@ function SyncBanner({ token, onRefresh }: { token: string; onRefresh: () => void
       group: "jurisprudence",
       label: "Jurisprudence",
       auto: true,
-      autoDetail: "Cour de cassation et Conseil constitutionnel le dimanche ; cours d’appel sociales suivies séparément chaque jour",
+      autoDetail:
+        "Cour de cassation et Conseil constitutionnel le dimanche ; cours d’appel sociales suivies séparément chaque jour",
       help: (
         <>
-          <strong>Le dimanche à 02:00 UTC :</strong> suivi de la Cour de cassation
-          (chambre sociale, sélections criminelle, commerciale, deuxième chambre civile,
-          assemblée plénière et chambre mixte) et du Conseil constitutionnel.<br /><br />
-          Les cours d’appel sociales ont un suivi quotidien séparé, présenté ci-dessous.
-          L’ancienne collecte de toutes les matières reste suspendue, y compris après
-          un lancement manuel de la synchronisation générale.
+          <strong>Le dimanche à 02:00 UTC :</strong> suivi de la Cour de
+          cassation (chambre sociale, sélections criminelle, commerciale,
+          deuxième chambre civile, assemblée plénière et chambre mixte) et du
+          Conseil constitutionnel.
+          <br />
+          <br />
+          Les cours d’appel sociales ont un suivi quotidien séparé, présenté
+          ci-dessous. L’ancienne collecte de toutes les matières reste
+          suspendue, y compris après un lancement manuel de la synchronisation
+          générale.
         </>
       ),
     },
@@ -619,15 +712,19 @@ function SyncBanner({ token, onRefresh }: { token: string; onRefresh: () => void
       group: "jurisprudence",
       label: "KALI (CCN)",
       auto: true,
-      autoDetail: "Rotation : les 15 CCN installées les plus anciennement synchronisées",
+      autoDetail:
+        "Rotation : les 15 CCN installées les plus anciennement synchronisées",
       help: (
         <>
-          <strong>Au clic :</strong> appelle <code>POST /admin/ccn/sync-all</code>,
-          qui lance un job ARQ <code>run_kali_install</code> pour chaque CCN installée
-          dans une organisation. Met à jour les articles, avenants et grilles depuis
-          la base KALI de Légifrance.<br /><br />
-          <strong>Cron auto :</strong> tous les dimanches à 2h UTC, traite uniquement
-          les 15 CCN les plus anciennement syncées (rotation).
+          <strong>Au clic :</strong> appelle{" "}
+          <code>POST /admin/ccn/sync-all</code>, qui lance un job ARQ{" "}
+          <code>run_kali_install</code> pour chaque CCN installée dans une
+          organisation. Met à jour les articles, avenants et grilles depuis la
+          base KALI de Légifrance.
+          <br />
+          <br />
+          <strong>Cron auto :</strong> tous les dimanches à 2h UTC, traite
+          uniquement les 15 CCN les plus anciennement syncées (rotation).
         </>
       ),
     },
@@ -636,204 +733,252 @@ function SyncBanner({ token, onRefresh }: { token: string; onRefresh: () => void
       group: "maintenance",
       label: "BOCC",
       auto: true,
-      autoDetail: "Chaque jour à 02:30 UTC : inventaire des publications officielles, cinq numéros maximum par passage",
+      autoDetail:
+        "Chaque jour à 02:30 UTC : inventaire des publications officielles, cinq numéros maximum par passage",
       help: (
         <>
-          <strong>Chaque jour à 02:30 UTC :</strong> repérage des nouveaux numéros
-          dans les catalogues officiels et inventaire de leurs PDF, y compris sans
-          convention identifiée. Les anciens échecs sont repris.<br /><br />
-          Les textes repérés sont à examiner avant leur ajout au corpus. Ils ne sont
-          pas indexés automatiquement à l’installation d’une convention.
-          Le bouton lance ce contrôle sans attendre le prochain passage.
+          <strong>Chaque jour à 02:30 UTC :</strong> repérage des nouveaux
+          numéros dans les catalogues officiels et inventaire de leurs PDF, y
+          compris sans convention identifiée. Les anciens échecs sont repris.
+          <br />
+          <br />
+          Les textes repérés sont à examiner avant leur ajout au corpus. Ils ne
+          sont pas indexés automatiquement à l’installation d’une convention. Le
+          bouton lance ce contrôle sans attendre le prochain passage.
         </>
       ),
     },
     {
-      key: "curated_sources", group: "maintenance", label: "Guides officiels et procédure civile",
-      auto: true, readOnly: true,
+      key: "curated_sources",
+      group: "maintenance",
+      label: "Guides officiels et procédure civile",
+      auto: true,
+      readOnly: true,
       autoDetail: "Samedi à 06:00 UTC : suivi des sources déjà sélectionnées",
-      help: <>Les guides admis et les 45 articles de procédure civile sont comparés à leur source officielle le samedi. Une source inchangée n’est pas réindexée. Les accès bloqués restent signalés et la version existante est conservée. Les textes européens et les sources encore en attente d’admission sont suivis pour examen.</>,
+      help: (
+        <>
+          Les guides admis et les 45 articles de procédure civile sont comparés
+          à leur source officielle le samedi. Une source inchangée n’est pas
+          réindexée. Les accès bloqués restent signalés et la version existante
+          est conservée. Les textes européens et les sources encore en attente
+          d’admission sont suivis pour examen.
+        </>
+      ),
     },
     {
-      key: "social_ca", group: "maintenance", label: "Cours d’appel — affaires sociales",
-      auto: true, readOnly: true,
-      autoDetail: "Chaque jour à 07:00 UTC : affaires sociales selon la classification officielle",
-      help: <>Le suivi repère les décisions publiées ou modifiées, vérifie les doublons et ajoute les nouvelles affaires appartenant aux catégories sociales retenues. Limite : 20 nouveaux documents et 250 000 tokens estimés par jour. Le reliquat reste en attente. Les catégories mixtes et les modifications d’une décision existante nécessitent un examen.</>,
+      key: "social_ca",
+      group: "maintenance",
+      label: "Cours d’appel — affaires sociales",
+      auto: true,
+      readOnly: true,
+      autoDetail:
+        "Chaque jour à 07:00 UTC : affaires sociales selon la classification officielle",
+      help: (
+        <>
+          Le suivi repère les décisions publiées ou modifiées, vérifie les
+          doublons et ajoute les nouvelles affaires appartenant aux catégories
+          sociales retenues. Limite : 20 nouveaux documents et 250 000 tokens
+          estimés par jour. Le reliquat reste en attente. Les catégories mixtes
+          et les modifications d’une décision existante nécessitent un examen.
+        </>
+      ),
     },
     {
-      key: "boss", group: "maintenance", label: "BOSS — évolutions à examiner",
-      auto: true, readOnly: true,
-      autoDetail: "Chaque jour à 05:00 UTC : comparaison avec les textes déjà admis",
-      help: <>Les versions nouvelles et leurs notes officielles sont conservées pour examen. Elles ne remplacent pas automatiquement le texte indexé : une annonce peut concerner une mesure future ou un projet.</>,
+      key: "boss",
+      group: "maintenance",
+      label: "BOSS — évolutions à examiner",
+      auto: true,
+      readOnly: true,
+      autoDetail:
+        "Chaque jour à 05:00 UTC : comparaison avec les textes déjà admis",
+      help: (
+        <>
+          Les versions nouvelles et leurs notes officielles sont conservées pour
+          examen. Elles ne remplacent pas automatiquement le texte indexé : une
+          annonce peut concerner une mesure future ou un projet.
+        </>
+      ),
     },
   ];
 
   const renderCard = (s: (typeof sources)[number]) => {
-          const log = lastSyncs[s.key];
-          const isPolling = pollingIds[s.key] !== null && pollingIds[s.key] !== undefined;
-          const isTriggering = running[s.key] === true;
-          const status = log?.status?.toLowerCase() ?? "";
-          const isRunning = isPolling || isTriggering || status === "running";
-          const ok = ["ok", "success", "completed"].includes(status);
-          const isErr = ["error", "failed", "interrupted"].includes(status);
-          const isDeferred = status === "deferred";
-          // "Soft" warnings: unchanged content (hash skip) or upstream-not-ready
-          const isUpToDate =
-            ok && s.key !== "bocc" && s.key !== "boss" &&
-            log?.items_skipped !== null &&
-            (log?.items_skipped ?? 0) > 0 &&
-            (log?.items_created ?? 0) === 0;
-          // BOCC may report 'Archive ... introuvable' which is a DILA delay,
-          // not a real error from our side — render as a warning, not red.
-          const isUpstreamMissing =
-            isErr && (log?.error_message ?? "").toLowerCase().includes("introuvable");
-          const cardBorder = isRunning
-            ? "border-blue-300 bg-blue-50/50 dark:bg-blue-950/20"
-            : isUpstreamMissing || isDeferred
-            ? "border-amber-300 bg-amber-50/50 dark:bg-amber-950/20"
-            : "";
+    const log = lastSyncs[s.key];
+    const isPolling =
+      pollingIds[s.key] !== null && pollingIds[s.key] !== undefined;
+    const isTriggering = running[s.key] === true;
+    const status = log?.status?.toLowerCase() ?? "";
+    const isRunning = isPolling || isTriggering || status === "running";
+    const ok = ["ok", "success", "completed"].includes(status);
+    const isErr = ["error", "failed", "interrupted"].includes(status);
+    const isDeferred = status === "deferred";
+    // "Soft" warnings: unchanged content (hash skip) or upstream-not-ready
+    const isUpToDate =
+      ok &&
+      s.key !== "bocc" &&
+      s.key !== "boss" &&
+      log?.items_skipped !== null &&
+      (log?.items_skipped ?? 0) > 0 &&
+      (log?.items_created ?? 0) === 0;
+    // BOCC may report 'Archive ... introuvable' which is a DILA delay,
+    // not a real error from our side — render as a warning, not red.
+    const isUpstreamMissing =
+      isErr && (log?.error_message ?? "").toLowerCase().includes("introuvable");
+    const cardBorder = isRunning
+      ? "border-blue-300 bg-blue-50/50 dark:bg-blue-950/20"
+      : isUpstreamMissing || isDeferred
+        ? "border-amber-300 bg-amber-50/50 dark:bg-amber-950/20"
+        : "";
 
-          return (
-            <div
-              key={s.key}
-              className={`flex flex-col gap-1 border rounded-md p-3 text-xs transition-colors ${cardBorder}`}
+    return (
+      <div
+        key={s.key}
+        className={`flex flex-col gap-1 rounded-md border p-3 text-xs transition-colors ${cardBorder}`}
+      >
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex min-w-0 items-center gap-1.5">
+            {loading ? (
+              <Skeleton className="h-3 w-3" />
+            ) : isRunning ? (
+              <Loader2 className="h-3 w-3 animate-spin text-blue-600" />
+            ) : log ? (
+              ok ? (
+                <CheckCircle2 className="h-3 w-3 text-green-600" />
+              ) : isUpstreamMissing || isDeferred ? (
+                <AlertCircle className="h-3 w-3 text-amber-600" />
+              ) : isErr ? (
+                <AlertCircle className="h-3 w-3 text-red-600" />
+              ) : status === "running" ? (
+                <Loader2 className="h-3 w-3 animate-spin text-blue-600" />
+              ) : (
+                <span className="bg-muted-foreground/30 inline-block h-3 w-3 rounded-full" />
+              )
+            ) : (
+              <span className="bg-muted-foreground/30 inline-block h-3 w-3 rounded-full" />
+            )}
+            <span className="truncate font-medium">{s.label}</span>
+            {s.auto ? (
+              <Badge
+                variant="outline"
+                className="h-4 shrink-0 border-green-300 px-1 text-[9px] text-green-700 dark:text-green-400"
+                title={s.autoDetail ?? undefined}
+              >
+                auto
+              </Badge>
+            ) : (
+              <Badge
+                variant="outline"
+                className="h-4 shrink-0 border-amber-300 px-1 text-[9px] text-amber-700 dark:text-amber-400"
+              >
+                manuel
+              </Badge>
+            )}
+            <InfoTooltip>{s.help}</InfoTooltip>
+          </div>
+          {!s.readOnly && (
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={isRunning}
+              onClick={() => triggerSync(s.key)}
+              className="h-7 shrink-0 px-2 text-[11px]"
+              title="Lancer la sync"
             >
-              <div className="flex items-center justify-between gap-2">
-                <div className="flex items-center gap-1.5 min-w-0">
-                  {loading ? (
-                    <Skeleton className="h-3 w-3" />
-                  ) : isRunning ? (
-                    <Loader2 className="h-3 w-3 text-blue-600 animate-spin" />
-                  ) : log ? (
-                    ok ? (
-                      <CheckCircle2 className="h-3 w-3 text-green-600" />
-                    ) : isUpstreamMissing || isDeferred ? (
-                      <AlertCircle className="h-3 w-3 text-amber-600" />
-                    ) : isErr ? (
-                      <AlertCircle className="h-3 w-3 text-red-600" />
-                    ) : status === "running" ? (
-                      <Loader2 className="h-3 w-3 text-blue-600 animate-spin" />
-                    ) : (
-                      <span className="h-3 w-3 inline-block rounded-full bg-muted-foreground/30" />
-                    )
-                  ) : (
-                    <span className="h-3 w-3 inline-block rounded-full bg-muted-foreground/30" />
-                  )}
-                  <span className="font-medium truncate">{s.label}</span>
-                  {s.auto ? (
-                    <Badge
-                      variant="outline"
-                      className="text-[9px] h-4 px-1 border-green-300 text-green-700 dark:text-green-400 shrink-0"
-                      title={s.autoDetail ?? undefined}
-                    >
-                      auto
-                    </Badge>
-                  ) : (
-                    <Badge
-                      variant="outline"
-                      className="text-[9px] h-4 px-1 border-amber-300 text-amber-700 dark:text-amber-400 shrink-0"
-                    >
-                      manuel
-                    </Badge>
-                  )}
-                  <InfoTooltip>{s.help}</InfoTooltip>
-                </div>
-                {!s.readOnly && <Button
-                  size="sm"
-                  variant="outline"
-                  disabled={isRunning}
-                  onClick={() => triggerSync(s.key)}
-                  className="h-7 px-2 text-[11px] shrink-0"
-                  title="Lancer la sync"
-                >
-                  {isRunning ? (
-                    <Loader2 className="h-3 w-3 animate-spin" />
-                  ) : (
-                    <RefreshCw className="h-3 w-3" />
-                  )}
-                </Button>}
-              </div>
+              {isRunning ? (
+                <Loader2 className="h-3 w-3 animate-spin" />
+              ) : (
+                <RefreshCw className="h-3 w-3" />
+              )}
+            </Button>
+          )}
+        </div>
 
-              {/* Status line */}
-              <div className="text-muted-foreground text-[10px] truncate min-h-[14px]">
-                {isRunning
-                  ? "En cours..."
-                  : log
-                  ? `${fmtRelative(log.started_at)}${
-                      log.duration_ms ? ` · ${(log.duration_ms / 1000).toFixed(0)}s` : ""
-                    }`
-                  : "—"}
-              </div>
+        {/* Status line */}
+        <div className="text-muted-foreground min-h-[14px] truncate text-[10px]">
+          {isRunning
+            ? "En cours..."
+            : log
+              ? `${fmtRelative(log.started_at)}${
+                  log.duration_ms
+                    ? ` · ${(log.duration_ms / 1000).toFixed(0)}s`
+                    : ""
+                }`
+              : "—"}
+        </div>
 
-              {/* Progress / counts (visible when running OR after completion) */}
-              {log && (
-                <div className="text-[10px] flex flex-wrap gap-x-2 gap-y-0.5">
-                  {isUpToDate ? (
-                    <span className="text-green-700 dark:text-green-400 font-medium">
-                      ✓ déjà à jour
-                      {log.items_fetched !== null && log.items_fetched > 0 && (
-                        <span className="text-muted-foreground font-normal">
-                          {" "}
-                          ({log.items_fetched.toLocaleString("fr-FR")} vérifiés)
-                        </span>
-                      )}
-                    </span>
-                  ) : (
-                    <>
-                      {log.items_fetched !== null && log.items_fetched > 0 && (
-                        <span className="text-muted-foreground">
-                          <span className="font-mono font-semibold text-foreground">
-                            {log.items_fetched.toLocaleString("fr-FR")}
-                          </span>{" "}
-                          récupéré
-                        </span>
-                      )}
-                      {log.items_created !== null && log.items_created > 0 && (
-                        <span className="text-muted-foreground">
-                          <span className="font-mono font-semibold text-foreground">
-                            {log.items_created.toLocaleString("fr-FR")}
-                          </span>{" "}
-                          créé
-                        </span>
-                      )}
-                    </>
-                  )}
-                  {log.errors !== null && log.errors > 0 && (
-                    <span className="text-red-600 dark:text-red-400">
-                      <span className="font-mono font-semibold">{log.errors}</span>{" "}
-                      erreur
-                    </span>
-                  )}
-                </div>
-              )}
+        {/* Progress / counts (visible when running OR after completion) */}
+        {log && (
+          <div className="flex flex-wrap gap-x-2 gap-y-0.5 text-[10px]">
+            {isUpToDate ? (
+              <span className="font-medium text-green-700 dark:text-green-400">
+                ✓ déjà à jour
+                {log.items_fetched !== null && log.items_fetched > 0 && (
+                  <span className="text-muted-foreground font-normal">
+                    {" "}
+                    ({log.items_fetched.toLocaleString("fr-FR")} vérifiés)
+                  </span>
+                )}
+              </span>
+            ) : (
+              <>
+                {log.items_fetched !== null && log.items_fetched > 0 && (
+                  <span className="text-muted-foreground">
+                    <span className="text-foreground font-mono font-semibold">
+                      {log.items_fetched.toLocaleString("fr-FR")}
+                    </span>{" "}
+                    récupéré
+                  </span>
+                )}
+                {log.items_created !== null && log.items_created > 0 && (
+                  <span className="text-muted-foreground">
+                    <span className="text-foreground font-mono font-semibold">
+                      {log.items_created.toLocaleString("fr-FR")}
+                    </span>{" "}
+                    créé
+                  </span>
+                )}
+              </>
+            )}
+            {log.errors !== null && log.errors > 0 && (
+              <span className="text-red-600 dark:text-red-400">
+                <span className="font-mono font-semibold">{log.errors}</span>{" "}
+                erreur
+              </span>
+            )}
+          </div>
+        )}
 
-              {/* Soft error: upstream missing (DILA delay etc.) */}
-              {isUpstreamMissing && log?.error_message && (
-                <div
-                  className="text-[10px] text-amber-700 dark:text-amber-400 truncate"
-                  title={`${log.error_message}\n\nLa source externe n'a pas encore publié cette donnée. Réessayez plus tard.`}
-                >
-                  ⏳ Source externe pas encore disponible
-                </div>
-              )}
+        {/* Soft error: upstream missing (DILA delay etc.) */}
+        {isUpstreamMissing && log?.error_message && (
+          <div
+            className="truncate text-[10px] text-amber-700 dark:text-amber-400"
+            title={`${log.error_message}\n\nLa source externe n'a pas encore publié cette donnée. Réessayez plus tard.`}
+          >
+            ⏳ Source externe pas encore disponible
+          </div>
+        )}
 
-              {isDeferred && (
-                <div className="text-[10px] text-amber-700 dark:text-amber-400">
-                  Passage terminé — suite reportée par les quotas quotidiens.
-                  {log?.error_message && <p>{log.error_message}</p>}
-                </div>
-              )}
-              {status === "interrupted" && (
-                <div className="text-[10px] text-red-600">Interrompue — fin non enregistrée</div>
-              )}
-              {/* Hard error message */}
-              {isErr && !isUpstreamMissing && log?.error_message && (
-                <div className="text-[10px] text-red-600 dark:text-red-400 break-words" title={log.error_message}>
-                  {log.error_message}
-                </div>
-              )}
-            </div>
-          );
+        {isDeferred && (
+          <div className="text-[10px] text-amber-700 dark:text-amber-400">
+            Passage terminé — suite reportée par les quotas quotidiens.
+            {log?.error_message && <p>{log.error_message}</p>}
+          </div>
+        )}
+        {status === "interrupted" && (
+          <div className="text-[10px] text-red-600">
+            Interrompue — fin non enregistrée
+          </div>
+        )}
+        {/* Hard error message */}
+        {isErr && !isUpstreamMissing && log?.error_message && (
+          <div
+            className="text-[10px] break-words text-red-600 dark:text-red-400"
+            title={log.error_message}
+          >
+            {log.error_message}
+          </div>
+        )}
+      </div>
+    );
   };
 
   const cronGroups = [
@@ -854,38 +999,43 @@ function SyncBanner({ token, onRefresh }: { token: string; onRefresh: () => void
 
   return (
     <Card>
-      <div className="px-4 pt-3 pb-2 border-b flex items-center gap-2 text-xs font-semibold">
+      <div className="flex items-center gap-2 border-b px-4 pt-3 pb-2 text-xs font-semibold">
         Synchronisations du corpus commun
         <InfoTooltip>
-          Les codes et le JO sont suivis le samedi, la jurisprudence de cassation
-          et les conventions le dimanche. Les guides sont suivis le samedi à 06:00 UTC.
-          Le BOCC, le BOSS et les cours d’appel sociales ont un passage quotidien séparé.
-          Un contrôle peut signaler des éléments à examiner sans les ajouter au corpus.
+          Les codes et le JO sont suivis le samedi, la jurisprudence de
+          cassation et les conventions le dimanche. Les guides sont suivis le
+          samedi à 06:00 UTC. Le BOCC, le BOSS et les cours d’appel sociales ont
+          un passage quotidien séparé. Un contrôle peut signaler des éléments à
+          examiner sans les ajouter au corpus.
         </InfoTooltip>
       </div>
       {cronGroups.map((g) => (
         <div key={g.id} className="px-3 pt-3">
-          <div className="flex items-center justify-between gap-2 mb-2">
+          <div className="mb-2 flex items-center justify-between gap-2">
             <div className="min-w-0">
-              <div className="text-xs font-semibold truncate">{g.title}</div>
-              <div className="text-[10px] text-muted-foreground truncate">
+              <div className="truncate text-xs font-semibold">{g.title}</div>
+              <div className="text-muted-foreground truncate text-[10px]">
                 {g.subtitle}
               </div>
             </div>
-            <div className="text-[10px] text-muted-foreground shrink-0">
+            <div className="text-muted-foreground shrink-0 text-[10px]">
               Prochaine :{" "}
-              <span className="font-medium text-foreground">{g.next}</span>
+              <span className="text-foreground font-medium">{g.next}</span>
             </div>
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
+          <div className="grid grid-cols-1 gap-2 md:grid-cols-2 lg:grid-cols-3">
             {sources.filter((s) => s.group === g.id).map(renderCard)}
           </div>
         </div>
       ))}
       <div className="px-3 pt-3 pb-3">
-        <div className="text-xs font-semibold mb-2">Suivi complémentaire des sources</div>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-          {sources.filter((source) => source.group === "maintenance").map(renderCard)}
+        <div className="mb-2 text-xs font-semibold">
+          Suivi complémentaire des sources
+        </div>
+        <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+          {sources
+            .filter((source) => source.group === "maintenance")
+            .map(renderCard)}
         </div>
       </div>
     </Card>
@@ -915,12 +1065,15 @@ function TestRetrievalDialog({
     setRunning(true);
     setResult(null);
     try {
-      const data = await apiFetch<RetrievalResponse>("/admin/corpus/test-retrieval", {
-        method: "POST",
-        token,
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ query: query.trim() }),
-      });
+      const data = await apiFetch<RetrievalResponse>(
+        "/admin/corpus/test-retrieval",
+        {
+          method: "POST",
+          token,
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ query: query.trim() }),
+        }
+      );
       setResult(data);
     } catch {
       toast.error("Échec du test");
@@ -931,14 +1084,15 @@ function TestRetrievalDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-4xl max-h-[85vh] overflow-y-auto">
+      <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-4xl">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <FlaskConical className="h-4 w-4" />
             Tester la recherche dans le corpus commun
           </DialogTitle>
           <DialogDescription>
-            Lance la recherche RAG (hybride + rerank + parent expansion) sans appeler le LLM.
+            Lance la recherche RAG (hybride + rerank + parent expansion) sans
+            appeler le LLM.
           </DialogDescription>
         </DialogHeader>
 
@@ -950,7 +1104,7 @@ function TestRetrievalDialog({
             rows={3}
           />
           <Button onClick={handleRun} disabled={running} className="w-full">
-            <Play className="h-4 w-4 mr-2" />
+            <Play className="mr-2 h-4 w-4" />
             {running ? "Exécution..." : "Lancer le test"}
           </Button>
         </div>
@@ -958,14 +1112,16 @@ function TestRetrievalDialog({
         {result && (
           <div className="mt-4">
             <InspectorBody
-              data={{
-                question: query,
-                answer: result.answer,
-                sources: result.sources,
-                rag_trace: result.rag_trace,
-                cost_usd: result.cost_usd,
-                latency_ms: result.duration_ms,
-              } as InspectorPayload}
+              data={
+                {
+                  question: query,
+                  answer: result.answer,
+                  sources: result.sources,
+                  rag_trace: result.rag_trace,
+                  cost_usd: result.cost_usd,
+                  latency_ms: result.duration_ms,
+                } as InspectorPayload
+              }
             />
           </div>
         )}
@@ -976,15 +1132,32 @@ function TestRetrievalDialog({
 
 // ----------------- Main page -----------------
 
-export default function CorpusPage() {
+function CorpusContent() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const requestedTab = searchParams.get("tab");
+  const activeTab =
+    requestedTab &&
+    ["documents", "updates", "maintenance"].includes(requestedTab)
+      ? requestedTab
+      : "documents";
   const { data: session } = useSession();
   const token = session?.access_token;
 
+  useEffect(() => {
+    if (!requestedTab && window.location.hash === "#indexation-errors")
+      router.replace("/admin/corpus?tab=updates#indexation-errors", {
+        scroll: false,
+      });
+  }, [requestedTab, router]);
+
   const [groups, setGroups] = useState<DocumentGroup[]>([]);
   const [groupsLoading, setGroupsLoading] = useState(true);
+  const [groupsError, setGroupsError] = useState(false);
   const [selectedType, setSelectedType] = useState<string | null>(null);
   const [docs, setDocs] = useState<DocumentItem[]>([]);
   const [docsLoading, setDocsLoading] = useState(false);
+  const [docsError, setDocsError] = useState(false);
   const [docsTotal, setDocsTotal] = useState(0);
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
@@ -993,7 +1166,7 @@ export default function CorpusPage() {
   const [dateDecisionStart, setDateDecisionStart] = useState<string>("");
   const [dateDecisionEnd, setDateDecisionEnd] = useState<string>("");
   const [sortBy, setSortBy] = useState<"created_at" | "date_decision" | "name">(
-    "created_at",
+    "created_at"
   );
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
   const [page, setPage] = useState(1);
@@ -1024,16 +1197,18 @@ export default function CorpusPage() {
   const fetchGroups = useCallback(async () => {
     if (!token) return;
     setGroupsLoading(true);
+    setGroupsError(false);
     try {
       const data = await apiFetch<{ groups: DocumentGroup[] }>(
         "/admin/documents/groups",
-        { token },
+        { token }
       );
       setGroups(data.groups);
       if (!selectedType && data.groups.length > 0) {
         setSelectedType(data.groups[0].source_type);
       }
     } catch {
+      setGroupsError(true);
       toast.error("Erreur lors du chargement des catégories");
     } finally {
       setGroupsLoading(false);
@@ -1047,6 +1222,7 @@ export default function CorpusPage() {
       return;
     }
     setDocsLoading(true);
+    setDocsError(false);
     try {
       const params = new URLSearchParams({
         page: String(page),
@@ -1057,16 +1233,18 @@ export default function CorpusPage() {
       if (debouncedSearch) params.set("q", debouncedSearch);
       if (statusFilter !== "all") params.set("status", statusFilter);
       if (chambreFilter !== "all") params.set("chambre", chambreFilter);
-      if (dateDecisionStart) params.set("date_decision_start", dateDecisionStart);
+      if (dateDecisionStart)
+        params.set("date_decision_start", dateDecisionStart);
       if (dateDecisionEnd) params.set("date_decision_end", dateDecisionEnd);
 
       const data = await apiFetch<DocumentListResponse>(
         `/admin/documents/groups/${selectedType}?${params.toString()}`,
-        { token },
+        { token }
       );
       setDocs(data.items);
       setDocsTotal(data.total);
     } catch {
+      setDocsError(true);
       toast.error("Erreur lors du chargement des documents");
     } finally {
       setDocsLoading(false);
@@ -1095,7 +1273,10 @@ export default function CorpusPage() {
   const handleReindex = async (id: string) => {
     if (!token) return;
     try {
-      await apiFetch(`/admin/documents/${id}/reindex`, { method: "POST", token });
+      await apiFetch(`/admin/documents/${id}/reindex`, {
+        method: "POST",
+        token,
+      });
       toast.success("Réindexation lancée");
       setTimeout(fetchDocs, 1000);
     } catch {
@@ -1114,7 +1295,9 @@ export default function CorpusPage() {
       if (disposition) {
         const utf8Match = disposition.match(/filename\*=UTF-8''(.+)/i);
         if (utf8Match) {
-          filename = decodeURIComponent(utf8Match[1].replace(/;.*$/, "").trim());
+          filename = decodeURIComponent(
+            utf8Match[1].replace(/;.*$/, "").trim()
+          );
         } else {
           const asciiMatch = disposition.match(/filename="(.+?)"/);
           if (asciiMatch) filename = asciiMatch[1];
@@ -1137,7 +1320,7 @@ export default function CorpusPage() {
     if (
       !confirm(
         "Réindexer TOUS les documents du corpus commun ? Cette opération " +
-          "peut prendre ~30 minutes et consomme du budget embeddings.",
+          "peut prendre ~30 minutes et consomme du budget embeddings."
       )
     )
       return;
@@ -1145,10 +1328,10 @@ export default function CorpusPage() {
     try {
       const data = await apiFetch<{ enqueued: number; skipped: number }>(
         "/admin/documents/actions/reindex-all",
-        { method: "POST", token },
+        { method: "POST", token }
       );
       toast.success(
-        `Réindexation lancée — ${data.enqueued} document(s) en file, ${data.skipped} ignoré(s)`,
+        `Réindexation lancée — ${data.enqueued} document(s) en file, ${data.skipped} ignoré(s)`
       );
       setTimeout(fetchGroups, 2000);
     } catch {
@@ -1163,7 +1346,7 @@ export default function CorpusPage() {
   const [customSource, setCustomSource] = useState<string>("cass_soc");
   const [customDateStart, setCustomDateStart] = useState<string>("2005-01-01");
   const [customDateEnd, setCustomDateEnd] = useState<string>(
-    new Date().toISOString().slice(0, 10),
+    new Date().toISOString().slice(0, 10)
   );
   const [customMaxDecisions, setCustomMaxDecisions] = useState<string>("");
   const [customPreview, setCustomPreview] = useState<{
@@ -1193,7 +1376,9 @@ export default function CorpusPage() {
   const handleCustomPreview = async () => {
     if (!token) return;
     if (customDateStart > customDateEnd) {
-      toast.error("La date de début doit être antérieure ou égale à la date de fin.");
+      toast.error(
+        "La date de début doit être antérieure ou égale à la date de fin."
+      );
       return;
     }
     setCustomPreviewLoading(true);
@@ -1215,7 +1400,7 @@ export default function CorpusPage() {
       });
     } catch (e) {
       toast.error(
-        e instanceof Error ? e.message : "Échec de l'aperçu Judilibre",
+        e instanceof Error ? e.message : "Échec de l'aperçu Judilibre"
       );
     } finally {
       setCustomPreviewLoading(false);
@@ -1225,26 +1410,31 @@ export default function CorpusPage() {
   const handleCustomSync = async () => {
     if (!token) return;
     if (customDateStart > customDateEnd) {
-      toast.error("La date de début doit être antérieure ou égale à la date de fin.");
+      toast.error(
+        "La date de début doit être antérieure ou égale à la date de fin."
+      );
       return;
     }
 
     // Confirmation modale si plage > 3 ans ou volume > 3 000 arrêts
     const yearsSpan =
-      (new Date(customDateEnd).getTime() - new Date(customDateStart).getTime()) /
+      (new Date(customDateEnd).getTime() -
+        new Date(customDateStart).getTime()) /
       (1000 * 60 * 60 * 24 * 365.25);
     const bigVolume = (customPreview?.total ?? 0) > 3000;
     const wideRange = yearsSpan > 3;
     if (bigVolume || wideRange) {
       const reasons: string[] = [];
       if (customPreview)
-        reasons.push(`Volume Judilibre : ${customPreview.total.toLocaleString("fr-FR")} arrêts`);
+        reasons.push(
+          `Volume Judilibre : ${customPreview.total.toLocaleString("fr-FR")} arrêts`
+        );
       if (wideRange) reasons.push(`Plage : ${yearsSpan.toFixed(1)} ans`);
       if (
         !confirm(
           `Lancer la synchronisation ?\n\n${reasons.join("\n")}\n\n` +
             "Cette opération peut prendre plusieurs heures et consomme du budget embeddings " +
-            "(Voyage AI ≈ 0,12 €/M tokens).\n\nContinuer ?",
+            "(Voyage AI ≈ 0,12 €/M tokens).\n\nContinuer ?"
         )
       )
         return;
@@ -1266,7 +1456,7 @@ export default function CorpusPage() {
         }),
       });
       toast.success(
-        "Synchronisation lancée — suis l'avancement dans le bandeau ci-dessous.",
+        "Synchronisation lancée — suis l'avancement dans le bandeau ci-dessous."
       );
       setCustomSyncOpen(false);
       // SyncBanner polls itself, so we juste refresh the document groups to
@@ -1276,7 +1466,7 @@ export default function CorpusPage() {
       }, 1500);
     } catch (e) {
       toast.error(
-        e instanceof Error ? e.message : "Échec du déclenchement de la sync",
+        e instanceof Error ? e.message : "Échec du déclenchement de la sync"
       );
     } finally {
       setCustomSyncRunning(false);
@@ -1293,7 +1483,7 @@ export default function CorpusPage() {
           "• Cours d’appel, toutes chambres, sur 1 an, sans plafond total\n\n" +
           "Idempotent (identifiant Judilibre pour les cours d’appel).\n" +
           "L’indexation progresse automatiquement par lots.\n\n" +
-          "Continuer ?",
+          "Continuer ?"
       )
     )
       return;
@@ -1304,7 +1494,7 @@ export default function CorpusPage() {
         token,
       });
       toast.success(
-        "Initialisation jurisprudence lancée — suis l'avancement dans le bandeau.",
+        "Initialisation jurisprudence lancée — suis l'avancement dans le bandeau."
       );
     } catch {
       toast.error("Échec du déclenchement");
@@ -1327,18 +1517,20 @@ export default function CorpusPage() {
   };
 
   // Tous les filtres sont serveur, on consomme `docs` tel quel.
-  const isJurisGroup = selectedType ? JURIS_SOURCE_TYPES.has(selectedType) : false;
+  const isJurisGroup = selectedType
+    ? JURIS_SOURCE_TYPES.has(selectedType)
+    : false;
   const isCassGroup = selectedType === "arret_cour_cassation";
   const corpusTotal = useMemo(
     () => groups.reduce((acc, g) => acc + g.count, 0),
-    [groups],
+    [groups]
   );
   const sortedGroups = useMemo(
     () =>
       [...groups].sort((a, b) =>
-        a.label.localeCompare(b.label, "fr", { sensitivity: "base" }),
+        a.label.localeCompare(b.label, "fr", { sensitivity: "base" })
       ),
-    [groups],
+    [groups]
   );
   const totalPages = Math.max(1, Math.ceil(docsTotal / PAGE_SIZE));
 
@@ -1370,356 +1562,420 @@ export default function CorpusPage() {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">Corpus juridique</h1>
-          <p className="text-sm text-muted-foreground">
-            Tous les documents communs : codes, conventions collectives, jurisprudence, doctrine.
-          </p>
+      <AdminPageHeader
+        section="Exploitation"
+        title="Documents juridiques"
+        description="Consultez les textes disponibles et suivez leurs mises à jour."
+        actions={
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={fetchGroups}
+            aria-label="Actualiser les catégories"
+          >
+            <RefreshCw className="size-4" />
+            Actualiser
+          </Button>
+        }
+      />
+      <Tabs
+        value={activeTab}
+        onValueChange={(value) =>
+          router.replace(`/admin/corpus?tab=${value}`, { scroll: false })
+        }
+        className="gap-6"
+      >
+        <div className="overflow-x-auto">
+          <TabsList
+            variant="line"
+            aria-label="Documents juridiques"
+            className="h-11 gap-4 border-b"
+          >
+            <TabsTrigger value="documents">Documents</TabsTrigger>
+            <TabsTrigger value="updates">Mises à jour</TabsTrigger>
+            <TabsTrigger value="maintenance">Maintenance avancée</TabsTrigger>
+          </TabsList>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <Button
-            variant="outline"
-            onClick={() => setCustomSyncOpen(true)}
-            title="Synchroniser la jurisprudence sur une plage de dates choisie"
-          >
-            <CalendarRange className="h-4 w-4 mr-2" />
-            Sync personnalisée
-          </Button>
-          <Button
-            variant="outline"
-            onClick={handleInitJurisprudence}
-            disabled={initJurisRunning}
-            title="Initialise le corpus jurisprudence (one-shot)"
-          >
-            {initJurisRunning ? (
-              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-            ) : (
-              <Database className="h-4 w-4 mr-2" />
-            )}
-            Init jurisprudence
-          </Button>
-          <Button
-            variant="outline"
-            onClick={handleReindexAll}
-            disabled={reindexAllRunning}
-            title="Réindexer tous les documents du corpus commun"
-          >
-            {reindexAllRunning ? (
-              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-            ) : (
-              <RefreshCw className="h-4 w-4 mr-2" />
-            )}
-            Tout réindexer
-          </Button>
-          <Button variant="outline" onClick={() => setTestOpen(true)}>
-            <FlaskConical className="h-4 w-4 mr-2" />
-            Tester recherche
-          </Button>
-          <InfoTooltip side="bottom">
-            Lance la recherche RAG (hybride + rerank + parent expansion) sur
-            le corpus commun, sans appeler le LLM. Permet de vérifier que
-            les bons chunks remontent pour une question donnée.
-          </InfoTooltip>
-          <Button variant="outline" size="sm" onClick={fetchGroups}>
-            <RefreshCw className="h-4 w-4" />
-          </Button>
-        </div>
-      </div>
-
-      {/* Live ingestion progress (visible only when worker is busy) */}
-      <IndexationErrors token={token} />
-      <IngestionProgressBanner token={token} />
-
-      {/* Sync banner */}
-      <SyncBanner token={token} onRefresh={fetchGroups} />
-
-      {/* --- Tout-en-un : catégories + filtres + table + pagination --- */}
-      <Card>
-        <CardContent className="space-y-4 pt-6">
-          {/* Catégories en pilules */}
-          <div className="space-y-2">
-            <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-              <Library className="h-3.5 w-3.5" />
-              Catégories
-            </div>
-            {groupsLoading ? (
-              <div className="flex flex-wrap gap-2">
-                {[1, 2, 3, 4, 5, 6].map((i) => (
-                  <Skeleton key={i} className="h-8 w-32" />
-                ))}
-              </div>
-            ) : (
-              <div className="flex flex-wrap gap-2">
-                {sortedGroups.map((g) => {
-                  const active = selectedType === g.source_type;
-                  return (
-                    <button
-                      key={g.source_type}
-                      onClick={() => setSelectedType(g.source_type)}
-                      className={`px-3 py-1.5 rounded-full text-xs border transition-colors ${
-                        active
-                          ? "bg-primary text-primary-foreground border-primary"
-                          : "bg-muted hover:bg-accent border-border text-foreground"
-                      }`}
-                    >
-                      <span className="font-medium">{g.label}</span>
-                      <span
-                        className={`ml-2 ${
-                          active ? "opacity-90" : "text-muted-foreground"
-                        }`}
-                      >
-                        {g.indexed.toLocaleString("fr-FR")}
-                        {g.pending > 0 && ` · ${g.pending} en attente`}
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-            )}
+        <TabsContent value="maintenance" className="space-y-5">
+          <div className="max-w-2xl space-y-2">
+            <h2 className="text-lg font-semibold">Maintenance du corpus</h2>
+            <p className="text-muted-foreground text-sm">
+              Lancez une opération ponctuelle ou testez la recherche
+              documentaire. Les opérations globales demandent une confirmation
+              avant exécution.
+            </p>
           </div>
-
-          {/* Compteurs */}
-          <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1 text-sm border-t pt-4">
-            <span className="font-semibold text-base">
-              {corpusTotal.toLocaleString("fr-FR")} document
-              {corpusTotal > 1 ? "s" : ""} au total dans le corpus
-            </span>
-            <span className="text-xs text-muted-foreground">
-              · {docsTotal.toLocaleString("fr-FR")} dans la catégorie sélectionnée
-              ({groups.find((g) => g.source_type === selectedType)?.label ?? "—"})
-            </span>
-          </div>
-
-          {/* --- Barre de filtres --- */}
-          <div className="flex flex-col gap-2">
-            <div className="flex flex-col md:flex-row gap-2">
-              <div className="relative flex-1">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                <Input
-                  placeholder="Rechercher par nom de document..."
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  className="pl-9"
-                />
-              </div>
-              <Select value={statusFilter} onValueChange={setStatusFilter}>
-                <SelectTrigger className="w-[180px]">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Tous les statuts</SelectItem>
-                  <SelectItem value="indexed">Indexés</SelectItem>
-                  <SelectItem value="pending">En attente</SelectItem>
-                  <SelectItem value="indexing">En cours</SelectItem>
-                  <SelectItem value="error">En erreur</SelectItem>
-                </SelectContent>
-              </Select>
-              {isCassGroup && (
-                <Select value={chambreFilter} onValueChange={setChambreFilter}>
-                  <SelectTrigger className="w-[200px]">
-                    <SelectValue placeholder="Chambre" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">Toutes chambres</SelectItem>
-                    {CASS_CHAMBRES.map((c) => (
-                      <SelectItem key={c} value={c}>
-                        {c}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              )}
-            </div>
-
-            {isJurisGroup && (
-              <div className="flex flex-col md:flex-row gap-2 md:items-center">
-                <span className="text-xs text-muted-foreground md:w-32">
-                  Date arrêt :
-                </span>
-                <Input
-                  type="date"
-                  value={dateDecisionStart}
-                  onChange={(e) => setDateDecisionStart(e.target.value)}
-                  className="w-full md:w-[170px]"
-                  aria-label="Date début"
-                />
-                <span className="text-xs text-muted-foreground">à</span>
-                <Input
-                  type="date"
-                  value={dateDecisionEnd}
-                  onChange={(e) => setDateDecisionEnd(e.target.value)}
-                  className="w-full md:w-[170px]"
-                  aria-label="Date fin"
-                />
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={resetFilters}
-                  className="md:ml-auto"
-                >
-                  Réinitialiser les filtres
-                </Button>
-              </div>
-            )}
-          </div>
-
-          <div className="border-t -mx-6 px-6 pt-2">
-              {docsLoading ? (
-                <div className="space-y-2 py-3">
-                  {[1, 2, 3, 4, 5].map((i) => (
-                    <Skeleton key={i} className="h-10 w-full" />
-                  ))}
-                </div>
-              ) : docs.length === 0 ? (
-                <div className="py-12 text-center text-sm text-muted-foreground">
-                  Aucun document dans cette catégorie pour ces filtres.
-                </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              variant="outline"
+              onClick={() => setCustomSyncOpen(true)}
+              title="Synchroniser la jurisprudence sur une plage de dates choisie"
+            >
+              <CalendarRange className="mr-2 h-4 w-4" />
+              Synchroniser une période
+            </Button>
+            <Button
+              variant="outline"
+              onClick={handleInitJurisprudence}
+              disabled={initJurisRunning}
+              title="Initialise le corpus jurisprudence (one-shot)"
+            >
+              {initJurisRunning ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
               ) : (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead
-                        className="cursor-pointer select-none"
-                        onClick={() => toggleSort("name")}
-                      >
-                        Nom{sortIndicator("name")}
-                      </TableHead>
-                      {isJurisGroup && (
-                        <TableHead className="w-[160px]">Chambre</TableHead>
-                      )}
-                      <TableHead className="w-[110px]">Statut</TableHead>
-                      <TableHead className="w-[80px] text-right">Taille</TableHead>
-                      {isJurisGroup && (
-                        <TableHead
-                          className="w-[110px] text-right cursor-pointer select-none"
-                          onClick={() => toggleSort("date_decision")}
-                        >
-                          Date arrêt{sortIndicator("date_decision")}
-                        </TableHead>
-                      )}
-                      <TableHead
-                        className="w-[100px] text-right cursor-pointer select-none"
-                        onClick={() => toggleSort("created_at")}
-                      >
-                        Ajouté{sortIndicator("created_at")}
-                      </TableHead>
-                      <TableHead className="w-[140px]"></TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {docs.map((d) => (
-                      <TableRow key={d.id}>
-                        <TableCell className="text-sm font-medium max-w-md break-words whitespace-normal align-top">
-                          {d.name}
-                        </TableCell>
-                        {isJurisGroup && (
-                          <TableCell className="text-xs text-muted-foreground">
-                            {d.chambre ?? "—"}
-                          </TableCell>
-                        )}
-                        <TableCell>
-                          <StatusBadge status={d.indexation_status} />
-                        </TableCell>
-                        <TableCell className="text-right text-xs text-muted-foreground">
-                          {fmtSize(d.file_size)}
-                        </TableCell>
-                        {isJurisGroup && (
-                          <TableCell className="text-right text-xs text-muted-foreground">
-                            {d.date_decision
-                              ? new Date(d.date_decision).toLocaleDateString("fr-FR")
-                              : "—"}
-                          </TableCell>
-                        )}
-                        <TableCell className="text-right text-xs text-muted-foreground">
-                          {new Date(d.created_at).toLocaleDateString("fr-FR")}
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex gap-1 justify-end">
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => handleReindex(d.id)}
-                              title="Réindexer"
-                            >
-                              <RefreshCw className="h-3 w-3" />
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => handleDownload(d.id)}
-                              title="Télécharger"
-                            >
-                              <Download className="h-3 w-3" />
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => handleDelete(d.id, d.name)}
-                              title="Supprimer"
-                              className="text-red-600 hover:text-red-700"
-                            >
-                              <Trash2 className="h-3 w-3" />
-                            </Button>
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
+                <Database className="mr-2 h-4 w-4" />
               )}
+              Initialiser la jurisprudence
+            </Button>
+            <Button
+              variant="outline"
+              onClick={handleReindexAll}
+              disabled={reindexAllRunning}
+              title="Réindexer tous les documents du corpus commun"
+            >
+              {reindexAllRunning ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <RefreshCw className="mr-2 h-4 w-4" />
+              )}
+              Tout réindexer
+            </Button>
+            <Button variant="outline" onClick={() => setTestOpen(true)}>
+              <FlaskConical className="mr-2 h-4 w-4" />
+              Tester recherche
+            </Button>
+            <InfoTooltip side="bottom">
+              Lance la recherche RAG (hybride + rerank + parent expansion) sur
+              le corpus commun, sans appeler le LLM. Permet de vérifier que les
+              bons chunks remontent pour une question donnée.
+            </InfoTooltip>
+            <Button variant="outline" size="sm" onClick={fetchGroups}>
+              <RefreshCw className="h-4 w-4" />
+            </Button>
           </div>
+        </TabsContent>
+        <TabsContent value="updates" className="space-y-5">
+          {/* Live ingestion progress (visible only when worker is busy) */}
+          <IndexationErrors token={token} />
+          <IngestionProgressBanner token={token} />
 
-          {/* --- Pagination --- */}
-          {docsTotal > PAGE_SIZE && (
-            <div className="flex items-center justify-between text-sm border-t pt-4">
-              <span className="text-muted-foreground">
-                Page {page} sur {totalPages} ·{" "}
-                {(page - 1) * PAGE_SIZE + 1}–
-                {Math.min(page * PAGE_SIZE, docsTotal)} sur{" "}
-                {docsTotal.toLocaleString("fr-FR")}
-              </span>
-              <div className="flex gap-1">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setPage(1)}
-                  disabled={page === 1}
-                >
-                  «
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setPage((p) => Math.max(1, p - 1))}
-                  disabled={page === 1}
-                >
-                  ‹ Précédent
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-                  disabled={page >= totalPages}
-                >
-                  Suivant ›
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setPage(totalPages)}
-                  disabled={page >= totalPages}
-                >
-                  »
-                </Button>
+          {/* Sync banner */}
+          <SyncBanner token={token} onRefresh={fetchGroups} />
+        </TabsContent>
+        <TabsContent value="documents" className="space-y-5">
+          {/* --- Tout-en-un : catégories + filtres + table + pagination --- */}
+          <Card>
+            <CardContent className="space-y-4 pt-6">
+              {/* Catégories en pilules */}
+              <div className="space-y-2">
+                <div className="text-muted-foreground flex items-center gap-2 text-xs font-semibold tracking-wide uppercase">
+                  <Library className="h-3.5 w-3.5" />
+                  Catégories
+                </div>
+                {groupsError ? (
+                  <AdminLoadError
+                    message="Impossible de charger les catégories."
+                    onRetry={fetchGroups}
+                  />
+                ) : groupsLoading ? (
+                  <div className="flex flex-wrap gap-2">
+                    {[1, 2, 3, 4, 5, 6].map((i) => (
+                      <Skeleton key={i} className="h-8 w-32" />
+                    ))}
+                  </div>
+                ) : (
+                  <div className="flex flex-wrap gap-2">
+                    {sortedGroups.map((g) => {
+                      const active = selectedType === g.source_type;
+                      return (
+                        <button
+                          key={g.source_type}
+                          aria-pressed={active}
+                          onClick={() => setSelectedType(g.source_type)}
+                          className={`rounded-full border px-3 py-1.5 text-xs transition-colors ${
+                            active
+                              ? "bg-primary text-primary-foreground border-primary"
+                              : "bg-muted hover:bg-accent border-border text-foreground"
+                          }`}
+                        >
+                          <span className="font-medium">{g.label}</span>
+                          <span
+                            className={`ml-2 ${
+                              active ? "opacity-90" : "text-muted-foreground"
+                            }`}
+                          >
+                            {g.indexed.toLocaleString("fr-FR")}
+                            {g.pending > 0 && ` · ${g.pending} en attente`}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
-            </div>
-          )}
-        </CardContent>
-      </Card>
 
-      <TestRetrievalDialog open={testOpen} onOpenChange={setTestOpen} token={token} />
+              {/* Compteurs */}
+              <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1 border-t pt-4 text-sm">
+                <span className="text-base font-semibold">
+                  {corpusTotal.toLocaleString("fr-FR")} document
+                  {corpusTotal > 1 ? "s" : ""} au total dans le corpus
+                </span>
+                <span className="text-muted-foreground text-xs">
+                  · {docsTotal.toLocaleString("fr-FR")} dans la catégorie
+                  sélectionnée (
+                  {groups.find((g) => g.source_type === selectedType)?.label ??
+                    "—"}
+                  )
+                </span>
+              </div>
+
+              {/* --- Barre de filtres --- */}
+              <div className="flex flex-col gap-2">
+                <div className="flex flex-col gap-2 md:flex-row">
+                  <div className="relative flex-1">
+                    <Search className="text-muted-foreground absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2" />
+                    <Input
+                      aria-label="Rechercher un document dans la catégorie sélectionnée"
+                      placeholder="Rechercher dans cette catégorie…"
+                      value={search}
+                      onChange={(e) => setSearch(e.target.value)}
+                      className="pl-9"
+                    />
+                  </div>
+                  <Select value={statusFilter} onValueChange={setStatusFilter}>
+                    <SelectTrigger className="w-[180px]">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">Tous les statuts</SelectItem>
+                      <SelectItem value="indexed">Indexés</SelectItem>
+                      <SelectItem value="pending">En attente</SelectItem>
+                      <SelectItem value="indexing">En cours</SelectItem>
+                      <SelectItem value="error">En erreur</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  {isCassGroup && (
+                    <Select
+                      value={chambreFilter}
+                      onValueChange={setChambreFilter}
+                    >
+                      <SelectTrigger className="w-[200px]">
+                        <SelectValue placeholder="Chambre" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">Toutes chambres</SelectItem>
+                        {CASS_CHAMBRES.map((c) => (
+                          <SelectItem key={c} value={c}>
+                            {c}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
+                </div>
+
+                {isJurisGroup && (
+                  <div className="flex flex-col gap-2 md:flex-row md:items-center">
+                    <span className="text-muted-foreground text-xs md:w-32">
+                      Date arrêt :
+                    </span>
+                    <Input
+                      type="date"
+                      value={dateDecisionStart}
+                      onChange={(e) => setDateDecisionStart(e.target.value)}
+                      className="w-full md:w-[170px]"
+                      aria-label="Date début"
+                    />
+                    <span className="text-muted-foreground text-xs">à</span>
+                    <Input
+                      type="date"
+                      value={dateDecisionEnd}
+                      onChange={(e) => setDateDecisionEnd(e.target.value)}
+                      className="w-full md:w-[170px]"
+                      aria-label="Date fin"
+                    />
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={resetFilters}
+                      className="md:ml-auto"
+                    >
+                      Réinitialiser les filtres
+                    </Button>
+                  </div>
+                )}
+              </div>
+
+              <div className="-mx-6 border-t px-6 pt-2">
+                {docsError ? (
+                  <AdminLoadError
+                    message="Impossible de charger les documents."
+                    onRetry={fetchDocs}
+                  />
+                ) : docsLoading ? (
+                  <div className="space-y-2 py-3">
+                    {[1, 2, 3, 4, 5].map((i) => (
+                      <Skeleton key={i} className="h-10 w-full" />
+                    ))}
+                  </div>
+                ) : docs.length === 0 ? (
+                  <div className="text-muted-foreground py-12 text-center text-sm">
+                    Aucun document dans cette catégorie pour ces filtres.
+                  </div>
+                ) : (
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead
+                          className="cursor-pointer select-none"
+                          onClick={() => toggleSort("name")}
+                        >
+                          Nom{sortIndicator("name")}
+                        </TableHead>
+                        {isJurisGroup && (
+                          <TableHead className="w-[160px]">Chambre</TableHead>
+                        )}
+                        <TableHead className="w-[110px]">Statut</TableHead>
+                        <TableHead className="w-[80px] text-right">
+                          Taille
+                        </TableHead>
+                        {isJurisGroup && (
+                          <TableHead
+                            className="w-[110px] cursor-pointer text-right select-none"
+                            onClick={() => toggleSort("date_decision")}
+                          >
+                            Date arrêt{sortIndicator("date_decision")}
+                          </TableHead>
+                        )}
+                        <TableHead
+                          className="w-[100px] cursor-pointer text-right select-none"
+                          onClick={() => toggleSort("created_at")}
+                        >
+                          Ajouté{sortIndicator("created_at")}
+                        </TableHead>
+                        <TableHead className="w-[140px]"></TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {docs.map((d) => (
+                        <TableRow key={d.id}>
+                          <TableCell className="max-w-md align-top text-sm font-medium break-words whitespace-normal">
+                            {d.name}
+                          </TableCell>
+                          {isJurisGroup && (
+                            <TableCell className="text-muted-foreground text-xs">
+                              {d.chambre ?? "—"}
+                            </TableCell>
+                          )}
+                          <TableCell>
+                            <StatusBadge status={d.indexation_status} />
+                          </TableCell>
+                          <TableCell className="text-muted-foreground text-right text-xs">
+                            {fmtSize(d.file_size)}
+                          </TableCell>
+                          {isJurisGroup && (
+                            <TableCell className="text-muted-foreground text-right text-xs">
+                              {d.date_decision
+                                ? new Date(d.date_decision).toLocaleDateString(
+                                    "fr-FR"
+                                  )
+                                : "—"}
+                            </TableCell>
+                          )}
+                          <TableCell className="text-muted-foreground text-right text-xs">
+                            {new Date(d.created_at).toLocaleDateString("fr-FR")}
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex justify-end gap-1">
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => handleReindex(d.id)}
+                                title="Réindexer"
+                              >
+                                <RefreshCw className="h-3 w-3" />
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => handleDownload(d.id)}
+                                title="Télécharger"
+                              >
+                                <Download className="h-3 w-3" />
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => handleDelete(d.id, d.name)}
+                                title="Supprimer"
+                                className="text-red-600 hover:text-red-700"
+                              >
+                                <Trash2 className="h-3 w-3" />
+                              </Button>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                )}
+              </div>
+
+              {/* --- Pagination --- */}
+              {docsTotal > PAGE_SIZE && (
+                <div className="flex items-center justify-between border-t pt-4 text-sm">
+                  <span className="text-muted-foreground">
+                    Page {page} sur {totalPages} · {(page - 1) * PAGE_SIZE + 1}–
+                    {Math.min(page * PAGE_SIZE, docsTotal)} sur{" "}
+                    {docsTotal.toLocaleString("fr-FR")}
+                  </span>
+                  <div className="flex gap-1">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setPage(1)}
+                      disabled={page === 1}
+                    >
+                      «
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setPage((p) => Math.max(1, p - 1))}
+                      disabled={page === 1}
+                    >
+                      ‹ Précédent
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() =>
+                        setPage((p) => Math.min(totalPages, p + 1))
+                      }
+                      disabled={page >= totalPages}
+                    >
+                      Suivant ›
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setPage(totalPages)}
+                      disabled={page >= totalPages}
+                    >
+                      »
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
+      <TestRetrievalDialog
+        open={testOpen}
+        onOpenChange={setTestOpen}
+        token={token}
+      />
 
       {/* ---------- Synchronisation jurisprudence personnalisée ---------- */}
       <Dialog open={customSyncOpen} onOpenChange={setCustomSyncOpen}>
@@ -1730,9 +1986,9 @@ export default function CorpusPage() {
               Synchronisation jurisprudence personnalisée
             </DialogTitle>
             <DialogDescription>
-              Récupère les arrêts d&apos;une source juridique sur la plage de dates de
-              votre choix. Idempotent : les arrêts déjà ingérés (dédup par numéro
-              de pourvoi) ne sont pas dupliqués.
+              Récupère les arrêts d&apos;une source juridique sur la plage de
+              dates de votre choix. Idempotent : les arrêts déjà ingérés (dédup
+              par numéro de pourvoi) ne sont pas dupliqués.
             </DialogDescription>
           </DialogHeader>
 
@@ -1777,7 +2033,10 @@ export default function CorpusPage() {
             {/* Plafond (optionnel) */}
             <div className="space-y-1.5">
               <label className="text-sm font-medium">
-                Plafond <span className="text-muted-foreground font-normal">(optionnel)</span>
+                Plafond{" "}
+                <span className="text-muted-foreground font-normal">
+                  (optionnel)
+                </span>
               </label>
               <Input
                 type="number"
@@ -1786,14 +2045,14 @@ export default function CorpusPage() {
                 onChange={(e) => setCustomMaxDecisions(e.target.value)}
                 min={1}
               />
-              <p className="text-xs text-muted-foreground">
-                Limite le nombre d&apos;arrêts ingérés. Utile pour les Cours d&apos;appel
-                (~80 % filtrés sur la chambre, volume très élevé).
+              <p className="text-muted-foreground text-xs">
+                Limite le nombre d&apos;arrêts ingérés. Utile pour les Cours
+                d&apos;appel (~80 % filtrés sur la chambre, volume très élevé).
               </p>
             </div>
 
             {/* Aperçu */}
-            <div className="rounded-md border bg-muted/30 p-3 space-y-2">
+            <div className="bg-muted/30 space-y-2 rounded-md border p-3">
               <div className="flex items-center justify-between gap-2">
                 <span className="text-sm font-medium">Aperçu Judilibre</span>
                 <Button
@@ -1803,9 +2062,9 @@ export default function CorpusPage() {
                   disabled={customPreviewLoading}
                 >
                   {customPreviewLoading ? (
-                    <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+                    <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
                   ) : (
-                    <Eye className="h-3.5 w-3.5 mr-1.5" />
+                    <Eye className="mr-1.5 h-3.5 w-3.5" />
                   )}
                   Calculer
                 </Button>
@@ -1820,13 +2079,13 @@ export default function CorpusPage() {
                   </div>
                   {customPreview.warning && (
                     <div className="flex gap-1.5 text-xs text-amber-700 dark:text-amber-400">
-                      <AlertCircle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+                      <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
                       <span>{customPreview.warning}</span>
                     </div>
                   )}
                 </div>
               ) : (
-                <p className="text-xs text-muted-foreground">
+                <p className="text-muted-foreground text-xs">
                   Cliquez sur « Calculer » pour interroger Judilibre avant de
                   lancer la synchronisation.
                 </p>
@@ -1844,9 +2103,9 @@ export default function CorpusPage() {
             </Button>
             <Button onClick={handleCustomSync} disabled={customSyncRunning}>
               {customSyncRunning ? (
-                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
               ) : (
-                <Play className="h-4 w-4 mr-2" />
+                <Play className="mr-2 h-4 w-4" />
               )}
               Lancer la synchronisation
             </Button>
@@ -1854,5 +2113,13 @@ export default function CorpusPage() {
         </DialogContent>
       </Dialog>
     </div>
+  );
+}
+
+export default function CorpusPage() {
+  return (
+    <Suspense fallback={<Skeleton className="h-64 w-full" />}>
+      <CorpusContent />
+    </Suspense>
   );
 }

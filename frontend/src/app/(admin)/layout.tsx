@@ -40,6 +40,7 @@ export default function AdminLayout({
   return (
     <Sheet open={open} onOpenChange={setOpen}>
       <div className="flex h-[var(--app-viewport-height,100dvh)]">
+        <a href="#admin-content" className="bg-background fixed top-2 left-2 z-50 -translate-y-24 rounded-md border px-4 py-2 text-sm focus:translate-y-0">Aller au contenu</a>
         <AdminSidebar />
         <SheetContent
           side="left"
@@ -74,8 +75,8 @@ export default function AdminLayout({
             />
             <SupportWidget variant="mobile" />
           </header>
-          <main className="flex min-w-0 flex-1 flex-col p-4 sm:p-6 md:p-8 lg:px-10 lg:py-8">
-            {children}
+          <main id="admin-content" className="bg-muted/25 flex min-w-0 flex-1 flex-col p-4 sm:p-6 md:p-8 lg:px-10 lg:py-8">
+            <div className="mx-auto w-full max-w-[1440px]">{children}</div>
           </main>
         </div>
       </div>

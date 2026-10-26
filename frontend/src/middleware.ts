@@ -56,6 +56,7 @@ export default auth((req) => {
     const businessOnly = [
       "/admin/pilotage",
       "/admin/clients",
+      "/admin/users",
       "/admin/billing",
       "/admin/costs",
       "/admin/emailing",
@@ -67,6 +68,7 @@ export default auth((req) => {
       "/admin/quality",
       "/admin/corpus",
       "/admin/qdrant",
+      "/admin/tools",
     ];
     if (
       session?.user?.staff_role === "business" &&

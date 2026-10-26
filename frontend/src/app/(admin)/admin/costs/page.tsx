@@ -1,20 +1,18 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
 import { useSession } from "next-auth/react";
-import {
-  DollarSign,
-  MessageSquare,
-  Upload,
-  TrendingUp,
-  Zap,
-  Pencil,
-  Check,
-  X,
-} from "lucide-react";
-import { toast } from "@/lib/toast";
+import { ArrowUpRight, RefreshCw } from "lucide-react";
 import { apiFetch } from "@/lib/api";
+import { formatAdminEur, type AdminClientsResponse } from "@/lib/admin-labels";
+import {
+  AdminLoadError,
+  AdminPageHeader,
+} from "@/components/admin/page-header";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   Table,
   TableBody,
@@ -23,1004 +21,222 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { Input } from "@/components/ui/input";
-import { Skeleton } from "@/components/ui/skeleton";
-import { Badge } from "@/components/ui/badge";
-import { InfoTooltip } from "@/components/admin/info-tooltip";
-import { Button } from "@/components/ui/button";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
-// --- Types ---
-
-interface CostSummary {
-  total_cost_usd: number;
-  total_tokens_input: number;
-  total_tokens_output: number;
-  total_calls: number;
-  avg_cost_per_question: number;
-  avg_cost_per_ingestion: number;
-  total_questions: number;
-  total_ingestions: number;
-}
-
-interface CostByPeriod {
-  period: string;
-  cost_usd: number;
-  tokens_input: number;
-  tokens_output: number;
-  calls: number;
-}
-
-interface CostByProvider {
-  provider: string;
-  model: string;
-  operation_type: string;
-  cost_usd: number;
-  tokens_input: number;
-  tokens_output: number;
-  calls: number;
-}
-
-interface CostByOrganisation {
-  organisation_id: string | null;
-  organisation_name: string | null;
-  cost_usd: number;
-  cost_questions_usd: number;
-  cost_ingestion_usd: number;
-  total_questions: number;
-  total_ingestions: number;
-  calls: number;
-}
-
-interface CostByUser {
-  user_id: string | null;
-  user_email: string | null;
-  cost_usd: number;
-  cost_questions_usd: number;
-  cost_ingestion_usd: number;
-  total_questions: number;
-  total_ingestions: number;
-  calls: number;
-}
-
-interface PricingEntry {
-  provider: string;
-  model: string;
-  price_input_per_million: number;
-  price_output_per_million: number | null;
-}
-
-interface CostDashboard {
-  summary: CostSummary;
-  by_period: CostByPeriod[];
-  by_provider: CostByProvider[];
-  by_organisation: CostByOrganisation[];
-  by_user: CostByUser[];
-  pricing: PricingEntry[];
-}
-
-// --- Helpers ---
-
-function formatUSD(value: number): string {
-  if (value < 0.01 && value > 0) return `$${value.toFixed(6)}`;
-  if (value < 1) return `$${value.toFixed(4)}`;
-  return `$${value.toFixed(2)}`;
-}
-
-function formatTokens(value: number): string {
-  if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}M`;
-  if (value >= 1_000) return `${(value / 1_000).toFixed(1)}k`;
-  return value.toString();
-}
-
-function formatPeriod(period: string, granularity: string): string {
-  const d = new Date(period);
-  if (granularity === "day")
-    return d.toLocaleDateString("fr-FR", { day: "2-digit", month: "short" });
-  if (granularity === "week")
-    return `S${getWeekNumber(d)} ${d.toLocaleDateString("fr-FR", { month: "short" })}`;
-  if (granularity === "month")
-    return d.toLocaleDateString("fr-FR", { month: "short", year: "2-digit" });
-  if (granularity === "year")
-    return d.toLocaleDateString("fr-FR", { year: "numeric" });
-  return period;
-}
-
-function getWeekNumber(d: Date): number {
-  const target = new Date(d.valueOf());
-  target.setDate(target.getDate() + 3 - ((target.getDay() + 6) % 7));
-  const firstThursday = new Date(target.getFullYear(), 0, 4);
-  firstThursday.setDate(
-    firstThursday.getDate() + 3 - ((firstThursday.getDay() + 6) % 7)
-  );
-  return (
-    1 + Math.round((target.getTime() - firstThursday.getTime()) / 604800000)
-  );
-}
-
-/** Fill missing periods so the chart X-axis is continuous */
-function fillPeriods(
-  data: CostByPeriod[],
-  dateFrom: Date,
-  dateTo: Date,
-  granularity: string
-): CostByPeriod[] {
-  const existing = new Map(data.map((d) => [d.period.split("T")[0], d]));
-  const filled: CostByPeriod[] = [];
-  const cursor = new Date(dateFrom);
-
-  // Align cursor to granularity start
-  if (granularity === "week") {
-    const dow = cursor.getDay();
-    cursor.setDate(cursor.getDate() - ((dow + 6) % 7)); // Monday
-  } else if (granularity === "month") {
-    cursor.setDate(1);
-  } else if (granularity === "year") {
-    cursor.setMonth(0, 1);
-  }
-
-  while (cursor <= dateTo) {
-    const key = cursor.toISOString().split("T")[0];
-    const entry = existing.get(key);
-    filled.push(
-      entry || {
-        period: cursor.toISOString(),
-        cost_usd: 0,
-        tokens_input: 0,
-        tokens_output: 0,
-        calls: 0,
-      }
-    );
-    // Advance cursor
-    if (granularity === "day") {
-      cursor.setDate(cursor.getDate() + 1);
-    } else if (granularity === "week") {
-      cursor.setDate(cursor.getDate() + 7);
-    } else if (granularity === "month") {
-      cursor.setMonth(cursor.getMonth() + 1);
-    } else if (granularity === "year") {
-      cursor.setFullYear(cursor.getFullYear() + 1);
-    }
-  }
-  return filled;
-}
-
-const OPERATION_LABELS: Record<string, string> = {
-  condense: "Condensation",
-  expand: "Expansion requête",
-  generate: "Génération réponse",
-  embedding: "Embedding",
-  rerank: "Reranking",
-};
-
-const RANGE_OPTIONS = [
-  { value: "7", label: "7 derniers jours" },
-  { value: "30", label: "30 derniers jours" },
-  { value: "90", label: "3 derniers mois" },
-  { value: "365", label: "12 derniers mois" },
-];
-
-const GRANULARITY_OPTIONS = [
-  { value: "day", label: "Jour" },
-  { value: "week", label: "Semaine" },
-  { value: "month", label: "Mois" },
-  { value: "year", label: "Année" },
-];
-
-// --- Margin banner (business rapprochement, in EUR) ---
-
-type MarginOverview = {
+type Overview = {
   mrr_eur: number;
   infra_cost_eur_30d: number;
   gross_margin_eur: number;
   infra_pct_of_mrr: number | null;
 };
 
-const fmtEur = (n: number) =>
-  new Intl.NumberFormat("fr-FR", {
-    style: "currency",
-    currency: "EUR",
-    maximumFractionDigits: 0,
-  }).format(n);
-
-function MarginBanner() {
+export default function ProfitabilityPage() {
   const { data: session } = useSession();
   const token = session?.access_token;
-  const [data, setData] = useState<MarginOverview | null>(null);
-
-  useEffect(() => {
-    if (!token) return;
-    apiFetch<MarginOverview>("/admin/business/overview", { token })
-      .then(setData)
-      .catch(() => {});
-  }, [token]);
-
-  if (!data) return null;
-  const marginGood = data.gross_margin_eur >= 0;
-
-  return (
-    <Card className="bg-muted/40">
-      <CardContent className="flex flex-wrap items-center gap-x-8 gap-y-3 py-4">
-        <div>
-          <p className="text-muted-foreground flex items-center gap-1.5 text-xs">
-            MRR
-            <InfoTooltip>
-              <b>Revenu mensuel récurrent</b> : somme des abonnements payants
-              actifs ramenée au mois (un annuel = 1/12). En euros.
-            </InfoTooltip>
-          </p>
-          <p className="text-lg font-semibold tabular-nums">
-            {fmtEur(data.mrr_eur)}
-          </p>
-        </div>
-        <div>
-          <p className="text-muted-foreground flex items-center gap-1.5 text-xs">
-            Coût infra (30 j)
-            <InfoTooltip>
-              Coût des appels IA (OpenAI, Voyage) sur 30 jours, facturé en
-              dollars et converti en euros au taux configuré.
-            </InfoTooltip>
-          </p>
-          <p className="text-lg font-semibold tabular-nums">
-            {fmtEur(data.infra_cost_eur_30d)}
-          </p>
-        </div>
-        <div>
-          <p className="text-muted-foreground flex items-center gap-1.5 text-xs">
-            Marge brute
-            <InfoTooltip>
-              MRR − coût d&apos;infrastructure (30 j). Avant charges fixes
-              (salaires, hébergement…).
-            </InfoTooltip>
-          </p>
-          <p
-            className={
-              "text-lg font-semibold tabular-nums " +
-              (marginGood
-                ? "text-emerald-600 dark:text-emerald-400"
-                : "text-destructive")
-            }
-          >
-            {fmtEur(data.gross_margin_eur)}
-          </p>
-        </div>
-        <div>
-          <p className="text-muted-foreground flex items-center gap-1.5 text-xs">
-            Coût infra / MRR
-            <InfoTooltip>
-              Part du revenu absorbée par les coûts techniques variables. Sain
-              en dessous de ~30 %.
-            </InfoTooltip>
-          </p>
-          <p className="text-lg font-semibold tabular-nums">
-            {data.infra_pct_of_mrr === null
-              ? "—"
-              : `${data.infra_pct_of_mrr} %`}
-          </p>
-        </div>
-        <p className="text-muted-foreground basis-full text-xs">
-          Le détail ci-dessous est exprimé en dollars (facturation des
-          fournisseurs). Conversion EUR au taux configuré.
-        </p>
-      </CardContent>
-    </Card>
-  );
-}
-
-// --- Component ---
-
-export default function AdminCostsPage() {
-  const { data: session } = useSession();
-  const token = session?.access_token;
-
-  const [dashboard, setDashboard] = useState<CostDashboard | null>(null);
+  const [overview, setOverview] = useState<Overview | null>(null);
+  const [clients, setClients] = useState<AdminClientsResponse | null>(null);
   const [loading, setLoading] = useState(true);
-  const [range, setRange] = useState("30");
-  const [granularity, setGranularity] = useState("day");
-
-  // Pricing edit state
-  const [editingPricing, setEditingPricing] = useState(false);
-  const [pricingDraft, setPricingDraft] = useState<PricingEntry[]>([]);
-  const [savingPricing, setSavingPricing] = useState(false);
-
-  // LLM model switch state
-  const [currentModel, setCurrentModel] = useState<string>("");
-  const [availableModels, setAvailableModels] = useState<
-    { id: string; label: string; input_1m: number; output_1m: number }[]
-  >([]);
-  const [switchingModel, setSwitchingModel] = useState(false);
-
-  const fetchLlmModel = useCallback(async () => {
+  const [error, setError] = useState(false);
+  const load = useCallback(async () => {
     if (!token) return;
+    setLoading(true);
+    setError(false);
     try {
-      const data = await apiFetch<{
-        current_model: string;
-        available_models: {
-          id: string;
-          label: string;
-          input_1m: number;
-          output_1m: number;
-        }[];
-      }>("/admin/costs/llm-model", { token });
-      setCurrentModel(data.current_model);
-      setAvailableModels(data.available_models);
+      const [summary, accounts] = await Promise.all([
+        apiFetch<Overview>("/admin/business/overview", { token }),
+        apiFetch<AdminClientsResponse>(
+          "/admin/business/clients?sort=margin&direction=asc&page_size=10",
+          { token }
+        ),
+      ]);
+      setOverview(summary);
+      setClients(accounts);
     } catch {
-      /* ignore */
-    }
-  }, [token]);
-
-  const handleSwitchModel = async (modelId: string) => {
-    if (!token || modelId === currentModel) return;
-    setSwitchingModel(true);
-    try {
-      await apiFetch("/admin/costs/llm-model", {
-        method: "PUT",
-        token,
-        body: JSON.stringify({ model: modelId }),
-      });
-      setCurrentModel(modelId);
-      toast.success(`Modèle changé : ${modelId}`);
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Erreur");
-    } finally {
-      setSwitchingModel(false);
-    }
-  };
-
-  const fetchDashboard = useCallback(async () => {
-    if (!token) return;
-    try {
-      const today = new Date();
-      const from = new Date(today);
-      from.setDate(from.getDate() - parseInt(range));
-      const dateFrom = from.toISOString().split("T")[0];
-      const dateTo = today.toISOString().split("T")[0];
-
-      const data = await apiFetch<CostDashboard>(
-        `/admin/costs/dashboard?date_from=${dateFrom}&date_to=${dateTo}&granularity=${granularity}`,
-        { token }
-      );
-      setDashboard(data);
-    } catch {
-      toast.error("Erreur lors du chargement des coûts");
+      setError(true);
     } finally {
       setLoading(false);
     }
-  }, [token, range, granularity]);
-
+  }, [token]);
   useEffect(() => {
-    setLoading(true);
-    fetchDashboard();
-    fetchLlmModel();
-  }, [fetchDashboard, fetchLlmModel]);
-
-  if (loading) {
-    return (
-      <div className="space-y-6">
-        <h1 className="text-2xl font-semibold tracking-tight">
-          Suivi des coûts API
-        </h1>
-        <div className="grid gap-4 md:grid-cols-4">
-          {[...Array(4)].map((_, i) => (
-            <Card key={i}>
-              <CardHeader className="pb-2">
-                <Skeleton className="h-4 w-24" />
-              </CardHeader>
-              <CardContent>
-                <Skeleton className="h-8 w-20" />
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-        <Skeleton className="h-64 w-full" />
-      </div>
-    );
-  }
-
-  if (!dashboard) return null;
-
-  const { summary, by_provider, by_organisation, by_user, pricing } = dashboard;
-
-  // Fill periods for continuous X-axis
-  const today = new Date();
-  const dateFrom = new Date(today);
-  dateFrom.setDate(dateFrom.getDate() - parseInt(range));
-  const filledPeriods = fillPeriods(
-    dashboard.by_period,
-    dateFrom,
-    today,
-    granularity
-  );
-
-  // Find max cost in period for bar chart
-  const maxPeriodCost = Math.max(
-    ...filledPeriods.map((p) => p.cost_usd),
-    0.001
-  );
-
+    void load();
+  }, [load]);
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <h1 className="text-2xl font-semibold tracking-tight">
-          Suivi des coûts API
-        </h1>
-        <div className="flex flex-wrap items-center gap-3">
-          <Select value={range} onValueChange={setRange}>
-            <SelectTrigger className="w-full sm:w-[180px]">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {RANGE_OPTIONS.map((o) => (
-                <SelectItem key={o.value} value={o.value}>
-                  {o.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Select value={granularity} onValueChange={setGranularity}>
-            <SelectTrigger className="w-full sm:w-[140px]">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {GRANULARITY_OPTIONS.map((o) => (
-                <SelectItem key={o.value} value={o.value}>
-                  {o.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+      <AdminPageHeader
+        section="Pilotage"
+        title="Rentabilité"
+        description="Comparez le revenu récurrent et les coûts IA pour comprendre la marge de votre activité."
+        actions={
+          <Button variant="outline" disabled={loading} onClick={load}>
+            <RefreshCw className="size-4" />
+            Actualiser
+          </Button>
+        }
+      />
+      <div className="bg-primary/5 border-primary/10 rounded-xl border px-4 py-3 text-sm">
+        Référence : <strong>30 derniers jours</strong> pour les coûts · Revenu
+        récurrent mensuel · Tous les montants en euros
+      </div>
+      {error ? (
+        <AdminLoadError onRetry={load} />
+      ) : loading ? (
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          {[1, 2, 3, 4].map((i) => (
+            <Skeleton key={i} className="h-36" />
+          ))}
         </div>
-      </div>
-
-      {/* Business rapprochement (EUR) */}
-      <MarginBanner />
-
-      {/* Summary cards */}
-      <div className="grid gap-4 md:grid-cols-4">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Coût total</CardTitle>
-            <DollarSign className="text-muted-foreground h-4 w-4" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              {formatUSD(summary.total_cost_usd)}
-            </div>
-            <p className="text-muted-foreground text-xs">
-              {summary.total_calls.toLocaleString("fr-FR")} appels API
-            </p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">
-              Coût moyen / question
-            </CardTitle>
-            <MessageSquare className="text-muted-foreground h-4 w-4" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              {formatUSD(summary.avg_cost_per_question)}
-            </div>
-            <p className="text-muted-foreground text-xs">
-              {summary.total_questions.toLocaleString("fr-FR")} questions
-            </p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">
-              Coût moyen / upload
-            </CardTitle>
-            <Upload className="text-muted-foreground h-4 w-4" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              {formatUSD(summary.avg_cost_per_ingestion)}
-            </div>
-            <p className="text-muted-foreground text-xs">
-              {summary.total_ingestions.toLocaleString("fr-FR")} documents
-            </p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Tokens</CardTitle>
-            <Zap className="text-muted-foreground h-4 w-4" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              {formatTokens(
-                summary.total_tokens_input + summary.total_tokens_output
-              )}
-            </div>
-            <p className="text-muted-foreground text-xs">
-              {formatTokens(summary.total_tokens_input)} in /{" "}
-              {formatTokens(summary.total_tokens_output)} out
-            </p>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Timeline chart (CSS bars) with Y-axis */}
-      {filledPeriods.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-base">
-              <TrendingUp className="h-4 w-4" />
-              Coûts par{" "}
-              {granularity === "day"
-                ? "jour"
-                : granularity === "week"
-                  ? "semaine"
-                  : granularity === "month"
-                    ? "mois"
-                    : "année"}
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            {(() => {
-              const chartHeight = 180;
-              const barArea = chartHeight - 20; // space for labels
-              // Compute nice Y-axis ticks
-              const yTicks = (() => {
-                const steps = 4;
-                const raw = maxPeriodCost / steps;
-                const magnitude = Math.pow(10, Math.floor(Math.log10(raw)));
-                const nice = Math.ceil(raw / magnitude) * magnitude;
-                return Array.from({ length: steps + 1 }, (_, i) => nice * i);
-              })();
-              const yMax = yTicks[yTicks.length - 1] || maxPeriodCost;
-              const labelStep = Math.max(
-                1,
-                Math.ceil(filledPeriods.length / 12)
-              );
-
-              return (
-                <div className="flex">
-                  {/* Y-axis labels */}
-                  <div
-                    className="flex flex-col-reverse justify-between pr-2 text-right"
-                    style={{ height: barArea }}
-                  >
-                    {yTicks.map((tick, i) => (
-                      <span
-                        key={i}
-                        className="text-muted-foreground text-[10px] leading-none whitespace-nowrap"
-                      >
-                        {formatUSD(tick)}
-                      </span>
-                    ))}
-                  </div>
-                  {/* Chart area */}
-                  <div className="min-w-0 flex-1">
-                    {/* Grid lines + bars */}
-                    <div
-                      className="border-border relative border-b border-l"
-                      style={{ height: barArea }}
-                    >
-                      {/* Horizontal grid lines */}
-                      {yTicks.slice(1).map((tick, i) => (
-                        <div
-                          key={i}
-                          className="border-border/40 absolute right-0 left-0 border-t"
-                          style={{
-                            bottom: `${(tick / yMax) * 100}%`,
-                          }}
-                        />
-                      ))}
-                      {/* Bars */}
-                      <div className="absolute inset-0 flex items-end gap-[2px] px-[2px]">
-                        {filledPeriods.map((p, i) => {
-                          const pct = yMax > 0 ? (p.cost_usd / yMax) * 100 : 0;
-                          return (
-                            <div
-                              key={i}
-                              className="group relative min-w-0 flex-1"
-                              style={{ height: "100%" }}
-                            >
-                              <div
-                                className="bg-primary/70 hover:bg-primary absolute right-0 bottom-0 left-0 rounded-t transition-colors"
-                                style={{
-                                  height: `${Math.max(pct, 0.5)}%`,
-                                }}
-                              />
-                              {/* Tooltip */}
-                              <div className="bg-popover border-border text-popover-foreground pointer-events-none absolute -top-14 left-1/2 z-10 hidden -translate-x-1/2 rounded-md border px-2.5 py-1.5 text-xs whitespace-nowrap shadow-md group-hover:block">
-                                <div className="font-medium">
-                                  {formatPeriod(p.period, granularity)}
-                                </div>
-                                <div>
-                                  {formatUSD(p.cost_usd)} &middot; {p.calls}{" "}
-                                  appels
-                                </div>
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                    {/* X-axis labels */}
-                    <div className="mt-1 flex gap-[2px] px-[2px]">
-                      {filledPeriods.map((p, i) => (
-                        <div
-                          key={i}
-                          className="text-muted-foreground min-w-0 flex-1 truncate text-center text-[10px]"
-                        >
-                          {i % labelStep === 0 || i === filledPeriods.length - 1
-                            ? formatPeriod(p.period, granularity)
-                            : ""}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              );
-            })()}
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Tabs: Provider / Organisation / User / Pricing */}
-      {/* LLM Model Switch */}
-      {availableModels.length > 0 && (
-        <Card>
-          <CardContent className="flex items-center gap-3 py-3">
-            <span className="text-sm font-medium">Modèle LLM :</span>
-            <div className="flex gap-1.5">
-              {availableModels.map((m) => (
-                <Button
-                  key={m.id}
-                  variant={m.id === currentModel ? "default" : "outline"}
-                  size="sm"
-                  disabled={switchingModel}
-                  onClick={() => handleSwitchModel(m.id)}
-                  className="text-xs"
-                >
-                  {m.label}
-                </Button>
+      ) : (
+        overview && (
+          <>
+            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+              {[
+                {
+                  title: "Revenu mensuel",
+                  value: formatAdminEur(overview.mrr_eur),
+                  detail: "Abonnements ramenés au mois",
+                },
+                {
+                  title: "Coûts IA",
+                  value: formatAdminEur(overview.infra_cost_eur_30d),
+                  detail: "Questions et ingestions sur 30 jours",
+                },
+                {
+                  title: "Marge estimée",
+                  value: formatAdminEur(overview.gross_margin_eur),
+                  detail: "Revenu mensuel − coûts IA sur 30 jours",
+                },
+                {
+                  title: "Part des coûts IA",
+                  value:
+                    overview.infra_pct_of_mrr === null
+                      ? "—"
+                      : `${overview.infra_pct_of_mrr} %`,
+                  detail: "Coûts IA rapportés au revenu mensuel",
+                },
+              ].map((item) => (
+                <Card key={item.title} className="border shadow-none">
+                  <CardHeader>
+                    <CardTitle className="text-muted-foreground text-sm font-medium">
+                      {item.title}
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <p className="text-2xl font-semibold tabular-nums">
+                      {item.value}
+                    </p>
+                    <p className="text-muted-foreground mt-2 text-xs">
+                      {item.detail}
+                    </p>
+                  </CardContent>
+                </Card>
               ))}
             </div>
-          </CardContent>
-        </Card>
-      )}
-
-      <Tabs defaultValue="organisation">
-        <TabsList>
-          <TabsTrigger value="organisation">Par organisation</TabsTrigger>
-          <TabsTrigger value="user">Par utilisateur</TabsTrigger>
-          <TabsTrigger value="provider">Par modèle</TabsTrigger>
-          <TabsTrigger value="pricing">Tarifs configurés</TabsTrigger>
-        </TabsList>
-
-        {/* By Provider/Model */}
-        <TabsContent value="provider">
-          <Card>
-            <CardContent className="pt-6">
-              <Table className="table-fixed">
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Provider</TableHead>
-                    <TableHead>Modèle</TableHead>
-                    <TableHead>Opération</TableHead>
-                    <TableHead className="text-right">Appels</TableHead>
-                    <TableHead className="text-right">Tokens in</TableHead>
-                    <TableHead className="text-right">Tokens out</TableHead>
-                    <TableHead className="text-right">Coût</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {by_provider.map((row, i) => (
-                    <TableRow key={i}>
-                      <TableCell>
-                        <Badge variant="outline">{row.provider}</Badge>
-                      </TableCell>
-                      <TableCell className="font-mono text-sm break-all">
-                        {row.model}
-                      </TableCell>
-                      <TableCell>
-                        {OPERATION_LABELS[row.operation_type] ||
-                          row.operation_type}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        {row.calls.toLocaleString("fr-FR")}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        {formatTokens(row.tokens_input)}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        {formatTokens(row.tokens_output)}
-                      </TableCell>
-                      <TableCell className="text-right font-medium">
-                        {formatUSD(row.cost_usd)}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                  {by_provider.length === 0 && (
-                    <TableRow>
-                      <TableCell
-                        colSpan={7}
-                        className="text-muted-foreground py-8 text-center"
-                      >
-                        Aucune donnée sur cette période
-                      </TableCell>
-                    </TableRow>
-                  )}
-                </TableBody>
-              </Table>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        {/* By Organisation */}
-        <TabsContent value="organisation">
-          <Card>
-            <CardContent className="pt-6">
-              <Table className="table-fixed">
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Organisation</TableHead>
-                    <TableHead className="text-right">Questions</TableHead>
-                    <TableHead className="text-right">Coût questions</TableHead>
-                    <TableHead className="text-right">Ingestions</TableHead>
-                    <TableHead className="text-right">Coût ingestion</TableHead>
-                    <TableHead className="text-right">Coût total</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {by_organisation.map((row, i) => (
-                    <TableRow key={i}>
-                      <TableCell className="font-medium break-all">
-                        {row.organisation_name || (
-                          <span className="text-muted-foreground italic">
-                            Non attribué
-                          </span>
-                        )}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        {row.total_questions.toLocaleString("fr-FR")}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        {formatUSD(row.cost_questions_usd)}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        {row.total_ingestions.toLocaleString("fr-FR")}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        {formatUSD(row.cost_ingestion_usd)}
-                      </TableCell>
-                      <TableCell className="text-right font-medium">
-                        {formatUSD(row.cost_usd)}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                  {by_organisation.length === 0 && (
-                    <TableRow>
-                      <TableCell
-                        colSpan={6}
-                        className="text-muted-foreground py-8 text-center"
-                      >
-                        Aucune donnée sur cette période
-                      </TableCell>
-                    </TableRow>
-                  )}
-                </TableBody>
-              </Table>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        {/* By User */}
-        <TabsContent value="user">
-          <Card>
-            <CardContent className="pt-6">
-              <Table className="table-fixed">
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Utilisateur</TableHead>
-                    <TableHead className="text-right">Questions</TableHead>
-                    <TableHead className="text-right">Coût questions</TableHead>
-                    <TableHead className="text-right">Ingestions</TableHead>
-                    <TableHead className="text-right">Coût ingestion</TableHead>
-                    <TableHead className="text-right">Coût total</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {by_user.map((row, i) => (
-                    <TableRow key={i}>
-                      <TableCell className="font-medium break-all">
-                        {row.user_email || (
-                          <span className="text-muted-foreground italic">
-                            Non attribué
-                          </span>
-                        )}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        {row.total_questions.toLocaleString("fr-FR")}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        {formatUSD(row.cost_questions_usd)}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        {row.total_ingestions.toLocaleString("fr-FR")}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        {formatUSD(row.cost_ingestion_usd)}
-                      </TableCell>
-                      <TableCell className="text-right font-medium">
-                        {formatUSD(row.cost_usd)}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                  {by_user.length === 0 && (
-                    <TableRow>
-                      <TableCell
-                        colSpan={6}
-                        className="text-muted-foreground py-8 text-center"
-                      >
-                        Aucune donnée sur cette période
-                      </TableCell>
-                    </TableRow>
-                  )}
-                </TableBody>
-              </Table>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        {/* Pricing (editable) */}
-        <TabsContent value="pricing">
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between">
-              <CardTitle className="text-base">
-                Tarifs actuels (USD / 1M tokens)
-              </CardTitle>
-              {!editingPricing ? (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => {
-                    setPricingDraft(pricing.map((p) => ({ ...p })));
-                    setEditingPricing(true);
-                  }}
-                >
-                  <Pencil className="mr-2 h-3.5 w-3.5" />
-                  Modifier
-                </Button>
-              ) : (
-                <div className="flex items-center gap-2">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => setEditingPricing(false)}
-                    disabled={savingPricing}
-                  >
-                    <X className="mr-1 h-3.5 w-3.5" />
-                    Annuler
-                  </Button>
-                  <Button
-                    size="sm"
-                    disabled={savingPricing}
-                    onClick={async () => {
-                      if (!token) return;
-                      setSavingPricing(true);
-                      try {
-                        const updated = await apiFetch<PricingEntry[]>(
-                          "/admin/costs/pricing",
-                          {
-                            token,
-                            method: "PUT",
-                            body: JSON.stringify(pricingDraft),
-                          }
-                        );
-                        setDashboard((prev) =>
-                          prev ? { ...prev, pricing: updated } : prev
-                        );
-                        setEditingPricing(false);
-                        toast.success("Tarifs mis à jour");
-                      } catch {
-                        toast.error("Erreur lors de la mise à jour");
-                      } finally {
-                        setSavingPricing(false);
-                      }
-                    }}
-                  >
-                    <Check className="mr-1 h-3.5 w-3.5" />
-                    Enregistrer
-                  </Button>
+            <Card className="border shadow-none">
+              <CardHeader className="flex flex-wrap items-start justify-between gap-3 sm:flex-row">
+                <div className="space-y-2">
+                  <CardTitle className="text-base">
+                    Clients avec la marge la plus faible
+                  </CardTitle>
+                  <p className="text-muted-foreground text-sm">
+                    Les 10 premiers comptes, du moins au plus rentable sur cette
+                    base de calcul.
+                  </p>
                 </div>
-              )}
-            </CardHeader>
-            <CardContent>
-              <Table className="table-fixed">
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Provider</TableHead>
-                    <TableHead>Modèle</TableHead>
-                    <TableHead className="text-right">Input ($/1M)</TableHead>
-                    <TableHead className="text-right">Output ($/1M)</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {(editingPricing ? pricingDraft : pricing).map((row, i) => (
-                    <TableRow key={i}>
-                      <TableCell>
-                        <Badge variant="outline">{row.provider}</Badge>
-                      </TableCell>
-                      <TableCell className="font-mono text-sm break-all">
-                        {row.model}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        {editingPricing ? (
-                          <Input
-                            type="number"
-                            step="0.0001"
-                            min="0"
-                            className="ml-auto h-8 w-28 text-right"
-                            value={row.price_input_per_million}
-                            onChange={(e) => {
-                              const val = parseFloat(e.target.value) || 0;
-                              setPricingDraft((prev) =>
-                                prev.map((p, j) =>
-                                  j === i
-                                    ? { ...p, price_input_per_million: val }
-                                    : p
-                                )
-                              );
-                            }}
-                          />
-                        ) : (
-                          `$${row.price_input_per_million.toFixed(4)}`
-                        )}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        {editingPricing ? (
-                          row.price_output_per_million !== null ? (
-                            <Input
-                              type="number"
-                              step="0.0001"
-                              min="0"
-                              className="ml-auto h-8 w-28 text-right"
-                              value={row.price_output_per_million}
-                              onChange={(e) => {
-                                const val = parseFloat(e.target.value) || 0;
-                                setPricingDraft((prev) =>
-                                  prev.map((p, j) =>
-                                    j === i
-                                      ? {
-                                          ...p,
-                                          price_output_per_million: val,
-                                        }
-                                      : p
-                                  )
-                                );
-                              }}
-                            />
-                          ) : (
-                            <span className="text-muted-foreground">—</span>
-                          )
-                        ) : row.price_output_per_million !== null ? (
-                          `$${row.price_output_per_million.toFixed(4)}`
-                        ) : (
-                          "—"
-                        )}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </CardContent>
-          </Card>
-        </TabsContent>
-      </Tabs>
+                <Button variant="outline" size="sm" asChild>
+                  <Link href="/admin/clients">
+                    Tous les clients
+                    <ArrowUpRight className="size-4" />
+                  </Link>
+                </Button>
+              </CardHeader>
+              <CardContent>
+                {clients?.rows.length ? (
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Client</TableHead>
+                        <TableHead className="text-right">
+                          Revenu / mois
+                        </TableHead>
+                        <TableHead className="text-right">
+                          Coûts IA · 30 j
+                        </TableHead>
+                        <TableHead className="text-right">
+                          Marge estimée
+                        </TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {clients.rows.map((client) => (
+                        <TableRow key={client.account_id}>
+                          <TableCell>
+                            <Link
+                              className="hover:text-primary font-medium hover:underline"
+                              href={`/admin/clients/${client.account_id}`}
+                            >
+                              {client.account_name ||
+                                client.owner_email ||
+                                "Client"}
+                            </Link>
+                          </TableCell>
+                          <TableCell className="text-right tabular-nums">
+                            {formatAdminEur(client.mrr_eur)}
+                          </TableCell>
+                          <TableCell className="text-right tabular-nums">
+                            {formatAdminEur(client.infra_cost_eur_30d)}
+                          </TableCell>
+                          <TableCell
+                            className={`text-right tabular-nums ${client.margin_eur < 0 ? "text-destructive" : ""}`}
+                          >
+                            {formatAdminEur(client.margin_eur)}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                ) : (
+                  <p className="text-muted-foreground py-4 text-sm">
+                    Aucun compte à afficher.
+                  </p>
+                )}
+              </CardContent>
+            </Card>
+            <details className="bg-card rounded-xl border p-5">
+              <summary className="cursor-pointer text-sm font-medium">
+                Comprendre ces chiffres
+              </summary>
+              <div className="text-muted-foreground mt-4 space-y-3 text-sm leading-relaxed">
+                <p>
+                  La marge estimée compare le revenu récurrent mensuel aux coûts
+                  IA des 30 derniers jours. Elle ne représente pas un résultat
+                  comptable : salaires, hébergement et autres charges fixes ne
+                  sont pas déduits.
+                </p>
+                <p>
+                  Les coûts des questions et des ingestions sont inclus. Les
+                  tests du bac à sable sont exclus. Les montants fournisseurs
+                  sont convertis en euros au taux configuré.
+                </p>
+                <p>
+                  Les essais et comptes gratuits peuvent présenter une marge
+                  négative puisqu’ils génèrent des coûts sans revenu récurrent.
+                </p>
+              </div>
+            </details>
+            <Button variant="outline" asChild>
+              <Link
+                href={
+                  session?.user?.staff_role === "business"
+                    ? "/admin/costs/details"
+                    : "/admin/tools?tab=costs"
+                }
+              >
+                Détails fournisseurs & réglages IA
+                <ArrowUpRight className="size-4" />
+              </Link>
+            </Button>
+          </>
+        )
+      )}
     </div>
   );
 }
