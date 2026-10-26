@@ -54,11 +54,8 @@ const GROUPS: NavGroup[] = [
     key: "acquisition",
     label: "Acquisition",
     items: [
-      { name: "Campagnes", href: "/admin/emailing/campaigns", icon: Mail },
+      { name: "Emailing", href: "/admin/emailing", icon: Mail },
       { name: "Liens promo", href: "/admin/plan-invitations", icon: Gift },
-      { name: "Séquences", href: "/admin/emailing/sequences", icon: Mail },
-      { name: "Templates", href: "/admin/emailing/templates", icon: Mail },
-      { name: "Listes Brevo", href: "/admin/emailing/lists", icon: Mail },
     ],
   },
   {

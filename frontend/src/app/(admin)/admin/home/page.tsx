@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useSession } from "next-auth/react";
 import Link from "next/link";
 import {
@@ -108,7 +108,6 @@ function KpiCard({
   icon,
   value,
   subValue,
-  severity,
   help,
 }: {
   href: string;
@@ -116,21 +115,11 @@ function KpiCard({
   icon: React.ReactNode;
   value: string;
   subValue?: string;
-  severity: "green" | "orange" | "red" | "neutral";
   help?: React.ReactNode;
 }) {
-  const bgClass = {
-    green:
-      "bg-muted/40 border-border hover:bg-green-100 dark:hover:bg-green-950/50",
-    orange:
-      "bg-orange-50 dark:bg-orange-950/30 border-orange-200 dark:border-orange-900 hover:bg-orange-100 dark:hover:bg-orange-950/50",
-    red: "bg-red-50 dark:bg-red-950/30 border-red-200 dark:border-red-900 hover:bg-red-100 dark:hover:bg-red-950/50",
-    neutral: "hover:bg-muted/50",
-  }[severity];
-
   return (
     <Link href={href}>
-      <Card className={`${bgClass} h-full cursor-pointer transition-colors`}>
+      <Card className="h-full cursor-pointer transition-shadow hover:shadow-md">
         <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
           <CardTitle className="text-muted-foreground flex items-center gap-2 text-sm font-medium">
             {icon}
@@ -157,6 +146,22 @@ function KpiCard({
 // ----------------- Timeline chart (SVG) -----------------
 
 function TimelineChart({ data }: { data: TimeseriesPoint[] }) {
+  const chartRef = useRef<HTMLDivElement>(null);
+  const [width, setWidth] = useState(800);
+
+  useEffect(() => {
+    const container = chartRef.current;
+    if (!container) return;
+
+    const observer = new ResizeObserver(([entry]) => {
+      if (entry.contentRect.width > 0) {
+        setWidth(entry.contentRect.width);
+      }
+    });
+    observer.observe(container);
+    return () => observer.disconnect();
+  }, [data.length]);
+
   if (data.length === 0) {
     return (
       <div className="text-muted-foreground py-12 text-center text-xs">
@@ -165,7 +170,6 @@ function TimelineChart({ data }: { data: TimeseriesPoint[] }) {
     );
   }
   const max = Math.max(...data.map((d) => d.questions), 1);
-  const width = 800;
   const height = 160;
   const padding = { top: 10, right: 10, bottom: 25, left: 30 };
   const chartW = width - padding.left - padding.right;
@@ -174,78 +178,82 @@ function TimelineChart({ data }: { data: TimeseriesPoint[] }) {
   const step = chartW / data.length;
 
   return (
-    <svg viewBox={`0 0 ${width} ${height}`} className="h-40 w-full">
-      {/* Y-axis lines */}
-      {[0, 0.25, 0.5, 0.75, 1].map((p) => {
-        const y = padding.top + chartH - chartH * p;
-        return (
-          <g key={p}>
-            <line
-              x1={padding.left}
-              x2={width - padding.right}
-              y1={y}
-              y2={y}
-              stroke="currentColor"
-              strokeOpacity="0.1"
-              strokeWidth="1"
-            />
+    <div ref={chartRef} className="w-full">
+      <svg viewBox={`0 0 ${width} ${height}`} className="block h-40 w-full">
+        {/* Y-axis lines */}
+        {[0, 0.25, 0.5, 0.75, 1].map((p) => {
+          const y = padding.top + chartH - chartH * p;
+          return (
+            <g key={p}>
+              <line
+                x1={padding.left}
+                x2={width - padding.right}
+                y1={y}
+                y2={y}
+                stroke="currentColor"
+                strokeOpacity="0.1"
+                strokeWidth="1"
+              />
+              <text
+                x={padding.left - 4}
+                y={y + 3}
+                textAnchor="end"
+                fontSize="9"
+                fill="currentColor"
+                fillOpacity="0.5"
+              >
+                {Math.round(max * p)}
+              </text>
+            </g>
+          );
+        })}
+        {/* Bars */}
+        {data.map((d, i) => {
+          const h = (d.questions / max) * chartH;
+          const x = padding.left + i * step + (step - barWidth) / 2;
+          const y = padding.top + chartH - h;
+          return (
+            <g key={d.date}>
+              <rect
+                x={x}
+                y={y}
+                width={barWidth}
+                height={h}
+                className="fill-primary"
+                opacity={0.85}
+              >
+                <title>{`${d.date}: ${d.questions} question(s)`}</title>
+              </rect>
+            </g>
+          );
+        })}
+        {/* X-axis labels (first, middle, last) */}
+        {[0, Math.floor(data.length / 2), data.length - 1].map((i) => {
+          if (i < 0 || i >= data.length) return null;
+          const x = padding.left + i * step + step / 2;
+          const date = new Date(data[i].date);
+          const label = date.toLocaleDateString("fr-FR", {
+            day: "2-digit",
+            month: "short",
+          });
+          return (
             <text
-              x={padding.left - 4}
-              y={y + 3}
-              textAnchor="end"
-              fontSize="9"
-              fill="currentColor"
-              fillOpacity="0.5"
-            >
-              {Math.round(max * p)}
-            </text>
-          </g>
-        );
-      })}
-      {/* Bars */}
-      {data.map((d, i) => {
-        const h = (d.questions / max) * chartH;
-        const x = padding.left + i * step + (step - barWidth) / 2;
-        const y = padding.top + chartH - h;
-        return (
-          <g key={d.date}>
-            <rect
+              key={i}
               x={x}
-              y={y}
-              width={barWidth}
-              height={h}
-              className="fill-primary"
-              opacity={0.85}
+              y={height - 8}
+              textAnchor={
+                i === 0 ? "start" : i === data.length - 1 ? "end" : "middle"
+              }
+              fontSize="10"
+              fill="currentColor"
+              fillOpacity="0.6"
             >
-              <title>{`${d.date}: ${d.questions} question(s)`}</title>
-            </rect>
-          </g>
-        );
-      })}
-      {/* X-axis labels (first, middle, last) */}
-      {[0, Math.floor(data.length / 2), data.length - 1].map((i) => {
-        if (i < 0 || i >= data.length) return null;
-        const x = padding.left + i * step + step / 2;
-        const date = new Date(data[i].date);
-        const label = date.toLocaleDateString("fr-FR", {
-          day: "2-digit",
-          month: "short",
-        });
-        return (
-          <text
-            key={i}
-            x={x}
-            y={height - 8}
-            textAnchor="middle"
-            fontSize="10"
-            fill="currentColor"
-            fillOpacity="0.6"
-          >
-            {label}
-          </text>
-        );
-      })}
-    </svg>
+              {label}
+            </text>
+          );
+        })}
+      </svg>
+    </div>
   );
 }
 
@@ -302,22 +310,6 @@ export default function AdminHomePage() {
 
   if (!stats) return <AdminLoadError onRetry={fetchStats} />;
 
-  // Severity logic for the 4 main cards
-  const ragSeverity: "green" | "orange" | "red" =
-    stats.quality_health.feedback_negative_rate_7d > 0.15
-      ? "red"
-      : stats.quality_health.feedback_negative_rate_7d > 0.05 ||
-          stats.quality_health.no_sources_rate_7d > 0.05
-        ? "orange"
-        : "green";
-
-  const corpusSeverity: "green" | "orange" | "red" =
-    stats.error_documents > 0
-      ? "red"
-      : stats.pending_documents > 10
-        ? "orange"
-        : "green";
-
   return (
     <div className="space-y-6">
       <AdminPageHeader
@@ -354,7 +346,6 @@ export default function AdminHomePage() {
           icon={<Gauge className="h-4 w-4" />}
           value={fmtPct(stats.quality_health.feedback_negative_rate_7d)}
           subValue={`${fmtPct(stats.quality_health.no_sources_rate_7d)} sans réponse trouvée · cas le plus lent ${fmtMs(stats.quality_health.latency_p95_ms_7d)}`}
-          severity={ragSeverity}
           help={
             <>
               Indicateur de santé du moteur RAG sur les 7 derniers jours. Valeur
@@ -372,7 +363,6 @@ export default function AdminHomePage() {
               icon={<DollarSign className="h-4 w-4" />}
               value={fmtCost(stats.cost_30d)}
               subValue="Hors ingestions et tests manuels"
-              severity="neutral"
               help={
                 <>
                   Coût total des appels API (OpenAI + Voyage AI) sur 30 jours,
@@ -389,7 +379,6 @@ export default function AdminHomePage() {
             icon={<RefreshCw className="size-4" />}
             value={String(stats.failed_syncs_24h)}
             subValue="Synchronisation(s) en échec sur 24 h"
-            severity={stats.failed_syncs_24h > 0 ? "orange" : "neutral"}
           />
         )}
         <KpiCard
@@ -398,12 +387,11 @@ export default function AdminHomePage() {
           icon={<Library className="h-4 w-4" />}
           value={`${stats.indexed_documents.toLocaleString("fr-FR")}`}
           subValue={`${stats.error_documents} erreur · ${stats.pending_documents} en attente`}
-          severity={corpusSeverity}
           help={
             <>
               Nombre de documents communs indexés et interrogeables par le RAG
-              (codes, conventions collectives, jurisprudence). Carte orange si
-              docs en attente, rouge si docs en erreur.
+              (codes, conventions collectives, jurisprudence). Le détail indique
+              les documents en erreur et en attente.
             </>
           }
         />
@@ -413,7 +401,6 @@ export default function AdminHomePage() {
           icon={<Activity className="h-4 w-4" />}
           value={stats.questions_7d.toLocaleString("fr-FR")}
           subValue={`${stats.questions_today} aujourd'hui · ${stats.active_users}/${stats.total_users} utilisateurs actifs`}
-          severity="neutral"
           help={
             <>
               Nombre de questions posées dans le chat sur 7 jours, hors tests

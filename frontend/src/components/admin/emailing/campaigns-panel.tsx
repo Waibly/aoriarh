@@ -1,0 +1,1044 @@
+"use client";
+
+import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
+import {
+  AdminEmptyState,
+  AdminLoadError,
+} from "@/components/admin/page-header";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { STATUS_BADGE, type EmailCampaign } from "./types";
+import { useSession } from "next-auth/react";
+import {
+  Loader2,
+  Plus,
+  Download,
+  RefreshCw,
+  Pause,
+  RotateCcw,
+  Trash2,
+  BarChart3,
+  MoreHorizontal,
+  Layers,
+  Send,
+  X,
+} from "lucide-react";
+import { toast } from "@/lib/toast";
+import { apiFetch } from "@/lib/api";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Card, CardContent } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+
+interface EmailSequence {
+  id: string;
+  name: string;
+  status: string;
+}
+
+interface BrevoList {
+  id: number;
+  name: string;
+  total_subscribers: number;
+}
+
+interface CampaignWave {
+  id: string;
+  number: number;
+  scheduled_at: string;
+  recipient_count: number;
+  sent_count: number;
+  done_count: number;
+  status: string;
+}
+
+interface WavesOverview {
+  campaign_id: string;
+  status: string;
+  total_recipients: number;
+  pending_count: number;
+  daily_limit: number;
+  wave_max_size: number;
+  waves: CampaignWave[];
+}
+
+interface WaveContact {
+  email: string;
+  first_name: string | null;
+  last_name: string | null;
+  company: string | null;
+  status: string;
+  sent: boolean;
+  sent_at: string | null;
+  opened: boolean;
+  clicked: boolean;
+}
+
+const WAVE_STATUS: Record<
+  string,
+  { label: string; variant: "default" | "secondary" | "outline" }
+> = {
+  scheduled: { label: "Programmée", variant: "outline" },
+  sending: { label: "En cours", variant: "default" },
+  done: { label: "Terminée", variant: "secondary" },
+};
+
+export default function CampaignsPanel({
+  onPrepare,
+}: {
+  onPrepare: (section: "lists" | "sequences") => void;
+}) {
+  const { data: session } = useSession();
+  const token = session?.access_token;
+
+  const [campaigns, setCampaigns] = useState<EmailCampaign[]>([]);
+  const [sequences, setSequences] = useState<EmailSequence[]>([]);
+  const [brevoLists, setBrevoLists] = useState<BrevoList[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
+
+  const [createOpen, setCreateOpen] = useState(false);
+  const [formName, setFormName] = useState("");
+  const [formSequenceId, setFormSequenceId] = useState("");
+  const [formListIds, setFormListIds] = useState<number[]>([]);
+  const [saving, setSaving] = useState(false);
+
+  const [deleteTarget, setDeleteTarget] = useState<EmailCampaign | null>(null);
+  const [running, setRunning] = useState(false);
+
+  const [wavesTarget, setWavesTarget] = useState<EmailCampaign | null>(null);
+  const [waves, setWaves] = useState<WavesOverview | null>(null);
+  const [loadingWaves, setLoadingWaves] = useState(false);
+  const [waveCount, setWaveCount] = useState(100);
+  const [waveDate, setWaveDate] = useState("");
+  const [schedulingWave, setSchedulingWave] = useState(false);
+  const [previewContacts, setPreviewContacts] = useState<WaveContact[]>([]);
+  const [showPreview, setShowPreview] = useState(false);
+  const [expandedWaveId, setExpandedWaveId] = useState<string | null>(null);
+  const [waveContacts, setWaveContacts] = useState<WaveContact[]>([]);
+  const [loadingWaveContacts, setLoadingWaveContacts] = useState(false);
+
+  const fetchData = useCallback(async () => {
+    if (!token) return;
+    setLoading(true);
+    setError(false);
+    try {
+      const [camps, seqs, lists] = await Promise.all([
+        apiFetch<EmailCampaign[]>("/admin/emailing/campaigns", { token }),
+        apiFetch<EmailSequence[]>("/admin/emailing/sequences", { token }),
+        apiFetch<BrevoList[]>("/admin/emailing/lists", { token }),
+      ]);
+      setCampaigns(camps);
+      setSequences(seqs);
+      setBrevoLists(lists);
+    } catch {
+      setError(true);
+      toast.error("Erreur lors du chargement");
+    } finally {
+      setLoading(false);
+    }
+  }, [token]);
+
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
+
+  function toggleList(listId: number) {
+    setFormListIds((prev) =>
+      prev.includes(listId)
+        ? prev.filter((id) => id !== listId)
+        : [...prev, listId]
+    );
+  }
+
+  async function handleCreate() {
+    if (
+      !token ||
+      !formName.trim() ||
+      !formSequenceId ||
+      formListIds.length === 0
+    )
+      return;
+    setSaving(true);
+    try {
+      const created = await apiFetch<{ id: string }>(
+        "/admin/emailing/campaigns",
+        {
+          method: "POST",
+          token,
+          body: JSON.stringify({
+            name: formName.trim(),
+            sequence_id: formSequenceId,
+            brevo_list_ids: formListIds,
+          }),
+        }
+      );
+      // Chargement automatique des contacts dans la foulée.
+      try {
+        await apiFetch(`/admin/emailing/campaigns/${created.id}/launch`, {
+          method: "POST",
+          token,
+        });
+        toast.success(
+          "Campagne créée — contacts chargés. Cliquez sur « Programmer les envois » pour choisir une date."
+        );
+      } catch {
+        toast.error(
+          "Campagne créée, mais le chargement des contacts a échoué. Cliquez « Charger les contacts » pour réessayer."
+        );
+      }
+      setCreateOpen(false);
+      setFormName("");
+      setFormSequenceId("");
+      setFormListIds([]);
+      fetchData();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Erreur");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleRefresh(id: string) {
+    if (!token) return;
+    try {
+      await apiFetch(`/admin/emailing/campaigns/${id}/launch`, {
+        method: "POST",
+        token,
+      });
+      toast.success("Contacts à jour");
+      fetchData();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Erreur");
+    }
+  }
+
+  async function handleRunNow() {
+    if (!token || running) return;
+    setRunning(true);
+    try {
+      const res = await apiFetch<{ sent: number }>("/admin/emailing/run", {
+        method: "POST",
+        token,
+      });
+      toast.success(
+        res.sent > 0
+          ? `${res.sent} mail(s) envoyé(s)`
+          : "Rien à envoyer pour le moment"
+      );
+      fetchData();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Erreur");
+    } finally {
+      setRunning(false);
+    }
+  }
+
+  async function handlePause(id: string) {
+    if (!token) return;
+    try {
+      await apiFetch(`/admin/emailing/campaigns/${id}/pause`, {
+        method: "POST",
+        token,
+      });
+      toast.success("Campagne mise en pause");
+      fetchData();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Erreur");
+    }
+  }
+
+  async function handleResume(id: string) {
+    if (!token) return;
+    try {
+      await apiFetch(`/admin/emailing/campaigns/${id}/resume`, {
+        method: "POST",
+        token,
+      });
+      toast.success("Campagne relancée");
+      fetchData();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Erreur");
+    }
+  }
+
+  async function handleDelete() {
+    if (!token || !deleteTarget) return;
+    try {
+      await apiFetch(`/admin/emailing/campaigns/${deleteTarget.id}`, {
+        method: "DELETE",
+        token,
+      });
+      toast.success("Campagne supprimée");
+      setDeleteTarget(null);
+      fetchData();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Erreur");
+    }
+  }
+
+  const loadWaves = useCallback(
+    async (campaignId: string) => {
+      if (!token) return;
+      setLoadingWaves(true);
+      try {
+        const data = await apiFetch<WavesOverview>(
+          `/admin/emailing/campaigns/${campaignId}/waves`,
+          { token }
+        );
+        setWaves(data);
+        setWaveCount(Math.min(100, data.pending_count) || 100);
+      } catch {
+        toast.error("Erreur lors du chargement des vagues");
+      } finally {
+        setLoadingWaves(false);
+      }
+    },
+    [token]
+  );
+
+  const loadPreview = useCallback(
+    async (campaignId: string) => {
+      if (!token) return;
+      try {
+        const data = await apiFetch<WaveContact[]>(
+          `/admin/emailing/campaigns/${campaignId}/waves/preview?count=100`,
+          { token }
+        );
+        setPreviewContacts(data);
+      } catch {
+        // l'aperçu n'est pas critique, on reste silencieux
+      }
+    },
+    [token]
+  );
+
+  function openWaves(campaign: EmailCampaign) {
+    setWavesTarget(campaign);
+    setWaveDate("");
+    setShowPreview(false);
+    setExpandedWaveId(null);
+    loadWaves(campaign.id);
+    loadPreview(campaign.id);
+  }
+
+  async function handleScheduleWave() {
+    if (!token || !wavesTarget || !waveDate || waveCount < 1) return;
+    if (new Date(waveDate).getTime() < Date.now()) {
+      toast.error("Choisissez une date dans le futur");
+      return;
+    }
+    setSchedulingWave(true);
+    try {
+      await apiFetch(`/admin/emailing/campaigns/${wavesTarget.id}/waves`, {
+        method: "POST",
+        token,
+        // datetime-local est en heure locale : on l'envoie en UTC ISO.
+        body: JSON.stringify({
+          count: waveCount,
+          scheduled_at: new Date(waveDate).toISOString(),
+        }),
+      });
+      toast.success("Envoi programmé");
+      setWaveDate("");
+      await loadWaves(wavesTarget.id);
+      await loadPreview(wavesTarget.id);
+      fetchData();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Erreur");
+    } finally {
+      setSchedulingWave(false);
+    }
+  }
+
+  async function handleCancelWave(waveId: string) {
+    if (!token || !wavesTarget) return;
+    try {
+      await apiFetch(
+        `/admin/emailing/campaigns/${wavesTarget.id}/waves/${waveId}`,
+        {
+          method: "DELETE",
+          token,
+        }
+      );
+      toast.success("Vague annulée");
+      if (expandedWaveId === waveId) setExpandedWaveId(null);
+      await loadWaves(wavesTarget.id);
+      await loadPreview(wavesTarget.id);
+      fetchData();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Erreur");
+    }
+  }
+
+  async function toggleWaveContacts(waveId: string) {
+    if (expandedWaveId === waveId) {
+      setExpandedWaveId(null);
+      return;
+    }
+    if (!token || !wavesTarget) return;
+    setExpandedWaveId(waveId);
+    setWaveContacts([]);
+    setLoadingWaveContacts(true);
+    try {
+      const data = await apiFetch<WaveContact[]>(
+        `/admin/emailing/campaigns/${wavesTarget.id}/waves/${waveId}/contacts`,
+        { token }
+      );
+      setWaveContacts(data);
+    } catch {
+      toast.error("Erreur lors du chargement des contacts");
+    } finally {
+      setLoadingWaveContacts(false);
+    }
+  }
+
+  const contactLabel = (c: WaveContact) => {
+    const name = [c.first_name, c.last_name].filter(Boolean).join(" ");
+    return name ? `${name} · ${c.email}` : c.email;
+  };
+
+  const contactStatus = (c: WaveContact) => {
+    if (c.status === "unsubscribed")
+      return <span className="text-destructive">⛔ Désinscrit</span>;
+    if (c.status === "bounced")
+      return <span className="text-amber-600">⚠ Bounce</span>;
+    if (c.status === "failed")
+      return <span className="text-destructive">✕ Échec</span>;
+    if (c.sent)
+      return (
+        <span className="text-green-700 dark:text-green-500">
+          ✓ Envoyé{c.sent_at ? ` ${fmtDateTime(c.sent_at)}` : ""}
+          {c.opened ? " · 👁 Ouvert" : ""}
+          {c.clicked ? " · 🖱 Cliqué" : ""}
+        </span>
+      );
+    return <span className="text-muted-foreground">⏳ En attente</span>;
+  };
+
+  const fmt = (d: string) =>
+    new Date(d).toLocaleDateString("fr-FR", {
+      day: "numeric",
+      month: "short",
+      year: "numeric",
+    });
+
+  const fmtDateTime = (d: string) =>
+    new Date(d).toLocaleString("fr-FR", {
+      day: "numeric",
+      month: "short",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+
+  // "now" au format datetime-local (heure locale) — pour bloquer le passé.
+  const minDateTime = () => {
+    const d = new Date();
+    d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
+    return d.toISOString().slice(0, 16);
+  };
+
+  const listName = (id: number) =>
+    brevoLists.find((l) => l.id === id)?.name ?? `#${id}`;
+
+  return (
+    <div className="space-y-5">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h2 className="text-lg font-semibold tracking-tight">Campagnes</h2>
+          <p className="text-muted-foreground text-sm">
+            Associez une séquence à vos contacts, puis programmez les envois.
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={fetchData}
+            disabled={loading}
+            aria-label="Actualiser les campagnes"
+          >
+            <RefreshCw className={loading ? "size-4 animate-spin" : "size-4"} />
+          </Button>
+          <Button
+            onClick={() => setCreateOpen(true)}
+            disabled={loading || error}
+          >
+            <Plus className="size-4" /> Nouvelle campagne
+          </Button>
+        </div>
+      </div>
+
+      {error && (
+        <AdminLoadError
+          message="Impossible de charger les campagnes et leurs ressources."
+          onRetry={fetchData}
+        />
+      )}
+      {!loading &&
+        !error &&
+        (sequences.length === 0 || brevoLists.length === 0) && (
+          <div className="bg-primary/5 border-primary/15 flex flex-wrap items-center justify-between gap-3 rounded-xl border p-4">
+            <p className="text-sm">
+              {sequences.length === 0
+                ? "Préparez une séquence d’emails avant de créer votre campagne."
+                : "Une liste de contacts Brevo est nécessaire pour votre campagne."}
+            </p>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() =>
+                onPrepare(sequences.length === 0 ? "sequences" : "lists")
+              }
+            >
+              {sequences.length === 0
+                ? "Préparer une séquence"
+                : "Voir les contacts"}
+            </Button>
+          </div>
+        )}
+      <Card>
+        <CardContent className="p-0 sm:p-2">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Nom</TableHead>
+                <TableHead>Séquence</TableHead>
+                <TableHead>Listes</TableHead>
+                <TableHead>Contacts</TableHead>
+                <TableHead>Statut</TableHead>
+                <TableHead>Créée le</TableHead>
+                <TableHead className="text-right">Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {loading ? (
+                <TableRow>
+                  <TableCell colSpan={7} className="py-8 text-center">
+                    <Loader2 className="text-muted-foreground mx-auto h-6 w-6 animate-spin" />
+                  </TableCell>
+                </TableRow>
+              ) : error && campaigns.length === 0 ? (
+                <TableRow>
+                  <TableCell
+                    colSpan={7}
+                    className="text-muted-foreground py-8 text-center"
+                  >
+                    Données indisponibles.
+                  </TableCell>
+                </TableRow>
+              ) : campaigns.length === 0 ? (
+                <TableRow>
+                  <TableCell
+                    colSpan={7}
+                    className="text-muted-foreground py-8 text-center"
+                  >
+                    <AdminEmptyState
+                      title="Votre première campagne commence ici"
+                      description="Choisissez une séquence et vos listes de contacts. Vous pourrez ensuite programmer chaque envoi."
+                    />
+                  </TableCell>
+                </TableRow>
+              ) : (
+                campaigns.map((c) => {
+                  const badge = STATUS_BADGE[c.status] ?? {
+                    label: c.status,
+                    variant: "outline" as const,
+                  };
+                  return (
+                    <TableRow key={c.id}>
+                      <TableCell className="font-medium">{c.name}</TableCell>
+                      <TableCell className="text-muted-foreground">
+                        {c.sequence_name ?? "—"}
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex flex-wrap gap-1">
+                          {c.brevo_list_ids.map((id) => (
+                            <Badge
+                              key={id}
+                              variant="outline"
+                              className="text-xs"
+                            >
+                              {listName(id)}
+                            </Badge>
+                          ))}
+                        </div>
+                      </TableCell>
+                      <TableCell title="Envoyés / total">
+                        {c.recipient_count > 0 ? (
+                          <span>
+                            <span className="font-medium">{c.sent_count}</span>
+                            <span className="text-muted-foreground">
+                              {" "}
+                              / {c.recipient_count}
+                            </span>
+                          </span>
+                        ) : (
+                          <span className="text-muted-foreground">0</span>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant={badge.variant}>{badge.label}</Badge>
+                      </TableCell>
+                      <TableCell className="text-muted-foreground">
+                        {fmt(c.created_at)}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <div className="flex items-center justify-end gap-2">
+                          {c.status === "draft" ? (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => handleRefresh(c.id)}
+                            >
+                              <Download className="size-4" /> Charger les
+                              contacts
+                            </Button>
+                          ) : c.status === "paused" ? (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => handleResume(c.id)}
+                            >
+                              <RotateCcw className="size-4" /> Reprendre
+                            </Button>
+                          ) : (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => openWaves(c)}
+                            >
+                              <Layers className="size-4" />{" "}
+                              {c.status === "running"
+                                ? "Programmer les envois"
+                                : "Voir les envois"}
+                            </Button>
+                          )}
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                aria-label={`Actions pour ${c.name}`}
+                              >
+                                <MoreHorizontal className="size-4" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem asChild>
+                                <Link
+                                  href={`/admin/emailing/stats?campaign=${encodeURIComponent(c.id)}`}
+                                >
+                                  <BarChart3 className="size-4" /> Voir les
+                                  statistiques
+                                </Link>
+                              </DropdownMenuItem>
+                              {(c.status === "running" ||
+                                c.status === "paused") && (
+                                <DropdownMenuItem
+                                  onSelect={() => handleRefresh(c.id)}
+                                >
+                                  <RefreshCw className="size-4" /> Actualiser
+                                  les contacts
+                                </DropdownMenuItem>
+                              )}
+                              {c.status === "running" && (
+                                <DropdownMenuItem
+                                  onSelect={() => handlePause(c.id)}
+                                >
+                                  <Pause className="size-4" /> Mettre en pause
+                                </DropdownMenuItem>
+                              )}
+                              {c.status === "paused" && (
+                                <DropdownMenuItem onSelect={() => openWaves(c)}>
+                                  <Layers className="size-4" /> Voir les envois
+                                </DropdownMenuItem>
+                              )}
+                              {c.status !== "running" && (
+                                <>
+                                  <DropdownMenuSeparator />
+                                  <DropdownMenuItem
+                                    variant="destructive"
+                                    onSelect={() => setDeleteTarget(c)}
+                                  >
+                                    <Trash2 className="size-4" /> Supprimer
+                                  </DropdownMenuItem>
+                                </>
+                              )}
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })
+              )}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
+
+      {campaigns.some((c) => c.status === "running") && (
+        <details className="text-muted-foreground rounded-xl border px-4 py-3 text-sm">
+          <summary className="cursor-pointer font-medium">
+            Action avancée
+          </summary>
+          <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
+            <p className="max-w-xl text-xs">
+              Déclenche immédiatement le traitement des envois arrivés à
+              échéance pour toutes les campagnes en cours.
+            </p>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleRunNow}
+              disabled={running}
+            >
+              {running ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <Send className="size-4" />
+              )}{" "}
+              Traiter les envois dus
+            </Button>
+          </div>
+        </details>
+      )}
+
+      {/* Dialog : Créer */}
+      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+        <DialogContent className="max-h-[90dvh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Nouvelle campagne</DialogTitle>
+            <DialogDescription>
+              Les contacts seront chargés à la création. Vous choisirez ensuite
+              quand programmer les envois.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="campaign-name">Nom</Label>
+              <Input
+                id="campaign-name"
+                placeholder="Ex : Prospection RH — Juin 2026"
+                value={formName}
+                onChange={(e) => setFormName(e.target.value)}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="campaign-sequence">Séquence</Label>
+              {sequences.length === 0 && (
+                <Button
+                  variant="link"
+                  className="h-auto p-0"
+                  onClick={() => {
+                    setCreateOpen(false);
+                    onPrepare("sequences");
+                  }}
+                >
+                  Créer d’abord une séquence
+                </Button>
+              )}
+              <Select value={formSequenceId} onValueChange={setFormSequenceId}>
+                <SelectTrigger id="campaign-sequence">
+                  <SelectValue placeholder="Choisir une séquence" />
+                </SelectTrigger>
+                <SelectContent>
+                  {sequences.map((s) => (
+                    <SelectItem key={s.id} value={s.id}>
+                      {s.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>Listes de contacts</Label>
+              <div className="max-h-60 space-y-2 overflow-y-auto">
+                {brevoLists.map((list) => (
+                  <label
+                    key={list.id}
+                    className="hover:bg-muted/50 flex cursor-pointer items-center gap-2 rounded-lg border p-3 transition-colors"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={formListIds.includes(list.id)}
+                      onChange={() => toggleList(list.id)}
+                      className="rounded"
+                    />
+                    <span className="flex-1 text-sm">{list.name}</span>
+                    <span className="text-muted-foreground text-xs">
+                      {list.total_subscribers} contacts
+                    </span>
+                  </label>
+                ))}
+                {brevoLists.length === 0 && (
+                  <p className="text-muted-foreground text-sm">
+                    Aucune liste trouvée dans Brevo
+                  </p>
+                )}
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCreateOpen(false)}>
+              Annuler
+            </Button>
+            <Button
+              onClick={handleCreate}
+              disabled={
+                saving ||
+                !formName.trim() ||
+                !formSequenceId ||
+                formListIds.length === 0
+              }
+            >
+              {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Créer
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialog : Vagues d'envoi */}
+      <Dialog
+        open={wavesTarget !== null}
+        onOpenChange={(open) => {
+          if (!open) {
+            setWavesTarget(null);
+            setWaves(null);
+          }
+        }}
+      >
+        <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Envois — {wavesTarget?.name}</DialogTitle>
+            <DialogDescription>
+              {waves
+                ? `${waves.pending_count} contact(s) en attente sur ${waves.total_recipients}. Maximum ${waves.wave_max_size} par envoi, ${waves.daily_limit}/jour (limite Brevo).`
+                : "Chargement…"}
+            </DialogDescription>
+          </DialogHeader>
+          {loadingWaves ? (
+            <div className="flex justify-center py-8">
+              <Loader2 className="text-muted-foreground h-6 w-6 animate-spin" />
+            </div>
+          ) : waves ? (
+            <div className="space-y-5">
+              {/* Bloc 1 : programmer un envoi */}
+              {wavesTarget?.status === "running" && waves.pending_count > 0 && (
+                <div className="space-y-3 rounded-lg border p-3">
+                  <p className="text-sm font-medium">Programmer un envoi</p>
+                  <div className="flex flex-wrap items-end gap-3">
+                    <div className="space-y-1">
+                      <Label htmlFor="wave-count" className="text-xs">
+                        Combien de contacts
+                      </Label>
+                      <Input
+                        id="wave-count"
+                        type="number"
+                        min={1}
+                        max={Math.min(waves.wave_max_size, waves.pending_count)}
+                        value={waveCount}
+                        onChange={(e) => setWaveCount(Number(e.target.value))}
+                        className="w-24"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label htmlFor="wave-date" className="text-xs">
+                        Quand (date et heure)
+                      </Label>
+                      <Input
+                        id="wave-date"
+                        type="datetime-local"
+                        value={waveDate}
+                        min={minDateTime()}
+                        onChange={(e) => setWaveDate(e.target.value)}
+                        className="w-56"
+                      />
+                    </div>
+                    <Button
+                      onClick={handleScheduleWave}
+                      disabled={schedulingWave || !waveDate || waveCount < 1}
+                    >
+                      {schedulingWave && (
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      )}
+                      Programmer cet envoi
+                    </Button>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowPreview((v) => !v)}
+                    className="text-primary text-xs underline-offset-2 hover:underline"
+                  >
+                    {showPreview ? "Masquer" : "Voir"} les{" "}
+                    {Math.min(waveCount, previewContacts.length)} contacts qui
+                    partiront
+                  </button>
+                  {showPreview && (
+                    <div className="bg-muted/30 max-h-40 space-y-0.5 overflow-auto rounded border p-2 text-xs">
+                      {previewContacts.length === 0 ? (
+                        <div className="text-muted-foreground">
+                          Aucun contact en attente.
+                        </div>
+                      ) : (
+                        previewContacts.slice(0, waveCount).map((c, i) => (
+                          <div key={i} className="text-muted-foreground">
+                            {contactLabel(c)}
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+              {wavesTarget?.status === "running" &&
+                waves.pending_count === 0 && (
+                  <p className="text-muted-foreground text-sm">
+                    Tous les contacts ont été répartis en envois.
+                  </p>
+                )}
+              {wavesTarget?.status === "paused" && (
+                <p className="text-muted-foreground text-sm">
+                  Campagne en pause. Reprenez-la pour programmer de nouveaux
+                  envois.
+                </p>
+              )}
+
+              {/* Bloc 2 : envois programmés / faits */}
+              {waves.waves.length === 0 ? (
+                <p className="text-muted-foreground text-sm">
+                  Aucun envoi programmé pour l&apos;instant.
+                </p>
+              ) : (
+                <div className="space-y-2">
+                  <p className="text-muted-foreground text-xs font-medium">
+                    Envois programmés / faits
+                  </p>
+                  {waves.waves.map((w) => {
+                    const badge = WAVE_STATUS[w.status] ?? {
+                      label: w.status,
+                      variant: "outline" as const,
+                    };
+                    const expanded = expandedWaveId === w.id;
+                    return (
+                      <div key={w.id} className="rounded-lg border">
+                        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 p-2.5 text-sm">
+                          <span className="font-medium">Envoi {w.number}</span>
+                          <span className="text-muted-foreground">
+                            · {w.recipient_count} contacts
+                          </span>
+                          <span className="text-muted-foreground">
+                            · {fmtDateTime(w.scheduled_at)}
+                          </span>
+                          <Badge variant={badge.variant} className="ml-1">
+                            {badge.label}
+                          </Badge>
+                          <div className="ml-auto flex items-center gap-1">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-7 text-xs"
+                              onClick={() => toggleWaveContacts(w.id)}
+                            >
+                              {expanded ? "Masquer" : "Voir la liste"}
+                            </Button>
+                            {w.status === "scheduled" && (
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-7 w-7"
+                                onClick={() => handleCancelWave(w.id)}
+                                title="Annuler cet envoi"
+                              >
+                                <X className="text-destructive h-4 w-4" />
+                              </Button>
+                            )}
+                          </div>
+                        </div>
+                        {expanded && (
+                          <div className="bg-muted/30 max-h-40 space-y-0.5 overflow-auto border-t p-2 text-xs">
+                            {loadingWaveContacts ? (
+                              <div className="flex justify-center py-2">
+                                <Loader2 className="text-muted-foreground h-4 w-4 animate-spin" />
+                              </div>
+                            ) : (
+                              waveContacts.map((c, i) => (
+                                <div
+                                  key={i}
+                                  className="flex flex-wrap items-center justify-between gap-x-3 gap-y-0.5 py-0.5"
+                                >
+                                  <span className="text-muted-foreground">
+                                    {contactLabel(c)}
+                                  </span>
+                                  <span>{contactStatus(c)}</span>
+                                </div>
+                              ))
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          ) : null}
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialog : Supprimer */}
+      <Dialog
+        open={deleteTarget !== null}
+        onOpenChange={(open) => {
+          if (!open) setDeleteTarget(null);
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Supprimer cette campagne ?</DialogTitle>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteTarget(null)}>
+              Annuler
+            </Button>
+            <Button variant="destructive" onClick={handleDelete}>
+              Supprimer
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}

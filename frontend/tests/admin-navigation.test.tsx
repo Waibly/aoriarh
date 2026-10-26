@@ -82,3 +82,19 @@ test("masking an alert never presents the incident as resolved", () => {
   fireEvent.click(screen.getByRole("button", { name: "Réafficher" }));
   expect(screen.getByText("Synchronisation interrompue")).toBeInTheDocument();
 });
+
+test("groups all emailing views under one acquisition entry", () => {
+  mockPathname = "/admin/emailing/stats";
+  render(<AdminSidebar />);
+  expect(screen.getByRole("link", { name: "Emailing" })).toHaveAttribute(
+    "aria-current",
+    "page"
+  );
+  expect(screen.getByRole("link", { name: "Emailing" })).toHaveAttribute(
+    "href",
+    "/admin/emailing"
+  );
+  for (const name of ["Campagnes", "Séquences", "Templates", "Listes Brevo"]) {
+    expect(screen.queryByRole("link", { name })).not.toBeInTheDocument();
+  }
+});
