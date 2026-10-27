@@ -12,7 +12,7 @@ from pydantic import ValidationError
 from app.models.document import Document
 from app.rag.agent import RAGAgent
 from app.rag.chronology import ChronologyRequest
-from app.rag.legal_catalogue import LegalCatalogueSearch, catalogue_page
+from app.rag.legal_catalogue import TOPIC_DOCUMENT_BUDGET, LegalCatalogueSearch, catalogue_page
 from app.rag.parent_expansion import RetrievalError
 from app.rag.search import HybridSearch, SearchResult
 from app.rag.search_plan import (
@@ -21,6 +21,7 @@ from app.rag.search_plan import (
 )
 from app.services.conversation_requests import RequestLegalSearch, request_schema
 from app.services.jorf_service import JorfService
+from app.services.jurisprudence_publication import BULLETIN, BULLETIN_RAPPORT, RAPPORT
 from tests.conftest import test_session_factory
 
 
@@ -144,6 +145,79 @@ async def test_decision_filters_jurisdiction_chamber_and_uses_decision_date():
     assert rows == []
 
 
+@pytest.mark.parametrize(
+    "publication, expected",
+    [
+        ("rapport", [BULLETIN_RAPPORT, RAPPORT]),
+        ("bulletin", [BULLETIN, BULLETIN_RAPPORT]),
+        (None, [BULLETIN, BULLETIN_RAPPORT, RAPPORT, "Inédit", None, "P+B+R+I"]),
+    ],
+)
+async def test_official_publication_filter_uses_exact_cassation_metadata(publication, expected):
+    labels = [BULLETIN, BULLETIN_RAPPORT, RAPPORT, "Inédit", None, "P+B+R+I"]
+    await insert(
+        *[
+            document(
+                str(i),
+                source_type="arret_cour_cassation",
+                publication=label,
+                date_decision=date(2025, 12, 20 - i),
+            )
+            for i, label in enumerate(labels)
+        ]
+    )
+    rows, report = await page(
+        spec(
+            date_kind="decision",
+            source_types=["arret_cour_cassation"],
+            publication=publication,
+            limit=10,
+        )
+    )
+    assert [doc.publication for doc, _ in rows] == expected
+    assert report["matching_dated_documents"] == len(expected)
+    assert report["request"]["publication"] == publication
+
+
+async def test_publication_filter_precedes_pagination_and_preserves_access_constraints():
+    common = dict(source_type="arret_cour_cassation", publication=RAPPORT)
+    await insert(
+        document("first", **common, date_decision=date(2025, 9, 10)),
+        document("second", **common, date_decision=date(2025, 3, 19)),
+        document("unknown-date", **common),
+        document("unknown-publication", source_type="arret_cour_cassation"),
+        document(
+            "bulletin",
+            source_type="arret_cour_cassation",
+            publication=BULLETIN,
+            date_decision=date(2025, 12, 17),
+        ),
+        document(
+            "private", **common, date_decision=date(2025, 12, 17), organisation_id=uuid.uuid4()
+        ),
+        document(
+            "pending",
+            **{**common, "indexation_status": "pending"},
+            date_decision=date(2025, 12, 17),
+        ),
+        document(
+            "other-court",
+            source_type="arret_cour_appel",
+            publication=RAPPORT,
+            date_decision=date(2025, 12, 17),
+        ),
+    )
+    request = spec(date_kind="decision", source_types=[], publication="rapport", limit=1)
+    rows, report = await page(request)
+    assert [doc.name for doc, _ in rows] == ["first"]
+    assert report["matching_dated_documents"] == 2
+    assert report["documents_with_unknown_date"] == 1
+    assert report["catalogue_has_more"] is True
+    rows, report = await page(request.model_copy(update={"offset": 1}))
+    assert [doc.name for doc, _ in rows] == ["second"]
+    assert report["catalogue_has_more"] is False
+
+
 async def test_future_effective_dates_are_distinct_from_publication_and_update():
     upcoming = document(
         "upcoming", publication_date=date(2026, 8, 1), effective_date=date(2026, 10, 1)
@@ -170,6 +244,8 @@ def test_invalid_operation_is_rejected_without_repair():
         spec(date_from=date(2026, 9, 2), date_to=date(2026, 9, 1), period_basis="explicit")
     with pytest.raises(ValidationError):
         spec(source_types=["contrat_travail"])
+    with pytest.raises(ValidationError):
+        spec(publication="rapporteur public")
 
 
 def test_journal_publication_does_not_use_signature_date():
@@ -193,8 +269,9 @@ def payload(chronology):
     }
 
 
-def test_chronology_survives_typed_request_and_plan_compilation():
-    query = spec().model_dump(mode="json")
+@pytest.mark.parametrize("publication", [None, "rapport", "bulletin"])
+def test_chronology_survives_typed_request_and_plan_compilation(publication):
+    query = spec(publication=publication).model_dump(mode="json")
     wire = payload(query)
     arguments = RequestLegalSearch.model_validate_json(
         json.dumps({k: v for k, v in wire.items() if k != "standalone_question"})
@@ -211,6 +288,8 @@ def test_chronology_survives_typed_request_and_plan_compilation():
     assert plan.chronology["date_from"] is None
     schema = request_schema(1)
     assert "chronology" in schema["$defs"]["RequestLegalSearch"]["required"]
+    assert "publication" in schema["$defs"]["ChronologyRequest"]["required"]
+    assert "default" not in schema["$defs"]["ChronologyRequest"]["properties"]["publication"]
 
 
 def engine_for(documents):
@@ -284,6 +363,69 @@ async def test_topic_search_is_constrained_before_retrieval_and_final_order_is_c
     assert engine.search.await_args.kwargs["document_ids"] == [str(new.id), str(old.id)]
     assert [r.document_id for r in results] == [str(new.id), str(old.id)]
     assert report["topic_selection_is_exhaustive"] is False
+
+
+async def test_report_decisions_reach_topic_search_beyond_newer_candidate_budget():
+    # Reproduce the production failure: qualifying R/B/R decisions are older
+    # than the entire bounded pool of newer B or unpublished decisions.
+    targets = [
+        document(
+            "both",
+            publication=BULLETIN_RAPPORT,
+            date_decision=date(2025, 9, 10),
+            source_type="arret_cour_cassation",
+        ),
+        document(
+            "report",
+            publication=RAPPORT,
+            date_decision=date(2025, 3, 19),
+            source_type="arret_cour_cassation",
+        ),
+    ]
+    await insert(
+        *targets,
+        *[
+            document(
+                f"newer-{i}",
+                source_type="arret_cour_cassation",
+                publication=BULLETIN if i % 2 else "Inédit",
+                date_decision=date(2025, 12, 17),
+            )
+            for i in range(TOPIC_DOCUMENT_BUDGET + 1)
+        ],
+    )
+    candidates = [
+        SearchResult(doc.name, doc.name, str(doc.id), doc.source_type, 4, 1, 0, 0.5)
+        for doc in targets
+    ]
+    engine = engine_for(targets)
+    engine.search.return_value = candidates
+    service = LegalCatalogueSearch(
+        engine,
+        SimpleNamespace(rerank=AsyncMock(return_value=candidates)),
+        session_factory=test_session_factory,
+    )
+    results, report = await service.search(
+        spec(
+            date_kind="decision",
+            date_from=date(2025, 1, 1),
+            date_to=date(2025, 12, 31),
+            period_basis="explicit",
+            source_types=["arret_cour_cassation"],
+            publication="rapport",
+            topic="droit du travail",
+            limit=10,
+        ),
+        str(uuid.uuid4()),
+    )
+    assert engine.search.await_args.kwargs["document_ids"] == [str(d.id) for d in targets]
+    assert [r.document_id for r in results] == [str(d.id) for d in targets]
+    # SQL metadata remains authoritative even if the source payload omits it.
+    assert [r.publication for r in results] == [BULLETIN_RAPPORT, RAPPORT]
+    assert [d["publication"] for d in report["selected_documents"]] == [BULLETIN_RAPPORT, RAPPORT]
+    assert report["matching_dated_documents"] == 2
+    assert report["topic_candidates_truncated"] is False
+    assert report["next_offset"] is None
 
 
 async def test_missing_source_text_is_a_technical_error_not_an_empty_catalogue():

@@ -42,6 +42,15 @@ class ChronologyRequest(BaseModel):
             "par exemple sociale ou criminelle ; sinon null."
         ),
     )
+    publication: Literal["bulletin", "rapport"] | None = Field(
+        default=None,
+        description=(
+            "Sélection officielle des arrêts de la Cour de cassation : rapport exige "
+            "la mention R ou B/R ; bulletin exige B ou B/R. Bulletin seul ne signifie "
+            "pas Rapport. Null sans critère de publication demandé ou hérité. "
+            "Ce statut est distinct de date_kind=publication."
+        ),
+    )
     topic: str | None = Field(
         max_length=1000,
         description=(
@@ -105,9 +114,20 @@ chronology contient :
 - chamber : chambre explicitement demandée ou conservée depuis l'historique, sinon null.
   « chambre sociale » donne chamber="sociale". Une veille RH générale ne se limite pas
   automatiquement à cette chambre : d'autres juridictions peuvent traiter de questions RH.
+- publication : critère officiel de sélection des arrêts de la Cour de cassation.
+  « publiés au Rapport », « Rapport annuel » ou « R » donne publication="rapport" :
+  seules les mentions R et B/R correspondent. « publiés au Bulletin » ou « B » donne
+  publication="bulletin" : les mentions B et B/R correspondent. Sinon null.
+  Conserve ce filtre à la page suivante.
+  N'élargis jamais « Rapport » en « Bulletin ou Rapport », ni dans le filtre ni dans
+  la reformulation ou les requêtes. Un rapporteur ou un rapporteur public n'est pas
+  un statut de publication. Pour « liste les arrêts 2025 publiés au rapport », utilise
+  publication="rapport", date_kind="decision", date_from="2025-01-01",
+  date_to="2025-12-31" et source_types=["arret_cour_cassation"]. Le statut de publication
+  ne transforme pas l'année de décision en date de publication.
 - topic : sujet concret demandé, ou null pour une liste chronologique d'une chambre précise
-  sans thème particulier, ou explicitement toutes matières. « décrets », « jurisprudence », « arrêts »
-  et « décisions » sont des types de sources, pas des thèmes de recherche.
+  sans thème particulier, ou explicitement toutes matières. « décrets », « jurisprudence »,
+  « arrêts » et « décisions » sont des types de sources, pas des thèmes de recherche.
   Pour une veille générale AORIA RH sans autre périmètre explicite ou hérité, utilise
   topic="droit du travail, relations employeur-salarié et protection sociale" et conserve
   ce périmètre RH dans la question de recherche, y compris si seule la Cour de cassation

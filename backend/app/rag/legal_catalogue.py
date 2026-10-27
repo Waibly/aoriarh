@@ -20,6 +20,7 @@ from app.models.sync_log import SyncLog
 from app.rag.chronology import ChronologyRequest, ChronologySource
 from app.rag.parent_expansion import RetrievalError, _payload_to_result
 from app.rag.qdrant_store import COLLECTION_NAME
+from app.services.jurisprudence_publication import BULLETIN, BULLETIN_RAPPORT, RAPPORT
 
 TOPIC_DOCUMENT_BUDGET = 500
 TOPIC_PASSAGE_BUDGET = 80
@@ -77,6 +78,19 @@ async def catalogue_page(
         Document.indexation_status == "indexed",
         Document.source_type.in_(allowed_types),
     ]
+    if spec.publication is not None:
+        labels = {
+            "rapport": (RAPPORT, BULLETIN_RAPPORT),
+            "bulletin": (BULLETIN, BULLETIN_RAPPORT),
+        }[spec.publication]
+        # Official metadata constraints must precede counts, candidate budgets
+        # and pagination. Never infer R from a historical sigle or decision text.
+        filters.extend(
+            [
+                Document.source_type == "arret_cour_cassation",
+                Document.publication.in_(labels),
+            ]
+        )
     for column, value in (
         (Document.juridiction, spec.jurisdiction),
         (Document.chambre, spec.chamber),
@@ -223,12 +237,14 @@ class LegalCatalogueSearch:
                         "date": when.isoformat(),
                         "date_kind": kind,
                         "source_url": doc.source_url,
+                        "publication": doc.publication,
                         "partial_read": partial,
                     }
                 )
                 results.append(
                     replace(
                         passage,
+                        publication=doc.publication,
                         publication_date=doc.publication_date.isoformat()
                         if doc.publication_date
                         else None,
