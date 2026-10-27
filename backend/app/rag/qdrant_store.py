@@ -30,7 +30,9 @@ def _create_client() -> QdrantClient:
         host=settings.qdrant_host,
         port=settings.qdrant_port,
         api_key=settings.qdrant_api_key or None,
-        timeout=10,
+        # A cold corpus search can complete after 10 seconds. Keep transport
+        # bounded below the 60-second RAG step deadline without retrying it.
+        timeout=30,
         check_compatibility=False,
     )
 
