@@ -59,12 +59,14 @@ export function ChatInput({
   onAttachmentScopeChange,
 }: ChatInputProps) {
   const [value, setValue] = useState("");
+  const [prefillUndo, setPrefillUndo] = useState<string | null>(null);
   useEffect(() => {
     if (draftKey)
       setValue(sessionStorage.getItem(`chat-draft:${draftKey}`) || "");
   }, [draftKey]);
   const [menuOpen, setMenuOpen] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const focusAtEnd = useRef(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const limitReached = attachments.length >= 3;
   const attachmentStates = effectiveAttachments(attachments);
@@ -72,10 +74,15 @@ export function ChatInput({
   useImperativeHandle(ref, () => ({
     prefill(text) {
       if (disabled) return;
-      // Suggestions are editable input. Keep any text already written.
-      const next = value ? `${value}\n\n${text}` : text;
-      setValue(next);
-      if (draftKey) sessionStorage.setItem(`chat-draft:${draftKey}`, next);
+      if (text === value) {
+        textareaRef.current?.focus();
+        return;
+      }
+      // Choose one request at a time; the previous draft remains recoverable.
+      setPrefillUndo(value);
+      setValue(text);
+      focusAtEnd.current = true;
+      if (draftKey) sessionStorage.setItem(`chat-draft:${draftKey}`, text);
       textareaRef.current?.focus();
     },
     openAttachments() {
@@ -88,6 +95,11 @@ export function ChatInput({
     if (!textarea) return;
     textarea.style.height = "auto";
     textarea.style.height = `${Math.min(textarea.scrollHeight, 200)}px`;
+    if (focusAtEnd.current) {
+      textarea.focus();
+      textarea.setSelectionRange(value.length, value.length);
+      focusAtEnd.current = false;
+    }
   }, [value]);
 
   const handleSend = useCallback(async () => {
@@ -95,6 +107,7 @@ export function ChatInput({
     if (!trimmed || disabled) return;
     if ((await onSend(trimmed)) === false) return;
     setValue("");
+    setPrefillUndo(null);
     if (draftKey) sessionStorage.removeItem(`chat-draft:${draftKey}`);
     if (textareaRef.current) textareaRef.current.style.height = "auto";
     textareaRef.current?.focus();
@@ -171,6 +184,7 @@ export function ChatInput({
             }
             onChange={(event) => {
               setValue(event.target.value);
+              setPrefillUndo(null);
               if (draftKey)
                 sessionStorage.setItem(
                   `chat-draft:${draftKey}`,
@@ -338,6 +352,24 @@ export function ChatInput({
                 <span className="text-muted-foreground text-xs">
                   {attachments.length}/3 pièces
                 </span>
+              )}
+              {prefillUndo !== null && (
+                <button
+                  type="button"
+                  disabled={disabled}
+                  aria-label="Annuler le remplacement de la demande"
+                  title="Retrouver le texte précédent"
+                  className="text-muted-foreground hover:text-primary focus-visible:outline-ring min-h-8 rounded px-2 text-xs focus-visible:outline-2 disabled:opacity-50"
+                  onClick={() => {
+                    setValue(prefillUndo);
+                    if (draftKey) sessionStorage.setItem(`chat-draft:${draftKey}`, prefillUndo);
+                    setPrefillUndo(null);
+                    focusAtEnd.current = true;
+                    textareaRef.current?.focus();
+                  }}
+                >
+                  Annuler
+                </button>
               )}
               {disabled && !onStop && (
                 <span

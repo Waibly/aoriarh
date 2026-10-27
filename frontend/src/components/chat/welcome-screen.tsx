@@ -1,17 +1,9 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import Link from "next/link";
-import {
-  BookOpen,
-  FileSearch,
-  Lightbulb,
-  ListChecks,
-  MoveRight,
-  PencilLine,
-  X,
-} from "lucide-react";
+import { useMemo, useRef, useState } from "react";
+import { BookOpen, FileSearch, ListChecks, PencilLine } from "lucide-react";
 import { ChatWelcomeLayout, ChatWelcomeHeading } from "./chat-welcome-layout";
+import { DiscoveryIdeas } from "./discovery-ideas";
 import {
   ChatInput,
   type ChatInputHandle,
@@ -42,9 +34,8 @@ const CATEGORY_ICONS = {
   write: PencilLine,
   prepare: ListChecks,
 };
-const TIPS_HIDDEN_KEY = "aoriarh.welcome.tips-hidden";
 const quietButton =
-  "text-muted-foreground hover:text-primary focus-visible:outline-ring rounded-md text-xs transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 disabled:cursor-not-allowed disabled:opacity-50";
+  "text-muted-foreground hover:text-primary focus-visible:outline-ring min-h-9 rounded px-2 text-xs transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 disabled:cursor-not-allowed disabled:opacity-50";
 
 export function WelcomeScreen(inputProps: ChatInputProps) {
   const { profilMetier } = useOrg();
@@ -52,42 +43,22 @@ export function WelcomeScreen(inputProps: ChatInputProps) {
   const pendingSelection = useRef<ChatSuggestion | null>(null);
   const [examplesOpen, setExamplesOpen] = useState(false);
   const [category, setCategory] = useState<DiscoveryCategory | "all">("all");
-  const [tipsHidden, setTipsHidden] = useState(false);
-  const [tipId, setTipId] = useState<string | null>(null);
   const canUseDocuments = Boolean(inputProps.onAttach || inputProps.onBrowse);
+  const canBrowse = Boolean(inputProps.onBrowse);
   const hasDocuments = Boolean(inputProps.attachments?.length);
   const { featured, library } = getChatSuggestions(
     profilMetier,
     canUseDocuments
   );
-  const tips = DISCOVERY_TIPS.filter(
-    (tip) =>
-      (!tip.needsDocuments || canUseDocuments) &&
-      (tip.action?.kind !== "browse" || Boolean(inputProps.onBrowse))
+  const tips = useMemo(
+    () =>
+      DISCOVERY_TIPS.filter(
+        (tip) =>
+          (!tip.needsDocuments || canUseDocuments) &&
+          (tip.action?.kind !== "browse" || canBrowse)
+      ),
+    [canUseDocuments, canBrowse]
   );
-  const tip =
-    tips.find((item) => item.id === tipId) ??
-    tips.find(
-      (item) => item.id === (hasDocuments ? "comparison" : "documents")
-    ) ??
-    tips[0];
-
-  useEffect(() => {
-    try {
-      setTipsHidden(localStorage.getItem(TIPS_HIDDEN_KEY) === "true");
-    } catch {
-      /* Storage is optional. */
-    }
-  }, []);
-
-  function hideTips(hidden: boolean) {
-    setTipsHidden(hidden);
-    try {
-      localStorage.setItem(TIPS_HIDDEN_KEY, String(hidden));
-    } catch {
-      /* Keep the session preference. */
-    }
-  }
 
   function prepareSuggestion(suggestion: ChatSuggestion) {
     if (inputProps.disabled) return;
@@ -107,42 +78,9 @@ export function WelcomeScreen(inputProps: ChatInputProps) {
     if (action.kind === "browse") inputProps.onBrowse?.();
   }
 
-  function tipAction(selected: DiscoveryTip) {
-    const action = selected.action;
-    if (!action) return null;
-    if (action.kind === "link" && !inputProps.disabled) {
-      return (
-        <Link
-          href={action.href}
-          className={cn(
-            quietButton,
-            "text-primary inline-flex min-h-8 items-center gap-1.5 font-medium"
-          )}
-        >
-          {action.label}
-          <MoveRight aria-hidden="true" className="size-3" />
-        </Link>
-      );
-    }
-    return (
-      <button
-        type="button"
-        disabled={inputProps.disabled}
-        onClick={() => handleTipAction(selected)}
-        className={cn(
-          quietButton,
-          "text-primary min-h-8 text-left font-medium"
-        )}
-      >
-        {action.label}
-      </button>
-    );
-  }
-
   return (
     <ChatWelcomeLayout compact>
       <ChatWelcomeHeading
-        compact
         badge="Aoria RH · Votre assistant juridique"
         title="Une question en droit social ?"
         description={
@@ -155,37 +93,18 @@ export function WelcomeScreen(inputProps: ChatInputProps) {
         }
       />
       <ChatInput {...inputProps} ref={inputRef} variant="welcome" />
-      <div className="mt-3">
-        <p id="welcome-suggestions-label" className="sr-only">
-          Des idées pour votre quotidien
-        </p>
-        <div
-          role="group"
-          aria-labelledby="welcome-suggestions-label"
-          className="grid grid-cols-2 gap-2"
-        >
-          {featured.map((item) => {
-            const Icon = CATEGORY_ICONS[item.category];
-            return (
-              <button
-                key={item.id}
-                type="button"
-                disabled={inputProps.disabled}
-                onClick={() => prepareSuggestion(item)}
-                className="bg-primary/5 hover:border-primary/20 hover:bg-primary/10 focus-visible:outline-ring flex min-h-12 items-start gap-2 rounded-xl border border-transparent px-3 py-2.5 text-left transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 disabled:cursor-not-allowed disabled:opacity-50 sm:items-center sm:gap-2.5"
-              >
-                <Icon
-                  aria-hidden="true"
-                  className="text-primary mt-0.5 size-4 shrink-0 sm:mt-0"
-                />
-                <span className="min-w-0 text-xs leading-5 sm:text-sm">
-                  {item.title}
-                </span>
-              </button>
-            );
-          })}
-        </div>
-        <div className="mt-1 flex items-center justify-end">
+      <DiscoveryIdeas
+        tips={tips}
+        initialTipId={hasDocuments ? "comparison" : "documents"}
+        disabled={inputProps.disabled}
+        suspended={examplesOpen}
+        onAction={handleTipAction}
+      />
+      <div className="mt-7">
+        <div className="mb-4 flex items-center justify-between gap-4">
+          <p id="welcome-suggestions-label" className="text-sm font-medium">
+            Des idées pour votre quotidien
+          </p>
           <Dialog open={examplesOpen} onOpenChange={setExamplesOpen}>
             <DialogTrigger asChild>
               <button
@@ -293,65 +212,41 @@ export function WelcomeScreen(inputProps: ChatInputProps) {
             </DialogContent>
           </Dialog>
         </div>
-        {tipsHidden ? (
-          <div className="mt-2 text-right">
-            <button
-              type="button"
-              onClick={() => hideTips(false)}
-              className={cn(quietButton, "min-h-8")}
-            >
-              Afficher un conseil
-            </button>
-          </div>
-        ) : (
-          tip && (
-            <aside
-              aria-label="Conseil d’utilisation"
-              className="border-border/60 mt-4 flex items-start gap-2.5 border-t pt-3"
-            >
-              <Lightbulb
-                aria-hidden="true"
-                className="text-primary/70 mt-0.5 size-4 shrink-0"
-              />
-              <div className="min-w-0 flex-1">
-                <div
-                  aria-live="polite"
-                  className="space-y-1 sm:flex sm:flex-wrap sm:items-baseline sm:space-y-0 sm:gap-x-2"
-                >
-                  <p className="text-xs leading-relaxed font-medium">
-                    {tip.title}
-                  </p>
-                  <p className="text-muted-foreground text-xs leading-relaxed">
-                    {tip.description}
-                  </p>
-                </div>
-                <div className="mt-0.5 flex flex-wrap items-center gap-x-4">
-                  {tipAction(tip)}
-                  <button
-                    type="button"
-                    className={cn(quietButton, "min-h-8")}
-                    onClick={() =>
-                      setTipId(tips[(tips.indexOf(tip) + 1) % tips.length].id)
-                    }
-                  >
-                    Autre conseil
-                  </button>
-                </div>
-              </div>
+        <div
+          role="group"
+          aria-labelledby="welcome-suggestions-label"
+          className="grid grid-cols-1 gap-4 sm:grid-cols-2"
+        >
+          {featured.map((item) => {
+            const Icon = CATEGORY_ICONS[item.category];
+            return (
               <button
+                key={item.id}
                 type="button"
-                aria-label="Masquer les conseils"
-                onClick={() => hideTips(true)}
-                className={cn(
-                  quietButton,
-                  "-mt-1 flex size-8 shrink-0 items-center justify-center"
-                )}
+                aria-label={item.title}
+                aria-describedby={"welcome-example-" + item.id}
+                disabled={inputProps.disabled}
+                onClick={() => prepareSuggestion(item)}
+                className="border-border/70 hover:border-primary/35 hover:bg-primary/[0.025] focus-visible:outline-ring bg-background/30 flex min-h-28 flex-col gap-3 rounded-2xl border p-4 text-left transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 disabled:cursor-not-allowed disabled:opacity-50 sm:p-5"
               >
-                <X aria-hidden="true" className="size-3.5" />
+                <span className="flex items-center gap-3">
+                  <span className="bg-primary/8 text-primary flex size-8 shrink-0 items-center justify-center rounded-lg">
+                    <Icon aria-hidden="true" className="size-4" />
+                  </span>
+                  <span className="text-sm leading-5 font-semibold">
+                    {item.title}
+                  </span>
+                </span>
+                <span
+                  id={"welcome-example-" + item.id}
+                  className="text-muted-foreground text-sm leading-6"
+                >
+                  {item.description}
+                </span>
               </button>
-            </aside>
-          )
-        )}
+            );
+          })}
+        </div>
       </div>
     </ChatWelcomeLayout>
   );
