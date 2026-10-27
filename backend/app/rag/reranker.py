@@ -65,7 +65,7 @@ def document_rerank_input(result: SearchResult) -> str:
 
 
 class VoyageReranker:
-    """Cross-encoder reranker using Voyage AI rerank-2."""
+    """Cross-encoder reranker using the configured Voyage AI model."""
 
     async def rerank(
         self,

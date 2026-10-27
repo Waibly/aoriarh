@@ -45,6 +45,7 @@ PRICING: dict[tuple[str, str], tuple[float, float | None]] = {
     # Voyage AI — https://docs.voyageai.com/pricing/
     ("voyageai", "voyage-law-2"): (0.12, None),
     ("voyageai", "rerank-2"): (0.05, None),
+    ("voyageai", "rerank-3"): (0.05, None),
 }
 
 

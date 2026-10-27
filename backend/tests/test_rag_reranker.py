@@ -123,3 +123,4 @@ async def test_bounded_transport_retries_and_no_input_truncation(mode):
         assert client.post.await_count == (1 if mode == "success" else 3)
         assert sleep.await_count == (0 if mode == "success" else 2)
         assert client.post.call_args.kwargs["json"]["truncation"] is False
+        assert client.post.call_args.kwargs["json"]["model"] == "rerank-3"

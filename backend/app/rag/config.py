@@ -13,7 +13,7 @@ CHUNK_SIZE = 1024
 CHUNK_OVERLAP = 100
 
 TOP_K = 20
-RERANK_MODEL = "rerank-2"
+RERANK_MODEL = "rerank-3"
 
 # Legislation floor: number of "written-law" candidates pulled by the auxiliary
 # legislation-only retrieval and injected into the candidate pool, so codified
