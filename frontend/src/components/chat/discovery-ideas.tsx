@@ -2,7 +2,9 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { ArrowRight, Lightbulb, Pause, Play, X } from "lucide-react";
+import { Lightbulb, Pause, Play, X } from "lucide-react";
+import { DiscoveryNavigation } from "./discovery-navigation";
+import { useDiscoveryRotation } from "./use-discovery-rotation";
 import type { DiscoveryTip } from "@/lib/chat-discovery";
 
 const HIDDEN_KEY = "aoriarh.welcome.rotating-ideas-hidden";
@@ -15,22 +17,18 @@ export function DiscoveryIdeas({
   tips,
   initialTipId,
   disabled = false,
-  step,
-  paused,
-  onNext,
-  onTogglePause,
+  suspended = false,
   onAction,
 }: {
   tips: readonly DiscoveryTip[];
   initialTipId: string;
   disabled?: boolean;
-  step: number;
-  paused: boolean;
-  onNext: () => void;
-  onTogglePause: () => void;
+  suspended?: boolean;
   onAction: (tip: DiscoveryTip) => void;
 }) {
   const [hidden, setHidden] = useState(false);
+  const rotation = useDiscoveryRotation(disabled || suspended || hidden);
+  const { step, paused } = rotation;
   const firstIndex = Math.max(
     0,
     tips.findIndex((item) => item.id === initialTipId)
@@ -60,23 +58,14 @@ export function DiscoveryIdeas({
       <>
         <button
           type="button"
-          aria-label="Autre conseil"
-          title="Afficher les idées suivantes"
-          className={controlClass}
-          onClick={onNext}
-        >
-          <ArrowRight aria-hidden="true" className="size-4" />
-        </button>
-        <button
-          type="button"
           aria-label={
             paused
-              ? "Reprendre le défilement des idées"
-              : "Mettre en pause les idées"
+              ? "Reprendre le défilement des conseils"
+              : "Mettre en pause les conseils"
           }
           title={paused ? "Reprendre" : "Mettre en pause"}
           className={controlClass}
-          onClick={onTogglePause}
+          onClick={rotation.togglePause}
         >
           {paused ? (
             <Play aria-hidden="true" className="size-3.5" />
@@ -98,7 +87,6 @@ export function DiscoveryIdeas({
         >
           Afficher les idées
         </button>
-        <div className="flex gap-1">{playbackControls()}</div>
       </div>
     );
   if (!tip) return null;
@@ -107,8 +95,15 @@ export function DiscoveryIdeas({
   return (
     <aside
       aria-label="Idées et conseils"
-      className="mt-5 flex min-h-40 items-start gap-3 py-2 sm:min-h-20 sm:items-center"
+      className="relative mx-5 mt-5 flex items-start gap-3 py-2 sm:mx-0 sm:min-h-20 sm:items-center"
+      {...rotation.interactionProps}
     >
+      <DiscoveryNavigation
+        previousLabel="Afficher le conseil précédent"
+        nextLabel="Afficher le conseil suivant"
+        onPrevious={rotation.previous}
+        onNext={rotation.next}
+      />
       <Lightbulb
         aria-hidden="true"
         className="text-primary mt-1 size-4 shrink-0 sm:mt-0"
