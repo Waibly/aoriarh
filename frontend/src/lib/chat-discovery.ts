@@ -26,11 +26,11 @@ const PROFILE_SUGGESTIONS: Record<Profile, readonly ChatSuggestion[]> = {
     {
       id: "drh-rule",
       category: "understand",
-      title: "Faire évoluer les horaires",
+      title: "Modifier les horaires d’une équipe",
       description:
-        "Faut-il l’accord du salarié avant de modifier ses horaires ?",
+        "Faut-il l’accord des salariés pour appliquer les nouveaux horaires ?",
       prompt:
-        "Un changement d’horaires nécessite-t-il l’accord du salarié ? Aide-moi à identifier les règles applicables et les informations nécessaires pour examiner ma situation.",
+        "Nous voulons modifier les horaires d’une équipe. Faut-il l’accord des salariés ? Aide-moi à examiner le changement envisagé avec les contrats, les accords disponibles et la convention collective de cette entreprise. Précise les informations nécessaires avant de conclure.",
     },
     {
       id: "drh-document",
@@ -45,30 +45,29 @@ const PROFILE_SUGGESTIONS: Record<Profile, readonly ChatSuggestion[]> = {
     {
       id: "drh-writing",
       category: "write",
-      title: "Préparer une note à la direction",
+      title: "Expliquer le forfait jours à la direction",
       description:
-        "Comment présenter cette situation et les options à la direction ?",
+        "Quelles conditions présenter avant de retenir cette organisation ?",
       prompt:
-        "Aide-moi à préparer une note pour la direction sur une situation RH. Demande-moi les faits, le destinataire et l’objectif nécessaires, puis présente les règles pertinentes, les options à examiner et les informations manquantes.",
+        "La direction envisage de mettre en place des forfaits jours. Prépare une note sur les conditions à examiner dans cette entreprise, les salariés concernés et les obligations de suivi. Appuie-toi sur les textes et accords disponibles et demande-moi les éléments manquants.",
     },
     {
       id: "drh-steps",
       category: "prepare",
-      title: "Préparer une réunion RH",
-      description:
-        "Quelles questions préparer avant de discuter d’une réorganisation ?",
+      title: "Un salarié refuse une mobilité",
+      description: "Quelles options examiner avant de décider de la suite ?",
       prompt:
-        "Aide-moi à préparer une réunion sur un projet de réorganisation. Quelles informations réunir et quelles questions examiner au regard du projet et du contexte de l’entreprise ?",
+        "Un salarié refuse la mobilité que nous lui proposons. Aide-moi à examiner les options selon le changement envisagé, son contrat et les règles applicables. Demande-moi les faits utiles et précise les conditions et les conséquences de chaque démarche envisagée.",
     },
   ],
   charge_rh: [
     {
       id: "hr-rule",
       category: "understand",
-      title: "Répondre à une demande de congé",
-      description: "Quels congés prévoir pour un mariage ou une naissance ?",
+      title: "Renouveler une période d’essai",
+      description: "Est-ce possible pour ce salarié et à quelles conditions ?",
       prompt:
-        "Quels congés pour événement familial prévoient la loi et la convention collective de cette entreprise ? Demande-moi l’événement concerné et les informations utiles avant d’examiner la demande.",
+        "Peut-on renouveler la période d’essai de ce salarié ? Aide-moi à examiner les conditions et les délais à partir du contrat, de la convention collective et des dates utiles. Demande-moi les informations manquantes.",
     },
     {
       id: "hr-document",
@@ -82,10 +81,11 @@ const PROFILE_SUGGESTIONS: Record<Profile, readonly ChatSuggestion[]> = {
     {
       id: "hr-writing",
       category: "write",
-      title: "Rédiger une réponse au salarié",
-      description: "Comment répondre à une demande de télétravail ?",
+      title: "Répondre à une dispense de préavis",
+      description:
+        "Un salarié veut partir plus tôt après sa démission. Comment lui répondre ?",
       prompt:
-        "Aide-moi à préparer une réponse à une demande de télétravail. Demande-moi la demande reçue, le contexte et les dispositions disponibles avant de rédiger le projet de réponse.",
+        "Un salarié démissionnaire demande à être dispensé de tout ou partie de son préavis. Aide-moi à examiner les conséquences des options possibles, puis à préparer une réponse. Demande-moi les dates, la demande reçue et la position de l’entreprise avant de rédiger.",
     },
     {
       id: "hr-steps",
@@ -110,8 +110,8 @@ const PROFILE_SUGGESTIONS: Record<Profile, readonly ChatSuggestion[]> = {
     {
       id: "manager-document",
       category: "analyze",
-      title: "Comprendre une clause du contrat",
-      description: "Que prévoit la période d’essai dans ce contrat ?",
+      title: "Examiner la période d’essai du contrat",
+      description: "Que prévoit cette clause et quelles conditions examiner ?",
       prompt:
         "Explique-moi la clause de période d’essai du contrat que je joins. Distingue ce que prévoit la clause et les conditions légales ou conventionnelles à examiner.",
       needsDocuments: true,
@@ -128,89 +128,81 @@ const PROFILE_SUGGESTIONS: Record<Profile, readonly ChatSuggestion[]> = {
     {
       id: "manager-steps",
       category: "prepare",
-      title: "Préparer ma première embauche",
-      description:
-        "Quelles démarches préparer pour recruter mon premier salarié ?",
+      title: "Embaucher en CDD pour un surcroît d’activité",
+      description: "Ce recrutement est-il possible dans ma situation ?",
       prompt:
-        "Je prépare ma première embauche. Par quoi commencer ? Demande-moi les informations utiles et prépare une liste d’étapes adaptée à mon entreprise.",
+        "Je souhaite recruter en CDD pour faire face à un surcroît d’activité. Quelles conditions et quelles démarches examiner avant l’embauche ? Demande-moi la nature du besoin, la durée envisagée et les informations utiles à cette entreprise.",
     },
   ],
   elu_cse: [
     {
       id: "cse-rule",
       category: "understand",
-      title: "Comprendre les heures de délégation",
-      description:
-        "Comment utiliser mes heures de délégation dans le cadre de mon mandat ?",
+      title: "Mes heures de délégation sont refusées",
+      description: "L’employeur peut-il s’opposer à leur utilisation ?",
       prompt:
-        "Quelles règles encadrent l’utilisation des heures de délégation dans ma situation d’élu CSE ? Demande-moi mon mandat et les éléments nécessaires au contexte.",
+        "Mon employeur s’oppose à l’utilisation de mes heures de délégation. Quelles règles s’appliquent et quelles démarches envisager ? Demande-moi mon mandat, le motif donné par l’employeur et les circonstances avant d’examiner la situation.",
     },
     {
       id: "cse-document",
       category: "analyze",
-      title: "Examiner un projet transmis au CSE",
-      description:
-        "Que prévoit ce projet et quelles informations demander à la direction ?",
+      title: "La direction change les horaires",
+      description: "Le CSE doit-il être consulté sur ce projet ?",
       prompt:
-        "Résume le projet transmis au CSE que je joins. Présente les changements annoncés, les conséquences décrites pour les salariés et les informations à demander pour préparer son examen.",
+        "La direction prévoit de changer les horaires d’une équipe. À partir du projet que je joins, du contexte de l’entreprise et des accords disponibles, quelles obligations d’information ou de consultation du CSE faut-il examiner ? Précise les informations manquantes et les questions à poser.",
       needsDocuments: true,
     },
     {
       id: "cse-writing",
       category: "write",
-      title: "Préparer des questions à la direction",
+      title: "Des congés sont refusés à certains salariés",
       description:
-        "Comment formuler les questions des élus sur un projet de l’entreprise ?",
+        "Quelles questions adresser à la direction sur les critères appliqués ?",
       prompt:
-        "Aide-moi à rédiger des questions à adresser à la direction sur un projet concernant les salariés. Demande-moi le projet et les préoccupations à traiter du point de vue de mon mandat CSE.",
+        "Des salariés signalent des différences dans l’acceptation de leurs demandes de congés. Aide-moi à préparer des questions à la direction sur les critères appliqués et les règles pertinentes pour mon mandat CSE. Demande-moi les situations et les éléments disponibles avant de rédiger.",
     },
     {
       id: "cse-steps",
       category: "prepare",
-      title: "Préparer l’examen d’une réclamation",
-      description:
-        "Quels faits et éléments réunir pour examiner la demande d’un salarié ?",
+      title: "La charge de travail augmente",
+      description: "Comment préparer un échange après une réorganisation ?",
       prompt:
-        "En tant qu’élu CSE, comment préparer l’examen d’une réclamation d’un salarié ? Aide-moi à réunir les faits et à identifier les règles et les démarches pertinentes pour mon mandat.",
+        "Des salariés signalent une hausse de leur charge de travail après une réorganisation. En tant qu’élu CSE, quels faits et documents réunir, quelles prérogatives examiner et quelles questions préparer pour la direction ? Demande-moi les éléments utiles sur notre comité et la situation.",
     },
   ],
   juriste: [
     {
       id: "legal-rule",
       category: "understand",
-      title: "Approfondir une question juridique",
-      description:
-        "Quelles décisions distinguent modification du contrat et changement des conditions de travail ?",
+      title: "Passer d’un horaire de jour à un horaire de nuit",
+      description: "Quelle jurisprudence rechercher sur l’accord du salarié ?",
       prompt:
-        "Quelle jurisprudence rechercher pour distinguer modification du contrat de travail et changement des conditions de travail ? Présente les distinctions et les références disponibles, en précisant les faits nécessaires à leur application.",
+        "Quelle jurisprudence rechercher sur le passage d’un horaire de jour à un horaire de nuit et la nécessité de l’accord du salarié ? Présente les décisions disponibles, les faits qu’elles examinent et les éléments nécessaires pour les rapprocher de mon dossier.",
     },
     {
       id: "legal-document",
       category: "analyze",
-      title: "Articuler accord et convention",
-      description:
-        "Comment cet accord s’articule-t-il avec la convention collective ?",
+      title: "Examiner une clause de mobilité",
+      description: "Permet-elle le changement de lieu de travail envisagé ?",
       prompt:
-        "Analyse l’articulation entre l’accord d’entreprise que je joins et les dispositions conventionnelles pertinentes. Demande-moi le point à traiter si nécessaire et distingue les textes disponibles des informations manquantes.",
+        "Cette clause de mobilité permet-elle le changement de lieu de travail envisagé ? Examine le contrat que je joins et recherche les règles pertinentes. Demande-moi les lieux concernés et les circonstances, puis distingue la portée de la clause et ses conditions de mise en œuvre.",
       needsDocuments: true,
     },
     {
       id: "legal-writing",
       category: "write",
-      title: "Rédiger une note juridique",
-      description:
-        "Comment structurer les faits, les références et les points encore ouverts ?",
+      title: "Expliquer les conditions du forfait jours aux RH",
+      description: "Quels points examiner pour les salariés concernés ?",
       prompt:
-        "Aide-moi à préparer une note juridique à partir d’une situation. Demande-moi les faits et la question à traiter, puis présente les règles, les références disponibles, les nuances et les points encore ouverts.",
+        "Les RH souhaitent appliquer le forfait jours à certains salariés. Aide-moi à préparer une note sur les conditions d’éligibilité, les dispositions collectives et individuelles et les obligations de suivi à examiner. Demande-moi le contexte et les textes disponibles, puis présente les références et les points encore ouverts.",
     },
     {
       id: "legal-steps",
       category: "prepare",
-      title: "Reconstituer la chronologie",
-      description:
-        "Dans quel ordre les faits se sont-ils déroulés, d’après les pièces ?",
+      title: "Préparer un dossier de contestation d’un avertissement",
+      description: "Quels faits et quelles pièces éclairent le différend ?",
       prompt:
-        "À partir des pièces que je joins, reconstitue la chronologie de la situation. Attribue chaque fait à sa pièce et relève les contradictions ou informations manquantes sans les résoudre à ma place.",
+        "Un salarié conteste un avertissement. À partir des pièces que je joins, reconstitue la chronologie pour préparer l’examen du différend. Attribue chaque élément à sa pièce et distingue les faits rapportés, les positions des parties et les informations manquantes.",
       needsDocuments: true,
     },
   ],
@@ -227,41 +219,38 @@ const PROFILE_SUGGESTIONS: Record<Profile, readonly ChatSuggestion[]> = {
     {
       id: "consultant-document",
       category: "analyze",
-      title: "Comparer deux versions d’un accord",
-      description:
-        "Qu’est-ce qui change entre l’ancienne et la nouvelle version ?",
+      title: "Comparer deux versions d’un accord télétravail",
+      description: "Qu’est-ce qui change pour les salariés de mon client ?",
       prompt:
-        "Compare les deux versions de l’accord que je joins. Présente les changements dans un tableau avec les passages concernés et les questions à approfondir.",
+        "Compare les deux versions de l’accord télétravail que je joins pour mon client. Présente dans un tableau les changements sur l’accès au télétravail, son organisation et sa prise en charge, avec les passages concernés et les questions à approfondir.",
       needsDocuments: true,
     },
     {
       id: "consultant-writing",
       category: "write",
-      title: "Préparer une restitution client",
-      description:
-        "Comment présenter les constats et les options à discuter avec mon client ?",
+      title: "Mon client veut supprimer une prime",
+      description: "Peut-il le faire et quelles démarches prévoir ?",
       prompt:
-        "Aide-moi à préparer une note de restitution pour mon client. Demande-moi les éléments de la mission, puis distingue les constats documentés, les points à confirmer et les options à discuter.",
+        "Mon client souhaite supprimer une prime versée régulièrement aux salariés. Aide-moi à déterminer son origine et les règles applicables à sa suppression, à partir de la convention collective et des documents disponibles. Quelles informations faut-il compléter avant de lui répondre ? Prépare ensuite une explication au client avec les références disponibles.",
     },
     {
       id: "consultant-steps",
       category: "prepare",
-      title: "Cadrer une mission RH",
-      description:
-        "Quelles questions poser au client avant une mission sur le temps de travail ?",
+      title: "Mon client veut instaurer des forfaits jours",
+      description: "Quelles conditions examiner avant la mise en place ?",
       prompt:
-        "Prépare les questions de cadrage d’une mission sur le temps de travail chez mon client : objectifs, pratiques actuelles, périmètre, documents et informations nécessaires.",
+        "Mon client veut instaurer des forfaits jours. Quelles conditions examiner et quels documents réunir avant la mise en place ? Aide-moi à préciser les salariés concernés, les dispositions collectives disponibles et l’organisation du suivi dans l’entreprise cliente sélectionnée.",
     },
   ],
   comptable_paie: [
     {
       id: "payroll-rule",
       category: "understand",
-      title: "Examiner le maintien de salaire",
+      title: "Maintenir le salaire pendant un arrêt maladie",
       description:
-        "Que prévoit la convention collective pendant un arrêt maladie ?",
+        "Ce salarié y a-t-il droit selon sa situation et sa convention collective ?",
       prompt:
-        "Arrêt maladie : quelles règles de maintien de salaire prévoit la convention collective de cette entreprise ? Précise les conditions, les informations nécessaires et les références disponibles.",
+        "Ce salarié en arrêt maladie a-t-il droit au maintien de salaire ? Examine les règles légales et celles de la convention collective de cette entreprise. Demande-moi les dates, son ancienneté et les autres informations nécessaires, puis présente les conditions et les références disponibles.",
     },
     {
       id: "payroll-document",
@@ -276,59 +265,59 @@ const PROFILE_SUGGESTIONS: Record<Profile, readonly ChatSuggestion[]> = {
     {
       id: "payroll-writing",
       category: "write",
-      title: "Expliquer une règle au salarié",
+      title: "Expliquer une prime d’ancienneté au salarié",
       description:
-        "Comment expliquer une règle de prime d’ancienneté au salarié ?",
+        "Est-elle prévue pour lui et comment expliquer ses conditions ?",
       prompt:
-        "Aide-moi à préparer une explication au salarié sur une règle de prime d’ancienneté. Demande-moi sa question et les éléments utiles, puis prépare un texte clair avec les références disponibles.",
+        "Une prime d’ancienneté est-elle prévue pour ce salarié par la convention collective de cette entreprise ? Demande-moi les éléments utiles à l’examen de sa situation, puis prépare une explication au salarié sur les conditions applicables avec les références disponibles.",
     },
     {
       id: "payroll-steps",
       category: "prepare",
-      title: "Préparer le départ d’un salarié",
+      title: "Préparer le départ après une démission",
       description:
-        "Quelles informations réunir pour le préavis et les indemnités ?",
+        "Quel préavis et quels éléments prévoir pour le solde de tout compte ?",
       prompt:
-        "Départ d’un salarié : quelles informations réunir et quelles règles examiner pour le préavis et les indemnités ? Distingue les règles à rechercher de leur traitement dans le logiciel de paie.",
+        "Un salarié démissionne. Quelles informations réunir et quelles règles examiner pour le préavis, les sommes de fin de contrat et les documents à remettre ? Demande-moi sa situation et les dates utiles. Distingue les règles à rechercher de leur traitement dans le logiciel de paie.",
     },
   ],
   expert_comptable: [
     {
       id: "accountant-rule",
       category: "understand",
-      title: "Conseiller un client sur un CDD",
+      title: "Mon client veut renouveler un CDD",
       description:
-        "Quels points examiner avant le recrutement en CDD de mon client ?",
+        "Est-ce possible avec ce motif, cette durée et cette convention collective ?",
       prompt:
-        "Mon client envisage un CDD : quelles conditions faut-il examiner ? Demande-moi le motif, la durée et les informations utiles, en tenant compte de l’entreprise cliente sélectionnée.",
+        "Mon client souhaite renouveler un CDD. Est-ce possible dans sa situation ? Demande-moi le motif, les dates, les renouvellements déjà intervenus et les dispositions du contrat, puis examine les règles applicables à l’entreprise cliente sélectionnée.",
     },
     {
       id: "accountant-document",
       category: "analyze",
-      title: "Examiner un accord pour la paie",
+      title: "Examiner les majorations d’heures supplémentaires",
       description:
-        "Quelles dispositions sur le temps de travail peuvent avoir un effet en paie ?",
+        "Comment l’accord du client s’articule-t-il avec sa convention collective ?",
       prompt:
-        "Examine l’accord sur le temps de travail que je joins pour mon client. Quels passages peuvent avoir des conséquences en paie et quelles informations faut-il encore examiner ?",
+        "Examine les dispositions sur les heures supplémentaires dans l’accord que je joins pour mon client. Comment les majorations prévues s’articulent-elles avec la convention collective et les règles légales ? Cite les passages utiles et précise les informations à compléter avant le traitement en paie.",
       needsDocuments: true,
     },
     {
       id: "accountant-writing",
       category: "write",
-      title: "Préparer une explication au client",
+      title: "Expliquer les frais professionnels au client",
       description:
-        "Comment expliquer les remboursements de frais professionnels à mon client ?",
+        "Quelles conditions de remboursement et d’exonération lui présenter ?",
       prompt:
         "Prépare une explication pour mon client sur les règles de remboursement des frais professionnels. Demande-moi les frais concernés et présente les conditions d’exonération avec les références disponibles.",
     },
     {
       id: "accountant-steps",
       category: "prepare",
-      title: "Préparer un rendez-vous social",
+      title: "Un salarié de mon client démissionne",
       description:
-        "Quelles questions poser au client pour préparer son embauche ?",
+        "Quel préavis et quelles démarches préparer avec le client ?",
       prompt:
-        "Aide-moi à préparer un rendez-vous avec mon client sur les questions sociales d’une embauche. Prépare les questions à lui poser, les documents à réunir et les points à examiner pour son entreprise.",
+        "Un salarié de mon client démissionne. Quel préavis examiner et quelles démarches préparer avec le client ? Demande-moi la classification, l’ancienneté, les dates et les documents utiles, puis présente les règles et les points à traiter pour l’entreprise cliente sélectionnée.",
     },
   ],
 };
@@ -337,93 +326,90 @@ const COMMON_SUGGESTIONS: readonly ChatSuggestion[] = [
   {
     id: "common-rule",
     category: "understand",
-    title: "Comprendre une règle de congé",
+    title: "Un salarié demande un congé pour mariage",
     description:
-      "Quelles règles examiner pour répondre à une demande de congé ?",
+      "Quelle durée prévoir selon la loi et la convention collective ?",
     prompt:
-      "Aide-moi à comprendre les règles applicables à une demande de congé. Demande-moi le type de congé et les informations nécessaires au contexte de cette entreprise.",
+      "Un salarié demande un congé pour son mariage. Que prévoient la loi et la convention collective de cette entreprise sur sa durée et ses conditions ? Demande-moi les dates et les informations nécessaires à sa situation.",
   },
   {
     id: "common-document",
     category: "analyze",
-    title: "Résumer un document RH",
+    title: "Examiner les heures supplémentaires dans un accord",
     description:
-      "Quels sont les points essentiels, les dates et les questions ouvertes ?",
+      "Que prévoit ce document sur leur majoration et leur compensation ?",
     prompt:
-      "Résume le document que je joins. Fais ressortir son objet, les points principaux, les dates et les questions laissées ouvertes, en restant dans le contenu de la pièce.",
+      "Examine les dispositions sur les heures supplémentaires dans l’accord que je joins. Présente les passages sur leur majoration et leur compensation, puis recherche les règles utiles pour examiner leur application dans cette entreprise. Précise les informations manquantes.",
     needsDocuments: true,
   },
   {
     id: "common-writing",
     category: "write",
-    title: "Préparer un email ou un courrier",
-    description:
-      "Comment formuler un message adapté à la situation et au destinataire ?",
+    title: "Répondre à une demande de congé tardive",
+    description: "Quels éléments examiner avant d’accepter ou de refuser ?",
     prompt:
-      "Aide-moi à préparer un email ou un courrier sur une situation RH. Demande-moi les faits, mon rôle, le destinataire et le résultat attendu avant de rédiger.",
+      "Un salarié a présenté une demande de congé peu avant la date souhaitée. Aide-moi à examiner les règles applicables et à préparer une réponse. Demande-moi le type de congé, les dates, les dispositions internes et les contraintes invoquées avant de rédiger.",
   },
   {
     id: "common-steps",
     category: "prepare",
-    title: "Organiser les prochaines étapes",
+    title: "Un salarié démissionne",
     description:
-      "Quels éléments réunir et quelles démarches envisager pour cette situation ?",
+      "Quelles démarches et quels documents prévoir pour son départ ?",
     prompt:
-      "Aide-moi à organiser les prochaines étapes d’une situation RH. Demande-moi mon rôle et le contexte, puis distingue les informations à réunir, les règles à examiner et les actions à envisager.",
+      "Un salarié démissionne. Quelles démarches et quels documents prévoir pour son départ ? Demande-moi mon rôle, les dates et les éléments utiles à sa situation, puis présente les étapes à préparer au regard des règles applicables.",
   },
   {
     id: "compare",
     category: "analyze",
-    title: "Comparer deux documents",
-    description:
-      "Quelles différences entre les deux pièces sur le point qui m’intéresse ?",
+    title: "Repérer les changements d’un accord télétravail",
+    description: "Qu’est-ce qui change entre ces deux versions ?",
     prompt:
-      "Compare les deux documents que je joins sur le point que je souhaite examiner. Demande-moi ce point si nécessaire et présente les différences avec les passages concernés.",
+      "Compare les deux versions de l’accord télétravail que je joins. Présente les changements sur l’accès au télétravail, son organisation et sa prise en charge, avec les passages concernés et les points à approfondir.",
     needsDocuments: true,
   },
   {
     id: "clause",
     category: "analyze",
-    title: "Expliquer une clause",
-    description: "Que dit cette clause et quelles règles faut-il examiner ?",
+    title: "Comprendre une clause de non-concurrence",
+    description:
+      "Que prévoit-elle et quelles conditions examiner pour son application ?",
     prompt:
-      "Explique la clause que je souhaite examiner dans le document joint. Distingue ce qui est écrit dans la pièce et les règles à rechercher pour comprendre son application.",
+      "Explique la clause de non-concurrence du contrat que je joins. Présente les obligations qu’elle prévoit et recherche les règles utiles pour examiner ses conditions de validité et d’application. Demande-moi les éléments nécessaires à la situation du salarié.",
     needsDocuments: true,
   },
   {
     id: "interview",
     category: "write",
-    title: "Préparer une trame d’entretien",
-    description: "Quelles questions poser pour préparer cet échange ?",
+    title: "Préparer un entretien de reprise après un arrêt maladie",
+    description: "Quels sujets aborder avec le salarié lors de l’échange RH ?",
     prompt:
-      "Aide-moi à préparer une trame d’entretien pour une situation RH. Demande-moi mon rôle, le sujet et l’objectif de l’échange avant de proposer les questions.",
+      "Aide-moi à préparer une trame d’entretien RH avec un salarié qui reprend après un arrêt maladie. Demande-moi mon rôle, le contexte de la reprise et les éléments utiles à l’organisation du travail. Prépare les sujets et questions à aborder dans cet échange, en distinguant celui-ci des visites relevant de la santé au travail.",
   },
   {
     id: "summary",
     category: "write",
-    title: "Structurer une synthèse",
+    title: "Répondre à la contestation d’un avertissement",
     description:
-      "Comment présenter les faits et les prochaines étapes dans un tableau ?",
+      "Quels éléments du dossier examiner avant de rédiger la réponse ?",
     prompt:
-      "Aide-moi à synthétiser une situation RH dans un tableau : faits, informations manquantes, points à examiner et prochaines étapes. Demande-moi les éléments de la situation.",
+      "Un salarié conteste un avertissement. Aide-moi à examiner les faits, les dates, le courrier reçu et les règles pertinentes, puis à préparer une réponse. Demande-moi les éléments du dossier et la position de l’entreprise avant de rédiger.",
   },
   {
     id: "clarify",
     category: "prepare",
-    title: "Préciser une situation RH",
-    description:
-      "Quelles informations apporter avant d’examiner ma situation ?",
+    title: "Un salarié réclame des heures supplémentaires",
+    description: "Quels faits et relevés réunir pour examiner sa demande ?",
     prompt:
-      "Aide-moi à préciser une situation RH avant de l’analyser. Pose-moi les questions utiles sur les faits, les dates, mon rôle et le résultat recherché.",
+      "Un salarié réclame le paiement d’heures supplémentaires. Quels faits, dates et relevés réunir pour examiner sa demande au regard des règles applicables ? Demande-moi mon rôle, son organisation du temps de travail et les éléments disponibles.",
   },
   {
     id: "convention",
     category: "understand",
-    title: "Explorer la convention collective",
-    description:
-      "Que prévoit la convention collective sur le sujet qui m’intéresse ?",
+    title: "Rechercher une prime d’ancienneté",
+    description: "Que prévoit la convention collective pour ce salarié ?",
     prompt:
-      "Aide-moi à retrouver les dispositions de la convention collective de cette entreprise sur un sujet. Demande-moi le sujet et précise les conditions d’application et les références disponibles.",
+      "La convention collective de cette entreprise prévoit-elle une prime d’ancienneté pour ce salarié ? Demande-moi les éléments utiles à sa situation et présente les conditions d’attribution avec les références disponibles.",
   },
 ];
 

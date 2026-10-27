@@ -178,14 +178,14 @@ it("suspends rotation while the user reads or focuses the idea", () => {
 });
 
 it.each([
-  ["drh", "Faire évoluer les horaires"],
-  ["charge_rh", "Répondre à une demande de congé"],
+  ["drh", "Modifier les horaires d’une équipe"],
+  ["charge_rh", "Renouveler une période d’essai"],
   ["dirigeant", "Réagir à une absence inexpliquée"],
-  ["elu_cse", "Comprendre les heures de délégation"],
-  ["juriste", "Approfondir une question juridique"],
+  ["elu_cse", "Mes heures de délégation sont refusées"],
+  ["juriste", "Passer d’un horaire de jour à un horaire de nuit"],
   ["consultant_rh", "Faire évoluer le télétravail"],
-  ["comptable_paie", "Examiner le maintien de salaire"],
-  ["expert_comptable", "Conseiller un client sur un CDD"],
+  ["comptable_paie", "Maintenir le salaire pendant un arrêt maladie"],
+  ["expert_comptable", "Mon client veut renouveler un CDD"],
 ])(
   "shows the input, rotating ideas, then two carousel cards for %s",
   (_profile, title) => {
@@ -229,10 +229,10 @@ it("keeps the draft when changing profiles and can undo an example replacement",
   view.rerender(<WelcomeScreen onSend={onSend} />);
   expect(screen.getByRole("textbox")).toHaveValue("Mes faits à conserver");
   fireEvent.click(
-    screen.getByRole("button", { name: "Conseiller un client sur un CDD" })
+    screen.getByRole("button", { name: "Mon client veut renouveler un CDD" })
   );
   const draft = (screen.getByRole("textbox") as HTMLTextAreaElement).value;
-  expect(draft).toMatch(/^Mon client envisage un CDD/);
+  expect(draft).toMatch(/^Mon client souhaite renouveler un CDD/);
   expect(draft).not.toContain("Mes faits à conserver");
   expect(onSend).not.toHaveBeenCalled();
   fireEvent.click(
@@ -242,7 +242,7 @@ it("keeps the draft when changing profiles and can undo an example replacement",
   );
   expect(screen.getByRole("textbox")).toHaveValue("Mes faits à conserver");
   fireEvent.click(
-    screen.getByRole("button", { name: "Conseiller un client sur un CDD" })
+    screen.getByRole("button", { name: "Mon client veut renouveler un CDD" })
   );
   fireEvent.click(screen.getByRole("button", { name: "Envoyer le message" }));
   expect(onSend).toHaveBeenCalledTimes(1);
@@ -255,7 +255,7 @@ it("replaces the selected request on repeated and successive clicks instead of a
   const onSend = jest.fn();
   render(<WelcomeScreen onSend={onSend} onAttach={jest.fn()} />);
   fireEvent.click(
-    screen.getByRole("button", { name: "Faire évoluer les horaires" })
+    screen.getByRole("button", { name: "Modifier les horaires d’une équipe" })
   );
   const first = (screen.getByRole("textbox") as HTMLTextAreaElement).value;
   fireEvent.click(
@@ -272,7 +272,9 @@ it("replaces the selected request on repeated and successive clicks instead of a
     screen.getByRole("button", { name: "Afficher les idées suivantes" })
   );
   fireEvent.click(
-    screen.getByRole("button", { name: "Préparer une note à la direction" })
+    screen.getByRole("button", {
+      name: "Expliquer le forfait jours à la direction",
+    })
   );
   expect(
     (screen.getByRole("textbox") as HTMLTextAreaElement).value
@@ -286,7 +288,9 @@ it("recovers an edited draft when undoing a new example selection", () => {
     screen.getByRole("button", { name: "Afficher les idées suivantes" })
   );
   fireEvent.click(
-    screen.getByRole("button", { name: "Préparer un email ou un courrier" })
+    screen.getByRole("button", {
+      name: "Répondre à une demande de congé tardive",
+    })
   );
   const edited = "  Ma demande personnalisée\navec mes faits et mes dates.  ";
   fireEvent.change(screen.getByRole("textbox"), { target: { value: edited } });
@@ -299,7 +303,9 @@ it("recovers an edited draft when undoing a new example selection", () => {
     screen.getByRole("button", { name: "Afficher les idées précédentes" })
   );
   fireEvent.click(
-    screen.getByRole("button", { name: "Comprendre une règle de congé" })
+    screen.getByRole("button", {
+      name: "Un salarié demande un congé pour mariage",
+    })
   );
   fireEvent.click(
     screen.getByRole("button", {
@@ -317,11 +323,13 @@ it("filters the on-demand catalogue and returns focus to the editable request", 
   const dialog = screen.getByRole("dialog");
   fireEvent.click(within(dialog).getByRole("button", { name: "Rédiger" }));
   expect(
-    within(dialog).queryByRole("button", { name: /Comparer deux documents/ })
+    within(dialog).queryByRole("button", {
+      name: /Repérer les changements d’un accord télétravail/,
+    })
   ).not.toBeInTheDocument();
   fireEvent.click(
     within(dialog).getByRole("button", {
-      name: /Préparer une trame d’entretien/,
+      name: /Préparer un entretien de reprise après un arrêt maladie/,
     })
   );
   await waitFor(() =>
@@ -341,13 +349,15 @@ it("opens attachment choices for documentary tasks without sending a request", (
   const onAttach = jest.fn();
   render(<WelcomeScreen onSend={onSend} onAttach={onAttach} />);
   fireEvent.click(
-    screen.getByRole("button", { name: "Résumer un document RH" })
+    screen.getByRole("button", {
+      name: "Examiner les heures supplémentaires dans un accord",
+    })
   );
   expect(
     screen.getByRole("button", { name: /Importer un fichier/ })
   ).toBeVisible();
   expect((screen.getByRole("textbox") as HTMLTextAreaElement).value).toContain(
-    "Résume le document"
+    "Examine les dispositions sur les heures supplémentaires"
   );
   expect(onSend).not.toHaveBeenCalled();
   expect(onAttach).not.toHaveBeenCalled();
@@ -371,7 +381,9 @@ it("keeps document controls closed when a piece is already selected", () => {
     "Comparez deux versions"
   );
   fireEvent.click(
-    screen.getByRole("button", { name: "Résumer un document RH" })
+    screen.getByRole("button", {
+      name: "Examiner les heures supplémentaires dans un accord",
+    })
   );
   expect(
     screen.queryByRole("button", { name: /Importer un fichier/ })
@@ -395,12 +407,16 @@ it.each(["unknown", "juriste"])(
       ).size
     ).toBe(2);
     expect(
-      screen.queryByRole("button", { name: "Résumer un document RH" })
+      screen.queryByRole("button", {
+        name: "Examiner les heures supplémentaires dans un accord",
+      })
     ).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Voir les exemples" }));
     const dialog = screen.getByRole("dialog");
     expect(
-      within(dialog).queryByRole("button", { name: /Comparer deux documents/ })
+      within(dialog).queryByRole("button", {
+        name: /Repérer les changements d’un accord télétravail/,
+      })
     ).not.toBeInTheDocument();
   }
 );

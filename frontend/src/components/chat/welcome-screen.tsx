@@ -256,7 +256,7 @@ export function WelcomeScreen(inputProps: ChatInputProps) {
               </Dialog>
             </div>
           </div>
-          <div className="relative mx-5 sm:mx-0">
+          <div className="group/discovery relative mx-5 sm:mx-0">
             <div
               role="group"
               aria-labelledby="welcome-suggestions-label"

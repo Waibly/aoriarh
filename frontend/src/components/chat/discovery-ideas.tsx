@@ -95,7 +95,7 @@ export function DiscoveryIdeas({
   return (
     <aside
       aria-label="Idées et conseils"
-      className="relative mx-5 mt-5 flex items-start gap-3 py-2 sm:mx-0 sm:min-h-20 sm:items-center"
+      className="group/discovery relative mx-5 mt-5 flex items-start gap-3 py-2 sm:mx-0 sm:min-h-20 sm:items-center"
       {...rotation.interactionProps}
     >
       <DiscoveryNavigation
