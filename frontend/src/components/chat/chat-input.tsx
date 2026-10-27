@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useCallback, useEffect } from "react";
+import { useState, useRef, useCallback, useEffect, useImperativeHandle, type Ref } from "react";
 import {
   ArrowUp,
   Loader2,
@@ -22,7 +22,13 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 
+export interface ChatInputHandle {
+  prefill: (text: string) => void;
+  openAttachments: () => void;
+}
+
 export interface ChatInputProps {
+  ref?: Ref<ChatInputHandle>;
   variant?: "default" | "welcome";
   draftKey?: string;
   placeholder?: string;
@@ -38,6 +44,7 @@ export interface ChatInputProps {
 }
 
 export function ChatInput({
+  ref,
   onSend,
   disabled = false,
   onStop,
@@ -61,6 +68,27 @@ export function ChatInput({
   const fileRef = useRef<HTMLInputElement>(null);
   const limitReached = attachments.length >= 3;
   const attachmentStates = effectiveAttachments(attachments);
+
+  useImperativeHandle(ref, () => ({
+    prefill(text) {
+      if (disabled) return;
+      // Suggestions are editable input. Keep any text already written.
+      const next = value ? `${value}\n\n${text}` : text;
+      setValue(next);
+      if (draftKey) sessionStorage.setItem(`chat-draft:${draftKey}`, next);
+      textareaRef.current?.focus();
+    },
+    openAttachments() {
+      if (!disabled && !limitReached && (onAttach || onBrowse)) setMenuOpen(true);
+    },
+  }), [disabled, value, draftKey, limitReached, onAttach, onBrowse]);
+
+  useEffect(() => {
+    const textarea = textareaRef.current;
+    if (!textarea) return;
+    textarea.style.height = "auto";
+    textarea.style.height = `${Math.min(textarea.scrollHeight, 200)}px`;
+  }, [value]);
 
   const handleSend = useCallback(async () => {
     const trimmed = value.trim();

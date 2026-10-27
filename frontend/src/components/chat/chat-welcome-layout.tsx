@@ -9,10 +9,12 @@ export function ChatWelcomeLayout({
   children,
   header,
   verticallyCentered = true,
+  compact = false,
 }: {
   children: ReactNode;
   header?: ReactNode;
   verticallyCentered?: boolean;
+  compact?: boolean;
 }) {
   return (
     <section
@@ -25,7 +27,12 @@ export function ChatWelcomeLayout({
         </div>
       )}
       <div className="min-h-0 flex-1 overflow-y-auto [scrollbar-gutter:stable]">
-        <div className="flex min-h-full flex-col items-center px-3 py-5 sm:px-8 sm:py-12 lg:py-14">
+        <div
+          className={cn(
+            "flex min-h-full flex-col items-center px-3 sm:px-8",
+            compact ? "py-4 sm:py-8 lg:py-10" : "py-5 sm:py-12 lg:py-14"
+          )}
+        >
           <div
             className={cn("w-full max-w-3xl", verticallyCentered && "my-auto")}
           >
@@ -45,14 +52,23 @@ export function ChatWelcomeHeading({
   title,
   description,
   badge = "AORIA RH · Votre assistant juridique",
+  compact = false,
 }: {
   title: ReactNode;
   description: ReactNode;
   badge?: ReactNode;
+  compact?: boolean;
 }) {
   return (
-    <div className="mb-7 text-center sm:mb-9">
-      <div className="border-primary/10 bg-card text-muted-foreground mb-5 inline-flex max-w-full items-center gap-2.5 rounded-full border px-3.5 py-2 text-xs font-medium">
+    <div
+      className={cn("text-center", compact ? "mb-5 sm:mb-6" : "mb-7 sm:mb-9")}
+    >
+      <div
+        className={cn(
+          "border-primary/10 bg-card text-muted-foreground inline-flex max-w-full items-center gap-2.5 rounded-full border px-3.5 py-2 text-xs font-medium",
+          compact ? "mb-4" : "mb-5"
+        )}
+      >
         <Image
           src="/icon-aoria-dark.svg"
           alt=""
@@ -77,7 +93,12 @@ export function ChatWelcomeHeading({
       >
         {title}
       </h1>
-      <p className="text-muted-foreground mx-auto mt-4 max-w-xl text-sm leading-relaxed text-pretty sm:text-base">
+      <p
+        className={cn(
+          "text-muted-foreground mx-auto max-w-xl text-sm leading-relaxed text-pretty sm:text-base",
+          compact ? "mt-3" : "mt-4"
+        )}
+      >
         {description}
       </p>
     </div>
