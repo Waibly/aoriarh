@@ -352,6 +352,12 @@ async def list_common_document_groups(
         "accord_national_interprofessionnel": "Accords nationaux interprofessionnels (ANI)",
         "code_commerce": "Code de commerce (législatif)",
         "code_commerce_reglementaire": "Code de commerce (réglementaire)",
+        "code_general_collectivites_territoriales": (
+            "Code général des collectivités territoriales (législatif)"
+        ),
+        "code_general_collectivites_territoriales_reglementaire": (
+            "Code général des collectivités territoriales (réglementaire)"
+        ),
         "code_general_impots": "Code général des impôts",
         "code_monetaire_financier": "Code monétaire et financier (législatif)",
         "code_monetaire_financier_reglementaire": "Code monétaire et financier (réglementaire)",

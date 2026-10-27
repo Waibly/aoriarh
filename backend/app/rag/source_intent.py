@@ -184,6 +184,10 @@ CODE_SOURCE_LABELS: dict[str, list[str]] = {
     r"code\s+mon[ée]taire\s+et\s+financier": [
         "code_monetaire_financier", "code_monetaire_financier_reglementaire",
     ],
+    r"(?:code\s+g[ée]n[ée]ral\s+des\s+collectivit[ée]s\s+territoriales|\bcgct\b)": [
+        "code_general_collectivites_territoriales",
+        "code_general_collectivites_territoriales_reglementaire",
+    ],
     r"code\s+g[ée]n[ée]ral\s+des\s+imp[ôo]ts": [
         "code_general_impots", "code_general_impots_reglementaire",
     ],

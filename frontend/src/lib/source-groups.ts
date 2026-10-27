@@ -39,6 +39,8 @@ const LEGAL_TYPES = new Set([
   "code_commerce_reglementaire",
   "code_monetaire_financier",
   "code_monetaire_financier_reglementaire",
+  "code_general_collectivites_territoriales",
+  "code_general_collectivites_territoriales_reglementaire",
   "code_general_impots",
   "code_general_impots_reglementaire",
   "decret",

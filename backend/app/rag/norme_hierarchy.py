@@ -70,6 +70,8 @@ DOCUMENT_TYPE_HIERARCHY: dict[str, dict] = {
     "code_commerce_reglementaire": {"niveau": 5, "poids": 0.80},
     "code_monetaire_financier": {"niveau": 3, "poids": 0.90},
     "code_monetaire_financier_reglementaire": {"niveau": 5, "poids": 0.80},
+    "code_general_collectivites_territoriales": {"niveau": 3, "poids": 0.90},
+    "code_general_collectivites_territoriales_reglementaire": {"niveau": 5, "poids": 0.80},
     "code_general_impots": {"niveau": 3, "poids": 0.90},
     "code_general_impots_reglementaire": {"niveau": 5, "poids": 0.80},
     # Niveau 4 — Jurisprudence

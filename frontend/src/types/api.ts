@@ -308,6 +308,16 @@ export const SOURCE_TYPE_OPTIONS: {
     label: "Code de la sécurité sociale",
     niveau: 3,
   },
+  {
+    value: "code_general_collectivites_territoriales",
+    label: "Code général des collectivités territoriales",
+    niveau: 3,
+  },
+  {
+    value: "code_general_collectivites_territoriales_reglementaire",
+    label: "Code général des collectivités territoriales (partie réglementaire)",
+    niveau: 5,
+  },
   { value: "code_penal", label: "Code pénal", niveau: 3 },
   { value: "code_civil", label: "Code civil", niveau: 3 },
   {

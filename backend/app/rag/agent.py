@@ -313,6 +313,10 @@ _SOURCE_TYPE_LABELS: dict[str, str] = {
     "code_commerce_reglementaire": "Code de commerce (partie réglementaire)",
     "code_monetaire_financier": "Code monétaire et financier",
     "code_monetaire_financier_reglementaire": "Code monétaire et financier (partie réglementaire)",
+    "code_general_collectivites_territoriales": "Code général des collectivités territoriales",
+    "code_general_collectivites_territoriales_reglementaire": (
+        "Code général des collectivités territoriales (partie réglementaire)"
+    ),
     "code_general_impots": "Code général des impôts",
     "code_general_impots_reglementaire": "Code général des impôts (partie réglementaire)",
     "arret_cour_cassation": "Arrêt Cour de cassation",

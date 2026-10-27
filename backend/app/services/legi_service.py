@@ -94,6 +94,13 @@ SYNCABLE_CODES: dict[str, dict] = {
         "has_reglementaire": True,
         "storage_prefix": "common/code_monetaire_financier",
     },
+    "code_general_collectivites_territoriales": {
+        "text_id": "LEGITEXT000006070633",
+        "name": "Code général des collectivités territoriales",
+        "source_type": "code_general_collectivites_territoriales",
+        "has_reglementaire": True,
+        "storage_prefix": "common/code_general_collectivites_territoriales",
+    },
     "code_general_impots": {
         "text_id": "LEGITEXT000006069577",
         "name": "Code général des impôts",
