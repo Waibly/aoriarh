@@ -1,7 +1,14 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { BookOpen, FileSearch, ListChecks, PencilLine } from "lucide-react";
+import {
+  BookOpen,
+  ChevronLeft,
+  ChevronRight,
+  FileSearch,
+  ListChecks,
+  PencilLine,
+} from "lucide-react";
 import { ChatWelcomeLayout, ChatWelcomeHeading } from "./chat-welcome-layout";
 import { DiscoveryIdeas } from "./discovery-ideas";
 import {
@@ -36,7 +43,9 @@ const CATEGORY_ICONS = {
 };
 const quietButton =
   "text-muted-foreground hover:text-primary focus-visible:outline-ring min-h-9 rounded px-2 text-xs transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 disabled:cursor-not-allowed disabled:opacity-50";
-const ROTATION_MS = 3_000;
+const ROTATION_MS = 5_000;
+const carouselArrow =
+  "text-primary border-border/70 hover:border-primary/35 hover:bg-primary/5 focus-visible:outline-ring flex size-9 shrink-0 items-center justify-center rounded-full border transition-colors focus-visible:outline-2 focus-visible:outline-offset-2";
 
 export function WelcomeScreen(inputProps: ChatInputProps) {
   const { profilMetier } = useOrg();
@@ -325,10 +334,19 @@ export function WelcomeScreen(inputProps: ChatInputProps) {
             </div>
           </div>
           <div
-            className="mt-3 flex justify-center"
+            className="mt-3 flex items-center justify-center gap-2"
             role="group"
             aria-label="Pages du carrousel"
           >
+            <button
+              type="button"
+              aria-label="Afficher les idées précédentes"
+              title="Idées précédentes"
+              onClick={() => setStep((value) => value - 1)}
+              className={carouselArrow}
+            >
+              <ChevronLeft aria-hidden="true" className="size-4" />
+            </button>
             {Array.from({ length: pageCount }, (_, page) => (
               <button
                 key={page}
@@ -354,6 +372,15 @@ export function WelcomeScreen(inputProps: ChatInputProps) {
                 />
               </button>
             ))}
+            <button
+              type="button"
+              aria-label="Afficher les idées suivantes"
+              title="Idées suivantes"
+              onClick={next}
+              className={carouselArrow}
+            >
+              <ChevronRight aria-hidden="true" className="size-4" />
+            </button>
           </div>
         </div>
       </div>

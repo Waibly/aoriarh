@@ -22,7 +22,7 @@ afterEach(() => {
   jest.useRealTimers();
 });
 
-it("rotates the idea the idea and two-card page together every three seconds without changing the draft or sending a request", () => {
+it("rotates the idea and two-card page together every five seconds without changing the draft or sending a request", () => {
   jest.useFakeTimers();
   const onSend = jest.fn();
   render(<WelcomeScreen onSend={onSend} onAttach={jest.fn()} />);
@@ -38,7 +38,7 @@ it("rotates the idea the idea and two-card page together every three seconds wit
     .map((button) => button.getAttribute("aria-label"));
   expect(firstPair).toHaveLength(2);
   expect(ideas).toHaveTextContent("Analysez aussi vos documents");
-  act(() => jest.advanceTimersByTime(2_999));
+  act(() => jest.advanceTimersByTime(4_999));
   expect(ideas).toHaveTextContent("Analysez aussi vos documents");
   act(() => jest.advanceTimersByTime(1));
   expect(ideas).toHaveTextContent("Comparez deux versions");
@@ -48,7 +48,7 @@ it("rotates the idea the idea and two-card page together every three seconds wit
       .getAllByRole("button")
       .map((button) => button.getAttribute("aria-label"))
   ).not.toEqual(firstPair);
-  act(() => jest.advanceTimersByTime(3_000));
+  act(() => jest.advanceTimersByTime(5_000));
   expect(ideas).toHaveTextContent("Préparez un écrit");
   expect(
     within(carousel)
@@ -82,7 +82,7 @@ it("lets the user pause and resume automatic ideas", () => {
   fireEvent.click(
     screen.getByRole("button", { name: "Reprendre le défilement des idées" })
   );
-  act(() => jest.advanceTimersByTime(3_000));
+  act(() => jest.advanceTimersByTime(5_000));
   expect(ideas).toHaveTextContent("Comparez deux versions");
   expect(
     within(carousel)
@@ -101,7 +101,26 @@ it("uses the same navigation for the idea and the carousel and pauses both while
   const firstPair = within(carousel)
     .getAllByRole("button")
     .map((button) => button.getAttribute("aria-label"));
-  fireEvent.click(screen.getByRole("button", { name: "Autre conseil" }));
+  fireEvent.click(
+    screen.getByRole("button", { name: "Afficher les idées précédentes" })
+  );
+  expect(
+    within(carousel)
+      .getAllByRole("button")
+      .map((button) => button.getAttribute("aria-label"))
+  ).not.toEqual(firstPair);
+  fireEvent.click(
+    screen.getByRole("button", { name: "Afficher les idées suivantes" })
+  );
+  expect(ideas).toHaveTextContent("Analysez aussi vos documents");
+  expect(
+    within(carousel)
+      .getAllByRole("button")
+      .map((button) => button.getAttribute("aria-label"))
+  ).toEqual(firstPair);
+  fireEvent.click(
+    screen.getByRole("button", { name: "Afficher les idées suivantes" })
+  );
   expect(ideas).toHaveTextContent("Comparez deux versions");
   const nextPair = within(carousel)
     .getAllByRole("button")
@@ -116,7 +135,7 @@ it("uses the same navigation for the idea and the carousel and pauses both while
       .map((button) => button.getAttribute("aria-label"))
   ).toEqual(nextPair);
   fireEvent.mouseLeave(within(carousel).getAllByRole("button")[0]);
-  act(() => jest.advanceTimersByTime(3_000));
+  act(() => jest.advanceTimersByTime(5_000));
   expect(ideas).toHaveTextContent("Préparez un écrit");
   expect(
     within(carousel)
@@ -138,7 +157,7 @@ it("suspends rotation while the user reads or focuses the idea", () => {
   act(() => jest.advanceTimersByTime(20_000));
   expect(ideas).toHaveTextContent("Analysez aussi vos documents");
   fireEvent.blur(next, { relatedTarget: document.body });
-  act(() => jest.advanceTimersByTime(3_000));
+  act(() => jest.advanceTimersByTime(5_000));
   expect(ideas).toHaveTextContent("Comparez deux versions");
 });
 
