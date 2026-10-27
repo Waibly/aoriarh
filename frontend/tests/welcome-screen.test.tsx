@@ -22,7 +22,7 @@ afterEach(() => {
   jest.useRealTimers();
 });
 
-it("rotates the idea every ten seconds without changing the draft or sending a request", () => {
+it("rotates the idea the idea and two-card page together every three seconds without changing the draft or sending a request", () => {
   jest.useFakeTimers();
   const onSend = jest.fn();
   render(<WelcomeScreen onSend={onSend} onAttach={jest.fn()} />);
@@ -30,13 +30,31 @@ it("rotates the idea every ten seconds without changing the draft or sending a r
     target: { value: "Mon travail en cours" },
   });
   const ideas = screen.getByRole("complementary");
+  const carousel = screen.getByRole("group", {
+    name: "Des idées pour votre quotidien",
+  });
+  const firstPair = within(carousel)
+    .getAllByRole("button")
+    .map((button) => button.getAttribute("aria-label"));
+  expect(firstPair).toHaveLength(2);
   expect(ideas).toHaveTextContent("Analysez aussi vos documents");
-  act(() => jest.advanceTimersByTime(9_999));
+  act(() => jest.advanceTimersByTime(2_999));
   expect(ideas).toHaveTextContent("Analysez aussi vos documents");
   act(() => jest.advanceTimersByTime(1));
   expect(ideas).toHaveTextContent("Comparez deux versions");
-  act(() => jest.advanceTimersByTime(10_000));
+  expect(within(carousel).getAllByRole("button")).toHaveLength(2);
+  expect(
+    within(carousel)
+      .getAllByRole("button")
+      .map((button) => button.getAttribute("aria-label"))
+  ).not.toEqual(firstPair);
+  act(() => jest.advanceTimersByTime(3_000));
   expect(ideas).toHaveTextContent("Préparez un écrit");
+  expect(
+    within(carousel)
+      .getAllByRole("button")
+      .map((button) => button.getAttribute("aria-label"))
+  ).toEqual(firstPair);
   expect(screen.getByRole("textbox")).toHaveValue("Mon travail en cours");
   expect(onSend).not.toHaveBeenCalled();
 });
@@ -45,16 +63,66 @@ it("lets the user pause and resume automatic ideas", () => {
   jest.useFakeTimers();
   render(<WelcomeScreen onSend={jest.fn()} onAttach={jest.fn()} />);
   const ideas = screen.getByRole("complementary");
+  const carousel = screen.getByRole("group", {
+    name: "Des idées pour votre quotidien",
+  });
+  const firstPair = within(carousel)
+    .getAllByRole("button")
+    .map((button) => button.getAttribute("aria-label"));
   fireEvent.click(
     screen.getByRole("button", { name: "Mettre en pause les idées" })
   );
   act(() => jest.advanceTimersByTime(30_000));
   expect(ideas).toHaveTextContent("Analysez aussi vos documents");
+  expect(
+    within(carousel)
+      .getAllByRole("button")
+      .map((button) => button.getAttribute("aria-label"))
+  ).toEqual(firstPair);
   fireEvent.click(
     screen.getByRole("button", { name: "Reprendre le défilement des idées" })
   );
-  act(() => jest.advanceTimersByTime(10_000));
+  act(() => jest.advanceTimersByTime(3_000));
   expect(ideas).toHaveTextContent("Comparez deux versions");
+  expect(
+    within(carousel)
+      .getAllByRole("button")
+      .map((button) => button.getAttribute("aria-label"))
+  ).not.toEqual(firstPair);
+});
+
+it("uses the same navigation for the idea and the carousel and pauses both while reading a tile", () => {
+  jest.useFakeTimers();
+  render(<WelcomeScreen onSend={jest.fn()} onAttach={jest.fn()} />);
+  const ideas = screen.getByRole("complementary");
+  const carousel = screen.getByRole("group", {
+    name: "Des idées pour votre quotidien",
+  });
+  const firstPair = within(carousel)
+    .getAllByRole("button")
+    .map((button) => button.getAttribute("aria-label"));
+  fireEvent.click(screen.getByRole("button", { name: "Autre conseil" }));
+  expect(ideas).toHaveTextContent("Comparez deux versions");
+  const nextPair = within(carousel)
+    .getAllByRole("button")
+    .map((button) => button.getAttribute("aria-label"));
+  expect(nextPair).not.toEqual(firstPair);
+  fireEvent.mouseEnter(within(carousel).getAllByRole("button")[0]);
+  act(() => jest.advanceTimersByTime(9_000));
+  expect(ideas).toHaveTextContent("Comparez deux versions");
+  expect(
+    within(carousel)
+      .getAllByRole("button")
+      .map((button) => button.getAttribute("aria-label"))
+  ).toEqual(nextPair);
+  fireEvent.mouseLeave(within(carousel).getAllByRole("button")[0]);
+  act(() => jest.advanceTimersByTime(3_000));
+  expect(ideas).toHaveTextContent("Préparez un écrit");
+  expect(
+    within(carousel)
+      .getAllByRole("button")
+      .map((button) => button.getAttribute("aria-label"))
+  ).toEqual(firstPair);
 });
 
 it("suspends rotation while the user reads or focuses the idea", () => {
@@ -70,7 +138,7 @@ it("suspends rotation while the user reads or focuses the idea", () => {
   act(() => jest.advanceTimersByTime(20_000));
   expect(ideas).toHaveTextContent("Analysez aussi vos documents");
   fireEvent.blur(next, { relatedTarget: document.body });
-  act(() => jest.advanceTimersByTime(10_000));
+  act(() => jest.advanceTimersByTime(3_000));
   expect(ideas).toHaveTextContent("Comparez deux versions");
 });
 
@@ -84,7 +152,7 @@ it.each([
   ["comptable_paie", "Examiner le maintien de salaire"],
   ["expert_comptable", "Conseiller un client sur un CDD"],
 ])(
-  "shows the input, rotating ideas, then four separate cards for %s",
+  "shows the input, rotating ideas, then two carousel cards for %s",
   (_profile, title) => {
     mockProfile = _profile;
     const onSend = jest.fn();
@@ -92,7 +160,7 @@ it.each([
     const suggestions = screen.getByRole("group", {
       name: "Des idées pour votre quotidien",
     });
-    expect(within(suggestions).getAllByRole("button")).toHaveLength(4);
+    expect(within(suggestions).getAllByRole("button")).toHaveLength(2);
     const composer = screen
       .getByRole("textbox")
       .closest('[data-slot="chat-input"]')!;
@@ -166,6 +234,9 @@ it("replaces the selected request on repeated and successive clicks instead of a
   );
   expect(screen.getByRole("textbox")).toHaveValue(second);
   fireEvent.click(
+    screen.getByRole("button", { name: "Afficher les tuiles 3 à 4" })
+  );
+  fireEvent.click(
     screen.getByRole("button", { name: "Préparer une note à la direction" })
   );
   expect(
@@ -177,6 +248,9 @@ it("replaces the selected request on repeated and successive clicks instead of a
 it("recovers an edited draft when undoing a new example selection", () => {
   render(<WelcomeScreen onSend={jest.fn()} />);
   fireEvent.click(
+    screen.getByRole("button", { name: "Afficher les tuiles 3 à 4" })
+  );
+  fireEvent.click(
     screen.getByRole("button", { name: "Préparer un email ou un courrier" })
   );
   const edited = "  Ma demande personnalisée\navec mes faits et mes dates.  ";
@@ -186,6 +260,9 @@ it("recovers an edited draft when undoing a new example selection", () => {
       name: "Annuler le remplacement de la demande",
     })
   ).not.toBeInTheDocument();
+  fireEvent.click(
+    screen.getByRole("button", { name: "Afficher les tuiles 1 à 2" })
+  );
   fireEvent.click(
     screen.getByRole("button", { name: "Comprendre une règle de congé" })
   );
@@ -274,14 +351,14 @@ it.each(["unknown", "juriste"])(
     const suggestions = screen.getByRole("group", {
       name: "Des idées pour votre quotidien",
     });
-    expect(within(suggestions).getAllByRole("button")).toHaveLength(4);
+    expect(within(suggestions).getAllByRole("button")).toHaveLength(2);
     expect(
       new Set(
         within(suggestions)
           .getAllByRole("button")
           .map((button) => button.textContent)
       ).size
-    ).toBe(4);
+    ).toBe(2);
     expect(
       screen.queryByRole("button", { name: "Résumer un document RH" })
     ).not.toBeInTheDocument();

@@ -5,7 +5,6 @@ import Link from "next/link";
 import { ArrowRight, Lightbulb, Pause, Play, X } from "lucide-react";
 import type { DiscoveryTip } from "@/lib/chat-discovery";
 
-const ROTATION_MS = 10_000;
 const HIDDEN_KEY = "aoriarh.welcome.rotating-ideas-hidden";
 const controlClass =
   "text-muted-foreground hover:bg-muted hover:text-primary focus-visible:outline-ring flex size-9 shrink-0 items-center justify-center rounded-full transition-colors focus-visible:outline-2 focus-visible:outline-offset-2";
@@ -16,25 +15,28 @@ export function DiscoveryIdeas({
   tips,
   initialTipId,
   disabled = false,
-  suspended = false,
+  step,
+  paused,
+  onNext,
+  onTogglePause,
   onAction,
 }: {
   tips: readonly DiscoveryTip[];
   initialTipId: string;
   disabled?: boolean;
-  suspended?: boolean;
+  step: number;
+  paused: boolean;
+  onNext: () => void;
+  onTogglePause: () => void;
   onAction: (tip: DiscoveryTip) => void;
 }) {
-  const [tipId, setTipId] = useState<string | null>(null);
   const [hidden, setHidden] = useState(false);
-  const [paused, setPaused] = useState(false);
-  const [hovered, setHovered] = useState(false);
-  const [focused, setFocused] = useState(false);
-  const [pageHidden, setPageHidden] = useState(false);
+  const firstIndex = Math.max(
+    0,
+    tips.findIndex((item) => item.id === initialTipId)
+  );
   const tip =
-    tips.find((item) => item.id === tipId) ??
-    tips.find((item) => item.id === initialTipId) ??
-    tips[0];
+    tips[(((firstIndex + step) % tips.length) + tips.length) % tips.length];
 
   useEffect(() => {
     try {
@@ -42,45 +44,7 @@ export function DiscoveryIdeas({
     } catch {
       /* Optional browser preference. */
     }
-    const visibilityChanged = () => setPageHidden(document.hidden);
-    visibilityChanged();
-    document.addEventListener("visibilitychange", visibilityChanged);
-    const reducedMotion = window.matchMedia?.(
-      "(prefers-reduced-motion: reduce)"
-    );
-    if (reducedMotion?.matches) setPaused(true);
-    return () =>
-      document.removeEventListener("visibilitychange", visibilityChanged);
   }, []);
-
-  useEffect(() => {
-    if (
-      !tip ||
-      hidden ||
-      paused ||
-      hovered ||
-      focused ||
-      pageHidden ||
-      suspended ||
-      disabled ||
-      tips.length < 2
-    )
-      return;
-    const timer = window.setTimeout(() => {
-      setTipId(tips[(tips.indexOf(tip) + 1) % tips.length].id);
-    }, ROTATION_MS);
-    return () => window.clearTimeout(timer);
-  }, [
-    tip,
-    tips,
-    hidden,
-    paused,
-    hovered,
-    focused,
-    pageHidden,
-    suspended,
-    disabled,
-  ]);
 
   function setVisibility(nextHidden: boolean) {
     setHidden(nextHidden);
@@ -91,9 +55,42 @@ export function DiscoveryIdeas({
     }
   }
 
+  function playbackControls() {
+    return (
+      <>
+        <button
+          type="button"
+          aria-label="Autre conseil"
+          title="Afficher les idées suivantes"
+          className={controlClass}
+          onClick={onNext}
+        >
+          <ArrowRight aria-hidden="true" className="size-4" />
+        </button>
+        <button
+          type="button"
+          aria-label={
+            paused
+              ? "Reprendre le défilement des idées"
+              : "Mettre en pause les idées"
+          }
+          title={paused ? "Reprendre" : "Mettre en pause"}
+          className={controlClass}
+          onClick={onTogglePause}
+        >
+          {paused ? (
+            <Play aria-hidden="true" className="size-3.5" />
+          ) : (
+            <Pause aria-hidden="true" className="size-3.5" />
+          )}
+        </button>
+      </>
+    );
+  }
+
   if (hidden)
     return (
-      <div className="mt-5 text-center">
+      <div className="mt-5 flex items-center justify-between gap-3">
         <button
           type="button"
           onClick={() => setVisibility(false)}
@@ -101,6 +98,7 @@ export function DiscoveryIdeas({
         >
           Afficher les idées
         </button>
+        <div className="flex gap-1">{playbackControls()}</div>
       </div>
     );
   if (!tip) return null;
@@ -110,13 +108,6 @@ export function DiscoveryIdeas({
     <aside
       aria-label="Idées et conseils"
       className="mt-5 flex min-h-40 items-start gap-3 py-2 sm:min-h-20 sm:items-center"
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
-      onFocusCapture={() => setFocused(true)}
-      onBlurCapture={(event) => {
-        if (!event.currentTarget.contains(event.relatedTarget))
-          setFocused(false);
-      }}
     >
       <Lightbulb
         aria-hidden="true"
@@ -124,7 +115,7 @@ export function DiscoveryIdeas({
       />
       <div className="flex min-w-0 flex-1 flex-col gap-2 sm:flex-row sm:items-center sm:gap-4">
         <p
-          aria-live={paused || focused ? "polite" : "off"}
+          aria-live={paused ? "polite" : "off"}
           className="min-w-0 flex-1 text-[13px] leading-5"
         >
           <span className="font-medium">{tip.title}</span>
@@ -147,34 +138,7 @@ export function DiscoveryIdeas({
             ))}
         </p>
         <div className="flex shrink-0 justify-end gap-1">
-          <button
-            type="button"
-            aria-label="Autre conseil"
-            title="Afficher une autre idée"
-            className={controlClass}
-            onClick={() =>
-              setTipId(tips[(tips.indexOf(tip) + 1) % tips.length].id)
-            }
-          >
-            <ArrowRight aria-hidden="true" className="size-4" />
-          </button>
-          <button
-            type="button"
-            aria-label={
-              paused
-                ? "Reprendre le défilement des idées"
-                : "Mettre en pause les idées"
-            }
-            title={paused ? "Reprendre" : "Mettre en pause"}
-            className={controlClass}
-            onClick={() => setPaused((value) => !value)}
-          >
-            {paused ? (
-              <Play aria-hidden="true" className="size-3.5" />
-            ) : (
-              <Pause aria-hidden="true" className="size-3.5" />
-            )}
-          </button>
+          {playbackControls()}
           <button
             type="button"
             aria-label="Masquer les idées"
