@@ -198,7 +198,7 @@ class EmailTemplateService:
             "nom": "Dupont",
             "entreprise": "Entreprise Test",
             "poste": "DRH",
-            "desinscription": "#",
+            "desinscription": f"{settings.api_base_url.rstrip('/')}/api/v1/emailing/unsubscribe/test",
         }
         html = _render_variables(tpl.html_body, test_vars)
         preview = _render_variables(tpl.preview_text, test_vars) if tpl.preview_text else None

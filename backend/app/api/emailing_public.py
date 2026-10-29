@@ -56,6 +56,25 @@ def _invalid() -> HTMLResponse:
     )
 
 
+@router.get("/unsubscribe/test", response_class=HTMLResponse)
+async def unsubscribe_test_confirm() -> HTMLResponse:
+    return HTMLResponse(_page(
+        "Tester la désinscription",
+        "Cet email est un envoi de test. Vous pouvez essayer la confirmation : "
+        "aucune adresse ne sera désinscrite.",
+        button="Confirmer la désinscription de test",
+        action="/api/v1/emailing/unsubscribe/test",
+    ))
+
+
+@router.post("/unsubscribe/test", response_class=HTMLResponse)
+async def unsubscribe_test_action() -> HTMLResponse:
+    return HTMLResponse(_page(
+        "Test de désinscription terminé",
+        "Le parcours de confirmation a été testé. Aucune adresse n'a été désinscrite.",
+    ))
+
+
 @router.get("/unsubscribe", response_class=HTMLResponse)
 async def unsubscribe_confirm(
     rid: str,

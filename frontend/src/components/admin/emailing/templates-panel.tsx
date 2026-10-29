@@ -340,7 +340,7 @@ export default function TemplatesPanel() {
                 HTML
                 <span className="text-muted-foreground ml-2 text-xs">
                   Variables : {"{{prenom}}"} {"{{nom}}"} {"{{entreprise}}"}{" "}
-                  {"{{poste}}"}
+                  {"{{poste}}"} {"{{desinscription}}"}
                 </span>
               </Label>
               <Textarea
