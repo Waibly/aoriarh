@@ -167,7 +167,7 @@ class Settings(BaseSettings):
     # workers via Redis (fail-open : si Redis est indisponible on laisse passer,
     # le plafond de budget reste le garde-fou financier).
     demo_max_questions_per_ip_per_minute: int = 2
-    demo_max_questions_per_ip_per_day: int = 5
+    demo_max_questions_per_ip_per_day: int = 3
     # Plafond global (toutes IP) par minute — garde-fou anti-flood distribué.
     demo_max_questions_global_per_minute: int = 120
     # Modèle de génération FORCÉ pour la démo : même modèle que l'application
