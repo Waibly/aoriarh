@@ -40,7 +40,7 @@ from app.models.organisation import Organisation
 from app.models.user import User
 from app.rag import agent as agent_module
 from app.rag.config import (
-    EXPAND_MODEL,
+    CONVERSATION_PLANNER_MODEL,
     LLM_MODEL,
     LLM_REASONING_EFFORT,
     RERANK_MODEL,
@@ -311,7 +311,7 @@ async def test_capture_http_reference(reference_environment, monkeypatch, scenar
         "inputs": inputs,
         "runtime": {
             "reference_date": date.today().isoformat(),
-            "planner_model": EXPAND_MODEL,
+            "planner_model": CONVERSATION_PLANNER_MODEL,
             "generation_model": LLM_MODEL,
             "reasoning_effort": LLM_REASONING_EFFORT,
             "embedding_model": settings.voyage_embedding_model,
@@ -492,7 +492,7 @@ async def test_capture_http_reference(reference_environment, monkeypatch, scenar
                 if branch["status"].endswith("_error")
             ]
         assert response.status_code == 200, response.text
-        assert record["model_calls"][0]["request"]["model"] == EXPAND_MODEL
+        assert record["model_calls"][0]["request"]["model"] == CONVERSATION_PLANNER_MODEL
         if scenario["planner"] == "invalid":
             assert record["errors"]
             assert not record["answer"]
