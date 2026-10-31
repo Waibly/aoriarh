@@ -56,6 +56,7 @@ async def list_installed_ccn(
     )
     # Group by IDCC extracted from name
     import re
+
     idcc_docs: dict[str, int] = {}
     for row in doc_q.all():
         match = re.search(r"IDCC\s+(\d{4})", row.name)
@@ -71,8 +72,7 @@ async def list_installed_ccn(
             func.max(OrganisationConvention.articles_count).label("articles"),
             func.max(OrganisationConvention.source_date).label("source_date"),
             func.max(OrganisationConvention.status).label("status"),
-        )
-        .group_by(OrganisationConvention.idcc)
+        ).group_by(OrganisationConvention.idcc)
     )
     org_data: dict[str, dict] = {}
     for row in org_q.all():
@@ -87,9 +87,7 @@ async def list_installed_ccn(
     all_idcc = set(idcc_docs.keys()) | set(org_data.keys())
 
     # Get CCN reference info
-    ref_q = await db.execute(
-        select(CcnReference).where(CcnReference.idcc.in_(all_idcc))
-    )
+    ref_q = await db.execute(select(CcnReference).where(CcnReference.idcc.in_(all_idcc)))
     refs = {r.idcc: r for r in ref_q.scalars().all()}
 
     items: list[InstalledCcnItem] = []
@@ -104,16 +102,18 @@ async def list_installed_ccn(
             if q not in idcc and q not in titre and q not in titre_court:
                 continue
 
-        items.append(InstalledCcnItem(
-            idcc=idcc,
-            titre=ref.titre if ref else f"IDCC {idcc}",
-            titre_court=ref.titre_court if ref else None,
-            documents_count=idcc_docs.get(idcc, 0),
-            orgs_count=od.get("orgs", 0),
-            articles_count=od.get("articles"),
-            source_date=od.get("source_date"),
-            status=od.get("status", "ready"),
-        ))
+        items.append(
+            InstalledCcnItem(
+                idcc=idcc,
+                titre=ref.titre if ref else f"IDCC {idcc}",
+                titre_court=ref.titre_court if ref else None,
+                documents_count=idcc_docs.get(idcc, 0),
+                orgs_count=od.get("orgs", 0),
+                articles_count=od.get("articles"),
+                source_date=od.get("source_date"),
+                status=od.get("status", "ready"),
+            )
+        )
 
     return InstalledCcnListResponse(items=items, total=len(items))
 
@@ -129,7 +129,6 @@ async def admin_install_ccn(
     db: AsyncSession = Depends(get_db),
 ) -> dict:
     """Install a CCN into the shared reference (admin-triggered)."""
-    from app.services.kali_service import KaliService
 
     ccn_ref = await db.get(CcnReference, body.idcc)
     if not ccn_ref:
@@ -137,11 +136,13 @@ async def admin_install_ccn(
 
     # Check if already installed
     existing = await db.execute(
-        select(Document).where(
+        select(Document)
+        .where(
             Document.organisation_id.is_(None),
             Document.source_type == "convention_collective_nationale",
             Document.name.ilike(f"%IDCC {body.idcc}%"),
-        ).limit(1)
+        )
+        .limit(1)
     )
     if existing.scalar_one_or_none():
         raise HTTPException(status_code=409, detail=f"La CCN IDCC {body.idcc} est déjà installée")
@@ -173,9 +174,11 @@ async def admin_sync_ccn(
     """Force re-sync a CCN from KALI."""
     # Find any org_conv for this IDCC to trigger sync
     result = await db.execute(
-        select(OrganisationConvention).where(
+        select(OrganisationConvention)
+        .where(
             OrganisationConvention.idcc == idcc,
-        ).limit(1)
+        )
+        .limit(1)
     )
     org_conv = result.scalar_one_or_none()
     if not org_conv:
@@ -186,6 +189,7 @@ async def admin_sync_ccn(
     await db.commit()
 
     from app.rag.tasks import enqueue_kali_install
+
     await enqueue_kali_install(str(org_conv.id), str(user.id), force_refetch=True)
     return {"detail": f"Mise à jour de la CCN IDCC {idcc} lancée"}
 
@@ -252,8 +256,8 @@ async def check_ccn_health(
     db: AsyncSession = Depends(get_db),
 ) -> CcnHealthResponse:
     """Health check for all installed CCN. Auto-repairs broken indexations."""
+
     from app.rag.tasks import enqueue_ingestion
-    from sqlalchemy import or_
 
     # Get all unique IDCCs with an org_conv
     oc_q = await db.execute(
@@ -281,7 +285,11 @@ async def check_ccn_health(
             )
         )
         kali_docs = list(kali_q.scalars().all())
-        indexed = [d for d in kali_docs if d.indexation_status == "indexed" or d.indexation_status == "success"]
+        indexed = [
+            d
+            for d in kali_docs
+            if d.indexation_status == "indexed" or d.indexation_status == "success"
+        ]
         errored = [d for d in kali_docs if d.indexation_status == "error"]
         pending = [d for d in kali_docs if d.indexation_status in ("pending", "reserved")]
         total_chunks = sum(d.chunk_count or 0 for d in indexed)
@@ -299,10 +307,7 @@ async def check_ccn_health(
         bocc_reserved = bocc_q.scalar() or 0
 
         healthy = (
-            len(kali_docs) > 0
-            and len(errored) == 0
-            and len(pending) == 0
-            and total_chunks > 0
+            len(kali_docs) > 0 and len(errored) == 0 and len(pending) == 0 and total_chunks > 0
         )
 
         repaired = 0
@@ -320,10 +325,13 @@ async def check_ccn_health(
             # If no KALI docs at all, trigger a full install
             if len(kali_docs) == 0:
                 from app.rag.tasks import enqueue_kali_install
+
                 oc_result = await db.execute(
-                    select(OrganisationConvention).where(
+                    select(OrganisationConvention)
+                    .where(
                         OrganisationConvention.idcc == idcc,
-                    ).limit(1)
+                    )
+                    .limit(1)
                 )
                 oc = oc_result.scalar_one_or_none()
                 if oc:
@@ -335,20 +343,22 @@ async def check_ccn_health(
 
             total_repaired += repaired
 
-        items.append(CcnHealthItem(
-            idcc=idcc,
-            titre_court=ref.titre_court if ref else None,
-            status=row.status or "unknown",
-            articles_count=row.articles_count,
-            kali_docs_total=len(kali_docs),
-            kali_docs_indexed=len(indexed),
-            kali_docs_error=len(errored),
-            kali_docs_pending=len(pending),
-            kali_chunks=total_chunks,
-            bocc_reserved=bocc_reserved,
-            healthy=healthy and repaired == 0,
-            repaired=repaired,
-        ))
+        items.append(
+            CcnHealthItem(
+                idcc=idcc,
+                titre_court=ref.titre_court if ref else None,
+                status=row.status or "unknown",
+                articles_count=row.articles_count,
+                kali_docs_total=len(kali_docs),
+                kali_docs_indexed=len(indexed),
+                kali_docs_error=len(errored),
+                kali_docs_pending=len(pending),
+                kali_chunks=total_chunks,
+                bocc_reserved=bocc_reserved,
+                healthy=healthy and repaired == 0,
+                repaired=repaired,
+            )
+        )
 
     await db.commit()
 
@@ -367,8 +377,9 @@ async def admin_delete_ccn(
     db: AsyncSession = Depends(get_db),
 ) -> dict:
     """Delete a CCN from the shared reference. Only if no org uses it."""
-    from sqlalchemy import delete
     from qdrant_client.models import FieldCondition, Filter, FilterSelector, MatchValue
+    from sqlalchemy import delete
+
     from app.rag.qdrant_store import COLLECTION_NAME, get_qdrant_client
 
     # Check if any org uses this CCN
@@ -402,7 +413,9 @@ async def admin_delete_ccn(
                 collection_name=COLLECTION_NAME,
                 points_selector=FilterSelector(
                     filter=Filter(
-                        must=[FieldCondition(key="document_id", match=MatchValue(value=str(doc.id)))]
+                        must=[
+                            FieldCondition(key="document_id", match=MatchValue(value=str(doc.id)))
+                        ]
                     )
                 ),
             )

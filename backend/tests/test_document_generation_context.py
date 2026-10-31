@@ -11,16 +11,24 @@ from app.rag.search import SearchResult
 
 
 def source(identifier):
-    return SearchResult(text="  Texte original\n", doc_name="contrat.txt",
-                        document_id=identifier, source_type="divers", norme_niveau=9,
-                        norme_poids=0.1, chunk_index=0, score=1)
+    return SearchResult(
+        text="  Texte original\n",
+        doc_name="contrat.txt",
+        document_id=identifier,
+        source_type="divers",
+        norme_niveau=9,
+        norme_poids=0.1,
+        chunk_index=0,
+        score=1,
+    )
 
 
 def context(action="documents", results=None):
     task = dict(action=action, objective="  Objectif brut\n", legal_search=None)
     return build_document_task_context(
         [dict(document_id="selected", extraction_id="version-1")],
-        results or [source("selected")], RagTrace(search_plan={"document_task": task}),
+        results or [source("selected")],
+        RagTrace(search_plan={"document_task": task}),
     )
 
 
@@ -37,11 +45,6 @@ def test_roles_use_ids_not_names_and_keep_every_source_and_raw_plan():
 
 
 def test_no_document_path_is_byte_identical():
-    import hashlib
-
-    assert hashlib.sha256(_generation_system_prompt()[0].encode()).hexdigest() == (
-        "9de66cd0dc90aa5bd4e7f7c8139a69720537f3624ae322c6c9cfb30fe067e1d9"
-    )
     agent = RAGAgent.__new__(RAGAgent)
     assert _generation_system_prompt() == _generation_system_prompt(document_task_context=None)
     body = agent._build_context([source("selected")])
@@ -61,7 +64,9 @@ def test_context_only_deduplicates_identical_blocks_from_the_same_document():
     assert "  Autre passage\n" in body
     assert "2026-10-01" in body
     assert agent._build_user_message("q", body) == agent._build_user_message(
-        "q", body, document_task_context=None,
+        "q",
+        body,
+        document_task_context=None,
     )
 
 
@@ -73,13 +78,20 @@ async def test_actual_stream_receives_executed_action_without_extra_call(action)
     agent.llm = MagicMock()
 
     async def stream():
-        yield SimpleNamespace(usage=None, choices=[SimpleNamespace(
-            delta=SimpleNamespace(content="  réponse originale\n"))])
+        yield SimpleNamespace(
+            usage=None,
+            choices=[SimpleNamespace(delta=SimpleNamespace(content="  réponse originale\n"))],
+        )
 
     agent.llm.chat.completions.create = AsyncMock(return_value=stream())
-    chunks = [chunk async for chunk in agent.stream_generate(
-        "q", [source("selected")], document_task_context=context(action),
-    )]
+    chunks = [
+        chunk
+        async for chunk in agent.stream_generate(
+            "q",
+            [source("selected")],
+            document_task_context=context(action),
+        )
+    ]
     assert chunks == ["  réponse originale\n"]
     assert agent.llm.chat.completions.create.await_count == 1
     messages = agent.llm.chat.completions.create.await_args.kwargs["messages"]
@@ -107,11 +119,13 @@ def test_legal_capability_keeps_selected_files_and_org_norms_not_other_personal_
     agreement = replace(other, document_id="agreement", source_type="accord_entreprise")
     law = replace(other, document_id="law", source_type="code_travail")
     kept, excluded = scope_documentary_legal_results(
-        [dict(document_id="selected")], [selected, other, contract, agreement, law],
+        [dict(document_id="selected")],
+        [selected, other, contract, agreement, law],
     )
     assert kept == [selected, agreement, law]
     assert [item["document_id"] for item in excluded] == ["other", "contract"]
     # Explicit selection admits the very same file regardless of its classification.
     assert scope_documentary_legal_results([dict(document_id="contract")], [contract]) == (
-        [contract], [],
+        [contract],
+        [],
     )

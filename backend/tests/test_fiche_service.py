@@ -48,8 +48,7 @@ def _content(**overrides) -> FicheContent:
 
 def test_parse_minimal_json():
     raw = (
-        '{"eligible": true, "titre": "Test", "essentiel": "Une phrase.", '
-        '"points_cles": ["a", "b"]}'
+        '{"eligible": true, "titre": "Test", "essentiel": "Une phrase.", "points_cles": ["a", "b"]}'
     )
     content = parse_fiche_content(raw)
     assert content.eligible is True
@@ -349,7 +348,7 @@ def test_render_html_inserts_dynamic_body_verbatim():
     raw = (
         '<article class="fiche-content"><h1>Une procédure</h1>'
         '<section class="procedure"><h2>Étapes</h2><ol>'
-        '<li>Première</li><li>Deuxième</li></ol></section></article>'
+        "<li>Première</li><li>Deuxième</li></ol></section></article>"
     )
     content = parse_fiche_content(raw)
     final_html = render_fiche_html(content, [], generated_at=GEN_AT)
@@ -362,10 +361,10 @@ def test_render_html_styles_question_before_answer_and_reference_topics():
     raw = (
         '<article class="fiche-content"><h1>Préavis de démission</h1>'
         '<section class="user-question"><span class="question-label">Question posée</span>'
-        '<p>Quel est le préavis applicable ?</p></section>'
+        "<p>Quel est le préavis applicable ?</p></section>"
         '<aside class="essential"><p>Le préavis dépend de la convention.</p></aside>'
         '<section class="legal-references"><h2>Références juridiques</h2><ul><li>'
-        '<strong>Code du travail, art. L.1237-1</strong>'
+        "<strong>Code du travail, art. L.1237-1</strong>"
         '<span class="reference-topic">Conditions de la démission</span>'
         "</li></ul></section></article>"
     )

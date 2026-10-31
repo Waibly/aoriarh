@@ -38,9 +38,7 @@ _QUERY_MAX_CHARS = 2000
 _SENSITIVE_QUERY_PATTERNS = (
     (re.compile(r"(?i)\bbearer\s+[A-Za-z0-9._~+/=-]{12,}"), "Bearer [MASQUÉ]"),
     (
-        re.compile(
-            r"(?i)\b(api[_ -]?key|token|secret|password|mot de passe)\s*[:=]\s*\S+"
-        ),
+        re.compile(r"(?i)\b(api[_ -]?key|token|secret|password|mot de passe)\s*[:=]\s*\S+"),
         r"\1=[MASQUÉ]",
     ),
     (
@@ -85,7 +83,10 @@ async def _reserve_alert(user_id: str, event_type: str) -> bool:
         redis = _get_redis()
         category_key = f"security-alert:cooldown:{user_id}:{event_type}"
         reserved = await redis.set(
-            category_key, "1", ex=_CATEGORY_COOLDOWN_SECONDS, nx=True,
+            category_key,
+            "1",
+            ex=_CATEGORY_COOLDOWN_SECONDS,
+            nx=True,
         )
         if not reserved:
             return False
@@ -141,28 +142,28 @@ async def send_security_alert(
     html_content = f"""
     <div style="font-family:Arial,sans-serif;max-width:680px;color:#27272a">
       <h2 style="color:#652BB0">Demande sensible détectée</h2>
-      <p><strong>Catégorie :</strong> {safe['label']}</p>
+      <p><strong>Catégorie :</strong> {safe["label"]}</p>
       <div style="background:#f4f4f5;border-left:4px solid #652BB0;padding:14px;
-                  margin:16px 0;white-space:pre-wrap;overflow-wrap:anywhere">{safe['query']}</div>
+                  margin:16px 0;white-space:pre-wrap;overflow-wrap:anywhere">{safe["query"]}</div>
       <table style="border-collapse:collapse;font-size:13px">
         <tr><td style="padding:4px 12px 4px 0"><strong>Utilisateur</strong></td>
-            <td>{safe['user_name']} — {safe['user_email']}</td></tr>
+            <td>{safe["user_name"]} — {safe["user_email"]}</td></tr>
         <tr><td style="padding:4px 12px 4px 0"><strong>Rôle</strong></td>
-            <td>{safe['user_role']}</td></tr>
+            <td>{safe["user_role"]}</td></tr>
         <tr><td style="padding:4px 12px 4px 0"><strong>Organisation</strong></td>
-            <td>{safe['organisation_name']}</td></tr>
+            <td>{safe["organisation_name"]}</td></tr>
         <tr><td style="padding:4px 12px 4px 0"><strong>User ID</strong></td>
-            <td>{safe['user_id']}</td></tr>
+            <td>{safe["user_id"]}</td></tr>
         <tr><td style="padding:4px 12px 4px 0"><strong>Organisation ID</strong></td>
-            <td>{safe['organisation_id']}</td></tr>
+            <td>{safe["organisation_id"]}</td></tr>
         <tr><td style="padding:4px 12px 4px 0"><strong>Conversation ID</strong></td>
-            <td>{safe['conversation_id']}</td></tr>
+            <td>{safe["conversation_id"]}</td></tr>
         <tr><td style="padding:4px 12px 4px 0"><strong>Message ID</strong></td>
-            <td>{safe['message_id']}</td></tr>
+            <td>{safe["message_id"]}</td></tr>
         <tr><td style="padding:4px 12px 4px 0"><strong>Détection</strong></td>
-            <td>{safe['detected_via']}</td></tr>
+            <td>{safe["detected_via"]}</td></tr>
         <tr><td style="padding:4px 12px 4px 0"><strong>Date</strong></td>
-            <td>{safe['detected_at']}</td></tr>
+            <td>{safe["detected_at"]}</td></tr>
       </table>
       <p style="color:#71717a;font-size:12px;margin-top:18px">
         Aucune adresse IP, donnée d'un autre client, secret ou contexte technique

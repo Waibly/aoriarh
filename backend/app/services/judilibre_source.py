@@ -5,13 +5,17 @@ def official_summaries(raw: dict) -> list[str]:
     entries = raw.get("titlesAndSummaries")
     if entries is None:
         entries = []
-    if (raw.get("summary") is not None and not isinstance(raw["summary"], str)
-            or not isinstance(entries, list)):
+    if (
+        raw.get("summary") is not None
+        and not isinstance(raw["summary"], str)
+        or not isinstance(entries, list)
+    ):
         raise ValueError("judilibre_invalid_official_summary_structure")
     values = [raw.get("summary")]
     for item in entries:
-        if not isinstance(item, dict) or (item.get("summary") is not None
-                                         and not isinstance(item["summary"], str)):
+        if not isinstance(item, dict) or (
+            item.get("summary") is not None and not isinstance(item["summary"], str)
+        ):
             raise ValueError("judilibre_invalid_official_summary_structure")
         values.append(item.get("summary"))
     # Duplicate fields describe the same source. Do not rewrite their contents.

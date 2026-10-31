@@ -76,8 +76,10 @@ def ensure_collection(client: QdrantClient) -> None:
             },
             sparse_vectors_config={
                 name: SparseVectorParams(
-                    index=SparseIndexParams(on_disk=True), modifier=Modifier.IDF,
-                ) for name in {"sparse-bm25", lexical_profile().vector_name}
+                    index=SparseIndexParams(on_disk=True),
+                    modifier=Modifier.IDF,
+                )
+                for name in {"sparse-bm25", lexical_profile().vector_name}
             },
         )
         # Create payload indexes for efficient filtering

@@ -9,6 +9,7 @@ seraient facturés à la mauvaise org (race relevée à l'audit du 27/07/2026).
 Ces tests exécutent des appels réellement CONCURRENTS sur la même instance
 partagée et vérifient que chaque coût part avec l'organisation de SA requête.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -44,10 +45,7 @@ async def test_concurrent_rerank_costs_attributed_to_each_org(monkeypatch):
         await asyncio.sleep(0.05)
         return {
             "usage": {"total_tokens": 42},
-            "data": [
-                {"index": i, "relevance_score": 0.9}
-                for i in range(len(documents))
-            ],
+            "data": [{"index": i, "relevance_score": 0.9} for i in range(len(documents))],
         }
 
     monkeypatch.setattr(VoyageReranker, "_call_api", fake_api)
@@ -55,11 +53,15 @@ async def test_concurrent_rerank_costs_attributed_to_each_org(monkeypatch):
     reranker = VoyageReranker()  # une seule instance, comme le singleton prod
     await asyncio.gather(
         reranker.rerank(
-            "q A", [_res(1), _res(2)], top_k=2,
+            "q A",
+            [_res(1), _res(2)],
+            top_k=2,
             cost_ctx=CostContext(organisation_id="org-A", context_id="question-A"),
         ),
         reranker.rerank(
-            "q B", [_res(3), _res(4)], top_k=2,
+            "q B",
+            [_res(3), _res(4)],
+            top_k=2,
             cost_ctx=CostContext(organisation_id="org-B", context_id="question-B"),
         ),
     )

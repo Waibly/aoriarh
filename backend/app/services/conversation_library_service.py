@@ -29,9 +29,12 @@ class ConversationLibraryService:
 
     async def conversation(self, conversation_id, user):
         try:
-            conversation = await ConversationService(self.db).get_conversation(conversation_id, user)
+            conversation = await ConversationService(self.db).get_conversation(
+                conversation_id, user
+            )
         except HTTPException as exc:
             from app.models.conversation import Conversation
+
             source = await self.db.get(Conversation, conversation_id)
             if exc.status_code == 403 and source is not None and source.user_id == user.id:
                 raise HTTPException(404, "Conversation non accessible") from None
@@ -78,13 +81,22 @@ class ConversationLibraryService:
             raise HTTPException(422, "La date de début doit précéder la date de fin")
         if order not in {"newest", "oldest"}:
             raise HTTPException(422, "Ordre de recherche invalide")
+        from sqlalchemy import and_, or_
+
         from app.services.document_access import company_document_conditions
-        from sqlalchemy import or_, and_
+
         scope = and_(*company_document_conditions())
         if getattr(conversation, "dossier_id", None):
-            scope = or_(scope, and_(Document.private_dossier_id == conversation.dossier_id,
-                                   Document.retired_at.is_(None)))
-        query = select(Document).where(Document.organisation_id == conversation.organisation_id, scope)
+            scope = or_(
+                scope,
+                and_(
+                    Document.private_dossier_id == conversation.dossier_id,
+                    Document.retired_at.is_(None),
+                ),
+            )
+        query = select(Document).where(
+            Document.organisation_id == conversation.organisation_id, scope
+        )
         if uploaded_by is not None:
             query = query.where(Document.uploaded_by == uploaded_by)
         if name:
@@ -139,7 +151,11 @@ class ConversationLibraryService:
         }
 
     async def prepare(self, conversation, user, document_id: uuid.UUID, source_sha256: str):
-        reader = DocumentExtractionService(self.db, dossier_id=getattr(conversation, "dossier_id", None), conversation_id=conversation.id)
+        reader = DocumentExtractionService(
+            self.db,
+            dossier_id=getattr(conversation, "dossier_id", None),
+            conversation_id=conversation.id,
+        )
         doc = await reader._authorize(document_id, conversation.organisation_id, user.id)
         if doc.file_hash != source_sha256:
             raise HTTPException(409, "Le document a changé ; relancez la recherche")

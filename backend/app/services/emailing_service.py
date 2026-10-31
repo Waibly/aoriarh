@@ -81,9 +81,7 @@ async def process_unsubscribe(
     lignes (toutes campagnes) + événement pour les stats. Idempotent."""
     recipient = (
         await db.execute(
-            select(EmailCampaignRecipient).where(
-                EmailCampaignRecipient.id == recipient_id
-            )
+            select(EmailCampaignRecipient).where(EmailCampaignRecipient.id == recipient_id)
         )
     ).scalar_one_or_none()
     if not recipient:
@@ -93,9 +91,7 @@ async def process_unsubscribe(
     now = datetime.now(UTC)
 
     already = (
-        await db.execute(
-            select(EmailUnsubscribe).where(EmailUnsubscribe.email == email)
-        )
+        await db.execute(select(EmailUnsubscribe).where(EmailUnsubscribe.email == email))
     ).scalar_one_or_none()
     if not already:
         db.add(EmailUnsubscribe(email=email, unsubscribed_at=now))
@@ -122,13 +118,15 @@ async def process_unsubscribe(
             .limit(1)
         )
     ).scalar()
-    db.add(EmailCampaignEvent(
-        campaign_id=recipient.campaign_id,
-        recipient_id=recipient_id,
-        step_position=last_sent or 0,
-        event_type="unsubscribed",
-        occurred_at=now,
-    ))
+    db.add(
+        EmailCampaignEvent(
+            campaign_id=recipient.campaign_id,
+            recipient_id=recipient_id,
+            step_position=last_sent or 0,
+            event_type="unsubscribed",
+            occurred_at=now,
+        )
+    )
 
     await db.commit()
     return recipient
@@ -150,16 +148,18 @@ class EmailTemplateService:
         return list(result.scalars().all())
 
     async def get(self, template_id: uuid.UUID) -> EmailTemplate:
-        result = await self.db.execute(
-            select(EmailTemplate).where(EmailTemplate.id == template_id)
-        )
+        result = await self.db.execute(select(EmailTemplate).where(EmailTemplate.id == template_id))
         tpl = result.scalar_one_or_none()
         if not tpl:
             raise HTTPException(status.HTTP_404_NOT_FOUND, "Template introuvable")
         return tpl
 
-    async def create(self, name: str, subject: str, html_body: str, preview_text: str | None = None) -> EmailTemplate:
-        tpl = EmailTemplate(name=name, subject=subject, preview_text=preview_text, html_body=html_body)
+    async def create(
+        self, name: str, subject: str, html_body: str, preview_text: str | None = None
+    ) -> EmailTemplate:
+        tpl = EmailTemplate(
+            name=name, subject=subject, preview_text=preview_text, html_body=html_body
+        )
         self.db.add(tpl)
         await self.db.commit()
         await self.db.refresh(tpl)
@@ -198,7 +198,9 @@ class EmailTemplateService:
             "nom": "Dupont",
             "entreprise": "Entreprise Test",
             "poste": "DRH",
-            "desinscription": f"{settings.api_base_url.rstrip('/')}/api/v1/emailing/unsubscribe/test",
+            "desinscription": (
+                f"{settings.api_base_url.rstrip('/')}/api/v1/emailing/unsubscribe/test"
+            ),
         }
         html = _render_variables(tpl.html_body, test_vars)
         preview = _render_variables(tpl.preview_text, test_vars) if tpl.preview_text else None
@@ -216,8 +218,7 @@ class EmailTemplateService:
 
 def _sequence_load_options():
     return (
-        selectinload(EmailSequence.steps)
-        .selectinload(EmailSequenceStep.template),
+        selectinload(EmailSequence.steps).selectinload(EmailSequenceStep.template),
         selectinload(EmailSequence.steps)
         .selectinload(EmailSequenceStep.branches)
         .selectinload(EmailSequenceStepBranch.template),
@@ -336,9 +337,11 @@ class EmailCampaignService:
         self.db = db
 
     async def list_all(self, status_filter: str | None = None) -> list[dict]:
-        query = select(EmailCampaign).options(
-            selectinload(EmailCampaign.sequence)
-        ).order_by(EmailCampaign.updated_at.desc())
+        query = (
+            select(EmailCampaign)
+            .options(selectinload(EmailCampaign.sequence))
+            .order_by(EmailCampaign.updated_at.desc())
+        )
 
         if status_filter and status_filter != "all":
             query = query.where(EmailCampaign.status == status_filter)
@@ -349,14 +352,16 @@ class EmailCampaignService:
         items = []
         for c in campaigns:
             count_result = await self.db.execute(
-                select(func.count()).select_from(EmailCampaignRecipient)
+                select(func.count())
+                .select_from(EmailCampaignRecipient)
                 .where(EmailCampaignRecipient.campaign_id == c.id)
             )
             recipient_count = count_result.scalar() or 0
 
             # Combien ont déjà reçu au moins le 1er mail (progression).
             sent_result = await self.db.execute(
-                select(func.count()).select_from(EmailCampaignRecipient)
+                select(func.count())
+                .select_from(EmailCampaignRecipient)
                 .where(
                     EmailCampaignRecipient.campaign_id == c.id,
                     EmailCampaignRecipient.current_step > 0,
@@ -364,20 +369,22 @@ class EmailCampaignService:
             )
             sent_count = sent_result.scalar() or 0
 
-            items.append({
-                "id": c.id,
-                "name": c.name,
-                "sequence_id": c.sequence_id,
-                "sequence_name": c.sequence.name if c.sequence else None,
-                "brevo_list_ids": c.brevo_list_ids,
-                "status": c.status,
-                "scheduled_at": c.scheduled_at,
-                "current_step": c.current_step,
-                "recipient_count": recipient_count,
-                "sent_count": sent_count,
-                "created_at": c.created_at,
-                "updated_at": c.updated_at,
-            })
+            items.append(
+                {
+                    "id": c.id,
+                    "name": c.name,
+                    "sequence_id": c.sequence_id,
+                    "sequence_name": c.sequence.name if c.sequence else None,
+                    "brevo_list_ids": c.brevo_list_ids,
+                    "status": c.status,
+                    "scheduled_at": c.scheduled_at,
+                    "current_step": c.current_step,
+                    "recipient_count": recipient_count,
+                    "sent_count": sent_count,
+                    "created_at": c.created_at,
+                    "updated_at": c.updated_at,
+                }
+            )
 
         return items
 
@@ -448,15 +455,15 @@ class EmailCampaignService:
 
         existing_emails = set()
         result = await self.db.execute(
-            select(EmailCampaignRecipient.email)
-            .where(EmailCampaignRecipient.campaign_id == campaign_id)
+            select(EmailCampaignRecipient.email).where(
+                EmailCampaignRecipient.campaign_id == campaign_id
+            )
         )
         existing_emails = {row[0] for row in result.all()}
 
         # Liste de suppression : on ne ré-ajoute jamais un email désinscrit.
         suppressed = {
-            row[0]
-            for row in (await self.db.execute(select(EmailUnsubscribe.email))).all()
+            row[0] for row in (await self.db.execute(select(EmailUnsubscribe.email))).all()
         }
 
         for contact in contacts:
@@ -526,8 +533,7 @@ class EmailCampaignService:
                 EmailCampaignEvent.branch_condition == branch_condition,
             )
         result = await self.db.execute(
-            select(func.count(func.distinct(EmailCampaignEvent.recipient_id)))
-            .where(*conditions)
+            select(func.count(func.distinct(EmailCampaignEvent.recipient_id))).where(*conditions)
         )
         return result.scalar() or 0
 
@@ -535,7 +541,8 @@ class EmailCampaignService:
         campaign = await self.get(campaign_id)
 
         count_result = await self.db.execute(
-            select(func.count()).select_from(EmailCampaignRecipient)
+            select(func.count())
+            .select_from(EmailCampaignRecipient)
             .where(EmailCampaignRecipient.campaign_id == campaign_id)
         )
         total_recipients = count_result.scalar() or 0
@@ -546,10 +553,12 @@ class EmailCampaignService:
                 select(
                     EmailCampaignEvent.event_type,
                     func.count(),
-                ).where(
+                )
+                .where(
                     EmailCampaignEvent.campaign_id == campaign_id,
                     EmailCampaignEvent.step_position == step.position,
-                ).group_by(EmailCampaignEvent.event_type)
+                )
+                .group_by(EmailCampaignEvent.event_type)
             )
             counts = dict(events_result.all())
             # Un clic implique une ouverture (cf. _determine_recipient_condition) :
@@ -558,7 +567,8 @@ class EmailCampaignService:
             # cohérent avec la logique d'aiguillage et ne jamais afficher plus de
             # clics que d'ouvertures.
             opened = await self._opened_or_clicked_count(
-                campaign_id, step.position,
+                campaign_id,
+                step.position,
             )
 
             branch_stats = []
@@ -568,39 +578,47 @@ class EmailCampaignService:
                         select(
                             EmailCampaignEvent.event_type,
                             func.count(),
-                        ).where(
+                        )
+                        .where(
                             EmailCampaignEvent.campaign_id == campaign_id,
                             EmailCampaignEvent.step_position == step.position,
                             EmailCampaignEvent.branch_condition == branch.condition,
-                        ).group_by(EmailCampaignEvent.event_type)
+                        )
+                        .group_by(EmailCampaignEvent.event_type)
                     )
                     br_counts = dict(br_events.all())
                     br_opened = await self._opened_or_clicked_count(
-                        campaign_id, step.position, branch.condition,
+                        campaign_id,
+                        step.position,
+                        branch.condition,
                     )
-                    branch_stats.append({
-                        "condition": branch.condition,
-                        "template_name": branch.template.name if branch.template else None,
-                        "sent": br_counts.get("sent", 0),
-                        "opened": br_opened,
-                        "clicked": br_counts.get("clicked", 0),
-                        "clicked_machine": br_counts.get("clicked_machine", 0),
-                        "bounced": br_counts.get("bounced", 0),
-                        "unsubscribed": br_counts.get("unsubscribed", 0),
-                    })
+                    branch_stats.append(
+                        {
+                            "condition": branch.condition,
+                            "template_name": branch.template.name if branch.template else None,
+                            "sent": br_counts.get("sent", 0),
+                            "opened": br_opened,
+                            "clicked": br_counts.get("clicked", 0),
+                            "clicked_machine": br_counts.get("clicked_machine", 0),
+                            "bounced": br_counts.get("bounced", 0),
+                            "unsubscribed": br_counts.get("unsubscribed", 0),
+                        }
+                    )
 
-            steps_stats.append({
-                "step_position": step.position,
-                "template_name": step.template.name if step.template else None,
-                "delay_days": step.delay_days,
-                "sent": counts.get("sent", 0),
-                "opened": opened,
-                "clicked": counts.get("clicked", 0),
-                "clicked_machine": counts.get("clicked_machine", 0),
-                "bounced": counts.get("bounced", 0),
-                "unsubscribed": counts.get("unsubscribed", 0),
-                "branches": branch_stats,
-            })
+            steps_stats.append(
+                {
+                    "step_position": step.position,
+                    "template_name": step.template.name if step.template else None,
+                    "delay_days": step.delay_days,
+                    "sent": counts.get("sent", 0),
+                    "opened": opened,
+                    "clicked": counts.get("clicked", 0),
+                    "clicked_machine": counts.get("clicked_machine", 0),
+                    "bounced": counts.get("bounced", 0),
+                    "unsubscribed": counts.get("unsubscribed", 0),
+                    "branches": branch_stats,
+                }
+            )
 
         return {
             "campaign_id": campaign.id,
@@ -629,12 +647,8 @@ class EmailCampaignService:
             select(
                 EmailCampaignRecipient.wave_id,
                 func.count().label("total"),
-                func.count()
-                .filter(EmailCampaignRecipient.current_step > 0)
-                .label("started"),
-                func.count()
-                .filter(EmailCampaignRecipient.status == "completed")
-                .label("done"),
+                func.count().filter(EmailCampaignRecipient.current_step > 0).label("started"),
+                func.count().filter(EmailCampaignRecipient.status == "completed").label("done"),
             )
             .where(
                 EmailCampaignRecipient.campaign_id == campaign_id,
@@ -655,24 +669,28 @@ class EmailCampaignService:
                 status_label = "sending"
             else:
                 status_label = "scheduled"
-            wave_items.append({
-                "id": w.id,
-                "number": w.number,
-                "scheduled_at": w.scheduled_at,
-                "recipient_count": w.recipient_count,
-                "sent_count": started,
-                "done_count": done,
-                "status": status_label,
-            })
+            wave_items.append(
+                {
+                    "id": w.id,
+                    "number": w.number,
+                    "scheduled_at": w.scheduled_at,
+                    "recipient_count": w.recipient_count,
+                    "sent_count": started,
+                    "done_count": done,
+                    "status": status_label,
+                }
+            )
 
         total_result = await self.db.execute(
-            select(func.count()).select_from(EmailCampaignRecipient)
+            select(func.count())
+            .select_from(EmailCampaignRecipient)
             .where(EmailCampaignRecipient.campaign_id == campaign_id)
         )
         total_recipients = total_result.scalar() or 0
 
         pending_result = await self.db.execute(
-            select(func.count()).select_from(EmailCampaignRecipient)
+            select(func.count())
+            .select_from(EmailCampaignRecipient)
             .where(
                 EmailCampaignRecipient.campaign_id == campaign_id,
                 EmailCampaignRecipient.wave_id.is_(None),
@@ -707,9 +725,7 @@ class EmailCampaignService:
             "clicked": clicked,
         }
 
-    async def preview_next_contacts(
-        self, campaign_id: uuid.UUID, count: int
-    ) -> list[dict]:
+    async def preview_next_contacts(self, campaign_id: uuid.UUID, count: int) -> list[dict]:
         """Les N prochains contacts du stock — ceux qui partiront dans la
         prochaine vague. Même ordre que schedule_wave, pour montrer « qui »
         avant de valider."""
@@ -727,9 +743,7 @@ class EmailCampaignService:
         )
         return [self._contact_dict(r) for r in result.scalars().all()]
 
-    async def list_wave_contacts(
-        self, campaign_id: uuid.UUID, wave_id: uuid.UUID
-    ) -> list[dict]:
+    async def list_wave_contacts(self, campaign_id: uuid.UUID, wave_id: uuid.UUID) -> list[dict]:
         wave = (
             await self.db.execute(
                 select(EmailCampaignWave).where(
@@ -749,9 +763,9 @@ class EmailCampaignService:
         contacts = []
         for r in result.scalars().unique().all():
             types = {e.event_type for e in r.events}
-            contacts.append(self._contact_dict(
-                r, opened="opened" in types, clicked="clicked" in types
-            ))
+            contacts.append(
+                self._contact_dict(r, opened="opened" in types, clicked="clicked" in types)
+            )
         return contacts
 
     async def schedule_wave(
@@ -776,8 +790,7 @@ class EmailCampaignService:
         day_start = scheduled_at.replace(hour=0, minute=0, second=0, microsecond=0)
         day_end = day_start + timedelta(days=1)
         already_result = await self.db.execute(
-            select(func.coalesce(func.sum(EmailCampaignWave.recipient_count), 0))
-            .where(
+            select(func.coalesce(func.sum(EmailCampaignWave.recipient_count), 0)).where(
                 EmailCampaignWave.scheduled_at >= day_start,
                 EmailCampaignWave.scheduled_at < day_end,
             )
@@ -814,8 +827,9 @@ class EmailCampaignService:
             )
 
         number_result = await self.db.execute(
-            select(func.coalesce(func.max(EmailCampaignWave.number), 0))
-            .where(EmailCampaignWave.campaign_id == campaign_id)
+            select(func.coalesce(func.max(EmailCampaignWave.number), 0)).where(
+                EmailCampaignWave.campaign_id == campaign_id
+            )
         )
         next_number = (number_result.scalar() or 0) + 1
 
@@ -836,9 +850,7 @@ class EmailCampaignService:
         await self.db.refresh(wave)
         return wave
 
-    async def cancel_wave(
-        self, campaign_id: uuid.UUID, wave_id: uuid.UUID
-    ) -> None:
+    async def cancel_wave(self, campaign_id: uuid.UUID, wave_id: uuid.UUID) -> None:
         wave_result = await self.db.execute(
             select(EmailCampaignWave).where(
                 EmailCampaignWave.id == wave_id,
@@ -850,7 +862,9 @@ class EmailCampaignService:
             raise HTTPException(status.HTTP_404_NOT_FOUND, "Vague introuvable")
 
         started_result = await self.db.execute(
-            select(func.count()).select_from(EmailCampaignRecipient).where(
+            select(func.count())
+            .select_from(EmailCampaignRecipient)
+            .where(
                 EmailCampaignRecipient.wave_id == wave_id,
                 EmailCampaignRecipient.current_step > 0,
             )
@@ -927,13 +941,17 @@ async def fetch_brevo_list_contacts(list_id: int, limit: int = 500) -> list[dict
             data = response.json()
             for c in data.get("contacts", []):
                 attrs = c.get("attributes", {})
-                contacts.append({
-                    "id": c.get("id"),
-                    "email": c.get("email", ""),
-                    "first_name": attrs.get("PRENOM") or attrs.get("FIRSTNAME"),
-                    "last_name": attrs.get("NOM") or attrs.get("LASTNAME"),
-                    "company": attrs.get("ENTREPRISE") or attrs.get("COMPANY") or attrs.get("SMS"),
-                })
+                contacts.append(
+                    {
+                        "id": c.get("id"),
+                        "email": c.get("email", ""),
+                        "first_name": attrs.get("PRENOM") or attrs.get("FIRSTNAME"),
+                        "last_name": attrs.get("NOM") or attrs.get("LASTNAME"),
+                        "company": attrs.get("ENTREPRISE")
+                        or attrs.get("COMPANY")
+                        or attrs.get("SMS"),
+                    }
+                )
 
             if len(data.get("contacts", [])) < 500 or len(contacts) >= limit:
                 break
@@ -1046,7 +1064,9 @@ async def _delete_brevo_contact(email: str) -> bool:
 
     logger.error(
         "Brevo delete error %s for %s: %s",
-        response.status_code, email, response.text,
+        response.status_code,
+        email,
+        response.text,
     )
     return False
 
@@ -1179,7 +1199,9 @@ async def process_campaign_emails(db: AsyncSession) -> int:
     day_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
     sent_today = (
         await db.execute(
-            select(func.count()).select_from(EmailCampaignEvent).where(
+            select(func.count())
+            .select_from(EmailCampaignEvent)
+            .where(
                 EmailCampaignEvent.event_type == "sent",
                 EmailCampaignEvent.occurred_at >= day_start,
             )
@@ -1251,23 +1273,25 @@ async def process_campaign_emails(db: AsyncSession) -> int:
             if not template:
                 continue
 
-            pending.append({
-                "send_after": send_after,
-                "recipient_id": recipient.id,
-                "campaign_id": campaign.id,
-                "email": recipient.email,
-                "first_name": recipient.first_name,
-                "last_name": recipient.last_name,
-                "company": recipient.company,
-                "current_step": idx,
-                "len_steps": len(steps),
-                "send_attempts": recipient.send_attempts or 0,
-                "step_position": step.position,
-                "branch_condition": branch_condition,
-                "html_body": template.html_body,
-                "subject": template.subject,
-                "preview_text": template.preview_text,
-            })
+            pending.append(
+                {
+                    "send_after": send_after,
+                    "recipient_id": recipient.id,
+                    "campaign_id": campaign.id,
+                    "email": recipient.email,
+                    "first_name": recipient.first_name,
+                    "last_name": recipient.last_name,
+                    "company": recipient.company,
+                    "current_step": idx,
+                    "len_steps": len(steps),
+                    "send_attempts": recipient.send_attempts or 0,
+                    "step_position": step.position,
+                    "branch_condition": branch_condition,
+                    "html_body": template.html_body,
+                    "subject": template.subject,
+                    "preview_text": template.preview_text,
+                }
+            )
 
     # 4) Les plus anciens d'abord : relances et vieilles vagues prioritaires.
     pending.sort(key=lambda p: p["send_after"])
@@ -1310,14 +1334,16 @@ async def process_campaign_emails(db: AsyncSession) -> int:
                     status="completed" if new_step >= p["len_steps"] else "active",
                 )
             )
-            db.add(EmailCampaignEvent(
-                campaign_id=p["campaign_id"],
-                recipient_id=p["recipient_id"],
-                step_position=p["step_position"],
-                event_type="sent",
-                branch_condition=p["branch_condition"],
-                occurred_at=now,
-            ))
+            db.add(
+                EmailCampaignEvent(
+                    campaign_id=p["campaign_id"],
+                    recipient_id=p["recipient_id"],
+                    step_position=p["step_position"],
+                    event_type="sent",
+                    branch_condition=p["branch_condition"],
+                    occurred_at=now,
+                )
+            )
             await db.commit()
             total_sent += 1
         elif status_result in ("quota", "skip"):
@@ -1337,7 +1363,8 @@ async def process_campaign_emails(db: AsyncSession) -> int:
             if new_status == "failed":
                 logger.error(
                     "Recipient %s marqué 'failed' après %d échecs",
-                    p["email"], new_attempts,
+                    p["email"],
+                    new_attempts,
                 )
 
     # 6) Marquer terminées les campagnes sans contact actif restant (ni stock,
@@ -1348,7 +1375,9 @@ async def process_campaign_emails(db: AsyncSession) -> int:
             continue
         remaining = (
             await db.execute(
-                select(func.count()).select_from(EmailCampaignRecipient).where(
+                select(func.count())
+                .select_from(EmailCampaignRecipient)
+                .where(
                     EmailCampaignRecipient.campaign_id == campaign.id,
                     EmailCampaignRecipient.status == "active",
                     EmailCampaignRecipient.current_step < len(steps),
@@ -1357,9 +1386,9 @@ async def process_campaign_emails(db: AsyncSession) -> int:
         ).scalar() or 0
         total = (
             await db.execute(
-                select(func.count()).select_from(EmailCampaignRecipient).where(
-                    EmailCampaignRecipient.campaign_id == campaign.id
-                )
+                select(func.count())
+                .select_from(EmailCampaignRecipient)
+                .where(EmailCampaignRecipient.campaign_id == campaign.id)
             )
         ).scalar() or 0
         if total > 0 and remaining == 0 and campaign.status == "running":
@@ -1380,6 +1409,8 @@ async def process_campaign_emails(db: AsyncSession) -> int:
 
     logger.info(
         "Campaign cron: %d envoyés (budget passage=%d, déjà %d aujourd'hui)",
-        total_sent, run_budget, sent_today,
+        total_sent,
+        run_budget,
+        sent_today,
     )
     return total_sent

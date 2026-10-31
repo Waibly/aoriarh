@@ -59,9 +59,7 @@ async def _get_user_id(email: str) -> uuid.UUID:
 
 
 @pytest.mark.asyncio
-async def test_stats_requires_admin(
-    client: AsyncClient, regular_user: dict[str, str]
-) -> None:
+async def test_stats_requires_admin(client: AsyncClient, regular_user: dict[str, str]) -> None:
     res = await client.get(
         "/api/v1/admin/documents/stats",
         headers=auth_header(regular_user["token"]),
@@ -70,9 +68,7 @@ async def test_stats_requires_admin(
 
 
 @pytest.mark.asyncio
-async def test_list_all_requires_admin(
-    client: AsyncClient, regular_user: dict[str, str]
-) -> None:
+async def test_list_all_requires_admin(client: AsyncClient, regular_user: dict[str, str]) -> None:
     res = await client.get(
         "/api/v1/admin/documents/all",
         headers=auth_header(regular_user["token"]),
@@ -107,12 +103,16 @@ async def test_manager_cannot_access_admin_endpoints(
 
 @pytest.mark.asyncio
 async def test_errors_requires_admin(client: AsyncClient, regular_user: dict[str, str]):
-    res = await client.get("/api/v1/admin/documents/errors", headers=auth_header(regular_user["token"]))
+    res = await client.get(
+        "/api/v1/admin/documents/errors", headers=auth_header(regular_user["token"])
+    )
     assert res.status_code == 403
 
 
 @pytest.mark.asyncio
-async def test_errors_include_both_scopes_and_original_error(client: AsyncClient, admin_user: dict[str, str]):
+async def test_errors_include_both_scopes_and_original_error(
+    client: AsyncClient, admin_user: dict[str, str]
+):
     from app.models.document import Document
     from app.models.organisation import Organisation
 
@@ -122,7 +122,9 @@ async def test_errors_include_both_scopes_and_original_error(client: AsyncClient
         session.add(Organisation(id=org_id, name="Organisation test"))
         await session.commit()
     common = await _create_document_in_db(uploaded_by=user_id, status="error", name="CCN commune")
-    org = await _create_document_in_db(uploaded_by=user_id, org_id=org_id, status="error", name="CCN entreprise")
+    org = await _create_document_in_db(
+        uploaded_by=user_id, org_id=org_id, status="error", name="CCN entreprise"
+    )
     await _create_document_in_db(uploaded_by=user_id, status="indexed")
     async with test_session_factory() as session:
         doc = await session.get(Document, org)
@@ -135,15 +137,20 @@ async def test_errors_include_both_scopes_and_original_error(client: AsyncClient
     assert items[str(common)]["organisation_id"] is None
     assert items[str(org)]["organisation_name"] == "Organisation test"
     assert items[str(org)]["indexation_error"] == "Expecting ',' delimiter"
-    pages = [(await client.get(f"/api/v1/admin/documents/errors?page={page}&page_size=1", headers=headers)).json() for page in (1, 2)]
+    pages = [
+        (
+            await client.get(
+                f"/api/v1/admin/documents/errors?page={page}&page_size=1", headers=headers
+            )
+        ).json()
+        for page in (1, 2)
+    ]
     assert all(page["total"] == 2 and len(page["items"]) == 1 for page in pages)
     assert pages[0]["items"][0]["id"] != pages[1]["items"][0]["id"]
 
 
 @pytest.mark.asyncio
-async def test_stats_empty(
-    client: AsyncClient, admin_user: dict[str, str]
-) -> None:
+async def test_stats_empty(client: AsyncClient, admin_user: dict[str, str]) -> None:
     res = await client.get(
         "/api/v1/admin/documents/stats",
         headers=auth_header(admin_user["token"]),
@@ -158,9 +165,7 @@ async def test_stats_empty(
 
 
 @pytest.mark.asyncio
-async def test_stats_with_documents(
-    client: AsyncClient, admin_user: dict[str, str]
-) -> None:
+async def test_stats_with_documents(client: AsyncClient, admin_user: dict[str, str]) -> None:
     user_id = await _get_user_id("admin@test.com")
 
     # Create common docs
@@ -199,9 +204,7 @@ async def test_stats_with_documents(
 
 
 @pytest.mark.asyncio
-async def test_list_all_documents_empty(
-    client: AsyncClient, admin_user: dict[str, str]
-) -> None:
+async def test_list_all_documents_empty(client: AsyncClient, admin_user: dict[str, str]) -> None:
     res = await client.get(
         "/api/v1/admin/documents/all",
         headers=auth_header(admin_user["token"]),
@@ -216,9 +219,7 @@ async def test_list_all_documents_returns_all(
 ) -> None:
     user_id = await _get_user_id("admin@test.com")
     await _create_document_in_db(uploaded_by=user_id, name="common.pdf")
-    await _create_document_in_db(
-        uploaded_by=user_id, name="org.pdf", org_id=uuid.uuid4()
-    )
+    await _create_document_in_db(uploaded_by=user_id, name="org.pdf", org_id=uuid.uuid4())
 
     res = await client.get(
         "/api/v1/admin/documents/all",
@@ -245,9 +246,7 @@ async def test_list_all_documents_includes_organisation_name(
     org_id = uuid.UUID(org_res.json()["id"])
 
     user_id = await _get_user_id("admin@test.com")
-    await _create_document_in_db(
-        uploaded_by=user_id, name="org-doc.pdf", org_id=org_id
-    )
+    await _create_document_in_db(uploaded_by=user_id, name="org-doc.pdf", org_id=org_id)
 
     res = await client.get(
         "/api/v1/admin/documents/all",
@@ -278,14 +277,10 @@ async def test_list_all_common_doc_has_null_org_name(
 
 
 @pytest.mark.asyncio
-async def test_list_common_documents(
-    client: AsyncClient, admin_user: dict[str, str]
-) -> None:
+async def test_list_common_documents(client: AsyncClient, admin_user: dict[str, str]) -> None:
     user_id = await _get_user_id("admin@test.com")
     await _create_document_in_db(uploaded_by=user_id, name="common.pdf")
-    await _create_document_in_db(
-        uploaded_by=user_id, name="org.pdf", org_id=uuid.uuid4()
-    )
+    await _create_document_in_db(uploaded_by=user_id, name="org.pdf", org_id=uuid.uuid4())
 
     res = await client.get(
         "/api/v1/admin/documents/",
@@ -407,9 +402,7 @@ async def test_reindex_error_document(
     admin_user: dict[str, str],
 ) -> None:
     user_id = await _get_user_id("admin@test.com")
-    doc_id = await _create_document_in_db(
-        uploaded_by=user_id, name="failed.pdf", status="error"
-    )
+    doc_id = await _create_document_in_db(uploaded_by=user_id, name="failed.pdf", status="error")
 
     res = await client.post(
         f"/api/v1/admin/documents/{doc_id}/reindex",
@@ -425,9 +418,7 @@ async def test_reindex_indexed_document_rejected(
     client: AsyncClient, admin_user: dict[str, str]
 ) -> None:
     user_id = await _get_user_id("admin@test.com")
-    doc_id = await _create_document_in_db(
-        uploaded_by=user_id, name="ok.pdf", status="indexed"
-    )
+    doc_id = await _create_document_in_db(uploaded_by=user_id, name="ok.pdf", status="indexed")
 
     res = await client.post(
         f"/api/v1/admin/documents/{doc_id}/reindex",

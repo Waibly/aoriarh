@@ -42,19 +42,21 @@ def decision_period_filter(period: dict) -> Filter:
         gte=spec.date_from,
         lt=end + timedelta(days=1) if end and end < date.max else None,
     )
-    decisions = FieldCondition(
-        key="source_type", match=MatchAny(any=list(DECISION_SOURCE_TYPES))
-    )
-    return Filter(should=[
-        Filter(must_not=[decisions]),
-        Filter(must=[
-            FieldCondition(
-                key="source_type",
-                match=MatchAny(any=spec.source_types or list(DECISION_SOURCE_TYPES)),
+    decisions = FieldCondition(key="source_type", match=MatchAny(any=list(DECISION_SOURCE_TYPES)))
+    return Filter(
+        should=[
+            Filter(must_not=[decisions]),
+            Filter(
+                must=[
+                    FieldCondition(
+                        key="source_type",
+                        match=MatchAny(any=spec.source_types or list(DECISION_SOURCE_TYPES)),
+                    ),
+                    FieldCondition(key="date_decision", range=date_range),
+                ]
             ),
-            FieldCondition(key="date_decision", range=date_range),
-        ]),
-    ])
+        ]
+    )
 
 
 DECISION_PERIOD_PROMPT = """

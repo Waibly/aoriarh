@@ -7,8 +7,7 @@ from app.rag.agent import RAGAgent
 
 @pytest.fixture
 def agent():
-    with patch("app.rag.agent._search_engine"), \
-         patch("app.rag.agent.get_reranker"):
+    with patch("app.rag.agent._search_engine"), patch("app.rag.agent.get_reranker"):
         a = RAGAgent()
         a.llm = MagicMock()
         a.llm.chat = MagicMock()
@@ -41,7 +40,8 @@ class TestBuildUserMessageCondensed:
 
     def test_no_condensed(self, agent):
         msg = agent._build_user_message(
-            "Question simple", context="[Source]\nContenu : x",
+            "Question simple",
+            context="[Source]\nContenu : x",
         )
         assert "replacée dans le contexte" not in msg
 
@@ -49,7 +49,8 @@ class TestBuildUserMessageCondensed:
 class TestBuildUserMessageDate:
     def test_date_du_jour_present(self, agent):
         msg = agent._build_user_message(
-            "Le décret est-il en vigueur ?", context="[Source]\nContenu : x",
+            "Le décret est-il en vigueur ?",
+            context="[Source]\nContenu : x",
         )
         assert "Date du jour :" in msg
         # La date précède la question pour cadrer le raisonnement temporel

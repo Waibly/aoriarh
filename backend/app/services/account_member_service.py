@@ -26,9 +26,7 @@ class AccountMemberService:
         self.db = db
 
     async def _get_account(self, account_id: uuid.UUID) -> Account:
-        result = await self.db.execute(
-            select(Account).where(Account.id == account_id)
-        )
+        result = await self.db.execute(select(Account).where(Account.id == account_id))
         account = result.scalar_one_or_none()
         if not account:
             raise HTTPException(
@@ -50,9 +48,7 @@ class AccountMemberService:
         account_orgs_result = await self.db.execute(
             select(Organisation).where(Organisation.account_id == account_id)
         )
-        account_orgs = {
-            org.id: org.name for org in account_orgs_result.scalars().all()
-        }
+        account_orgs = {org.id: org.name for org in account_orgs_result.scalars().all()}
 
         items = []
         for m in members:
@@ -95,6 +91,7 @@ class AccountMemberService:
         # helper without being subject to the quota.
         if inviter.role != "admin":
             from app.services.billing_service import BillingService
+
             billing = BillingService(self.db)
             billing.ensure_plan_active(account)
             await billing.check_user_limit(account, email=data.email)
@@ -164,9 +161,7 @@ class AccountMemberService:
         await self.db.refresh(invitation)
         return invitation
 
-    async def remove_member(
-        self, account_id: uuid.UUID, member_id: uuid.UUID
-    ) -> None:
+    async def remove_member(self, account_id: uuid.UUID, member_id: uuid.UUID) -> None:
         result = await self.db.execute(
             select(AccountMember).where(
                 AccountMember.id == member_id,
@@ -240,9 +235,7 @@ class AccountMemberService:
     async def _sync_memberships(self, account_member: AccountMember) -> None:
         """Create/delete Memberships to match AccountMember's access configuration."""
         org_result = await self.db.execute(
-            select(Organisation.id).where(
-                Organisation.account_id == account_member.account_id
-            )
+            select(Organisation.id).where(Organisation.account_id == account_member.account_id)
         )
         all_org_ids = {row[0] for row in org_result.all()}
 
@@ -258,7 +251,9 @@ class AccountMemberService:
         existing_result = await self.db.execute(
             select(Membership).where(
                 Membership.user_id == account_member.user_id,
-                Membership.organisation_id.in_(all_org_ids) if all_org_ids else Membership.id == None,
+                Membership.organisation_id.in_(all_org_ids)
+                if all_org_ids
+                else Membership.id.is_(None),
             )
         )
         existing_memberships = {ms.organisation_id: ms for ms in existing_result.scalars().all()}
@@ -307,9 +302,7 @@ class AccountMemberService:
                     )
                 )
 
-    async def accept_account_invitation(
-        self, invitation: Invitation, user: User
-    ) -> dict:
+    async def accept_account_invitation(self, invitation: Invitation, user: User) -> dict:
         """Create AccountMember + sync Memberships when accepting an account-level invitation."""
         # Check if already an account member
         existing = await self.db.execute(
@@ -330,6 +323,7 @@ class AccountMemberService:
         # account downgraded to a smaller plan).
         account_for_limit = await self._get_account(invitation.account_id)
         from app.services.billing_service import BillingService
+
         billing = BillingService(self.db)
         billing.ensure_plan_active(account_for_limit)
         await billing.check_user_limit(account_for_limit, email=user.email)
@@ -380,9 +374,7 @@ class AccountMemberService:
         await self.db.commit()
         return invitations
 
-    async def cancel_invitation(
-        self, account_id: uuid.UUID, invitation_id: uuid.UUID
-    ) -> None:
+    async def cancel_invitation(self, account_id: uuid.UUID, invitation_id: uuid.UUID) -> None:
         result = await self.db.execute(
             select(Invitation).where(
                 Invitation.id == invitation_id,

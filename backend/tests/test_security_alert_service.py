@@ -11,7 +11,8 @@ from app.services.security_alert_service import (
 @pytest.mark.asyncio
 async def test_security_alert_escapes_user_content(monkeypatch):
     monkeypatch.setattr(
-        "app.services.security_alert_service.settings.security_alerts_enabled", True,
+        "app.services.security_alert_service.settings.security_alerts_enabled",
+        True,
     )
     monkeypatch.setattr(
         "app.services.security_alert_service.settings.security_alert_email",
@@ -30,8 +31,8 @@ async def test_security_alert_escapes_user_content(monkeypatch):
         sent = await send_security_alert(
             event_type=EVENT_PROTECTED_DATA,
             query=(
-                '<img src=x onerror="alert(1)"> '\
-                'api_key=sk_test_12345678901234567890 client@exemple.fr'
+                '<img src=x onerror="alert(1)"> '
+                "api_key=sk_test_12345678901234567890 client@exemple.fr"
             ),
             user_id="user-1",
             user_email="client@example.fr",
@@ -58,7 +59,8 @@ async def test_security_alert_escapes_user_content(monkeypatch):
 @pytest.mark.asyncio
 async def test_security_alert_is_not_sent_when_throttled(monkeypatch):
     monkeypatch.setattr(
-        "app.services.security_alert_service.settings.security_alerts_enabled", True,
+        "app.services.security_alert_service.settings.security_alerts_enabled",
+        True,
     )
     with (
         patch(

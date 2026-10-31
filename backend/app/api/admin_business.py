@@ -138,9 +138,7 @@ class SignupsBySourceResponse(BaseModel):
 # ---------------------------------------------------------------------------
 
 
-async def _usage_by_account(
-    db: AsyncSession, since: datetime
-) -> dict[Any, dict[str, Any]]:
+async def _usage_by_account(db: AsyncSession, since: datetime) -> dict[Any, dict[str, Any]]:
     """Per-account usage since ``since``: answered questions, cost and activity.
 
     Joins ApiUsageLog → Organisation → Account via ``Organisation.account_id``.
@@ -200,8 +198,7 @@ async def _usage_by_account(
         )
         current["questions"] = int(row.questions or 0)
         if current["last_activity"] is None or (
-            row.last_activity is not None
-            and row.last_activity > current["last_activity"]
+            row.last_activity is not None and row.last_activity > current["last_activity"]
         ):
             current["last_activity"] = row.last_activity
 
@@ -211,9 +208,7 @@ async def _usage_by_account(
 async def _mrr_by_account(db: AsyncSession) -> dict[Any, int]:
     """Per-account MRR contribution (cents) from active subscriptions."""
     subs = (
-        await db.execute(
-            select(Subscription).where(Subscription.status.in_(_ACTIVE_SUB_STATUSES))
-        )
+        await db.execute(select(Subscription).where(Subscription.status.in_(_ACTIVE_SUB_STATUSES)))
     ).scalars()
     out: dict[Any, int] = {}
     for sub in subs:
@@ -242,9 +237,7 @@ async def get_business_overview(
     active_subs = list(
         (
             await db.execute(
-                select(Subscription).where(
-                    Subscription.status.in_(_ACTIVE_SUB_STATUSES)
-                )
+                select(Subscription).where(Subscription.status.in_(_ACTIVE_SUB_STATUSES))
             )
         ).scalars()
     )
@@ -276,9 +269,7 @@ async def get_business_overview(
     new_customers_30d = int(
         (
             await db.execute(
-                select(func.count())
-                .select_from(Subscription)
-                .where(Subscription.created_at >= d30)
+                select(func.count()).select_from(Subscription).where(Subscription.created_at >= d30)
             )
         ).scalar()
         or 0
@@ -382,9 +373,7 @@ async def _build_at_risk(db: AsyncSession, now: datetime) -> list[AtRiskAccount]
 
     # Past-due paying accounts
     past_due_subs = (
-        await db.execute(
-            select(Subscription).where(Subscription.status == "past_due")
-        )
+        await db.execute(select(Subscription).where(Subscription.status == "past_due"))
     ).scalars()
     for sub in past_due_subs:
         acc = await db.get(Account, sub.account_id)
@@ -439,13 +428,17 @@ async def _product_value(
     oos_prefix = _OUT_OF_SCOPE_ANSWER[:60]
 
     rows = (
-        await db.execute(
-            select(Message).where(
-                Message.role == "assistant",
-                Message.created_at >= d30,
+        (
+            await db.execute(
+                select(Message).where(
+                    Message.role == "assistant",
+                    Message.created_at >= d30,
+                )
             )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     total = len(rows)
     fb_up = sum(1 for m in rows if m.feedback == "up")
     fb_down = sum(1 for m in rows if m.feedback == "down")
@@ -455,9 +448,7 @@ async def _product_value(
             return True
         return bool(m.content and m.content.startswith(oos_prefix))
 
-    no_src = sum(
-        1 for m in rows if (not m.sources or len(m.sources) == 0) and not _is_oos(m)
-    )
+    no_src = sum(1 for m in rows if (not m.sources or len(m.sources) == 0) and not _is_oos(m))
     rated = fb_up + fb_down
     satisfaction_rate = round(fb_up / rated, 4) if rated > 0 else None
     feedback_negative_rate = round(fb_down / total, 4) if total > 0 else 0.0
@@ -493,9 +484,7 @@ async def _product_value(
 
 @router.get("/clients", response_model=ClientsResponse)
 async def get_clients(
-    sort: Literal["signup", "margin", "mrr", "questions", "activity", "name"] = Query(
-        "signup"
-    ),
+    sort: Literal["signup", "margin", "mrr", "questions", "activity", "name"] = Query("signup"),
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=200),
     direction: Literal["asc", "desc"] | None = Query(None),

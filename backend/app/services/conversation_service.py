@@ -66,8 +66,9 @@ class ConversationService:
             )
             .order_by(Conversation.updated_at.desc())
         )
-        from app.models.dossier import Dossier
         from sqlalchemy import or_
+
+        from app.models.dossier import Dossier
 
         query = (
             query.add_columns(Dossier.name)
@@ -198,8 +199,9 @@ class ConversationService:
         conversation.updated_at = datetime.now(UTC)
         conversation.recent_hidden_at = None
         if conversation.dossier_id:
-            from app.models.dossier import Dossier
             from sqlalchemy import update
+
+            from app.models.dossier import Dossier
 
             await self.db.execute(
                 update(Dossier)

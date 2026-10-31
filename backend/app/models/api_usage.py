@@ -33,13 +33,9 @@ class ApiPricing(Base):
     effective_from: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
-    effective_to: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
+    effective_to: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
-    __table_args__ = (
-        Index("ix_api_pricing_provider_model", "provider", "model"),
-    )
+    __table_args__ = (Index("ix_api_pricing_provider_model", "provider", "model"),)
 
 
 class ApiUsageLog(Base):
@@ -56,7 +52,8 @@ class ApiUsageLog(Base):
     provider: Mapped[str] = mapped_column(String(50), nullable=False)
     model: Mapped[str] = mapped_column(String(100), nullable=False)
     operation_type: Mapped[str] = mapped_column(
-        String(50), nullable=False,
+        String(50),
+        nullable=False,
         comment="condense | expand | generate | embedding | rerank",
     )
 
@@ -65,9 +62,7 @@ class ApiUsageLog(Base):
     tokens_output: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
     # Computed cost at time of logging
-    cost_usd: Mapped[float] = mapped_column(
-        Numeric(10, 6), nullable=False, default=0
-    )
+    cost_usd: Mapped[float] = mapped_column(Numeric(10, 6), nullable=False, default=0)
 
     # Attribution
     organisation_id: Mapped[uuid.UUID | None] = mapped_column(

@@ -133,7 +133,8 @@ class AuthService:
             logger.warning(
                 "Paid plan %s/%s requested at signup but Stripe is not configured "
                 "— falling back to trial",
-                requested_plan, requested_cycle,
+                requested_plan,
+                requested_cycle,
             )
             return None
         try:

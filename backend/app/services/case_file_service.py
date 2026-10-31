@@ -5,7 +5,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import HTTPException, status
-from sqlalchemy import delete, select, update, or_, and_
+from sqlalchemy import and_, delete, or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -75,6 +75,7 @@ class CaseFileService:
         conversation = await self.db.get(Conversation, conversation_id)
         if conversation.dossier_id:
             from app.services.dossier_service import DossierService
+
             await DossierService(self.db).get(conversation.dossier_id, user, write=True)
         messages = (
             (

@@ -22,8 +22,12 @@ async def planned_request(**overrides):
     agent = planner(raw)
     inputs = dict(
         query="Demande originale à conserver intégralement",
-        history=[], active_documents=[], documents=[], tool_results=[],
-        continuation=False, model="test",
+        history=[],
+        active_documents=[],
+        documents=[],
+        tool_results=[],
+        continuation=False,
+        model="test",
     )
     inputs.update(overrides)
     result = await plan_conversation(agent, **inputs)
@@ -51,9 +55,9 @@ async def test_historical_and_newly_consulted_sources_remain_readable():
         tool_results=[{"action": "search_legal", "sources": [{"document_id": CONSULTED}]}],
     )
     assert "#/$defs/ReadLegalSourcesRequest" in choices(schema)
-    assert schema["$defs"]["ReadLegalSourcesRequest"]["properties"]["document_ids"][
-        "items"
-    ]["enum"] == [HISTORICAL, CONSULTED]
+    assert schema["$defs"]["ReadLegalSourcesRequest"]["properties"]["document_ids"]["items"][
+        "enum"
+    ] == [HISTORICAL, CONSULTED]
 
 
 async def test_private_checks_use_all_active_pieces_and_keep_null_passage_scope():
@@ -61,14 +65,16 @@ async def test_private_checks_use_all_active_pieces_and_keep_null_passage_scope(
         active_documents=[{"document_id": PRIVATE}],
         documents=[{"document_id": CONSULTED}],
     )
-    assert schema["$defs"]["DocumentCheck"]["properties"]["document_ids"][
-        "items"
-    ]["enum"] == [PRIVATE, CONSULTED]
+    assert schema["$defs"]["DocumentCheck"]["properties"]["document_ids"]["items"]["enum"] == [
+        PRIVATE,
+        CONSULTED,
+    ]
     passages = schema["$defs"]["PassageRequest"]["properties"]["document_ids"]["anyOf"]
     assert {"type": "null"} in passages
-    assert next(item for item in passages if item["type"] == "array")["items"][
-        "enum"
-    ] == [PRIVATE, CONSULTED]
+    assert next(item for item in passages if item["type"] == "array")["items"]["enum"] == [
+        PRIVATE,
+        CONSULTED,
+    ]
     assert "#/$defs/ReadLegalSourcesRequest" not in choices(schema)
 
 
@@ -87,13 +93,21 @@ async def test_continuation_keeps_legal_source_reads_and_cannot_restart_discover
 def test_uuid_in_prose_is_not_an_application_source_reference():
     history = [
         {"role": "user", "content": f"Lire {UNSUPPLIED}"},
-        {"role": "assistant", "content": UNSUPPLIED, "sources": [
-            {"document_id": HISTORICAL}, {"document_id": HISTORICAL},
-            {"document_id": "invalid"}, {}, "not a source",
-        ]},
+        {
+            "role": "assistant",
+            "content": UNSUPPLIED,
+            "sources": [
+                {"document_id": HISTORICAL},
+                {"document_id": HISTORICAL},
+                {"document_id": "invalid"},
+                {},
+                "not a source",
+            ],
+        },
     ]
     assert legal_source_document_ids(history, [{"sources": [{"document_id": CONSULTED}]}]) == [
-        HISTORICAL, CONSULTED,
+        HISTORICAL,
+        CONSULTED,
     ]
     assert legal_source_document_ids(f"Ancien texte {UNSUPPLIED}", []) == []
 
@@ -114,8 +128,14 @@ async def test_inexecutable_output_is_preserved_without_repair_or_retry():
     raw = "  {JSON inexécutable\n"
     agent = planner(raw)
     result = await plan_conversation(
-        agent, query="Demande", history=[], active_documents=[], documents=[],
-        tool_results=[], continuation=False, model="test",
+        agent,
+        query="Demande",
+        history=[],
+        active_documents=[],
+        documents=[],
+        tool_results=[],
+        continuation=False,
+        model="test",
     )
     assert result.raw == raw
     assert result.trace.router_raw_response == raw
@@ -126,6 +146,7 @@ async def test_inexecutable_output_is_preserved_without_repair_or_retry():
 def test_unscoped_contract_remains_available_to_standalone_contract_consumers():
     schema = request_schema(3)
     assert "#/$defs/ReadLegalSourcesRequest" in choices(schema)
-    assert "enum" not in schema["$defs"]["ReadLegalSourcesRequest"]["properties"][
-        "document_ids"
-    ]["items"]
+    assert (
+        "enum"
+        not in schema["$defs"]["ReadLegalSourcesRequest"]["properties"]["document_ids"]["items"]
+    )

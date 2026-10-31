@@ -21,12 +21,22 @@ GROUP_INTERVAL = 60
 MAX_BATCH = 1000
 # Stable technical fields only. Identities remain on individual incident records.
 GROUP_FIELDS = (
-    "source", "code", "reason", "location", "status", "method", "exception_type",
-    "job_name", "sync_type", "release",
+    "source",
+    "code",
+    "reason",
+    "location",
+    "status",
+    "method",
+    "exception_type",
+    "job_name",
+    "sync_type",
+    "release",
 )
-GROUP_SQL = "json_array(" + ",".join(
-    f"json_extract(i.payload, '$.{field}')" for field in GROUP_FIELDS
-) + ")"
+GROUP_SQL = (
+    "json_array("
+    + ",".join(f"json_extract(i.payload, '$.{field}')" for field in GROUP_FIELDS)
+    + ")"
+)
 
 
 def slack_message(row, batch=None):
@@ -127,16 +137,20 @@ async def deliver_one(client, webhook):
         for incident in batch:
             attempts = incident["attempts"] + 1
             state = (
-                "delivered" if success
+                "delivered"
+                if success
                 else ("pending" if retryable and attempts < MAX_ATTEMPTS else "failed")
             )
             db.execute(
                 "UPDATE incidents SET "
                 "state=?,attempts=?,next_attempt=?,delivered=?,last_error=? WHERE id=?",
                 (
-                    state, attempts,
+                    state,
+                    attempts,
                     now + max(delay, min(3600, 15 * 2 ** (attempts - 1))),
-                    now if success else None, None if success else error, incident["id"],
+                    now if success else None,
+                    None if success else error,
+                    incident["id"],
                 ),
             )
         if success:

@@ -391,9 +391,7 @@ def select_linkedin_references(answer_markdown: str, sources: list[dict]) -> lis
             source_copy["article_nums"] = None
         elif article_nums:
             cited_articles = [
-                article
-                for article in article_nums
-                if _article_is_cited(article, answer_markdown)
+                article for article in article_nums if _article_is_cited(article, answer_markdown)
             ]
             if not cited_articles:
                 continue
@@ -719,8 +717,7 @@ async def generate_linkedin_carousel_post(
         if content.strip():
             break
         logger.warning(
-            "Sortie du post carrousel LinkedIn vide pour le message %s "
-            "(tentative %d/2)",
+            "Sortie du post carrousel LinkedIn vide pour le message %s (tentative %d/2)",
             message_id,
             attempt + 1,
         )

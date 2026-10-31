@@ -436,9 +436,10 @@ def render_subscription_confirmed_email(
         invoice_section = SUBSCRIPTION_INVOICE_LINK.format(invoice_url=invoice_url)
 
     features = PLAN_FEATURES.get(plan, [])
-    features_list = "\n".join(
-        f'<li>{f}</li>' for f in features
-    ) or "<li>Accès complet à la plateforme AORIA RH</li>"
+    features_list = (
+        "\n".join(f"<li>{f}</li>" for f in features)
+        or "<li>Accès complet à la plateforme AORIA RH</li>"
+    )
 
     content = SUBSCRIPTION_CONFIRMED_CONTENT.format(
         full_name=full_name,
@@ -539,8 +540,18 @@ INVITE_PLAN_ASSIGNED_CONTENT = """\
 
 
 _FRENCH_MONTHS = (
-    "janvier", "février", "mars", "avril", "mai", "juin",
-    "juillet", "août", "septembre", "octobre", "novembre", "décembre",
+    "janvier",
+    "février",
+    "mars",
+    "avril",
+    "mai",
+    "juin",
+    "juillet",
+    "août",
+    "septembre",
+    "octobre",
+    "novembre",
+    "décembre",
 )
 
 

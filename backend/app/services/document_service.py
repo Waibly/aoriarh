@@ -13,15 +13,18 @@ from qdrant_client.models import FieldCondition, Filter, FilterSelector, MatchVa
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
 from app.models.document import Document
-from app.services.document_access import company_document_conditions
 from app.rag.norme_hierarchy import DOCUMENT_TYPE_HIERARCHY
 from app.rag.qdrant_store import COLLECTION_NAME, get_qdrant_client
-from app.services.storage_service import StorageService
+from app.services.document_access import company_document_conditions
 from app.services.storage_operation_service import (
-    StorageOperationService, finish_pending_storage_deletes, finish_storage_io, queue_storage_delete,
+    StorageOperationService,
+    finish_pending_storage_deletes,
+    finish_storage_io,
+    queue_storage_delete,
 )
-from app.core.config import settings
+from app.services.storage_service import StorageService
 
 logger = logging.getLogger(__name__)
 
@@ -45,7 +48,7 @@ def _safe_storage_filename(filename: str | None, file_format: str) -> str:
     raw_name = PurePath(filename or f"document.{file_format}").name
     normalized = unicodedata.normalize("NFKC", raw_name)
     safe = re.sub(r"[^A-Za-z0-9._-]+", "_", normalized).strip("._")
-    return (safe[:180] or f"document.{file_format}")
+    return safe[:180] or f"document.{file_format}"
 
 
 def _invalid_file(detail: str) -> HTTPException:
@@ -127,7 +130,8 @@ class DocumentService:
         self,
         file_hash: str,
         org_id: uuid.UUID | None,
-        private_dossier_id=None, private_conversation_id=None,
+        private_dossier_id=None,
+        private_conversation_id=None,
     ) -> None:
         if org_id is not None:
             query = select(Document).where(
@@ -139,9 +143,11 @@ class DocumentService:
                 Document.organisation_id.is_(None),
                 Document.file_hash == file_hash,
             )
-        query = query.where(Document.private_dossier_id == private_dossier_id,
-                            Document.private_conversation_id == private_conversation_id,
-                            Document.retired_at.is_(None))
+        query = query.where(
+            Document.private_dossier_id == private_dossier_id,
+            Document.private_conversation_id == private_conversation_id,
+            Document.retired_at.is_(None),
+        )
         result = await self.db.execute(query.limit(1))
         existing = result.scalar_one_or_none()
         if existing:
@@ -165,7 +171,8 @@ class DocumentService:
         solution: str | None = None,
         publication: str | None = None,
         max_file_size: int = MAX_FILE_SIZE,
-        private_dossier_id=None, private_conversation_id=None,
+        private_dossier_id=None,
+        private_conversation_id=None,
     ) -> Document:
         # Validate format
         content_type = file.content_type or ""
@@ -200,6 +207,7 @@ class DocumentService:
         # ingested reliably and would degrade RAG quality.
         if file_format == "pdf":
             from app.rag.text_extractor import is_scanned_pdf
+
             if is_scanned_pdf(contents):
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
@@ -235,7 +243,8 @@ class DocumentService:
         doc = Document(
             id=document_id,
             organisation_id=org_id,
-            private_dossier_id=private_dossier_id, private_conversation_id=private_conversation_id,
+            private_dossier_id=private_dossier_id,
+            private_conversation_id=private_conversation_id,
             name=file.filename or "document",
             source_type=source_type,
             norme_niveau=hierarchy["niveau"],
@@ -286,29 +295,25 @@ class DocumentService:
         installed_idccs = [row[0] for row in idcc_result.all()]
 
         # Build filter: org docs + common CCN docs matching installed IDCCs
-        conditions = [((Document.organisation_id == org_id) &
-                       company_document_conditions()[0] & company_document_conditions()[1] &
-                       company_document_conditions()[2])]
+        conditions = [
+            (
+                (Document.organisation_id == org_id)
+                & company_document_conditions()[0]
+                & company_document_conditions()[1]
+                & company_document_conditions()[2]
+            )
+        ]
         if installed_idccs:
             # Common CCN docs whose name contains any installed IDCC
-            idcc_filters = [
-                Document.name.ilike(f"%IDCC {idcc}%")
-                for idcc in installed_idccs
-            ]
-            conditions.append(
-                Document.organisation_id.is_(None) & or_(*idcc_filters)
-            )
+            idcc_filters = [Document.name.ilike(f"%IDCC {idcc}%") for idcc in installed_idccs]
+            conditions.append(Document.organisation_id.is_(None) & or_(*idcc_filters))
 
         result = await self.db.execute(
-            select(Document)
-            .where(or_(*conditions))
-            .order_by(Document.created_at.desc())
+            select(Document).where(or_(*conditions)).order_by(Document.created_at.desc())
         )
         return list(result.scalars().all())
 
-    async def get_document(
-        self, doc_id: uuid.UUID, org_id: uuid.UUID
-    ) -> Document:
+    async def get_document(self, doc_id: uuid.UUID, org_id: uuid.UUID) -> Document:
         result = await self.db.execute(
             select(Document).where(
                 Document.id == doc_id,
@@ -321,9 +326,7 @@ class DocumentService:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document non trouvé")
         return doc
 
-    async def delete_document(
-        self, doc_id: uuid.UUID, org_id: uuid.UUID
-    ) -> None:
+    async def delete_document(self, doc_id: uuid.UUID, org_id: uuid.UUID) -> None:
         doc = await self.get_document(doc_id, org_id)
         await self._delete_extraction_artifacts(doc_id)
         await queue_storage_delete(self.db, storage, doc_id, doc.storage_path)
@@ -332,9 +335,7 @@ class DocumentService:
         await self.db.commit()
         await finish_pending_storage_deletes(self.db, storage)
 
-    async def get_download_url(
-        self, doc_id: uuid.UUID, org_id: uuid.UUID
-    ) -> str:
+    async def get_download_url(self, doc_id: uuid.UUID, org_id: uuid.UUID) -> str:
         doc = await self.get_document(doc_id, org_id)
         return storage.get_presigned_url(doc.storage_path)
 
@@ -429,6 +430,7 @@ class DocumentService:
         # Reject scanned PDFs (same rule as create_document)
         if file_format == "pdf":
             from app.rag.text_extractor import is_scanned_pdf
+
             if is_scanned_pdf(contents):
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
@@ -461,12 +463,17 @@ class DocumentService:
         if settings.document_extraction_enabled_for(org_id):
             operations = StorageOperationService(self.db, storage)
             operation_id = await operations.reserve(doc_id, new_path, "original")
-        current = (await self.db.execute(
-            select(Document.id).where(
-                Document.id == doc_id, Document.storage_path == old_path,
-                Document.file_hash == old_hash,
-            ).with_for_update()
-        )).first()
+        current = (
+            await self.db.execute(
+                select(Document.id)
+                .where(
+                    Document.id == doc_id,
+                    Document.storage_path == old_path,
+                    Document.file_hash == old_hash,
+                )
+                .with_for_update()
+            )
+        ).first()
         if current is None:
             raise HTTPException(409, "Le document a été modifié ; rechargez sa version actuelle")
 

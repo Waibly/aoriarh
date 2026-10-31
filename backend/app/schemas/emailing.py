@@ -3,8 +3,8 @@ from datetime import datetime
 
 from pydantic import BaseModel
 
-
 # --- Templates ---
+
 
 class EmailTemplateCreate(BaseModel):
     name: str
@@ -33,6 +33,7 @@ class EmailTemplateRead(BaseModel):
 
 
 # --- Sequences ---
+
 
 class StepBranchCreate(BaseModel):
     condition: str  # "opened_and_clicked", "opened_not_clicked", "not_opened"
@@ -91,6 +92,7 @@ class EmailSequenceRead(BaseModel):
 
 # --- Campaigns ---
 
+
 class EmailCampaignCreate(BaseModel):
     name: str
     sequence_id: uuid.UUID
@@ -116,6 +118,7 @@ class EmailCampaignRead(BaseModel):
 
 
 # --- Waves (vagues d'envoi) ---
+
 
 class WaveScheduleRequest(BaseModel):
     count: int = 100
@@ -158,6 +161,7 @@ class WaveContact(BaseModel):
 
 # --- Stats ---
 
+
 class CampaignBranchStats(BaseModel):
     condition: str
     template_name: str | None = None
@@ -191,6 +195,7 @@ class CampaignStats(BaseModel):
 
 
 # --- Brevo lists (read-only) ---
+
 
 class BrevoList(BaseModel):
     id: int

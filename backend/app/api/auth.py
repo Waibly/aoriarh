@@ -81,7 +81,5 @@ async def refresh(
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
 @limiter.limit("20/minute")
-async def logout(
-    request: Request, data: LogoutRequest, db: AsyncSession = Depends(get_db)
-) -> None:
+async def logout(request: Request, data: LogoutRequest, db: AsyncSession = Depends(get_db)) -> None:
     await revoke_auth_session(db, data.refresh_token)

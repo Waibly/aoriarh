@@ -79,7 +79,7 @@ def test_literal_citations_keep_offsets_and_do_not_infer_unstated_case_or_status
     )
     refs = social_case_references(text)
     assert [r["date"] for r in refs] == ["1996-11-13", "1990-03-01"]
-    assert all(text[r["start"]:r["end"]] == r["literal"] for r in refs)
+    assert all(text[r["start"] : r["end"]] == r["literal"] for r in refs)
     assert social_case_references("Crim., 13 novembre 1996, n° 94-13.187") == []
     assert social_case_references("Soc., 31 février 1996, n° 94-13.187") == []
     assert social_case_references("Soc., 13 novembre 1996, Bulletin V n° 386") == []
@@ -88,9 +88,9 @@ def test_literal_citations_keep_offsets_and_do_not_infer_unstated_case_or_status
 def test_official_metadata_reaches_reranker_with_original_body_intact():
     raw = source()
     body = parse_inca_xml(raw).text
-    result = _payload_to_result({
-        "text": body, "source_type": "arret_cour_cassation", **source_metadata(raw)
-    })
+    result = _payload_to_result(
+        {"text": body, "source_type": "arret_cour_cassation", **source_metadata(raw)}
+    )
     assert result.numero_pourvois == ["07-44780", "07-44781"]
     assert result.source_url.endswith("JURITEXT000020424075")
     supplied = document_rerank_input(result)
@@ -100,10 +100,14 @@ def test_official_metadata_reaches_reranker_with_original_body_intact():
 
 def test_large_joined_case_sets_keep_exact_identifiers_without_bloating_model_metadata():
     numbers = [f"10-{12000 + i}" for i in range(920)]
-    result = _payload_to_result({
-        "text": "Texte original intégral.", "source_type": "arret_cour_cassation",
-        "numero_pourvois": numbers, "numero_pourvoi": numbers[0],
-    })
+    result = _payload_to_result(
+        {
+            "text": "Texte original intégral.",
+            "source_type": "arret_cour_cassation",
+            "numero_pourvois": numbers,
+            "numero_pourvoi": numbers[0],
+        }
+    )
     supplied = document_rerank_input(result)
     meta = json.loads(supplied.split("\n\nPassage original :\n", 1)[0])
     assert meta["nombre_references_pourvoi_renseignees"] == 920
@@ -128,9 +132,7 @@ async def test_secondary_case_alias_lookup_keeps_organisation_access_filter():
 
 
 @pytest.mark.asyncio
-async def test_inca_plan_requires_matching_immutable_subject_evidence(
-    tmp_path, monkeypatch
-):
+async def test_inca_plan_requires_matching_immutable_subject_evidence(tmp_path, monkeypatch):
     from tests.conftest import test_session_factory
 
     raw = source()
@@ -148,10 +150,13 @@ async def test_inca_plan_requires_matching_immutable_subject_evidence(
     )
     with pytest.raises(ValueError, match="immutable source qualification"):
         await plan(tmp_path, archive, state, tokenizer, source_parser=parse_inca_xml, selection={})
-    evidence = {"JURITEXT000020424075": {
-        "scope": "admitted", "xml_sha256": hashlib.sha256(raw).hexdigest(),
-        "reason": "literal primary employment reference",
-    }}
+    evidence = {
+        "JURITEXT000020424075": {
+            "scope": "admitted",
+            "xml_sha256": hashlib.sha256(raw).hexdigest(),
+            "reason": "literal primary employment reference",
+        }
+    }
     await plan(
         tmp_path, archive, state, tokenizer, source_parser=parse_inca_xml, selection=evidence
     )
@@ -207,7 +212,8 @@ async def test_reference_registry_cannot_publish_private_document_identity():
 def reconciliation(decision):
     return {
         "schema": "official-case-reference-reconciliation-v1",
-        "source_identifier": decision.source_id, "source_xml_sha256": decision.xml_sha256,
+        "source_identifier": decision.source_id,
+        "source_xml_sha256": decision.xml_sha256,
         "decision_date": str(decision.decision_date),
         "verified_numbers": [decision.numbers[0]],
         "verified_title": "Official primary case reference",

@@ -90,9 +90,7 @@ async def list_points(
     if search and search.strip():
         q = f"%{search.strip()}%"
         result = await db.execute(
-            select(Document.id).where(
-                Document.name.ilike(q) | Document.source_type.ilike(q)
-            )
+            select(Document.id).where(Document.name.ilike(q) | Document.source_type.ilike(q))
         )
         matching_doc_ids = [str(row[0]) for row in result.all()]
         if not matching_doc_ids:
@@ -243,7 +241,10 @@ async def cleanup_orphaned_vectors(
     total_after = client.count(collection_name=COLLECTION_NAME, exact=True).count
     logger.info(
         "Qdrant cleanup complete: %d orphaned docs, %d vectors deleted (%d → %d)",
-        len(orphaned_ids), vectors_deleted, total_before, total_after,
+        len(orphaned_ids),
+        vectors_deleted,
+        total_before,
+        total_after,
     )
 
     return CleanupResult(

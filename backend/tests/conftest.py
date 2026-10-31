@@ -1,6 +1,5 @@
 import pytest
 from httpx import ASGITransport, AsyncClient
-from slowapi import _rate_limit_exceeded_handler
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.core.config import settings
@@ -22,9 +21,7 @@ settings.brevo_list_id = 0
 TEST_DATABASE_URL = "sqlite+aiosqlite://"
 
 test_engine = create_async_engine(TEST_DATABASE_URL, echo=False)
-test_session_factory = async_sessionmaker(
-    test_engine, class_=AsyncSession, expire_on_commit=False
-)
+test_session_factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
 
 
 async def override_get_db():
@@ -114,9 +111,7 @@ async def regular_user(client: AsyncClient) -> dict[str, str]:
     from app.models.user import User
 
     async with test_session_factory() as session:
-        await session.execute(
-            update(User).where(User.email == "user@test.com").values(role="user")
-        )
+        await session.execute(update(User).where(User.email == "user@test.com").values(role="user"))
         await session.commit()
     return {"email": "user@test.com", "token": token}
 

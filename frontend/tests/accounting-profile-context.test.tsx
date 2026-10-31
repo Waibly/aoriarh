@@ -45,7 +45,7 @@ it("loads the personal profile with the account context and retains it when swit
     </OrgProvider>
   );
   await screen.findByRole("button", {
-    name: "Conseiller un client sur un CDD",
+    name: "Mon client veut renouveler un CDD",
   });
   await waitFor(() =>
     expect(screen.getByTestId("client")).toHaveTextContent("Entreprise A")
@@ -59,10 +59,10 @@ it("loads the personal profile with the account context and retains it when swit
   );
   expect(screen.getByTestId("client")).toHaveTextContent("Entreprise B");
   expect(
-    screen.getByRole("button", { name: "Conseiller un client sur un CDD" })
+    screen.getByRole("button", { name: "Mon client veut renouveler un CDD" })
   ).toBeEnabled();
   fireEvent.click(screen.getByRole("button", { name: "Modifier mon profil" }));
   expect(
-    screen.getByRole("button", { name: "Examiner le maintien de salaire" })
+    screen.getByRole("button", { name: "Maintenir le salaire pendant un arrêt maladie" })
   ).toBeEnabled();
 });

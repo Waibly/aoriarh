@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.core.dependencies import get_current_user, require_org_role, require_role
+from app.core.dependencies import get_current_user, require_org_role
 from app.models.user import User
 from app.schemas.organisation import (
     MembershipCreate,
@@ -27,13 +27,15 @@ async def create_organisation(
     db: AsyncSession = Depends(get_db),
 ) -> OrganisationRead:
     # Allow: admin, manager (workspace owner), or invited manager in a workspace
-    can_create = (
-        user.role in ("admin", "manager")
-        or any(m.role_in_org == "manager" for m in user.account_memberships)
+    can_create = user.role in ("admin", "manager") or any(
+        m.role_in_org == "manager" for m in user.account_memberships
     )
     if not can_create:
         from fastapi import HTTPException
-        raise HTTPException(status_code=403, detail="Vous n'avez pas les droits pour créer une organisation")
+
+        raise HTTPException(
+            status_code=403, detail="Vous n'avez pas les droits pour créer une organisation"
+        )
 
     # Enforce plan limit on number of organisations per account.
     # Admins (role='admin') are AORIA RH staff and bypass quota checks.

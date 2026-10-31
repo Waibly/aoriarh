@@ -85,9 +85,7 @@ async def get_billing_metrics(
     suspended_count = int(
         (
             await db.execute(
-                select(func.count())
-                .select_from(Account)
-                .where(Account.status == "suspended")
+                select(func.count()).select_from(Account).where(Account.status == "suspended")
             )
         ).scalar()
         or 0
@@ -95,9 +93,7 @@ async def get_billing_metrics(
     canceled_count = int(
         (
             await db.execute(
-                select(func.count())
-                .select_from(Account)
-                .where(Account.status == "canceled")
+                select(func.count()).select_from(Account).where(Account.status == "canceled")
             )
         ).scalar()
         or 0
@@ -173,12 +169,7 @@ async def list_subscriptions(
     db: AsyncSession = Depends(get_db),
 ) -> list[dict[str, Any]]:
     """Return the subscription list with optional filters."""
-    stmt = (
-        select(Subscription)
-        .order_by(Subscription.created_at.desc())
-        .limit(limit)
-        .offset(offset)
-    )
+    stmt = select(Subscription).order_by(Subscription.created_at.desc()).limit(limit).offset(offset)
     if status_filter:
         stmt = stmt.where(Subscription.status == status_filter)
     if plan:
@@ -208,7 +199,8 @@ async def list_subscriptions(
                 "billing_cycle": sub.billing_cycle,
                 "status": sub.status,
                 "current_period_end": sub.current_period_end.isoformat()
-                if sub.current_period_end else None,
+                if sub.current_period_end
+                else None,
                 "cancel_at_period_end": sub.cancel_at_period_end,
                 "canceled_at": sub.canceled_at.isoformat() if sub.canceled_at else None,
                 "created_at": sub.created_at.isoformat() if sub.created_at else None,
@@ -264,9 +256,7 @@ async def cancel_subscription(
         else:
             updated = stripe.Subscription.delete(sub.stripe_subscription_id)
     except stripe.error.StripeError as exc:
-        logger.exception(
-            "Stripe cancellation failed for %s", sub.stripe_subscription_id
-        )
+        logger.exception("Stripe cancellation failed for %s", sub.stripe_subscription_id)
         raise HTTPException(status_code=502, detail=f"Erreur Stripe : {exc}") from exc
 
     # Mirror the cancellation locally right away so the admin UI reflects
@@ -288,6 +278,7 @@ async def cancel_subscription(
     # (true, true) and skip the email.
     if account_row is not None:
         from app.services.stripe_service import StripeService as _StripeService
+
         await _StripeService(db)._send_subscription_canceled_email(account_row, sub)
 
     return {

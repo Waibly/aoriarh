@@ -64,11 +64,13 @@ def test_arrete_sans_mot_cle_rattrape_par_le_filet_code_travail():
 
 # --- _normalize --------------------------------------------------------------
 
+
 def test_normalize_strips_accents_and_lowercases():
     assert _normalize("Décret RELATIF à la Prévention") == "decret relatif a la prevention"
 
 
 # --- _title_matches_keywords -------------------------------------------------
+
 
 def test_title_keywords_match_duerp_law():
     title = (
@@ -101,55 +103,70 @@ def test_title_keywords_keep_pse_and_france_travail():
 
 def test_title_keywords_keep_smic_decree():
     # Le décret SMIC s'intitule "salaire minimum de croissance", sans le mot "smic".
-    assert _title_matches_keywords(
-        "Décret n° 2025-1228 du 17 décembre 2025 portant relèvement du salaire "
-        "minimum de croissance"
-    ) is True
+    assert (
+        _title_matches_keywords(
+            "Décret n° 2025-1228 du 17 décembre 2025 portant relèvement du salaire "
+            "minimum de croissance"
+        )
+        is True
+    )
 
 
 def test_title_keywords_match_plural_forms():
     # Mot entier tolérant au pluriel : "travailleur" capte "travailleurs",
     # "congé" capte "congés".
-    assert _title_matches_keywords(
-        "Décret n° 2026-260 relatif à la protection des jeunes travailleurs"
-    ) is True
+    assert (
+        _title_matches_keywords(
+            "Décret n° 2026-260 relatif à la protection des jeunes travailleurs"
+        )
+        is True
+    )
     assert _title_matches_keywords("Décret relatif aux congés payés") is True
 
 
 def test_title_keywords_catch_conge_de_naissance():
     # Cas qui a motivé la refonte : capté par "congé" en mot entier.
-    assert _title_matches_keywords(
-        "Décret n° 2026-419 du 30 mai 2026 relatif au congé supplémentaire de naissance"
-    ) is True
+    assert (
+        _title_matches_keywords(
+            "Décret n° 2026-419 du 30 mai 2026 relatif au congé supplémentaire de naissance"
+        )
+        is True
+    )
 
 
 def test_naissance_does_not_match_reconnaissance():
     # Frontière gauche stricte : "naissance" ne doit pas matcher "reconnaissance".
-    assert _title_matches_keywords(
-        "Décret portant reconnaissance de l'association des producteurs"
-    ) is False
+    assert (
+        _title_matches_keywords("Décret portant reconnaissance de l'association des producteurs")
+        is False
+    )
 
 
 def test_title_keywords_catch_apprenti():
-    assert _title_matches_keywords(
-        "Décret n° 2026-168 relatif à l'aide exceptionnelle aux employeurs d'apprentis"
-    ) is True
+    assert (
+        _title_matches_keywords(
+            "Décret n° 2026-168 relatif à l'aide exceptionnelle aux employeurs d'apprentis"
+        )
+        is True
+    )
 
 
 def test_exclusion_vetoes_fonction_publique_even_with_keyword():
     # "temps de travail" matche, mais "agents publics" est un veto (hors périmètre).
-    assert _title_matches_keywords(
-        "Décret relatif au temps de travail des agents publics"
-    ) is False
+    assert _title_matches_keywords("Décret relatif au temps de travail des agents publics") is False
 
 
 def test_exclusion_vetoes_prime_activite():
-    assert _title_matches_keywords(
-        "Décret portant revalorisation du montant forfaitaire de la prime d'activité"
-    ) is False
+    assert (
+        _title_matches_keywords(
+            "Décret portant revalorisation du montant forfaitaire de la prime d'activité"
+        )
+        is False
+    )
 
 
 # --- _is_rh_relevant (filtre mixte) ------------------------------------------
+
 
 def test_relevant_when_modifies_code_travail_even_without_keyword():
     # Titre sans mot-clé RH mais le texte modifie le Code du travail → gardé
@@ -173,12 +190,14 @@ def test_irrelevant_when_no_keyword_and_no_code_link():
 def test_exclusion_vetoes_even_when_modifies_code_travail():
     # Le veto périmètre l'emporte sur le filet code : une revalorisation de la
     # prime d'activité qui toucherait le Code du travail reste exclue.
-    assert _is_rh_relevant(
-        "Décret portant revalorisation de la prime d'activité", {_CODE_TRAVAIL_ID}
-    ) is False
+    assert (
+        _is_rh_relevant("Décret portant revalorisation de la prime d'activité", {_CODE_TRAVAIL_ID})
+        is False
+    )
 
 
 # --- mapping nature → source_type --------------------------------------------
+
 
 def test_nature_mapping_targets_existing_hierarchy_types():
     assert _NATURE_TO_SOURCE_TYPE == {
@@ -194,6 +213,7 @@ def test_nature_mapping_targets_existing_hierarchy_types():
 
 
 # --- _parse_search_result ----------------------------------------------------
+
 
 def test_parse_search_result_from_titles_array():
     raw = {
@@ -214,6 +234,7 @@ def test_parse_search_result_from_flat_fields():
 
 
 # --- _parse_consult ----------------------------------------------------------
+
 
 def test_parse_consult_detects_code_link_and_concatenates_articles():
     consult = {
@@ -242,6 +263,7 @@ def test_parse_consult_handles_epoch_millis_date():
 
 # --- run_jorf_sync écrit un SyncLog ------------------------------------------
 
+
 async def test_run_jorf_sync_writes_synclog(monkeypatch):
     import uuid as _uuid
 
@@ -256,9 +278,7 @@ async def test_run_jorf_sync_writes_synclog(monkeypatch):
             total_fetched=5, new_ingested=2, filtered_out=1, already_exists=0, errors=0
         )
 
-    monkeypatch.setattr(
-        "app.services.jorf_service.JorfService.sync", fake_sync, raising=True
-    )
+    monkeypatch.setattr("app.services.jorf_service.JorfService.sync", fake_sync, raising=True)
 
     from app.worker import run_jorf_sync
 
@@ -266,8 +286,8 @@ async def test_run_jorf_sync_writes_synclog(monkeypatch):
 
     async with test_session_factory() as db:
         rows = (
-            await db.execute(select(SyncLog).where(SyncLog.sync_type == "jorf"))
-        ).scalars().all()
+            (await db.execute(select(SyncLog).where(SyncLog.sync_type == "jorf"))).scalars().all()
+        )
     assert len(rows) == 1
     assert rows[0].status == "success"
     assert rows[0].items_created == 2
@@ -278,64 +298,90 @@ async def test_sync_archives_unadmitted_sources_without_indexing(monkeypatch):
     import json
     import uuid
     from unittest.mock import AsyncMock, MagicMock
+
     from app.services import jorf_service
 
     service = JorfService()
-    service._client_id = 'test'
-    service._client_secret = 'test'
-    monkeypatch.setattr(service, '_get_existing_cids', AsyncMock(return_value=set()))
-    monkeypatch.setattr(service, '_search_all', AsyncMock(return_value=[
-        {'id': 'JORFTEXT001', 'title': 'Décret relatif au rhum', 'nature': 'DECRET'},
-        {'id': 'JORFTEXT002', 'title': 'Arrêté portant nomination', 'nature': 'ARRETE'},
-        {'id': 'JORFTEXT003', 'title': _LOI_1107, 'nature': 'LOI'},
-    ]))
-    consult = {'articles': [{'num': '1', 'content': 'Texte officiel intégral. ' * 5}]}
-    monkeypatch.setattr(service, '_api_post', AsyncMock(return_value=consult))
+    service._client_id = "test"
+    service._client_secret = "test"
+    monkeypatch.setattr(service, "_get_existing_cids", AsyncMock(return_value=set()))
+    monkeypatch.setattr(
+        service,
+        "_search_all",
+        AsyncMock(
+            return_value=[
+                {"id": "JORFTEXT001", "title": "Décret relatif au rhum", "nature": "DECRET"},
+                {"id": "JORFTEXT002", "title": "Arrêté portant nomination", "nature": "ARRETE"},
+                {"id": "JORFTEXT003", "title": _LOI_1107, "nature": "LOI"},
+            ]
+        ),
+    )
+    consult = {"articles": [{"num": "1", "content": "Texte officiel intégral. " * 5}]}
+    monkeypatch.setattr(service, "_api_post", AsyncMock(return_value=consult))
     create = AsyncMock(return_value=MagicMock(id=uuid.uuid4()))
-    monkeypatch.setattr(service, '_create_document', create)
+    monkeypatch.setattr(service, "_create_document", create)
     enqueue = AsyncMock()
-    monkeypatch.setattr(jorf_service, 'enqueue_ingestion', enqueue)
+    monkeypatch.setattr(jorf_service, "enqueue_ingestion", enqueue)
     storage = MagicMock()
-    monkeypatch.setattr('app.services.storage_service.StorageService', lambda: storage)
+    monkeypatch.setattr("app.services.storage_service.StorageService", lambda: storage)
     result = await service.sync(MagicMock(), uuid.uuid4())
     assert result.new_ingested == 1 and result.filtered_out == 2 and result.errors == 0
     assert create.await_count == enqueue.await_count == 1
     entries = [json.loads(call.args[1]) for call in storage.put_file_bytes.call_args_list]
-    assert {e['cid'] for e in entries} == {'JORFTEXT001', 'JORFTEXT002'}
-    assert entries[0]['consult'] == consult
-    assert all(e['status'] == 'review_pending' and not e['indexation_requested'] for e in entries)
+    assert {e["cid"] for e in entries} == {"JORFTEXT001", "JORFTEXT002"}
+    assert entries[0]["consult"] == consult
+    assert all(e["status"] == "review_pending" and not e["indexation_requested"] for e in entries)
 
 
 async def test_incomplete_search_is_reported(monkeypatch):
     from datetime import date
     from unittest.mock import AsyncMock
+
     from app.services import jorf_service
+
     service = JorfService()
-    monkeypatch.setattr(jorf_service, '_MAX_PAGES', 1)
-    monkeypatch.setattr(service, '_api_post', AsyncMock(return_value={
-        'totalResultNumber': 120, 'results': [{'id': 'JORFTEXT001'}],
-    }))
+    monkeypatch.setattr(jorf_service, "_MAX_PAGES", 1)
+    monkeypatch.setattr(
+        service,
+        "_api_post",
+        AsyncMock(
+            return_value={
+                "totalResultNumber": 120,
+                "results": [{"id": "JORFTEXT001"}],
+            }
+        ),
+    )
     result = jorf_service.JorfSyncResult()
     await service._search_all(None, date(2026, 1, 1), date(2026, 1, 2), result)
     assert result.errors == 1
-    assert '1/120' in result.error_messages[0]
+    assert "1/120" in result.error_messages[0]
 
 
-async def test_jorf_review_admin_access_and_path_validation(client, admin_user, regular_user, monkeypatch):
+async def test_jorf_review_admin_access_and_path_validation(
+    client, admin_user, regular_user, monkeypatch
+):
     from unittest.mock import MagicMock
+
     storage = MagicMock()
     storage.get_file_bytes_bounded.return_value = b'{"status":"review_pending"}'
-    monkeypatch.setattr('app.services.storage_service.StorageService', lambda: storage)
-    url = '/api/v1/admin/syncs/jorf/review?cid=JORFTEXT000123'
+    monkeypatch.setattr("app.services.storage_service.StorageService", lambda: storage)
+    url = "/api/v1/admin/syncs/jorf/review?cid=JORFTEXT000123"
     assert (await client.get(url)).status_code in (401, 403)
-    assert (await client.get(url, headers={
-        'Authorization': f"Bearer {regular_user['token']}",
-    })).status_code == 403
+    assert (
+        await client.get(
+            url,
+            headers={
+                "Authorization": f"Bearer {regular_user['token']}",
+            },
+        )
+    ).status_code == 403
     storage.get_file_bytes_bounded.assert_not_called()
-    headers = {'Authorization': f"Bearer {admin_user['token']}"}
+    headers = {"Authorization": f"Bearer {admin_user['token']}"}
     assert (await client.get(url, headers=headers)).status_code == 200
     storage.get_file_bytes_bounded.assert_called_once_with(
-        'common/jorf_review/JORFTEXT000123.json', 10_000_000,
+        "common/jorf_review/JORFTEXT000123.json",
+        10_000_000,
     )
-    assert (await client.get('/api/v1/admin/syncs/jorf/review?cid=../../secret',
-                            headers=headers)).status_code == 422
+    assert (
+        await client.get("/api/v1/admin/syncs/jorf/review?cid=../../secret", headers=headers)
+    ).status_code == 422

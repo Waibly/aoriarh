@@ -23,9 +23,7 @@ class Fiche(TimestampMixin, Base):
     organisation_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("organisations.id"), nullable=False, index=True
     )
-    user_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("users.id"), nullable=False, index=True
-    )
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)
     # Message source. Nullable + SET NULL : la fiche survit si le message
     # disparaît un jour.
     message_id: Mapped[uuid.UUID | None] = mapped_column(
@@ -33,9 +31,5 @@ class Fiche(TimestampMixin, Base):
     )
     title: Mapped[str] = mapped_column(String(200), nullable=False)
     # Corps HTML brut (FicheContent sérialisé) + snapshot des sources.
-    content: Mapped[dict] = mapped_column(
-        JSON().with_variant(JSONB, "postgresql"), nullable=False
-    )
-    sources: Mapped[list | None] = mapped_column(
-        JSON().with_variant(JSONB, "postgresql")
-    )
+    content: Mapped[dict] = mapped_column(JSON().with_variant(JSONB, "postgresql"), nullable=False)
+    sources: Mapped[list | None] = mapped_column(JSON().with_variant(JSONB, "postgresql"))

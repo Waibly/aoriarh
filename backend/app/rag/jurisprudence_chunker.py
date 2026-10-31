@@ -27,7 +27,12 @@ _SECTION_MARKERS = [
     (re.compile(r"(?mi)^(?:Sur\s+le\s+rapport\s+de\s+)"), "faits"),
     # Moyens (grounds of appeal)
     (re.compile(r"(?mi)^(?:EXAMEN\s+DES?\s+MOYENS?|Examen\s+des?\s+moyens?)\s*$"), "moyens"),
-    (re.compile(r"(?mi)^(?:Sur\s+le\s+(?:premier|deuxième|troisième|quatrième|unique|moyen)\s+moyen)"), "moyens"),
+    (
+        re.compile(
+            r"(?mi)^(?:Sur\s+le\s+(?:premier|deuxième|troisième|quatrième|unique|moyen)\s+moyen)"
+        ),
+        "moyens",
+    ),
     (re.compile(r"(?mi)^(?:MOYEN\s+(?:UNIQUE|ANNEXÉ|DE\s+CASSATION))"), "moyens"),
     # Motifs / Reasoning — THE KEY PART
     (re.compile(r"(?mi)^(?:MOTIFS\s+DE\s+LA\s+D[EÉ]CISION|Motifs)\s*$"), "motifs"),
@@ -99,7 +104,11 @@ class JurisprudenceChunker:
         chunks: list[str] = []
         for label, content in sections:
             section_header = self._section_label_fr(label)
-            prefix = f"{metadata_header}\n{section_header}\n\n" if metadata_header else f"{section_header}\n\n"
+            prefix = (
+                f"{metadata_header}\n{section_header}\n\n"
+                if metadata_header
+                else f"{section_header}\n\n"
+            )
             prefix_tokens = self._token_count(prefix)
 
             effective_size = self.chunk_size - prefix_tokens
@@ -199,9 +208,7 @@ class JurisprudenceChunker:
         return raw_chunks
 
     def _force_split(self, text: str, max_tokens: int) -> list[str]:
-        return force_split_on_boundary(
-            text, self._enc, max_tokens, self.chunk_overlap
-        )
+        return force_split_on_boundary(text, self._enc, max_tokens, self.chunk_overlap)
 
     def _token_count(self, text: str) -> int:
         return len(self._enc.encode(text))

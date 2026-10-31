@@ -46,19 +46,52 @@ def postgres_url():
         pytest.fail("Docker is required by the explicitly enabled PostgreSQL test")
     name = f"aoriarh-test-planner-storage-{uuid.uuid4().hex}"
     try:
-        subprocess.run([
-            docker, "run", "--detach", "--rm", "--pull=never", "--name", name,
-            "--label", "aoriarh.test=planner-storage", "--publish", "127.0.0.1::5432",
-            "--tmpfs", "/var/lib/postgresql/data",
-            "--env", "POSTGRES_USER=storage_test", "--env", "POSTGRES_PASSWORD=test-only",
-            "--env", "POSTGRES_DB=storage_test", "postgres:16-alpine",
-        ], check=True, stdout=subprocess.DEVNULL, timeout=30)
+        subprocess.run(
+            [
+                docker,
+                "run",
+                "--detach",
+                "--rm",
+                "--pull=never",
+                "--name",
+                name,
+                "--label",
+                "aoriarh.test=planner-storage",
+                "--publish",
+                "127.0.0.1::5432",
+                "--tmpfs",
+                "/var/lib/postgresql/data",
+                "--env",
+                "POSTGRES_USER=storage_test",
+                "--env",
+                "POSTGRES_PASSWORD=test-only",
+                "--env",
+                "POSTGRES_DB=storage_test",
+                "postgres:16-alpine",
+            ],
+            check=True,
+            stdout=subprocess.DEVNULL,
+            timeout=30,
+        )
         deadline = time.monotonic() + 30
         while time.monotonic() < deadline:
-            ready = subprocess.run([
-                docker, "exec", name, "pg_isready", "-h", "127.0.0.1",
-                "-U", "storage_test", "-d", "storage_test",
-            ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=5)
+            ready = subprocess.run(
+                [
+                    docker,
+                    "exec",
+                    name,
+                    "pg_isready",
+                    "-h",
+                    "127.0.0.1",
+                    "-U",
+                    "storage_test",
+                    "-d",
+                    "storage_test",
+                ],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                timeout=5,
+            )
             if ready.returncode == 0:
                 break
             time.sleep(0.2)
@@ -67,13 +100,20 @@ def postgres_url():
         port = subprocess.check_output([docker, "port", name, "5432/tcp"], text=True)
         assert port.startswith("127.0.0.1:")
         yield URL.create(
-            "postgresql+asyncpg", username="storage_test", password="test-only",
-            host="127.0.0.1", port=int(port.strip().rsplit(":", 1)[1]), database="storage_test",
+            "postgresql+asyncpg",
+            username="storage_test",
+            password="test-only",
+            host="127.0.0.1",
+            port=int(port.strip().rsplit(":", 1)[1]),
+            database="storage_test",
         )
     finally:
         subprocess.run(
-            [docker, "rm", "--force", name], stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL, timeout=30, check=False,
+            [docker, "rm", "--force", name],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=30,
+            check=False,
         )
 
 
@@ -93,20 +133,27 @@ async def postgres_factory(postgres_url):
 async def test_postgres_rejects_decoded_nul_but_accepts_literal_backslash_text(postgres_factory):
     async with postgres_factory() as db:
         with pytest.raises(DBAPIError) as failure:
-            await db.scalar(text("SELECT CAST(:payload AS jsonb)"), {
-                "payload": json.dumps({"text": "salari\x00e9"}),
-            })
+            await db.scalar(
+                text("SELECT CAST(:payload AS jsonb)"),
+                {
+                    "payload": json.dumps({"text": "salari\x00e9"}),
+                },
+            )
         assert failure.value.orig.sqlstate == "22P05"
         await db.rollback()
         literal = r"Texte original \u0000"
-        stored = await db.scalar(text("SELECT CAST(:payload AS jsonb)"), {
-            "payload": json.dumps({"text": literal}),
-        })
+        stored = await db.scalar(
+            text("SELECT CAST(:payload AS jsonb)"),
+            {
+                "payload": json.dumps({"text": literal}),
+            },
+        )
         assert stored == {"text": literal}
 
 
 async def test_http_preserves_raw_and_exposes_error_without_partial_dossier_changes(
-    postgres_factory, monkeypatch,
+    postgres_factory,
+    monkeypatch,
 ):
     async with postgres_factory() as db:
         actor = User(email="storage@example.test", full_name="Storage test")
@@ -131,12 +178,18 @@ async def test_http_preserves_raw_and_exposes_error_without_partial_dossier_chan
     monkeypatch.setitem(app.dependency_overrides, get_db, local_db)
     monkeypatch.setitem(app.dependency_overrides, get_current_user, lambda: actor)
     monkeypatch.setattr("app.api.conversations.classify_intent", _passthrough_intent)
-    monkeypatch.setattr("app.api.conversations.BillingService", lambda db: SimpleNamespace(
-        get_account_for_organisation=AsyncMock(return_value=SimpleNamespace()),
-        check_question_quota=AsyncMock(), increment_question_count=AsyncMock(),
-        ensure_plan_active=MagicMock(),
-    ))
-    raw = "  " + wire([request(question="Texte salari\x00e9"), request(id="other")], [fact()]) + "\n"
+    monkeypatch.setattr(
+        "app.api.conversations.BillingService",
+        lambda db: SimpleNamespace(
+            get_account_for_organisation=AsyncMock(return_value=SimpleNamespace()),
+            check_question_quota=AsyncMock(),
+            increment_question_count=AsyncMock(),
+            ensure_plan_active=MagicMock(),
+        ),
+    )
+    raw = (
+        "  " + wire([request(question="Texte salari\x00e9"), request(id="other")], [fact()]) + "\n"
+    )
     agent = planner(raw)
     agent.stream_generate = MagicMock(side_effect=AssertionError("No generation for invalid plan"))
     legal = AsyncMock(side_effect=AssertionError("No search for invalid plan"))
@@ -170,12 +223,18 @@ async def test_http_preserves_raw_and_exposes_error_without_partial_dossier_chan
         assert await db.scalar(select(CaseFile.version).where(CaseFile.id == case_id)) == (
             initial_version
         )
-        assert await db.scalar(
-            select(func.count()).select_from(CaseEntry).where(CaseEntry.case_file_id == case_id)
-        ) == initial_entries
-        assert await db.scalar(
-            select(func.count()).select_from(CaseTask).where(CaseTask.case_file_id == case_id)
-        ) == 0
+        assert (
+            await db.scalar(
+                select(func.count()).select_from(CaseEntry).where(CaseEntry.case_file_id == case_id)
+            )
+            == initial_entries
+        )
+        assert (
+            await db.scalar(
+                select(func.count()).select_from(CaseTask).where(CaseTask.case_file_id == case_id)
+            )
+            == 0
+        )
         messages = list(await db.scalars(select(Message).where(Message.conversation_id == conv_id)))
         assert [(msg.role, msg.content) for msg in messages] == [("user", "Rédige un mail")]
         stored = await db.scalar(select(CaseEvent).where(CaseEvent.id == uuid.UUID(event["id"])))

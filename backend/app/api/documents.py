@@ -17,7 +17,6 @@ from app.rag.tasks import enqueue_ingestion
 from app.schemas.document import (
     BatchUploadFileResult,
     BatchUploadResponse,
-    DocumentDownload,
     DocumentExtractionStatus,
     DocumentExtractionText,
     DocumentRead,
@@ -44,6 +43,7 @@ async def document_extraction_status(
         raise HTTPException(404, "Fonctionnalité non disponible")
     response.headers["Cache-Control"] = "private, no-store"
     from app.services.document_extraction_service import DocumentExtractionService
+
     return await DocumentExtractionService(db).status(document_id, organisation_id, user.id)
 
 
@@ -66,8 +66,13 @@ async def read_document_extraction(
         raise HTTPException(404, "Fonctionnalité non disponible")
     response.headers["Cache-Control"] = "private, no-store"
     from app.services.document_extraction_service import DocumentExtractionService
+
     return await DocumentExtractionService(db).read(
-        document_id, organisation_id, user.id, extraction_id, max_bytes,
+        document_id,
+        organisation_id,
+        user.id,
+        extraction_id,
+        max_bytes,
     )
 
 
@@ -104,6 +109,7 @@ async def upload_documents_batch(
         account = await billing.get_account_for_organisation(organisation_id)
         billing.ensure_plan_active(account)
         from app.models.organisation import Organisation
+
         org = await db.get(Organisation, organisation_id)
         if org is not None:
             await billing.check_document_limit(org)
@@ -117,11 +123,13 @@ async def upload_documents_batch(
                 user_id=user.id,
             )
             await enqueue_ingestion(str(doc.id), expected_source=doc.storage_path)
-            results.append(BatchUploadFileResult(
-                filename=file.filename or "unknown",
-                success=True,
-                document=DocumentRead.model_validate(doc),
-            ))
+            results.append(
+                BatchUploadFileResult(
+                    filename=file.filename or "unknown",
+                    success=True,
+                    document=DocumentRead.model_validate(doc),
+                )
+            )
         except Exception as exc:
             raw_detail = getattr(exc, "detail", str(exc))
             logger.warning("Batch upload failed for %s: %s", file.filename, raw_detail)
@@ -131,11 +139,13 @@ async def upload_documents_batch(
                 if isinstance(exc, HTTPException)
                 else "Impossible de traiter ce fichier. Veuillez réessayer."
             )
-            results.append(BatchUploadFileResult(
-                filename=file.filename or "unknown",
-                success=False,
-                error=safe_detail,
-            ))
+            results.append(
+                BatchUploadFileResult(
+                    filename=file.filename or "unknown",
+                    success=False,
+                    error=safe_detail,
+                )
+            )
 
     succeeded = sum(1 for r in results if r.success)
     return BatchUploadResponse(
@@ -172,6 +182,7 @@ async def upload_document(
         account = await billing.get_account_for_organisation(organisation_id)
         billing.ensure_plan_active(account)
         from app.models.organisation import Organisation
+
         org = await db.get(Organisation, organisation_id)
         if org is not None:
             await billing.check_document_limit(org)
@@ -229,6 +240,7 @@ async def download_document(
     service = DocumentService(db)
     doc = await service.get_document(document_id, organisation_id)
     from app.services.storage_service import StorageService
+
     storage = StorageService()
     file_bytes = storage.get_file_bytes(doc.storage_path)
 
@@ -248,7 +260,8 @@ async def download_document(
         content=file_bytes,
         media_type=content_type,
         headers={
-            "Content-Disposition": "attachment; filename*=UTF-8''" + urllib.parse.quote(filename, safe=""),
+            "Content-Disposition": "attachment; filename*=UTF-8''"
+            + urllib.parse.quote(filename, safe=""),
         },
     )
 

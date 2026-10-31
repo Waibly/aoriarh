@@ -16,6 +16,7 @@ Stratégie :
 4. Création d'un Document (source_type loi/ordonnance/decret/arrete) + ingestion.
 5. Dédup par CID (stocké dans Document.numero_pourvoi, comme le Conseil constit).
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -78,43 +79,115 @@ _NATURE_TO_SOURCE_TYPE = {
 # (cf. _EXCLUSION_KEYWORDS) : fonction publique et aides sociales individuelles.
 _RH_KEYWORDS = (
     # Contrat & rupture
-    "contrat de travail", "embauche", "periode d'essai", "licenciement",
-    "demission", "preavis", "rupture conventionnelle", "prud'hommes", "cdd", "cdi",
+    "contrat de travail",
+    "embauche",
+    "periode d'essai",
+    "licenciement",
+    "demission",
+    "preavis",
+    "rupture conventionnelle",
+    "prud'hommes",
+    "cdd",
+    "cdi",
     # Temps de travail
-    "duree du travail", "temps de travail", "heure supplementaire", "forfait jours",
-    "forfait annuel", "travail de nuit", "travail dominical", "astreinte",
-    "amenagement du temps", "rtt",
+    "duree du travail",
+    "temps de travail",
+    "heure supplementaire",
+    "forfait jours",
+    "forfait annuel",
+    "travail de nuit",
+    "travail dominical",
+    "astreinte",
+    "amenagement du temps",
+    "rtt",
     # Rémunération & épargne salariale
-    "salaire", "salaire minimum", "smic", "interessement", "epargne salariale",
-    "participation aux benefices", "partage de la valeur", "prime de partage",
+    "salaire",
+    "salaire minimum",
+    "smic",
+    "interessement",
+    "epargne salariale",
+    "participation aux benefices",
+    "partage de la valeur",
+    "prime de partage",
     # Congés
-    "conge", "conge paye", "paternite", "maternite", "parentalite",
+    "conge",
+    "conge paye",
+    "paternite",
+    "maternite",
+    "parentalite",
     # Santé & sécurité au travail
-    "sante au travail", "medecine du travail", "accident du travail",
-    "maladie professionnelle", "document unique", "duerp", "risque professionnel",
-    "risque psychosocial", "penibilite", "amiante", "inaptitude", "harcelement",
-    "prevention des risques", "compte professionnel de prevention",
+    "sante au travail",
+    "medecine du travail",
+    "accident du travail",
+    "maladie professionnelle",
+    "document unique",
+    "duerp",
+    "risque professionnel",
+    "risque psychosocial",
+    "penibilite",
+    "amiante",
+    "inaptitude",
+    "harcelement",
+    "prevention des risques",
+    "compte professionnel de prevention",
     # Représentation du personnel
-    "comite social", "cse", "syndicat", "syndical", "election professionnelle",
-    "bdese", "delegue syndical", "representant du personnel", "representativite",
+    "comite social",
+    "cse",
+    "syndicat",
+    "syndical",
+    "election professionnelle",
+    "bdese",
+    "delegue syndical",
+    "representant du personnel",
+    "representativite",
     # Négociation collective
-    "convention collective", "accord collectif", "accord de branche",
-    "accord d'entreprise", "accord interprofessionnel", "negociation collective",
+    "convention collective",
+    "accord collectif",
+    "accord de branche",
+    "accord d'entreprise",
+    "accord interprofessionnel",
+    "negociation collective",
     "branche professionnelle",
     # Égalité & handicap
-    "egalite professionnelle", "index egalite", "egalite femmes", "discrimination",
-    "travailleur handicape", "rqth", "oeth", "agefiph",
+    "egalite professionnelle",
+    "index egalite",
+    "egalite femmes",
+    "discrimination",
+    "travailleur handicape",
+    "rqth",
+    "oeth",
+    "agefiph",
     # Formation & alternance
-    "formation professionnelle", "compte personnel de formation", "cpf",
-    "apprentissage", "apprenti", "alternance", "contrat de professionnalisation",
-    "opco", "developpement des competences",
+    "formation professionnelle",
+    "compte personnel de formation",
+    "cpf",
+    "apprentissage",
+    "apprenti",
+    "alternance",
+    "contrat de professionnalisation",
+    "opco",
+    "developpement des competences",
     # Emploi & chômage
-    "demandeur d'emploi", "france travail", "pole emploi", "activite partielle",
-    "assurance chomage", "plan de sauvegarde de l'emploi", "plan social",
+    "demandeur d'emploi",
+    "france travail",
+    "pole emploi",
+    "activite partielle",
+    "assurance chomage",
+    "plan de sauvegarde de l'emploi",
+    "plan social",
     # Socle & formes d'emploi
-    "code du travail", "securite sociale", "cotisation sociale", "travail",
-    "travailleur", "salarie", "teletravail", "interim", "travail temporaire",
-    "portage salarial", "groupement d'employeurs", "detachement de salarie",
+    "code du travail",
+    "securite sociale",
+    "cotisation sociale",
+    "travail",
+    "travailleur",
+    "salarie",
+    "teletravail",
+    "interim",
+    "travail temporaire",
+    "portage salarial",
+    "groupement d'employeurs",
+    "detachement de salarie",
     "jeune travailleur",
 )
 
@@ -125,20 +198,41 @@ _RH_KEYWORDS = (
 # Recherchés en sous-chaîne : ce sont des expressions distinctives.
 _EXCLUSION_KEYWORDS = (
     # Bruit administratif
-    "delegation de signature", "nomination", "est nomme", "sont nommes",
-    "cessation de fonctions", "legion d'honneur", "ordre national du merite",
-    "catastrophe naturelle", "site classe", "organisation de producteurs",
+    "delegation de signature",
+    "nomination",
+    "est nomme",
+    "sont nommes",
+    "cessation de fonctions",
+    "legion d'honneur",
+    "ordre national du merite",
+    "catastrophe naturelle",
+    "site classe",
+    "organisation de producteurs",
     "organisations de producteurs",
     # Fonction publique (hors périmètre)
-    "fonction publique", "agents publics", "fonctionnaires", "regime indemnitaire",
-    "rifseep", "echelonnement indiciaire", "statut particulier", "cadre d'emplois",
-    "corps des", "corps de", "emplois ouvrant droit", "liste des fonctions",
-    "liste des emplois", "integration directe",
+    "fonction publique",
+    "agents publics",
+    "fonctionnaires",
+    "regime indemnitaire",
+    "rifseep",
+    "echelonnement indiciaire",
+    "statut particulier",
+    "cadre d'emplois",
+    "corps des",
+    "corps de",
+    "emplois ouvrant droit",
+    "liste des fonctions",
+    "liste des emplois",
+    "integration directe",
     # Aides sociales individuelles (hors périmètre)
-    "prime d'activite", "revenu de solidarite active",
-    "allocation aux adultes handicapes", "allocation pour adulte handicape",
-    "allocation de solidarite specifique", "allocation temporaire d'attente",
-    "revalorisation de l'allocation", "minimum vieillesse",
+    "prime d'activite",
+    "revenu de solidarite active",
+    "allocation aux adultes handicapes",
+    "allocation pour adulte handicape",
+    "allocation de solidarite specifique",
+    "allocation temporaire d'attente",
+    "revalorisation de l'allocation",
+    "minimum vieillesse",
 )
 
 
@@ -152,10 +246,7 @@ def _word_in(keyword: str, normalized: str) -> bool:
     """Vrai si le mot-clé (forme singulier) apparaît en mot entier dans le texte
     normalisé, en tolérant le pluriel (s/x) sur chaque mot. Frontière gauche
     stricte → pas de collision de sous-chaîne (« naissance » vs « reconnaissance »)."""
-    parts = [
-        re.escape(re.sub(r"[sx]$", "", word)) + r"(?:s|x)?"
-        for word in keyword.split(" ")
-    ]
+    parts = [re.escape(re.sub(r"[sx]$", "", word)) + r"(?:s|x)?" for word in keyword.split(" ")]
     pattern = r"(?<![a-z])" + r"\s+".join(parts) + r"(?![a-z])"
     return re.search(pattern, normalized) is not None
 
@@ -244,12 +335,8 @@ class JorfService:
 
     def __init__(self) -> None:
         self.base_url = settings.legifrance_base_url.rstrip("/")
-        self._client_id = (
-            settings.legifrance_client_id or settings.judilibre_client_id
-        )
-        self._client_secret = (
-            settings.legifrance_client_secret or settings.judilibre_client_secret
-        )
+        self._client_id = settings.legifrance_client_id or settings.judilibre_client_id
+        self._client_secret = settings.legifrance_client_secret or settings.judilibre_client_secret
         self._oauth_url = settings.legifrance_oauth_url
 
     @classmethod
@@ -269,9 +356,7 @@ class JorfService:
                 return JorfService._cached_token
 
             if not self._client_id or not self._client_secret:
-                raise RuntimeError(
-                    "PISTE credentials missing (legifrance_client_id / _secret)"
-                )
+                raise RuntimeError("PISTE credentials missing (legifrance_client_id / _secret)")
 
             async with httpx.AsyncClient(timeout=15) as client:
                 r = await client.post(
@@ -292,9 +377,7 @@ class JorfService:
                 )
                 return JorfService._cached_token
 
-    async def _api_post(
-        self, client: httpx.AsyncClient, path: str, json_body: dict
-    ) -> dict | None:
+    async def _api_post(self, client: httpx.AsyncClient, path: str, json_body: dict) -> dict | None:
         url = f"{self.base_url}{path}"
         for attempt in range(_MAX_RETRIES):
             try:
@@ -350,15 +433,16 @@ class JorfService:
         existing_cids = await self._get_existing_cids(db)
 
         from app.services.storage_service import StorageService
+
         storage = StorageService()
 
         async with httpx.AsyncClient(timeout=_REQUEST_TIMEOUT) as client:
-            results_list = await self._search_all(
-                client, date_start, date_end, result
-            )
+            results_list = await self._search_all(client, date_start, date_end, result)
             logger.info(
                 "JORF sync: %d textes listés (%s → %s)",
-                len(results_list), date_start, date_end,
+                len(results_list),
+                date_start,
+                date_end,
             )
 
             for raw in results_list:
@@ -368,8 +452,9 @@ class JorfService:
                         continue
 
                     if not _should_consult(nature, title):
-                        self._store_review(storage, cid, title, nature, raw,
-                                           reason="titre_a_qualifier")
+                        self._store_review(
+                            storage, cid, title, nature, raw, reason="titre_a_qualifier"
+                        )
                         result.filtered_out += 1
                         continue
 
@@ -377,19 +462,22 @@ class JorfService:
                         result.already_exists += 1
                         continue
 
-                    consult = await self._api_post(
-                        client, "/consult/jorf", {"textCid": cid}
-                    )
+                    consult = await self._api_post(client, "/consult/jorf", {"textCid": cid})
                     if not consult:
                         result.errors += 1
                         continue
 
-                    full_text, modified_code_ids, pub_date = self._parse_consult(
-                        consult
-                    )
+                    full_text, modified_code_ids, pub_date = self._parse_consult(consult)
                     if not _should_keep(nature, title, modified_code_ids):
-                        self._store_review(storage, cid, title, nature, raw,
-                                           reason="perimetre_a_qualifier", consult=consult)
+                        self._store_review(
+                            storage,
+                            cid,
+                            title,
+                            nature,
+                            raw,
+                            reason="perimetre_a_qualifier",
+                            consult=consult,
+                        )
                         result.filtered_out += 1
                         continue
                     if not full_text or len(full_text) < 50:
@@ -404,9 +492,7 @@ class JorfService:
                         publication_date=pub_date,
                         effective_date=self._source_date(consult, ("dateEntreeVigueur",)),
                     )
-                    doc = await self._create_document(
-                        db, jorf_text, user_id, storage
-                    )
+                    doc = await self._create_document(db, jorf_text, user_id, storage)
                     await enqueue_ingestion(str(doc.id))
                     existing_cids.add(cid)
                     result.new_ingested += 1
@@ -416,10 +502,12 @@ class JorfService:
                     logger.warning("JORF: erreur sur un texte: %s", exc)
 
         logger.info(
-            "JORF sync terminé: %d listés, %d ingérés, %d déjà en base, "
-            "%d filtrés, %d erreurs",
-            result.total_fetched, result.new_ingested, result.already_exists,
-            result.filtered_out, result.errors,
+            "JORF sync terminé: %d listés, %d ingérés, %d déjà en base, %d filtrés, %d erreurs",
+            result.total_fetched,
+            result.new_ingested,
+            result.already_exists,
+            result.filtered_out,
+            result.errors,
         )
         return result
 
@@ -429,11 +517,16 @@ class JorfService:
         if not re.fullmatch(r"JORFTEXT[0-9]+", cid):
             raise ValueError("Identifiant JORF invalide pour le registre de revue")
         entry = {
-            "schema_version": 1, "status": "review_pending", "cid": cid,
-            "title": title, "nature": nature, "reason": reason,
+            "schema_version": 1,
+            "status": "review_pending",
+            "cid": cid,
+            "title": title,
+            "nature": nature,
+            "reason": reason,
             "source_url": f"https://www.legifrance.gouv.fr/jorf/id/{cid}",
             "observed_at": datetime.now(UTC).isoformat(),
-            "search_result": search_result, "consult": consult,
+            "search_result": search_result,
+            "consult": consult,
             "indexation_requested": False,
         }
         storage.put_file_bytes(
@@ -444,9 +537,7 @@ class JorfService:
 
     # ---- Search ----
 
-    def _build_search_payload(
-        self, page_number: int, date_start: date, date_end: date
-    ) -> dict:
+    def _build_search_payload(self, page_number: int, date_start: date, date_end: date) -> dict:
         return {
             "fond": _FOND,
             "recherche": {
@@ -493,7 +584,8 @@ class JorfService:
         results_list: list[dict] = []
         for page_number in range(1, _MAX_PAGES + 1):
             data = await self._api_post(
-                client, "/search",
+                client,
+                "/search",
                 self._build_search_payload(page_number, date_start, date_end),
             )
             if not data:
@@ -593,8 +685,13 @@ class JorfService:
         raw_json = _json.dumps(consult, ensure_ascii=False)
         modified_code_ids = {cid for cid in _RELEVANT_CODE_IDS if cid in raw_json}
 
-        return full_text, modified_code_ids, JorfService._source_date(
-            consult, ("dateParution", "datePublication"),
+        return (
+            full_text,
+            modified_code_ids,
+            JorfService._source_date(
+                consult,
+                ("dateParution", "datePublication"),
+            ),
         )
 
     @staticmethod

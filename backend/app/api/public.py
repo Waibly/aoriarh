@@ -334,9 +334,14 @@ async def public_ask(
                     use_llm_fallback=True,
                 )
                 if intent_result.raw_response:
-                    yield _sse_event("chat_search_details", search_feedback({
-                        "router_raw_response": intent_result.raw_response,
-                    }))
+                    yield _sse_event(
+                        "chat_search_details",
+                        search_feedback(
+                            {
+                                "router_raw_response": intent_result.raw_response,
+                            }
+                        ),
+                    )
                 if intent_result.static_answer is not None:
                     meta_user = await service.add_message(
                         conversation_id=conversation.id,
@@ -430,26 +435,47 @@ async def public_ask(
                 rag_trace.router_raw_response = intent_result.raw_response
                 yield _sse_event("chat_search_details", search_feedback(rag_trace))
                 if rag_trace.error in {"search_reranking_error", "search_context_error"}:
-                    yield _sse_event("chat_error", {
-                        "error": rag_trace.error,
-                        "message": (
-                            "Le classement des documents a échoué. Aucun classement de secours n’a été utilisé."
-                            if rag_trace.error == "search_reranking_error"
-                            else "Le contexte documentaire n’a pas pu être préparé. Aucune réponse n’a été générée."
-                        ),
-                    })
+                    yield _sse_event(
+                        "chat_error",
+                        {
+                            "error": rag_trace.error,
+                            "message": (
+                                (
+                                    "Le classement des documents a échoué. Aucun clas"
+                                    "sement de secours n’a été utilisé."  # noqa: E501 -- Preserve literal text.
+                                )
+                                if rag_trace.error == "search_reranking_error"
+                                else (
+                                    "Le contexte documentaire n’a pas pu être préparé"
+                                    ". Aucune réponse n’a été générée."  # noqa: E501 -- Preserve literal text.
+                                )
+                            ),
+                        },
+                    )
                     return
                 if rag_trace.error == "search_retrieval_error":
-                    yield _sse_event("chat_error", {
-                        "error": "search_retrieval_error",
-                        "message": "Une recherche documentaire a échoué. Aucune réponse n’a été générée à partir des résultats incomplets.",
-                    })
+                    yield _sse_event(
+                        "chat_error",
+                        {
+                            "error": "search_retrieval_error",
+                            "message": (
+                                "Une recherche documentaire a échoué. Aucune réponse n’a été "
+                                "générée à partir des résultats incomplets."
+                            ),
+                        },
+                    )
                     return
                 if rag_trace.error == "search_planner_error":
-                    yield _sse_event("chat_error", {
-                        "error": "search_planner_error",
-                        "message": "Le plan de recherche n’a pas pu être exécuté. Aucune recherche de secours n’a été lancée.",
-                    })
+                    yield _sse_event(
+                        "chat_error",
+                        {
+                            "error": "search_planner_error",
+                            "message": (
+                                "Le plan de recherche n’a pas pu être exécuté. Aucune recherche de"
+                                " secours n’a été lancée."
+                            ),
+                        },
+                    )
                     return
                 if not results and not rag_trace.search_plan_validation.get("chronology"):
                     yield _sse_event(
@@ -492,7 +518,11 @@ async def public_ask(
                             history=None,
                             low_confidence=rag_trace.low_confidence,
                             **(
-                                {"chronology_context": rag_trace.search_plan_validation["chronology"]}
+                                {
+                                    "chronology_context": rag_trace.search_plan_validation[
+                                        "chronology"
+                                    ]
+                                }
                                 if rag_trace.search_plan_validation.get("chronology") is not None
                                 else {}
                             ),
@@ -525,10 +555,13 @@ async def public_ask(
                     logger.warning(
                         "Démo: streaming interrompu (%d car.): %s", len(full_answer), stream_exc
                     )
-                    yield _sse_event("chat_error", {
-                        "error": "server_error",
-                        "message": "La génération a été interrompue par une erreur technique.",
-                    })
+                    yield _sse_event(
+                        "chat_error",
+                        {
+                            "error": "server_error",
+                            "message": "La génération a été interrompue par une erreur technique.",
+                        },
+                    )
                     return
 
                 if stream_dead:
@@ -546,17 +579,23 @@ async def public_ask(
                             },
                         )
                         return
-                    yield _sse_event("chat_error", {
-                        "error": "timeout",
-                        "message": "La génération s'est interrompue en cours de route.",
-                    })
+                    yield _sse_event(
+                        "chat_error",
+                        {
+                            "error": "timeout",
+                            "message": "La génération s'est interrompue en cours de route.",
+                        },
+                    )
                     return
 
                 if not full_answer:
-                    yield _sse_event("chat_error", {
-                        "error": "empty_response",
-                        "message": "Le service de génération a renvoyé une réponse vide.",
-                    })
+                    yield _sse_event(
+                        "chat_error",
+                        {
+                            "error": "empty_response",
+                            "message": "Le service de génération a renvoyé une réponse vide.",
+                        },
+                    )
                     return
 
                 # 7. Persistance (pour analytics prospect + claim futur au signup).

@@ -67,9 +67,7 @@ class InvitationService:
             )
 
         # Fetch org name for email
-        org_result = await self.db.execute(
-            select(Organisation).where(Organisation.id == org_id)
-        )
+        org_result = await self.db.execute(select(Organisation).where(Organisation.id == org_id))
         org = org_result.scalar_one()
 
         invitation = Invitation(
@@ -117,9 +115,7 @@ class InvitationService:
 
         return invitations
 
-    async def cancel_invitation(
-        self, org_id: uuid.UUID, invitation_id: uuid.UUID
-    ) -> None:
+    async def cancel_invitation(self, org_id: uuid.UUID, invitation_id: uuid.UUID) -> None:
         result = await self.db.execute(
             select(Invitation).where(
                 Invitation.id == invitation_id,
@@ -156,9 +152,7 @@ class InvitationService:
         invitation.expires_at = datetime.now(UTC) + timedelta(days=INVITATION_EXPIRY_DAYS)
         invitation.token = uuid.uuid4()
 
-        org_result = await self.db.execute(
-            select(Organisation).where(Organisation.id == org_id)
-        )
+        org_result = await self.db.execute(select(Organisation).where(Organisation.id == org_id))
         org = org_result.scalar_one()
 
         accept_url = f"{settings.frontend_url}/invite/accept/{invitation.token}"
@@ -181,12 +175,16 @@ class InvitationService:
         return invitation
 
     async def validate_token(self, token: uuid.UUID) -> dict:
-        result = await self.db.execute(
-            select(Invitation).where(Invitation.token == token)
-        )
+        result = await self.db.execute(select(Invitation).where(Invitation.token == token))
         invitation = result.scalar_one_or_none()
         if not invitation:
-            return {"valid": False, "status": None, "email": None, "organisation_name": None, "account_name": None}
+            return {
+                "valid": False,
+                "status": None,
+                "email": None,
+                "organisation_name": None,
+                "account_name": None,
+            }
 
         if invitation.status == "pending" and _is_expired(invitation.expires_at):
             invitation.status = "expired"
@@ -241,7 +239,10 @@ class InvitationService:
         if user.email.lower() != invitation.email.lower():
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail=f"Cette invitation a été envoyée à {invitation.email}. Connectez-vous avec cette adresse pour l'accepter.",
+                detail=(
+                    f"Cette invitation a été envoyée à {invitation.email}. "
+                    "Connectez-vous avec cette adresse pour l'accepter."
+                ),
             )
 
         # Account-level invitation
@@ -267,10 +268,9 @@ class InvitationService:
         # Prevents accepting an invitation after the account has been
         # downgraded or filled up by concurrent acceptances.
         from app.services.billing_service import BillingService
+
         billing = BillingService(self.db)
-        org_account = await billing.get_account_for_organisation(
-            invitation.organisation_id
-        )
+        org_account = await billing.get_account_for_organisation(invitation.organisation_id)
         billing.ensure_plan_active(org_account)
         await billing.check_user_limit(org_account, email=user.email)
 

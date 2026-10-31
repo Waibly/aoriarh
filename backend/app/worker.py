@@ -1,3 +1,4 @@
+# ruff: noqa: E402 -- Configure logging before importing application modules.
 """ARQ worker — processus séparé pour les tâches lourdes (ingestion, sync Judilibre).
 
 Lancer avec :
@@ -16,13 +17,14 @@ setup_logging(json_output=os.getenv("LOG_FORMAT", "json") == "json")
 import structlog
 from arq.connections import RedisSettings
 from arq.cron import cron
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-from sqlalchemy import select
-
-from app.observability.jobs import observed_job  # noqa: E402 - initialize logging before app imports
 from app.core.config import settings
 from app.models.document import Document
+from app.observability.jobs import (
+    observed_job,  # noqa: E402 - initialize logging before app imports
+)
 from app.rag.ingestion import IngestionPipeline
 
 logger = structlog.get_logger(__name__)
@@ -40,14 +42,14 @@ async def on_startup(ctx: dict) -> None:
         pool_recycle=1800,
     )
     ctx["engine"] = engine
-    ctx["session_factory"] = async_sessionmaker(
-        engine, class_=AsyncSession, expire_on_commit=False
-    )
+    ctx["session_factory"] = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
     # Warm the cached BM25 model before polling jobs. Its first load is blocking
     # and must not delay Redis connection/DNS timeouts during ingestion.
     from app.rag.search import _get_sparse_model
+
     await asyncio.to_thread(_get_sparse_model)
     from app.observability.jobs import heartbeat
+
     ctx["incident_heartbeat"] = asyncio.create_task(heartbeat())
 
 
@@ -68,6 +70,7 @@ async def on_shutdown(ctx: dict) -> None:
 
 # --- SyncLog helpers ---------------------------------------------------------
 
+
 async def _create_sync_log(
     session_factory,
     sync_type: str,
@@ -79,6 +82,7 @@ async def _create_sync_log(
     Using a dedicated short session avoids holding a long transaction open.
     """
     from datetime import UTC, datetime
+
     from app.models.sync_log import SyncLog
 
     async with session_factory() as db:
@@ -109,9 +113,10 @@ async def _finish_sync_log(
     deferred: bool = False,
 ) -> None:
     """Record completion; quota deferral is distinct from a technical failure."""
-    from datetime import UTC, datetime
-    from app.models.sync_log import SyncLog
     import uuid as _uuid
+    from datetime import UTC, datetime
+
+    from app.models.sync_log import SyncLog
 
     async with session_factory() as db:
         row = await db.get(SyncLog, _uuid.UUID(sync_log_id))
@@ -131,6 +136,7 @@ async def _finish_sync_log(
         await db.commit()
     if not success or errors:
         from app.observability.store import capture
+
         capture("sync_failed", sync_id=sync_log_id, items_failed=errors)
 
 
@@ -155,9 +161,12 @@ async def run_ingestion(ctx: dict, document_id: str, expected_source: str | None
         async with session_factory() as db:
             if not settings.judilibre_ca_collection_enabled:
                 from app.models.judilibre import JudilibreRecord
-                registered = await db.scalar(select(JudilibreRecord.source_id).where(
-                    JudilibreRecord.document_id == uuid.UUID(document_id)
-                ))
+
+                registered = await db.scalar(
+                    select(JudilibreRecord.source_id).where(
+                        JudilibreRecord.document_id == uuid.UUID(document_id)
+                    )
+                )
                 if registered:
                     logger.info("Worker: Judilibre CA ingestion suspended for %s", document_id)
                     return
@@ -166,6 +175,7 @@ async def run_ingestion(ctx: dict, document_id: str, expected_source: str | None
             document = await db.get(Document, uuid.UUID(document_id))
             if document is not None and document.indexation_status == "error":
                 from app.observability.store import capture
+
                 capture("document_indexation_failed", document_id=document_id)
                 logger.error("Worker: ingestion ended in error for document %s", document_id)
                 return
@@ -203,8 +213,10 @@ async def run_judilibre_sync(
             )
         logger.info(
             "Worker: Judilibre sync completed — %d fetched, %d new, %d existing, %d errors",
-            result.total_fetched, result.new_ingested,
-            result.already_exists, result.errors,
+            result.total_fetched,
+            result.new_ingested,
+            result.already_exists,
+            result.errors,
         )
     except Exception:
         logger.exception("Worker: Judilibre sync failed")
@@ -236,22 +248,25 @@ async def run_jurisprudence_presence_check(ctx: dict) -> None:
         if gone:
             logger.warning(
                 "Worker: presence check — %d décision(s) DISPARUE(S) de Judilibre "
-                "(à examiner/retirer)", len(gone),
+                "(à examiner/retirer)",
+                len(gone),
             )
             for g in gone:
                 logger.warning(
                     "  DISPARUE | %s | n° %s | %s | doc_id=%s",
-                    g.source_type, g.numero_pourvoi, g.name, g.doc_id,
+                    g.source_type,
+                    g.numero_pourvoi,
+                    g.name,
+                    g.doc_id,
                 )
-            summary = f"{len(gone)} disparue(s) : " + "; ".join(
-                g.numero_pourvoi for g in gone[:30]
-            )
+            summary = f"{len(gone)} disparue(s) : " + "; ".join(g.numero_pourvoi for g in gone[:30])
         else:
             logger.info("Worker: presence check — aucune décision disparue")
             summary = "aucune décision disparue"
 
         await _finish_sync_log(
-            session_factory, log_id,
+            session_factory,
+            log_id,
             success=True,
             items_fetched=res.checked,
             items_skipped=res.present,
@@ -263,7 +278,8 @@ async def run_jurisprudence_presence_check(ctx: dict) -> None:
     except Exception as exc:
         logger.exception("Worker: jurisprudence presence check failed")
         await _finish_sync_log(
-            session_factory, log_id,
+            session_factory,
+            log_id,
             success=False,
             error_message=str(exc),
             duration_ms=int((_time.monotonic() - t0) * 1000),
@@ -271,10 +287,17 @@ async def run_jurisprudence_presence_check(ctx: dict) -> None:
 
 
 async def run_kali_install(
-    ctx: dict, org_convention_id: str, user_id: str, force_refetch: bool = False,
+    ctx: dict,
+    org_convention_id: str,
+    user_id: str,
+    force_refetch: bool = False,
 ) -> None:
     """Tâche d'installation d'une convention collective depuis KALI."""
-    logger.info("Worker: KALI install started for org_convention %s (force_refetch=%s)", org_convention_id, force_refetch)
+    logger.info(
+        "Worker: KALI install started for org_convention %s (force_refetch=%s)",
+        org_convention_id,
+        force_refetch,
+    )
     session_factory = ctx["session_factory"]
     try:
         from app.models.ccn import OrganisationConvention
@@ -287,11 +310,16 @@ async def run_kali_install(
                 logger.error("OrganisationConvention %s not found", org_convention_id)
                 return
             result = await service.install_convention(
-                db, org_conv, uuid.UUID(user_id), force_refetch=force_refetch,
+                db,
+                org_conv,
+                uuid.UUID(user_id),
+                force_refetch=force_refetch,
             )
         logger.info(
             "Worker: KALI install completed — %d articles, %d docs, %d errors",
-            result.articles_count, result.documents_created, result.errors,
+            result.articles_count,
+            result.documents_created,
+            result.errors,
         )
 
         # Post-install health check: retry only jobs that have already failed.
@@ -299,6 +327,7 @@ async def run_kali_install(
         # jobs start; re-enqueueing them here indexes every CCN twice.
         if result.documents_created > 0:
             from app.rag.tasks import enqueue_ingestion as _enqueue
+
             async with session_factory() as db2:
                 org_conv2 = await db2.get(OrganisationConvention, uuid.UUID(org_convention_id))
                 if org_conv2:
@@ -320,14 +349,16 @@ async def run_kali_install(
                     if broken:
                         logger.info(
                             "Worker: post-install re-enqueued %d broken docs for IDCC %s",
-                            len(broken), org_conv2.idcc,
+                            len(broken),
+                            org_conv2.idcc,
                         )
     except Exception:
         logger.exception("Worker: KALI install failed for %s", org_convention_id)
         try:
-            from app.models.ccn import OrganisationConvention as OC
+            from app.models.ccn import OrganisationConvention
+
             async with session_factory() as db_err:
-                row = await db_err.get(OC, uuid.UUID(org_convention_id))
+                row = await db_err.get(OrganisationConvention, uuid.UUID(org_convention_id))
                 if row and row.status not in ("ready", "error"):
                     row.status = "error"
                     row.error_message = (
@@ -349,6 +380,7 @@ async def run_bocc_sync(
 ) -> None:
     """Tâche de synchronisation BOCC."""
     import time as _time
+
     logger.info("Worker: BOCC sync started (year=%s, week=%s)", year, week)
     session_factory = ctx["session_factory"]
     sync_log_id = await _create_sync_log(session_factory, "bocc")
@@ -361,6 +393,7 @@ async def run_bocc_sync(
 
         if year is None or week is None:
             import datetime as dt
+
             published = {}
             for catalog_year in (dt.date.today().year - 1, dt.date.today().year):
                 published.update(await service.discover_archives(catalog_year))
@@ -378,8 +411,10 @@ async def run_bocc_sync(
             if previous is not None and previous.status in {"processed", "review_pending"}:
                 logger.info("BOCC %d-%02d already processed, skipping", year, week)
                 await _finish_sync_log(
-                    session_factory, sync_log_id,
-                    success=True, items_skipped=1,
+                    session_factory,
+                    sync_log_id,
+                    success=True,
+                    items_skipped=1,
                     error_message=f"BOCC {year}-{week:02d} déjà traité",
                     duration_ms=int((_time.perf_counter() - t0) * 1000),
                 )
@@ -393,10 +428,12 @@ async def run_bocc_sync(
             if result.not_yet_available:
                 logger.info(
                     "Worker: BOCC %d-%02d pas encore disponible côté DILA — skip sans erreur",
-                    year, week,
+                    year,
+                    week,
                 )
                 await _finish_sync_log(
-                    session_factory, sync_log_id,
+                    session_factory,
+                    sync_log_id,
                     success=True,
                     items_fetched=0,
                     error_message=None,
@@ -411,11 +448,16 @@ async def run_bocc_sync(
 
         logger.info(
             "Worker: BOCC %d-%02d completed — %d found, %d ingested, %d stored, %d errors",
-            year, week, result.avenants_found, result.avenants_ingested,
-            result.avenants_stored, result.errors,
+            year,
+            week,
+            result.avenants_found,
+            result.avenants_ingested,
+            result.avenants_stored,
+            result.errors,
         )
         await _finish_sync_log(
-            session_factory, sync_log_id,
+            session_factory,
+            sync_log_id,
             success=result.errors == 0,
             items_fetched=result.avenants_found,
             items_created=result.avenants_ingested,
@@ -426,8 +468,11 @@ async def run_bocc_sync(
     except Exception as exc:
         logger.exception("Worker: BOCC sync failed")
         await _finish_sync_log(
-            session_factory, sync_log_id,
-            success=False, errors=1, error_message=str(exc),
+            session_factory,
+            sync_log_id,
+            success=False,
+            errors=1,
+            error_message=str(exc),
             duration_ms=int((_time.perf_counter() - t0) * 1000),
         )
 
@@ -435,6 +480,7 @@ async def run_bocc_sync(
 async def run_code_travail_sync(ctx: dict, user_id: str) -> None:
     """Tâche de synchronisation du Code du travail."""
     import time as _time
+
     logger.info("Worker: Code du travail sync started")
     session_factory = ctx["session_factory"]
     sync_log_id = await _create_sync_log(session_factory, "code_travail")
@@ -448,12 +494,16 @@ async def run_code_travail_sync(ctx: dict, user_id: str) -> None:
         logger.info(
             "Worker: Code du travail sync completed — %d législatifs, %d réglementaires, "
             "changed=%s/%s, %d errors",
-            result.articles_legislatif, result.articles_reglementaire,
-            result.legislatif_changed, result.reglementaire_changed, result.errors,
+            result.articles_legislatif,
+            result.articles_reglementaire,
+            result.legislatif_changed,
+            result.reglementaire_changed,
+            result.errors,
         )
         changed = result.legislatif_changed or result.reglementaire_changed
         await _finish_sync_log(
-            session_factory, sync_log_id,
+            session_factory,
+            sync_log_id,
             success=result.errors == 0,
             items_fetched=result.articles_legislatif + result.articles_reglementaire,
             items_created=1 if changed else 0,
@@ -465,8 +515,11 @@ async def run_code_travail_sync(ctx: dict, user_id: str) -> None:
     except Exception as exc:
         logger.exception("Worker: Code du travail sync failed")
         await _finish_sync_log(
-            session_factory, sync_log_id,
-            success=False, errors=1, error_message=str(exc),
+            session_factory,
+            sync_log_id,
+            success=False,
+            errors=1,
+            error_message=str(exc),
             duration_ms=int((_time.perf_counter() - t0) * 1000),
         )
 
@@ -483,8 +536,12 @@ async def run_code_sync(ctx: dict, user_id: str, code_key: str) -> None:
             result = await service.sync_code(db, uuid.UUID(user_id), code_key)
         logger.info(
             "Worker: %s sync completed — %d leg, %d regl, changed=%s/%s, %d errors",
-            code_key, result.articles_legislatif, result.articles_reglementaire,
-            result.legislatif_changed, result.reglementaire_changed, result.errors,
+            code_key,
+            result.articles_legislatif,
+            result.articles_reglementaire,
+            result.legislatif_changed,
+            result.reglementaire_changed,
+            result.errors,
         )
     except Exception:
         logger.exception("Worker: %s sync failed", code_key)
@@ -497,6 +554,7 @@ async def run_all_codes_sync(ctx: dict, user_id: str) -> None:
     a réellement changé depuis la dernière sync.
     """
     import time as _time
+
     logger.info("Worker: all codes sync started")
     session_factory = ctx["session_factory"]
     sync_log_id = await _create_sync_log(session_factory, "codes")
@@ -515,7 +573,8 @@ async def run_all_codes_sync(ctx: dict, user_id: str) -> None:
                     result = await service.sync_code(db, uuid.UUID(user_id), code_key)
                 logger.info(
                     "Worker: %s — %d articles, changed=%s, %d errors",
-                    code_key, result.articles_legislatif + result.articles_reglementaire,
+                    code_key,
+                    result.articles_legislatif + result.articles_reglementaire,
                     result.legislatif_changed or result.reglementaire_changed,
                     result.errors,
                 )
@@ -529,7 +588,8 @@ async def run_all_codes_sync(ctx: dict, user_id: str) -> None:
                 total_errors += 1
                 error_messages.append(f"{code_key}: {type(exc).__name__}: {exc}")
         await _finish_sync_log(
-            session_factory, sync_log_id,
+            session_factory,
+            sync_log_id,
             success=total_errors == 0,
             items_fetched=total_articles,
             items_created=total_changed,
@@ -540,8 +600,11 @@ async def run_all_codes_sync(ctx: dict, user_id: str) -> None:
     except Exception as exc:
         logger.exception("Worker: all codes sync failed")
         await _finish_sync_log(
-            session_factory, sync_log_id,
-            success=False, errors=1, error_message=str(exc),
+            session_factory,
+            sync_log_id,
+            success=False,
+            errors=1,
+            error_message=str(exc),
             duration_ms=int((_time.perf_counter() - t0) * 1000),
         )
 
@@ -549,6 +612,7 @@ async def run_all_codes_sync(ctx: dict, user_id: str) -> None:
 async def run_jorf_sync(ctx: dict, user_id: str) -> None:
     """Tâche de synchronisation des textes JORF (lois/décrets/arrêtés RH)."""
     import time as _time
+
     logger.info("Worker: JORF sync started")
     session_factory = ctx["session_factory"]
     sync_log_id = await _create_sync_log(session_factory, "jorf")
@@ -561,11 +625,14 @@ async def run_jorf_sync(ctx: dict, user_id: str) -> None:
             result = await service.sync(db, uuid.UUID(user_id))
         logger.info(
             "Worker: JORF sync completed — %d listés, %d ingérés, %d filtrés, %d erreurs",
-            result.total_fetched, result.new_ingested,
-            result.filtered_out, result.errors,
+            result.total_fetched,
+            result.new_ingested,
+            result.filtered_out,
+            result.errors,
         )
         await _finish_sync_log(
-            session_factory, sync_log_id,
+            session_factory,
+            sync_log_id,
             success=result.errors == 0,
             items_fetched=result.total_fetched,
             items_created=result.new_ingested,
@@ -577,8 +644,11 @@ async def run_jorf_sync(ctx: dict, user_id: str) -> None:
     except Exception as exc:
         logger.exception("Worker: JORF sync failed")
         await _finish_sync_log(
-            session_factory, sync_log_id,
-            success=False, errors=1, error_message=str(exc),
+            session_factory,
+            sync_log_id,
+            success=False,
+            errors=1,
+            error_message=str(exc),
             duration_ms=int((_time.perf_counter() - t0) * 1000),
         )
 
@@ -590,6 +660,7 @@ async def run_boss_sync(ctx: dict, user_id: str) -> None:
     pour revue documentaire, sans indexation automatique.
     """
     import time as _time
+
     logger.info("Worker: BOSS sync started")
     session_factory = ctx["session_factory"]
     sync_log_id = await _create_sync_log(session_factory, "boss")
@@ -601,12 +672,20 @@ async def run_boss_sync(ctx: dict, user_id: str) -> None:
         async with session_factory() as db:
             result = await service.sync(db, uuid.UUID(user_id))
         logger.info(
-            "Worker: BOSS sync completed — %d pages, %d créées, %d maj, %d inchangées, %d erreurs, %d à qualifier",
-            result.pages_crawled, result.docs_created, result.docs_updated,
-            result.docs_unchanged, result.errors, result.docs_pending,
+            (
+                "Worker: BOSS sync completed — %d pages, %d créées, %d maj, %d "
+                "inchangées, %d erreurs, %d à qualifier"
+            ),
+            result.pages_crawled,
+            result.docs_created,
+            result.docs_updated,
+            result.docs_unchanged,
+            result.errors,
+            result.docs_pending,
         )
         await _finish_sync_log(
-            session_factory, sync_log_id,
+            session_factory,
+            sync_log_id,
             success=result.errors == 0,
             items_fetched=result.pages_crawled,
             items_created=result.docs_created,
@@ -619,8 +698,11 @@ async def run_boss_sync(ctx: dict, user_id: str) -> None:
     except Exception as exc:
         logger.exception("Worker: BOSS sync failed")
         await _finish_sync_log(
-            session_factory, sync_log_id,
-            success=False, errors=1, error_message=str(exc),
+            session_factory,
+            sync_log_id,
+            success=False,
+            errors=1,
+            error_message=str(exc),
             duration_ms=int((_time.perf_counter() - t0) * 1000),
         )
 
@@ -695,8 +777,10 @@ async def run_ani_sync(ctx: dict) -> None:
             if not admin:
                 logger.error("No active admin user found — cannot run ANI sync")
                 await _finish_sync_log(
-                    session_factory, sync_log_id,
-                    success=False, errors=1,
+                    session_factory,
+                    sync_log_id,
+                    success=False,
+                    errors=1,
                     error_message="no active admin user",
                     duration_ms=int((_time.perf_counter() - t0) * 1000),
                 )
@@ -706,10 +790,14 @@ async def run_ani_sync(ctx: dict) -> None:
 
         logger.info(
             "Worker: ANI sync completed — %d listés, %d créés, %d sautés, %d erreurs",
-            result.fetched, result.created, result.skipped, result.errors,
+            result.fetched,
+            result.created,
+            result.skipped,
+            result.errors,
         )
         await _finish_sync_log(
-            session_factory, sync_log_id,
+            session_factory,
+            sync_log_id,
             success=result.errors == 0,
             items_fetched=result.fetched,
             items_created=result.created,
@@ -721,8 +809,11 @@ async def run_ani_sync(ctx: dict) -> None:
     except Exception as exc:
         logger.exception("Worker: ANI sync failed")
         await _finish_sync_log(
-            session_factory, sync_log_id,
-            success=False, errors=1, error_message=str(exc),
+            session_factory,
+            sync_log_id,
+            success=False,
+            errors=1,
+            error_message=str(exc),
             duration_ms=int((_time.perf_counter() - t0) * 1000),
         )
 
@@ -751,6 +842,7 @@ async def _run_jurisprudence_passes(
     import time as _time
     import traceback
     from datetime import UTC, datetime
+
     from app.models.sync_log import SyncLog
     from app.services.judilibre_service import JudilibreService
 
@@ -799,17 +891,18 @@ async def _run_jurisprudence_passes(
             sync_log.items_skipped = result.already_exists + result.filtered_out
             sync_log.errors = result.errors
             sync_log.error_message = (
-                "; ".join(result.error_messages[:3])
-                if result.error_messages
-                else None
+                "; ".join(result.error_messages[:3]) if result.error_messages else None
             )
             sync_log.duration_ms = duration
             sync_log.completed_at = datetime.now(UTC)
             await db.commit()
             logger.info(
                 "Jurisprudence pass %s: %d new, %d skipped, %d errors (%.1fs)",
-                pass_label, result.new_ingested, result.already_exists,
-                result.errors, duration / 1000,
+                pass_label,
+                result.new_ingested,
+                result.already_exists,
+                result.errors,
+                duration / 1000,
             )
         except Exception as exc:
             sync_log.status = "error"
@@ -828,7 +921,10 @@ async def _run_jurisprudence_passes(
     # CA collection is durable and paced separately; no chamber or total cap.
     if ca_max_decisions != 0:
         await juris_service.sync_ca_chambre_sociale(
-            db=db, user_id=admin_id, date_start=date_start, date_end=date_end,
+            db=db,
+            user_id=admin_id,
+            date_start=date_start,
+            date_end=date_end,
         )
 
     # 6th pass: Conseil constitutionnel via PISTE Légifrance (different service)
@@ -858,17 +954,17 @@ async def _run_jurisprudence_passes(
         cc_log.items_skipped = cc_result.already_exists
         cc_log.errors = cc_result.errors
         cc_log.error_message = (
-            "; ".join(cc_result.error_messages[:3])
-            if cc_result.error_messages
-            else None
+            "; ".join(cc_result.error_messages[:3]) if cc_result.error_messages else None
         )
         cc_log.duration_ms = duration
         cc_log.completed_at = datetime.now(UTC)
         await db.commit()
         logger.info(
             "Jurisprudence pass Conseil constit: %d new, %d skipped, %d errors (%.1fs)",
-            cc_result.new_ingested, cc_result.already_exists,
-            cc_result.errors, duration / 1000,
+            cc_result.new_ingested,
+            cc_result.already_exists,
+            cc_result.errors,
+            duration / 1000,
         )
     except Exception as exc:
         cc_log.status = "error"
@@ -886,18 +982,22 @@ async def run_full_jurisprudence_sync(ctx: dict, user_id: str) -> None:
     Identique à ce que fait le cron auto pour la jurisprudence, mais
     déclenchable depuis l'admin via le bouton 'Jurisprudence' du SyncBanner.
     Fenêtre 30 jours, cap CA à 300 décisions.
-    """
+    """  # noqa: E501 -- Preserve literal text.
     from datetime import date, timedelta
+
     from sqlalchemy import select
+
     from app.models.user import User
 
     logger.info("Worker: full jurisprudence sync started")
     session_factory = ctx["session_factory"]
     async with session_factory() as db:
         # Find admin user (le user_id passé par l'API peut être un user normal)
-        admin = (await db.execute(
-            select(User).where(User.role == "admin", User.is_active.is_(True)).limit(1)
-        )).scalar_one_or_none()
+        admin = (
+            await db.execute(
+                select(User).where(User.role == "admin", User.is_active.is_(True)).limit(1)
+            )
+        ).scalar_one_or_none()
         admin_id = admin.id if admin else uuid.UUID(user_id)
 
         date_end = date.today()
@@ -931,8 +1031,11 @@ async def run_custom_jurisprudence_sync(
     """
     import time as _time
     import traceback
-    from datetime import UTC, datetime, date as _date
+    from datetime import UTC, datetime
+    from datetime import date as _date
+
     from sqlalchemy import select
+
     from app.models.sync_log import SyncLog
     from app.models.user import User
     from app.services.judilibre_service import SOURCE_DEFINITIONS, JudilibreService
@@ -946,19 +1049,27 @@ async def run_custom_jurisprudence_sync(
 
     logger.info(
         "Worker: custom jurisprudence sync started (source=%s, %s → %s, cap=%s)",
-        source, ds, de, max_decisions,
+        source,
+        ds,
+        de,
+        max_decisions,
     )
     session_factory = ctx["session_factory"]
 
     async with session_factory() as db:
-        admin = (await db.execute(
-            select(User).where(User.role == "admin", User.is_active.is_(True)).limit(1)
-        )).scalar_one_or_none()
+        admin = (
+            await db.execute(
+                select(User).where(User.role == "admin", User.is_active.is_(True)).limit(1)
+            )
+        ).scalar_one_or_none()
         admin_id = admin.id if admin else uuid.UUID(user_id)
 
         if spec["service"] == "judilibre_ca":
             await JudilibreService().sync_ca_chambre_sociale(
-                db=db, user_id=admin_id, date_start=ds, date_end=de,
+                db=db,
+                user_id=admin_id,
+                date_start=ds,
+                date_end=de,
             )
             return
 
@@ -992,6 +1103,7 @@ async def run_custom_jurisprudence_sync(
                 error_msgs = result.error_messages
             elif spec["service"] == "conseil_constit":
                 from app.services.conseil_constit_service import ConseilConstitService
+
                 cc_service = ConseilConstitService()
                 result = await cc_service.sync(
                     db=db,
@@ -1020,7 +1132,11 @@ async def run_custom_jurisprudence_sync(
             await db.commit()
             logger.info(
                 "Custom sync %s done: %d new, %d skipped, %d errors (%.1fs)",
-                source, created, skipped, errors, duration / 1000,
+                source,
+                created,
+                skipped,
+                errors,
+                duration / 1000,
             )
         except Exception as exc:
             sync_log.status = "error"
@@ -1048,15 +1164,19 @@ async def run_jurisprudence_initialization(ctx: dict, user_id: str) -> None:
     de pourvoi protège contre les doublons si jamais on relance.
     """
     from datetime import date, timedelta
+
     from sqlalchemy import select
+
     from app.models.user import User
 
     logger.info("Worker: jurisprudence initialization started (one-shot)")
     session_factory = ctx["session_factory"]
     async with session_factory() as db:
-        admin = (await db.execute(
-            select(User).where(User.role == "admin", User.is_active.is_(True)).limit(1)
-        )).scalar_one_or_none()
+        admin = (
+            await db.execute(
+                select(User).where(User.role == "admin", User.is_active.is_(True)).limit(1)
+            )
+        ).scalar_one_or_none()
         admin_id = admin.id if admin else uuid.UUID(user_id)
 
         # Phase A : Cass sur 1 an publiés (pas de cap → tout ce qui a été publié)
@@ -1064,18 +1184,27 @@ async def run_jurisprudence_initialization(ctx: dict, user_id: str) -> None:
         date_start = date_end - timedelta(days=365)
         logger.info(
             "Init phase A: Cass passes (1 an) %s → %s",
-            date_start, date_end,
+            date_start,
+            date_end,
         )
         await _run_jurisprudence_passes(
-            db, session_factory, admin_id, date_start, date_end,
+            db,
+            session_factory,
+            admin_id,
+            date_start,
+            date_end,
             cc_max_decisions=None,
             ca_max_decisions=0,  # CA fait en phase B
         )
 
         # CA: all chambers over the same one-year initialization window.
         from app.services.judilibre_service import JudilibreService
+
         await JudilibreService().sync_ca_chambre_sociale(
-            db=db, user_id=admin_id, date_start=date_start, date_end=date_end,
+            db=db,
+            user_id=admin_id,
+            date_start=date_start,
+            date_end=date_end,
         )
 
     logger.info("Worker: jurisprudence initialization completed")
@@ -1083,7 +1212,6 @@ async def run_jurisprudence_initialization(ctx: dict, user_id: str) -> None:
 
 async def run_scheduled_sync(ctx: dict) -> None:
     """Tâche planifiée bimensuelle : sync jurisprudence + rotation CCN."""
-    import time as _time
 
     from datetime import UTC, datetime, timedelta
 
@@ -1112,7 +1240,9 @@ async def run_scheduled_sync(ctx: dict) -> None:
         # run_full_jurisprudence_sync (déclencheur manuel admin).
         date_end = date.today()
         date_start = date_end - timedelta(days=30)
-        await _run_jurisprudence_passes(db, session_factory, admin_id, date_start, date_end, ca_max_decisions=0)
+        await _run_jurisprudence_passes(
+            db, session_factory, admin_id, date_start, date_end, ca_max_decisions=0
+        )
 
         # --- 2. CCN rotation sync ---
         # Get 10-15 distinct installed CCN, oldest synced first
@@ -1131,7 +1261,8 @@ async def run_scheduled_sync(ctx: dict) -> None:
         if ccn_to_sync:
             logger.info(
                 "Scheduled sync: %d CCN to check: %s",
-                len(ccn_to_sync), ", ".join(ccn_to_sync),
+                len(ccn_to_sync),
+                ", ".join(ccn_to_sync),
             )
             try:
                 from app.services.kali_service import KaliService
@@ -1148,7 +1279,9 @@ async def run_scheduled_sync(ctx: dict) -> None:
                     ccn_log = SyncLog(
                         sync_type="ccn",
                         idcc=detail.idcc,
-                        status="error" if detail.error else ("success" if detail.update_needed else "no_change"),
+                        status="error"
+                        if detail.error
+                        else ("success" if detail.update_needed else "no_change"),
                         items_fetched=detail.articles_count,
                         items_created=1 if detail.new_document_id else 0,
                         items_updated=0,
@@ -1163,8 +1296,10 @@ async def run_scheduled_sync(ctx: dict) -> None:
                 await db.commit()
                 logger.info(
                     "Scheduled sync: CCN done — %d checked, %d updated, %d unchanged, %d errors",
-                    bulk_result.total_idcc, bulk_result.updates_needed,
-                    bulk_result.skipped_identical, bulk_result.errors,
+                    bulk_result.total_idcc,
+                    bulk_result.updates_needed,
+                    bulk_result.skipped_identical,
+                    bulk_result.errors,
                 )
             except Exception:
                 logger.exception("Scheduled sync: CCN bulk sync failed")
@@ -1192,8 +1327,12 @@ async def run_bocc_backfill(ctx: dict, user_id: str) -> None:
         logger.info(
             "Worker: BOCC backfill completed — %d issues (%d processed, %d skipped), "
             "%d avenants, %d ingested, %d errors",
-            result.total_issues, result.issues_processed, result.issues_skipped,
-            result.total_avenants, result.total_ingested, result.total_errors,
+            result.total_issues,
+            result.issues_processed,
+            result.issues_skipped,
+            result.total_avenants,
+            result.total_ingested,
+            result.total_errors,
         )
     except Exception:
         logger.exception("Worker: BOCC backfill failed")
@@ -1245,9 +1384,7 @@ async def run_billing_lifecycle(ctx: dict) -> None:
             logger.exception("Worker: resolve_expired_plans failed")
 
         # 2) Process trial accounts (plan='gratuit')
-        result = await db.execute(
-            select(Account).where(Account.plan == "gratuit")
-        )
+        result = await db.execute(select(Account).where(Account.plan == "gratuit"))
         trial_accounts = list(result.scalars())
 
         for account in trial_accounts:
@@ -1296,7 +1433,8 @@ async def run_billing_lifecycle(ctx: dict) -> None:
 
     logger.info(
         "Worker: billing lifecycle done — %d reminders sent, %d trials expired",
-        reminders_sent, expirations,
+        reminders_sent,
+        expirations,
     )
 
 
@@ -1337,20 +1475,24 @@ async def run_data_retention_purge(ctx: dict) -> None:
                 summary = await service.purge_account(candidate.account_id)
                 logger.info(
                     "Worker: purged account %s (%s) — reason=%s summary=%s",
-                    candidate.account_id, candidate.owner_email,
-                    candidate.reason, summary,
+                    candidate.account_id,
+                    candidate.owner_email,
+                    candidate.reason,
+                    summary,
                 )
                 purged += 1
             except Exception:
                 logger.exception(
                     "Worker: purge failed for account %s (%s)",
-                    candidate.account_id, candidate.owner_email,
+                    candidate.account_id,
+                    candidate.owner_email,
                 )
                 failed += 1
 
     logger.info(
         "Worker: data retention purge done — %d purged, %d failed",
-        purged, failed,
+        purged,
+        failed,
     )
 
 
@@ -1385,23 +1527,27 @@ async def run_daily_bocc_check(ctx: dict) -> None:
     # uniquement pour le champ user_id côté audit).
     async with session_factory() as db:
         from app.models.user import User
-        admin_q = await db.execute(
-            select(User).where(User.role == "admin").limit(1)
-        )
+
+        admin_q = await db.execute(select(User).where(User.role == "admin").limit(1))
         admin = admin_q.scalar_one_or_none()
     if admin is None:
         logger.warning("Daily BOCC check: aucun admin trouvé, skip")
         await _finish_sync_log(
-            session_factory, sync_log_id,
-            success=False, errors=1, error_message="Aucun admin pour attribuer la sync",
+            session_factory,
+            sync_log_id,
+            success=False,
+            errors=1,
+            error_message="Aucun admin pour attribuer la sync",
             duration_ms=int((_time.perf_counter() - t0) * 1000),
         )
         return
     admin_id = admin.id
 
+    from datetime import UTC, datetime
+
     from app.models.bocc_issue import BoccIssue
     from app.services.bocc_service import BoccService
-    from datetime import UTC, datetime
+
     bocc_service = BoccService()
 
     today = dt.date.today()
@@ -1415,8 +1561,7 @@ async def run_daily_bocc_check(ctx: dict) -> None:
     for catalog_year in range(2023, today.year + 1):
         try:
             archives = await bocc_service.discover_archives(catalog_year)
-            candidates.extend((int(code[:4]), int(code[4:]), url)
-                              for code, url in archives.items())
+            candidates.extend((int(code[:4]), int(code[4:]), url) for code, url in archives.items())
         except Exception as exc:
             total_errors += 1
             error_messages.append(f"Catalogue {catalog_year}: {str(exc)[:120]}")
@@ -1428,22 +1573,24 @@ async def run_daily_bocc_check(ctx: dict) -> None:
         # New publications first, then oldest failed attempts: permanently
         # broken archives cannot monopolize the daily batch.
         attempt_dates = {item.numero: item.processed_at.timestamp() for item in history}
-        candidates.sort(key=lambda item: (
-            attempt_dates.get(f"{item[0]}-{item[1]:02d}", float("-inf")),
-            item[0], item[1],
-        ))
+        candidates.sort(
+            key=lambda item: (
+                attempt_dates.get(f"{item[0]}-{item[1]:02d}", float("-inf")),
+                item[0],
+                item[1],
+            )
+        )
         for year, week, archive_url in candidates:
             numero = f"{year}-{week:02d}"
-            existing = await db.execute(
-                select(BoccIssue).where(BoccIssue.numero == numero)
-            )
+            existing = await db.execute(select(BoccIssue).where(BoccIssue.numero == numero))
             previous = existing.scalar_one_or_none()
             if previous is not None:
                 last_attempt = previous.processed_at
                 if last_attempt.tzinfo is None:
                     last_attempt = last_attempt.replace(tzinfo=UTC)
-                if (previous.status in {"processed", "review_pending"}
-                        or datetime.now(UTC) - last_attempt < dt.timedelta(hours=24)):
+                if previous.status in {"processed", "review_pending"} or datetime.now(
+                    UTC
+                ) - last_attempt < dt.timedelta(hours=24):
                     total_skipped += 1
                     continue
             if attempts >= 5:
@@ -1451,7 +1598,11 @@ async def run_daily_bocc_check(ctx: dict) -> None:
             attempts += 1
             try:
                 res = await bocc_service.process_issue(
-                    db, year, week, admin_id, archive_url=archive_url,
+                    db,
+                    year,
+                    week,
+                    admin_id,
+                    archive_url=archive_url,
                 )
                 if res.not_yet_available:
                     logger.info("Daily BOCC: %s pas encore publié, skip", numero)
@@ -1468,7 +1619,9 @@ async def run_daily_bocc_check(ctx: dict) -> None:
                     error_messages.extend(res.error_messages[:2])
                 logger.info(
                     "Daily BOCC: %s traité — %d trouvés, %d ingérés",
-                    numero, res.avenants_found, res.avenants_ingested,
+                    numero,
+                    res.avenants_found,
+                    res.avenants_ingested,
                 )
             except Exception as exc:
                 await db.rollback()
@@ -1477,7 +1630,8 @@ async def run_daily_bocc_check(ctx: dict) -> None:
                 error_messages.append(f"{numero}: {str(exc)[:120]}")
 
     await _finish_sync_log(
-        session_factory, sync_log_id,
+        session_factory,
+        sync_log_id,
         success=total_errors == 0,
         items_fetched=total_found,
         items_created=total_ingested,
@@ -1488,7 +1642,9 @@ async def run_daily_bocc_check(ctx: dict) -> None:
     )
     logger.info(
         "Daily BOCC check done — %d traité, %d skip (déjà fait ou pas publié), %d erreurs",
-        total_processed, total_skipped, total_errors,
+        total_processed,
+        total_skipped,
+        total_errors,
     )
 
 
@@ -1521,6 +1677,7 @@ async def run_emailing_campaigns(ctx: dict) -> None:
 async def run_judilibre_ca_collection(ctx: dict) -> dict:
     """One collector at a time, including across overlapping worker restarts."""
     from sqlalchemy import text
+
     from app.services.judilibre_ca_sync import collect_tick
 
     if not settings.judilibre_ca_collection_enabled:
@@ -1538,7 +1695,9 @@ async def run_judilibre_ca_collection(ctx: dict) -> dict:
 async def run_curated_sources_sync(ctx: dict) -> dict:
     """Maintain only explicitly admitted guides and CPC articles, with a run budget."""
     import time as _time
+
     from sqlalchemy import text
+
     from app.services.curated_source_service import CuratedSourceService
 
     session_factory = ctx["session_factory"]
@@ -1551,28 +1710,43 @@ async def run_curated_sources_sync(ctx: dict) -> dict:
         try:
             async with session_factory() as db:
                 result = await CuratedSourceService().sync(db)
-            problems = [r.get("name", r["key"]) + ": " + r.get("error", r["status"])
-                        for r in result["sources"] if r["status"] not in {"updated", "unchanged", "disabled"}]
+            problems = [
+                r.get("name", r["key"]) + ": " + r.get("error", r["status"])
+                for r in result["sources"]
+                if r["status"] not in {"updated", "unchanged", "disabled"}
+            ]
             await _finish_sync_log(
-                session_factory, log_id, success=not problems,
-                items_fetched=result["checked"], items_updated=result["updated"],
-                items_skipped=result["unchanged"], errors=result["errors"],
+                session_factory,
+                log_id,
+                success=not problems,
+                items_fetched=result["checked"],
+                items_updated=result["updated"],
+                items_skipped=result["unchanged"],
+                errors=result["errors"],
                 error_message="; ".join(problems)[:1500] or None,
                 duration_ms=int((_time.perf_counter() - start) * 1000),
             )
             return result
         except Exception as exc:
-            await _finish_sync_log(session_factory, log_id, success=False, errors=1,
-                                   error_message=str(exc)[:500],
-                                   duration_ms=int((_time.perf_counter() - start) * 1000))
+            await _finish_sync_log(
+                session_factory,
+                log_id,
+                success=False,
+                errors=1,
+                error_message=str(exc)[:500],
+                duration_ms=int((_time.perf_counter() - start) * 1000),
+            )
             raise
 
 
 async def run_social_ca_sync(ctx: dict) -> dict:
     """Daily scoped CA maintenance; the former all-matters collector remains paused."""
     import time as _time
+
     from sqlalchemy import text
+
     from app.services.social_ca_service import SocialCaService
+
     factory = ctx["session_factory"]
     async with ctx["engine"].begin() as lock_connection:
         locked = await lock_connection.scalar(text("SELECT pg_try_advisory_xact_lock(20261008, 3)"))
@@ -1586,20 +1760,38 @@ async def run_social_ca_sync(ctx: dict) -> dict:
             pending = result["remaining_eligible"]
             message = "; ".join(result["errors"])
             if pending:
-                message = "; ".join(filter(None, [
-                    message, f"{pending} décisions en attente des prochains passages quotidiens "
-                    "(plafonds de documents et de tokens).",
-                ]))
-            await _finish_sync_log(factory, log_id,
-                success=not result["errors"], deferred=bool(pending),
-                items_fetched=result["inventoried"], items_created=result["created"],
-                items_skipped=result["existing"], errors=len(result["errors"]),
+                message = "; ".join(
+                    filter(
+                        None,
+                        [
+                            message,
+                            f"{pending} décisions en attente des prochains passages quotidiens "
+                            "(plafonds de documents et de tokens).",
+                        ],
+                    )
+                )
+            await _finish_sync_log(
+                factory,
+                log_id,
+                success=not result["errors"],
+                deferred=bool(pending),
+                items_fetched=result["inventoried"],
+                items_created=result["created"],
+                items_skipped=result["existing"],
+                errors=len(result["errors"]),
                 error_message=message[:500] or None,
-                duration_ms=int((_time.perf_counter()-start)*1000))
+                duration_ms=int((_time.perf_counter() - start) * 1000),
+            )
             return result
         except Exception as exc:
-            await _finish_sync_log(factory, log_id, success=False, errors=1,
-                error_message=str(exc)[:500], duration_ms=int((_time.perf_counter()-start)*1000))
+            await _finish_sync_log(
+                factory,
+                log_id,
+                success=False,
+                errors=1,
+                error_message=str(exc)[:500],
+                duration_ms=int((_time.perf_counter() - start) * 1000),
+            )
             raise
 
 

@@ -121,9 +121,9 @@ async def get_dashboard(
         select(
             func.count().label("total"),
             func.count().filter(Document.indexation_status == "indexed").label("indexed"),
-            func.count().filter(
-                (Document.indexation_status == "pending") & bocc_reserve_filter
-            ).label("pending"),
+            func.count()
+            .filter((Document.indexation_status == "pending") & bocc_reserve_filter)
+            .label("pending"),
             func.count().filter(Document.indexation_status == "error").label("error"),
             func.coalesce(func.sum(Document.chunk_count), 0).label("chunks"),
         ).select_from(Document)
@@ -132,7 +132,9 @@ async def get_dashboard(
 
     # Count BOCC reserve separately
     bocc_reserve_q = await db.execute(
-        select(func.count()).select_from(Document).where(
+        select(func.count())
+        .select_from(Document)
+        .where(
             Document.organisation_id.is_(None),
             Document.storage_path.ilike("common/ccn/%/bocc_%"),
             Document.indexation_status == "pending",
@@ -146,16 +148,14 @@ async def get_dashboard(
     # matching the avg_cost_per_question shown on the costs page.
     usage_7d = await db.execute(
         select(
-            func.count(func.distinct(ApiUsageLog.context_id)).filter(
-                ApiUsageLog.context_type == "question"
-            ).label("questions"),
-            func.count(func.distinct(ApiUsageLog.context_id)).filter(
-                ApiUsageLog.context_type == "ingestion"
-            ).label("ingestions"),
+            func.count(func.distinct(ApiUsageLog.context_id))
+            .filter(ApiUsageLog.context_type == "question")
+            .label("questions"),
+            func.count(func.distinct(ApiUsageLog.context_id))
+            .filter(ApiUsageLog.context_type == "ingestion")
+            .label("ingestions"),
             func.coalesce(
-                func.sum(ApiUsageLog.cost_usd).filter(
-                    ApiUsageLog.context_type == "question"
-                ),
+                func.sum(ApiUsageLog.cost_usd).filter(ApiUsageLog.context_type == "question"),
                 0,
             ).label("cost"),
         ).where(
@@ -168,9 +168,9 @@ async def get_dashboard(
     # --- Usage today ---
     usage_today = await db.execute(
         select(
-            func.count(func.distinct(ApiUsageLog.context_id)).filter(
-                ApiUsageLog.context_type == "question"
-            ).label("questions"),
+            func.count(func.distinct(ApiUsageLog.context_id))
+            .filter(ApiUsageLog.context_type == "question")
+            .label("questions"),
         ).where(
             ApiUsageLog.created_at >= today_start,
             ApiUsageLog.is_replay.is_(False),
@@ -181,13 +181,11 @@ async def get_dashboard(
     # --- Usage 30 days ---
     usage_30d = await db.execute(
         select(
-            func.count(func.distinct(ApiUsageLog.context_id)).filter(
-                ApiUsageLog.context_type == "question"
-            ).label("questions"),
+            func.count(func.distinct(ApiUsageLog.context_id))
+            .filter(ApiUsageLog.context_type == "question")
+            .label("questions"),
             func.coalesce(
-                func.sum(ApiUsageLog.cost_usd).filter(
-                    ApiUsageLog.context_type == "question"
-                ),
+                func.sum(ApiUsageLog.cost_usd).filter(ApiUsageLog.context_type == "question"),
                 0,
             ).label("cost"),
         ).where(
@@ -198,11 +196,7 @@ async def get_dashboard(
     usage_30d_row = usage_30d.one()
 
     # --- Last sync ---
-    last_sync_q = await db.execute(
-        select(SyncLog)
-        .order_by(SyncLog.started_at.desc())
-        .limit(1)
-    )
+    last_sync_q = await db.execute(select(SyncLog).order_by(SyncLog.started_at.desc()).limit(1))
     last_sync = last_sync_q.scalar_one_or_none()
 
     # --- Failed syncs 24h (excluding soft errors) ---
@@ -220,12 +214,19 @@ async def get_dashboard(
     # a 500/502/503/504): they resolve on the next cron run and shouldn't raise
     # an incident. httpx phrases these as "Server error '5xx ...'".
     soft_error_patterns = (
-        "introuvable", "not yet available", "not yet published", "404",
-        "server error", "internal server error", "bad gateway",
-        "service unavailable", "gateway timeout",
+        "introuvable",
+        "not yet available",
+        "not yet published",
+        "404",
+        "server error",
+        "internal server error",
+        "bad gateway",
+        "service unavailable",
+        "gateway timeout",
     )
     hard_failures = [
-        log for log in failed_syncs.scalars().all()
+        log
+        for log in failed_syncs.scalars().all()
         if not log.error_message
         or not any(p in log.error_message.lower() for p in soft_error_patterns)
     ]
@@ -233,6 +234,7 @@ async def get_dashboard(
 
     # --- LLM model ---
     import app.rag.config as rag_config
+
     current_model = rag_config.LLM_MODEL
 
     # --- Quality health (last 7 days) ---
@@ -248,6 +250,7 @@ async def get_dashboard(
         # Detect out-of-scope refusals by EITHER flagged trace OR the canned
         # refusal text prefix (catches old messages without persisted trace).
         from app.rag.agent import _OUT_OF_SCOPE_ANSWER
+
         oos_prefix = _OUT_OF_SCOPE_ANSWER[:60]
 
         def _is_oos(m) -> bool:
@@ -260,10 +263,7 @@ async def get_dashboard(
         # In-scope questions without any source returned : real warning
         # signal (corpus gap). Out-of-scope refusals are excluded since
         # they legitimately have no sources.
-        no_src = sum(
-            1 for m in msgs
-            if (not m.sources or len(m.sources) == 0) and not _is_oos(m)
-        )
+        no_src = sum(1 for m in msgs if (not m.sources or len(m.sources) == 0) and not _is_oos(m))
         latencies = sorted(m.latency_ms for m in msgs if m.latency_ms is not None)
         if latencies:
             k = (len(latencies) - 1) * 0.95
@@ -289,57 +289,65 @@ async def get_dashboard(
     # --- Incidents (rules-based detection) ---
     incidents: list[Incident] = []
     if docs_row.error > 0:
-        incidents.append(Incident(
-            id="docs_in_error",
-            severity="critical" if docs_row.error >= 5 else "warning",
-            title=f"{docs_row.error} document(s) en erreur d'indexation",
-            detail="Ces documents ne sont pas interrogeables par le RAG.",
-            action_label="Voir les documents",
-            action_href="/admin/corpus?tab=updates#indexation-errors",
-        ))
+        incidents.append(
+            Incident(
+                id="docs_in_error",
+                severity="critical" if docs_row.error >= 5 else "warning",
+                title=f"{docs_row.error} document(s) en erreur d'indexation",
+                detail="Ces documents ne sont pas interrogeables par le RAG.",
+                action_label="Voir les documents",
+                action_href="/admin/corpus?tab=updates#indexation-errors",
+            )
+        )
     if failed_24h > 0:
-        incidents.append(Incident(
-            id="syncs_failed_24h",
-            severity="critical",
-            title=f"{failed_24h} synchronisation(s) échouée(s) (24h)",
-            detail=(
-                f"Dernière sync : {last_sync.sync_type if last_sync else '—'} "
-                f"({last_sync.status if last_sync else '—'})"
-            ),
-            action_label="Voir l'historique",
-            action_href="/admin/corpus?tab=updates",
-        ))
+        incidents.append(
+            Incident(
+                id="syncs_failed_24h",
+                severity="critical",
+                title=f"{failed_24h} synchronisation(s) échouée(s) (24h)",
+                detail=(
+                    f"Dernière sync : {last_sync.sync_type if last_sync else '—'} "
+                    f"({last_sync.status if last_sync else '—'})"
+                ),
+                action_label="Voir l'historique",
+                action_href="/admin/corpus?tab=updates",
+            )
+        )
     if quality_health.feedback_negative_rate_7d > 0.15 and total_msgs >= 10:
-        incidents.append(Incident(
-            id="feedback_negative_high",
-            severity="warning",
-            title=f"Taux de feedback négatif élevé ({quality_health.feedback_negative_rate_7d * 100:.0f}%)",
-            detail="Certaines réponses dégradent l'expérience utilisateur.",
-            action_label="Inspecter",
-            action_href="/admin/quality?feedback=down",
-        ))
-    if (
-        quality_health.latency_p95_ms_7d is not None
-        and quality_health.latency_p95_ms_7d > 25000
-    ):
+        incidents.append(
+            Incident(
+                id="feedback_negative_high",
+                severity="warning",
+                title=(
+                    "Taux de feedback négatif élevé "
+                    f"({quality_health.feedback_negative_rate_7d * 100:.0f}%)"
+                ),
+                detail="Certaines réponses dégradent l'expérience utilisateur.",
+                action_label="Inspecter",
+                action_href="/admin/quality?feedback=down",
+            )
+        )
+    if quality_health.latency_p95_ms_7d is not None and quality_health.latency_p95_ms_7d > 25000:
         # p95 = 95% of requests complete in LESS than this value (not "above"!)
-        incidents.append(Incident(
-            id="latency_p95_high",
-            severity="warning",
-            title=(
-                f"Temps de réponse trop long sur les cas les plus lents "
-                f"({quality_health.latency_p95_ms_7d / 1000:.1f}s)"
-            ),
-            detail=(
-                "Les 5% de questions les plus lentes mettent plus de "
-                f"{quality_health.latency_p95_ms_7d / 1000:.0f} secondes à "
-                "obtenir une réponse. Cible normale : moins de 20s. "
-                "Vérifie les dernières questions pour identifier celles "
-                "qui ralentissent le système."
-            ),
-            action_label="Voir la qualité",
-            action_href="/admin/quality",
-        ))
+        incidents.append(
+            Incident(
+                id="latency_p95_high",
+                severity="warning",
+                title=(
+                    f"Temps de réponse trop long sur les cas les plus lents "
+                    f"({quality_health.latency_p95_ms_7d / 1000:.1f}s)"
+                ),
+                detail=(
+                    "Les 5% de questions les plus lentes mettent plus de "
+                    f"{quality_health.latency_p95_ms_7d / 1000:.0f} secondes à "
+                    "obtenir une réponse. Cible normale : moins de 20s. "
+                    "Vérifie les dernières questions pour identifier celles "
+                    "qui ralentissent le système."
+                ),
+                action_label="Voir la qualité",
+                action_href="/admin/quality",
+            )
+        )
     # Sort by severity: critical first
     severity_order = {"critical": 0, "warning": 1, "info": 2}
     incidents.sort(key=lambda i: severity_order.get(i.severity, 99))

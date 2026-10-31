@@ -102,20 +102,38 @@ async def test_public_collector_rejects_secrets_and_deduplicates(spool):
     assert len(records()) == 1
 
 
-@pytest.mark.parametrize("reason", [
-    "resource_next_script", "resource_next_stylesheet", "resource_turnstile",
-    "resource_analytics", "resource_image", "resource_stylesheet",
-    "resource_script", "resource_frame", "resource_other",
-])
+@pytest.mark.parametrize(
+    "reason",
+    [
+        "resource_next_script",
+        "resource_next_stylesheet",
+        "resource_turnstile",
+        "resource_analytics",
+        "resource_image",
+        "resource_stylesheet",
+        "resource_script",
+        "resource_frame",
+        "resource_other",
+    ],
+)
 async def test_resource_diagnostic_is_allowlisted_and_persisted(spool, reason):
     app = FastAPI()
     app.include_router(telemetry.router)
-    data = {"id": str(uuid.uuid4()), "source": "app", "code": "resource_error",
-            "location": "/demo", "reason": reason}
+    data = {
+        "id": str(uuid.uuid4()),
+        "source": "app",
+        "code": "resource_error",
+        "location": "/demo",
+        "reason": reason,
+    }
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         headers = {"Origin": "https://app.aoriarh.fr"}
         assert (await client.post("/incidents", json=data, headers=headers)).status_code == 202
-        assert (await client.post("/incidents", json={**data, "reason": "https://private/SECRET"}, headers=headers)).status_code == 422
+        assert (
+            await client.post(
+                "/incidents", json={**data, "reason": "https://private/SECRET"}, headers=headers
+            )
+        ).status_code == 422
     assert json.loads(records()[0]["payload"])["reason"] == reason
     assert "SECRET" not in str(records())
 
@@ -298,28 +316,33 @@ async def test_cancelled_job_remains_visible(spool):
 
 async def test_slack_groups_occurrences_but_keeps_individual_records(spool):
     for number in range(281):
-        store.capture('http_error', source='backend', status=404,
-                      location='unmatched_route', request_id=str(uuid.uuid4()))
+        store.capture(
+            "http_error",
+            source="backend",
+            status=404,
+            location="unmatched_route",
+            request_id=str(uuid.uuid4()),
+        )
     with store.connection() as db:
-        db.execute('UPDATE incidents SET created=?', (time.time() - 10,))
+        db.execute("UPDATE incidents SET created=?", (time.time() - 10,))
     messages = []
 
     def handler(request):
         messages.append(json.loads(request.content))
-        return httpx.Response(200, text='ok')
+        return httpx.Response(200, text="ok")
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
-        assert await deliver_one(client, 'https://hooks.slack.com/services/test')
-        assert not await deliver_one(client, 'https://hooks.slack.com/services/test')
+        assert await deliver_one(client, "https://hooks.slack.com/services/test")
+        assert not await deliver_one(client, "https://hooks.slack.com/services/test")
     assert len(messages) == 1
-    assert 'Occurrences regroupées : 281' in messages[0]['blocks'][0]['text']['text']
+    assert "Occurrences regroupées : 281" in messages[0]["blocks"][0]["text"]["text"]
     assert len(records()) == 281
-    assert all(row['state'] == 'delivered' and row['attempts'] == 1 for row in records())
+    assert all(row["state"] == "delivered" and row["attempts"] == 1 for row in records())
 
 
 async def test_slack_cooldown_survives_new_events_and_does_not_block_other_groups(spool):
     def add(source):
-        store.capture('ui_error', source=source)
+        store.capture("ui_error", source=source)
         with store.connection() as db:
             db.execute("UPDATE incidents SET created=? WHERE state='pending'", (time.time() - 10,))
 
@@ -327,50 +350,53 @@ async def test_slack_cooldown_survives_new_events_and_does_not_block_other_group
 
     def handler(request):
         messages.append(json.loads(request.content))
-        return httpx.Response(200, text='ok')
+        return httpx.Response(200, text="ok")
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
-        add('nextjs')
-        assert await deliver_one(client, 'https://hooks.slack.com/services/test')
-        add('nextjs')
-        assert not await deliver_one(client, 'https://hooks.slack.com/services/test')
-        add('app')
-        assert await deliver_one(client, 'https://hooks.slack.com/services/test')
-        assert sum(r['state'] == 'pending' for r in records()) == 1
+        add("nextjs")
+        assert await deliver_one(client, "https://hooks.slack.com/services/test")
+        add("nextjs")
+        assert not await deliver_one(client, "https://hooks.slack.com/services/test")
+        add("app")
+        assert await deliver_one(client, "https://hooks.slack.com/services/test")
+        assert sum(r["state"] == "pending" for r in records()) == 1
         with store.connection() as db:
             db.execute("UPDATE state SET value='0' WHERE key LIKE 'slack_group:%'")
-        assert await deliver_one(client, 'https://hooks.slack.com/services/test')
+        assert await deliver_one(client, "https://hooks.slack.com/services/test")
     assert len(messages) == 3
-    assert all(r['state'] == 'delivered' for r in records())
+    assert all(r["state"] == "delivered" for r in records())
 
 
 async def test_slack_batch_failure_preserves_each_incident_retry_budget(spool):
-    store.capture('document_failed', document_id=str(uuid.uuid4()))
-    store.capture('document_failed', document_id=str(uuid.uuid4()))
+    store.capture("document_failed", document_id=str(uuid.uuid4()))
+    store.capture("document_failed", document_id=str(uuid.uuid4()))
     with store.connection() as db:
-        db.execute('UPDATE incidents SET created=?', (time.time() - 10,))
-        db.execute('UPDATE incidents SET attempts=7 WHERE id=?', (records()[0]['id'],))
+        db.execute("UPDATE incidents SET created=?", (time.time() - 10,))
+        db.execute("UPDATE incidents SET attempts=7 WHERE id=?", (records()[0]["id"],))
     async with httpx.AsyncClient(
         transport=httpx.MockTransport(lambda _: httpx.Response(503))
     ) as client:
-        assert await deliver_one(client, 'https://hooks.slack.com/services/test')
-    assert sorted((r['state'], r['attempts']) for r in records()) == [('failed', 8), ('pending', 1)]
+        assert await deliver_one(client, "https://hooks.slack.com/services/test")
+    assert sorted((r["state"], r["attempts"]) for r in records()) == [("failed", 8), ("pending", 1)]
 
 
-@pytest.mark.parametrize('reason,label', [
-    ('provider_quota_exhausted', 'Crédits OpenAI épuisés'),
-    ('provider_rate_limited', 'Limite de débit du service IA atteinte'),
-    ('server_error', 'Erreur technique du service IA'),
-])
+@pytest.mark.parametrize(
+    "reason,label",
+    [
+        ("provider_quota_exhausted", "Crédits OpenAI épuisés"),
+        ("provider_rate_limited", "Limite de débit du service IA atteinte"),
+        ("server_error", "Erreur technique du service IA"),
+    ],
+)
 async def test_server_and_browser_share_one_incident_with_cause(spool, reason, label):
     request_id = str(uuid.uuid4())
-    token = store.context.set({'incident_key': 'request:' + request_id,
-                               'request_id': request_id, 'source': 'backend'})
+    token = store.context.set(
+        {"incident_key": "request:" + request_id, "request_id": request_id, "source": "backend"}
+    )
     # The server log may precede the protocol error. Its cause must still be enriched.
-    store.capture('python_error', exception_type='RateLimitError')
+    store.capture("python_error", exception_type="RateLimitError")
     frame = (
-        'event: chat_error\ndata: '
-        + json.dumps({'error': reason, 'message': 'PRIVATE'}) + '\n\n'
+        "event: chat_error\ndata: " + json.dumps({"error": reason, "message": "PRIVATE"}) + "\n\n"
     )
 
     async def frames():
@@ -384,159 +410,199 @@ async def test_server_and_browser_share_one_incident_with_cause(spool, reason, l
     store.context.reset(token)
     app = FastAPI()
     app.include_router(telemetry.router)
-    async with AsyncClient(transport=ASGITransport(app=app), base_url='http://test') as client:
-        response = await client.post('/incidents', headers={'Origin': 'https://app.aoriarh.fr'},
-                                     json={'id': str(uuid.uuid4()), 'source': 'app',
-                                           'code': 'stream_error', 'reason': reason,
-                                           'request_id': request_id})
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post(
+            "/incidents",
+            headers={"Origin": "https://app.aoriarh.fr"},
+            json={
+                "id": str(uuid.uuid4()),
+                "source": "app",
+                "code": "stream_error",
+                "reason": reason,
+                "request_id": request_id,
+            },
+        )
         assert response.status_code == 202
     assert len(records()) == 1
-    assert json.loads(records()[0]['payload'])['reason'] == reason
-    assert 'PRIVATE' not in records()[0]['payload']
+    assert json.loads(records()[0]["payload"])["reason"] == reason
+    assert "PRIVATE" not in records()[0]["payload"]
     with store.connection() as db:
-        db.execute('UPDATE incidents SET created=?', (time.time() - 10,))
+        db.execute("UPDATE incidents SET created=?", (time.time() - 10,))
     messages = []
 
     def accept(request):
         messages.append(json.loads(request.content))
-        return httpx.Response(200, text='ok')
+        return httpx.Response(200, text="ok")
 
     async with AsyncClient(transport=httpx.MockTransport(accept)) as client:
-        assert await deliver_one(client, 'https://hooks.slack.com/services/test')
-        assert not await deliver_one(client, 'https://hooks.slack.com/services/test')
+        assert await deliver_one(client, "https://hooks.slack.com/services/test")
+        assert not await deliver_one(client, "https://hooks.slack.com/services/test")
     assert len(messages) == 1
-    assert label in messages[0]['text']
-    assert records()[0]['state'] == 'delivered'
+    assert label in messages[0]["text"]
+    assert records()[0]["state"] == "delivered"
 
 
 async def test_collector_rejects_arbitrary_reason_text(spool):
     app = FastAPI()
     app.include_router(telemetry.router)
-    async with AsyncClient(transport=ASGITransport(app=app), base_url='http://test') as client:
-        response = await client.post('/incidents', headers={'Origin': 'https://app.aoriarh.fr'},
-                                     json={'id': str(uuid.uuid4()), 'source': 'app',
-                                           'code': 'stream_error', 'reason': 'PRIVATE'})
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post(
+            "/incidents",
+            headers={"Origin": "https://app.aoriarh.fr"},
+            json={
+                "id": str(uuid.uuid4()),
+                "source": "app",
+                "code": "stream_error",
+                "reason": "PRIVATE",
+            },
+        )
     assert response.status_code == 422
     assert records() == []
 
 
 async def test_distinct_causes_are_not_grouped_together(spool):
-    for reason in ('provider_quota_exhausted', 'provider_rate_limited'):
-        store.capture('stream_error', source='app', reason=reason)
+    for reason in ("provider_quota_exhausted", "provider_rate_limited"):
+        store.capture("stream_error", source="app", reason=reason)
     with store.connection() as db:
-        db.execute('UPDATE incidents SET created=?', (time.time() - 10,))
+        db.execute("UPDATE incidents SET created=?", (time.time() - 10,))
     messages = []
 
     def accept(request):
         messages.append(json.loads(request.content))
-        return httpx.Response(200, text='ok')
+        return httpx.Response(200, text="ok")
 
     async with AsyncClient(transport=httpx.MockTransport(accept)) as client:
-        assert await deliver_one(client, 'https://hooks.slack.com/services/test')
-        assert await deliver_one(client, 'https://hooks.slack.com/services/test')
+        assert await deliver_one(client, "https://hooks.slack.com/services/test")
+        assert await deliver_one(client, "https://hooks.slack.com/services/test")
     assert len(messages) == 2
-    assert messages[0]['text'] != messages[1]['text']
+    assert messages[0]["text"] != messages[1]["text"]
 
 
-@pytest.mark.parametrize('origin,source', [
-    ('https://aoriarh.fr', 'site'),
-    ('https://www.aoriarh.fr', 'site'),
-    ('https://aoriarh.fr', 'app'),
-    ('https://app.aoriarh.fr', 'site'),
-])
+@pytest.mark.parametrize(
+    "origin,source",
+    [
+        ("https://aoriarh.fr", "site"),
+        ("https://www.aoriarh.fr", "site"),
+        ("https://aoriarh.fr", "app"),
+        ("https://app.aoriarh.fr", "site"),
+    ],
+)
 async def test_marketing_events_are_acknowledged_without_recording(spool, origin, source):
     app = FastAPI()
     app.include_router(telemetry.router)
-    async with AsyncClient(transport=ASGITransport(app=app), base_url='http://test') as client:
-        response = await client.post('/incidents', headers={'Origin': origin}, json={
-            'id': str(uuid.uuid4()), 'source': source, 'code': 'resource_error', 'location': '/',
-        })
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post(
+            "/incidents",
+            headers={"Origin": origin},
+            json={
+                "id": str(uuid.uuid4()),
+                "source": source,
+                "code": "resource_error",
+                "location": "/",
+            },
+        )
     assert response.status_code == 202
-    assert response.json()['ignored'] is True
+    assert response.json()["ignored"] is True
     assert records() == []
 
 
 async def test_old_site_backlog_is_never_delivered_but_app_errors_are(spool):
-    for state in ('pending', 'failed'):
-        incident_id = store.capture('resource_error', source='site')
+    for state in ("pending", "failed"):
+        incident_id = store.capture("resource_error", source="site")
         with store.connection() as db:
-            db.execute('UPDATE incidents SET state=? WHERE id=?', (state, incident_id))
-    store.capture('stream_error', source='app', reason='provider_quota_exhausted')
+            db.execute("UPDATE incidents SET state=? WHERE id=?", (state, incident_id))
+    store.capture("stream_error", source="app", reason="provider_quota_exhausted")
     with store.connection() as db:
-        db.execute('UPDATE incidents SET created=?', (time.time() - 10,))
+        db.execute("UPDATE incidents SET created=?", (time.time() - 10,))
     messages = []
 
     def accept(request):
         messages.append(json.loads(request.content))
-        return httpx.Response(200, text='ok')
+        return httpx.Response(200, text="ok")
 
     async with AsyncClient(transport=httpx.MockTransport(accept)) as client:
-        assert await deliver_one(client, 'https://hooks.slack.com/services/test')
-        assert not await deliver_one(client, 'https://hooks.slack.com/services/test')
+        assert await deliver_one(client, "https://hooks.slack.com/services/test")
+        assert not await deliver_one(client, "https://hooks.slack.com/services/test")
     assert len(messages) == 1
-    assert 'Crédits OpenAI épuisés' in messages[0]['text']
-    assert sorted(r['state'] for r in records()) == ['delivered', 'ignored', 'ignored']
+    assert "Crédits OpenAI épuisés" in messages[0]["text"]
+    assert sorted(r["state"] for r in records()) == ["delivered", "ignored", "ignored"]
 
 
 async def test_marketing_tool_api_errors_keep_site_scope(spool):
     app = FastAPI()
 
-    @app.get('/api/v1/public/tools/test')
+    @app.get("/api/v1/public/tools/test")
     async def tool():
-        store.IncidentLogHandler().emit(logging.LogRecord(
-            'app.public_tools', logging.ERROR, '/private', 1, 'private message', (), None,
-        ))
-        raise HTTPException(500, 'technical error')
+        store.IncidentLogHandler().emit(
+            logging.LogRecord(
+                "app.public_tools",
+                logging.ERROR,
+                "/private",
+                1,
+                "private message",
+                (),
+                None,
+            )
+        )
+        raise HTTPException(500, "technical error")
 
     app.add_middleware(IncidentMiddleware)
-    async with AsyncClient(transport=ASGITransport(app=app), base_url='http://test') as client:
-        assert (await client.get('/api/v1/public/tools/test')).status_code == 500
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        assert (await client.get("/api/v1/public/tools/test")).status_code == 500
     assert len(records()) == 1
-    assert json.loads(records()[0]['payload'])['source'] == 'site'
-    async with AsyncClient(transport=httpx.MockTransport(
-        lambda _: pytest.fail('Site incident must not reach Slack')
-    )) as client:
-        assert not await deliver_one(client, 'https://hooks.slack.com/services/test')
-    assert records()[0]['state'] == 'ignored'
+    assert json.loads(records()[0]["payload"])["source"] == "site"
+    async with AsyncClient(
+        transport=httpx.MockTransport(lambda _: pytest.fail("Site incident must not reach Slack"))
+    ) as client:
+        assert not await deliver_one(client, "https://hooks.slack.com/services/test")
+    assert records()[0]["state"] == "ignored"
 
 
 async def test_unmatched_scans_ignored_but_api_and_product_404_remain(spool):
     app = FastAPI()
-    @app.get('/known')
+
+    @app.get("/known")
     async def known():
         raise HTTPException(404)
+
     app.add_middleware(IncidentMiddleware)
-    async with AsyncClient(transport=ASGITransport(app=app), base_url='http://test') as client:
-        for path in ('/', '/wp-freya.php', '/.env'):
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        for path in ("/", "/wp-freya.php", "/.env"):
             assert (await client.get(path)).status_code == 404
         assert records() == []
-        for path in ('/api/v1/missing', '/known'):
+        for path in ("/api/v1/missing", "/known"):
             assert (await client.get(path)).status_code == 404
     assert len(records()) == 2
 
 
 async def test_only_managed_first_401_is_deferred(spool):
     app = FastAPI()
-    @app.get('/api/v1/protected/{status}')
+
+    @app.get("/api/v1/protected/{status}")
     async def protected(status: int):
         raise HTTPException(status)
+
     app.add_middleware(IncidentMiddleware)
-    async with AsyncClient(transport=ASGITransport(app=app), base_url='http://test') as client:
-        headers = {'X-Aoria-Auth-Retry': 'managed'}
-        assert (await client.get('/api/v1/protected/401', headers=headers)).status_code == 401
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        headers = {"X-Aoria-Auth-Retry": "managed"}
+        assert (await client.get("/api/v1/protected/401", headers=headers)).status_code == 401
         assert records() == []
-        await client.get('/api/v1/protected/401')  # final retry still denied
-        await client.get('/api/v1/protected/403', headers=headers)
-        await client.get('/api/v1/protected/500', headers=headers)
-    assert sorted(json.loads(r['payload'])['status'] for r in records()) == [401, 403, 500]
+        await client.get("/api/v1/protected/401")  # final retry still denied
+        await client.get("/api/v1/protected/403", headers=headers)
+        await client.get("/api/v1/protected/500", headers=headers)
+    assert sorted(json.loads(r["payload"])["status"] for r in records()) == [401, 403, 500]
 
 
 async def test_auth_retry_header_is_allowed_by_cors(client):
     from app.core.config import settings
-    response = await client.options('/api/v1/users/me', headers={
-        'Origin': settings.cors_origins[0],
-        'Access-Control-Request-Method': 'GET',
-        'Access-Control-Request-Headers': 'authorization,x-aoria-auth-retry',
-    })
+
+    response = await client.options(
+        "/api/v1/users/me",
+        headers={
+            "Origin": settings.cors_origins[0],
+            "Access-Control-Request-Method": "GET",
+            "Access-Control-Request-Headers": "authorization,x-aoria-auth-retry",
+        },
+    )
     assert response.status_code == 200
-    assert 'x-aoria-auth-retry' in response.headers['access-control-allow-headers'].lower()
+    assert "x-aoria-auth-retry" in response.headers["access-control-allow-headers"].lower()

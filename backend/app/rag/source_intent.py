@@ -135,7 +135,8 @@ _INTENT_PATTERNS: list[tuple[re.Pattern, list[str], bool]] = [
         re.compile(
             r"(?:que\s+" + _VERBS + r"|selon|d['’]apr[èe]s|aux\s+termes\s+d[eu]|dans)"
             r"\s+(?:le\s+|du\s+)?boss\b"
-            r"|\b(?:le|du)\s+boss\s+(?:\S+\s+){0,2}?" + _VERBS
+            r"|\b(?:le|du)\s+boss\s+(?:\S+\s+){0,2}?"
+            + _VERBS
             + r"|\bbulletin\s+officiel\s+de\s+la\s+s[ée]curit[ée]\s+sociale\b",
             re.IGNORECASE,
         ),
@@ -155,8 +156,7 @@ _INTENT_PATTERNS: list[tuple[re.Pattern, list[str], bool]] = [
     # Usage d'entreprise
     (
         re.compile(
-            _directed(r"usages?\s+d['’]entreprise")
-            + r"|\bnos\s+usages\b",
+            _directed(r"usages?\s+d['’]entreprise") + r"|\bnos\s+usages\b",
             re.IGNORECASE,
         ),
         ["usage_entreprise"],
@@ -169,27 +169,32 @@ _INTENT_PATTERNS: list[tuple[re.Pattern, list[str], bool]] = [
 CODE_SOURCE_LABELS: dict[str, list[str]] = {
     r"code\s+du\s+travail": ["code_travail", "code_travail_reglementaire"],
     r"code\s+de\s+la\s+s[ée]curit[ée]\s+sociale": [
-        "code_securite_sociale", "code_securite_sociale_reglementaire",
+        "code_securite_sociale",
+        "code_securite_sociale_reglementaire",
     ],
     r"code\s+civil": ["code_civil", "code_civil_reglementaire"],
     r"code\s+de\s+proc[ée]dure\s+civile": ["code_procedure_civile"],
     r"code\s+p[ée]nal": ["code_penal"],
     r"code\s+de\s+commerce": ["code_commerce", "code_commerce_reglementaire"],
     r"code\s+de\s+l['’]action\s+sociale(?:\s+et\s+des\s+familles)?": [
-        "code_action_sociale", "code_action_sociale_reglementaire",
+        "code_action_sociale",
+        "code_action_sociale_reglementaire",
     ],
     r"code\s+de\s+la\s+sant[ée]\s+publique": [
-        "code_sante_publique", "code_sante_publique_reglementaire",
+        "code_sante_publique",
+        "code_sante_publique_reglementaire",
     ],
     r"code\s+mon[ée]taire\s+et\s+financier": [
-        "code_monetaire_financier", "code_monetaire_financier_reglementaire",
+        "code_monetaire_financier",
+        "code_monetaire_financier_reglementaire",
     ],
     r"(?:code\s+g[ée]n[ée]ral\s+des\s+collectivit[ée]s\s+territoriales|\bcgct\b)": [
         "code_general_collectivites_territoriales",
         "code_general_collectivites_territoriales_reglementaire",
     ],
     r"code\s+g[ée]n[ée]ral\s+des\s+imp[ôo]ts": [
-        "code_general_impots", "code_general_impots_reglementaire",
+        "code_general_impots",
+        "code_general_impots_reglementaire",
     ],
 }
 for _label, _types in CODE_SOURCE_LABELS.items():
@@ -199,10 +204,15 @@ for _label, _types in CODE_SOURCE_LABELS.items():
 _SOURCE_LABELS = list(CODE_SOURCE_LABELS.items()) + [
     (r"\b(?:ccn|convention\s+collective)\b", ["convention_collective_nationale", "accord_branche"]),
     (r"\baccords?\s+d['’]entreprise\b", ["accord_entreprise", "accord_performance_collective"]),
-    (r"\b(?:jurisprudence|arrêts?)\b", [
-        "arret_cour_cassation", "arret_cour_appel", "arret_conseil_etat",
-        "decision_conseil_constitutionnel",
-    ]),
+    (
+        r"\b(?:jurisprudence|arrêts?)\b",
+        [
+            "arret_cour_cassation",
+            "arret_cour_appel",
+            "arret_conseil_etat",
+            "decision_conseil_constitutionnel",
+        ],
+    ),
     (r"\bboss\b", ["boss"]),
     (r"\br[èe]glement\s+int[ée]rieur\b", ["reglement_interieur"]),
     (r"\bcontrat(?:\s+de\s+travail)?\b", ["contrat_travail"]),
@@ -210,7 +220,8 @@ _SOURCE_LABELS = list(CODE_SOURCE_LABELS.items()) + [
 ]
 _NEGATED_SEARCH = re.compile(
     r"\b(?:ne\s+(?:\w+\s+){0,3}(?:cherche|recherche|utilise|consulte)\w*\s+pas"
-    r"|ignore|exclus|exclure|sans\s+(?:consulter|utiliser|chercher\s+dans))\b", re.I,
+    r"|ignore|exclus|exclure|sans\s+(?:consulter|utiliser|chercher\s+dans))\b",
+    re.I,
 )
 
 
@@ -219,16 +230,22 @@ def source_clauses(query: str) -> list[str]:
 
 
 def mentioned_source_types(query: str) -> list[str]:
-    return list(dict.fromkeys(
-        st for label, types in _SOURCE_LABELS if re.search(label, query, re.I) for st in types
-    ))
+    return list(
+        dict.fromkeys(
+            st for label, types in _SOURCE_LABELS if re.search(label, query, re.I) for st in types
+        )
+    )
 
 
 def detect_source_exclusions(query: str) -> list[str]:
-    return list(dict.fromkeys(
-        st for clause in source_clauses(query) if _NEGATED_SEARCH.search(clause)
-        for st in mentioned_source_types(clause)
-    ))
+    return list(
+        dict.fromkeys(
+            st
+            for clause in source_clauses(query)
+            if _NEGATED_SEARCH.search(clause)
+            for st in mentioned_source_types(clause)
+        )
+    )
 
 
 def detect_exclusive_sources(query: str) -> list[str]:
@@ -238,11 +255,13 @@ def detect_exclusive_sources(query: str) -> list[str]:
             continue
         for label, types in _SOURCE_LABELS:
             for match in re.finditer(label, clause, re.I):
-                before = clause[:match.start()]
-                after = clause[match.end():]
+                before = clause[: match.start()]
+                after = clause[match.end() :]
                 if re.search(
                     rf"\b(?:uniquement|exclusivement|seulement)\s+"
-                    rf"(?:(?:dans|selon)\s+)?(?:{_DET})?$", before, re.I,
+                    rf"(?:(?:dans|selon)\s+)?(?:{_DET})?$",
+                    before,
+                    re.I,
                 ) or re.match(r"\s+(?:uniquement|exclusivement|seulement)\b", after, re.I):
                     result.extend(types)
     return list(dict.fromkeys(result))
@@ -259,11 +278,24 @@ def detect_source_intent(query: str) -> list[tuple[list[str], bool]]:
     for pattern, source_types, needs_org in _INTENT_PATTERNS:
         if pattern.search(query):
             matches.append((source_types, needs_org))
-    if re.search(r"\b(?:compare\w*|comparaison|diff[ée]rence|uniquement|exclusivement|seulement)\b", query, re.I):
+    if re.search(
+        r"\b(?:compare\w*|comparaison|diff[ée]rence|uniquement|exclusivement|seulement)\b",
+        query,
+        re.I,
+    ):
         for source_type in mentioned_source_types(query):
             if not any(source_type in types for types, _ in matches):
-                matches.append(([source_type], source_type in {
-                    "accord_entreprise", "accord_performance_collective", "contrat_travail",
-                    "reglement_interieur", "engagement_unilateral",
-                }))
+                matches.append(
+                    (
+                        [source_type],
+                        source_type
+                        in {
+                            "accord_entreprise",
+                            "accord_performance_collective",
+                            "contrat_travail",
+                            "reglement_interieur",
+                            "engagement_unilateral",
+                        },
+                    )
+                )
     return matches

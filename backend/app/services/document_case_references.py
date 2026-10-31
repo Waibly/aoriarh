@@ -32,16 +32,25 @@ async def lock_case_references(session, day, numbers):
 async def find_existing_social_case(session, day, numbers):
     keys = set(aliases(numbers))
     scope = (
-        Document.organisation_id.is_(None), Document.private_dossier_id.is_(None),
-        Document.private_conversation_id.is_(None), Document.retired_at.is_(None),
-        Document.source_type == "arret_cour_cassation", Document.chambre == "Chambre sociale",
+        Document.organisation_id.is_(None),
+        Document.private_dossier_id.is_(None),
+        Document.private_conversation_id.is_(None),
+        Document.retired_at.is_(None),
+        Document.source_type == "arret_cour_cassation",
+        Document.chambre == "Chambre sociale",
         Document.date_decision == day,
     )
-    by_alias = (await session.execute(
-        select(Document.id).join(DocumentCaseReference).where(
-            *scope, DocumentCaseReference.number.in_(keys)
+    by_alias = (
+        (
+            await session.execute(
+                select(Document.id)
+                .join(DocumentCaseReference)
+                .where(*scope, DocumentCaseReference.number.in_(keys))
+            )
         )
-    )).scalars().all()
+        .scalars()
+        .all()
+    )
     found = set(by_alias)
     legacy = (await session.execute(select(Document).where(*scope))).scalars().all()
     for doc in legacy:
@@ -54,7 +63,8 @@ async def store_case_references(session, doc, numbers):
     if doc.organisation_id or doc.private_dossier_id or doc.private_conversation_id:
         raise ValueError("Social reference registry only accepts public decisions")
     if (
-        not doc.date_decision or doc.source_type != "arret_cour_cassation"
+        not doc.date_decision
+        or doc.source_type != "arret_cour_cassation"
         or doc.chambre != "Chambre sociale"
     ):
         raise ValueError("Invalid social reference owner")
@@ -72,5 +82,5 @@ async def store_case_references(session, doc, numbers):
     else:
         raise ValueError("Unsupported reference registry database")
     for offset in range(0, len(values), 200):
-        statement = insert(DocumentCaseReference).values(values[offset:offset + 200])
+        statement = insert(DocumentCaseReference).values(values[offset : offset + 200])
         await session.execute(statement.on_conflict_do_nothing())

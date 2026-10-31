@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.core.dependencies import get_current_user, require_org_role, require_role
+from app.core.dependencies import require_org_role, require_role
 from app.models.user import User
 from app.schemas.ccn import (
     CcnReferenceRead,
@@ -77,6 +77,7 @@ async def install_convention(
         account = await billing.get_account_for_organisation(organisation_id)
         billing.ensure_plan_active(account)
         from app.models.organisation import Organisation
+
         org = await db.get(Organisation, organisation_id)
         if org is not None:
             await billing.check_ccn_limit(org)

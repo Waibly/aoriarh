@@ -124,7 +124,14 @@ def coverage_manifest(file_format: str) -> dict:
 
 
 class DocumentExtractionService:
-    def __init__(self, db: AsyncSession, storage: StorageService | None = None, *, dossier_id=None, conversation_id=None):
+    def __init__(
+        self,
+        db: AsyncSession,
+        storage: StorageService | None = None,
+        *,
+        dossier_id=None,
+        conversation_id=None,
+    ):
         self.db = db
         self.dossier_id = dossier_id
         self.conversation_id = conversation_id
@@ -273,8 +280,10 @@ class DocumentExtractionService:
         if doc is None:
             raise HTTPException(404, "Document non accessible")
         from app.services.document_access import authorize_private_document
-        await authorize_private_document(self.db, doc, user, dossier_id=self.dossier_id,
-                                         conversation_id=self.conversation_id)
+
+        await authorize_private_document(
+            self.db, doc, user, dossier_id=self.dossier_id, conversation_id=self.conversation_id
+        )
         return doc
 
     @staticmethod
@@ -402,8 +411,10 @@ class DocumentExtractionService:
                 raise HTTPException(503, "Erreur technique de lecture de l'extraction") from None
             # A revocation or replacement during object-storage I/O must win.
             doc = await self._authorize(doc_id, org_id, user_id)
-            if (record.source_storage_path != doc.storage_path
-                    or record.source_sha256 != doc.file_hash):
+            if (
+                record.source_storage_path != doc.storage_path
+                or record.source_sha256 != doc.file_hash
+            ):
                 raise HTTPException(409, "La version du document a changé")
         return {
             **self.manifest(record),

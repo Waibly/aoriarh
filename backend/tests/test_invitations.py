@@ -9,8 +9,8 @@ from httpx import AsyncClient
 
 from tests.conftest import auth_header, test_session_factory
 
-
 # --- Helpers ---
+
 
 async def create_org(client: AsyncClient, token: str) -> str:
     """Create an org and return its id."""
@@ -104,9 +104,7 @@ async def test_unauthenticated_cannot_create_invitation(
 
 @pytest.mark.asyncio
 @patch("app.services.invitation_service.send_email", new_callable=AsyncMock)
-async def test_create_invitation_success(
-    mock_send, client: AsyncClient, manager_user
-):
+async def test_create_invitation_success(mock_send, client: AsyncClient, manager_user):
     org_id = await create_org(client, manager_user["token"])
     res = await client.post(
         f"/api/v1/organisations/{org_id}/invitations",
@@ -140,9 +138,7 @@ async def test_create_invitation_duplicate_pending_409(
 
 @pytest.mark.asyncio
 @patch("app.services.invitation_service.send_email", new_callable=AsyncMock)
-async def test_create_invitation_already_member_409(
-    mock_send, client: AsyncClient, manager_user
-):
+async def test_create_invitation_already_member_409(mock_send, client: AsyncClient, manager_user):
     org_id = await create_org(client, manager_user["token"])
     # Manager is already a member of the org
     res = await client.post(
@@ -249,8 +245,9 @@ async def test_validate_token_expired(mock_send, client: AsyncClient, manager_us
     inv = await create_invitation(client, org_id, manager_user["token"])
 
     # Manually expire the invitation
-    from app.models.invitation import Invitation
     from sqlalchemy import update
+
+    from app.models.invitation import Invitation
 
     async with test_session_factory() as session:
         await session.execute(
@@ -272,9 +269,7 @@ async def test_validate_token_expired(mock_send, client: AsyncClient, manager_us
 
 @pytest.mark.asyncio
 @patch("app.services.invitation_service.send_email", new_callable=AsyncMock)
-async def test_accept_invitation_success(
-    mock_send, client: AsyncClient, manager_user
-):
+async def test_accept_invitation_success(mock_send, client: AsyncClient, manager_user):
     org_id = await create_org(client, manager_user["token"])
 
     # Register a new user for the invitation
@@ -317,9 +312,7 @@ async def test_accept_invitation_wrong_email_403(
 
 @pytest.mark.asyncio
 @patch("app.services.invitation_service.send_email", new_callable=AsyncMock)
-async def test_accept_invitation_expired_410(
-    mock_send, client: AsyncClient, manager_user
-):
+async def test_accept_invitation_expired_410(mock_send, client: AsyncClient, manager_user):
     org_id = await create_org(client, manager_user["token"])
 
     reg_res = await client.post(
@@ -335,8 +328,9 @@ async def test_accept_invitation_expired_410(
     inv = await create_invitation(client, org_id, manager_user["token"])
 
     # Manually expire
-    from app.models.invitation import Invitation
     from sqlalchemy import update
+
+    from app.models.invitation import Invitation
 
     async with test_session_factory() as session:
         await session.execute(
@@ -355,9 +349,7 @@ async def test_accept_invitation_expired_410(
 
 @pytest.mark.asyncio
 @patch("app.services.invitation_service.send_email", new_callable=AsyncMock)
-async def test_accept_invitation_unauthenticated(
-    mock_send, client: AsyncClient, manager_user
-):
+async def test_accept_invitation_unauthenticated(mock_send, client: AsyncClient, manager_user):
     org_id = await create_org(client, manager_user["token"])
     inv = await create_invitation(client, org_id, manager_user["token"])
 

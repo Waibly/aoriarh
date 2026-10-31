@@ -557,9 +557,9 @@ async def verify(root, db, limit=None):
         "confirmed_provider_tokens": actual,
         "unconfirmed_tokens_upper_bound": uncertain,
         "unconfirmed_requests": [
-            dict(r) for r in db.execute(
-                "SELECT id,status,reserved,error FROM requests "
-                "WHERE actual IS NULL AND reserved>0"
+            dict(r)
+            for r in db.execute(
+                "SELECT id,status,reserved,error FROM requests WHERE actual IS NULL AND reserved>0"
             )
         ],
         "embedding_usd": actual * 0.12 / 1_000_000,

@@ -96,7 +96,7 @@ class BoccService:
                 if resp.status_code == 404:
                     continue
                 resp.raise_for_status()
-                for code in re.findall(r'CCO(\d{8})\.complet\.taz', resp.text):
+                for code in re.findall(r"CCO(\d{8})\.complet\.taz", resp.text):
                     if int(code[:4]) == year:
                         archives.setdefault(code, f"{url}CCO{code}.complet.taz")
         return dict(sorted(archives.items()))
@@ -110,8 +110,14 @@ class BoccService:
         """Update a failed attempt in place; partial failures remain retryable."""
         from app.models.bocc_issue import BoccIssue
 
-        issue = existing if existing is not None else BoccIssue(
-            numero=f"{year}-{week:02d}", year=year, week=week,
+        issue = (
+            existing
+            if existing is not None
+            else BoccIssue(
+                numero=f"{year}-{week:02d}",
+                year=year,
+                week=week,
+            )
         )
         issue.avenants_count = result.avenants_found
         issue.avenants_ingested = (issue.avenants_ingested or 0) + result.avenants_ingested
@@ -161,20 +167,27 @@ class BoccService:
                 result.total_issues += 1
 
                 # Skip if already processed
-                existing = await db.execute(
-                    select(BoccIssue).where(BoccIssue.numero == numero)
-                )
+                existing = await db.execute(select(BoccIssue).where(BoccIssue.numero == numero))
                 previous = existing.scalar_one_or_none()
                 if previous is not None and previous.status in {"processed", "review_pending"}:
                     result.issues_skipped += 1
                     continue
 
-                logger.info("BOCC backfill: processing %s (%d/%d for %d)",
-                            numero, result.issues_processed + 1, len(issue_codes), year)
+                logger.info(
+                    "BOCC backfill: processing %s (%d/%d for %d)",
+                    numero,
+                    result.issues_processed + 1,
+                    len(issue_codes),
+                    year,
+                )
 
                 try:
                     sync_result = await self.process_issue(
-                        db, year, week, user_id, archive_url=archives[code],
+                        db,
+                        year,
+                        week,
+                        user_id,
+                        archive_url=archives[code],
                     )
                     if sync_result.not_yet_available:
                         result.issues_skipped += 1
@@ -199,14 +212,22 @@ class BoccService:
                 # Throttle to avoid hammering DILA
                 await asyncio.sleep(1.0)
 
-            logger.info("BOCC backfill: year %d done — %d processed, %d skipped",
-                        year, result.issues_processed, result.issues_skipped)
+            logger.info(
+                "BOCC backfill: year %d done — %d processed, %d skipped",
+                year,
+                result.issues_processed,
+                result.issues_skipped,
+            )
 
         logger.info(
             "BOCC backfill complete — %d issues (%d processed, %d skipped), "
             "%d avenants found, %d ingested, %d stored, %d errors",
-            result.total_issues, result.issues_processed, result.issues_skipped,
-            result.total_avenants, result.total_ingested, result.total_stored,
+            result.total_issues,
+            result.issues_processed,
+            result.issues_skipped,
+            result.total_avenants,
+            result.total_ingested,
+            result.total_stored,
             result.total_errors,
         )
         return result
@@ -304,15 +325,19 @@ class BoccService:
                 entries.append(entry)
             result.avenants_found = len(entries)
             manifest = {
-                "schema_version": 1, "numero": numero, "source_url": url,
+                "schema_version": 1,
+                "numero": numero,
+                "source_url": url,
                 "archive_sha256": hashlib.sha256(archive_bytes).hexdigest(),
                 "captured_at": datetime.now(UTC).isoformat(),
-                "documents": entries, "indexation_requested": False,
+                "documents": entries,
+                "indexation_requested": False,
             }
             path = self.review_path(year, week)
             storage = StorageService()
             await asyncio.to_thread(
-                storage.put_file_bytes, path,
+                storage.put_file_bytes,
+                path,
                 json.dumps(manifest, ensure_ascii=False, indent=2).encode("utf-8"),
                 content_type="application/json",
             )
@@ -338,15 +363,17 @@ class BoccService:
         try:
             if archive_bytes.startswith(b"\x1f\x9d"):
                 proc = subprocess.run(
-                    ["gzip", "-dc"], input=archive_bytes,
-                    capture_output=True, timeout=120, check=True,
+                    ["gzip", "-dc"],
+                    input=archive_bytes,
+                    capture_output=True,
+                    timeout=120,
+                    check=True,
                 )
                 archive_bytes = proc.stdout
             pdfs = []
             with tarfile.open(fileobj=io.BytesIO(archive_bytes), mode="r:*") as tar:
                 for member in tar:
-                    if (member.isfile() and member.name.endswith(".pdf")
-                            and "_0000_" in member.name):
+                    if member.isfile() and member.name.endswith(".pdf") and "_0000_" in member.name:
                         file = tar.extractfile(member)
                         if file is not None:
                             pdfs.append((member.name, file.read()))
@@ -369,6 +396,7 @@ class BoccService:
         doc = pymupdf.open(stream=pdf_bytes, filetype="pdf")
         try:
             import pymupdf4llm
+
             full_text = pymupdf4llm.to_markdown(doc)
         except Exception:
             pages_text = [page.get_text("text") for page in doc]
@@ -404,11 +432,15 @@ class BoccService:
             match.group(0),
             re.IGNORECASE,
         )
-        titre = re.sub(r"\s+", " ", titre_match.group(1)).strip() if titre_match else meta["titre_raw"]
+        titre = (
+            re.sub(r"\s+", " ", titre_match.group(1)).strip() if titre_match else meta["titre_raw"]
+        )
 
         # Clean title
         titre = re.sub(r"^\([^)]+\)\s*", "", titre)
-        titre = re.sub(r"^[A-ZÉÈÊËÀÂÔÎÏÙÛÜÇ\s,.'()-]+(?=Accord|Avenant|Protocole|Annexe)", "", titre).strip()
+        titre = re.sub(
+            r"^[A-ZÉÈÊËÀÂÔÎÏÙÛÜÇ\s,.'()-]+(?=Accord|Avenant|Protocole|Annexe)", "", titre
+        ).strip()
         if titre and titre[0].islower():
             titre = titre[0].upper() + titre[1:]
 
@@ -454,12 +486,14 @@ class BoccService:
         ]
         if avenant["brochure"]:
             lines.append(f"**Brochure** : n° {avenant['brochure']}")
-        lines.extend([
-            f"**NOR** : {avenant['nor']}",
-            f"**Source** : BOCC n° {bocc_numero}",
-            "",
-            "---",
-            "",
-            avenant["content"],
-        ])
+        lines.extend(
+            [
+                f"**NOR** : {avenant['nor']}",
+                f"**Source** : BOCC n° {bocc_numero}",
+                "",
+                "---",
+                "",
+                avenant["content"],
+            ]
+        )
         return "\n".join(lines)

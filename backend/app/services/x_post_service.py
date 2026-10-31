@@ -128,9 +128,7 @@ class XPostGeneration:
 
 
 def build_x_system_prompt(format: XPostFormat) -> str:
-    return X_POST_BASE_SYSTEM_PROMPT.format(
-        format_instructions=_FORMAT_INSTRUCTIONS[format]
-    )
+    return X_POST_BASE_SYSTEM_PROMPT.format(format_instructions=_FORMAT_INSTRUCTIONS[format])
 
 
 def build_x_user_prompt(

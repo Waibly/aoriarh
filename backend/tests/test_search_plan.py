@@ -805,6 +805,7 @@ async def test_standard_plan_adds_ccn_priority_candidates_without_narrowing_main
     )
     agent = RAGAgent.__new__(RAGAgent)
     agent.search_engine = MagicMock()
+
     async def retrieve(query, org, **kwargs):
         if "convention_collective_nationale" in (kwargs.get("source_type_filter") or []):
             return [ccn]
@@ -827,9 +828,11 @@ async def test_standard_plan_adds_ccn_priority_candidates_without_narrowing_main
         ("code-1", 0),
         ("ccn-1", 9),
     ]
-    ccn_calls = [call for call in agent.search_engine.search.await_args_list
-                 if "convention_collective_nationale" in
-                 (call.kwargs.get("source_type_filter") or [])]
+    ccn_calls = [
+        call
+        for call in agent.search_engine.search.await_args_list
+        if "convention_collective_nationale" in (call.kwargs.get("source_type_filter") or [])
+    ]
     assert len(ccn_calls) == 1
     priority_call = ccn_calls[0]
     assert priority_call.kwargs["top_k"] == 20
@@ -1110,7 +1113,9 @@ async def test_plan_without_hypotheses_never_fetches_article_hypotheses():
         ),
     ):
         await agent.prepare_context(
-            "question", "org-1", search_plan=build_deterministic_search_plan("question"),
+            "question",
+            "org-1",
+            search_plan=build_deterministic_search_plan("question"),
         )
 
     fetch_mock.assert_not_awaited()

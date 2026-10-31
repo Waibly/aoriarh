@@ -18,10 +18,9 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
-from app.core.plans import get_limits
-
 from app.core.database import get_db
 from app.core.dependencies import get_current_user
+from app.core.plans import get_limits
 from app.models.subscription import Subscription
 from app.models.subscription_addon import SubscriptionAddon
 from app.models.user import User
@@ -76,9 +75,7 @@ async def start_booster_checkout(
     stripe_svc = StripeService(db)
 
     account = await billing.get_primary_account_for_user(user)
-    result = await stripe_svc.create_booster_checkout(
-        account=account, owner_email=user.email
-    )
+    result = await stripe_svc.create_booster_checkout(account=account, owner_email=user.email)
     return BoosterCheckoutResponse(
         checkout_url=result["checkout_url"],
         session_id=result["session_id"],
@@ -175,9 +172,7 @@ async def cancel_subscription(
 
 
 class AddAddonRequest(BaseModel):
-    addon_type: str = Field(
-        ..., description="extra_user, extra_org or extra_docs"
-    )
+    addon_type: str = Field(..., description="extra_user, extra_org or extra_docs")
 
 
 @router.post("/addons")
@@ -241,12 +236,14 @@ async def list_addons(
     )
     rows = []
     for addon in result.scalars():
-        rows.append({
-            "id": str(addon.id),
-            "addon_type": addon.addon_type,
-            "quantity": addon.quantity,
-            "unit_price_cents": addon.unit_price_cents,
-        })
+        rows.append(
+            {
+                "id": str(addon.id),
+                "addon_type": addon.addon_type,
+                "quantity": addon.quantity,
+                "unit_price_cents": addon.unit_price_cents,
+            }
+        )
     return rows
 
 
@@ -325,9 +322,7 @@ async def get_current_quota(
         period_start=info.period_start.isoformat(),
         period_end=info.period_end.isoformat(),
         quota_status=info.status.value,
-        trial_ends_at=(
-            account.plan_expires_at.isoformat() if account.plan_expires_at else None
-        ),
+        trial_ends_at=(account.plan_expires_at.isoformat() if account.plan_expires_at else None),
     )
 
 
@@ -369,27 +364,29 @@ async def list_invoices(
             limit=24,
         )
     except stripe.error.StripeError:
-        logger.exception(
-            "Stripe invoice list failed for account %s", account.id
-        )
+        logger.exception("Stripe invoice list failed for account %s", account.id)
         raise HTTPException(
             status_code=502,
             detail="Impossible de récupérer l'historique de factures.",
         )
 
     rows: list[dict] = []
-    for inv in response.auto_paging_iter() if hasattr(response, "auto_paging_iter") else response["data"]:
-        rows.append({
-            "id": inv["id"],
-            "number": inv.get("number"),
-            "status": inv.get("status"),
-            "amount_paid_cents": int(inv.get("amount_paid") or 0),
-            "amount_due_cents": int(inv.get("amount_due") or 0),
-            "currency": inv.get("currency", "eur"),
-            "created": inv.get("created"),
-            "hosted_invoice_url": inv.get("hosted_invoice_url"),
-            "invoice_pdf": inv.get("invoice_pdf"),
-        })
+    for inv in (
+        response.auto_paging_iter() if hasattr(response, "auto_paging_iter") else response["data"]
+    ):
+        rows.append(
+            {
+                "id": inv["id"],
+                "number": inv.get("number"),
+                "status": inv.get("status"),
+                "amount_paid_cents": int(inv.get("amount_paid") or 0),
+                "amount_due_cents": int(inv.get("amount_due") or 0),
+                "currency": inv.get("currency", "eur"),
+                "created": inv.get("created"),
+                "hosted_invoice_url": inv.get("hosted_invoice_url"),
+                "invoice_pdf": inv.get("invoice_pdf"),
+            }
+        )
         if len(rows) >= 24:
             break
     return rows
@@ -425,10 +422,7 @@ async def update_payment_method(
                 settings.stripe_checkout_success_url
                 or f"{settings.frontend_url}/billing?card_updated=1"
             ),
-            cancel_url=(
-                settings.stripe_checkout_cancel_url
-                or f"{settings.frontend_url}/billing"
-            ),
+            cancel_url=(settings.stripe_checkout_cancel_url or f"{settings.frontend_url}/billing"),
             # Tell Stripe to attach the new card to the customer AND set
             # it as the default payment method on its active subscription
             # via the SetupIntent metadata — the webhook will pick it up.
@@ -441,9 +435,7 @@ async def update_payment_method(
         )
     except stripe.error.StripeError as exc:
         logger.exception("Stripe setup checkout failed for account %s", account.id)
-        raise HTTPException(
-            status_code=502, detail=f"Erreur Stripe : {exc}"
-        ) from exc
+        raise HTTPException(status_code=502, detail=f"Erreur Stripe : {exc}") from exc
 
     return {"checkout_url": session["url"], "session_id": session["id"]}
 
@@ -469,8 +461,6 @@ async def get_current_subscription(
         plan=sub.plan,
         billing_cycle=sub.billing_cycle,
         status=sub.status,
-        current_period_end=(
-            sub.current_period_end.isoformat() if sub.current_period_end else None
-        ),
+        current_period_end=(sub.current_period_end.isoformat() if sub.current_period_end else None),
         cancel_at_period_end=sub.cancel_at_period_end,
     )

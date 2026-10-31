@@ -15,11 +15,15 @@ async def observe_stream(stream, request):
                 # Read only the protocol error code, never generated content or messages.
                 reason = None
                 try:
-                    data = json.loads("\n".join(
-                        line[6:] for line in frame.splitlines() if line.startswith("data: ")
-                    ))
+                    data = json.loads(
+                        "\n".join(
+                            line[6:] for line in frame.splitlines() if line.startswith("data: ")
+                        )
+                    )
                     if isinstance(data, dict) and data.get("error") in (
-                        "provider_quota_exhausted", "provider_rate_limited", "server_error"
+                        "provider_quota_exhausted",
+                        "provider_rate_limited",
+                        "server_error",
                     ):
                         reason = data["error"]
                 except (ValueError, TypeError):

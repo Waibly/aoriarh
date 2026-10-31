@@ -88,9 +88,14 @@ def compute_cost(
 
     input_price, output_price = prices
     # These models switch rate cards above 272K input tokens.
-    long_context = key in {
-        ("openai", "gpt-5.6-terra"), ("openai", "gpt-6-luna"),
-    } and tokens_input > 272_000
+    long_context = (
+        key
+        in {
+            ("openai", "gpt-5.6-terra"),
+            ("openai", "gpt-6-luna"),
+        }
+        and tokens_input > 272_000
+    )
     if long_context:
         input_price *= 2
         output_price *= 1.5
@@ -98,11 +103,13 @@ def compute_cost(
     cached = details.get("tokens_cached", 0)
     writes_12h = details.get("tokens_cache_write_12h", 0)
     writes = details.get(
-        "tokens_cache_write", details.get("tokens_cache_write_30m", 0) + writes_12h,
+        "tokens_cache_write",
+        details.get("tokens_cache_write_30m", 0) + writes_12h,
     )
     writes_30m = writes - writes_12h
     if (
-        cached + writes > tokens_input or writes_30m < 0
+        cached + writes > tokens_input
+        or writes_30m < 0
         or details.get("tokens_cache_write_30m", writes_30m) != writes_30m
     ):
         raise ValueError("Inconsistent provider cache token counts")
@@ -204,12 +211,14 @@ class CostTracker:
             async with async_session_factory() as session:
                 if not resolved_email and user_id:
                     from app.models.user import User
+
                     result = await session.execute(
                         select(User.email).where(User.id == uuid.UUID(user_id))
                     )
                     resolved_email = result.scalar_one_or_none()
                 if not resolved_org_name and organisation_id:
                     from app.models.organisation import Organisation
+
                     result = await session.execute(
                         select(Organisation.name).where(
                             Organisation.id == uuid.UUID(organisation_id)
@@ -237,9 +246,14 @@ class CostTracker:
 
             logger.debug(
                 "[COST] %s/%s %s — %d in + %d out = $%.6f | org=%s user=%s",
-                provider, model, operation_type,
-                tokens_input, tokens_output, cost,
-                organisation_id, user_id,
+                provider,
+                model,
+                operation_type,
+                tokens_input,
+                tokens_output,
+                cost,
+                organisation_id,
+                user_id,
             )
         except Exception:
             logger.exception("[COST] Failed to log usage — continuing without tracking")

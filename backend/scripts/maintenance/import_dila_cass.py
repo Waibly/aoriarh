@@ -100,9 +100,10 @@ def doc_for(decision):
     suffix = decision.xml_sha256
     if decision.reference_reconciliation is not None:
         prefix = INCA_RECONCILED_PREFIX
-        suffix += "." + hashlib.sha256(
-            reconciliation_bytes(decision.reference_reconciliation)
-        ).hexdigest()
+        suffix += (
+            "."
+            + hashlib.sha256(reconciliation_bytes(decision.reference_reconciliation)).hexdigest()
+        )
     return Document(
         id=uuid.uuid5(
             uuid.NAMESPACE_URL, "https://www.legifrance.gouv.fr/juri/id/" + decision.source_id
@@ -415,8 +416,7 @@ class Embeddings:
 
     async def get(self, texts, owners):
         cache_input = (
-            texts if self.input_type is None
-            else {"texts": texts, "input_type": self.input_type}
+            texts if self.input_type is None else {"texts": texts, "input_type": self.input_type}
         )
         digest = hashlib.sha256(json.dumps(cache_input, ensure_ascii=False).encode()).hexdigest()
         cache = self.folder / "embedding-cache" / (digest + ".json.gz")
@@ -424,7 +424,8 @@ class Embeddings:
             with gzip.open(cache, "rt") as handle:
                 saved = json.load(handle)
             if (
-                saved.get("input_digest") != digest or saved.get("model") != EMBEDDING_MODEL
+                saved.get("input_digest") != digest
+                or saved.get("model") != EMBEDDING_MODEL
                 or saved.get("input_type") != self.input_type
             ):
                 raise ValueError("Paid embedding cache source mismatch")
@@ -508,13 +509,16 @@ class Embeddings:
                     # full reservation: failed-request billing is not assumed.
                     errors = self.folder / "provider-errors"
                     errors.mkdir(exist_ok=True)
-                    dump(errors / (digest + f"-{attempt}.json"), {
-                        "request_id": request_id,
-                        "http_status": response.status_code,
-                        "response_body": response.text,
-                        "provider_request_id": response.headers.get("x-request-id"),
-                        "reserved_tokens_upper_bound": estimated,
-                    })
+                    dump(
+                        errors / (digest + f"-{attempt}.json"),
+                        {
+                            "request_id": request_id,
+                            "http_status": response.status_code,
+                            "response_body": response.text,
+                            "provider_request_id": response.headers.get("x-request-id"),
+                            "reserved_tokens_upper_bound": estimated,
+                        },
+                    )
                     self.state.execute(
                         "UPDATE requests SET status='server_error',error=? WHERE id=?",
                         (f"HTTP {response.status_code}", request_id),
@@ -522,12 +526,17 @@ class Embeddings:
                     self.state.commit()
                     delay = 2 ** (attempt + 1)
                     self.next_request = max(self.next_request, time.monotonic() + delay)
-                    print(json.dumps({
-                        "provider_server_error": response.status_code,
-                        "attempt": attempt + 1,
-                        "max_attempts": 3,
-                        "reservation_preserved": True,
-                    }), flush=True)
+                    print(
+                        json.dumps(
+                            {
+                                "provider_server_error": response.status_code,
+                                "attempt": attempt + 1,
+                                "max_attempts": 3,
+                                "reservation_preserved": True,
+                            }
+                        ),
+                        flush=True,
+                    )
                     continue
                 response.raise_for_status()
                 data = response.json()
@@ -605,11 +614,16 @@ class Embeddings:
                     (type(exc).__name__, request_id),
                 )
                 self.state.commit()
-                print(json.dumps({
-                    "provider_connection_not_sent": True,
-                    "attempt": attempt + 1,
-                    "max_attempts": 3,
-                }), flush=True)
+                print(
+                    json.dumps(
+                        {
+                            "provider_connection_not_sent": True,
+                            "attempt": attempt + 1,
+                            "max_attempts": 3,
+                        }
+                    ),
+                    flush=True,
+                )
                 if attempt < 2:
                     await asyncio.sleep(2 * (attempt + 1))
                 continue
@@ -655,7 +669,11 @@ async def apply(folder, db, tokenizer, args):
     qdrant = get_qdrant_client()
     ensure_collection(qdrant)
     embedder = Embeddings(
-        folder, db, tokenizer, args.tokens_per_minute, args.max_total_tokens,
+        folder,
+        db,
+        tokenizer,
+        args.tokens_per_minute,
+        args.max_total_tokens,
         input_type="document" if getattr(args, "corpus", "cass") == "inca" else None,
     )
     stats = Counter()
@@ -743,9 +761,12 @@ async def apply(folder, db, tokenizer, args):
                                 storage.put_file_bytes(
                                     identity_path, identity_bytes, "application/json"
                                 )
-                                if storage.get_file_bytes_bounded(
-                                    identity_path, len(identity_bytes) + 1
-                                ) != identity_bytes:
+                                if (
+                                    storage.get_file_bytes_bounded(
+                                        identity_path, len(identity_bytes) + 1
+                                    )
+                                    != identity_bytes
+                                ):
                                     raise ValueError("Reference reconciliation artifact mismatch")
                             if (
                                 storage.get_file_bytes_bounded(
@@ -883,11 +904,17 @@ async def verify(folder, db, limit=None):
                     select(Document).where(Document.id.in_([uuid.UUID(i) for i in ids]))
                 )
             ).all()
-            reference_rows = (await session.execute(
-                select(DocumentCaseReference).where(
-                    DocumentCaseReference.document_id.in_([uuid.UUID(i) for i in ids])
+            reference_rows = (
+                (
+                    await session.execute(
+                        select(DocumentCaseReference).where(
+                            DocumentCaseReference.document_id.in_([uuid.UUID(i) for i in ids])
+                        )
+                    )
                 )
-            )).scalars().all()
+                .scalars()
+                .all()
+            )
         by_id = {str(doc.id): doc for doc in docs}
         registered_aliases = defaultdict(set)
         for reference in reference_rows:
@@ -935,11 +962,13 @@ async def verify(folder, db, limit=None):
 
                 expected_metadata = (
                     source_metadata(
-                        row["xml"], reference_reconciliation=(
-                            expected.get("selection_evidence") or {}
-                        ).get("reference_reconciliation"),
+                        row["xml"],
+                        reference_reconciliation=(expected.get("selection_evidence") or {}).get(
+                            "reference_reconciliation"
+                        ),
                     )
-                    if expected.get("source_metadata_version") == 1 else {}
+                    if expected.get("source_metadata_version") == 1
+                    else {}
                 )
                 if [
                     hashlib.sha256(point["text"].encode()).hexdigest() for point in found
@@ -971,9 +1000,12 @@ async def verify(folder, db, limit=None):
                     identity_bytes = reconciliation_bytes(
                         expected_metadata["case_reference_reconciliation"]
                     )
-                    if storage.get_file_bytes_bounded(
-                        doc.storage_path + ".identity.json", len(identity_bytes) + 1
-                    ) != identity_bytes:
+                    if (
+                        storage.get_file_bytes_bounded(
+                            doc.storage_path + ".identity.json", len(identity_bytes) + 1
+                        )
+                        != identity_bytes
+                    ):
                         error = "source_reference_reconciliation_mismatch"
             if error:
                 failures.append(
@@ -1038,8 +1070,12 @@ async def main(args):
         if args.corpus == "inca":
             selection = json.loads((folder / "selection-manifest.json").read_text())["items"]
         await plan(
-            folder, folder / args.package, db, tokenizer,
-            source_parser=source_parser, selection=selection,
+            folder,
+            folder / args.package,
+            db,
+            tokenizer,
+            source_parser=source_parser,
+            selection=selection,
         )
     db.close()
     await engine.dispose()

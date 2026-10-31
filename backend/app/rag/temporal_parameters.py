@@ -19,13 +19,19 @@ _USER_TIME_REFERENCE = re.compile(
 def user_period_parameters_available(query: str, history=None) -> bool:
     user_texts = [query]
     if isinstance(history, list):
-        user_texts.extend(item.get("content", "") for item in history
-                          if isinstance(item, dict) and item.get("role") == "user")
+        user_texts.extend(
+            item.get("content", "")
+            for item in history
+            if isinstance(item, dict) and item.get("role") == "user"
+        )
     return any(_USER_TIME_REFERENCE.search(text) for text in user_texts if isinstance(text, str))
 
 
 def constrain_period_parameters(
-    schema: dict, *, available: bool, legal_search_type: str | None = None,
+    schema: dict,
+    *,
+    available: bool,
+    legal_search_type: str | None = None,
 ) -> None:
     """Constrain the generation schema before calling the model, without rewriting output."""
     if available:

@@ -67,16 +67,14 @@ def clean_text(text: str) -> str:
     Invalid source metadata is also preserved so the parser reports the error.
     """
     parts = re.split(rf"(?m)^({re.escape(ARTICLE_METADATA_PREFIX)}[^\n]*)$", text)
-    return "".join(
-        part if i % 2 else _clean_prose(part)
-        for i, part in enumerate(parts)
-    ).strip()
+    return "".join(part if i % 2 else _clean_prose(part) for i, part in enumerate(parts)).strip()
 
 
 def _clean_prose(text: str) -> str:
     # Remove zero-width chars and control characters (keep newlines and tabs)
     text = "".join(
-        ch for ch in text
+        ch
+        for ch in text
         if ch in ("\n", "\t", "\r") or not unicodedata.category(ch).startswith("C")
     )
 

@@ -12,14 +12,22 @@ def scope_documentary_legal_results(documents, results):
     selected = {str(d["document_id"]) for d in documents}
     kept, excluded = [], []
     for result in results:
-        if (result.document_id not in selected
-                and result.source_type in {"divers", "contrat_travail"}):
-            excluded.append({"document_id": result.document_id, "name": result.doc_name,
-                             "source_type": result.source_type,
-                             "reason": "personal_document_not_attached_to_this_task"})
+        if result.document_id not in selected and result.source_type in {
+            "divers",
+            "contrat_travail",
+        }:
+            excluded.append(
+                {
+                    "document_id": result.document_id,
+                    "name": result.doc_name,
+                    "source_type": result.source_type,
+                    "reason": "personal_document_not_attached_to_this_task",
+                }
+            )
         else:
             kept.append(result)
     return kept, excluded
+
 
 DOCUMENT_GENERATION_RULES = """## Contrat de rédaction avec pièces jointes
 Tu accomplis la tâche demandée par l'utilisateur : lecture, comparaison, rédaction ou analyse.
@@ -80,13 +88,17 @@ def build_document_task_context(documents, results, trace):
                 "document_id": result.document_id,
                 "name": result.doc_name,
                 "source_type": result.source_type,
-                "role": ("case_document" if result.document_id in selected
-                         else "retrieved_reference"),
+                "role": (
+                    "case_document" if result.document_id in selected else "retrieved_reference"
+                ),
                 "extraction_id": str(selected[result.document_id].get("extraction_id") or "")
-                if result.document_id in selected else None,
+                if result.document_id in selected
+                else None,
                 "reading_scope": selected[result.document_id].get(
                     "transmitted_scope", "full_extracted_text"
-                ) if result.document_id in selected else None,
+                )
+                if result.document_id in selected
+                else None,
             }
             for i, result in enumerate(results, start=1)
         ],
@@ -104,5 +116,6 @@ def document_generation_instructions(context):
 
 def document_task_block(context):
     return "## document_task_context — données de préparation\n" + json.dumps(
-        context, ensure_ascii=False,
+        context,
+        ensure_ascii=False,
     )

@@ -9,6 +9,7 @@ Le client est cachetté PAR EVENT LOOP : en prod chaque worker uvicorn n'a
 qu'une loop (un seul client), mais les tests créent une loop par test — un
 client lié à une loop fermée déclencherait des erreurs.
 """
+
 from __future__ import annotations
 
 import asyncio

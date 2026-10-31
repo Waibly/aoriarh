@@ -83,11 +83,11 @@ def force_split_on_boundary(
         sp = window.find(" ", next_start)
         if sp != -1 and sp + 1 < cut:
             next_start = sp + 1
-        new_remaining = window[next_start:] + remaining[len(window):]
+        new_remaining = window[next_start:] + remaining[len(window) :]
         # Guarantee forward progress.
         if len(new_remaining) >= len(remaining):
             next_start = cut
-            new_remaining = window[next_start:] + remaining[len(window):]
+            new_remaining = window[next_start:] + remaining[len(window) :]
         remaining = new_remaining
     return chunks
 
@@ -209,9 +209,7 @@ class LegalChunker:
                         chunks.append(f"{header}\n\n{sub}")
         return chunks
 
-    def _chunk_by_sentences(
-        self, text: str, reserved_tokens: int = 0
-    ) -> list[str]:
+    def _chunk_by_sentences(self, text: str, reserved_tokens: int = 0) -> list[str]:
         effective_size = self.chunk_size - reserved_tokens
 
         # Split into paragraphs first
@@ -286,6 +284,4 @@ class LegalChunker:
         return chunks
 
     def _force_split(self, text: str) -> list[str]:
-        return force_split_on_boundary(
-            text, self._enc, self.chunk_size, self.chunk_overlap
-        )
+        return force_split_on_boundary(text, self._enc, self.chunk_size, self.chunk_overlap)

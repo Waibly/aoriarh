@@ -43,16 +43,22 @@ def main():
     client = get_qdrant_client()
     if args.apply and args.phase == "build":
         result = build_sparse_profile(
-            client, max_points=args.max_points, batch_size=args.batch_size,
-            target=args.target, offset=args.offset,
+            client,
+            max_points=args.max_points,
+            batch_size=args.batch_size,
+            target=args.target,
+            offset=args.offset,
             resume=args.resume,
         )
     elif args.phase == "verify":
         result = verify_sparse_copy(client, target=args.target)
     elif args.apply and args.phase == "legacy-idf":
-        changed = client.update_collection(COLLECTION_NAME, sparse_vectors_config={
-            "sparse-bm25": SparseVectorParams(modifier=Modifier.IDF),
-        })
+        changed = client.update_collection(
+            COLLECTION_NAME,
+            sparse_vectors_config={
+                "sparse-bm25": SparseVectorParams(modifier=Modifier.IDF),
+            },
+        )
         config = client.get_collection(COLLECTION_NAME).config.params.sparse_vectors or {}
         if not changed or config["sparse-bm25"].modifier != Modifier.IDF:
             raise RuntimeError("IDF configuration change not confirmed")

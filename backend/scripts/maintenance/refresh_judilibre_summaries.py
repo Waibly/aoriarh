@@ -16,12 +16,19 @@ async def run(args):
     if not 1 <= args.limit <= 1000:
         raise ValueError("invalid_maintenance_budget")
     async with async_session_factory() as db:
-        statement = select(Document.id).where(
-            Document.organisation_id.is_(None), Document.private_dossier_id.is_(None),
-            Document.private_conversation_id.is_(None), Document.retired_at.is_(None),
-            Document.source_type == "arret_cour_cassation",
-            Document.storage_path.startswith("common/judilibre/"),
-        ).order_by(Document.id).limit(args.limit)
+        statement = (
+            select(Document.id)
+            .where(
+                Document.organisation_id.is_(None),
+                Document.private_dossier_id.is_(None),
+                Document.private_conversation_id.is_(None),
+                Document.retired_at.is_(None),
+                Document.source_type == "arret_cour_cassation",
+                Document.storage_path.startswith("common/judilibre/"),
+            )
+            .order_by(Document.id)
+            .limit(args.limit)
+        )
         if args.after_id:
             statement = statement.where(Document.id > args.after_id)
         ids = list(await db.scalars(statement))

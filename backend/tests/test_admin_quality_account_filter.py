@@ -8,9 +8,7 @@ from app.models.user import User
 from tests.conftest import test_session_factory as _test_session_factory
 
 
-async def test_client_question_count_links_to_same_quality_rows(
-    client, admin_user, regular_user
-):
+async def test_client_question_count_links_to_same_quality_rows(client, admin_user, regular_user):
     now = datetime.now(UTC)
 
     async with _test_session_factory() as session:
@@ -21,12 +19,8 @@ async def test_client_question_count_links_to_same_quality_rows(
             await session.execute(select(User).where(User.email == regular_user["email"]))
         ).scalar_one()
 
-        admin_org = Organisation(
-            name="Organisation admin", account_id=admin.owned_account.id
-        )
-        other_org = Organisation(
-            name="Organisation tierce", account_id=regular.owned_account.id
-        )
+        admin_org = Organisation(name="Organisation admin", account_id=admin.owned_account.id)
+        other_org = Organisation(name="Organisation tierce", account_id=regular.owned_account.id)
         session.add_all([admin_org, other_org])
         await session.flush()
 
@@ -90,9 +84,7 @@ async def test_client_question_count_links_to_same_quality_rows(
     assert metrics.status_code == 200
     assert metrics.json()["total_questions"] == 1
 
-    clients = await client.get(
-        "/api/v1/admin/business/clients?page_size=200", headers=headers
-    )
+    clients = await client.get("/api/v1/admin/business/clients?page_size=200", headers=headers)
     assert clients.status_code == 200
     row = next(row for row in clients.json()["rows"] if row["account_id"] == str(account_id))
     assert row["questions_30d"] == 1

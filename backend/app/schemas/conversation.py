@@ -30,6 +30,7 @@ class ConversationRead(BaseModel):
     @property
     def document_attachments_enabled(self) -> bool:
         from app.core.config import settings
+
         return settings.document_extraction_enabled_for(self.organisation_id)
 
 

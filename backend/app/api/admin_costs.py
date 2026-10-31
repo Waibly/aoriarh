@@ -1,12 +1,10 @@
 import logging
 from datetime import date, datetime, timedelta
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, status
 from pydantic import BaseModel, Field
-from sqlalchemy import func, select, case, distinct, literal
+from sqlalchemy import case, distinct, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
-
-from fastapi import status
 
 from app.core.database import get_db
 from app.core.dependencies import require_role
@@ -140,23 +138,28 @@ async def get_cost_dashboard(
             func.coalesce(func.sum(ApiUsageLog.tokens_input), 0).label("total_in"),
             func.coalesce(func.sum(ApiUsageLog.tokens_output), 0).label("total_out"),
             func.count(ApiUsageLog.id).label("total_calls"),
-            func.count(distinct(
-                case(
-                    (ApiUsageLog.context_type == "question", ApiUsageLog.context_id),
+            func.count(
+                distinct(
+                    case(
+                        (ApiUsageLog.context_type == "question", ApiUsageLog.context_id),
+                    )
                 )
-            )).label("total_questions"),
-            func.count(distinct(
-                case(
-                    (ApiUsageLog.context_type == "ingestion", ApiUsageLog.context_id),
+            ).label("total_questions"),
+            func.count(
+                distinct(
+                    case(
+                        (ApiUsageLog.context_type == "ingestion", ApiUsageLog.context_id),
+                    )
                 )
-            )).label("total_ingestions"),
+            ).label("total_ingestions"),
             func.coalesce(
                 func.sum(
                     case(
                         (ApiUsageLog.context_type == "question", ApiUsageLog.cost_usd),
                         else_=0,
                     )
-                ), 0
+                ),
+                0,
             ).label("question_cost"),
             func.coalesce(
                 func.sum(
@@ -164,7 +167,8 @@ async def get_cost_dashboard(
                         (ApiUsageLog.context_type == "ingestion", ApiUsageLog.cost_usd),
                         else_=0,
                     )
-                ), 0
+                ),
+                0,
             ).label("ingestion_cost"),
         ).where(*filters)
     )
@@ -178,7 +182,9 @@ async def get_cost_dashboard(
         total_tokens_output=int(row.total_out),
         total_calls=int(row.total_calls),
         avg_cost_per_question=float(row.question_cost) / total_questions if total_questions else 0,
-        avg_cost_per_ingestion=float(row.ingestion_cost) / total_ingestions if total_ingestions else 0,
+        avg_cost_per_ingestion=float(row.ingestion_cost) / total_ingestions
+        if total_ingestions
+        else 0,
         total_questions=total_questions,
         total_ingestions=total_ingestions,
     )
@@ -250,24 +256,38 @@ async def get_cost_dashboard(
             ApiUsageLog.organisation_id,
             org_name_col,
             func.sum(ApiUsageLog.cost_usd).label("cost"),
-            func.coalesce(func.sum(case(
-                (ApiUsageLog.context_type == "question", ApiUsageLog.cost_usd),
-                else_=0,
-            )), 0).label("cost_questions"),
-            func.coalesce(func.sum(case(
-                (ApiUsageLog.context_type == "ingestion", ApiUsageLog.cost_usd),
-                else_=0,
-            )), 0).label("cost_ingestion"),
-            func.count(distinct(
-                case(
-                    (ApiUsageLog.context_type == "question", ApiUsageLog.context_id),
+            func.coalesce(
+                func.sum(
+                    case(
+                        (ApiUsageLog.context_type == "question", ApiUsageLog.cost_usd),
+                        else_=0,
+                    )
+                ),
+                0,
+            ).label("cost_questions"),
+            func.coalesce(
+                func.sum(
+                    case(
+                        (ApiUsageLog.context_type == "ingestion", ApiUsageLog.cost_usd),
+                        else_=0,
+                    )
+                ),
+                0,
+            ).label("cost_ingestion"),
+            func.count(
+                distinct(
+                    case(
+                        (ApiUsageLog.context_type == "question", ApiUsageLog.context_id),
+                    )
                 )
-            )).label("questions"),
-            func.count(distinct(
-                case(
-                    (ApiUsageLog.context_type == "ingestion", ApiUsageLog.context_id),
+            ).label("questions"),
+            func.count(
+                distinct(
+                    case(
+                        (ApiUsageLog.context_type == "ingestion", ApiUsageLog.context_id),
+                    )
                 )
-            )).label("ingestions"),
+            ).label("ingestions"),
             func.count(ApiUsageLog.id).label("calls"),
         )
         .outerjoin(Organisation, Organisation.id == ApiUsageLog.organisation_id)
@@ -328,24 +348,38 @@ async def get_cost_dashboard(
             ApiUsageLog.user_id,
             user_email_col,
             func.sum(ApiUsageLog.cost_usd).label("cost"),
-            func.coalesce(func.sum(case(
-                (ApiUsageLog.context_type == "question", ApiUsageLog.cost_usd),
-                else_=0,
-            )), 0).label("cost_questions"),
-            func.coalesce(func.sum(case(
-                (ApiUsageLog.context_type == "ingestion", ApiUsageLog.cost_usd),
-                else_=0,
-            )), 0).label("cost_ingestion"),
-            func.count(distinct(
-                case(
-                    (ApiUsageLog.context_type == "question", ApiUsageLog.context_id),
+            func.coalesce(
+                func.sum(
+                    case(
+                        (ApiUsageLog.context_type == "question", ApiUsageLog.cost_usd),
+                        else_=0,
+                    )
+                ),
+                0,
+            ).label("cost_questions"),
+            func.coalesce(
+                func.sum(
+                    case(
+                        (ApiUsageLog.context_type == "ingestion", ApiUsageLog.cost_usd),
+                        else_=0,
+                    )
+                ),
+                0,
+            ).label("cost_ingestion"),
+            func.count(
+                distinct(
+                    case(
+                        (ApiUsageLog.context_type == "question", ApiUsageLog.context_id),
+                    )
                 )
-            )).label("questions"),
-            func.count(distinct(
-                case(
-                    (ApiUsageLog.context_type == "ingestion", ApiUsageLog.context_id),
+            ).label("questions"),
+            func.count(
+                distinct(
+                    case(
+                        (ApiUsageLog.context_type == "ingestion", ApiUsageLog.context_id),
+                    )
                 )
-            )).label("ingestions"),
+            ).label("ingestions"),
             func.count(ApiUsageLog.id).label("calls"),
         )
         .outerjoin(User, User.id == ApiUsageLog.user_id)
@@ -358,7 +392,9 @@ async def get_cost_dashboard(
         uid = str(r.user_id) if r.user_id else None
         by_user_map[uid] = CostByUser(
             user_id=uid,
-            user_email=r.user_email if r.user_email else ("Système (automatique)" if uid is None else "Utilisateur supprimé"),
+            user_email=r.user_email
+            if r.user_email
+            else ("Système (automatique)" if uid is None else "Utilisateur supprimé"),
             cost_usd=float(r.cost or 0),
             cost_questions_usd=float(r.cost_questions or 0),
             cost_ingestion_usd=float(r.cost_ingestion or 0),
@@ -368,9 +404,7 @@ async def get_cost_dashboard(
         )
 
     # Add users with zero usage
-    all_users_q = await db.execute(
-        select(User.id, User.email).where(User.is_active.is_(True))
-    )
+    all_users_q = await db.execute(select(User.id, User.email).where(User.is_active.is_(True)))
     for u_row in all_users_q.all():
         uid = str(u_row.id)
         if uid not in by_user_map:
@@ -443,12 +477,14 @@ async def update_pricing(
             row.price_input_per_million = entry.price_input_per_million
             row.price_output_per_million = entry.price_output_per_million
         else:
-            db.add(ApiPricing(
-                provider=entry.provider,
-                model=entry.model,
-                price_input_per_million=entry.price_input_per_million,
-                price_output_per_million=entry.price_output_per_million,
-            ))
+            db.add(
+                ApiPricing(
+                    provider=entry.provider,
+                    model=entry.model,
+                    price_input_per_million=entry.price_input_per_million,
+                    price_output_per_million=entry.price_output_per_million,
+                )
+            )
 
     await db.commit()
     logger.info("Pricing updated: %s", [(e.provider, e.model) for e in entries])
@@ -494,7 +530,9 @@ _REDIS_LLM_KEY = "aoriarh:llm_model"
 async def _get_redis():
     """Get async Redis connection."""
     import redis.asyncio as aioredis
+
     from app.core.config import settings
+
     return aioredis.from_url(settings.redis_url, decode_responses=True)
 
 
@@ -509,12 +547,14 @@ async def _get_active_model() -> str:
     except Exception:
         pass
     from app.rag.config import LLM_MODEL
+
     return LLM_MODEL
 
 
 async def _set_active_model(model: str) -> None:
     """Persist active model in Redis + update runtime config."""
     import app.rag.config as rag_config
+
     rag_config.LLM_MODEL = model
     try:
         r = await _get_redis()
@@ -532,6 +572,7 @@ async def get_llm_model(
     model = await _get_active_model()
     # Also sync runtime config in case it drifted
     import app.rag.config as rag_config
+
     rag_config.LLM_MODEL = model
     return LlmModelInfo(
         current_model=model,
@@ -548,6 +589,7 @@ async def set_llm_model(
     valid_ids = {m["id"] for m in AVAILABLE_MODELS}
     if body.model not in valid_ids:
         from fastapi import HTTPException
+
         raise HTTPException(status_code=400, detail=f"Modèle inconnu: {body.model}")
 
     await _set_active_model(body.model)

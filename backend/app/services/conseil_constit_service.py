@@ -7,6 +7,7 @@ Endpoints validés en phase A :
 - POST /search avec fond=CONSTIT pour lister les décisions par date
 - POST /consult/juri avec {"textId": cid} pour récupérer le texte intégral
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -15,7 +16,7 @@ import logging
 import time
 import uuid
 from dataclasses import dataclass, field
-from datetime import UTC, date, datetime
+from datetime import date
 
 import httpx
 from sqlalchemy import select
@@ -47,6 +48,7 @@ _FOND = "CONSTIT"  # validé en phase A — fond Légifrance Conseil constitutio
 @dataclass
 class CcDecision:
     """A single Conseil constitutionnel decision parsed from PISTE."""
+
     cid: str  # CONSTEXT...
     title: str
     nature: str  # qpc, dc, lp, etc.
@@ -80,12 +82,8 @@ class ConseilConstitService:
 
     def __init__(self) -> None:
         self.base_url = settings.legifrance_base_url.rstrip("/")
-        self._client_id = (
-            settings.legifrance_client_id or settings.judilibre_client_id
-        )
-        self._client_secret = (
-            settings.legifrance_client_secret or settings.judilibre_client_secret
-        )
+        self._client_id = settings.legifrance_client_id or settings.judilibre_client_id
+        self._client_secret = settings.legifrance_client_secret or settings.judilibre_client_secret
         self._oauth_url = settings.legifrance_oauth_url
 
     @classmethod
@@ -101,13 +99,14 @@ class ConseilConstitService:
 
         async with self._get_lock():
             now = time.monotonic()
-            if ConseilConstitService._cached_token and now < ConseilConstitService._token_expires_at:
+            if (
+                ConseilConstitService._cached_token
+                and now < ConseilConstitService._token_expires_at
+            ):
                 return ConseilConstitService._cached_token
 
             if not self._client_id or not self._client_secret:
-                raise RuntimeError(
-                    "PISTE credentials missing (legifrance_client_id / _secret)"
-                )
+                raise RuntimeError("PISTE credentials missing (legifrance_client_id / _secret)")
 
             async with httpx.AsyncClient(timeout=15) as client:
                 r = await client.post(
@@ -128,9 +127,7 @@ class ConseilConstitService:
                 )
                 return ConseilConstitService._cached_token
 
-    async def _api_post(
-        self, client: httpx.AsyncClient, path: str, json_body: dict
-    ) -> dict | None:
+    async def _api_post(self, client: httpx.AsyncClient, path: str, json_body: dict) -> dict | None:
         url = f"{self.base_url}{path}"
         for attempt in range(_MAX_RETRIES):
             try:
@@ -240,12 +237,14 @@ class ConseilConstitService:
             date_end = date.today()
         if date_start is None:
             from datetime import timedelta
+
             date_start = date_end - timedelta(days=30)
 
         # Load existing CIDs to avoid re-ingestion
         existing_cids = await self._get_existing_cids(db)
 
         from app.services.storage_service import StorageService
+
         storage = StorageService()
 
         def _build_search_payload(page_number: int) -> dict:
@@ -296,9 +295,7 @@ class ConseilConstitService:
                     break
                 page_results = search_data.get("results", [])
                 if page_number == 1:
-                    result.total_fetched = search_data.get(
-                        "totalResultNumber", 0
-                    )
+                    result.total_fetched = search_data.get("totalResultNumber", 0)
                 if not page_results:
                     break
                 results_list.extend(page_results)
@@ -311,7 +308,10 @@ class ConseilConstitService:
 
             logger.info(
                 "ConseilConstit sync: %d decisions found total (%d collected, %s → %s)",
-                result.total_fetched, len(results_list), date_start, date_end,
+                result.total_fetched,
+                len(results_list),
+                date_start,
+                date_end,
             )
 
             # --- Step 2 : fetch each decision text ---
@@ -332,9 +332,7 @@ class ConseilConstitService:
                         continue
 
                     # Fetch full text via /consult/juri
-                    consult_data = await self._api_post(
-                        client, "/consult/juri", {"textId": cid}
-                    )
+                    consult_data = await self._api_post(client, "/consult/juri", {"textId": cid})
                     if not consult_data:
                         result.errors += 1
                         continue
@@ -373,8 +371,10 @@ class ConseilConstitService:
 
         logger.info(
             "ConseilConstit sync completed: %d total, %d new, %d existing, %d errors",
-            result.total_fetched, result.new_ingested,
-            result.already_exists, result.errors,
+            result.total_fetched,
+            result.new_ingested,
+            result.already_exists,
+            result.errors,
         )
         return result
 
@@ -382,13 +382,23 @@ class ConseilConstitService:
 
     @staticmethod
     def _parse_date_from_title(title: str) -> date | None:
-        """Extract decision date from a title like 'Décision 2025-1175 QPC - 05 décembre 2025 - …'."""
+        "Extract decision date from a title like 'Décision 2025-1175 QPC - 05 décembre 2025 - …'."
         import re
+
         # Match patterns: '05 décembre 2025', '5 janvier 2024', etc.
         months = {
-            "janvier": 1, "février": 2, "mars": 3, "avril": 4, "mai": 5,
-            "juin": 6, "juillet": 7, "août": 8, "septembre": 9, "octobre": 10,
-            "novembre": 11, "décembre": 12,
+            "janvier": 1,
+            "février": 2,
+            "mars": 3,
+            "avril": 4,
+            "mai": 5,
+            "juin": 6,
+            "juillet": 7,
+            "août": 8,
+            "septembre": 9,
+            "octobre": 10,
+            "novembre": 11,
+            "décembre": 12,
         }
         m = re.search(r"(\d{1,2})\s+(\w+)\s+(\d{4})", title)
         if m:
@@ -426,6 +436,7 @@ class ConseilConstitService:
         # Robust to missing date / missing number — never produces double commas
         # or trailing 'n°' fragments. Falls back to the raw PISTE title.
         import re
+
         num_match = re.search(r"(\d{4}-\d{1,4})\s*(QPC|DC|LP|FNR|L|I|D)?", decision.title)
         num_str = ""
         if num_match:

@@ -27,9 +27,9 @@ def source_metadata(raw: bytes, *, reference_reconciliation: dict | None = None)
         "source_xml_sha256": decision.xml_sha256,
         "source_text_sha256": decision.text_sha256,
         "numero_pourvois": list(decision.numbers),
-        "numero_pourvoi_aliases": sorted({
-            alias for number in decision.numbers for alias in number_aliases(number)
-        }),
+        "numero_pourvoi_aliases": sorted(
+            {alias for number in decision.numbers for alias in number_aliases(number)}
+        ),
         "documentary_topics": list(decision.topics),
         "social_case_citations": social_case_references(decision.text),
         "primary_body_text_sha256": hashlib.sha256(

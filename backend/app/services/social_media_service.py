@@ -83,9 +83,7 @@ def _load_asset_data_url(filename: str, mime_type: str) -> str:
     return f"data:{mime_type};base64,{encoded}"
 
 
-_LOGO_MARK_WATERMARK_URL = _load_asset_data_url(
-    "logo-mark-watermark.svg", "image/svg+xml"
-)
+_LOGO_MARK_WATERMARK_URL = _load_asset_data_url("logo-mark-watermark.svg", "image/svg+xml")
 _BALANCE_ICON_URL = _load_asset_data_url("icon-balance-white.svg", "image/svg+xml")
 
 
@@ -283,12 +281,14 @@ Bibliothèque HTML et classes disponibles :
 N'ajoute aucun style inline. Le design system AORIA RH applique la charte à ces
 éléments et classes. N'insère pas le logo, la pagination ou aoriarh.fr : ils sont
 ajoutés visuellement par la feuille de style sans modifier ton fragment.
-"""
+"""  # noqa: E501 -- Preserve literal text.
 
-LINKEDIN_CAROUSEL_SYSTEM_PROMPT = SOCIAL_MEDIA_SYSTEM_PROMPT.replace(
-    "les réseaux sociaux, principalement un carrousel Instagram.",
-    "un carrousel destiné à être publié comme document PDF dans un post LinkedIn.",
-) + """
+LINKEDIN_CAROUSEL_SYSTEM_PROMPT = (
+    SOCIAL_MEDIA_SYSTEM_PROMPT.replace(
+        "les réseaux sociaux, principalement un carrousel Instagram.",
+        "un carrousel destiné à être publié comme document PDF dans un post LinkedIn.",
+    )
+    + """
 
 Contexte LinkedIn :
 - Un post d'accompagnement distinct sera généré séparément. Le carrousel doit
@@ -325,6 +325,7 @@ Budget de slides pour « Post + carrousel » :
   répartis-la sur deux slides explicitement titrées dans le budget global.
   Ne laisse pas un dernier encart isolé sur une page de continuation sans titre.
 """
+)
 
 X_VISUAL_SYSTEM_PROMPT = """\
 Tu crées le contenu d'une carte visuelle AORIA RH destinée à accompagner une
@@ -569,8 +570,7 @@ def inspect_x_visual_fragment(raw_content: str, references: list[str]) -> list[s
         )
     if inspector.title_count != 1:
         warnings.append(
-            "Le visuel ne contient pas exactement un titre h1. "
-            "La génération brute reste inchangée."
+            "Le visuel ne contient pas exactement un titre h1. La génération brute reste inchangée."
         )
     if references and inspector.source_list_count != 1:
         warnings.append(
@@ -584,9 +584,7 @@ def inspect_x_visual_fragment(raw_content: str, references: list[str]) -> list[s
             "pas supprimées ; le moteur PNG n'exécute aucun script."
         )
     missing_references = [reference for reference in references if reference not in raw_content]
-    if references and (
-        inspector.source_count != len(references) or missing_references
-    ):
+    if references and (inspector.source_count != len(references) or missing_references):
         warnings.append(
             "Une ou plusieurs références autorisées ne figurent pas à l'identique "
             "dans le visuel. "

@@ -50,6 +50,7 @@ def setup_logging(json_output: bool = True) -> None:
     root.handlers.clear()
     root.addHandler(handler)
     from app.observability.store import IncidentLogHandler
+
     root.addHandler(IncidentLogHandler(level=logging.ERROR))
     root.setLevel(logging.INFO)
 

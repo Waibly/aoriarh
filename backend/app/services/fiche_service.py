@@ -120,7 +120,7 @@ _ICON_STEPS = _icon(
 _ICON_SOURCES = _icon(
     '<path d="M12 7v14"/>'
     '<path d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 '
-    '4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 '
+    "4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 "
     '3 3 0 0 0-3-3z"/>'
 )
 
@@ -285,9 +285,7 @@ class _FicheFragmentInspector(HTMLParser):
     def title(self) -> str:
         return " ".join("".join(self._title_parts).split())
 
-    def handle_starttag(
-        self, tag: str, attrs: list[tuple[str, str | None]]
-    ) -> None:
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         tag = tag.casefold()
         self.tags.append(tag)
         if tag not in _ALLOWED_BODY_TAGS:
@@ -299,9 +297,7 @@ class _FicheFragmentInspector(HTMLParser):
             self.h1_count += 1
             self._in_first_h1 = self.h1_count == 1
 
-    def handle_startendtag(
-        self, tag: str, attrs: list[tuple[str, str | None]]
-    ) -> None:
+    def handle_startendtag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         self.handle_starttag(tag, attrs)
 
     def handle_endtag(self, tag: str) -> None:
@@ -465,9 +461,7 @@ def select_fiche_references(answer_markdown: str, sources: list[dict]) -> list[d
             source_copy["article_nums"] = None
         elif article_nums:
             cited_articles = [
-                article
-                for article in article_nums
-                if _article_is_cited(article, answer_markdown)
+                article for article in article_nums if _article_is_cited(article, answer_markdown)
             ]
             if not cited_articles:
                 continue
@@ -599,8 +593,7 @@ def _render_legacy_body(content: FicheContent, sources: list[dict]) -> str:
     if reference_lines:
         src_items = "".join(f"<li>{line}</li>" for line in reference_lines)
         blocks.append(
-            f'<h2>{_ICON_SOURCES}Références juridiques</h2>'
-            f'<ul class="sources">{src_items}</ul>'
+            f'<h2>{_ICON_SOURCES}Références juridiques</h2><ul class="sources">{src_items}</ul>'
         )
 
     return '<article class="fiche-content legacy-content">' + "\n".join(blocks) + "</article>"
@@ -845,9 +838,7 @@ def render_fiche_pdf(
     org_name: str | None = None,
 ) -> bytes:
     """Rend le PDF à partir du corps brut (ou du format historique)."""
-    html_str = render_fiche_html(
-        content, sources, generated_at=generated_at, org_name=org_name
-    )
+    html_str = render_fiche_html(content, sources, generated_at=generated_at, org_name=org_name)
     return html_to_pdf(html_str)
 
 

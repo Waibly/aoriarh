@@ -20,10 +20,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql.selectable import Subquery
 
 from app.core.config import settings as app_settings
-from app.core.plans import PLAN_LABELS as _PLAN_LABELS, get_limits, is_commercial
-
-
-logger = logging.getLogger(__name__)
+from app.core.plans import PLAN_LABELS as _PLAN_LABELS
+from app.core.plans import get_limits, is_commercial
 from app.models.account import Account
 from app.models.account_member import AccountMember
 from app.models.booster_purchase import BoosterPurchase
@@ -41,6 +39,8 @@ from app.schemas.billing import (
     QuotaInfo,
     QuotaStatus,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class BillingService:
@@ -64,9 +64,7 @@ class BillingService:
             detail="Aucun compte actif associé à cet utilisateur",
         )
 
-    async def get_account_for_organisation(
-        self, organisation_id: uuid.UUID
-    ) -> Account:
+    async def get_account_for_organisation(self, organisation_id: uuid.UUID) -> Account:
         result = await self.db.execute(
             select(Organisation).where(Organisation.id == organisation_id)
         )
@@ -109,9 +107,7 @@ class BillingService:
             return limits
 
         addons = await self.db.execute(
-            select(SubscriptionAddon).where(
-                SubscriptionAddon.subscription_id == sub.id
-            )
+            select(SubscriptionAddon).where(SubscriptionAddon.subscription_id == sub.id)
         )
         for addon in addons.scalars():
             if addon.addon_type == "extra_user":
@@ -123,9 +119,7 @@ class BillingService:
 
         return limits
 
-    async def _get_active_subscription(
-        self, account_id: uuid.UUID
-    ) -> Subscription | None:
+    async def _get_active_subscription(self, account_id: uuid.UUID) -> Subscription | None:
         result = await self.db.execute(
             select(Subscription).where(
                 Subscription.account_id == account_id,
@@ -206,9 +200,7 @@ class BillingService:
     # Monthly question usage
     # ------------------------------------------------------------------
 
-    async def get_or_create_usage(
-        self, account: Account
-    ) -> MonthlyQuestionUsage:
+    async def get_or_create_usage(self, account: Account) -> MonthlyQuestionUsage:
         start, end = await self._current_period(account)
         limits = await self.get_effective_limits(account)
         quota = int(limits["questions_per_month"] or 0)
@@ -391,34 +383,32 @@ class BillingService:
                 await self.db.flush()
         except Exception:
             logger.exception(
-                "Hard-warning email failed for account %s — swallowed so the chat request continues",
+                (
+                    "Hard-warning email failed for account %s — swallowed so the chat "
+                    "request continues"
+                ),
                 account.id,
             )
 
     async def _active_booster_remaining(self, account_id: uuid.UUID) -> int:
         now = datetime.now(UTC)
         result = await self.db.execute(
-            select(func.coalesce(func.sum(BoosterPurchase.questions_remaining), 0))
-            .where(
+            select(func.coalesce(func.sum(BoosterPurchase.questions_remaining), 0)).where(
                 BoosterPurchase.account_id == account_id,
                 BoosterPurchase.questions_remaining > 0,
-                (BoosterPurchase.expires_at.is_(None))
-                | (BoosterPurchase.expires_at > now),
+                (BoosterPurchase.expires_at.is_(None)) | (BoosterPurchase.expires_at > now),
             )
         )
         return int(result.scalar() or 0)
 
-    async def _get_oldest_available_booster(
-        self, account_id: uuid.UUID
-    ) -> BoosterPurchase | None:
+    async def _get_oldest_available_booster(self, account_id: uuid.UUID) -> BoosterPurchase | None:
         now = datetime.now(UTC)
         result = await self.db.execute(
             select(BoosterPurchase)
             .where(
                 BoosterPurchase.account_id == account_id,
                 BoosterPurchase.questions_remaining > 0,
-                (BoosterPurchase.expires_at.is_(None))
-                | (BoosterPurchase.expires_at > now),
+                (BoosterPurchase.expires_at.is_(None)) | (BoosterPurchase.expires_at > now),
             )
             .order_by(BoosterPurchase.purchased_at)
             .limit(1)
@@ -435,9 +425,7 @@ class BillingService:
             select(Account.owner_id.label("user_id"))
             .where(Account.id == account_id)
             .union(
-                select(AccountMember.user_id).where(
-                    AccountMember.account_id == account_id
-                ),
+                select(AccountMember.user_id).where(AccountMember.account_id == account_id),
                 select(Membership.user_id)
                 .join(Organisation, Organisation.id == Membership.organisation_id)
                 .where(Organisation.account_id == account_id),

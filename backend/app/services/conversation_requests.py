@@ -171,7 +171,7 @@ Exemples de répartition (pas de contenu à recopier) :
   du catalogue, aucun read, aucun calcul : l'utilisateur demande quoi demander à la paie.
 - « Retrouve mon contrat déposé et analyse-le » : find_existing_document puis
   read_existing_document ; les faits de cette pièce seront disponibles au passage suivant.
-"""
+"""  # noqa: E501 -- Preserve literal text.
 
 
 REQUEST_PROMPT += LEGAL_RETRIEVAL_INSTRUCTIONS + CHRONOLOGY_PROMPT + DECISION_PERIOD_PROMPT
@@ -193,7 +193,8 @@ class RequestLegalSearch(LegalSearchArguments):
 class LegalRequest(RequestBase):
     kind: Literal["legal"]
     question: str = Field(
-        min_length=1, max_length=2000,
+        min_length=1,
+        max_length=2000,
         description=(
             "Question autonome fidèle, une ou deux phrases. Si la demande est déjà autonome, "
             "la recopier exactement. Pour une relance, ajouter seulement le contexte nécessaire. "
@@ -217,6 +218,7 @@ class ReadRequest(RequestBase):
 
 class ReadLegalSourcesRequest(RequestBase):
     """Lecture des sources désignées, pour les expliquer ; aucune recherche d'autres décisions."""
+
     kind: Literal["read_legal_sources"]
     document_ids: list[uuid.UUID] = Field(min_length=1, max_length=10)
 
@@ -244,8 +246,13 @@ class CalculationRequest(RequestBase):
 
 
 Request = (
-    LegalRequest | FindRequest | ReadRequest | ReadLegalSourcesRequest
-    | PassageRequest | AnswerRequest | CalculationRequest
+    LegalRequest
+    | FindRequest
+    | ReadRequest
+    | ReadLegalSourcesRequest
+    | PassageRequest
+    | AnswerRequest
+    | CalculationRequest
 )
 request_adapter = TypeAdapter(Request)
 
@@ -308,7 +315,8 @@ def request_schema(
                 document_ids = schema["$defs"][name]["properties"]["document_ids"]
                 # PassageRequest also permits null, meaning all active pieces.
                 array = next(
-                    choice for choice in document_ids.get("anyOf", [document_ids])
+                    choice
+                    for choice in document_ids.get("anyOf", [document_ids])
                     if choice.get("type") == "array"
                 )
                 array["items"]["enum"] = ids
@@ -318,9 +326,9 @@ def request_schema(
     if legal_source_ids is not None:
         ids = sorted({str(uuid.UUID(str(value))) for value in legal_source_ids})
         if ids:
-            schema["$defs"]["ReadLegalSourcesRequest"]["properties"]["document_ids"][
-                "items"
-            ]["enum"] = ids
+            schema["$defs"]["ReadLegalSourcesRequest"]["properties"]["document_ids"]["items"][
+                "enum"
+            ] = ids
         else:
             unavailable.add("#/$defs/ReadLegalSourcesRequest")
     if continuation:
@@ -329,14 +337,15 @@ def request_schema(
         # boundary, not a semantic judgement on the proposed questions.
         unavailable.update({"#/$defs/FindRequest", "#/$defs/ReadRequest"})
     schema["properties"]["requests"]["items"]["anyOf"] = [
-        choice for choice in schema["properties"]["requests"]["items"]["anyOf"]
+        choice
+        for choice in schema["properties"]["requests"]["items"]["anyOf"]
         if choice.get("$ref") not in unavailable
     ]
-    schema["$defs"]["RequestLegalSearch"]["properties"]["search_queries"]["maxItems"] = (
-        query_budget
-    )
+    schema["$defs"]["RequestLegalSearch"]["properties"]["search_queries"]["maxItems"] = query_budget
     constrain_period_parameters(
-        schema, available=period_parameters_available, legal_search_type="RequestLegalSearch",
+        schema,
+        available=period_parameters_available,
+        legal_search_type="RequestLegalSearch",
     )
     return schema
 
@@ -367,16 +376,22 @@ def decode_requests(
     Its error details, compiled requests and facts must still be JSONB-storable.
     """
     decoded = _decode_requests(
-        raw, previous=previous, query=query, continuation=continuation,
-        case_file=case_file, documents=documents,
+        raw,
+        previous=previous,
+        query=query,
+        continuation=continuation,
+        case_file=case_file,
+        documents=documents,
     )
     plan, delta, requests, errors = decoded
-    if _contains_nul({
-        "plan": plan.model_dump(mode="json") if plan is not None else None,
-        "case_delta": delta.model_dump(mode="json") if delta is not None else None,
-        "requests": requests,
-        "errors": errors,
-    }):
+    if _contains_nul(
+        {
+            "plan": plan.model_dump(mode="json") if plan is not None else None,
+            "case_delta": delta.model_dump(mode="json") if delta is not None else None,
+            "requests": requests,
+            "errors": errors,
+        }
+    ):
         raise ValueError("planner_json_contains_nul")
     return decoded
 
@@ -393,7 +408,8 @@ def _decode_requests(
     """Validate independent contracts. Invalid requests never become operations."""
     payload = json.loads(raw)
     if not isinstance(payload, dict) or set(payload) not in (
-        {"case_delta", "requests"}, {"case_delta", "document_checks", "requests"}
+        {"case_delta", "requests"},
+        {"case_delta", "document_checks", "requests"},
     ):
         raise ValueError("invalid_request_envelope")
     errors = []
@@ -441,20 +457,34 @@ def _decode_requests(
                 raise ValueError("empty_document_check")
             if not {str(i) for i in check.document_ids}.issubset(authorized_ids):
                 raise ValueError("document_check_outside_active_scope")
-            requests.append(PassageRequest(
-                id=check.id, kind="search_uploaded_passages", question=check.missing_information,
-                document_ids=check.document_ids, depends_on=[], fact_keys=[], replaces_task_id=None,
-            ))
+            requests.append(
+                PassageRequest(
+                    id=check.id,
+                    kind="search_uploaded_passages",
+                    question=check.missing_information,
+                    document_ids=check.document_ids,
+                    depends_on=[],
+                    fact_keys=[],
+                    replaces_task_id=None,
+                )
+            )
         except (ValueError, ValidationError):
             errors.append({"scope": "document_checks", "error": "invalid_document_check"})
     for item in payload["requests"]:
         try:
             parsed = request_adapter.validate_json(json.dumps(item))
-            if isinstance(parsed, PassageRequest) and parsed.document_ids is not None and not {
-                str(i) for i in parsed.document_ids
-            }.issubset(authorized_ids):
-                errors.append({"scope": "request", "id": parsed.id,
-                               "error": "document_check_outside_active_scope"})
+            if (
+                isinstance(parsed, PassageRequest)
+                and parsed.document_ids is not None
+                and not {str(i) for i in parsed.document_ids}.issubset(authorized_ids)
+            ):
+                errors.append(
+                    {
+                        "scope": "request",
+                        "id": parsed.id,
+                        "error": "document_check_outside_active_scope",
+                    }
+                )
             elif continuation and isinstance(parsed, (FindRequest, ReadRequest)):
                 errors.append(
                     {
@@ -533,8 +563,9 @@ def _decode_requests(
     action_ids = {
         item.id
         for item in executable
-        if isinstance(item, (LegalRequest, FindRequest, ReadRequest, ReadLegalSourcesRequest,
-                             PassageRequest))
+        if isinstance(
+            item, (LegalRequest, FindRequest, ReadRequest, ReadLegalSourcesRequest, PassageRequest)
+        )
     }
     for item in executable:
         deps = [dep for dep in item.depends_on if dep in action_ids]
@@ -550,10 +581,12 @@ def _decode_requests(
             response=None,
         )
         if isinstance(item, LegalRequest):
-            search = DocumentLegalSearch.model_validate({
-                **item.search.model_dump(),
-                "standalone_question": item.question,
-            })
+            search = DocumentLegalSearch.model_validate(
+                {
+                    **item.search.model_dump(),
+                    "standalone_question": item.question,
+                }
+            )
             operation = OrchestratorAction(
                 action="search_legal",
                 **{**kwargs, "query": item.question, "legal_search": search},
@@ -582,8 +615,13 @@ def _decode_requests(
             task_type = "legal_question"
         elif isinstance(item, PassageRequest):
             operation = OrchestratorAction(
-                action="search_documents", **{**kwargs, "source": "active", "query": item.question,
-                   "document_ids": item.document_ids}
+                action="search_documents",
+                **{
+                    **kwargs,
+                    "source": "active",
+                    "query": item.question,
+                    "document_ids": item.document_ids,
+                },
             )
             task_type = "document_review"
         else:

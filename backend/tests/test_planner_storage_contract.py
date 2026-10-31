@@ -12,10 +12,15 @@ from tests.test_conversation_requests import fact, request, wire
 
 
 def payload():
-    return json.loads(wire([
-        request("legal", "law", search=task_payload("documents_and_law")["legal_search"]),
-        request(depends_on=["law"]),
-    ], [fact()]))
+    return json.loads(
+        wire(
+            [
+                request("legal", "law", search=task_payload("documents_and_law")["legal_search"]),
+                request(depends_on=["law"]),
+            ],
+            [fact()],
+        )
+    )
 
 
 @pytest.mark.parametrize("location", ["question", "fact", "unit", "key", "theme", "missing"])
@@ -37,8 +42,14 @@ async def test_decoded_nul_blocks_plan_before_any_facts_can_be_applied(location)
     assert "\x00" not in raw
     agent = planner(raw)
     result = await plan_conversation(
-        agent, query="Demande", history=[], active_documents=[], documents=[],
-        tool_results=[], continuation=False, model="test",
+        agent,
+        query="Demande",
+        history=[],
+        active_documents=[],
+        documents=[],
+        tool_results=[],
+        continuation=False,
+        model="test",
     )
     assert result.plan is None
     assert result.fact_delta is None
@@ -50,15 +61,21 @@ async def test_decoded_nul_blocks_plan_before_any_facts_can_be_applied(location)
     agent.llm.chat.completions.create.assert_awaited_once()
 
 
-@pytest.mark.parametrize("text", [
-    "  Salarié : 3 200 €\n\t原文 😀  ",
-    r"Écrire littéralement \u0000, sans interpréter cet exemple.",
-    "Texte avec séparateur\u2028et null comme mot",
-])
+@pytest.mark.parametrize(
+    "text",
+    [
+        "  Salarié : 3 200 €\n\t原文 😀  ",
+        r"Écrire littéralement \u0000, sans interpréter cet exemple.",
+        "Texte avec séparateur\u2028et null comme mot",
+    ],
+)
 def test_valid_unicode_and_literal_escape_text_are_preserved(text):
     raw = wire([request(question=text)])
     plan, _, requests, errors = decode_requests(
-        raw, previous=[], query="Question", continuation=False,
+        raw,
+        previous=[],
+        query="Question",
+        continuation=False,
     )
     assert not errors
     assert plan.case_tasks[0].question == text
@@ -67,7 +84,10 @@ def test_valid_unicode_and_literal_escape_text_are_preserved(text):
 
 def test_json_null_is_allowed_and_is_not_a_nul_character():
     plan, delta, requests, errors = decode_requests(
-        wire([request()]), previous=[], query="Question", continuation=False,
+        wire([request()]),
+        previous=[],
+        query="Question",
+        continuation=False,
     )
     assert not errors
     assert requests[0]["replaces_task_id"] is None
@@ -76,12 +96,18 @@ def test_json_null_is_allowed_and_is_not_a_nul_character():
 
 
 def test_discarded_invalid_value_does_not_block_independent_valid_request_or_fact():
-    raw = wire([
-        request("read", "invalid", source_request_id={"invalid_value": "\x00"}),
-        request(),
-    ], [fact()])
+    raw = wire(
+        [
+            request("read", "invalid", source_request_id={"invalid_value": "\x00"}),
+            request(),
+        ],
+        [fact()],
+    )
     plan, delta, requests, errors = decode_requests(
-        raw, previous=[], query="Question", continuation=False,
+        raw,
+        previous=[],
+        query="Question",
+        continuation=False,
     )
     assert errors[0]["error"] == "invalid_request"
     assert [item["id"] for item in requests] == ["email"]

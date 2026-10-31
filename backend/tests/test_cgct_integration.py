@@ -19,14 +19,32 @@ CODE = "code_general_collectivites_territoriales"
 async def test_cgct_sync_routes_original_articles_to_legislative_and_regulatory_documents():
     service = LegiService()
     service._client_id = service._client_secret = "unit-test"
-    service._api_post = AsyncMock(return_value={"sections": [
-        {"title": "PARTIE LÉGISLATIVE", "articles": [
-            {"num": "L2333-87", "etat": "VIGUEUR", "texte": "<p>Règle FPS originale.</p>"},
-        ]},
-        {"title": "PARTIE RÉGLEMENTAIRE", "articles": [
-            {"num": "R2333-120-1", "etat": "VIGUEUR", "texte": "<p>Procédure originale.</p>"},
-        ]},
-    ]})
+    service._api_post = AsyncMock(
+        return_value={
+            "sections": [
+                {
+                    "title": "PARTIE LÉGISLATIVE",
+                    "articles": [
+                        {
+                            "num": "L2333-87",
+                            "etat": "VIGUEUR",
+                            "texte": "<p>Règle FPS originale.</p>",
+                        },
+                    ],
+                },
+                {
+                    "title": "PARTIE RÉGLEMENTAIRE",
+                    "articles": [
+                        {
+                            "num": "R2333-120-1",
+                            "etat": "VIGUEUR",
+                            "texte": "<p>Procédure originale.</p>",
+                        },
+                    ],
+                },
+            ]
+        }
+    )
     service._sync_part = AsyncMock(side_effect=[(True, "leg-doc"), (True, "reg-doc")])
     with patch("app.services.storage_service.StorageService"):
         result = await service.sync_code(AsyncMock(), uuid.uuid4(), CODE)
@@ -48,23 +66,40 @@ async def test_cgct_reference_resolves_only_authorized_code_passages(label):
     index.create_collection(
         COLLECTION_NAME, vectors_config=models.VectorParams(size=1, distance=models.Distance.COSINE)
     )
-    index.upsert(COLLECTION_NAME, [
-        models.PointStruct(id=n, vector=[1.0], payload={
-            "document_id": f"doc-{n}", "organisation_id": org, "source_type": kind,
-            "article_nums": ["L2333-87"], "chunk_index": 0, "text": text,
-            "doc_name": "CGCT", "norme_niveau": 3, "norme_poids": 0.9,
-        })
-        for n, (org, kind, text) in enumerate([
-            ("common", CODE, "Texte officiel FPS"),
-            ("other-tenant", CODE, "Texte privé interdit"),
-            ("common", "code_travail", "Autre Code"),
-        ])
-    ])
+    index.upsert(
+        COLLECTION_NAME,
+        [
+            models.PointStruct(
+                id=n,
+                vector=[1.0],
+                payload={
+                    "document_id": f"doc-{n}",
+                    "organisation_id": org,
+                    "source_type": kind,
+                    "article_nums": ["L2333-87"],
+                    "chunk_index": 0,
+                    "text": text,
+                    "doc_name": "CGCT",
+                    "norme_niveau": 3,
+                    "norme_poids": 0.9,
+                },
+            )
+            for n, (org, kind, text) in enumerate(
+                [
+                    ("common", CODE, "Texte officiel FPS"),
+                    ("other-tenant", CODE, "Texte privé interdit"),
+                    ("common", "code_travail", "Autre Code"),
+                ]
+            )
+        ],
+    )
     question = f"article L2333-87 du {label}"
     scopes = reference_source_types(question)
     assert set(scopes["L2333-87"]) == {CODE, CODE + "_reglementaire"}
     found = await fetch_by_identifiers(
-        index, {"article_nums": ["L2333-87"], "numero_pourvoi": []}, "my-tenant",
+        index,
+        {"article_nums": ["L2333-87"], "numero_pourvoi": []},
+        "my-tenant",
         article_source_filters=scopes,
     )
     assert [r.text for r in found] == ["Texte officiel FPS"]

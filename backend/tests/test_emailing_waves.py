@@ -1,4 +1,5 @@
 """Tests du découpage des campagnes en vagues d'envoi de 100 contacts."""
+
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -22,7 +23,6 @@ from app.services.emailing_service import (
     EmailCampaignService,
     process_campaign_emails,
 )
-
 from tests.conftest import test_session_factory
 
 
@@ -101,20 +101,18 @@ async def test_waves_never_overlap():
         from sqlalchemy import select
 
         ids1 = {
-            r for (r,) in (
+            r
+            for (r,) in (
                 await session.execute(
-                    select(EmailCampaignRecipient.id).where(
-                        EmailCampaignRecipient.wave_id == w1.id
-                    )
+                    select(EmailCampaignRecipient.id).where(EmailCampaignRecipient.wave_id == w1.id)
                 )
             ).all()
         }
         ids2 = {
-            r for (r,) in (
+            r
+            for (r,) in (
                 await session.execute(
-                    select(EmailCampaignRecipient.id).where(
-                        EmailCampaignRecipient.wave_id == w2.id
-                    )
+                    select(EmailCampaignRecipient.id).where(EmailCampaignRecipient.wave_id == w2.id)
                 )
             ).all()
         }
@@ -147,7 +145,9 @@ async def test_daily_limit_guard():
     async with test_session_factory() as session:
         campaign = await _make_campaign(session, 500)
         service = EmailCampaignService(session)
-        day = datetime.now(UTC).replace(hour=9, minute=0, second=0, microsecond=0) + timedelta(days=1)
+        day = datetime.now(UTC).replace(hour=9, minute=0, second=0, microsecond=0) + timedelta(
+            days=1
+        )
 
         # 3 vagues de 100 le même jour = 300, OK (= limite Brevo).
         await service.schedule_wave(campaign.id, count=100, scheduled_at=day)
@@ -206,7 +206,10 @@ async def test_get_stats_with_branches_does_not_lazyload():
         )
 
         campaign = EmailCampaign(
-            name="test", sequence_id=seq.id, brevo_list_ids=[1], status="running",
+            name="test",
+            sequence_id=seq.id,
+            brevo_list_ids=[1],
+            status="running",
             scheduled_at=datetime.now(UTC),
         )
         session.add(campaign)
@@ -216,8 +219,11 @@ async def test_get_stats_with_branches_does_not_lazyload():
         await session.flush()
         session.add(
             EmailCampaignEvent(
-                campaign_id=campaign.id, recipient_id=recipient.id, step_position=0,
-                event_type="sent", occurred_at=datetime.now(UTC),
+                campaign_id=campaign.id,
+                recipient_id=recipient.id,
+                step_position=0,
+                event_type="sent",
+                occurred_at=datetime.now(UTC),
             )
         )
         await session.commit()
@@ -245,7 +251,10 @@ async def test_get_stats_counts_click_as_open():
         await session.flush()
 
         campaign = EmailCampaign(
-            name="test", sequence_id=seq.id, brevo_list_ids=[1], status="running",
+            name="test",
+            sequence_id=seq.id,
+            brevo_list_ids=[1],
+            status="running",
             scheduled_at=datetime.now(UTC),
         )
         session.add(campaign)
@@ -257,16 +266,24 @@ async def test_get_stats_counts_click_as_open():
         rb = EmailCampaignRecipient(campaign_id=campaign.id, email="b@x.fr", current_step=0)
         session.add_all([ra, rb])
         await session.flush()
-        session.add_all([
-            EmailCampaignEvent(
-                campaign_id=campaign.id, recipient_id=ra.id, step_position=0,
-                event_type="clicked", occurred_at=datetime.now(UTC),
-            ),
-            EmailCampaignEvent(
-                campaign_id=campaign.id, recipient_id=rb.id, step_position=0,
-                event_type="opened", occurred_at=datetime.now(UTC),
-            ),
-        ])
+        session.add_all(
+            [
+                EmailCampaignEvent(
+                    campaign_id=campaign.id,
+                    recipient_id=ra.id,
+                    step_position=0,
+                    event_type="clicked",
+                    occurred_at=datetime.now(UTC),
+                ),
+                EmailCampaignEvent(
+                    campaign_id=campaign.id,
+                    recipient_id=rb.id,
+                    step_position=0,
+                    event_type="opened",
+                    occurred_at=datetime.now(UTC),
+                ),
+            ]
+        )
         await session.commit()
 
         stats = await EmailCampaignService(session).get_stats(campaign.id)
@@ -285,9 +302,7 @@ async def test_cron_respects_wave_schedule(monkeypatch):
         sent_to.append(to_email)
         return "ok"
 
-    monkeypatch.setattr(
-        "app.services.emailing_service._send_via_brevo", fake_send
-    )
+    monkeypatch.setattr("app.services.emailing_service._send_via_brevo", fake_send)
 
     async with test_session_factory() as session:
         campaign = await _make_campaign(session, 250)
@@ -320,25 +335,35 @@ async def _make_scheduled_campaign(session, n: int):
     await session.flush()
     session.add(EmailSequenceStep(sequence_id=seq.id, template_id=tpl.id, position=0, delay_days=0))
     campaign = EmailCampaign(
-        name="C", sequence_id=seq.id, brevo_list_ids=[1], status="running",
+        name="C",
+        sequence_id=seq.id,
+        brevo_list_ids=[1],
+        status="running",
         scheduled_at=datetime.now(UTC),
     )
     session.add(campaign)
     await session.flush()
     past = datetime.now(UTC) - timedelta(days=1)
     for i in range(n):
-        session.add(EmailCampaignRecipient(
-            campaign_id=campaign.id, email=f"c{i}@x.fr", first_name=f"P{i}",
-            status="active", scheduled_at=past,
-        ))
+        session.add(
+            EmailCampaignRecipient(
+                campaign_id=campaign.id,
+                email=f"c{i}@x.fr",
+                first_name=f"P{i}",
+                status="active",
+                scheduled_at=past,
+            )
+        )
     await session.commit()
     return campaign
 
 
 async def test_cron_caps_at_100_per_run(monkeypatch):
     """Jamais plus de 100 personnes touchées d'un coup, même si 250 sont dues."""
+
     async def fake_send(**kwargs):
         return "ok"
+
     monkeypatch.setattr("app.services.emailing_service._send_via_brevo", fake_send)
 
     async with test_session_factory() as session:
@@ -351,6 +376,7 @@ async def test_cron_caps_at_100_per_run(monkeypatch):
 async def test_cron_marks_failed_after_max_attempts(monkeypatch):
     async def fake_send(**kwargs):
         return "error"
+
     monkeypatch.setattr("app.services.emailing_service._send_via_brevo", fake_send)
 
     async with test_session_factory() as session:
@@ -360,12 +386,16 @@ async def test_cron_marks_failed_after_max_attempts(monkeypatch):
             await process_campaign_emails(session)
 
     from sqlalchemy import func, select
+
     async with test_session_factory() as session:
         recipient = (await session.execute(select(EmailCampaignRecipient))).scalar_one()
-        sent_events = (await session.execute(
-            select(func.count()).select_from(EmailCampaignEvent)
-            .where(EmailCampaignEvent.event_type == "sent")
-        )).scalar()
+        sent_events = (
+            await session.execute(
+                select(func.count())
+                .select_from(EmailCampaignEvent)
+                .where(EmailCampaignEvent.event_type == "sent")
+            )
+        ).scalar()
     assert recipient.send_attempts == MAX_SEND_ATTEMPTS
     assert recipient.status == "failed"
     assert sent_events == 0  # un échec ne crée jamais d'événement "envoyé"
@@ -373,12 +403,15 @@ async def test_cron_marks_failed_after_max_attempts(monkeypatch):
 
 async def test_unsubscribe_marks_all_rows_and_suppresses(monkeypatch):
     from sqlalchemy import func, select
+
     from app.services import emailing_service as svc
 
     async with test_session_factory() as session:
         c1 = await _make_scheduled_campaign(session, 0)
         c2 = await _make_scheduled_campaign(session, 0)
-        r1 = EmailCampaignRecipient(campaign_id=c1.id, email="bob@x.fr", status="active", current_step=1)
+        r1 = EmailCampaignRecipient(
+            campaign_id=c1.id, email="bob@x.fr", status="active", current_step=1
+        )
         r2 = EmailCampaignRecipient(campaign_id=c2.id, email="bob@x.fr", status="active")
         r3 = EmailCampaignRecipient(campaign_id=c1.id, email="autre@x.fr", status="active")
         session.add_all([r1, r2, r3])
@@ -390,15 +423,26 @@ async def test_unsubscribe_marks_all_rows_and_suppresses(monkeypatch):
         await svc.process_unsubscribe(session, rid)
 
     async with test_session_factory() as session:
-        bob = [s for (s,) in (await session.execute(
-            select(EmailCampaignRecipient.status).where(EmailCampaignRecipient.email == "bob@x.fr")
-        )).all()]
-        autre = (await session.execute(
-            select(EmailCampaignRecipient.status).where(EmailCampaignRecipient.email == "autre@x.fr")
-        )).scalar()
-        suppressed = (await session.execute(
-            select(func.count()).select_from(EmailUnsubscribe)
-        )).scalar()
+        bob = [
+            s
+            for (s,) in (
+                await session.execute(
+                    select(EmailCampaignRecipient.status).where(
+                        EmailCampaignRecipient.email == "bob@x.fr"
+                    )
+                )
+            ).all()
+        ]
+        autre = (
+            await session.execute(
+                select(EmailCampaignRecipient.status).where(
+                    EmailCampaignRecipient.email == "autre@x.fr"
+                )
+            )
+        ).scalar()
+        suppressed = (
+            await session.execute(select(func.count()).select_from(EmailUnsubscribe))
+        ).scalar()
     assert bob == ["unsubscribed", "unsubscribed"]  # toutes les lignes du même email
     assert autre == "active"
     assert suppressed == 1
@@ -406,9 +450,13 @@ async def test_unsubscribe_marks_all_rows_and_suppresses(monkeypatch):
 
 async def test_unsubscribe_signature_roundtrip():
     import uuid
+
     from app.services.emailing_service import (
-        unsubscribe_signature, verify_unsubscribe_signature, unsubscribe_url,
+        unsubscribe_signature,
+        unsubscribe_url,
+        verify_unsubscribe_signature,
     )
+
     rid = uuid.uuid4()
     sig = unsubscribe_signature(rid)
     assert verify_unsubscribe_signature(rid, sig)
@@ -423,6 +471,7 @@ async def test_cron_stops_on_quota(monkeypatch):
 
     async def fake_send(**kwargs):
         return sequence.pop(0)
+
     monkeypatch.setattr("app.services.emailing_service._send_via_brevo", fake_send)
 
     async with test_session_factory() as session:
@@ -436,6 +485,7 @@ async def test_purge_bounced_deletes_and_marks_all_rows(monkeypatch):
     """Purge : supprime de Brevo chaque email rebondi, marque toutes ses lignes
     purgées, et ne touche ni aux actifs ni aux déjà-purgés."""
     from sqlalchemy import select
+
     from app.services import emailing_service as svc
 
     deleted: list[str] = []
@@ -450,12 +500,14 @@ async def test_purge_bounced_deletes_and_marks_all_rows(monkeypatch):
         c1 = await _make_scheduled_campaign(session, 0)
         c2 = await _make_scheduled_campaign(session, 0)
         # Même email rebondi dans 2 campagnes → 2 lignes, 1 seul appel Brevo.
-        session.add_all([
-            EmailCampaignRecipient(campaign_id=c1.id, email="dead@x.fr", status="bounced"),
-            EmailCampaignRecipient(campaign_id=c2.id, email="dead@x.fr", status="bounced"),
-            EmailCampaignRecipient(campaign_id=c1.id, email="soft@x.fr", status="bounced"),
-            EmailCampaignRecipient(campaign_id=c1.id, email="ok@x.fr", status="active"),
-        ])
+        session.add_all(
+            [
+                EmailCampaignRecipient(campaign_id=c1.id, email="dead@x.fr", status="bounced"),
+                EmailCampaignRecipient(campaign_id=c2.id, email="dead@x.fr", status="bounced"),
+                EmailCampaignRecipient(campaign_id=c1.id, email="soft@x.fr", status="bounced"),
+                EmailCampaignRecipient(campaign_id=c1.id, email="ok@x.fr", status="active"),
+            ]
+        )
         await session.commit()
 
     async with test_session_factory() as session:
@@ -465,14 +517,22 @@ async def test_purge_bounced_deletes_and_marks_all_rows(monkeypatch):
     assert set(deleted) == {"dead@x.fr", "soft@x.fr"}
 
     async with test_session_factory() as session:
-        dead_rows = (await session.execute(
-            select(EmailCampaignRecipient.brevo_purged_at)
-            .where(EmailCampaignRecipient.email == "dead@x.fr")
-        )).scalars().all()
-        ok_row = (await session.execute(
-            select(EmailCampaignRecipient)
-            .where(EmailCampaignRecipient.email == "ok@x.fr")
-        )).scalar_one()
+        dead_rows = (
+            (
+                await session.execute(
+                    select(EmailCampaignRecipient.brevo_purged_at).where(
+                        EmailCampaignRecipient.email == "dead@x.fr"
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        ok_row = (
+            await session.execute(
+                select(EmailCampaignRecipient).where(EmailCampaignRecipient.email == "ok@x.fr")
+            )
+        ).scalar_one()
     assert all(d is not None for d in dead_rows)  # les 2 lignes marquées
     assert ok_row.brevo_purged_at is None and ok_row.status == "active"
 
@@ -486,6 +546,7 @@ async def test_purge_bounced_deletes_and_marks_all_rows(monkeypatch):
 async def test_purge_bounced_retries_on_failure(monkeypatch):
     """Un échec Brevo laisse la ligne non purgée → retentée au passage suivant."""
     from sqlalchemy import select
+
     from app.services import emailing_service as svc
 
     outcomes = [False, True]
@@ -516,6 +577,7 @@ async def test_purge_bounced_retries_on_failure(monkeypatch):
 async def test_purge_bounced_dry_run_does_not_delete(monkeypatch):
     """dry_run : aucun appel Brevo, aucune ligne marquée."""
     from sqlalchemy import select
+
     from app.services import emailing_service as svc
 
     called = False
@@ -556,7 +618,10 @@ async def test_get_stats_excludes_machine_clicks():
         session.add(step0)
         await session.flush()
         campaign = EmailCampaign(
-            name="test", sequence_id=seq.id, brevo_list_ids=[1], status="running",
+            name="test",
+            sequence_id=seq.id,
+            brevo_list_ids=[1],
+            status="running",
             scheduled_at=datetime.now(UTC),
         )
         session.add(campaign)
@@ -566,16 +631,19 @@ async def test_get_stats_excludes_machine_clicks():
         await session.flush()
         session.add(
             EmailCampaignEvent(
-                campaign_id=campaign.id, recipient_id=r.id, step_position=0,
-                event_type="clicked_machine", occurred_at=datetime.now(UTC),
+                campaign_id=campaign.id,
+                recipient_id=r.id,
+                step_position=0,
+                event_type="clicked_machine",
+                occurred_at=datetime.now(UTC),
             )
         )
         await session.commit()
 
         stats = await EmailCampaignService(session).get_stats(campaign.id)
         step = stats["steps"][0]
-        assert step["clicked"] == 0          # le bot ne compte pas comme clic
-        assert step["opened"] == 0           # ni comme ouverture
+        assert step["clicked"] == 0  # le bot ne compte pas comme clic
+        assert step["opened"] == 0  # ni comme ouverture
         assert step["clicked_machine"] == 1  # mais il est visible à part
 
 
@@ -608,53 +676,90 @@ async def test_webhook_tags_fast_click_as_machine(monkeypatch):
         session.add(step0)
         await session.flush()
         campaign = EmailCampaign(
-            name="c", sequence_id=seq.id, brevo_list_ids=[1], status="running",
+            name="c",
+            sequence_id=seq.id,
+            brevo_list_ids=[1],
+            status="running",
             scheduled_at=datetime.now(UTC),
         )
         session.add(campaign)
         await session.flush()
 
         fast = EmailCampaignRecipient(
-            campaign_id=campaign.id, email="fast@x.fr", current_step=1,
+            campaign_id=campaign.id,
+            email="fast@x.fr",
+            current_step=1,
             last_sent_at=datetime.now(UTC),
         )
         slow = EmailCampaignRecipient(
-            campaign_id=campaign.id, email="slow@x.fr", current_step=1,
+            campaign_id=campaign.id,
+            email="slow@x.fr",
+            current_step=1,
             last_sent_at=datetime.now(UTC) - timedelta(minutes=10),
         )
         session.add_all([fast, slow])
         await session.flush()
-        session.add_all([
-            EmailCampaignEvent(
-                campaign_id=campaign.id, recipient_id=fast.id, step_position=0,
-                event_type="sent", occurred_at=datetime.now(UTC),
-            ),
-            EmailCampaignEvent(
-                campaign_id=campaign.id, recipient_id=slow.id, step_position=0,
-                event_type="sent", occurred_at=datetime.now(UTC) - timedelta(minutes=10),
-            ),
-        ])
+        session.add_all(
+            [
+                EmailCampaignEvent(
+                    campaign_id=campaign.id,
+                    recipient_id=fast.id,
+                    step_position=0,
+                    event_type="sent",
+                    occurred_at=datetime.now(UTC),
+                ),
+                EmailCampaignEvent(
+                    campaign_id=campaign.id,
+                    recipient_id=slow.id,
+                    step_position=0,
+                    event_type="sent",
+                    occurred_at=datetime.now(UTC) - timedelta(minutes=10),
+                ),
+            ]
+        )
         await session.commit()
 
-        await brevo_webhook(_FakeRequest({"event": "click", "email": "fast@x.fr"}), token=None, db=session)
-        await brevo_webhook(_FakeRequest({"event": "click", "email": "slow@x.fr"}), token=None, db=session)
+        await brevo_webhook(
+            _FakeRequest({"event": "click", "email": "fast@x.fr"}), token=None, db=session
+        )
+        await brevo_webhook(
+            _FakeRequest({"event": "click", "email": "slow@x.fr"}), token=None, db=session
+        )
 
-        rows = (await session.execute(
-            select(EmailCampaignEvent.event_type)
-            .join(EmailCampaignRecipient, EmailCampaignEvent.recipient_id == EmailCampaignRecipient.id)
-            .where(
-                EmailCampaignRecipient.email == "fast@x.fr",
-                EmailCampaignEvent.event_type.in_(["clicked", "clicked_machine"]),
+        rows = (
+            (
+                await session.execute(
+                    select(EmailCampaignEvent.event_type)
+                    .join(
+                        EmailCampaignRecipient,
+                        EmailCampaignEvent.recipient_id == EmailCampaignRecipient.id,
+                    )
+                    .where(
+                        EmailCampaignRecipient.email == "fast@x.fr",
+                        EmailCampaignEvent.event_type.in_(["clicked", "clicked_machine"]),
+                    )
+                )
             )
-        )).scalars().all()
+            .scalars()
+            .all()
+        )
         assert rows == ["clicked_machine"]
 
-        rows_slow = (await session.execute(
-            select(EmailCampaignEvent.event_type)
-            .join(EmailCampaignRecipient, EmailCampaignEvent.recipient_id == EmailCampaignRecipient.id)
-            .where(
-                EmailCampaignRecipient.email == "slow@x.fr",
-                EmailCampaignEvent.event_type.in_(["clicked", "clicked_machine"]),
+        rows_slow = (
+            (
+                await session.execute(
+                    select(EmailCampaignEvent.event_type)
+                    .join(
+                        EmailCampaignRecipient,
+                        EmailCampaignEvent.recipient_id == EmailCampaignRecipient.id,
+                    )
+                    .where(
+                        EmailCampaignRecipient.email == "slow@x.fr",
+                        EmailCampaignEvent.event_type.in_(["clicked", "clicked_machine"]),
+                    )
+                )
             )
-        )).scalars().all()
+            .scalars()
+            .all()
+        )
         assert rows_slow == ["clicked"]

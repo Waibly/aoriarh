@@ -21,21 +21,31 @@ from tests.conftest import test_session_factory as db_session_factory
 def test_accounting_profile_reaches_chat_and_all_publication_prompts(profile):
     label = RAGAgent._PROFIL_METIER_LABELS[ProfilMetier(profile).value]
     agent = object.__new__(RAGAgent)
-    context = agent._build_org_context_block({
-        "nom": "Entreprise cliente", "profil_metier": profile,
-    })
+    context = agent._build_org_context_block(
+        {
+            "nom": "Entreprise cliente",
+            "profil_metier": profile,
+        }
+    )
     assert f"**Profil de l'utilisateur** : {label}" in context
     assert RAGAgent._PROFIL_METIER_INSTRUCTIONS[profile] in context
     raw_answer = "  Réponse source exacte.\n\nAvec ses réserves.  "
     for builder in (
-        build_linkedin_user_prompt, build_linkedin_carousel_user_prompt, build_x_user_prompt,
+        build_linkedin_user_prompt,
+        build_linkedin_carousel_user_prompt,
+        build_x_user_prompt,
     ):
-        kwargs = {"carousel_content": "<main>Original</main>"} if (
-            builder is build_linkedin_carousel_user_prompt
-        ) else {}
+        kwargs = (
+            {"carousel_content": "<main>Original</main>"}
+            if (builder is build_linkedin_carousel_user_prompt)
+            else {}
+        )
         prompt = builder(
-            question="Question", answer_markdown=raw_answer,
-            references=[], user_profile=profile, **kwargs,
+            question="Question",
+            answer_markdown=raw_answer,
+            references=[],
+            user_profile=profile,
+            **kwargs,
         )
         assert f"Profil métier : {label}" in prompt
         assert f"<reponse_source>\n{raw_answer}\n</reponse_source>" in prompt
@@ -50,9 +60,14 @@ async def test_accountant_context_uses_each_selected_clients_convention():
             db.add(org)
             db.add(CcnReference(idcc=idcc, titre=name + " convention"))
             await db.flush()
-            db.add(OrganisationConvention(
-                organisation_id=org.id, idcc=idcc, status="ready", use_custom=False,
-            ))
+            db.add(
+                OrganisationConvention(
+                    organisation_id=org.id,
+                    idcc=idcc,
+                    status="ready",
+                    use_custom=False,
+                )
+            )
             client_ids.append((org.id, name, idcc))
         await db.commit()
         agent = object.__new__(RAGAgent)

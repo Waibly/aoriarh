@@ -173,21 +173,21 @@ PRICE_YEARLY_CENTS: dict[str, int] = {
 }
 
 ADDON_PRICES_CENTS: dict[str, int] = {
-    "extra_user": 1500,   # +1 user / month
-    "extra_org": 1900,    # +1 organisation / month
-    "extra_docs": 1000,   # +500 documents / month
+    "extra_user": 1500,  # +1 user / month
+    "extra_org": 1900,  # +1 organisation / month
+    "extra_docs": 1000,  # +500 documents / month
 }
 
-BOOSTER_PRICE_CENTS: int = 2500      # one-shot purchase
-BOOSTER_QUESTIONS: int = 500         # questions granted per booster
+BOOSTER_PRICE_CENTS: int = 2500  # one-shot purchase
+BOOSTER_QUESTIONS: int = 500  # questions granted per booster
 
 
 # --- Trial and lifecycle ---------------------------------------------------
 
 TRIAL_DURATION_DAYS: int = 14
-GRACE_AFTER_CANCEL_DAYS: int = 30       # retention after voluntary cancellation
-GRACE_AFTER_UNPAID_DAYS: int = 60       # retention after payment suspension
-GRACE_AFTER_TRIAL_END_DAYS: int = 30    # retention after unconverted trial
+GRACE_AFTER_CANCEL_DAYS: int = 30  # retention after voluntary cancellation
+GRACE_AFTER_UNPAID_DAYS: int = 60  # retention after payment suspension
+GRACE_AFTER_TRIAL_END_DAYS: int = 30  # retention after unconverted trial
 
 
 def get_limits(plan: str) -> PlanLimits:

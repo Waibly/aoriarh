@@ -11,7 +11,9 @@ SOURCES = [
         "format": "html",
         "policy": "refresh",
         "allowed_hosts": ["ameli.fr", "www.ameli.fr"],
-        "baseline_document_sha256": "c8a699cb65ef775803a2d790042bce6f99c87ffec8bea286d1f0c351c60d2ad4",
+        "baseline_document_sha256": (
+            "c8a699cb65ef775803a2d790042bce6f99c87ffec8bea286d1f0c351c60d2ad4"
+        ),
         "xpath": "//article",
         "baseline_body_sha256": "e10e38362ed46c87ec93990c3a957b5207fcce7c2bd47409e5baaa23db78ce3b",
         "baseline_raw_sha256": "e4bf0ebd0f6c0d6dc65c3eb3b332e0ba9d380b565f8dc6e5e22a04ed75634f0f",
@@ -25,7 +27,9 @@ SOURCES = [
         "format": "pdf",
         "policy": "refresh",
         "allowed_hosts": ["cnil.fr", "www.cnil.fr"],
-        "baseline_document_sha256": "9b1d3b9477f9e51e5adb951c87ccde965306dfb526ebc85729a23384d5be57d7",
+        "baseline_document_sha256": (
+            "9b1d3b9477f9e51e5adb951c87ccde965306dfb526ebc85729a23384d5be57d7"
+        ),
         "baseline_body_sha256": "49e62ce65949896b98234eaf24e506981a2d0d89175ad57a2294cb3144af8b5a",
         "baseline_raw_sha256": "db39c38bfe50e031e968a3f57462d5739ef50cefca19d46115211615a2c94c3a",
     },
@@ -38,7 +42,9 @@ SOURCES = [
         "format": "html",
         "policy": "refresh",
         "allowed_hosts": ["cnil.fr", "www.cnil.fr"],
-        "baseline_document_sha256": "5b11759d8585dbf29e64fbfc17395dda16abd0f85e9f999eec3fe9696177b50b",
+        "baseline_document_sha256": (
+            "5b11759d8585dbf29e64fbfc17395dda16abd0f85e9f999eec3fe9696177b50b"
+        ),
         "xpath": "//main",
         "baseline_body_sha256": "1ec091216851fb0a9cae0109f91985b008bbb0991de35b8dd813522aeb049124",
         "baseline_raw_sha256": "b7b0aa876e570012f50da587066aca6bca7893a81c4f89231897d769001830ed",
@@ -52,7 +58,9 @@ SOURCES = [
         "format": "pdf",
         "policy": "refresh",
         "allowed_hosts": ["cnil.fr", "www.cnil.fr"],
-        "baseline_document_sha256": "363cd6065b7705a5e748f40e70acd07be7720ca921c7862fdbfef581b38a2ba2",
+        "baseline_document_sha256": (
+            "363cd6065b7705a5e748f40e70acd07be7720ca921c7862fdbfef581b38a2ba2"
+        ),
         "baseline_body_sha256": "4b266ea6edfafd75beabde60a57e9714b93a5828d9121a0ba15b6443e0c361d3",
         "baseline_raw_sha256": "c9837d457ff95d46d5f670e2ee275127b9ac2d066e5931dad67b39985503af7e",
     },
@@ -65,7 +73,9 @@ SOURCES = [
         "format": "html",
         "policy": "refresh",
         "allowed_hosts": ["inrs.fr", "www.inrs.fr"],
-        "baseline_document_sha256": "96132968787e9348dd7a9a25dd5d45285f202f9a9ae7cddd917595ae453bcbd7",
+        "baseline_document_sha256": (
+            "96132968787e9348dd7a9a25dd5d45285f202f9a9ae7cddd917595ae453bcbd7"
+        ),
         "xpath": "//article",
         "baseline_body_sha256": "e2e437ad0777b596b7670cf357d633bca748bc8514ed4e01a0fb6d0189ea9e9a",
         "baseline_raw_sha256": "c5a4a56deb27876dc869bb156d95eba0c23d2c9c339cdb4999c76b2ec9bc23ec",
@@ -79,7 +89,9 @@ SOURCES = [
         "format": "html",
         "policy": "refresh",
         "allowed_hosts": ["inrs.fr", "www.inrs.fr"],
-        "baseline_document_sha256": "ffde13200aac66c32982ba54b0841a1819ba5724e45de1c13fbb03e46d1a593f",
+        "baseline_document_sha256": (
+            "ffde13200aac66c32982ba54b0841a1819ba5724e45de1c13fbb03e46d1a593f"
+        ),
         "xpath": '//div[@class="container_contenuWrapper article--narrow"]',
         "baseline_body_sha256": "db1aaca80c246100bf72d63b2c5a850ff841dabe837621165ae129b09cd652e6",
         "baseline_raw_sha256": "cc9eca62c3131274d48ee8e45af0f15f37ce47cf1944750215fc44c67f59642f",
@@ -93,7 +105,9 @@ SOURCES = [
         "format": "html",
         "policy": "refresh",
         "allowed_hosts": ["francetravail.fr", "www.francetravail.fr"],
-        "baseline_document_sha256": "a882672f00ebf28966f154af3cc591a8948a42c91f9a80c2e7d4ad747a2bcca6",
+        "baseline_document_sha256": (
+            "a882672f00ebf28966f154af3cc591a8948a42c91f9a80c2e7d4ad747a2bcca6"
+        ),
         "xpath": '//article[@class="article-content-left"]',
         "baseline_body_sha256": "47891181477b76295b3f5eb0df540f6cc73cfaa0a7b60673608b4590759f05f0",
         "baseline_raw_sha256": "c69269ebec700264fe351a586467d5d453e3a0eb0441db5e998236f13265889b",
@@ -107,7 +121,9 @@ SOURCES = [
         "format": "pdf",
         "policy": "refresh",
         "allowed_hosts": ["defenseurdesdroits.fr", "www.defenseurdesdroits.fr"],
-        "baseline_document_sha256": "49df06b7efd0625875452bed8fa2b0829027fa58b0e08ca9101bba03ed298ee2",
+        "baseline_document_sha256": (
+            "49df06b7efd0625875452bed8fa2b0829027fa58b0e08ca9101bba03ed298ee2"
+        ),
         "baseline_body_sha256": "32a0aec23446af73fde8e4da0ddf2d2596e16062d74bd0384bc53b707d401ada",
         "baseline_raw_sha256": "2bcf2aa9293872673d49425e487e5998b3215d7b8b8afab88eb536fd805df3db",
     },
@@ -121,7 +137,9 @@ SOURCES = [
         "format": "html",
         "policy": "refresh",
         "allowed_hosts": ["ameli.fr", "www.ameli.fr"],
-        "baseline_document_sha256": "f6fcd30834400bfe535d7c30d7530b9945a0de0a0217601d0ce51d9a3f297d3e",
+        "baseline_document_sha256": (
+            "f6fcd30834400bfe535d7c30d7530b9945a0de0a0217601d0ce51d9a3f297d3e"
+        ),
         "xpath": "//article",
         "baseline_body_sha256": "bf59f582e95d0051a285a7903616350228219d15e8485a45382fe93e83bd0480",
         "baseline_raw_sha256": "7dde93eaba71d993771973b8318fec49e0bf83411a667b06d959bbd712ff88ee",
@@ -136,7 +154,9 @@ SOURCES = [
         "format": "html",
         "policy": "refresh",
         "allowed_hosts": ["ameli.fr", "www.ameli.fr"],
-        "baseline_document_sha256": "bc21066e67671cb41f8b31220488d3682ac6e462df289555b4e4b62535ff54c9",
+        "baseline_document_sha256": (
+            "bc21066e67671cb41f8b31220488d3682ac6e462df289555b4e4b62535ff54c9"
+        ),
         "xpath": "//article",
         "baseline_body_sha256": "503a0a99aaf9ecc250197ebca48ab10197efa40f01cb05dcadcbba2a755b6c14",
         "baseline_raw_sha256": "0adb8ffb0491626ac1c81f2d54374870ce953c521f79d96fa4d4cee2d0bb689b",
@@ -150,7 +170,9 @@ SOURCES = [
         "format": "html",
         "policy": "refresh",
         "allowed_hosts": ["agirc-arrco.fr", "www.agirc-arrco.fr"],
-        "baseline_document_sha256": "7af3b85b5edc7ae2df1a138e1a93529b16351d6c5378aa6b5d745a74dcfffbef",
+        "baseline_document_sha256": (
+            "7af3b85b5edc7ae2df1a138e1a93529b16351d6c5378aa6b5d745a74dcfffbef"
+        ),
         "xpath": "//main",
         "baseline_body_sha256": "bdae3e435f974203fe35429f0103d7d0af3bd36ef3ca9e1ec5de87309d548f08",
         "baseline_raw_sha256": "2da816f48f44950f9841ba91976d34f4688ebed979cabfb57bffc809d5a88689",
@@ -164,7 +186,9 @@ SOURCES = [
         "format": "html",
         "policy": "refresh",
         "allowed_hosts": ["agirc-arrco.fr", "www.agirc-arrco.fr"],
-        "baseline_document_sha256": "4ad22ed4775d5859472fa625aac9699ae44626ffdca0e35ca64e33a3dfd159a3",
+        "baseline_document_sha256": (
+            "4ad22ed4775d5859472fa625aac9699ae44626ffdca0e35ca64e33a3dfd159a3"
+        ),
         "xpath": "//main",
         "baseline_body_sha256": "6d0f6f948a9eee1db42b0bfad50f37fa3bf736b0ddfb7363fbb5b9c4426c0e30",
         "baseline_raw_sha256": "8cf9f799068bf7d49d3f3cd5ff0d09ee21cbfe1d4b23d8d952d21dba9d506194",
@@ -172,13 +196,18 @@ SOURCES = [
     {
         "key": "R03",
         "document_id": "6e0d29db-85cf-5ee1-8555-471d4522c683",
-        "name": "CLEISS — Présentation des règlements (CE) n° 883/2004 et 987/2009 4) Détermination de la législation applicable",
+        "name": (
+            "CLEISS — Présentation des règlements (CE) n° 883/2004 et 987/2009"
+            " 4) Détermination de la législation applicable"
+        ),
         "url": "https://www.cleiss.fr/reglements/883_legislation_applicable.html",
         "source_type": "documentation_officielle",
         "format": "html",
         "policy": "refresh",
         "allowed_hosts": ["cleiss.fr", "www.cleiss.fr"],
-        "baseline_document_sha256": "8c60e4924924b27b7e64e09a02fa377e811b7670ca33abade6b641470b678d0d",
+        "baseline_document_sha256": (
+            "8c60e4924924b27b7e64e09a02fa377e811b7670ca33abade6b641470b678d0d"
+        ),
         "xpath": '//*[@id="contenu"]',
         "baseline_body_sha256": "968c0e78398c84e1124cd00832ac5fc504db5898ab6e3d9b0fba3920fc4f7fdd",
         "baseline_raw_sha256": "e5b76ed58af0c8593f0beaf62b75c330313e2cec0634a1e50821d95b159950f5",
@@ -192,7 +221,9 @@ SOURCES = [
         "format": "html",
         "policy": "refresh",
         "allowed_hosts": ["net-entreprises.fr", "www.net-entreprises.fr"],
-        "baseline_document_sha256": "f5d0955d2827f1451f39492d8f778d9c0db1fbb3ca52047d8c76717e19cf8309",
+        "baseline_document_sha256": (
+            "f5d0955d2827f1451f39492d8f778d9c0db1fbb3ca52047d8c76717e19cf8309"
+        ),
         "xpath": '//div[contains(concat(" ",normalize-space(@class)," ")," content-main ")]',
         "remove_xpath": ' | .//div[contains(concat(" ",normalize-space(@class)," ")," bar-menu ")]',
         "baseline_body_sha256": "ff4e76242a843b5215819a03edf912fc525efc7036774be8deefe317c71cdc8f",
@@ -207,7 +238,9 @@ SOURCES = [
         "format": "html",
         "policy": "refresh",
         "allowed_hosts": ["net-entreprises.custhelp.com", "www.net-entreprises.custhelp.com"],
-        "baseline_document_sha256": "f06bd4b42735e23dfcf75707a15b2a345cac7d66400fdfdac4874900079beafe",
+        "baseline_document_sha256": (
+            "f06bd4b42735e23dfcf75707a15b2a345cac7d66400fdfdac4874900079beafe"
+        ),
         "xpath": '//*[@id="rn_AnswerText"]',
         "baseline_body_sha256": "a3cbc0fdebda068e432e4bcbccece9f13990aa3ae4b2d8c112dee0f0c7af2c2c",
         "baseline_raw_sha256": "1d383c68f09488a2d4ed684c7d9ad66a4775aaa3b728fd61417512afba7aa6cd",
@@ -267,7 +300,9 @@ SOURCES = [
             "961",
             "879",
         ],
-        "baseline_document_sha256": "e6f65d002265212a9a26b8fa11504f7c6a14793faa3868ed24a3ea09fe7172ec",
+        "baseline_document_sha256": (
+            "e6f65d002265212a9a26b8fa11504f7c6a14793faa3868ed24a3ea09fe7172ec"
+        ),
         "baseline_body_sha256": "9db23c83708bcc438609e714d6de6819f8934a3c825b56038061339b506e8b84",
     },
     {
@@ -280,7 +315,9 @@ SOURCES = [
         "format": "pdf",
         "policy": "review",
         "allowed_hosts": ["eur-lex.europa.eu"],
-        "baseline_document_sha256": "324f9691f32519129cade45e3cf914aa9221d8082d382cfc6e6606831d8a3878",
+        "baseline_document_sha256": (
+            "324f9691f32519129cade45e3cf914aa9221d8082d382cfc6e6606831d8a3878"
+        ),
         "baseline_raw_sha256": "02728785133bbe809fa16e647197432bdb0d2faf8991cd08c49550fe9cf2b72e",
         "baseline_body_sha256": "4b2331ea933a992316585f2c874c3c7cd29ad35b563bb5a8ad045dce5ba1b217",
     },
@@ -294,7 +331,9 @@ SOURCES = [
         "format": "pdf",
         "policy": "review",
         "allowed_hosts": ["eur-lex.europa.eu"],
-        "baseline_document_sha256": "316d8e738f7c228ae1a0c5e106b606d5d008de621608baf9ff8369ec1498de4d",
+        "baseline_document_sha256": (
+            "316d8e738f7c228ae1a0c5e106b606d5d008de621608baf9ff8369ec1498de4d"
+        ),
         "baseline_raw_sha256": "50bc39cd04114256f72bd66855deea813a828a3bdfe9c22b3e41b769d16e96ad",
         "baseline_body_sha256": "63404b30c312dd0ad2eb7ebf1f3de13e80dba8334be79cb2b7ac3d179f030e35",
     },
@@ -310,7 +349,9 @@ SOURCES = [
         "document_id": "78b9e7c9-559f-5417-ad67-107d4bfe61ac",
         "baseline_body_sha256": "20824cbff161548d4a10097d5e4832fb416be65758efc4415dc56e268ed531de",
         "baseline_raw_sha256": "b4dbde3b4fcb6c14038146386c22a48e2829369063b5cbdc669c0d8c873c6bfe",
-        "baseline_document_sha256": "851493ac2895c87eb58450c69db951c754a0f3c16bbc484ed10022df56483a77",
+        "baseline_document_sha256": (
+            "851493ac2895c87eb58450c69db951c754a0f3c16bbc484ed10022df56483a77"
+        ),
     },
     {
         "key": "urssaf-dpae",
@@ -322,10 +363,15 @@ SOURCES = [
         "policy": "refresh",
         "allowed_hosts": ["www.urssaf.fr", "urssaf.fr"],
         "transport": "browser_http",
-        "remove_xpath": ' | .//*[contains(concat(" ", normalize-space(@class), " "), " bloc-souhaits ")] | .//button',
+        "remove_xpath": (
+            ' | .//*[contains(concat(" ", normalize-space(@class), " "), " '
+            'bloc-souhaits ")] | .//button'
+        ),
         "document_id": "1e76606d-3582-5ed0-8b4a-143f59aee5ea",
         "baseline_body_sha256": "7114f9fe19fcb02268b6bfe751f854a2f3fa950d5a98413a1e23b0c529ef1c06",
         "baseline_raw_sha256": "ab936685a20f242077bdd04b3802b3ec1370371b748fae6100f71bba21f1825f",
-        "baseline_document_sha256": "6fdb3738a38e710ed25d92efe315f22f6c8c624af97c5afaf1f251fb78ed97a3",
+        "baseline_document_sha256": (
+            "6fdb3738a38e710ed25d92efe315f22f6c8c624af97c5afaf1f251fb78ed97a3"
+        ),
     },
 ]

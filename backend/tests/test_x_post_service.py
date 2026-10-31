@@ -74,9 +74,7 @@ def test_posts_are_split_without_numbering_or_rewriting() -> None:
         "Deuxième post exact.",
         "Troisième post exact.",
     ]
-    assert split_x_posts("  Post court exact.  ", "short") == [
-        "  Post court exact.  "
-    ]
+    assert split_x_posts("  Post court exact.  ", "short") == ["  Post court exact.  "]
 
 
 @pytest.mark.asyncio
@@ -97,11 +95,7 @@ async def test_generation_returns_non_empty_output_exactly() -> None:
     assert generation.posts == ["Hook naturel.", "Règle utile.", "Source exacte."]
     assert generation.format == "thread"
     assert create.await_args.kwargs["reasoning_effort"] == "medium"
-    assert (
-        create.await_args.kwargs["max_completion_tokens"]
-        == X_POST_MAX_COMPLETION_TOKENS
-        == 6000
-    )
+    assert create.await_args.kwargs["max_completion_tokens"] == X_POST_MAX_COMPLETION_TOKENS == 6000
 
 
 @pytest.mark.asyncio

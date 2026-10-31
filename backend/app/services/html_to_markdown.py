@@ -20,10 +20,18 @@ import re
 from html import unescape
 from html.parser import HTMLParser
 
-
 _BLOCK_TAGS = {
-    "p", "div", "section", "article", "header", "footer",
-    "ul", "ol", "li", "blockquote", "pre",
+    "p",
+    "div",
+    "section",
+    "article",
+    "header",
+    "footer",
+    "ul",
+    "ol",
+    "li",
+    "blockquote",
+    "pre",
 }
 _HEADING_TAGS = {"h1", "h2", "h3", "h4", "h5", "h6"}
 
@@ -66,22 +74,18 @@ class _HtmlToMarkdown(HTMLParser):
 
         # Find header row : first explicit header, else first row
         header_idx = next(
-            (i for i, (is_h, _) in enumerate(self._table_rows) if is_h), 0,
+            (i for i, (is_h, _) in enumerate(self._table_rows) if is_h),
+            0,
         )
 
         def _norm(cells: list[str]) -> list[str]:
-            cleaned = [
-                re.sub(r"\s+", " ", c).replace("|", "\\|").strip()
-                for c in cells
-            ]
+            cleaned = [re.sub(r"\s+", " ", c).replace("|", "\\|").strip() for c in cells]
             cleaned += [""] * (ncols - len(cleaned))
             return cleaned
 
         header = _norm(self._table_rows[header_idx][1])
         body_rows = [
-            _norm(cells)
-            for i, (_, cells) in enumerate(self._table_rows)
-            if i != header_idx
+            _norm(cells) for i, (_, cells) in enumerate(self._table_rows) if i != header_idx
         ]
         # If header is empty (no real header), synthesize one
         if not any(h.strip() for h in header):

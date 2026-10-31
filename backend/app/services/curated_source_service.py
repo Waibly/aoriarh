@@ -7,7 +7,7 @@ Other legal publications are archived for review. No generated text is processed
 import hashlib
 import json
 import uuid
-from datetime import UTC, date, datetime, timezone
+from datetime import UTC, date, datetime
 from urllib.parse import urljoin, urlsplit
 
 import httpx
@@ -37,9 +37,15 @@ def validate_browser_capture(spec, capture):
     """
     source_url = capture.get("source_url", capture["url"])
     parsed = urlsplit(capture["url"])
-    if (spec["format"] != "html" or source_url != spec["url"]
-            or parsed.scheme != "https" or parsed.hostname not in spec["allowed_hosts"]
-            or parsed.port not in (None, 443) or parsed.username or parsed.password):
+    if (
+        spec["format"] != "html"
+        or source_url != spec["url"]
+        or parsed.scheme != "https"
+        or parsed.hostname not in spec["allowed_hosts"]
+        or parsed.port not in (None, 443)
+        or parsed.username
+        or parsed.password
+    ):
         raise ValueError("Capture does not match the approved HTML source")
     captured_at = datetime.fromisoformat(capture["captured_at"])
     if captured_at.tzinfo is None:
@@ -104,6 +110,7 @@ async def fetch_browser_source(spec):
                 or parsed.password
             ):
                 from app.services.source_diagnostics import redirect_error
+
                 raise redirect_error(url)
             async with session.stream("GET", url, allow_redirects=False) as response:
                 if response.status_code in {301, 302, 303, 307, 308}:
@@ -134,6 +141,7 @@ async def fetch_source(client, spec):
             or parsed.port not in (None, 443)
         ):
             from app.services.source_diagnostics import redirect_error
+
             raise redirect_error(url)
         async with client.stream("GET", url) as response:
             if response.is_redirect:
@@ -189,7 +197,12 @@ async def fetch_cpc(spec, today):
             + ", ".join(sorted(set(spec["articles"]) - set(selected)))
         )
     parts = [
-        "Sélection de 45 articles du Code de procédure civile. Les contextes de juridiction et notes officielles sont conservés. Pour la procédure prud’homale, voir le renvoi de l’article 879 au Code du travail."
+        (
+            "Sélection de 45 articles du Code de procédure civile. Les "
+            "contextes de juridiction et notes officielles sont conservés. "
+            "Pour la procédure prud’homale, voir le renvoi de l’article 879 au"
+            " Code du travail."
+        )
     ]
     for number in spec["articles"]:
         article, path = selected[number]
@@ -259,7 +272,7 @@ class CuratedSourceService:
                     "name": spec.get("name", spec["key"]),
                     "transport": spec.get("transport", "httpx"),
                     "url": spec["url"],
-                    "checked_at": datetime.now(timezone.utc).isoformat(),
+                    "checked_at": datetime.now(UTC).isoformat(),
                 }
                 if captures is None and not spec.get("automatic_enabled", True):
                     item.update(status="disabled", reason="automatic_collection_disabled")
@@ -270,8 +283,9 @@ class CuratedSourceService:
                     if captures is not None:
                         capture = captures[spec["key"]]
                         raw, final_url = validate_browser_capture(spec, capture)
-                        item.update(transport="manual_browser_capture",
-                                    captured_at=capture["captured_at"])
+                        item.update(
+                            transport="manual_browser_capture", captured_at=capture["captured_at"]
+                        )
                         body = extract_body(spec, raw)
                     elif spec["format"] == "cpc":
                         body, raw = await fetch_cpc(spec, date.today())
@@ -368,9 +382,10 @@ class CuratedSourceService:
                             + "\n\n"
                             + body
                         )
-                        from app.rag.ingestion import IngestionPipeline, ARTICLE_AWARE_SOURCE_TYPES
-                        from app.rag.text_cleaner import clean_text
                         import tiktoken
+
+                        from app.rag.ingestion import ARTICLE_AWARE_SOURCE_TYPES, IngestionPipeline
+                        from app.rag.text_cleaner import clean_text
 
                         pipeline = IngestionPipeline()
                         cleaned = clean_text(text)
@@ -408,9 +423,12 @@ class CuratedSourceService:
                     item.update(status="error", error=type(exc).__name__ + ": " + str(exc)[:300])
                     if isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code == 403:
                         item.update(
-                            status="access_blocked", http_status=403,
-                            error=("Accès refusé par la source (HTTP 403) ; mise à jour bloquée, "
-                                   "document existant conservé."),
+                            status="access_blocked",
+                            http_status=403,
+                            error=(
+                                "Accès refusé par la source (HTTP 403) ; mise à jour bloquée, "
+                                "document existant conservé."
+                            ),
                             technical_error=type(exc).__name__ + ": " + str(exc)[:1000],
                         )
                     result["errors"] += 1
@@ -420,7 +438,8 @@ class CuratedSourceService:
 
     async def replace(self, db, doc, text, pipeline, tokens, *, name):
         """Backup and guarded replacement. Restore prior vectors on technical failure."""
-        from qdrant_client.models import Filter, FieldCondition, MatchValue, PointStruct
+        from qdrant_client.models import FieldCondition, Filter, MatchValue, PointStruct
+
         from app.rag.qdrant_store import COLLECTION_NAME
 
         old = {column.name: getattr(doc, column.name) for column in Document.__table__.columns}

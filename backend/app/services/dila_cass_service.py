@@ -112,17 +112,21 @@ def reconcile_source_references(decision: CassDecision, evidence: dict | None) -
         or evidence.get("source_xml_sha256") != decision.xml_sha256
         or evidence.get("decision_date") != str(decision.decision_date)
         or not re.fullmatch(r"https://www\.courdecassation\.fr/decision/[0-9a-f]{24}", url)
-        or not isinstance(numbers, list) or not numbers
+        or not isinstance(numbers, list)
+        or not numbers
         or any(not isinstance(number, str) for number in numbers)
         or len(set(numbers)) != len(numbers)
         or not set(numbers) <= set(decision.numbers)
-        or not decision.numbers or numbers[0] != decision.numbers[0]
+        or not decision.numbers
+        or numbers[0] != decision.numbers[0]
         or not isinstance(evidence.get("verified_title"), str)
         or not 1 <= len(evidence["verified_title"]) <= 500
     ):
         raise ValueError("Invalid explicit source-reference reconciliation")
     return replace(
-        decision, numbers=tuple(numbers), title=evidence["verified_title"],
+        decision,
+        numbers=tuple(numbers),
+        title=evidence["verified_title"],
         reference_reconciliation=evidence,
     )
 

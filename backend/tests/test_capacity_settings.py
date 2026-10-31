@@ -31,6 +31,7 @@ def test_capacity_defaults_bound_database_and_worker_concurrency():
 
 async def test_worker_warms_sparse_model_outside_event_loop(monkeypatch):
     import threading
+
     from app import worker
     from app.rag import search
 

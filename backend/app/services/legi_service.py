@@ -171,9 +171,7 @@ class LegiService:
 
             LegiService._cached_token = token_data["access_token"]
             expires_in = token_data.get("expires_in", 3600)
-            LegiService._token_expires_at = (
-                time.monotonic() + expires_in - _TOKEN_REFRESH_MARGIN
-            )
+            LegiService._token_expires_at = time.monotonic() + expires_in - _TOKEN_REFRESH_MARGIN
             return LegiService._cached_token
 
     # --- Public API ---
@@ -201,10 +199,14 @@ class LegiService:
             articles_reglementaire: list[dict] = []
 
             async with httpx.AsyncClient(timeout=_REQUEST_TIMEOUT) as client:
-                data = await self._api_post(client, "/consult/legiPart", {
-                    "textId": _LEGITEXT_CODE_TRAVAIL,
-                    "date": datetime.now(UTC).strftime("%Y-%m-%d"),
-                })
+                data = await self._api_post(
+                    client,
+                    "/consult/legiPart",
+                    {
+                        "textId": _LEGITEXT_CODE_TRAVAIL,
+                        "date": datetime.now(UTC).strftime("%Y-%m-%d"),
+                    },
+                )
                 if data is None:
                     raise ValueError("Impossible de récupérer le Code du travail depuis l'API LEGI")
 
@@ -225,10 +227,12 @@ class LegiService:
             result.articles_reglementaire = len(articles_reglementaire)
             logger.info(
                 "LegiService: %d articles législatifs, %d articles réglementaires",
-                result.articles_legislatif, result.articles_reglementaire,
+                result.articles_legislatif,
+                result.articles_reglementaire,
             )
 
             from app.services.storage_service import StorageService
+
             storage = StorageService()
 
             # Step 2: Process partie législative
@@ -300,10 +304,14 @@ class LegiService:
             articles_regl: list[dict] = []
 
             async with httpx.AsyncClient(timeout=_REQUEST_TIMEOUT) as client:
-                data = await self._api_post(client, "/consult/legiPart", {
-                    "textId": text_id,
-                    "date": datetime.now(UTC).strftime("%Y-%m-%d"),
-                })
+                data = await self._api_post(
+                    client,
+                    "/consult/legiPart",
+                    {
+                        "textId": text_id,
+                        "date": datetime.now(UTC).strftime("%Y-%m-%d"),
+                    },
+                )
                 if data is None:
                     raise ValueError(f"Impossible de récupérer {code_name}")
 
@@ -321,10 +329,13 @@ class LegiService:
             result.articles_reglementaire = len(articles_regl)
             logger.info(
                 "LegiService: %s — %d articles législatifs, %d réglementaires",
-                code_name, len(articles_leg), len(articles_regl),
+                code_name,
+                len(articles_leg),
+                len(articles_regl),
             )
 
             from app.services.storage_service import StorageService
+
             storage = StorageService()
 
             if articles_leg:
@@ -428,10 +439,13 @@ class LegiService:
         if existing_docs:
             old_ids = [str(d.id) for d in existing_docs]
             from app.services.kali_service import KaliService
+
             await KaliService._enqueue_old_docs_cleanup(old_ids)
             logger.info(
                 "LegiService: %s updated (blue-green) — new=%s, old=%s",
-                doc_name, new_doc.id, old_ids,
+                doc_name,
+                new_doc.id,
+                old_ids,
             )
         else:
             logger.info("LegiService: %s created — doc=%s", doc_name, new_doc.id)
@@ -451,17 +465,16 @@ class LegiService:
             if not cls._is_in_force(article):
                 continue
             content = (
-                article.get("texte")
-                or article.get("texteHtml")
-                or article.get("content")
-                or ""
+                article.get("texte") or article.get("texteHtml") or article.get("content") or ""
             )
             if content:
-                articles.append({
-                    "num": article.get("num", ""),
-                    "content": cls._clean_html(content),
-                    "section": path,
-                })
+                articles.append(
+                    {
+                        "num": article.get("num", ""),
+                        "content": cls._clean_html(content),
+                        "section": path,
+                    }
+                )
 
         for child in section.get("sections", section.get("children", [])):
             child_title = child.get("title", child.get("titre", ""))
@@ -497,6 +510,7 @@ class LegiService:
         (annexes, barèmes) ne seront plus aplatis.
         """
         from app.services.html_to_markdown import html_to_markdown
+
         return html_to_markdown(html)
 
     @staticmethod
@@ -546,7 +560,7 @@ class LegiService:
                     continue
 
                 if response.status_code == 429 and attempt < _MAX_RETRIES - 1:
-                    delay = _RETRY_DELAY * (2 ** attempt)
+                    delay = _RETRY_DELAY * (2**attempt)
                     logger.warning("LEGI rate limit (429), retry in %.1fs", delay)
                     await asyncio.sleep(delay)
                     continue
@@ -562,9 +576,11 @@ class LegiService:
                     raise
                 logger.warning(
                     "LEGI returned invalid JSON for %s; retry %d/%d",
-                    path, attempt + 2, _MAX_RETRIES,
+                    path,
+                    attempt + 2,
+                    _MAX_RETRIES,
                 )
-                await asyncio.sleep(_RETRY_DELAY * (2 ** attempt))
+                await asyncio.sleep(_RETRY_DELAY * (2**attempt))
 
             except httpx.TimeoutException:
                 if attempt < _MAX_RETRIES - 1:

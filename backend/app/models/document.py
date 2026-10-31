@@ -17,18 +17,22 @@ class Document(TimestampMixin, Base):
     organisation_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("organisations.id"), nullable=True, index=True
     )
-    private_dossier_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("dossiers.id"), index=True)
-    private_conversation_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("conversations.id"), index=True)
+    private_dossier_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("dossiers.id"), index=True
+    )
+    private_conversation_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("conversations.id"), index=True
+    )
     retired_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     name: Mapped[str] = mapped_column(String(500), nullable=False)
     source_type: Mapped[str] = mapped_column(String(100), nullable=False)
     norme_niveau: Mapped[int | None] = mapped_column(Integer)
     norme_poids: Mapped[float | None] = mapped_column(Float)
     storage_path: Mapped[str] = mapped_column(String(1000), nullable=False)
-    indexation_status: Mapped[str] = mapped_column(
-        String(20), nullable=False, default="pending"
+    indexation_status: Mapped[str] = mapped_column(String(20), nullable=False, default="pending")
+    uploaded_by: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
-    uploaded_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     file_size: Mapped[int | None] = mapped_column(Integer)
     file_format: Mapped[str | None] = mapped_column(String(50))
     file_hash: Mapped[str | None] = mapped_column(String(64))

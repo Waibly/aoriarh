@@ -4,6 +4,7 @@ The false positives below are real prod questions that emptied the candidate
 pool when a bare mention ("ccn", "contrat de travail") hard-restricted the
 search. They must NOT trigger anymore.
 """
+
 from __future__ import annotations
 
 from app.rag.source_intent import detect_source_intent
@@ -20,14 +21,18 @@ class TestNoFalsePositives:
     """Bare mentions of a source are generic legal questions — no filter."""
 
     def test_ccn_mention_prod_case(self):
-        q = ("Si l'employeur a une ccn il faut la prendre en compte "
-             "dans le calcul des indemnités de licenciement")
+        q = (
+            "Si l'employeur a une ccn il faut la prendre en compte "
+            "dans le calcul des indemnités de licenciement"
+        )
         assert detect_source_intent(q) == []
 
     def test_rupture_contrat_de_travail_prod_case(self):
-        q = ("Comment un employeur peut-il préparer et conduire une rupture "
-             "du contrat de travail afin de limiter les risques prud'homaux "
-             "à chaque étape de la procédure ?")
+        q = (
+            "Comment un employeur peut-il préparer et conduire une rupture "
+            "du contrat de travail afin de limiter les risques prud'homaux "
+            "à chaque étape de la procédure ?"
+        )
         assert detect_source_intent(q) == []
 
     def test_convention_de_forfait(self):
@@ -35,8 +40,10 @@ class TestNoFalsePositives:
         assert detect_source_intent(q) == []
 
     def test_clause_dans_le_contrat(self):
-        q = ("Une clause de non-concurrence dans le contrat de travail "
-             "est-elle valable sans contrepartie ?")
+        q = (
+            "Une clause de non-concurrence dans le contrat de travail "
+            "est-elle valable sans contrepartie ?"
+        )
         assert detect_source_intent(q) == []
 
     def test_code_du_travail_et_decrets_prod_case(self):
@@ -44,8 +51,10 @@ class TestNoFalsePositives:
         assert detect_source_intent(q) == []
 
     def test_cassation_citation(self):
-        q = ("La Cour de cassation a déjà jugé qu'un licenciement est sans "
-             "cause réelle et sérieuse dans ce cas ?")
+        q = (
+            "La Cour de cassation a déjà jugé qu'un licenciement est sans "
+            "cause réelle et sérieuse dans ce cas ?"
+        )
         assert detect_source_intent(q) == []
 
     def test_un_accord_entreprise_generique(self):
@@ -83,14 +92,11 @@ class TestDirectedTriggers:
 
     def test_aux_termes_de_la_convention_collective(self):
         assert "convention_collective_nationale" in _types(
-            "Aux termes de la convention collective nationale, l'article 3.4 "
-            "prévoit une indemnité"
+            "Aux termes de la convention collective nationale, l'article 3.4 prévoit une indemnité"
         )
 
     def test_que_dit_le_code_du_travail(self):
-        assert "code_travail" in _types(
-            "Que dit le code du travail sur le préavis de démission ?"
-        )
+        assert "code_travail" in _types("Que dit le code du travail sur le préavis de démission ?")
 
     def test_mon_contrat(self):
         assert "contrat_travail" in _types(
@@ -98,9 +104,7 @@ class TestDirectedTriggers:
         )
 
     def test_nos_accords(self):
-        assert "accord_entreprise" in _types(
-            "Que contiennent nos accords sur le télétravail ?"
-        )
+        assert "accord_entreprise" in _types("Que contiennent nos accords sur le télétravail ?")
 
     def test_jurisprudence_sur(self):
         assert "arret_cour_cassation" in _types(

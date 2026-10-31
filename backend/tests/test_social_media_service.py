@@ -86,18 +86,14 @@ def test_inspection_warns_about_missing_slide_body_without_changing_output():
 
 def test_prompt_requires_sober_copy_and_explained_legal_references():
     assert "carrousel Instagram" in SOCIAL_MEDIA_SYSTEM_PROMPT
-    assert (
-        "document PDF dans un post LinkedIn" in LINKEDIN_CAROUSEL_SYSTEM_PROMPT
-    )
+    assert "document PDF dans un post LinkedIn" in LINKEDIN_CAROUSEL_SYSTEM_PROMPT
     assert "post d'accompagnement distinct" in LINKEDIN_CAROUSEL_SYSTEM_PROMPT
     assert "N'emploie aucun superlatif" in SOCIAL_MEDIA_SYSTEM_PROMPT
     assert "adverbe d'intensité ou de surenchère" in SOCIAL_MEDIA_SYSTEM_PROMPT
     assert '<span class="reference-topic">' in SOCIAL_MEDIA_SYSTEM_PROMPT
     assert "exactement « Références juridiques »" in SOCIAL_MEDIA_SYSTEM_PROMPT
     assert "N'écris jamais" in SOCIAL_MEDIA_SYSTEM_PROMPT
-    assert (
-        '<p class="source-note">Référence exacte</p>' in SOCIAL_MEDIA_SYSTEM_PROMPT
-    )
+    assert '<p class="source-note">Référence exacte</p>' in SOCIAL_MEDIA_SYSTEM_PROMPT
     assert "sans attendre la dernière slide" in SOCIAL_MEDIA_SYSTEM_PROMPT
     assert "première slide est l'ouverture visuelle" in SOCIAL_MEDIA_SYSTEM_PROMPT
     assert "Aère verticalement" in SOCIAL_MEDIA_SYSTEM_PROMPT
@@ -117,9 +113,7 @@ def test_prompt_requires_sober_copy_and_explained_legal_references():
     assert "N'écris jamais <strong>Libellé</strong>Valeur" in SOCIAL_MEDIA_SYSTEM_PROMPT
     assert "titre seul dans strong" in SOCIAL_MEDIA_SYSTEM_PROMPT
     assert "sans deux-points" in SOCIAL_MEDIA_SYSTEM_PROMPT
-    assert "<strong>Libellé</strong><span>Explication.</span>" in (
-        SOCIAL_MEDIA_SYSTEM_PROMPT
-    )
+    assert "<strong>Libellé</strong><span>Explication.</span>" in (SOCIAL_MEDIA_SYSTEM_PROMPT)
     assert "publication publique et décontextualisée" in SOCIAL_MEDIA_SYSTEM_PROMPT
     assert "forme ou type de société" in SOCIAL_MEDIA_SYSTEM_PROMPT
     assert "effectif exact ou" in SOCIAL_MEDIA_SYSTEM_PROMPT
@@ -217,15 +211,21 @@ async def test_generation_returns_exact_non_empty_llm_output_without_fallback():
 @pytest.mark.asyncio
 @pytest.mark.parametrize("slide_count", [10, 11])
 async def test_carousel_page_limit_preserves_every_slide_without_retry(slide_count):
-    raw = '  <main class="carousel">' + "".join(
-        f'<section class="slide"><h2>Page {index}</h2>'
-        '<div class="slide-body"><p>Texte intégral.</p></div></section>'
-        for index in range(slide_count)
-    ) + "</main>\n"
+    raw = (
+        '  <main class="carousel">'
+        + "".join(
+            f'<section class="slide"><h2>Page {index}</h2>'
+            '<div class="slide-body"><p>Texte intégral.</p></div></section>'
+            for index in range(slide_count)
+        )
+        + "</main>\n"
+    )
     create = AsyncMock(return_value=_response(raw))
     with patch("app.services.social_media_service._llm.chat.completions.create", create):
         generation = await generate_social_media(
-            question="Question", answer_markdown="Réponse", sources=[],
+            question="Question",
+            answer_markdown="Réponse",
+            sources=[],
             linkedin_carousel=True,
         )
 
@@ -493,12 +493,12 @@ def test_timeline_title_is_alone_and_explanation_starts_on_next_line():
 def test_blue_box_separates_label_from_adjacent_text_without_rewriting(density, wrapped):
     explanation = "Une explication complète reste visible."
     body = f"<span>{explanation}</span>" if wrapped else explanation
-    fragment = f'''<main class="carousel">
+    fragment = f"""<main class="carousel">
       <section class="slide"><h1>Couverture</h1><div class="slide-body"></div></section>
       <section class="slide {density}"><h2>Exemple</h2><div class="slide-body">
         <div class="example"><strong>Condition applicable</strong>{body}</div>
       </div></section>
-    </main>'''
+    </main>"""
     html = render_social_media_document(fragment, generated_at=datetime(2026, 10, 2))
 
     assert fragment in html

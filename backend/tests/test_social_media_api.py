@@ -138,9 +138,7 @@ async def test_admin_receives_post_then_exact_carousel_without_eager_png_render(
     assert generate.await_args.kwargs["answer_markdown"] == "Voici la procédure à appliquer."
     assert generate.await_args.kwargs["linkedin_carousel"] is True
     assert generate_post.await_args.kwargs["carousel_content"] == raw
-    assert generate_post.await_args.kwargs["answer_markdown"] == (
-        "Voici la procédure à appliquer."
-    )
+    assert generate_post.await_args.kwargs["answer_markdown"] == ("Voici la procédure à appliquer.")
 
 
 async def test_post_failure_keeps_non_empty_carousel_output_visible(
@@ -186,9 +184,7 @@ async def test_standalone_media_does_not_generate_a_linkedin_post(
     client: AsyncClient,
     admin_user: dict,
 ) -> None:
-    conversation_id = await _create_conversation(
-        client, admin_user, suffix="media-only"
-    )
+    conversation_id = await _create_conversation(client, admin_user, suffix="media-only")
     message_id = await _add_exchange(conversation_id)
     raw = '<main class="carousel"><section class="slide">Média</section></main>'
     generation = SocialMediaGeneration(

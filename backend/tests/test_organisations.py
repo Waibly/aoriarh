@@ -140,9 +140,7 @@ async def test_delete_organisation_also_deletes_its_fiches(
 
     async with session_factory() as session:
         user_id = (
-            await session.execute(
-                select(User.id).where(User.email == manager_user["email"])
-            )
+            await session.execute(select(User.id).where(User.email == manager_user["email"]))
         ).scalar_one()
         fiche = Fiche(
             organisation_id=uuid.UUID(organisation_id),

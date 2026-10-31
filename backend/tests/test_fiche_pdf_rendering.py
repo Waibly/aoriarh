@@ -38,7 +38,7 @@ def test_long_procedure_keeps_every_step_without_footer_only_page():
 def test_external_resource_is_ignored_without_hiding_generation():
     fragment = (
         '<article class="fiche-content"><h1>Contenu brut</h1>'
-        '<p>Le texte doit rester visible.</p>'
+        "<p>Le texte doit rester visible.</p>"
         '<img src="https://invalid.example/image.png"></article>'
     )
 
@@ -65,9 +65,9 @@ def test_legal_reference_and_its_topic_stay_on_the_same_page():
         '<article class="fiche-content"><h1>Documents de fin de contrat</h1>'
         f"<section><h2>Règles</h2>{filler}</section>"
         '<section class="legal-references"><h2>Références juridiques</h2><ul>'
-        '<li><strong>Cour de cassation, 03/09/2025, n° 24-16.546</strong>'
+        "<li><strong>Cour de cassation, 03/09/2025, n° 24-16.546</strong>"
         '<span class="reference-topic">Remise des documents de fin de contrat</span></li>'
-        '<li><strong>Code du travail, art. L1234-19</strong>'
+        "<li><strong>Code du travail, art. L1234-19</strong>"
         '<span class="reference-topic">Délivrance du certificat de travail</span></li>'
         "</ul></section></article>"
     )

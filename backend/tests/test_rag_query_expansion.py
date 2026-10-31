@@ -5,7 +5,10 @@ from app.rag.search import SearchResult
 
 
 def _make_result(
-    text: str, score: float, doc_id: str = "doc1", chunk: int = 0,
+    text: str,
+    score: float,
+    doc_id: str = "doc1",
+    chunk: int = 0,
 ) -> SearchResult:
     return SearchResult(
         text=text,

@@ -145,6 +145,7 @@ async def assign_plan(
     if plan in TECHNICAL_PLANS:
         if active_sub is not None and active_sub.stripe_subscription_id:
             from app.services.stripe_service import StripeService
+
             await StripeService(db).cancel_subscription_now(account)
             account.status = "active"
 
@@ -156,6 +157,7 @@ async def assign_plan(
     elif plan in {"solo", "equipe", "groupe"}:
         if active_sub is not None and active_sub.stripe_subscription_id:
             from app.services.stripe_service import StripeService
+
             stripe_svc = StripeService(db)
             cycle = active_sub.billing_cycle or "monthly"
             if active_sub.plan != plan:
@@ -163,11 +165,13 @@ async def assign_plan(
                 # change_plan already updated account.plan and committed.
                 await db.refresh(account)
         else:
-            raise PlanOverflowError([
-                f"Impossible d'assigner le plan commercial {plan} à un compte "
-                f"sans abonnement Stripe actif : le client doit souscrire lui-même "
-                f"depuis la page /billing avec un moyen de paiement valide."
-            ])
+            raise PlanOverflowError(
+                [
+                    f"Impossible d'assigner le plan commercial {plan} à un compte "
+                    f"sans abonnement Stripe actif : le client doit souscrire lui-même "
+                    f"depuis la page /billing avec un moyen de paiement valide."
+                ]
+            )
 
     # Block the change if the new plan is too small for what already exists.
     # Admins may still deal with an overflow manually (delete the excess

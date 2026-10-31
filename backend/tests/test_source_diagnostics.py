@@ -6,7 +6,8 @@ from app.services.source_diagnostics import source_json
 
 def test_invalid_json_keeps_technical_evidence_without_response_content():
     response = httpx.Response(
-        200, content=b'{"private":"sensitive',
+        200,
+        content=b'{"private":"sensitive',
         headers={"content-type": "application/json", "content-length": "20"},
     )
     with pytest.raises(ValueError) as error:

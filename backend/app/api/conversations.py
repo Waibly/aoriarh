@@ -66,27 +66,42 @@ class ExistingDocumentAttachment(BaseModel):
 @router.get("/{conversation_id}/document-library")
 @limiter.limit("120/minute")
 async def search_conversation_library(
-    conversation_id: uuid.UUID, request: Request, response: Response,
+    conversation_id: uuid.UUID,
+    request: Request,
+    response: Response,
     name: str = Query("", max_length=200),
-    uploaded_from: date | None = None, uploaded_to: date | None = None,
-    offset: int = Query(0, ge=0, le=10_000), limit: int = Query(20, ge=1, le=50),
-    user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db),
+    uploaded_from: date | None = None,
+    uploaded_to: date | None = None,
+    offset: int = Query(0, ge=0, le=10_000),
+    limit: int = Query(20, ge=1, le=50),
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
 ):
     from app.services.conversation_library_service import ConversationLibraryService
 
     service = ConversationLibraryService(db)
     conversation = await service.conversation(conversation_id, user)
     response.headers["Cache-Control"] = "private, no-store"
-    return await service.search(conversation, name=name, uploaded_from=uploaded_from,
-                                uploaded_to=uploaded_to, offset=offset, limit=limit)
+    return await service.search(
+        conversation,
+        name=name,
+        uploaded_from=uploaded_from,
+        uploaded_to=uploaded_to,
+        offset=offset,
+        limit=limit,
+    )
 
 
 @router.post("/{conversation_id}/document-library/{document_id}")
 @limiter.limit("30/hour")
 async def prepare_existing_conversation_document(
-    conversation_id: uuid.UUID, document_id: uuid.UUID,
-    data: ExistingDocumentAttachment, request: Request, response: Response,
-    user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db),
+    conversation_id: uuid.UUID,
+    document_id: uuid.UUID,
+    data: ExistingDocumentAttachment,
+    request: Request,
+    response: Response,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
 ):
     from app.services.conversation_library_service import ConversationLibraryService
 
@@ -102,9 +117,12 @@ async def prepare_existing_conversation_document(
 @router.post("/{conversation_id}/documents", status_code=201)
 @limiter.limit("30/hour")
 async def attach_conversation_document(
-    conversation_id: uuid.UUID, request: Request, file: UploadFile,
+    conversation_id: uuid.UUID,
+    request: Request,
+    file: UploadFile,
     scope: Literal["dossier", "conversation"] = "dossier",
-    user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
 ):
     from app.core.config import settings
     from app.rag.tasks import enqueue_ingestion
@@ -115,8 +133,10 @@ async def attach_conversation_document(
     conversation = await ConversationService(db).get_conversation(conversation_id, user)
     if conversation.dossier_id:
         from app.services.dossier_service import DossierService
+
         await DossierService(db).get(conversation.dossier_id, user, write=True)
     from app.core.dependencies import verify_org_membership
+
     if user.role != "admin" and (
         await verify_org_membership(conversation.organisation_id, user, db) is None
     ):
@@ -128,23 +148,37 @@ async def attach_conversation_document(
     billing.ensure_plan_active(account)
     org = await db.get(Organisation, conversation.organisation_id)
     await billing.check_document_limit(org)
-    doc = await DocumentService(db).upload_document(file, "divers", org.id, user.id,
-                                                   max_file_size=2 * 1024 * 1024,
-                                                   private_dossier_id=conversation.dossier_id if scope == "dossier" else None,
-                                                   private_conversation_id=conversation.id if conversation.dossier_id and scope == "conversation" else None)
+    doc = await DocumentService(db).upload_document(
+        file,
+        "divers",
+        org.id,
+        user.id,
+        max_file_size=2 * 1024 * 1024,
+        private_dossier_id=conversation.dossier_id if scope == "dossier" else None,
+        private_conversation_id=conversation.id
+        if conversation.dossier_id and scope == "conversation"
+        else None,
+    )
     dossier_link = None
     if conversation.dossier_id and scope == "dossier":
         from app.models.case_file import CaseDocumentLink
         from app.services.dossier_service import DossierService
+
         ds = DossierService(db)
         uploaded_document_id = doc.id
         target_dossier_id = conversation.dossier_id
         try:
             dossier = await ds.get(target_dossier_id, user, write=True)
             case = await ds.case(dossier)
-            await ds.bump_case(dossier, case.version, "document_uploaded", {"document_id": str(doc.id)})
-            dossier_link = CaseDocumentLink(case_file_id=case.id, document_id=doc.id,
-                                           document_name=doc.name, source_sha256=doc.file_hash)
+            await ds.bump_case(
+                dossier, case.version, "document_uploaded", {"document_id": str(doc.id)}
+            )
+            dossier_link = CaseDocumentLink(
+                case_file_id=case.id,
+                document_id=doc.id,
+                document_name=doc.name,
+                source_sha256=doc.file_hash,
+            )
             db.add(dossier_link)
             await db.commit()
         except Exception:
@@ -155,17 +189,27 @@ async def attach_conversation_document(
                 logger.exception("Failed to clean up an unlinked chat dossier upload")
             raise
     # The original remains available even if extraction/queue fails.
-    extraction = DocumentExtractionService(db, storage, dossier_id=conversation.dossier_id, conversation_id=conversation.id)
+    extraction = DocumentExtractionService(
+        db, storage, dossier_id=conversation.dossier_id, conversation_id=conversation.id
+    )
     try:
         raw_bytes = await asyncio.to_thread(storage.get_file_bytes, doc.storage_path)
         await extraction.extract(SourceSnapshot.from_document(doc), raw_bytes, TextExtractor())
         manifest = await extraction.status(doc.id, org.id, user.id)
         if dossier_link:
             dossier = await ds.get(target_dossier_id, user, write=True)
-            dossier_link = (await db.execute(select(CaseDocumentLink).where(
-                CaseDocumentLink.case_file_id == dossier.case_file_id,
-                CaseDocumentLink.document_id == uploaded_document_id,
-            ))).scalars().first()
+            dossier_link = (
+                (
+                    await db.execute(
+                        select(CaseDocumentLink).where(
+                            CaseDocumentLink.case_file_id == dossier.case_file_id,
+                            CaseDocumentLink.document_id == uploaded_document_id,
+                        )
+                    )
+                )
+                .scalars()
+                .first()
+            )
             if dossier_link is None:
                 raise HTTPException(409, "Le document a été retiré pendant sa préparation.")
             dossier_link.extraction_id = manifest["extraction_id"]
@@ -184,12 +228,15 @@ async def attach_conversation_document(
         ) from None
     from app.services.conversation_document_service import attachment_readiness
 
-    manifest = await extraction.reference_status(
-        doc.id, org.id, user.id, manifest["extraction_id"]
-    )
-    return {"document_id": str(doc.id), "extraction_id": str(manifest["extraction_id"]),
-            "name": doc.name, "coverage": manifest["coverage"],
-            "text_bytes": manifest["text_bytes"], **attachment_readiness(manifest)}
+    manifest = await extraction.reference_status(doc.id, org.id, user.id, manifest["extraction_id"])
+    return {
+        "document_id": str(doc.id),
+        "extraction_id": str(manifest["extraction_id"]),
+        "name": doc.name,
+        "coverage": manifest["coverage"],
+        "text_bytes": manifest["text_bytes"],
+        **attachment_readiness(manifest),
+    }
 
 
 @router.get("/{conversation_id}/documents/{document_id}/readiness")
@@ -207,9 +254,9 @@ async def conversation_document_readiness(
     from app.services.document_extraction_service import DocumentExtractionService
 
     conversation = await ConversationService(db).get_conversation(conversation_id, user)
-    manifest = await DocumentExtractionService(db, dossier_id=conversation.dossier_id, conversation_id=conversation.id).reference_status(
-        document_id, conversation.organisation_id, user.id, extraction_id
-    )
+    manifest = await DocumentExtractionService(
+        db, dossier_id=conversation.dossier_id, conversation_id=conversation.id
+    ).reference_status(document_id, conversation.organisation_id, user.id, extraction_id)
     response.headers["Cache-Control"] = "private, no-store"
     return {
         "document_id": str(document_id),
@@ -265,14 +312,17 @@ async def get_conversation(
 
 
 @router.patch("/{conversation_id}", response_model=ConversationRead)
-async def rename_conversation(conversation_id: uuid.UUID,
-                              data: "ConversationRename",
-                              user: User = Depends(get_current_user),
-                              db: AsyncSession = Depends(get_db)):
+async def rename_conversation(
+    conversation_id: uuid.UUID,
+    data: "ConversationRename",
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
     service = ConversationService(db)
     conversation = await service.get_conversation(conversation_id, user)
     if conversation.dossier_id:
         from app.services.dossier_service import DossierService
+
         await DossierService(db).get(conversation.dossier_id, user, write=True)
     if not data.title.strip():
         raise HTTPException(422, "Le titre est obligatoire")
@@ -362,14 +412,22 @@ async def get_source_full_content(
             )
 
     from app.services.document_access import authorize_private_document
+
     source_conversation = None
     if conversation_id is not None:
         source_conversation = await ConversationService(db).get_conversation(conversation_id, user)
-        if doc.organisation_id is not None and source_conversation.organisation_id != doc.organisation_id:
+        if (
+            doc.organisation_id is not None
+            and source_conversation.organisation_id != doc.organisation_id
+        ):
             raise HTTPException(404, "Document non accessible")
-    await authorize_private_document(db, doc, user,
+    await authorize_private_document(
+        db,
+        doc,
+        user,
         conversation_id=conversation_id,
-        dossier_id=source_conversation.dossier_id if source_conversation else None)
+        dossier_id=source_conversation.dossier_id if source_conversation else None,
+    )
 
     if not doc.storage_path:
         raise HTTPException(
@@ -871,9 +929,7 @@ async def generate_message_social_media(
                 message_id=str(message.id),
             )
         except Exception:
-            logger.exception(
-                "Échec de génération du post carrousel pour %s", message_id
-            )
+            logger.exception("Échec de génération du post carrousel pour %s", message_id)
             post_error = (
                 "Le carrousel a bien été généré, mais son post d'accompagnement a "
                 "échoué. La sortie du carrousel reste disponible sans modification."
@@ -1023,9 +1079,7 @@ async def download_message_social_media_pdf(
     return Response(
         content=pdf,
         media_type="application/pdf",
-        headers={
-            "Content-Disposition": 'attachment; filename="aoria-media-linkedin.pdf"'
-        },
+        headers={"Content-Disposition": 'attachment; filename="aoria-media-linkedin.pdf"'},
     )
 
 
@@ -1046,9 +1100,12 @@ def _sse_event(event: str, data: dict) -> str:
 async def _finalize_case_answer(db, conversation_id, message_id, answer_id, prepared):
     """A dossier persistence failure must not discard an already saved answer."""
     from app.services.case_file_service import CaseFileService
+
     try:
         version = await CaseFileService(db).link_task_answer(
-            conversation_id, uuid.UUID(message_id), uuid.UUID(answer_id),
+            conversation_id,
+            uuid.UUID(message_id),
+            uuid.UUID(answer_id),
             expected_version=(prepared.trace.case_file_observation or {}).get("case_file_version"),
             used_version=(prepared.case_context or {}).get("dossier", {}).get("version"),
         )
@@ -1057,7 +1114,8 @@ async def _finalize_case_answer(db, conversation_id, message_id, answer_id, prep
         await db.rollback()
         logger.exception("Case-file finalization failed; original answer remains saved")
         prepared.trace.search_plan = {
-            **(prepared.trace.search_plan or {}), "case_finalization_error": True,
+            **(prepared.trace.search_plan or {}),
+            "case_finalization_error": True,
         }
         return None, True
 
@@ -1291,6 +1349,7 @@ async def chat_stream(
 
     if conversation.dossier_id:
         from app.services.dossier_service import DossierService
+
         await DossierService(db).get(conversation.dossier_id, user, write=True)
 
     # 1b. Enforce quota / plan lifecycle (raises 402 if expired/suspended).
@@ -1303,24 +1362,37 @@ async def chat_stream(
         active_references,
         read_conversation_documents,
     )
+
     references = active_references(conversation.messages, data.document_references)
     if conversation.dossier_id:
         from app.services.dossier_service import DossierService
+
         dossier_service = DossierService(db)
         dossier = await dossier_service.get(conversation.dossier_id, user, write=True)
         references = await dossier_service.conversation_references(dossier, references)
-    shared_reference_ids = {str(ref["document_id"]) for ref in references if ref.get("scope") == "dossier"}
+    shared_reference_ids = {
+        str(ref["document_id"]) for ref in references if ref.get("scope") == "dossier"
+    }
     initial_reference_ids = {str(reference["document_id"]) for reference in references}
     documents, document_continuity = await read_conversation_documents(
-        db, conversation, user, references, query=data.message,
+        db,
+        conversation,
+        user,
+        references,
+        query=data.message,
     )
     initial_perf["initial_documents"] = (time.perf_counter() - t_documents) * 1000
     t_profile = time.perf_counter()
     if documents:
-        references = [{"document_id": str(d["document_id"]),
-                       "extraction_id": str(d["extraction_id"]), "name": d["source_name"],
-                       **({"scope": "dossier"} if str(d["document_id"]) in shared_reference_ids else {})}
-                      for d in documents]
+        references = [
+            {
+                "document_id": str(d["document_id"]),
+                "extraction_id": str(d["extraction_id"]),
+                "name": d["source_name"],
+                **({"scope": "dossier"} if str(d["document_id"]) in shared_reference_ids else {}),
+            }
+            for d in documents
+        ]
 
     # Persist the user's exact request before any intent/planning/generation
     # call. It becomes the stable provenance for dossier facts and tasks, and
@@ -1384,9 +1456,15 @@ async def chat_stream(
                 if source_document.organisation_id not in (None, conversation.organisation_id):
                     continue
                 from app.services.document_access import authorize_private_document
+
                 try:
-                    await authorize_private_document(db, source_document, user,
-                        dossier_id=conversation.dossier_id, conversation_id=conversation.id)
+                    await authorize_private_document(
+                        db,
+                        source_document,
+                        user,
+                        dossier_id=conversation.dossier_id,
+                        conversation_id=conversation.id,
+                    )
                 except HTTPException:
                     continue
                 key = _source_key(src)
@@ -1411,9 +1489,14 @@ async def chat_stream(
                 use_llm_fallback=False,
             )
             if intent_result.raw_response:
-                yield _sse_event("chat_search_details", search_feedback({
-                    "router_raw_response": intent_result.raw_response,
-                }))
+                yield _sse_event(
+                    "chat_search_details",
+                    search_feedback(
+                        {
+                            "router_raw_response": intent_result.raw_response,
+                        }
+                    ),
+                )
             if intent_result.static_answer is not None and (
                 not documents or is_security_response(intent_result.static_answer)
             ):
@@ -1499,6 +1582,7 @@ async def chat_stream(
             # the whole conversation as before). The agent's `conversation_id`
             # parameter is in fact used as the cost context id.
             question_id = uuid.uuid4()
+
             async def legal_context(query=data.message, *, search_plan=None):
                 # Each branch owns its mutable search plan, diagnostics and caches.
                 branch_agent = RAGAgent()
@@ -1508,17 +1592,23 @@ async def chat_stream(
                 branch_org_context = org_context
                 if case_ccn_unknown and org_context:
                     branch_org_context = {
-                        key: value for key, value in org_context.items()
+                        key: value
+                        for key, value in org_context.items()
                         if key not in {"convention_collective", "not_subject_to_ccn"}
                     }
                 return await prepare_rag_context(
-                    branch_agent, query=query, organisation_id=str(conversation.organisation_id),
-                    org_context=branch_org_context, history=history or None,
+                    branch_agent,
+                    query=query,
+                    organisation_id=str(conversation.organisation_id),
+                    org_context=branch_org_context,
+                    history=history or None,
                     cited_sources=cited_sources or None,
                     org_idcc_list=None if case_ccn_unknown else org_idcc_list,
-                    user_id=str(user.id), context_id=str(question_id),
+                    user_id=str(user.id),
+                    context_id=str(question_id),
                     **({"search_plan": search_plan} if search_plan is not None else {}),
                 )
+
             from app.rag.config import CONVERSATION_PLANNER_MODEL
             from app.services.conversation_orchestrator import prepare_conversation_context
 
@@ -1557,7 +1647,8 @@ async def chat_stream(
                     if progress_task is None:
                         progress_task = asyncio.create_task(progress_queue.get())
                     done, _ = await asyncio.wait(
-                        {ctx_task, progress_task}, timeout=RAG_SLOW_NOTICE,
+                        {ctx_task, progress_task},
+                        timeout=RAG_SLOW_NOTICE,
                         return_when=asyncio.FIRST_COMPLETED,
                     )
                     if await request.is_disconnected():
@@ -1567,9 +1658,13 @@ async def chat_stream(
                         progress_task = None
                         yield _sse_event("chat_status", {"step": current_step})
                     if not done:
-                        yield _sse_event("chat_status", {
-                            "step": current_step, "notice": _SLOW_CONTEXT_NOTICE,
-                        })
+                        yield _sse_event(
+                            "chat_status",
+                            {
+                                "step": current_step,
+                                "notice": _SLOW_CONTEXT_NOTICE,
+                            },
+                        )
                 prepared_context = await ctx_task
             except (TimeoutError, APITimeoutError):
                 logger.warning(
@@ -1601,10 +1696,21 @@ async def chat_stream(
             rag_trace = prepared_context.trace
             rag_trace.perf_ms.update(initial_perf)
             documents = prepared_context.documents
-            references = [{**ref, **({"scope": "dossier"} if str(ref["document_id"]) in shared_reference_ids else {})}
-                          for ref in prepared_context.references]
-            if (rag_trace.error != "case_execution_conflict"
-                    and user_message.document_references != references):
+            references = [
+                {
+                    **ref,
+                    **(
+                        {"scope": "dossier"}
+                        if str(ref["document_id"]) in shared_reference_ids
+                        else {}
+                    ),
+                }
+                for ref in prepared_context.references
+            ]
+            if (
+                rag_trace.error != "case_execution_conflict"
+                and user_message.document_references != references
+            ):
                 user_message.document_references = references
                 await db.commit()
 
@@ -1615,28 +1721,39 @@ async def chat_stream(
                 }
             yield _sse_event("chat_search_details", search_feedback(rag_trace))
             if rag_trace.search_plan_validation.get("request_errors"):
-                yield _sse_event("chat_warning", {
-                    "message": "Une ou plusieurs opérations n’ont pas pu être exécutées. "
-                    "La réponse peut être incomplète. Les erreurs techniques et la sortie "
-                    "originale sont consultables dans le dossier.",
-                })
+                yield _sse_event(
+                    "chat_warning",
+                    {
+                        "message": "Une ou plusieurs opérations n’ont pas pu être exécutées. "
+                        "La réponse peut être incomplète. Les erreurs techniques et la sortie "
+                        "originale sont consultables dans le dossier.",
+                    },
+                )
             case_observation = rag_trace.case_file_observation or {}
             case_application = case_observation.get("application_result") or {}
             if rag_trace.error == "case_context_budget_exceeded":
-                yield _sse_event("chat_error", {
-                    "error": rag_trace.error,
-                    "message": "Le contexte dépasse la limite de traitement. Archivez les éléments "
-                    "devenus inutiles ou ouvrez une conversation plus ciblée. "
-                    "Aucun texte n’a été tronqué.",
-                })
+                yield _sse_event(
+                    "chat_error",
+                    {
+                        "error": rag_trace.error,
+                        "message": (
+                            "Le contexte dépasse la limite de traitement. Archivez les "
+                            "éléments devenus inutiles ou ouvrez une conversation plus ciblée."
+                            " Aucun texte n’a été tronqué."
+                        ),
+                    },
+                )
                 return
             if rag_trace.error == "case_execution_conflict":
-                yield _sse_event("chat_error", {
-                    "error": "case_execution_conflict",
-                    "message": "Le dossier a changé ou son enregistrement a échoué. "
-                    "Rechargez-le avant de relancer votre demande ; aucun calcul obsolète "
-                    "n’a été utilisé.",
-                })
+                yield _sse_event(
+                    "chat_error",
+                    {
+                        "error": "case_execution_conflict",
+                        "message": "Le dossier a changé ou son enregistrement a échoué. "
+                        "Rechargez-le avant de relancer votre demande ; aucun calcul obsolète "
+                        "n’a été utilisé.",
+                    },
+                )
                 return
             if case_application.get("applied") is True:
                 yield _sse_event(
@@ -1648,46 +1765,58 @@ async def chat_stream(
                     },
                 )
             if rag_trace.error in {"search_reranking_error", "search_context_error"}:
-                yield _sse_event("chat_error", {
-                    "error": rag_trace.error,
-                    "message": (
-                        "Le classement des documents a échoué. "
-                        "Aucun classement de secours n’a été utilisé."
-                        if rag_trace.error == "search_reranking_error"
-                        else "Le contexte documentaire n’a pas pu être préparé. "
-                        "Aucune réponse n’a été générée."
-                    ),
-                })
+                yield _sse_event(
+                    "chat_error",
+                    {
+                        "error": rag_trace.error,
+                        "message": (
+                            "Le classement des documents a échoué. "
+                            "Aucun classement de secours n’a été utilisé."
+                            if rag_trace.error == "search_reranking_error"
+                            else "Le contexte documentaire n’a pas pu être préparé. "
+                            "Aucune réponse n’a été générée."
+                        ),
+                    },
+                )
                 return
             if rag_trace.error == "search_retrieval_error":
-                yield _sse_event("chat_error", {
-                    "error": "search_retrieval_error",
-                    "message": (
-                        "Une recherche documentaire a échoué. Aucune réponse n’a été "
-                        "générée à partir des résultats incomplets."
-                    ),
-                })
+                yield _sse_event(
+                    "chat_error",
+                    {
+                        "error": "search_retrieval_error",
+                        "message": (
+                            "Une recherche documentaire a échoué. Aucune réponse n’a été "
+                            "générée à partir des résultats incomplets."
+                        ),
+                    },
+                )
                 return
             if rag_trace.error == "search_planner_error":
                 if (
                     rag_trace.search_plan_validation.get("technical_error")
                     == "planner_json_contains_nul"
                 ):
-                    yield _sse_event("chat_error", {
-                        "error": "search_planner_error",
-                        "technical_error": "planner_json_contains_nul",
-                        "message": "Le plan reçu contient un caractère incompatible avec "
-                        "l’enregistrement. Il n’a pas été exécuté. Sa sortie originale "
-                        "est consultable dans le dossier.",
-                    })
+                    yield _sse_event(
+                        "chat_error",
+                        {
+                            "error": "search_planner_error",
+                            "technical_error": "planner_json_contains_nul",
+                            "message": "Le plan reçu contient un caractère incompatible avec "
+                            "l’enregistrement. Il n’a pas été exécuté. Sa sortie originale "
+                            "est consultable dans le dossier.",
+                        },
+                    )
                     return
-                yield _sse_event("chat_error", {
-                    "error": "search_planner_error",
-                    "message": (
-                        "Le plan de recherche n’a pas pu être exécuté. "
-                        "Aucune recherche de secours n’a été lancée."
-                    ),
-                })
+                yield _sse_event(
+                    "chat_error",
+                    {
+                        "error": "search_planner_error",
+                        "message": (
+                            "Le plan de recherche n’a pas pu être exécuté. "
+                            "Aucune recherche de secours n’a été lancée."
+                        ),
+                    },
+                )
                 return
             if not results and not prepared_context.generate_without_sources:
                 yield _sse_event(
@@ -1744,9 +1873,12 @@ async def chat_stream(
             source_policy = rag_trace.search_plan or {}
             excluded_types = set(source_policy.get("excluded_source_types", []))
             exclusive_types = set(source_policy.get("exclusive_source_types", []))
-            carried_sources = [s for s in carried_sources
-                               if s.get("source_type") not in excluded_types
-                               and (not exclusive_types or s.get("source_type") in exclusive_types)]
+            carried_sources = [
+                s
+                for s in carried_sources
+                if s.get("source_type") not in excluded_types
+                and (not exclusive_types or s.get("source_type") in exclusive_types)
+            ]
             if carried_sources:
                 details = search_feedback(rag_trace)
                 details["warnings"].append(
@@ -1804,8 +1936,14 @@ async def chat_stream(
                             and rag_trace.search_plan_usage.get("execution") == "adaptive"
                             else None
                         ),
-                        **({"document_continuity": document_continuity,
-                            "document_task_context": document_task_context} if documents else {}),
+                        **(
+                            {
+                                "document_continuity": document_continuity,
+                                "document_task_context": document_task_context,
+                            }
+                            if documents
+                            else {}
+                        ),
                     ),
                     idle_timeout=RAG_TIMEOUT_STREAM_IDLE,
                     slow_notice=RAG_SLOW_NOTICE,
@@ -1870,25 +2008,40 @@ async def chat_stream(
                     )
                     return
                 # The incident is separate from the verbatim generated answer.
-                yield _sse_event("chat_warning", {
-                    "error": "generation_interrupted",
-                    "message": "La génération s’est interrompue. Le texte partiel est conservé.",
-                })
+                yield _sse_event(
+                    "chat_warning",
+                    {
+                        "error": "generation_interrupted",
+                        "message": (
+                            "La génération s’est interrompue. Le texte partiel est conservé."
+                        ),
+                    },
+                )
 
             if not full_answer:
-                yield _sse_event("chat_error", {
-                    "error": "empty_generation", "message": "Le modèle a renvoyé une réponse vide.",
-                })
+                yield _sse_event(
+                    "chat_error",
+                    {
+                        "error": "empty_generation",
+                        "message": "Le modèle a renvoyé une réponse vide.",
+                    },
+                )
                 return
             if generation_interrupted and not stream_dead:
-                yield _sse_event("chat_warning", {
-                    "error": "generation_interrupted",
-                    "message": "La génération s’est interrompue. Le texte partiel est conservé.",
-                })
+                yield _sse_event(
+                    "chat_warning",
+                    {
+                        "error": "generation_interrupted",
+                        "message": (
+                            "La génération s’est interrompue. Le texte partiel est conservé."
+                        ),
+                    },
+                )
             t_stream_done = time.perf_counter()
             if stream_dead or generation_interrupted:
                 rag_trace.search_plan = {
-                    **(rag_trace.search_plan or {}), "generation_interrupted": True,
+                    **(rag_trace.search_plan or {}),
+                    "generation_interrupted": True,
                 }
 
             # Finalize trace : add stream perf + compute total latency
@@ -1909,24 +2062,35 @@ async def chat_stream(
             user_message_id = str(user_message.id)
             assistant_message_id = str(assistant_message.id)
 
-            if (prepared_context.case_context is not None
-                    and not stream_dead and not generation_interrupted):
+            if (
+                prepared_context.case_context is not None
+                and not stream_dead
+                and not generation_interrupted
+            ):
                 final_case_version, case_failed = await _finalize_case_answer(
                     db, conversation_id, user_message_id, assistant_message_id, prepared_context
                 )
                 if case_failed:
                     for instance in (assistant_message, conversation, account):
                         await db.refresh(instance)
-                    yield _sse_event("chat_warning", {
-                        "message": "La réponse est conservée, mais le dossier a changé ou sa "
-                        "finalisation a échoué. Les tâches n’ont pas été clôturées.",
-                    })
+                    yield _sse_event(
+                        "chat_warning",
+                        {
+                            "message": "La réponse est conservée, mais le dossier a changé ou sa "
+                            "finalisation a échoué. Les tâches n’ont pas été clôturées.",
+                        },
+                    )
                 if final_case_version is not None:
-                    yield _sse_event("case_file_updated", {
-                        "conversation_id": str(conversation_id),
-                        "case_file_id": (rag_trace.case_file_observation or {}).get("case_file_id"),
-                        "version": final_case_version,
-                    })
+                    yield _sse_event(
+                        "case_file_updated",
+                        {
+                            "conversation_id": str(conversation_id),
+                            "case_file_id": (rag_trace.case_file_observation or {}).get(
+                                "case_file_id"
+                            ),
+                            "version": final_case_version,
+                        },
+                    )
 
             # 5b. Persist trace + question_id + latency on the assistant message.
             # The cost is NOT snapshot anymore — it is computed live via JOIN

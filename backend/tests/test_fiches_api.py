@@ -34,9 +34,7 @@ async def test_list_fiches_includes_source_conversation(
 
     async with session_factory() as session:
         user = (
-            await session.execute(
-                select(User).where(User.email == manager_user["email"])
-            )
+            await session.execute(select(User).where(User.email == manager_user["email"]))
         ).scalar_one()
         message = Message(
             conversation_id=uuid.UUID(conversation_id),
@@ -75,8 +73,5 @@ async def test_list_fiches_includes_source_conversation(
 
     assert response.status_code == 200
     fiches_by_title = {fiche["title"]: fiche for fiche in response.json()}
-    assert (
-        fiches_by_title["Fiche avec conversation"]["conversation_id"]
-        == conversation_id
-    )
+    assert fiches_by_title["Fiche avec conversation"]["conversation_id"] == conversation_id
     assert fiches_by_title["Fiche historique"]["conversation_id"] is None

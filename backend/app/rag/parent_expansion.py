@@ -218,17 +218,30 @@ async def fetch_by_identifiers(
         else reference_source_types(reference_query or "")
     )
     conditions: list[list] = [
-        [Filter(should=[
-            FieldCondition(key="numero_pourvoi", match=MatchAny(any=list(dict.fromkeys([
-                pourvoi,
-                pourvoi.replace(".", ""),
-                "".join(c for c in pourvoi if c.isdigit()),
-            ])))),
-            FieldCondition(
-                key="numero_pourvoi_aliases",
-                match=MatchAny(any=sorted(number_aliases(pourvoi))),
-            ),
-        ])]
+        [
+            Filter(
+                should=[
+                    FieldCondition(
+                        key="numero_pourvoi",
+                        match=MatchAny(
+                            any=list(
+                                dict.fromkeys(
+                                    [
+                                        pourvoi,
+                                        pourvoi.replace(".", ""),
+                                        "".join(c for c in pourvoi if c.isdigit()),
+                                    ]
+                                )
+                            )
+                        ),
+                    ),
+                    FieldCondition(
+                        key="numero_pourvoi_aliases",
+                        match=MatchAny(any=sorted(number_aliases(pourvoi))),
+                    ),
+                ]
+            )
+        ]
         for pourvoi in identifiers.get("numero_pourvoi", [])
     ] + [
         [FieldCondition(key="article_nums", match=MatchAny(any=article_lookup_keys(article)))]
@@ -294,10 +307,16 @@ def _payload_to_result(payload: dict, *, score: float = 0.0) -> SearchResult:
         effective_to=payload.get("effective_to"),
         instrument_status=payload.get("instrument_status"),
         organisation_id=payload.get("organisation_id"),
-        **{key: payload.get(key) for key in (
-            "article_id", "article_title", "article_status",
-            "article_effective_from", "article_effective_to",
-        )},
+        **{
+            key: payload.get(key)
+            for key in (
+                "article_id",
+                "article_title",
+                "article_status",
+                "article_effective_from",
+                "article_effective_to",
+            )
+        },
     )
 
 
@@ -339,10 +358,21 @@ def deduplicate_article_passages(results: list[SearchResult]) -> list[SearchResu
     output = []
     for r in results:
         if r.article_id and r.instrument_id and r.organisation_id is not None:
-            key = (r.organisation_id, r.source_type, r.idcc, r.instrument_id,
-                   r.article_id, r.article_effective_from, r.article_effective_to,
-                   r.article_status, r.effective_from, r.effective_to,
-                   r.instrument_status, r.article_title, r.text)
+            key = (
+                r.organisation_id,
+                r.source_type,
+                r.idcc,
+                r.instrument_id,
+                r.article_id,
+                r.article_effective_from,
+                r.article_effective_to,
+                r.article_status,
+                r.effective_from,
+                r.effective_to,
+                r.instrument_status,
+                r.article_title,
+                r.text,
+            )
             if key in seen:
                 continue
             seen.add(key)

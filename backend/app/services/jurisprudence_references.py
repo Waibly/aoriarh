@@ -20,9 +20,21 @@ def case_reference_context_metadata(numbers: list[str] | None) -> dict:
 
 
 MONTHS = {
-    "janvier": 1, "février": 2, "fevrier": 2, "mars": 3, "avril": 4,
-    "mai": 5, "juin": 6, "juillet": 7, "août": 8, "aout": 8,
-    "septembre": 9, "octobre": 10, "novembre": 11, "décembre": 12, "decembre": 12,
+    "janvier": 1,
+    "février": 2,
+    "fevrier": 2,
+    "mars": 3,
+    "avril": 4,
+    "mai": 5,
+    "juin": 6,
+    "juillet": 7,
+    "août": 8,
+    "aout": 8,
+    "septembre": 9,
+    "octobre": 10,
+    "novembre": 11,
+    "décembre": 12,
+    "decembre": 12,
 }
 _REFERENCE = re.compile(
     r"\b(?:soc\.|chambre\s+sociale)\s*,?\s*"
@@ -42,8 +54,13 @@ def social_case_references(text: str) -> list[dict]:
         except ValueError:
             continue
         digits = "".join(c for c in match["number"] if c.isdigit())
-        result.append({
-            "date": day.isoformat(), "number": digits[:2] + "-" + digits[2:4] + "." + digits[4:],
-            "start": match.start(), "end": match.end(), "literal": match.group(),
-        })
+        result.append(
+            {
+                "date": day.isoformat(),
+                "number": digits[:2] + "-" + digits[2:4] + "." + digits[4:],
+                "start": match.start(),
+                "end": match.end(),
+                "literal": match.group(),
+            }
+        )
     return result

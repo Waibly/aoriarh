@@ -43,17 +43,17 @@ from app.services.security_alert_service import (
 logger = logging.getLogger(__name__)
 
 
-class Intent(str, Enum):
+class Intent(str, Enum):  # noqa: UP042 -- Preserve the existing Enum string representation.
     """Catégories d'intention classées par le router."""
 
-    LEGAL_QUESTION = "legal_question"          # → RAG complet (cas par défaut)
-    META_CAPABILITIES = "meta_capabilities"    # "que sais-tu / que peux-tu"
-    META_SCOPE = "meta_scope"                  # "tu connais X (loi, code, CCN)"
-    META_SOURCES = "meta_sources"              # "tes sources, dernière maj"
-    META_INTERNALS = "meta_internals"          # "quel modèle, comment tu fonctionnes" ⚠️ IP
-    OUT_OF_SCOPE = "out_of_scope"              # droit hors social FR, recettes, etc.
+    LEGAL_QUESTION = "legal_question"  # → RAG complet (cas par défaut)
+    META_CAPABILITIES = "meta_capabilities"  # "que sais-tu / que peux-tu"
+    META_SCOPE = "meta_scope"  # "tu connais X (loi, code, CCN)"
+    META_SOURCES = "meta_sources"  # "tes sources, dernière maj"
+    META_INTERNALS = "meta_internals"  # "quel modèle, comment tu fonctionnes" ⚠️ IP
+    OUT_OF_SCOPE = "out_of_scope"  # droit hors social FR, recettes, etc.
     ROUTING_ERROR = "routing_error"
-    GREETING = "greeting"                      # "bonjour", "merci"
+    GREETING = "greeting"  # "bonjour", "merci"
 
 
 @dataclass
@@ -123,12 +123,24 @@ _PATTERNS_INSTRUCTION_BYPASS = [
 ]
 
 _PATTERNS_INTERNALS = [
-    r"\b(quel|quelle|quels|quelles)\s+(modèle|llm|ia|moteur|outil|techno|stack|prompt|framework|librairie|reranker|embedding|vector|base de données)\b"
-    r"[^.?!]{0,50}\b(utilises?-tu|utilisez-vous|tu utilises|vous utilisez|aoria)\b",
+    (
+        "\\b(quel|quelle|quels|quelles)\\s+(modèle|llm|ia|moteur|outil|techn"
+        "o|stack|prompt|framework|librairie|reranker|embedding|vector|base"
+        " de données)\\b[^.?!]{0,50}\\b(utilises?-tu|utilisez-vous|tu "
+        "utilises|vous utilisez|aoria)\\b"
+    ),
     # 'c'est quoi les techno', 'tu utilises quoi', 'ça tourne avec quoi'
-    r"\b(c'est quoi|qu'est[- ]ce que c'est|qu'est[- ]ce que)\s+(ton|ta|tes|votre|vos)\s+(techno|technologie|stack|modèle|llm|ia|outil|moteur|infrastructure|prompt|framework|librairie)\b",
+    (
+        "\\b(c'est quoi|qu'est[- ]ce que c'est|qu'est[- ]ce que)\\s+(ton|ta|"
+        "tes|votre|vos)\\s+(techno|technologie|stack|modèle|llm|ia|outil|mo"
+        "teur|infrastructure|prompt|framework|librairie)\\b"
+    ),
     r"\b(t['eu]|tu|vous)\s+(utilis\w*|tournes?\s+(avec|sur)|emploies?|fonctionne(s|z)?\s+avec)\s+(quoi|quel|quelle|quels|quelles|comme)\b",
-    r"\b(comment|de quelle (façon|manière))\s+(tu|vous)\s+(es codé|fonctionne|fonctionnez|marche|marches|es construit|es entraîné|es développ)",
+    (
+        "\\b(comment|de quelle (façon|manière))\\s+(tu|vous)\\s+(es "
+        "codé|fonctionne|fonctionnez|marche|marches|es construit|es "
+        "entraîné|es développ)"
+    ),
     r"\bton\s+(prompt|système|architecture|infrastructure|hébergeur)\b",
     r"\b(tu|vous|aoria)\b[^.?!]{0,30}\b(utilises?|utilisez|emploies?|employez|fonctionnes?)\b"
     r"[^.?!]{0,30}\b(openai|chatgpt|gpt[- .]?\d*|claude|anthropic|qdrant|voyage)\b",
@@ -139,9 +151,20 @@ _PATTERNS_INTERNALS = [
 _PATTERNS_SOURCES = [
     r"\b(quelle|quels|quelles)\s+(sont|seraient)?\s*(tes|vos|les)\s+sources\b",
     # 'tes sources datent de quand', 'corpus à jour', 'dernière maj des données'
-    r"\b(source|donn|corpus|index|base)\w*\s+\w*\s*(date|datent|datant|à jour|jour|mis à jour|maj|mise à jour|actualisé|récent|publi|update)",
-    r"\b(date|datent|datant|à jour|jour de la maj|dernière (synchro|maj|mise à jour))\b[^.?!]{0,40}\b(source|donn|corpus|index|base)",
-    r"\b(d'où|d ou|où|ou)\s+(viennent|proviennent)\s+(tes|vos|les)\s+(sources|données|informations)",
+    (
+        "\\b(source|donn|corpus|index|base)\\w*\\s+\\w*\\s*(date|datent|datant|"
+        "à jour|jour|mis à jour|maj|mise à "
+        "jour|actualisé|récent|publi|update)"
+    ),
+    (
+        "\\b(date|datent|datant|à jour|jour de la maj|dernière "
+        "(synchro|maj|mise à "
+        "jour))\\b[^.?!]{0,40}\\b(source|donn|corpus|index|base)"
+    ),
+    (
+        "\\b(d'où|d ou|où|ou)\\s+(viennent|proviennent)\\s+(tes|vos|les)\\s+(s"
+        "ources|données|informations)"
+    ),
     r"\b(à\s+quand|de\s+quand)\s+(date|datent)\s+(tes|vos|les)?\s*(sources|données|infos)?",
     r"\b(de\s+quand|à\s+quelle\s+date|quand)\s+(date|datent)",
     r"\bcorpus\s+(à jour|mis à jour|actualisé|récent)",
@@ -170,7 +193,10 @@ _PATTERNS_SCOPE = [
     r"^\s*(?:es[- ]tu|êtes[- ]vous)\s+(?:spécialisée?|experte?|capable)"
     r"(?:\s+en\s+(?:droit\s+(?:social|du\s+travail)|ressources\s+humaines|rh))?"
     r"\s*[?!.]*\s*$",
-    r"\b(quelles?\s+convention(s)?\s+collectives?)\s+(tu|vous|que tu|que vous)\s+(connais|connaissez|maîtris|couvr|gèr)",
+    (
+        "\\b(quelles?\\s+convention(s)?\\s+collectives?)\\s+(tu|vous|que "
+        "tu|que vous)\\s+(connais|connaissez|maîtris|couvr|gèr)"
+    ),
     r"\b(quelles?\s+(idcc|ccn))\s+(tu|vous)\b",
     # Droits ÉTRANGERS uniquement (catch direct). Les autres branches du droit
     # FRANÇAIS (pénal, civil, fiscal…) ne sont PAS des motifs de refus direct :
@@ -194,7 +220,10 @@ _PATTERNS_CAPABILITIES = [
     r"\b(que|qu')\s*(sais|peux|fais|fait)[- ]?(tu|vous)\s*(faire|pour\s+moi|m['']aider)?\s*\??\s*$",
     r"\b(quelles?|quel)\s+(sont|est)\s+(tes|vos)\s+(capacit|fonctionnalit|fonction)",
     r"\b(à quoi|pour quoi|pourquoi|comment)\s+(sers|sert|utilis)",
-    r"\b(qui es[- ]tu|qui êtes-vous|tu es qui|c'est quoi|qu'est-ce que)\b.{0,30}\b(aoria|toi|vous)\b",
+    (
+        "\\b(qui es[- ]tu|qui êtes-vous|tu es qui|c'est quoi|qu'est-ce "
+        "que)\\b.{0,30}\\b(aoria|toi|vous)\\b"
+    ),
     r"\b(présente[- ]toi|décris[- ]toi|dis[- ]m'?en plus sur toi)",
 ]
 
@@ -334,7 +363,9 @@ async def _answer_sources_status(db: AsyncSession) -> str:
     )
 
 
-async def _answer_scope_check(db: AsyncSession, query: str, organisation_id: uuid.UUID | None) -> str:
+async def _answer_scope_check(
+    db: AsyncSession, query: str, organisation_id: uuid.UUID | None
+) -> str:
     """Pour 'tu connais X' (CCN spécifique, code…) → on confirme ou non factuellement.
 
     Si la CCN demandée est installée pour l'organisation, on confirme. Sinon
@@ -427,11 +458,13 @@ par les salariés et « peux-tu m'aider sur un licenciement » sont legal_questi
 Un utilisateur qui décrit son métier ou son statut ne demande pas forcément \
 des privilèges techniques. Les aspects civils, pénaux ou fiscaux d'une question \
 RH restent legal_question.
-"""
+"""  # noqa: E501 -- Preserve literal text.
 
 
 async def _classify_via_llm(
-    query: str, llm: AsyncOpenAI, raw_capture: dict | None = None,
+    query: str,
+    llm: AsyncOpenAI,
+    raw_capture: dict | None = None,
 ) -> Intent:
     """Classify without inventing a replacement intent on failure."""
     try:
@@ -493,26 +526,34 @@ async def classify_intent(
     # générique sur le fonctionnement afin de servir la réponse adaptée.
     if _match_any(q, _PATTERNS_PROTECTED_DATA):
         return IntentResult(
-            Intent.META_INTERNALS, _ANSWER_PROTECTED_DATA,
-            via="prefilter", security_event=EVENT_PROTECTED_DATA,
+            Intent.META_INTERNALS,
+            _ANSWER_PROTECTED_DATA,
+            via="prefilter",
+            security_event=EVENT_PROTECTED_DATA,
         )
 
     if _match_any(q, _PATTERNS_PRIVILEGE_CLAIM):
         return IntentResult(
-            Intent.META_INTERNALS, _ANSWER_PRIVILEGE_CLAIM,
-            via="prefilter", security_event=EVENT_PRIVILEGE_CLAIM,
+            Intent.META_INTERNALS,
+            _ANSWER_PRIVILEGE_CLAIM,
+            via="prefilter",
+            security_event=EVENT_PRIVILEGE_CLAIM,
         )
 
     if _match_any(q, _PATTERNS_INSTRUCTION_BYPASS):
         return IntentResult(
-            Intent.META_INTERNALS, _ANSWER_INSTRUCTION_BYPASS,
-            via="prefilter", security_event=EVENT_INSTRUCTION_BYPASS,
+            Intent.META_INTERNALS,
+            _ANSWER_INSTRUCTION_BYPASS,
+            via="prefilter",
+            security_event=EVENT_INSTRUCTION_BYPASS,
         )
 
     if _match_any(q, _PATTERNS_INTERNALS):
         return IntentResult(
-            Intent.META_INTERNALS, _ANSWER_INTERNALS,
-            via="prefilter", security_event=EVENT_TECHNICAL_RECON,
+            Intent.META_INTERNALS,
+            _ANSWER_INTERNALS,
+            via="prefilter",
+            security_event=EVENT_TECHNICAL_RECON,
         )
 
     if _match_any(q, _PATTERNS_GREETING):
@@ -544,14 +585,17 @@ async def classify_intent(
 
     if intent == Intent.ROUTING_ERROR:
         return llm_result(
-            intent, "Le routage de la question a échoué ; aucune recherche de secours n’a été lancée.",
+            intent,
+            "Le routage de la question a échoué ; aucune recherche de secours n’a été lancée.",
             via="llm_error",
         )
 
     # 3. Génère la réponse statique si meta
     if intent == Intent.META_INTERNALS:
         return llm_result(
-            intent, _ANSWER_INTERNALS, via="llm",
+            intent,
+            _ANSWER_INTERNALS,
+            via="llm",
             security_event=EVENT_TECHNICAL_RECON,
         )
     if intent == Intent.GREETING:

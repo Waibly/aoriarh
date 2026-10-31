@@ -110,9 +110,7 @@ async def test_business_admin_cannot_call_technical_admin_api(
 ) -> None:
     async with test_session_factory() as session:
         await session.execute(
-            update(User)
-            .where(User.email == admin_user["email"])
-            .values(staff_role="business")
+            update(User).where(User.email == admin_user["email"]).values(staff_role="business")
         )
         await session.commit()
 
@@ -129,9 +127,7 @@ async def test_tech_admin_cannot_call_business_admin_api(
 ) -> None:
     async with test_session_factory() as session:
         await session.execute(
-            update(User)
-            .where(User.email == admin_user["email"])
-            .values(staff_role="tech")
+            update(User).where(User.email == admin_user["email"]).values(staff_role="tech")
         )
         await session.commit()
 

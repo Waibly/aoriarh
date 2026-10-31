@@ -112,7 +112,9 @@ _LEGAL_NEWS_PATTERNS = [
 _FOLLOW_UP_PATTERNS = [
     re.compile(r"^\s*(?:et|mais)\s+(?:les?|la|un|une|ceux|celles)\b", re.I),
     re.compile(r"^\s*quelle?\s+(?:dur[ée]e|montant|d[ée]lai|risque)\s*\??\s*$", re.I),
-    re.compile(r"^\s*(?:peux-tu\s+|pouvez-vous\s+)?(?:d[ée]tailler|pr[ée]ciser|expliquer)\s*\??\s*$", re.I),
+    re.compile(
+        r"^\s*(?:peux-tu\s+|pouvez-vous\s+)?(?:d[ée]tailler|pr[ée]ciser|expliquer)\s*\??\s*$", re.I
+    ),
     re.compile(r"^\s*(?:et|mais)\s+(?:pour|dans|si|concernant)\b", re.IGNORECASE),
     re.compile(r"\b(?:dans ce cas|dans cette situation|pour chacun)\b", re.IGNORECASE),
     re.compile(r"\b(?:ça|cela|ce point|cet article|ce texte|cet accord)\b", re.IGNORECASE),
@@ -328,7 +330,9 @@ Schéma JSON exact :
 
 
 _COMPACT_PLANNER_PROMPT += (
-    LEGAL_RETRIEVAL_INSTRUCTIONS + CHRONOLOGY_PROMPT + DECISION_PERIOD_PROMPT
+    LEGAL_RETRIEVAL_INSTRUCTIONS
+    + CHRONOLOGY_PROMPT
+    + DECISION_PERIOD_PROMPT
     + "\nAjoute chronology et decision_period (objets ou null) au schéma JSON.\n"
 )
 
@@ -400,10 +404,14 @@ def _answer_format(intent: AnswerIntent) -> str:
 def _time_scope(query: str, *, legal_news: bool) -> dict[str, int | str] | None:
     years = re.findall(r"\b(20\d{2})\b", query)
     publication = legal_news or bool(re.search(r"\bpubli[ée]\w*\b", query, re.I))
-    publication = publication or bool(re.search(
-        r"\b(?:arr[êe]ts?|d[ée]cisions?|textes?|jurisprudence)\b[^.!?]{0,50}"
-        r"\b(?:derniers?|r[ée]cents?)\b", query, re.I,
-    ))
+    publication = publication or bool(
+        re.search(
+            r"\b(?:arr[êe]ts?|d[ée]cisions?|textes?|jurisprudence)\b[^.!?]{0,50}"
+            r"\b(?:derniers?|r[ée]cents?)\b",
+            query,
+            re.I,
+        )
+    )
     if publication and len(set(years)) > 1:
         return None
     if publication and len(set(years)) == 1:
@@ -427,7 +435,9 @@ def _time_scope(query: str, *, legal_news: bool) -> dict[str, int | str] | None:
         return None
     application = re.search(
         r"\b(?:applicables?|en vigueur|quel [ée]tait|quelle [ée]tait|r[èe]gles?|droit)\b"
-        r"[^.?!]{0,80}\ben\s+(20\d{2})\b", query, re.I,
+        r"[^.?!]{0,80}\ben\s+(20\d{2})\b",
+        query,
+        re.I,
     )
     if application and not re.search(r"\baujourd['’]hui\b", query, re.I):
         return {"kind": "application_year", "year": int(application.group(1)), "source": "explicit"}
@@ -502,9 +512,9 @@ def apply_compact_planner_payload(
 
     chronology = payload.get("chronology")
     if chronology is not None:
-        chronology = ChronologyRequest.model_validate_json(
-            json.dumps(chronology)
-        ).model_dump(mode="json")
+        chronology = ChronologyRequest.model_validate_json(json.dumps(chronology)).model_dump(
+            mode="json"
+        )
     decision_period = payload.get("decision_period")
     if decision_period is not None:
         decision_period = DecisionPeriod.model_validate_json(
@@ -545,10 +555,13 @@ def _planner_user_message(
         content = message.get("content")
         if role not in {"user", "assistant"} or not isinstance(content, str):
             continue
-        recent_history.append({
-            "role": role, "content": content,
-            **{k: message[k] for k in ("created_at", "chronology") if k in message},
-        })
+        recent_history.append(
+            {
+                "role": role,
+                "content": content,
+                **{k: message[k] for k in ("created_at", "chronology") if k in message},
+            }
+        )
     safe_org = {}
     for key in (
         "convention_collective",
@@ -609,7 +622,8 @@ async def run_compact_search_planner(
 
     def failure(reason: str) -> PlannerCallResult:
         return PlannerCallResult(
-            plan=_planner_error(plan, reason), prompt_tokens=prompt_tokens,
+            plan=_planner_error(plan, reason),
+            prompt_tokens=prompt_tokens,
             completion_tokens=completion_tokens,
         )
 
@@ -621,7 +635,8 @@ async def run_compact_search_planner(
         schema = strict_planner_schema(DocumentLegalSearch.model_json_schema())
         schema["properties"]["search_queries"]["maxItems"] = plan.query_budget
         constrain_period_parameters(
-            schema, available=user_period_parameters_available(plan.query_original, history),
+            schema,
+            available=user_period_parameters_available(plan.query_original, history),
         )
         response = await asyncio.wait_for(
             llm.chat.completions.create(
@@ -638,9 +653,14 @@ async def run_compact_search_planner(
                         ),
                     },
                 ],
-                response_format={"type": "json_schema", "json_schema": {
-                    "name": "legal_search_plan", "strict": True, "schema": schema,
-                }},
+                response_format={
+                    "type": "json_schema",
+                    "json_schema": {
+                        "name": "legal_search_plan",
+                        "strict": True,
+                        "schema": schema,
+                    },
+                },
                 max_completion_tokens=2400,
                 reasoning_effort="minimal",
             ),

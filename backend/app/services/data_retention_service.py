@@ -120,8 +120,7 @@ class DataRetentionService:
                     owner_email=owner.email if owner else "<unknown>",
                     reason="canceled",
                     ref_date=account.updated_at,
-                    eligible_since=account.updated_at
-                    + timedelta(days=GRACE_AFTER_CANCEL_DAYS),
+                    eligible_since=account.updated_at + timedelta(days=GRACE_AFTER_CANCEL_DAYS),
                 )
             )
 
@@ -144,8 +143,7 @@ class DataRetentionService:
                     owner_email=owner.email if owner else "<unknown>",
                     reason="unpaid",
                     ref_date=account.updated_at,
-                    eligible_since=account.updated_at
-                    + timedelta(days=GRACE_AFTER_UNPAID_DAYS),
+                    eligible_since=account.updated_at + timedelta(days=GRACE_AFTER_UNPAID_DAYS),
                 )
             )
 
@@ -189,10 +187,7 @@ class DataRetentionService:
                     OrganisationConvention.organisation_id == org.id
                 )
             )
-            conventions = [
-                {"idcc": c.idcc, "status": c.status}
-                for c in conv_result.scalars()
-            ]
+            conventions = [{"idcc": c.idcc, "status": c.status} for c in conv_result.scalars()]
             orgs_rows.append(
                 {
                     "id": str(org.id),
@@ -273,9 +268,11 @@ class DataRetentionService:
                 "plan": account.plan,
                 "status": account.status,
                 "plan_assigned_at": account.plan_assigned_at.isoformat()
-                if account.plan_assigned_at else None,
+                if account.plan_assigned_at
+                else None,
                 "plan_expires_at": account.plan_expires_at.isoformat()
-                if account.plan_expires_at else None,
+                if account.plan_expires_at
+                else None,
                 "stripe_customer_id": account.stripe_customer_id,
                 "created_at": account.created_at.isoformat() if account.created_at else None,
             },
@@ -350,7 +347,9 @@ class DataRetentionService:
             from app.services.storage_operation_service import queue_storage_delete
 
             await delete_extraction_artifacts(
-                self.db, storage, [doc.id for doc in docs],
+                self.db,
+                storage,
+                [doc.id for doc in docs],
             )
             for doc in docs:
                 if doc.storage_path:
@@ -359,27 +358,29 @@ class DataRetentionService:
             # Private documents reference conversations and dossiers: delete them
             # before those parents. Physical storage deletion waits for commit.
             summary["documents"] = len(docs)
-            await self.db.execute(
-                delete(Document).where(Document.organisation_id.in_(org_ids))
-            )
-            fiches = await self.db.execute(
-                delete(Fiche).where(Fiche.organisation_id.in_(org_ids))
-            )
+            await self.db.execute(delete(Document).where(Document.organisation_id.in_(org_ids)))
+            fiches = await self.db.execute(delete(Fiche).where(Fiche.organisation_id.in_(org_ids)))
             summary["fiches"] = fiches.rowcount
             # Break the conversation/dossier/case-file cycle explicitly.
             await self.db.execute(
-                update(Conversation).where(Conversation.organisation_id.in_(org_ids))
+                update(Conversation)
+                .where(Conversation.organisation_id.in_(org_ids))
                 .values(dossier_id=None)
             )
-            dossier_case_ids = list((await self.db.execute(
-                select(Dossier.case_file_id).where(Dossier.organisation_id.in_(org_ids))
-            )).scalars())
+            dossier_case_ids = list(
+                (
+                    await self.db.execute(
+                        select(Dossier.case_file_id).where(Dossier.organisation_id.in_(org_ids))
+                    )
+                ).scalars()
+            )
             dossiers = await self.db.execute(
                 delete(Dossier).where(Dossier.organisation_id.in_(org_ids))
             )
             summary["dossiers"] = dossiers.rowcount
             # Some dossiers have no conversation yet; include their case files.
             from app.models.case_file import CaseDocumentLink, CaseEntry, CaseEvent, CaseTask
+
             for model in (CaseDocumentLink, CaseTask, CaseEntry, CaseEvent):
                 await self.db.execute(delete(model).where(model.case_file_id.in_(dossier_case_ids)))
             detached_cases = await self.db.execute(
@@ -391,6 +392,7 @@ class DataRetentionService:
             if org_ids:
                 # Count before delete for the summary
                 from sqlalchemy import func as sqlfunc
+
                 count_convs = await self.db.execute(
                     select(sqlfunc.count())
                     .select_from(Conversation)
@@ -407,9 +409,15 @@ class DataRetentionService:
                 summary["messages"] = int(count_msgs.scalar() or 0)
 
                 # Delete messages first (no cascade guarantee), then conversations.
-                conv_ids = (await self.db.execute(
-                    select(Conversation.id).where(Conversation.organisation_id.in_(org_ids))
-                )).scalars().all()
+                conv_ids = (
+                    (
+                        await self.db.execute(
+                            select(Conversation.id).where(Conversation.organisation_id.in_(org_ids))
+                        )
+                    )
+                    .scalars()
+                    .all()
+                )
                 if conv_ids:
                     summary["case_files"] += await delete_case_files_for_conversations(
                         self.db, list(conv_ids)
@@ -417,33 +425,23 @@ class DataRetentionService:
                     await self.db.execute(
                         delete(Message).where(Message.conversation_id.in_(conv_ids))
                     )
-                    await self.db.execute(
-                        delete(Conversation).where(Conversation.id.in_(conv_ids))
-                    )
+                    await self.db.execute(delete(Conversation).where(Conversation.id.in_(conv_ids)))
 
             # OrganisationConventions, Memberships, Invitations (no cascade on all)
-            await self.db.execute(
-                delete(OrgConv).where(OrgConv.organisation_id.in_(org_ids))
-            )
+            await self.db.execute(delete(OrgConv).where(OrgConv.organisation_id.in_(org_ids)))
             memb_result = await self.db.execute(
                 select(Membership).where(Membership.organisation_id.in_(org_ids))
             )
             summary["memberships"] = len(list(memb_result.scalars()))
-            await self.db.execute(
-                delete(Membership).where(Membership.organisation_id.in_(org_ids))
-            )
+            await self.db.execute(delete(Membership).where(Membership.organisation_id.in_(org_ids)))
 
         # Include legacy organisation invitations without an account_id.
         invitation_scope = or_(
             Invitation.account_id == account_id, Invitation.organisation_id.in_(org_ids)
         )
-        inv_result = await self.db.execute(
-            select(Invitation).where(invitation_scope)
-        )
+        inv_result = await self.db.execute(select(Invitation).where(invitation_scope))
         summary["invitations"] = len(list(inv_result.scalars()))
-        await self.db.execute(
-            delete(Invitation).where(invitation_scope)
-        )
+        await self.db.execute(delete(Invitation).where(invitation_scope))
 
         # Organisations (parent of memberships we just removed)
         summary["organisations"] = len(orgs)
@@ -459,9 +457,7 @@ class DataRetentionService:
             select(AccountMember).where(AccountMember.account_id == account_id)
         )
         summary["members"] = len(list(members_result.scalars()))
-        await self.db.execute(
-            delete(AccountMember).where(AccountMember.account_id == account_id)
-        )
+        await self.db.execute(delete(AccountMember).where(AccountMember.account_id == account_id))
 
         # Account (cascade deletes Subscription, SubscriptionAddon,
         # BoosterPurchase, MonthlyQuestionUsage via the model cascade config).
@@ -487,9 +483,9 @@ class DataRetentionService:
             )
             retained = False
             for model, column in references:
-                if (await self.db.execute(
-                    select(model.id).where(column == owner_id).limit(1)
-                )).first():
+                if (
+                    await self.db.execute(select(model.id).where(column == owner_id).limit(1))
+                ).first():
                     retained = True
                     break
             if retained:
@@ -527,12 +523,14 @@ class DataRetentionService:
 
         if org_ids:
             from app.services.storage_operation_service import finish_pending_storage_deletes
+
             recovery = await finish_pending_storage_deletes(self.db, storage)
             summary["storage_objects_deleted"] = recovery["deleted"]
             summary["storage_objects_pending"] = recovery["pending"]
 
         logger.info(
             "Purge: account %s deleted — %s",
-            account_id, summary,
+            account_id,
+            summary,
         )
         return summary

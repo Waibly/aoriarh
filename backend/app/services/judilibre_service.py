@@ -24,7 +24,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.models.document import Document
-from app.services.judilibre_source import official_summaries, render_judilibre_source
 from app.models.document_case_reference import DocumentCaseReference
 from app.rag.norme_hierarchy import DOCUMENT_TYPE_HIERARCHY
 from app.rag.tasks import enqueue_ingestion
@@ -35,6 +34,7 @@ from app.services.document_case_references import (
     lock_case_references,
     store_case_references,
 )
+from app.services.judilibre_source import official_summaries, render_judilibre_source
 from app.services.jurisprudence_publication import judilibre_publication_label
 
 if TYPE_CHECKING:
@@ -56,7 +56,18 @@ _API_THROTTLE = 0.3
 # (the API rejects anything else with 400). Source: live probe of /export
 # error response → "[pl,mi,civ1,civ2,civ3,comm,soc,cr,creun,ordo,allciv,other]"
 CC_CHAMBERS = {
-    "pl", "mi", "civ1", "civ2", "civ3", "comm", "soc", "cr", "creun", "ordo", "allciv", "other"
+    "pl",
+    "mi",
+    "civ1",
+    "civ2",
+    "civ3",
+    "comm",
+    "soc",
+    "cr",
+    "creun",
+    "ordo",
+    "allciv",
+    "other",
 }
 
 # Sources sélectionnables depuis l'UI admin pour la sync personnalisée.
@@ -147,7 +158,7 @@ _CHAMBER_MAP = {
     "civ2": "Chambre civile 2",
     "civ3": "Chambre civile 3",
     "comm": "Chambre commerciale",  # Judilibre code is 'comm' (not 'com')
-    "cr": "Chambre criminelle",      # Judilibre code is 'cr' (not 'crim')
+    "cr": "Chambre criminelle",  # Judilibre code is 'cr' (not 'crim')
     "mi": "Chambre mixte",
     "pl": "Assemblée plénière",
     "creun": "Chambres réunies",
@@ -250,19 +261,13 @@ class JudilibreService:
     async def _get_access_token(self) -> str:
         """Get a valid OAuth2 Bearer token, fetching/refreshing as needed."""
         now = time.monotonic()
-        if (
-            JudilibreService._cached_token
-            and now < JudilibreService._token_expires_at
-        ):
+        if JudilibreService._cached_token and now < JudilibreService._token_expires_at:
             return JudilibreService._cached_token
 
         async with self._get_lock():
             # Double-check after acquiring lock
             now = time.monotonic()
-            if (
-                JudilibreService._cached_token
-                and now < JudilibreService._token_expires_at
-            ):
+            if JudilibreService._cached_token and now < JudilibreService._token_expires_at:
                 return JudilibreService._cached_token
 
             async with httpx.AsyncClient(timeout=_REQUEST_TIMEOUT) as client:
@@ -504,8 +509,12 @@ class JudilibreService:
         return result
 
     async def sync_ca_chambre_sociale(
-        self, db: AsyncSession, user_id: uuid.UUID, *,
-        date_start: date | None = None, date_end: date | None = None,
+        self,
+        db: AsyncSession,
+        user_id: uuid.UUID,
+        *,
+        date_start: date | None = None,
+        date_end: date | None = None,
         max_decisions: int | None = None,
     ) -> SyncResult:
         """Compatibility entry point: schedule ALL CA decisions durably.
@@ -518,8 +527,11 @@ class JudilibreService:
         end = date_end or date.today()
         start = date_start or (end - timedelta(days=365))
         scan = await schedule_scan(
-            db, key=f"ca:manual:{start}:{end}:{date.today()}",
-            start=start, end=end, user_id=user_id,
+            db,
+            key=f"ca:manual:{start}:{end}:{date.today()}",
+            start=start,
+            end=end,
+            user_id=user_id,
         )
         await db.commit()
         return SyncResult(
@@ -653,10 +665,7 @@ class JudilibreService:
                     Document.retired_at.is_(None),
                     # A DILA publication is audited against its own source.
                     # Its absence from Judilibre cannot establish a withdrawal.
-                    *(
-                        Document.storage_path.not_like(prefix + "%")
-                        for prefix in SOURCE_PREFIXES
-                    ),
+                    *(Document.storage_path.not_like(prefix + "%") for prefix in SOURCE_PREFIXES),
                 )
             )
         ).all()
@@ -768,11 +777,14 @@ class JudilibreService:
             return None
         rest = juridiction
         for prefix in (
-            "Cour d'appel de ", "Cour d'appel d'", "Cour d'appel du ",
-            "Cour d'appel des ", "Cour d'appel ",
+            "Cour d'appel de ",
+            "Cour d'appel d'",
+            "Cour d'appel du ",
+            "Cour d'appel des ",
+            "Cour d'appel ",
         ):
             if rest.startswith(prefix):
-                rest = rest[len(prefix):]
+                rest = rest[len(prefix) :]
                 break
         else:
             return None  # libellé inattendu
@@ -887,6 +899,7 @@ class JudilibreService:
             if isinstance(v, dict) and v.get("title"):
                 # Strip HTML tags from visa
                 import re
+
                 textes_appliques.append(re.sub(r"<[^>]+>", "", v["title"]))
 
         # Use the Judilibre 'id' as fallback if 'number' is missing
@@ -959,7 +972,8 @@ class JudilibreService:
         text_bytes = render_judilibre_source(source).encode("utf-8")
         storage.put_file_bytes(storage_path, text_bytes, content_type="text/plain")
         storage.put_file_bytes(
-            storage_path + ".source.json", json.dumps(source, ensure_ascii=False).encode("utf-8"),
+            storage_path + ".source.json",
+            json.dumps(source, ensure_ascii=False).encode("utf-8"),
             content_type="application/json",
         )
 
@@ -1017,15 +1031,20 @@ class JudilibreService:
             keys.update(self._social_case_keys([number or ""], day))
             if source_url:
                 urls.add(source_url)
-        references = (await db.execute(
-            select(DocumentCaseReference.number, DocumentCaseReference.decision_date)
-            .join(Document).where(
-                Document.source_type == "arret_cour_cassation",
-                Document.chambre == "Chambre sociale", Document.organisation_id.is_(None),
-                Document.private_dossier_id.is_(None), Document.private_conversation_id.is_(None),
-                Document.retired_at.is_(None),
+        references = (
+            await db.execute(
+                select(DocumentCaseReference.number, DocumentCaseReference.decision_date)
+                .join(Document)
+                .where(
+                    Document.source_type == "arret_cour_cassation",
+                    Document.chambre == "Chambre sociale",
+                    Document.organisation_id.is_(None),
+                    Document.private_dossier_id.is_(None),
+                    Document.private_conversation_id.is_(None),
+                    Document.retired_at.is_(None),
+                )
             )
-        )).all()
+        ).all()
         keys.update((str(day), number) for number, day in references)
         return keys, urls
 
@@ -1069,7 +1088,7 @@ class JudilibreService:
                     continue
 
                 if response.status_code == 429 and attempt < _MAX_RETRIES - 1:
-                    delay = _RETRY_DELAY * (2 ** attempt)
+                    delay = _RETRY_DELAY * (2**attempt)
                     logger.warning("Judilibre rate limit (429), retry in %.1fs", delay)
                     await asyncio.sleep(delay)
                     continue
@@ -1091,6 +1110,7 @@ class JudilibreService:
 
                 response.raise_for_status()
                 from app.services.source_diagnostics import source_json
+
                 return source_json(response)
 
             except httpx.TimeoutException:

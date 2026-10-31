@@ -59,9 +59,8 @@ async def list_sync_logs(
 
     # Count
     from sqlalchemy import func
-    total_result = await db.execute(
-        select(func.count()).select_from(count_query.subquery())
-    )
+
+    total_result = await db.execute(select(func.count()).select_from(count_query.subquery()))
     total = total_result.scalar() or 0
 
     # Paginate
@@ -106,9 +105,11 @@ async def trigger_scheduled_sync(
     )
     if running.scalars().first():
         from fastapi import HTTPException
+
         raise HTTPException(status_code=409, detail="Une synchronisation est déjà en cours")
 
     from app.rag.tasks import enqueue_scheduled_sync
+
     await enqueue_scheduled_sync()
     return {"detail": "Synchronisation planifiée lancée"}
 
@@ -121,6 +122,7 @@ async def trigger_bocc_sync(
 ) -> dict:
     """Manually trigger BOCC sync. If year/week omitted, syncs latest available."""
     from app.rag.tasks import enqueue_bocc_sync
+
     await enqueue_bocc_sync(str(user.id), year=year, week=week)
     label = f"{year}-{week:02d}" if year and week else "dernier disponible"
     return {"detail": f"Veille BOCC lancée ({label}), sans indexation"}
@@ -132,6 +134,7 @@ async def trigger_bocc_backfill(
 ) -> dict:
     """Launch full BOCC backfill (3 last years)."""
     from app.rag.tasks import enqueue_bocc_backfill
+
     await enqueue_bocc_backfill(str(user.id))
     return {"detail": "Inventaire BOCC lancé depuis 2023, sans indexation. Voir les logs."}
 
@@ -155,7 +158,8 @@ async def read_bocc_review(
     try:
         raw = await asyncio.to_thread(
             StorageService().get_file_bytes_bounded,
-            BoccService.review_path(year, week), 10_000_000,
+            BoccService.review_path(year, week),
+            10_000_000,
         )
     except ClientError as exc:
         if str(exc.response.get("Error", {}).get("Code")) in {"404", "NoSuchKey"}:
@@ -181,7 +185,8 @@ async def read_jorf_review(
     try:
         raw = await asyncio.to_thread(
             StorageService().get_file_bytes_bounded,
-            f"common/jorf_review/{cid}.json", 10_000_000,
+            f"common/jorf_review/{cid}.json",
+            10_000_000,
         )
     except ClientError as exc:
         if str(exc.response.get("Error", {}).get("Code")) in {"404", "NoSuchKey"}:
@@ -207,7 +212,9 @@ async def read_boss_review(
     key = f"common/boss_review/{source_id}.json" if source_id else "common/boss_review/index.json"
     try:
         raw = await asyncio.to_thread(
-            StorageService().get_file_bytes_bounded, key, 10_000_000,
+            StorageService().get_file_bytes_bounded,
+            key,
+            10_000_000,
         )
     except ClientError as exc:
         if str(exc.response.get("Error", {}).get("Code")) in {"404", "NoSuchKey"}:
@@ -223,7 +230,6 @@ async def trigger_code_travail_sync(
 ) -> dict:
     """Manually trigger Code du travail sync from Légifrance API."""
     # Check if a sync is already running (document pending/indexing for code_travail)
-    from sqlalchemy import or_
     running = await db.execute(
         select(SyncLog).where(
             SyncLog.sync_type == "code_travail",
@@ -232,9 +238,13 @@ async def trigger_code_travail_sync(
     )
     if running.scalars().first():
         from fastapi import HTTPException
-        raise HTTPException(status_code=409, detail="Une synchronisation du Code du travail est déjà en cours")
+
+        raise HTTPException(
+            status_code=409, detail="Une synchronisation du Code du travail est déjà en cours"
+        )
 
     from app.rag.tasks import enqueue_code_travail_sync
+
     await enqueue_code_travail_sync(str(user.id))
     return {"detail": "Synchronisation du Code du travail lancée"}
 
@@ -253,9 +263,11 @@ async def trigger_boss_sync(
     )
     if running.scalars().first():
         from fastapi import HTTPException
+
         raise HTTPException(status_code=409, detail="Une synchronisation BOSS est déjà en cours")
 
     from app.rag.tasks import enqueue_boss_sync
+
     await enqueue_boss_sync(str(user.id))
     return {"detail": "Synchronisation BOSS lancée"}
 
@@ -266,6 +278,7 @@ async def trigger_all_codes_sync(
 ) -> dict:
     """Sync all legal codes (Code civil, pénal, sécurité sociale, action sociale)."""
     from app.rag.tasks import enqueue_all_codes_sync
+
     await enqueue_all_codes_sync(str(user.id))
     return {"detail": "Synchronisation de tous les codes lancée"}
 
@@ -284,9 +297,11 @@ async def trigger_jorf_sync(
     )
     if running.scalars().first():
         from fastapi import HTTPException
+
         raise HTTPException(status_code=409, detail="Une synchronisation JORF est déjà en cours")
 
     from app.rag.tasks import enqueue_jorf_sync
+
     await enqueue_jorf_sync(str(user.id))
     return {"detail": "Synchronisation JORF lancée"}
 
@@ -297,7 +312,9 @@ async def read_curated_sources_status(
 ) -> dict:
     """Source-by-source evidence of updates, blocked downloads and pending changes."""
     import asyncio
-    from app.services.curated_source_service import CuratedSourceService, PREFIX
+
+    from app.services.curated_source_service import PREFIX, CuratedSourceService
+
     result = await asyncio.to_thread(CuratedSourceService().read_json, PREFIX + "latest.json")
     return result or {"status": "not_run", "sources": []}
 
@@ -308,6 +325,10 @@ async def read_social_ca_status(
 ) -> dict:
     """Inventory, scoped admissions, remaining candidates and technical failures."""
     import asyncio
+
     from app.services.curated_source_service import CuratedSourceService
-    result = await asyncio.to_thread(CuratedSourceService().read_json, "common/social_ca/latest.json")
+
+    result = await asyncio.to_thread(
+        CuratedSourceService().read_json, "common/social_ca/latest.json"
+    )
     return result or {"status": "not_run"}

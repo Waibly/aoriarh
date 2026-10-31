@@ -59,9 +59,7 @@ def test_prompt_requires_hook_body_sources_cta_and_forbids_hashtags() -> None:
     assert "étapes numérotées" in LINKEDIN_POST_SYSTEM_PROMPT
     assert "puces pour" in LINKEDIN_POST_SYSTEM_PROMPT
     assert "paragraphes courts pour une explication" in LINKEDIN_POST_SYSTEM_PROMPT
-    assert (
-        "Rattache chaque référence à l'affirmation précise" in LINKEDIN_POST_SYSTEM_PROMPT
-    )
+    assert "Rattache chaque référence à l'affirmation précise" in LINKEDIN_POST_SYSTEM_PROMPT
     assert "juste après la phrase concernée" in LINKEDIN_POST_SYSTEM_PROMPT
     assert "Sources :" in LINKEDIN_POST_SYSTEM_PROMPT
     assert "un libellé de" in LINKEDIN_POST_SYSTEM_PROMPT
@@ -178,10 +176,7 @@ def test_selects_and_formats_only_references_cited_by_answer() -> None:
     assert len(selected) == 2
     assert selected[0]["article_nums"] == ["L.1234-1"]
     assert format_linkedin_reference(selected[0]) == "Code du travail, art. L.1234-1"
-    assert (
-        format_linkedin_reference(selected[1])
-        == "Cour de cassation, 10/05/2023, n° 21-12.345"
-    )
+    assert format_linkedin_reference(selected[1]) == "Cour de cassation, 10/05/2023, n° 21-12.345"
 
 
 def test_internal_reference_does_not_expose_document_name() -> None:
@@ -202,7 +197,10 @@ def test_law_reference_identifies_the_document_before_the_article() -> None:
         {
             "source_type": "loi",
             "source_type_label": "Loi",
-            "document_name": "Loi n° 78-17 du 6 janvier 1978 relative à l'informatique, aux fichiers et aux libertés",
+            "document_name": (
+                "Loi n° 78-17 du 6 janvier 1978 relative à l'informatique, aux "
+                "fichiers et aux libertés"
+            ),
             "article_nums": ["48"],
         }
     )
@@ -250,10 +248,13 @@ def test_warnings_never_transform_content() -> None:
     assert any("références autorisées" in warning for warning in warnings)
 
 
-@pytest.mark.parametrize("content", [
-    "Utilisez ce document pour préparer votre décision ↓",
-    "Un texte — conservé tel quel. #RH",
-])
+@pytest.mark.parametrize(
+    "content",
+    [
+        "Utilisez ce document pour préparer votre décision ↓",
+        "Un texte — conservé tel quel. #RH",
+    ],
+)
 def test_carousel_warnings_do_not_judge_editorial_content(content: str) -> None:
     assert build_linkedin_carousel_warnings(content) == []
 
@@ -318,7 +319,7 @@ async def test_carousel_post_generation_returns_raw_output_byte_for_byte() -> No
             question="Question",
             answer_markdown="Réponse",
             sources=[],
-            carousel_content="<main class=\"carousel\">Carrousel</main>",
+            carousel_content='<main class="carousel">Carrousel</main>',
         )
 
     assert generation.content == raw

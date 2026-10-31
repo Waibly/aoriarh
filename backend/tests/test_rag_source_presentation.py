@@ -21,9 +21,7 @@ def test_formatted_source_exposes_reliable_presentation_metadata():
         section_path="Préavis",
     )
 
-    with patch("app.rag.agent._search_engine"), patch(
-        "app.rag.agent.get_reranker"
-    ):
+    with patch("app.rag.agent._search_engine"), patch("app.rag.agent.get_reranker"):
         source = RAGAgent().format_sources([result])[0]
 
     assert source.content_date == "2026-06-01"

@@ -29,12 +29,8 @@ class BoosterPurchase(TimestampMixin, Base):
         String(255), unique=True, nullable=True
     )
 
-    purchased_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False
-    )
-    expires_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
+    purchased_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     # Relations
     account: Mapped["Account"] = relationship(  # noqa: F821

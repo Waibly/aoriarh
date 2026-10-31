@@ -168,8 +168,11 @@ class DossierService:
 
         case = await self.case(dossier)
         if any(not link.document_id for link in case.document_links):
-            raise HTTPException(409, "Une pièce du dossier n’est plus disponible. "
-                                "Retirez-la dans Documents avant de poursuivre.")
+            raise HTTPException(
+                409,
+                "Une pièce du dossier n’est plus disponible. "
+                "Retirez-la dans Documents avant de poursuivre.",
+            )
         if any(link.document_id and not link.extraction_id for link in case.document_links):
             raise HTTPException(
                 409,

@@ -12,17 +12,13 @@ class Account(TimestampMixin, Base):
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=generate_uuid)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
-    owner_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("users.id"), nullable=False, unique=True
-    )
+    owner_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), nullable=False, unique=True)
 
     # Plan (both technical plans gratuit/invite/vip and commercial solo/equipe/groupe)
     plan: Mapped[str] = mapped_column(
         String(20), nullable=False, default="gratuit", server_default="gratuit"
     )
-    plan_expires_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
+    plan_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     plan_assigned_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
@@ -35,9 +31,7 @@ class Account(TimestampMixin, Base):
 
     # Stripe customer (only set for commercial plans). One customer per account,
     # can carry several subscriptions over time (history).
-    stripe_customer_id: Mapped[str | None] = mapped_column(
-        String(255), unique=True, nullable=True
-    )
+    stripe_customer_id: Mapped[str | None] = mapped_column(String(255), unique=True, nullable=True)
 
     # Relations
     owner: Mapped["User"] = relationship("User", back_populates="owned_account")  # noqa: F821

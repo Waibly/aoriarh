@@ -30,8 +30,13 @@ class SignupAttribution(BaseModel):
     attributed_at: datetime | None = None
 
     @field_validator(
-        "utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content",
-        "gclid", "msclkid",
+        "utm_source",
+        "utm_medium",
+        "utm_campaign",
+        "utm_term",
+        "utm_content",
+        "gclid",
+        "msclkid",
     )
     @classmethod
     def _truncate_255(cls, v: str | None) -> str | None:
@@ -52,8 +57,15 @@ class SignupAttribution(BaseModel):
         return not any(
             getattr(self, f)
             for f in (
-                "utm_source", "utm_medium", "utm_campaign", "utm_term",
-                "utm_content", "gclid", "msclkid", "referrer", "landing_page",
+                "utm_source",
+                "utm_medium",
+                "utm_campaign",
+                "utm_term",
+                "utm_content",
+                "gclid",
+                "msclkid",
+                "referrer",
+                "landing_page",
             )
         )
 

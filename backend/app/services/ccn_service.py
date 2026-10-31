@@ -103,6 +103,7 @@ class CcnService:
 
         # Enqueue background task
         from app.rag.tasks import enqueue_kali_install
+
         await enqueue_kali_install(
             str(org_conv.id),
             str(user_id),
@@ -110,9 +111,7 @@ class CcnService:
 
         return org_conv
 
-    async def remove_convention(
-        self, organisation_id: uuid.UUID, idcc: str
-    ) -> None:
+    async def remove_convention(self, organisation_id: uuid.UUID, idcc: str) -> None:
         """Remove a convention link from an organisation.
 
         Common CCN docs are NOT deleted (shared with other orgs).
@@ -196,9 +195,7 @@ class CcnService:
                     points_selector=FilterSelector(
                         filter=Filter(
                             must=[
-                                FieldCondition(
-                                    key="idcc", match=MatchValue(value=idcc)
-                                ),
+                                FieldCondition(key="idcc", match=MatchValue(value=idcc)),
                                 FieldCondition(
                                     key="source_type",
                                     match=MatchAny(any=ccn_types),
@@ -208,9 +205,7 @@ class CcnService:
                     ),
                 )
             except Exception:
-                logger.warning(
-                    "Failed to delete leftover Qdrant chunks for IDCC %s", idcc
-                )
+                logger.warning("Failed to delete leftover Qdrant chunks for IDCC %s", idcc)
 
         await self.db.delete(org_conv)
         await self.db.commit()
@@ -233,9 +228,7 @@ class CcnService:
                 ),
             )
         except Exception:
-            logger.warning(
-                "Failed to delete Qdrant chunks for document %s", document_id
-            )
+            logger.warning("Failed to delete Qdrant chunks for document %s", document_id)
 
     async def sync_convention(
         self, organisation_id: uuid.UUID, idcc: str, user_id: uuid.UUID
@@ -262,6 +255,7 @@ class CcnService:
         await self.db.commit()
 
         from app.rag.tasks import enqueue_kali_install
+
         await enqueue_kali_install(str(org_conv.id), str(user_id))
 
         return org_conv

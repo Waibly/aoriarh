@@ -6,6 +6,7 @@ filtre construit alors ne doit remonter QUE le corpus commun non-CCN, jamais les
 documents d'une autre organisation ni une convention collective d'un secteur
 tiers. Un régression ici = fuite de données → à ne jamais casser.
 """
+
 from __future__ import annotations
 
 from datetime import date
@@ -79,10 +80,13 @@ class TestCloisonnementDemo:
                 {"organisation_id": _OTHER_ORG, "source_type": "divers"},
                 {"organisation_id": _DEMO_ORG, "source_type": "divers", "private": True},
             ]
-            client.upsert("demo", [
-                models.PointStruct(id=i, vector=[1.0, 0.0], payload=payload)
-                for i, payload in enumerate(payloads, start=1)
-            ])
+            client.upsert(
+                "demo",
+                [
+                    models.PointStruct(id=i, vector=[1.0, 0.0], payload=payload)
+                    for i, payload in enumerate(payloads, start=1)
+                ],
+            )
             records, _ = client.scroll("demo", scroll_filter=f)
             assert [record.id for record in records] == [1]
         finally:

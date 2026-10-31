@@ -2,7 +2,7 @@ import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
-from sqlalchemy import delete, select, func
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -10,14 +10,14 @@ from app.core.database import get_db
 from app.core.dependencies import get_current_user, require_role
 from app.models.account import Account
 from app.models.account_member import AccountMember
-from app.models.user import User
 from app.models.invitation import Invitation
 from app.models.membership import Membership
-from app.services.user_service import UserService
 from app.models.organisation import Organisation
+from app.models.user import User
 from app.schemas.account import AccountRead
 from app.schemas.organisation import PlanAssign
 from app.services.plan_service import PlanOverflowError, assign_plan, resolve_expired_plans
+from app.services.user_service import UserService
 
 router = APIRouter()
 
@@ -68,9 +68,7 @@ async def list_users(
     if search:
         pattern = f"%{search}%"
         base = base.where(User.email.ilike(pattern) | User.full_name.ilike(pattern))
-        count_base = count_base.where(
-            User.email.ilike(pattern) | User.full_name.ilike(pattern)
-        )
+        count_base = count_base.where(User.email.ilike(pattern) | User.full_name.ilike(pattern))
 
     total = (await db.execute(count_base)).scalar() or 0
 
@@ -110,7 +108,9 @@ async def list_users(
                 account_id=str(account.id) if account else None,
                 account_name=account.name if account else None,
                 plan=account.plan if account else None,
-                plan_expires_at=account.plan_expires_at.isoformat() if account and account.plan_expires_at else None,
+                plan_expires_at=account.plan_expires_at.isoformat()
+                if account and account.plan_expires_at
+                else None,
             )
         )
 
@@ -211,9 +211,7 @@ async def delete_user(
 
     if user.role == "admin":
         # Allow deleting admins, but ensure at least one remains
-        admin_count_q = await db.execute(
-            select(func.count(User.id)).where(User.role == "admin")
-        )
+        admin_count_q = await db.execute(select(func.count(User.id)).where(User.role == "admin"))
         if (admin_count_q.scalar() or 0) <= 1:
             raise HTTPException(
                 status_code=400,
@@ -224,11 +222,13 @@ async def delete_user(
     if user.owned_account:
         account = user.owned_account
         other_manager_q = await db.execute(
-            select(AccountMember).where(
+            select(AccountMember)
+            .where(
                 AccountMember.account_id == account.id,
                 AccountMember.user_id != user_id,
                 AccountMember.role_in_org == "manager",
-            ).limit(1)
+            )
+            .limit(1)
         )
         other_manager = other_manager_q.scalar_one_or_none()
         if other_manager is not None:
@@ -240,7 +240,7 @@ async def delete_user(
             raise HTTPException(
                 status_code=400,
                 detail="Cet utilisateur est le dernier manager du compte. "
-                       "Supprimez d'abord le compte ou transférez la propriété à un autre membre.",
+                "Supprimez d'abord le compte ou transférez la propriété à un autre membre.",
             )
 
     service = UserService(db)
@@ -284,7 +284,7 @@ async def delete_account(
         raise HTTPException(
             status_code=400,
             detail="Impossible de supprimer un compte dont vous êtes membre. "
-                   "Retirez-vous d'abord du compte.",
+            "Retirez-vous d'abord du compte.",
         )
 
     # Safety: if any member is an admin, check at least one admin remains
@@ -294,34 +294,29 @@ async def delete_account(
         if u and u.role == "admin":
             admin_in_account.append(u)
     if admin_in_account:
-        admin_count_q = await db.execute(
-            select(func.count(User.id)).where(User.role == "admin")
-        )
+        admin_count_q = await db.execute(select(func.count(User.id)).where(User.role == "admin"))
         total_admins = admin_count_q.scalar() or 0
         if total_admins - len(admin_in_account) < 1:
             raise HTTPException(
                 status_code=400,
-                detail="La suppression de ce compte supprimerait le dernier administrateur du système.",
+                detail=(
+                    "La suppression de ce compte supprimerait le dernier administrateur du système."
+                ),
             )
 
     # 1. Delete all organisations in this account (Qdrant, MinIO, docs, etc.)
     from app.services.organisation_service import OrganisationService
+
     org_service = OrganisationService(db)
-    org_result = await db.execute(
-        select(Organisation).where(Organisation.account_id == account_id)
-    )
+    org_result = await db.execute(select(Organisation).where(Organisation.account_id == account_id))
     for org in org_result.scalars().all():
         await org_service.delete_organisation(org.id, current_user)
 
     # 2. Delete account-level invitations and account members, then the
     #    account itself — BEFORE user cleanup so delete_user_data step 8
     #    sees owned_account=None and doesn't try to double-delete.
-    await db.execute(
-        delete(Invitation).where(Invitation.account_id == account_id)
-    )
-    await db.execute(
-        delete(AccountMember).where(AccountMember.account_id == account_id)
-    )
+    await db.execute(delete(Invitation).where(Invitation.account_id == account_id))
+    await db.execute(delete(AccountMember).where(AccountMember.account_id == account_id))
     await db.delete(account)
     await db.flush()
 

@@ -43,9 +43,7 @@ async def get_me(
         )
         org = org_result.scalar_one_or_none()
         if org and org.account_id:
-            acc_result = await db.execute(
-                select(Account).where(Account.id == org.account_id)
-            )
+            acc_result = await db.execute(select(Account).where(Account.id == org.account_id))
             account = acc_result.scalar_one_or_none()
             if account:
                 plan = account.plan
@@ -63,9 +61,7 @@ async def get_me(
     # Fallback: first team account membership
     if plan is None and user.account_memberships:
         team_account_id = user.account_memberships[0].account_id
-        acc_result = await db.execute(
-            select(Account).where(Account.id == team_account_id)
-        )
+        acc_result = await db.execute(select(Account).where(Account.id == team_account_id))
         team_acc = acc_result.scalar_one_or_none()
         if team_acc:
             plan = team_acc.plan
@@ -114,9 +110,7 @@ async def set_my_attribution(
     front envoie l'attribution juste après la première connexion. Premier
     contact conservé : no-op si le compte porte déjà une attribution.
     """
-    already = user.attributed_at is not None or bool(
-        user.utm_source or user.gclid or user.msclkid
-    )
+    already = user.attributed_at is not None or bool(user.utm_source or user.gclid or user.msclkid)
     apply_attribution(user, data)
     await db.commit()
     written = not already and not data.is_empty()
@@ -145,7 +139,9 @@ async def rename_workspace(
     db: AsyncSession = Depends(get_db),
 ) -> dict:
     if not user.owned_account:
-        raise HTTPException(status_code=403, detail="Vous n'êtes pas propriétaire d'un espace de travail")
+        raise HTTPException(
+            status_code=403, detail="Vous n'êtes pas propriétaire d'un espace de travail"
+        )
     user.owned_account.name = data.name.strip()
     await db.commit()
     return {"detail": "Espace de travail renommé", "name": user.owned_account.name}

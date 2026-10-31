@@ -1,19 +1,18 @@
 from app.models.account import Account
 from app.models.account_member import AccountMember
 from app.models.api_usage import ApiPricing, ApiUsageLog
-from app.models.auth_session import AuthSession
 from app.models.audit_log import AuditLog
+from app.models.auth_session import AuthSession
 from app.models.base import Base
+from app.models.bocc_issue import BoccIssue
 from app.models.booster_purchase import BoosterPurchase
 from app.models.case_file import CaseDocumentLink, CaseEntry, CaseEvent, CaseFile, CaseTask
 from app.models.ccn import CcnReference, OrganisationConvention
 from app.models.conversation import Conversation, Message
-from app.models.dossier import Dossier
 from app.models.document import Document
 from app.models.document_case_reference import DocumentCaseReference
 from app.models.document_extraction import DocumentExtraction
-from app.models.storage_operation import StorageOperation
-from app.models.fiche import Fiche
+from app.models.dossier import Dossier
 from app.models.emailing import (
     EmailCampaign,
     EmailCampaignEvent,
@@ -23,13 +22,14 @@ from app.models.emailing import (
     EmailSequenceStepBranch,
     EmailTemplate,
 )
+from app.models.fiche import Fiche
 from app.models.invitation import Invitation
 from app.models.judilibre import JudilibreRecord, JudilibreScan, JudilibreScanItem
 from app.models.membership import Membership
-from app.models.plan_invitation import PlanInvitation, PlanInvitationRedemption
 from app.models.monthly_question_usage import MonthlyQuestionUsage
-from app.models.bocc_issue import BoccIssue
 from app.models.organisation import Organisation
+from app.models.plan_invitation import PlanInvitation, PlanInvitationRedemption
+from app.models.storage_operation import StorageOperation
 from app.models.subscription import Subscription
 from app.models.subscription_addon import SubscriptionAddon
 from app.models.sync_log import SyncLog

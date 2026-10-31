@@ -52,11 +52,9 @@ class Settings(BaseSettings):
     # Available to every organisation; global operational switch, no legacy backfill.
     document_extraction_enabled: bool = True
     storage_recovery_enabled: bool = False
+
     def document_extraction_enabled_for(self, organisation_id: UUID | None) -> bool:
-        return (
-            self.document_extraction_enabled
-            and organisation_id is not None
-        )
+        return self.document_extraction_enabled and organisation_id is not None
 
     # OpenAI
     openai_api_key: str  # OBLIGATOIRE — pas de défaut
@@ -120,9 +118,13 @@ class Settings(BaseSettings):
     stripe_price_booster: str = ""
 
     # Redirect URLs after Stripe checkout / portal
-    stripe_checkout_success_url: str = ""  # defaults to frontend_url + "/settings/billing?success=1"
-    stripe_checkout_cancel_url: str = ""   # defaults to frontend_url + "/settings/billing?canceled=1"
-    stripe_portal_return_url: str = ""     # defaults to frontend_url + "/settings/billing"
+    stripe_checkout_success_url: str = (
+        ""  # defaults to frontend_url + "/settings/billing?success=1"
+    )
+    stripe_checkout_cancel_url: str = (
+        ""  # defaults to frontend_url + "/settings/billing?canceled=1"
+    )
+    stripe_portal_return_url: str = ""  # defaults to frontend_url + "/settings/billing"
 
     # Admin seed
     seed_admin: bool = False  # Activer uniquement en dev / premier déploiement
@@ -196,7 +198,7 @@ class Settings(BaseSettings):
         if v in ("dev-secret-key", "changeme", "secret", ""):
             raise ValueError(
                 "SECRET_KEY non sécurisé. "
-                "Générer avec : python -c \"import secrets; print(secrets.token_urlsafe(64))\""
+                'Générer avec : python -c "import secrets; print(secrets.token_urlsafe(64))"'
             )
         if len(v) < 32:
             raise ValueError("SECRET_KEY doit faire au moins 32 caractères")

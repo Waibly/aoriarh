@@ -63,9 +63,7 @@ class PlanInvitationService:
         return invitation
 
     async def validate_token(self, token: uuid.UUID) -> dict:
-        result = await self.db.execute(
-            select(PlanInvitation).where(PlanInvitation.token == token)
-        )
+        result = await self.db.execute(select(PlanInvitation).where(PlanInvitation.token == token))
         invitation = result.scalar_one_or_none()
         if not invitation:
             return {"valid": False, "reason": "not_found"}
@@ -100,9 +98,7 @@ class PlanInvitationService:
                 detail=f"Ce lien n'est plus valide ({validation['reason']})",
             )
 
-        result = await self.db.execute(
-            select(PlanInvitation).where(PlanInvitation.token == token)
-        )
+        result = await self.db.execute(select(PlanInvitation).where(PlanInvitation.token == token))
         invitation = result.scalar_one()
 
         if invitation.email and user.email.lower() != invitation.email.lower():
@@ -120,6 +116,7 @@ class PlanInvitationService:
 
         # Already on a commercial plan with active Stripe subscription
         from app.models.subscription import Subscription
+
         sub_result = await self.db.execute(
             select(Subscription).where(
                 Subscription.account_id == account.id,
@@ -208,14 +205,16 @@ class PlanInvitationService:
         redemptions = []
         for r in redemptions_result.scalars().all():
             user = await self.db.get(User, r.user_id)
-            redemptions.append({
-                "id": r.id,
-                "account_id": r.account_id,
-                "user_id": r.user_id,
-                "user_email": user.email if user else None,
-                "user_name": user.full_name if user else None,
-                "redeemed_at": r.redeemed_at,
-            })
+            redemptions.append(
+                {
+                    "id": r.id,
+                    "account_id": r.account_id,
+                    "user_id": r.user_id,
+                    "user_email": user.email if user else None,
+                    "user_name": user.full_name if user else None,
+                    "redeemed_at": r.redeemed_at,
+                }
+            )
 
         return {
             "invitation": invitation,

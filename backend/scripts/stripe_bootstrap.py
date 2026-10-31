@@ -32,7 +32,6 @@ from app.core.plans import (
     PRICE_YEARLY_CENTS,
 )
 
-
 # --- Product catalogue ------------------------------------------------------
 
 
@@ -40,7 +39,9 @@ PRODUCTS: list[dict] = [
     {
         "aoria_code": "solo",
         "name": "AORIA RH — Solo",
-        "description": "Plan Solo · 2 utilisateurs inclus · 1 organisation · 300 questions / mois partagées",
+        "description": (
+            "Plan Solo · 2 utilisateurs inclus · 1 organisation · 300 questions / mois partagées"
+        ),
         "prices": [
             {
                 "aoria_code": "solo_monthly",
@@ -78,7 +79,10 @@ PRODUCTS: list[dict] = [
     {
         "aoria_code": "groupe",
         "name": "AORIA RH — Groupe",
-        "description": "Plan Groupe · 10 utilisateurs · 10 organisations · 2 400 questions / mois · onboarding inclus",
+        "description": (
+            "Plan Groupe · 10 utilisateurs · 10 organisations · 2 400 "
+            "questions / mois · onboarding inclus"
+        ),
         "prices": [
             {
                 "aoria_code": "groupe_monthly",
@@ -97,7 +101,10 @@ PRODUCTS: list[dict] = [
     {
         "aoria_code": "addon_user",
         "name": "AORIA RH — Utilisateur additionnel",
-        "description": "Add-on : +1 utilisateur (accès partagé au quota du plan, maximum 3 add-ons par abonnement)",
+        "description": (
+            "Add-on : +1 utilisateur (accès partagé au quota du plan, maximum "
+            "3 add-ons par abonnement)"
+        ),
         "prices": [
             {
                 "aoria_code": "addon_user_monthly",
@@ -153,7 +160,9 @@ PRODUCTS: list[dict] = [
 
 
 def _search_product(aoria_code: str):
-    results = stripe.Product.search(query=f"metadata['aoria_code']:'{aoria_code}' AND active:'true'")
+    results = stripe.Product.search(
+        query=f"metadata['aoria_code']:'{aoria_code}' AND active:'true'"
+    )
     return results.data[0] if results.data else None
 
 

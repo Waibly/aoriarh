@@ -9,7 +9,6 @@ import pytest
 
 from app.services.curated_source_service import CuratedSourceService, extract_body, fetch_source
 
-
 SPEC = {
     "key": "test",
     "format": "html",
@@ -22,7 +21,11 @@ SPEC = {
     "name": "Guide",
     "baseline_document_sha256": "old",
 }
-RAW = b'<html><nav>Menu</nav><article><h1>Source</h1><p>Original source text <a href="/law">law</a></p></article></html>'
+RAW = (
+    b"<html><nav>Menu</nav><article><h1>Source</h1><p>"
+    b'Original source text <a href="/law">law</a></p><'
+    b"/article></html>"
+)
 
 
 def test_source_structure_and_links():
@@ -71,9 +74,12 @@ async def test_empty_download_is_failure():
 @pytest.mark.asyncio
 async def test_redirect_diagnostic_excludes_credentials_path_and_query():
     def handler(request):
-        return httpx.Response(302, headers={
-            "Location": "https://user:password@other.example:8443/private?token=secret",
-        })
+        return httpx.Response(
+            302,
+            headers={
+                "Location": "https://user:password@other.example:8443/private?token=secret",
+            },
+        )
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
         with pytest.raises(ValueError) as error:
@@ -257,6 +263,7 @@ async def test_identical_raw_source_avoids_reindex_on_pdf_parser_version_change(
 @pytest.mark.asyncio
 async def test_cpc_requires_all_selected_current_articles_and_preserves_notes():
     from datetime import date
+
     from app.services.curated_source_service import fetch_cpc
 
     data = {
@@ -286,8 +293,9 @@ async def test_cpc_requires_all_selected_current_articles_and_preserves_notes():
 
 @pytest.mark.asyncio
 async def test_index_failure_restores_document_and_vectors():
-    from app.models.document import Document
     from qdrant_client.models import Record
+
+    from app.models.document import Document
 
     service = CuratedSourceService(Mock())
     service.save_json = Mock()
@@ -356,9 +364,14 @@ async def test_status_reports_blocked_sources_without_triggering_import(client, 
 async def test_forbidden_source_is_explicit_and_preserves_document():
     service, db, doc = setup_service()
     response = httpx.Response(403, request=httpx.Request("GET", SPEC["url"]))
-    with patch("app.services.curated_source_service.fetch_source", new=AsyncMock(
-        side_effect=httpx.HTTPStatusError("Forbidden", request=response.request, response=response)
-    )):
+    with patch(
+        "app.services.curated_source_service.fetch_source",
+        new=AsyncMock(
+            side_effect=httpx.HTTPStatusError(
+                "Forbidden", request=response.request, response=response
+            )
+        ),
+    ):
         result = await service.sync(db, sources=[SPEC])
     assert result["errors"] == 1
     assert result["sources"][0]["status"] == "access_blocked"
@@ -370,20 +383,32 @@ async def test_forbidden_source_is_explicit_and_preserves_document():
 
 def browser_capture(spec=SPEC):
     from datetime import UTC, datetime
-    raw = (f'<html><head><link rel="canonical" href="{spec["url"]}"></head>'
-           '<body><article>Official source text.</article></body></html>')
-    return {'url': spec['url'], 'html': raw, 'captured_at': datetime.now(UTC).isoformat(),
-            'sha256': hashlib.sha256(raw.encode()).hexdigest()}
+
+    raw = (
+        f'<html><head><link rel="canonical" href="{spec["url"]}"></head>'
+        "<body><article>Official source text.</article></body></html>"
+    )
+    return {
+        "url": spec["url"],
+        "html": raw,
+        "captured_at": datetime.now(UTC).isoformat(),
+        "sha256": hashlib.sha256(raw.encode()).hexdigest(),
+    }
 
 
-@pytest.mark.parametrize('field,value', [
-    ('url', 'https://other.example/guide'), ('sha256', 'wrong'),
-    ('captured_at', '2000-01-01T00:00:00+00:00'),
-    ('captured_at', '2099-01-01T00:00:00+00:00'),
-    ('captured_at', '2026-10-11T00:00:00'),
-])
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("url", "https://other.example/guide"),
+        ("sha256", "wrong"),
+        ("captured_at", "2000-01-01T00:00:00+00:00"),
+        ("captured_at", "2099-01-01T00:00:00+00:00"),
+        ("captured_at", "2026-10-11T00:00:00"),
+    ],
+)
 def test_browser_capture_rejects_wrong_provenance(field, value):
     from app.services.curated_source_service import validate_browser_capture
+
     capture = browser_capture()
     capture[field] = value
     with pytest.raises(ValueError):
@@ -393,27 +418,32 @@ def test_browser_capture_rejects_wrong_provenance(field, value):
 @pytest.mark.asyncio
 async def test_manual_capture_no_network_or_overwriting_automatic_report():
     from app.services.curated_source_service import PREFIX
+
     service, db, doc = setup_service()
     capture = browser_capture()
-    spec = dict(SPEC, baseline_body_sha256=hashlib.sha256(
-        extract_body(SPEC, capture['html'].encode()).encode()).hexdigest())
-    with patch('app.services.curated_source_service.fetch_source', new=AsyncMock()) as fetch:
-        result = await service.sync(db, sources=[spec], captures={spec['key']: capture})
+    spec = dict(
+        SPEC,
+        baseline_body_sha256=hashlib.sha256(
+            extract_body(SPEC, capture["html"].encode()).encode()
+        ).hexdigest(),
+    )
+    with patch("app.services.curated_source_service.fetch_source", new=AsyncMock()) as fetch:
+        result = await service.sync(db, sources=[spec], captures={spec["key"]: capture})
     fetch.assert_not_awaited()
     service.replace.assert_not_awaited()
-    assert result['unchanged'] == 1 and result['errors'] == 0
-    assert result['mode'] == 'manual_browser_capture'
+    assert result["unchanged"] == 1 and result["errors"] == 0
+    assert result["mode"] == "manual_browser_capture"
     paths = [c.args[0] for c in service.save_json.call_args_list]
-    assert PREFIX + 'manual/latest.json' in paths
-    assert PREFIX + 'latest.json' not in paths
-    assert result['sources'][0]['captured_at'] == capture['captured_at']
+    assert PREFIX + "manual/latest.json" in paths
+    assert PREFIX + "latest.json" not in paths
+    assert result["sources"][0]["captured_at"] == capture["captured_at"]
 
 
 @pytest.mark.asyncio
 async def test_missing_capture_never_falls_back_to_network():
     service, db, doc = setup_service()
-    with patch('app.services.curated_source_service.fetch_source', new=AsyncMock()) as fetch:
-        with pytest.raises(ValueError, match='Every selected source'):
+    with patch("app.services.curated_source_service.fetch_source", new=AsyncMock()) as fetch:
+        with pytest.raises(ValueError, match="Every selected source"):
             await service.sync(db, sources=[SPEC], captures={})
     fetch.assert_not_awaited()
     service.replace.assert_not_awaited()
@@ -421,18 +451,20 @@ async def test_missing_capture_never_falls_back_to_network():
 
 def test_browser_capture_accepts_same_host_regional_url_with_exact_canonical():
     from app.services.curated_source_service import validate_browser_capture
+
     capture = browser_capture()
-    capture['source_url'] = SPEC['url']
-    capture['url'] = 'https://example.org/region/guide'
+    capture["source_url"] = SPEC["url"]
+    capture["url"] = "https://example.org/region/guide"
     raw, final_url = validate_browser_capture(SPEC, capture)
-    assert raw == capture['html'].encode()
-    assert final_url == capture['url']
+    assert raw == capture["html"].encode()
+    assert final_url == capture["url"]
 
 
 def test_browser_capture_rejects_mismatched_canonical_even_with_valid_hash():
     from app.services.curated_source_service import validate_browser_capture
+
     capture = browser_capture()
-    capture['html'] = capture['html'].replace(SPEC['url'], 'https://example.org/other')
-    capture['sha256'] = hashlib.sha256(capture['html'].encode()).hexdigest()
-    with pytest.raises(ValueError, match='canonical'):
+    capture["html"] = capture["html"].replace(SPEC["url"], "https://example.org/other")
+    capture["sha256"] = hashlib.sha256(capture["html"].encode()).hexdigest()
+    with pytest.raises(ValueError, match="canonical"):
         validate_browser_capture(SPEC, capture)

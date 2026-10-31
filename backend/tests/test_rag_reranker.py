@@ -39,9 +39,11 @@ async def test_raw_scores_and_inputs_are_preserved_including_territories():
 
 def test_rerank_context_keeps_question_and_excludes_unrelated_org_fields():
     import json
+
     question = "Question complète\navec plusieurs lignes"
-    encoded = build_rerank_query(question, {"convention_collective": "CCN test",
-                                          "secret": "not-for-provider"}, "autonome")
+    encoded = build_rerank_query(
+        question, {"convention_collective": "CCN test", "secret": "not-for-provider"}, "autonome"
+    )
     data = json.loads(encoded.split("\n", 1)[1])
     assert data["question_originale"] == question
     assert data["contexte_organisation"] == {"convention_collective": "CCN test"}

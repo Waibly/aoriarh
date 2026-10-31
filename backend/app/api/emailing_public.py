@@ -5,6 +5,7 @@ désinscrire quelqu'un d'autre. Pour éviter qu'un scanner d'emails ne désinscr
 par simple pré-chargement, le GET affiche une page de confirmation et seul le
 POST effectue réellement la désinscription.
 """
+
 import uuid
 
 from fastapi import APIRouter, Depends
@@ -24,8 +25,7 @@ router = APIRouter()
 
 def _page(title: str, message: str, button: str | None = None, action: str | None = None) -> str:
     btn = (
-        f'<form method="post" action="{action}">'
-        f'<button type="submit">{button}</button></form>'
+        f'<form method="post" action="{action}"><button type="submit">{button}</button></form>'
         if button and action
         else ""
     )
@@ -58,21 +58,25 @@ def _invalid() -> HTMLResponse:
 
 @router.get("/unsubscribe/test", response_class=HTMLResponse)
 async def unsubscribe_test_confirm() -> HTMLResponse:
-    return HTMLResponse(_page(
-        "Tester la désinscription",
-        "Cet email est un envoi de test. Vous pouvez essayer la confirmation : "
-        "aucune adresse ne sera désinscrite.",
-        button="Confirmer la désinscription de test",
-        action="/api/v1/emailing/unsubscribe/test",
-    ))
+    return HTMLResponse(
+        _page(
+            "Tester la désinscription",
+            "Cet email est un envoi de test. Vous pouvez essayer la confirmation : "
+            "aucune adresse ne sera désinscrite.",
+            button="Confirmer la désinscription de test",
+            action="/api/v1/emailing/unsubscribe/test",
+        )
+    )
 
 
 @router.post("/unsubscribe/test", response_class=HTMLResponse)
 async def unsubscribe_test_action() -> HTMLResponse:
-    return HTMLResponse(_page(
-        "Test de désinscription terminé",
-        "Le parcours de confirmation a été testé. Aucune adresse n'a été désinscrite.",
-    ))
+    return HTMLResponse(
+        _page(
+            "Test de désinscription terminé",
+            "Le parcours de confirmation a été testé. Aucune adresse n'a été désinscrite.",
+        )
+    )
 
 
 @router.get("/unsubscribe", response_class=HTMLResponse)
@@ -98,16 +102,21 @@ async def unsubscribe_confirm(
 
     if recipient.status == "unsubscribed":
         return HTMLResponse(
-            _page("Déjà désinscrit", "Cette adresse est déjà désinscrite. Vous ne recevrez plus nos emails.")
+            _page(
+                "Déjà désinscrit",
+                "Cette adresse est déjà désinscrite. Vous ne recevrez plus nos emails.",
+            )
         )
 
-    return HTMLResponse(_page(
-        "Se désinscrire",
-        f"Confirmez-vous la désinscription de <strong>{recipient.email}</strong> ? "
-        "Vous ne recevrez plus aucun email de notre part.",
-        button="Confirmer la désinscription",
-        action=f"/api/v1/emailing/unsubscribe?rid={rid}&sig={sig}",
-    ))
+    return HTMLResponse(
+        _page(
+            "Se désinscrire",
+            f"Confirmez-vous la désinscription de <strong>{recipient.email}</strong> ? "
+            "Vous ne recevrez plus aucun email de notre part.",
+            button="Confirmer la désinscription",
+            action=f"/api/v1/emailing/unsubscribe?rid={rid}&sig={sig}",
+        )
+    )
 
 
 @router.post("/unsubscribe", response_class=HTMLResponse)
@@ -127,7 +136,9 @@ async def unsubscribe_action(
     if not recipient:
         return _invalid()
 
-    return HTMLResponse(_page(
-        "Désinscription confirmée",
-        "C'est fait. Vous ne recevrez plus aucun email de notre part. À bientôt.",
-    ))
+    return HTMLResponse(
+        _page(
+            "Désinscription confirmée",
+            "C'est fait. Vous ne recevrez plus aucun email de notre part. À bientôt.",
+        )
+    )

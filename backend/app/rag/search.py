@@ -68,7 +68,8 @@ def _get_sparse_model(profile_name: str | None = None):
             from fastembed import SparseTextEmbedding
 
             _sparse_models[profile.vector_name] = SparseTextEmbedding(
-                model_name="Qdrant/bm25", language=profile.language,
+                model_name="Qdrant/bm25",
+                language=profile.language,
             )
     return _sparse_models[profile.vector_name]
 
@@ -155,7 +156,9 @@ class HybridSearch:
         rendre le cloisonnement testable isolément (invariant de sécurité, cf.
         démo publique corpus-commun-only).
         """
-        org_filter = build_org_access_filter(organisation_id, org_idcc_list, authorized_private_document_ids)
+        org_filter = build_org_access_filter(
+            organisation_id, org_idcc_list, authorized_private_document_ids
+        )
         if org_filter is None:
             raise ValueError("An organisation is required for hybrid search")
 
@@ -207,9 +210,12 @@ class HybridSearch:
             org_filter = Filter(must=[org_filter, decision_period_filter(decision_period)])
 
         if excluded_source_types:
-            org_filter = Filter(must=[org_filter], must_not=[
-                FieldCondition(key="source_type", match=MatchAny(any=excluded_source_types)),
-            ])
+            org_filter = Filter(
+                must=[org_filter],
+                must_not=[
+                    FieldCondition(key="source_type", match=MatchAny(any=excluded_source_types)),
+                ],
+            )
         return org_filter
 
     async def search(
@@ -309,14 +315,22 @@ class HybridSearch:
             # exact same access, source and date filter.
             dense_results, sparse_results = await asyncio.gather(
                 asyncio.to_thread(
-                    self.qdrant.query_points, collection_name=COLLECTION_NAME,
-                    query=dense_embedding, using="dense", query_filter=org_filter,
-                    limit=top_k, with_payload=True,
+                    self.qdrant.query_points,
+                    collection_name=COLLECTION_NAME,
+                    query=dense_embedding,
+                    using="dense",
+                    query_filter=org_filter,
+                    limit=top_k,
+                    with_payload=True,
                 ),
                 asyncio.to_thread(
-                    self.qdrant.query_points, collection_name=COLLECTION_NAME,
-                    query=SparseVector(**sparse_vector), using=lexical_profile().vector_name,
-                    query_filter=org_filter, limit=top_k, with_payload=True,
+                    self.qdrant.query_points,
+                    collection_name=COLLECTION_NAME,
+                    query=SparseVector(**sparse_vector),
+                    using=lexical_profile().vector_name,
+                    query_filter=org_filter,
+                    limit=top_k,
+                    with_payload=True,
                 ),
             )
             points, scores = {}, {}
@@ -376,10 +390,16 @@ class HybridSearch:
                     effective_to=payload.get("effective_to"),
                     instrument_status=payload.get("instrument_status"),
                     organisation_id=payload.get("organisation_id"),
-                    **{key: payload.get(key) for key in (
-                        "article_id", "article_title", "article_status",
-                        "article_effective_from", "article_effective_to",
-                    )},
+                    **{
+                        key: payload.get(key)
+                        for key in (
+                            "article_id",
+                            "article_title",
+                            "article_status",
+                            "article_effective_from",
+                            "article_effective_to",
+                        )
+                    },
                 )
             )
 

@@ -12,7 +12,7 @@ import logging
 import re
 import uuid
 from dataclasses import dataclass, field
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 from html import unescape
 from urllib.parse import urljoin, urlparse
 
@@ -64,7 +64,7 @@ _ROOT_STEMS = frozenset(_STEM_TO_LABEL)
 
 _HREF_RE = re.compile(r'href="([^"#?]+\.html)"', re.IGNORECASE)
 _ARTICLE_OPEN_RE = re.compile(r'<article\b[^>]*\bid="article"[^>]*>', re.IGNORECASE)
-_ARTICLE_TAG_RE = re.compile(r'<article\b[^>]*>|</article>', re.IGNORECASE)
+_ARTICLE_TAG_RE = re.compile(r"<article\b[^>]*>|</article>", re.IGNORECASE)
 _TITLE_RE = re.compile(r"<h1[^>]*>(.*?)</h1>", re.IGNORECASE | re.DOTALL)
 _A_JOUR_RE = re.compile(r"jour\s+(?:au|le)\s+(\d{2})/(\d{2})/(\d{4})", re.IGNORECASE)
 _TAG_RE = re.compile(r"<[^>]+>")
@@ -134,7 +134,14 @@ class BossService:
 
                 try:
                     await self._upsert_document(
-                        db, storage, user_id, path, rubrique, html, markdown, result,
+                        db,
+                        storage,
+                        user_id,
+                        path,
+                        rubrique,
+                        html,
+                        markdown,
+                        result,
                         version_notes=await self._fetch_version_notes(client, article_html),
                     )
                 except Exception as exc:
@@ -150,21 +157,27 @@ class BossService:
             result.error_messages.append("Catalogue BOSS incomplet : limite de pages atteinte")
         storage.put_file_bytes(
             "common/boss_review/index.json",
-            json.dumps({
-                "captured_at": datetime.now(timezone.utc).isoformat(),
-                "pages_crawled": result.pages_crawled,
-                "pending": result.docs_pending,
-                "errors": result.error_messages,
-                "candidates": result.review_candidates,
-                "automatic_ingestion": False,
-            }, ensure_ascii=False).encode(),
+            json.dumps(
+                {
+                    "captured_at": datetime.now(UTC).isoformat(),
+                    "pages_crawled": result.pages_crawled,
+                    "pending": result.docs_pending,
+                    "errors": result.error_messages,
+                    "candidates": result.review_candidates,
+                    "automatic_ingestion": False,
+                },
+                ensure_ascii=False,
+            ).encode(),
             content_type="application/json",
         )
         logger.info(
             "BOSS sync terminée — %d pages crawlées, %d créées, %d mises à jour, "
             "%d inchangées, %d erreurs",
-            result.pages_crawled, result.docs_created, result.docs_updated,
-            result.docs_unchanged, result.errors,
+            result.pages_crawled,
+            result.docs_created,
+            result.docs_updated,
+            result.docs_unchanged,
+            result.errors,
         )
         return result
 
@@ -184,32 +197,40 @@ class BossService:
                 await asyncio.sleep(1.0 * (attempt + 1))
         raise last_exc  # type: ignore[misc]
 
-    async def _fetch_version_notes(self, client: httpx.AsyncClient, article_html: str) -> list[dict]:
+    async def _fetch_version_notes(
+        self, client: httpx.AsyncClient, article_html: str
+    ) -> list[dict]:
         """Keep linked publication notes with the page, including future applicability."""
         blocks = re.findall(
             r'<div\b[^>]*class=["\'][^"\']*bloc_notes_version[^"\']*["\'][^>]*>(.*?)</div>',
-            article_html, re.IGNORECASE | re.DOTALL,
+            article_html,
+            re.IGNORECASE | re.DOTALL,
         )
         paths = []
         for block in blocks:
             for href in re.findall(r'href=["\']([^"\']+)["\']', block, re.IGNORECASE):
                 url = urljoin(BOSS_BASE_URL, unescape(href))
                 parsed = urlparse(url)
-                if (parsed.scheme == "https" and parsed.netloc == "boss.gouv.fr"
-                        and parsed.path.startswith("/portail/accueil/actualites-boss-et-rescrits/")
-                        and parsed.path not in paths):
+                if (
+                    parsed.scheme == "https"
+                    and parsed.netloc == "boss.gouv.fr"
+                    and parsed.path.startswith("/portail/accueil/actualites-boss-et-rescrits/")
+                    and parsed.path not in paths
+                ):
                     paths.append(parsed.path)
         if len(paths) > 5:
             raise ValueError("Too many BOSS version notes: review evidence incomplete")
-        return [{"url": BOSS_BASE_URL + path, "source_html": await self._fetch(client, path)}
-                for path in paths]
+        return [
+            {"url": BOSS_BASE_URL + path, "source_html": await self._fetch(client, path)}
+            for path in paths
+        ]
 
     # ---- Parsing HTML ----
 
     @staticmethod
     def _rubrique_for_path(path: str) -> str:
         """Libellé de rubrique déduit du 1er segment du chemin de la page."""
-        rest = path[len("/portail/accueil/"):]
+        rest = path[len("/portail/accueil/") :]
         stem = rest.split("/", 1)[0].removesuffix(".html")
         return _STEM_TO_LABEL.get(stem, "BOSS")
 
@@ -228,7 +249,7 @@ class BossService:
     def _normalize_path(href: str) -> str | None:
         """Ramène un href (absolu ou relatif au site) à un chemin ``/portail/...``."""
         if href.startswith(BOSS_BASE_URL):
-            href = href[len(BOSS_BASE_URL):]
+            href = href[len(BOSS_BASE_URL) :]
         if href.startswith("http"):
             return None  # lien externe
         if not href.startswith("/"):
@@ -240,7 +261,7 @@ class BossService:
         """True si le chemin appartient au sous-arbre d'une des 8 rubriques."""
         if not path.startswith("/portail/accueil/"):
             return False
-        rest = path[len("/portail/accueil/"):]
+        rest = path[len("/portail/accueil/") :]
         stem = rest.split("/", 1)[0].removesuffix(".html")
         return stem in _ROOT_STEMS
 
@@ -278,6 +299,7 @@ class BossService:
             return ""
         text = _TAG_RE.sub(" ", m.group(1))
         from html import unescape
+
         return re.sub(r"\s+", " ", unescape(text)).strip()
 
     @staticmethod
@@ -295,13 +317,11 @@ class BossService:
 
     def _build_storage_path(self, page_path: str) -> str:
         """Chemin MinIO déterministe dérivé du chemin de la page BOSS."""
-        rel = page_path[len("/portail/accueil/"):].removesuffix(".html")
+        rel = page_path[len("/portail/accueil/") :].removesuffix(".html")
         rel = re.sub(r"[^a-zA-Z0-9/_-]", "_", rel)
         return f"common/boss/{rel}.md"
 
-    def _format_markdown(
-        self, title: str, rubrique: str, page_path: str, body: str
-    ) -> str:
+    def _format_markdown(self, title: str, rubrique: str, page_path: str, body: str) -> str:
         body = body.lstrip()
         # Évite le doublon de titre : l'article porte déjà son propre <h1>.
         if body.startswith("# "):
@@ -341,7 +361,8 @@ class BossService:
         name = f"BOSS — {rubrique} — {title}" if title else f"BOSS — {rubrique}"
 
         existing = await db.execute(
-            select(Document).where(
+            select(Document)
+            .where(
                 Document.organisation_id.is_(None),
                 Document.private_dossier_id.is_(None),
                 Document.private_conversation_id.is_(None),
@@ -351,7 +372,8 @@ class BossService:
                     Document.storage_path == storage_path,
                     Document.source_url == source_url,
                 ),
-            ).limit(1)
+            )
+            .limit(1)
         )
         doc = existing.scalar_one_or_none()
 
@@ -365,16 +387,19 @@ class BossService:
         source_id = str(uuid.uuid5(uuid.NAMESPACE_URL, source_url))
         review_path = f"common/boss_review/{source_id}.json"
         candidate = {
-            "source_id": source_id, "name": name, "source_url": source_url,
+            "source_id": source_id,
+            "name": name,
+            "source_url": source_url,
             "current_document_id": str(doc.id) if doc else None,
             "current_sha256": doc.file_hash if doc else None,
             "candidate_sha256": file_hash,
             "source_updated_date": content_date.isoformat() if content_date else None,
-            "status": "review_pending", "review_path": review_path,
+            "status": "review_pending",
+            "review_path": review_path,
         }
         payload = {
             **candidate,
-            "captured_at": datetime.now(timezone.utc).isoformat(),
+            "captured_at": datetime.now(UTC).isoformat(),
             "candidate_markdown": full_md,
             "source_html": html,
             "version_notes": version_notes or [],
@@ -382,9 +407,12 @@ class BossService:
         }
         raw = json.dumps(payload, ensure_ascii=False).encode()
         # Keep each observed body revision, as well as the latest review pointer.
-        evidence_hash = hashlib.sha256(json.dumps(
-            {"html": html, "version_notes": version_notes or []}, sort_keys=True,
-        ).encode()).hexdigest()
+        evidence_hash = hashlib.sha256(
+            json.dumps(
+                {"html": html, "version_notes": version_notes or []},
+                sort_keys=True,
+            ).encode()
+        ).hexdigest()
         version_path = f"common/boss_review/versions/{source_id}/{file_hash}/{evidence_hash}.json"
         storage.put_file_bytes(version_path, raw, content_type="application/json")
         storage.put_file_bytes(review_path, raw, content_type="application/json")

@@ -1190,35 +1190,49 @@ class KaliService:
             # A scheduled delay does not prove that replacement ingestion
             # succeeded. Preserve the old public source until its replacement
             # is indexed and its complete vector set is available.
-            if (doc.organisation_id is not None or doc.private_dossier_id is not None
-                    or doc.private_conversation_id is not None):
+            if (
+                doc.organisation_id is not None
+                or doc.private_dossier_id is not None
+                or doc.private_conversation_id is not None
+            ):
                 logger.warning("Refusing public-source cleanup for private doc %s", doc_id)
                 continue
-            replacements = (await db.execute(
-                select(Document).where(
-                    Document.organisation_id.is_(None),
-                    Document.private_dossier_id.is_(None),
-                    Document.private_conversation_id.is_(None),
-                    Document.retired_at.is_(None),
-                    Document.id.not_in([uuid.UUID(value) for value in old_doc_ids]),
-                    Document.name == doc.name,
-                    Document.source_type == doc.source_type,
-                    Document.indexation_status == "indexed",
-                    Document.chunk_count > 0,
+            replacements = (
+                (
+                    await db.execute(
+                        select(Document).where(
+                            Document.organisation_id.is_(None),
+                            Document.private_dossier_id.is_(None),
+                            Document.private_conversation_id.is_(None),
+                            Document.retired_at.is_(None),
+                            Document.id.not_in([uuid.UUID(value) for value in old_doc_ids]),
+                            Document.name == doc.name,
+                            Document.source_type == doc.source_type,
+                            Document.indexation_status == "indexed",
+                            Document.chunk_count > 0,
+                        )
+                    )
                 )
-            )).scalars().all()
+                .scalars()
+                .all()
+            )
             qdrant = get_qdrant_client()
             replacement_ready = False
             for replacement in replacements:
                 count = qdrant.count(
                     COLLECTION_NAME,
-                    count_filter=Filter(must=[
-                        FieldCondition(key="document_id", match=MatchValue(
-                            value=str(replacement.id),
-                        )),
-                        FieldCondition(key="organisation_id", match=MatchValue(value="common")),
-                        FieldCondition(key="private", match=MatchValue(value=False)),
-                    ]),
+                    count_filter=Filter(
+                        must=[
+                            FieldCondition(
+                                key="document_id",
+                                match=MatchValue(
+                                    value=str(replacement.id),
+                                ),
+                            ),
+                            FieldCondition(key="organisation_id", match=MatchValue(value="common")),
+                            FieldCondition(key="private", match=MatchValue(value=False)),
+                        ]
+                    ),
                     exact=True,
                 ).count
                 if count == replacement.chunk_count:

@@ -65,8 +65,9 @@ ARTICLE_AWARE_SOURCE_TYPES = {
 logger = logging.getLogger(__name__)
 
 
-class StaleDocumentIngestion(RuntimeError):
+class StaleDocumentIngestion(RuntimeError):  # noqa: N818 -- Public exception used by worker callers.
     """The source has changed/deleted; this job must not publish or update it."""
+
 
 # Retry config for Voyage AI rate limits
 MAX_RETRIES = 3
@@ -128,7 +129,8 @@ async def _get_embeddings_batch(
             url,
             headers=headers,
             json={
-                "input": texts, "model": EMBEDDING_MODEL,
+                "input": texts,
+                "model": EMBEDDING_MODEL,
                 **({"input_type": input_type} if input_type else {}),
             },
             timeout=60.0,
@@ -298,7 +300,9 @@ class IngestionPipeline:
 
     async def _update_current(self, doc: Document, db: AsyncSession, **values) -> None:
         result = await db.execute(
-            update(Document).where(*self._current_source_conditions()).values(**values)
+            update(Document)
+            .where(*self._current_source_conditions())
+            .values(**values)
             .execution_options(synchronize_session=False)
         )
         if result.rowcount != 1:
@@ -310,15 +314,21 @@ class IngestionPipeline:
         await db.refresh(doc)
 
     async def _lock_publication(self, db: AsyncSession) -> None:
-        current = (await db.execute(
-            select(Document.id).where(*self._current_source_conditions()).with_for_update()
-        )).first()
+        current = (
+            await db.execute(
+                select(Document.id).where(*self._current_source_conditions()).with_for_update()
+            )
+        ).first()
         if current is None:
             raise StaleDocumentIngestion("source_version_changed")
 
-    async def ingest(self, document_id: uuid.UUID, db: AsyncSession,
-                     expected_source: str | None = None,
-                     max_embedding_tokens: int | None = None) -> None:
+    async def ingest(
+        self,
+        document_id: uuid.UUID,
+        db: AsyncSession,
+        expected_source: str | None = None,
+        max_embedding_tokens: int | None = None,
+    ) -> None:
         # 1. Load document from PostgreSQL
         result = await db.execute(select(Document).where(Document.id == document_id))
         doc = result.scalar_one_or_none()
@@ -398,9 +408,13 @@ class IngestionPipeline:
 
             if not cleaned_text.strip():
                 logger.warning("Document %s: no text extracted", document_id)
-                await self._update_current(doc, db, indexation_status="error",
-                                           indexation_error="Aucun texte extrait du document",
-                                           indexation_progress=None)
+                await self._update_current(
+                    doc,
+                    db,
+                    indexation_status="error",
+                    indexation_error="Aucun texte extrait du document",
+                    indexation_progress=None,
+                )
                 return
 
             # 6. Chunk (route to specialized chunker by source type)
@@ -422,9 +436,13 @@ class IngestionPipeline:
                 chunks = self.chunker.chunk(cleaned_text)
             if not chunks:
                 logger.warning("Document %s: no chunks produced", document_id)
-                await self._update_current(doc, db, indexation_status="error",
-                                           indexation_error="Aucun chunk produit après extraction du texte",
-                                           indexation_progress=None)
+                await self._update_current(
+                    doc,
+                    db,
+                    indexation_status="error",
+                    indexation_error="Aucun chunk produit après extraction du texte",
+                    indexation_progress=None,
+                )
                 return
 
             chunk_char_lengths = [len(c) for c in chunks]
@@ -442,6 +460,7 @@ class IngestionPipeline:
 
             if max_embedding_tokens is not None:
                 import tiktoken
+
                 encoder = tiktoken.get_encoding("cl100k_base")
                 tokens = sum(len(encoder.encode(c, disallowed_special=())) for c in chunks)
                 if tokens > max_embedding_tokens or max_embedding_tokens < 1:
@@ -450,16 +469,22 @@ class IngestionPipeline:
             # 7. Generate embeddings (dense + sparse) — 15% → 80%
             embedding_provider = self.embedding_provider or _get_embeddings_with_progress
             dense_embeddings = await embedding_provider(
-                chunks, settings.voyage_api_key, doc, db,
+                chunks,
+                settings.voyage_api_key,
+                doc,
+                db,
                 progress_callback=lambda progress: self._update_progress(doc, db, progress),
             )
             sparse_vectors = _get_sparse_vectors(chunks)
             # When both fields exist in the destination, keep both profiles
             # available after cutover. No query vector is compared against a
             # corpus encoded in a different language.
-            sparse_fields = self.qdrant.get_collection(
-                COLLECTION_NAME,
-            ).config.params.sparse_vectors or {}
+            sparse_fields = (
+                self.qdrant.get_collection(
+                    COLLECTION_NAME,
+                ).config.params.sparse_vectors
+                or {}
+            )
             extra_sparse = {
                 profile.vector_name: _get_sparse_vectors(chunks, name)
                 for name, profile in LEXICAL_PROFILES.items()
@@ -488,9 +513,8 @@ class IngestionPipeline:
                     "norme_niveau": doc.norme_niveau,
                     "norme_poids": doc.norme_poids,
                     "chunk_index": i,
-                    "has_table": contains_markdown_table(chunk_text) or (
-                        lossless_source and "<table" in chunk_text
-                    ),
+                    "has_table": contains_markdown_table(chunk_text)
+                    or (lossless_source and "<table" in chunk_text),
                 }
                 if dila_source:
                     payload.update(dila_metadata)
@@ -587,11 +611,15 @@ class IngestionPipeline:
         except Exception as exc:
             from app.services.document_extraction_service import ExtractionError
 
-            if (isinstance(exc, StaleDocumentIngestion)
-                    or isinstance(exc, ExtractionError) and str(exc) == "source_version_changed"):
+            if (
+                isinstance(exc, StaleDocumentIngestion)
+                or isinstance(exc, ExtractionError)
+                and str(exc) == "source_version_changed"
+            ):
                 await db.rollback()
                 logger.warning(
-                    "Extraction cancelled: document %s changed during ingestion", document_id,
+                    "Extraction cancelled: document %s changed during ingestion",
+                    document_id,
                 )
                 return
             duration_ms = int((time.time() - start_time) * 1000)
@@ -599,14 +627,21 @@ class IngestionPipeline:
             await db.rollback()
             try:
                 await self._update_current(
-                    doc, db, indexation_status="error", indexation_duration_ms=duration_ms,
-                    indexation_error=str(exc)[:500], indexation_progress=None,
+                    doc,
+                    db,
+                    indexation_status="error",
+                    indexation_duration_ms=duration_ms,
+                    indexation_error=str(exc)[:500],
+                    indexation_progress=None,
                 )
             except StaleDocumentIngestion:
                 logger.info("Discarded error from obsolete job for document %s", document_id)
 
     async def _extract_document_text(
-        self, doc: Document, file_bytes: bytes, db: AsyncSession,
+        self,
+        doc: Document,
+        file_bytes: bytes,
+        db: AsyncSession,
     ) -> str:
         if not settings.document_extraction_enabled_for(doc.organisation_id):
             return self.extractor.extract(file_bytes, doc.file_format or "pdf")
@@ -616,11 +651,14 @@ class IngestionPipeline:
         )
 
         return await DocumentExtractionService(db, self.storage).extract(
-            SourceSnapshot.from_document(doc), file_bytes, self.extractor,
+            SourceSnapshot.from_document(doc),
+            file_bytes,
+            self.extractor,
         )
 
-    def _cleanup_old_chunks(self, document_id: str, new_point_ids: set[str],
-                            strict: bool = False) -> None:
+    def _cleanup_old_chunks(
+        self, document_id: str, new_point_ids: set[str], strict: bool = False
+    ) -> None:
         """Delete old Qdrant points for a document, keeping only new_point_ids."""
         try:
             old_point_ids: list[str] = []

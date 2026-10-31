@@ -1,6 +1,5 @@
 """Admin endpoints for Judilibre synchronization."""
 
-import uuid
 from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -21,7 +20,6 @@ from app.schemas.document import DocumentRead
 from app.services.judilibre_service import (
     SOURCE_DEFINITIONS,
     JudilibreService,
-    SyncResult,
 )
 
 router = APIRouter()
@@ -82,7 +80,10 @@ async def sync_judilibre(
     )
     return SyncResponse(
         status="queued",
-        message="Synchronisation lancée en arrière-plan. Consultez les statistiques pour suivre la progression.",
+        message=(
+            "Synchronisation lancée en arrière-plan. Consultez les "
+            "statistiques pour suivre la progression."
+        ),
     )
 
 
@@ -118,6 +119,7 @@ async def initialize_jurisprudence_corpus(
     empêche les doublons même si on relance.
     """
     from app.rag.tasks import enqueue_jurisprudence_initialization
+
     await enqueue_jurisprudence_initialization(user_id=str(user.id))
     return SyncResponse(
         status="queued",

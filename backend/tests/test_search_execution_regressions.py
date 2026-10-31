@@ -335,10 +335,22 @@ async def test_timeout_of_main_search_is_not_hidden_by_successful_floor(monkeypa
 
 
 async def test_historical_article_spelling_is_still_retrievable(corpus):
-    corpus.upsert(COLLECTION_NAME, [PointStruct(id=20, vector=[1., 0.], payload={
-        "organisation_id": "common", "source_type": "code_securite_sociale",
-        "article_nums": ["L. 242-1-4"], "document_id": "historical", "chunk_index": 0,
-    })])
+    corpus.upsert(
+        COLLECTION_NAME,
+        [
+            PointStruct(
+                id=20,
+                vector=[1.0, 0.0],
+                payload={
+                    "organisation_id": "common",
+                    "source_type": "code_securite_sociale",
+                    "article_nums": ["L. 242-1-4"],
+                    "document_id": "historical",
+                    "chunk_index": 0,
+                },
+            )
+        ],
+    )
     found = await fetch_by_identifiers(corpus, {"article_nums": ["L242-1-4"]}, "org")
     assert [r.document_id for r in found] == ["historical"]
 
@@ -354,8 +366,10 @@ async def test_boss_is_not_forced_without_a_model_hint():
     plan = build_deterministic_search_plan("Quels frais professionnels exonérer ?")
     assert plan.planner_source_hints == []
     await obj._search_with_plan(plan, plan.query_original, "org")
-    assert not any(call.kwargs.get("source_type_filter") == ["boss"]
-               for call in obj.search_engine.search.await_args_list)
+    assert not any(
+        call.kwargs.get("source_type_filter") == ["boss"]
+        for call in obj.search_engine.search.await_args_list
+    )
 
 
 async def test_unchanged_planner_keeps_raw_output_without_reconstructing_context():
@@ -363,13 +377,22 @@ async def test_unchanged_planner_keeps_raw_output_without_reconstructing_context
     query = "Et les cadres ?"
     anchor = "Quelle durée de préavis pour une démission ?"
     raw = '{"standalone_question":"Et les cadres ?"}'
-    llm = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(
-        create=AsyncMock(return_value=SimpleNamespace(
-            choices=[SimpleNamespace(message=SimpleNamespace(content=raw))], usage=None,
-        )),
-    )))
+    llm = SimpleNamespace(
+        chat=SimpleNamespace(
+            completions=SimpleNamespace(
+                create=AsyncMock(
+                    return_value=SimpleNamespace(
+                        choices=[SimpleNamespace(message=SimpleNamespace(content=raw))],
+                        usage=None,
+                    )
+                ),
+            )
+        )
+    )
     planned = await run_compact_search_planner(
-        build_deterministic_search_plan(query, has_history=True), llm=llm, model="test",
+        build_deterministic_search_plan(query, has_history=True),
+        llm=llm,
+        model="test",
         history=[{"role": "user", "content": anchor}],
     )
     assert planned.plan.planner_raw_response == raw
@@ -387,21 +410,29 @@ async def test_generated_queries_are_executed_without_cleanup_or_truncation():
         "legal_topics": ["  sujet\n brut  "],
     }
     plan = apply_compact_planner_payload(
-        build_deterministic_search_plan("Quel préavis ?"), payload,
+        build_deterministic_search_plan("Quel préavis ?"),
+        payload,
     )
     assert plan.search_queries == queries
     assert plan.legal_topics == payload["legal_topics"]
     _, variants = await obj._search_with_plan(plan, plan.query_original, "org")
-    assert variants == list(dict.fromkeys([
-        plan.query_original, payload["standalone_question"], *queries,
-    ]))
+    assert variants == list(
+        dict.fromkeys(
+            [
+                plan.query_original,
+                payload["standalone_question"],
+                *queries,
+            ]
+        )
+    )
     assert plan.search_queries == queries  # Raw duplicates remain in the model output.
 
 
 def test_identical_generated_question_does_not_trigger_semantic_warning():
     plan = build_deterministic_search_plan("Et les cadres ?", has_history=True)
     enriched = apply_compact_planner_payload(
-        plan, {"standalone_question": plan.query_original},
+        plan,
+        {"standalone_question": plan.query_original},
     )
     assert "planner_condensation_unchanged" not in enriched.warnings
     assert search_feedback({"search_plan": enriched.to_dict()})["warnings"] == []
@@ -416,7 +447,8 @@ def test_planner_history_keeps_selected_messages_verbatim():
     history = [{"role": "assistant", "content": content}]
     message = _planner_user_message(
         build_deterministic_search_plan("Suite ?", has_history=True),
-        history=history, org_context=None,
+        history=history,
+        org_context=None,
     )
     assert json.loads(message)["conversation_history"] == history
 
@@ -435,7 +467,8 @@ async def test_auxiliary_search_does_not_construct_query_from_topics():
 async def test_explicit_empty_source_scope_is_never_broadened():
     obj = agent()
     obj._active_search_plan = replace(
-        build_deterministic_search_plan("question"), exclusive_source_types=["boss"],
+        build_deterministic_search_plan("question"),
+        exclusive_source_types=["boss"],
     )
     assert await obj._search("question", "org", source_type_filter=[]) == []
     obj.search_engine.search.assert_not_awaited()
@@ -457,13 +490,18 @@ async def test_total_retrieval_failure_is_not_reported_as_no_documents():
 @pytest.mark.parametrize("raw", [None, "", "  sortie non JSON\n"])
 async def test_default_entry_point_never_uses_legacy_search_on_planner_failure(raw):
     obj = agent()
-    create = AsyncMock(return_value=SimpleNamespace(
-        choices=[SimpleNamespace(message=SimpleNamespace(content=raw))], usage=None,
-    ))
+    create = AsyncMock(
+        return_value=SimpleNamespace(
+            choices=[SimpleNamespace(message=SimpleNamespace(content=raw))],
+            usage=None,
+        )
+    )
     obj.llm = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
     obj._search_with_plan = AsyncMock()
     results, _, trace = await obj.prepare_context(
-        "Et les cadres ?", "org", history=[{"role": "user", "content": "Question précédente"}],
+        "Et les cadres ?",
+        "org",
+        history=[{"role": "user", "content": "Question précédente"}],
     )
     assert results == []
     assert trace.error == "search_planner_error"
@@ -486,7 +524,12 @@ async def test_default_entry_point_reports_transport_error_without_retry():
 
 def test_legacy_search_entry_points_are_removed():
     for name in (
-        "_condense_question", "_running_topic", "_expand_queries", "_generate_legal_anchor",
-        "_parse_variants", "_search_with_expansion", "_build_expand_user_message",
+        "_condense_question",
+        "_running_topic",
+        "_expand_queries",
+        "_generate_legal_anchor",
+        "_parse_variants",
+        "_search_with_expansion",
+        "_build_expand_user_message",
     ):
         assert not hasattr(RAGAgent, name)

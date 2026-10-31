@@ -7,11 +7,11 @@ from sqlalchemy import delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.models.ccn import OrganisationConvention
 from app.models.conversation import Conversation, Message
 from app.models.document import Document
 from app.models.fiche import Fiche
 from app.models.invitation import Invitation
-from app.models.ccn import OrganisationConvention
 from app.models.membership import Membership
 from app.models.organisation import Organisation
 from app.models.user import User
@@ -31,9 +31,7 @@ class OrganisationService:
     def __init__(self, db: AsyncSession) -> None:
         self.db = db
 
-    async def create_organisation(
-        self, data: OrganisationCreate, user: User
-    ) -> Organisation:
+    async def create_organisation(self, data: OrganisationCreate, user: User) -> Organisation:
         # Resolve account_id: own workspace first, then invited workspace
         account_id = None
         if user.owned_account:
@@ -78,12 +76,9 @@ class OrganisationService:
         # Include these alongside owned orgs, even when the user has a personal
         # account. Account membership alone does not grant access to every org.
         owned_accounts = select(Account.id).where(Account.owner_id == user.id)
-        member_orgs = select(Membership.organisation_id).where(
-            Membership.user_id == user.id
-        )
+        member_orgs = select(Membership.organisation_id).where(Membership.user_id == user.id)
         result = await self.db.execute(
-            select(Organisation)
-            .where(
+            select(Organisation).where(
                 or_(
                     Organisation.account_id.in_(owned_accounts),
                     Organisation.id.in_(member_orgs),
@@ -92,12 +87,8 @@ class OrganisationService:
         )
         return list(result.scalars().all())
 
-    async def get_organisation(
-        self, org_id: uuid.UUID, user: User
-    ) -> Organisation:
-        result = await self.db.execute(
-            select(Organisation).where(Organisation.id == org_id)
-        )
+    async def get_organisation(self, org_id: uuid.UUID, user: User) -> Organisation:
+        result = await self.db.execute(select(Organisation).where(Organisation.id == org_id))
         org = result.scalar_one_or_none()
         if org is None:
             raise HTTPException(
@@ -151,9 +142,7 @@ class OrganisationService:
         await self.db.refresh(org)
         return org
 
-    async def delete_organisation(
-        self, org_id: uuid.UUID, user: User
-    ) -> None:
+    async def delete_organisation(self, org_id: uuid.UUID, user: User) -> None:
         org = await self.get_organisation(org_id, user)
 
         if user.role != "admin":
@@ -197,7 +186,8 @@ class OrganisationService:
         storage = StorageService()
         from app.services.document_extraction_service import delete_extraction_artifacts
         from app.services.storage_operation_service import (
-            queue_storage_delete, finish_pending_storage_deletes,
+            finish_pending_storage_deletes,
+            queue_storage_delete,
         )
 
         await delete_extraction_artifacts(self.db, storage, [doc.id for doc in documents])
@@ -205,9 +195,7 @@ class OrganisationService:
             await queue_storage_delete(self.db, storage, doc.id, doc.storage_path)
 
         # 3. Delete practical sheets before their source messages and organisation
-        await self.db.execute(
-            delete(Fiche).where(Fiche.organisation_id == org_id)
-        )
+        await self.db.execute(delete(Fiche).where(Fiche.organisation_id == org_id))
 
         # 4. Delete messages via conversation_ids
         conv_result = await self.db.execute(
@@ -218,24 +206,16 @@ class OrganisationService:
             from app.services.case_file_service import delete_case_files_for_conversations
 
             await delete_case_files_for_conversations(self.db, conv_ids)
-            await self.db.execute(
-                delete(Message).where(Message.conversation_id.in_(conv_ids))
-            )
+            await self.db.execute(delete(Message).where(Message.conversation_id.in_(conv_ids)))
 
         # 5. Delete conversations
-        await self.db.execute(
-            delete(Conversation).where(Conversation.organisation_id == org_id)
-        )
+        await self.db.execute(delete(Conversation).where(Conversation.organisation_id == org_id))
 
         # 6. Delete documents
-        await self.db.execute(
-            delete(Document).where(Document.organisation_id == org_id)
-        )
+        await self.db.execute(delete(Document).where(Document.organisation_id == org_id))
 
         # 7. Delete invitations
-        await self.db.execute(
-            delete(Invitation).where(Invitation.organisation_id == org_id)
-        )
+        await self.db.execute(delete(Invitation).where(Invitation.organisation_id == org_id))
 
         # 8. Delete organisation_conventions
         await self.db.execute(
@@ -243,9 +223,7 @@ class OrganisationService:
         )
 
         # 9. Delete memberships (NOT users)
-        await self.db.execute(
-            delete(Membership).where(Membership.organisation_id == org_id)
-        )
+        await self.db.execute(delete(Membership).where(Membership.organisation_id == org_id))
 
         # 10. Delete organisation
         await self.db.delete(org)
@@ -275,9 +253,7 @@ class OrganisationService:
         ]
 
     async def add_member(self, org_id: uuid.UUID, data: MembershipCreate) -> dict:
-        result = await self.db.execute(
-            select(User).where(User.email == data.email)
-        )
+        result = await self.db.execute(select(User).where(User.email == data.email))
         user = result.scalar_one_or_none()
         if user is None:
             raise HTTPException(
@@ -348,9 +324,7 @@ class OrganisationService:
             "user_full_name": membership.user.full_name if membership.user else None,
         }
 
-    async def remove_member(
-        self, org_id: uuid.UUID, membership_id: uuid.UUID
-    ) -> None:
+    async def remove_member(self, org_id: uuid.UUID, membership_id: uuid.UUID) -> None:
         result = await self.db.execute(
             select(Membership).where(
                 Membership.id == membership_id,

@@ -43,12 +43,23 @@ class IncidentInput(BaseModel):
     location: str = Field(
         default="unknown", max_length=180, pattern=r"^[a-zA-Z0-9_./:{}@\[\]()-]+$"
     )
-    reason: Literal[
-        "provider_quota_exhausted", "provider_rate_limited", "server_error",
-        "resource_next_script", "resource_next_stylesheet", "resource_turnstile",
-        "resource_analytics", "resource_image", "resource_stylesheet",
-        "resource_script", "resource_frame", "resource_other",
-    ] | None = None
+    reason: (
+        Literal[
+            "provider_quota_exhausted",
+            "provider_rate_limited",
+            "server_error",
+            "resource_next_script",
+            "resource_next_stylesheet",
+            "resource_turnstile",
+            "resource_analytics",
+            "resource_image",
+            "resource_stylesheet",
+            "resource_script",
+            "resource_frame",
+            "resource_other",
+        ]
+        | None
+    ) = None
     request_id: uuid.UUID | None = None
     visitor_id: uuid.UUID | None = None
     status: int | None = Field(default=None, ge=400, le=599)
@@ -116,12 +127,15 @@ async def list_incidents(
     with connection() as db:
         where, args = (" AND state=?", [state]) if state else ("", [])
         rows = db.execute(
-            "SELECT * FROM incidents WHERE " + APP_ONLY + where
+            "SELECT * FROM incidents WHERE "
+            + APP_ONLY
+            + where
             + " ORDER BY created DESC LIMIT 100 OFFSET ?",
             [*args, offset],
         ).fetchall()
         counts = {
-            r[0]: r[1] for r in db.execute(
+            r[0]: r[1]
+            for r in db.execute(
                 "SELECT state,count(*) FROM incidents WHERE " + APP_ONLY + " GROUP BY state"
             )
         }

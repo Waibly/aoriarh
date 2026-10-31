@@ -6,10 +6,9 @@ from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import hash_password, verify_password
-from app.models.account import Account
 from app.models.account_member import AccountMember
-from app.models.auth_session import AuthSession
 from app.models.audit_log import AuditLog
+from app.models.auth_session import AuthSession
 from app.models.conversation import Conversation, Message
 from app.models.document import Document
 from app.models.invitation import Invitation
@@ -31,9 +30,7 @@ class UserService:
             return user
 
         if "email" in update_data and update_data["email"] != user.email:
-            existing = await self.db.execute(
-                select(User).where(User.email == update_data["email"])
-            )
+            existing = await self.db.execute(select(User).where(User.email == update_data["email"]))
             if existing.scalar_one_or_none():
                 raise HTTPException(
                     status_code=status.HTTP_409_CONFLICT,
@@ -51,7 +48,9 @@ class UserService:
         return user
 
     async def change_password(self, user: User, data: PasswordChange) -> None:
-        if not user.hashed_password or not verify_password(data.current_password, user.hashed_password):
+        if not user.hashed_password or not verify_password(
+            data.current_password, user.hashed_password
+        ):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Mot de passe actuel incorrect",
@@ -130,6 +129,7 @@ class UserService:
 
             # Get all orgs in this account
             from app.models.organisation import Organisation
+
             org_result = await self.db.execute(
                 select(Organisation).where(Organisation.account_id == account.id)
             )

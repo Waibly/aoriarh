@@ -515,94 +515,176 @@ async def test_delete_project_erases_private_content_and_preserves_company_docum
     client, manager_user, regular_user, monkeypatch
 ):
     from unittest.mock import AsyncMock, Mock
+
     from app.models.dossier import Dossier
     from app.models.storage_operation import StorageOperation
     from app.services import document_service, storage_operation_service
+
     cleanup = AsyncMock(return_value={"pending": 3})
     chunks = Mock()
     monkeypatch.setattr(storage_operation_service, "finish_pending_storage_deletes", cleanup)
     monkeypatch.setattr(document_service.DocumentService, "_delete_qdrant_chunks", chunks)
     org, free = await _create_org_and_conversation(client, manager_user)
     d = await new_dossier(client, manager_user, org)
-    headers = auth_header(manager_user['token'])
-    r = await client.post('/api/v1/conversations/', headers=headers,
-                          json={'organisation_id': org, 'dossier_id': d['id']})
-    conv_id = uuid.UUID(r.json()['id'])
+    headers = auth_header(manager_user["token"])
+    r = await client.post(
+        "/api/v1/conversations/",
+        headers=headers,
+        json={"organisation_id": org, "dossier_id": d["id"]},
+    )
+    conv_id = uuid.UUID(r.json()["id"])
     async with session_factory() as db:
         owner = (await db.get(Conversation, conv_id)).user_id
-        docs = [Document(organisation_id=uuid.UUID(org), name=name, source_type='divers',
-                         storage_path=name, uploaded_by=owner, **scope)
-                for name, scope in [('company', {}), ('private', {'private_dossier_id': uuid.UUID(d['id'])}),
-                                    ('conversation', {'private_conversation_id': conv_id})]]
+        docs = [
+            Document(
+                organisation_id=uuid.UUID(org),
+                name=name,
+                source_type="divers",
+                storage_path=name,
+                uploaded_by=owner,
+                **scope,
+            )
+            for name, scope in [
+                ("company", {}),
+                ("private", {"private_dossier_id": uuid.UUID(d["id"])}),
+                ("conversation", {"private_conversation_id": conv_id}),
+            ]
+        ]
         db.add_all(docs)
-        db.add(Message(conversation_id=conv_id, role='user', content='Private message'))
-        db.add(CaseEntry(case_file_id=uuid.UUID(d['case_file']['id']), entry_type='fact',
-                         label='Private fact', value_text='Private', source_kind='user'))
+        db.add(Message(conversation_id=conv_id, role="user", content="Private message"))
+        db.add(
+            CaseEntry(
+                case_file_id=uuid.UUID(d["case_file"]["id"]),
+                entry_type="fact",
+                label="Private fact",
+                value_text="Private",
+                source_kind="user",
+            )
+        )
         await db.flush()
         for doc in docs:
-            db.add(CaseDocumentLink(case_file_id=uuid.UUID(d['case_file']['id']),
-                                   document_id=doc.id, document_name=doc.name))
+            db.add(
+                CaseDocumentLink(
+                    case_file_id=uuid.UUID(d["case_file"]["id"]),
+                    document_id=doc.id,
+                    document_name=doc.name,
+                )
+            )
         await db.commit()
         company_id = docs[0].id
     url = f"/api/v1/dossiers/{d['id']}?expected_version=1"
-    assert (await client.delete(url, headers=auth_header(regular_user['token']))).status_code == 404
-    assert (await client.delete(url.replace('=1', '=99'), headers=headers)).status_code == 409
+    assert (await client.delete(url, headers=auth_header(regular_user["token"]))).status_code == 404
+    assert (await client.delete(url.replace("=1", "=99"), headers=headers)).status_code == 409
     # Hidden conversations must also be physically erased.
-    await client.delete(f'/api/v1/conversations/{conv_id}', headers=headers)
+    await client.delete(f"/api/v1/conversations/{conv_id}", headers=headers)
     response = await client.delete(url, headers=headers)
     assert response.status_code == 204, response.text
     assert (await client.get(f"/api/v1/dossiers/{d['id']}", headers=headers)).status_code == 404
     async with session_factory() as db:
-        assert await db.get(Dossier, uuid.UUID(d['id'])) is None
-        assert await db.get(CaseFile, uuid.UUID(d['case_file']['id'])) is None
+        assert await db.get(Dossier, uuid.UUID(d["id"])) is None
+        assert await db.get(CaseFile, uuid.UUID(d["case_file"]["id"])) is None
         assert await db.get(Conversation, conv_id) is None
         assert await db.get(Conversation, uuid.UUID(free)) is not None
         assert list((await db.scalars(select(Document.id))).all()) == [company_id]
-        assert list((await db.scalars(select(Message).where(Message.conversation_id == conv_id))).all()) == []
+        assert (
+            list(
+                (await db.scalars(select(Message).where(Message.conversation_id == conv_id))).all()
+            )
+            == []
+        )
         assert list((await db.scalars(select(CaseEntry))).all()) == []
-        assert {o.target_path for o in (await db.scalars(select(StorageOperation))).all()} == {'private', 'conversation'}
+        assert {o.target_path for o in (await db.scalars(select(StorageOperation))).all()} == {
+            "private",
+            "conversation",
+        }
     assert chunks.call_count == 2
     cleanup.assert_awaited_once()
 
 
-async def test_dossier_references_use_current_links_and_exclude_retired_uploads(client, manager_user):
+async def test_dossier_references_use_current_links_and_exclude_retired_uploads(
+    client, manager_user
+):
     from datetime import UTC, datetime
+
     from app.services.dossier_service import DossierService
+
     org, _ = await _create_org_and_conversation(client, manager_user)
     d = await new_dossier(client, manager_user, org)
     async with session_factory() as db:
-        user = (await db.scalars(select(User).where(User.email == manager_user['email']))).one()
+        user = (await db.scalars(select(User).where(User.email == manager_user["email"]))).one()
         service = DossierService(db)
-        dossier = await service.get(uuid.UUID(d['id']), user)
-        old = Document(organisation_id=uuid.UUID(org), private_dossier_id=dossier.id,
-                       name='old', source_type='divers', storage_path='old', retired_at=datetime.now(UTC))
-        new = Document(organisation_id=uuid.UUID(org), private_dossier_id=dossier.id,
-                       name='new', source_type='divers', storage_path='new')
-        db.add_all([old, new]); await db.flush()
+        dossier = await service.get(uuid.UUID(d["id"]), user)
+        old = Document(
+            organisation_id=uuid.UUID(org),
+            private_dossier_id=dossier.id,
+            name="old",
+            source_type="divers",
+            storage_path="old",
+            retired_at=datetime.now(UTC),
+        )
+        new = Document(
+            organisation_id=uuid.UUID(org),
+            private_dossier_id=dossier.id,
+            name="new",
+            source_type="divers",
+            storage_path="new",
+        )
+        db.add_all([old, new])
+        await db.flush()
         extraction_id = uuid.uuid4()
-        db.add(CaseDocumentLink(case_file_id=dossier.case_file_id, document_id=new.id,
-                               extraction_id=extraction_id, document_name='new'))
+        db.add(
+            CaseDocumentLink(
+                case_file_id=dossier.case_file_id,
+                document_id=new.id,
+                extraction_id=extraction_id,
+                document_name="new",
+            )
+        )
         await db.commit()
-        result = await service.conversation_references(dossier, [
-            {'document_id':str(old.id), 'extraction_id':str(uuid.uuid4())},
-            {'document_id':str(uuid.uuid4()), 'extraction_id':str(uuid.uuid4()), 'scope':'dossier'},
-        ])
-        assert result == [{'document_id':str(new.id), 'extraction_id':str(extraction_id),
-                           'name':'new', 'scope':'dossier'}]
+        result = await service.conversation_references(
+            dossier,
+            [
+                {"document_id": str(old.id), "extraction_id": str(uuid.uuid4())},
+                {
+                    "document_id": str(uuid.uuid4()),
+                    "extraction_id": str(uuid.uuid4()),
+                    "scope": "dossier",
+                },
+            ],
+        )
+        assert result == [
+            {
+                "document_id": str(new.id),
+                "extraction_id": str(extraction_id),
+                "name": "new",
+                "scope": "dossier",
+            }
+        ]
 
 
 async def test_unprepared_dossier_document_is_not_silently_ignored(client, manager_user):
     from app.services.dossier_service import DossierService
+
     org, _ = await _create_org_and_conversation(client, manager_user)
     d = await new_dossier(client, manager_user, org)
     async with session_factory() as db:
-        user = (await db.scalars(select(User).where(User.email == manager_user['email']))).one()
+        user = (await db.scalars(select(User).where(User.email == manager_user["email"]))).one()
         service = DossierService(db)
-        dossier = await service.get(uuid.UUID(d['id']), user)
-        doc = Document(organisation_id=uuid.UUID(org), private_dossier_id=dossier.id,
-                       name='not-ready', source_type='divers', storage_path='pending')
-        db.add(doc); await db.flush()
-        db.add(CaseDocumentLink(case_file_id=dossier.case_file_id, document_id=doc.id, document_name=doc.name))
+        dossier = await service.get(uuid.UUID(d["id"]), user)
+        doc = Document(
+            organisation_id=uuid.UUID(org),
+            private_dossier_id=dossier.id,
+            name="not-ready",
+            source_type="divers",
+            storage_path="pending",
+        )
+        db.add(doc)
+        await db.flush()
+        db.add(
+            CaseDocumentLink(
+                case_file_id=dossier.case_file_id, document_id=doc.id, document_name=doc.name
+            )
+        )
         await db.commit()
         with pytest.raises(HTTPException) as err:
             await service.conversation_references(dossier, [])
@@ -613,57 +695,89 @@ async def test_unavailable_document_link_can_be_removed_without_a_document_id(cl
     org, _ = await _create_org_and_conversation(client, manager_user)
     d = await new_dossier(client, manager_user, org)
     async with session_factory() as db:
-        link = CaseDocumentLink(case_file_id=uuid.UUID(d['case_file']['id']), document_id=None,
-                                document_name='Deleted company document')
-        db.add(link); await db.commit(); link_id = str(link.id)
-    result = await client.post(f"/api/v1/dossiers/{d['id']}/documents/actions",
-        headers=auth_header(manager_user['token']), json={'operation':'remove', 'link_id':link_id,
-                                                       'expected_case_version':1})
+        link = CaseDocumentLink(
+            case_file_id=uuid.UUID(d["case_file"]["id"]),
+            document_id=None,
+            document_name="Deleted company document",
+        )
+        db.add(link)
+        await db.commit()
+        link_id = str(link.id)
+    result = await client.post(
+        f"/api/v1/dossiers/{d['id']}/documents/actions",
+        headers=auth_header(manager_user["token"]),
+        json={"operation": "remove", "link_id": link_id, "expected_case_version": 1},
+    )
     assert result.status_code == 200, result.text
-    assert result.json()['documents'] == []
+    assert result.json()["documents"] == []
 
 
-async def test_failed_upload_association_cleans_new_file_and_keeps_original(client, manager_user, monkeypatch):
+async def test_failed_upload_association_cleans_new_file_and_keeps_original(
+    client, manager_user, monkeypatch
+):
     from unittest.mock import AsyncMock
+
     from sqlalchemy import update
-    from app.services.billing_service import BillingService
+
     from app.services import storage_operation_service
+    from app.services.billing_service import BillingService
+
     org, _ = await _create_org_and_conversation(client, manager_user)
     d = await new_dossier(client, manager_user, org)
-    monkeypatch.setattr(BillingService, 'get_account_for_organisation', AsyncMock(return_value=object()))
-    monkeypatch.setattr(BillingService, 'ensure_plan_active', lambda *args: None)
-    monkeypatch.setattr(BillingService, 'check_document_limit', AsyncMock())
-    monkeypatch.setattr(storage_operation_service, 'finish_pending_storage_deletes', AsyncMock())
+    monkeypatch.setattr(
+        BillingService, "get_account_for_organisation", AsyncMock(return_value=object())
+    )
+    monkeypatch.setattr(BillingService, "ensure_plan_active", lambda *args: None)
+    monkeypatch.setattr(BillingService, "check_document_limit", AsyncMock())
+    monkeypatch.setattr(storage_operation_service, "finish_pending_storage_deletes", AsyncMock())
     uploaded_ids = []
+
     async def upload(self, *args, **kwargs):
-        doc = Document(organisation_id=uuid.UUID(org), private_dossier_id=uuid.UUID(d['id']),
-                       name='new', source_type='divers', storage_path='new')
+        doc = Document(
+            organisation_id=uuid.UUID(org),
+            private_dossier_id=uuid.UUID(d["id"]),
+            name="new",
+            source_type="divers",
+            storage_path="new",
+        )
         self.db.add(doc)
-        await self.db.execute(update(CaseFile).where(CaseFile.id == uuid.UUID(d['case_file']['id'])).values(version=2))
-        await self.db.commit(); uploaded_ids.append(doc.id)
+        await self.db.execute(
+            update(CaseFile).where(CaseFile.id == uuid.UUID(d["case_file"]["id"])).values(version=2)
+        )
+        await self.db.commit()
+        uploaded_ids.append(doc.id)
         return doc
-    monkeypatch.setattr(DocumentService, 'upload_document', upload)
-    result = await client.post(f"/api/v1/dossiers/{d['id']}/documents?expected_case_version=1",
-        headers=auth_header(manager_user['token']), files={'file':('new.txt',b'text','text/plain')})
+
+    monkeypatch.setattr(DocumentService, "upload_document", upload)
+    result = await client.post(
+        f"/api/v1/dossiers/{d['id']}/documents?expected_case_version=1",
+        headers=auth_header(manager_user["token"]),
+        files={"file": ("new.txt", b"text", "text/plain")},
+    )
     assert result.status_code == 409, result.text
     assert len(uploaded_ids) == 1
     async with session_factory() as db:
         assert await db.get(Document, uploaded_ids[0]) is None
-        assert (await db.get(CaseFile, uuid.UUID(d['case_file']['id']))).version == 2
+        assert (await db.get(CaseFile, uuid.UUID(d["case_file"]["id"]))).version == 2
 
 
 async def test_recent_dossiers_are_ordered_before_pagination(client, manager_user):
     from datetime import UTC, datetime, timedelta
+
     from app.models.dossier import Dossier
+
     org, _ = await _create_org_and_conversation(client, manager_user)
     first = await new_dossier(client, manager_user, org)
     second = await new_dossier(client, manager_user, org)
     async with session_factory() as db:
-        old = await db.get(Dossier, uuid.UUID(first['id']))
-        old.pinned = True; old.updated_at = datetime.now(UTC) - timedelta(days=1)
+        old = await db.get(Dossier, uuid.UUID(first["id"]))
+        old.pinned = True
+        old.updated_at = datetime.now(UTC) - timedelta(days=1)
         await db.commit()
-    response = await client.get(f'/api/v1/dossiers/?organisation_id={org}&order=recent&limit=1',
-                                headers=auth_header(manager_user['token']))
+    response = await client.get(
+        f"/api/v1/dossiers/?organisation_id={org}&order=recent&limit=1",
+        headers=auth_header(manager_user["token"]),
+    )
     assert response.status_code == 200
-    assert [d['id'] for d in response.json()['items']] == [second['id']]
-    assert response.json()['has_more'] is True
+    assert [d["id"] for d in response.json()["items"]] == [second["id"]]
+    assert response.json()["has_more"] is True

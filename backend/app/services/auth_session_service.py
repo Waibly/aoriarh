@@ -50,9 +50,7 @@ async def rotate_auth_session(
     """
     token_hash = _hash_refresh_token(raw_token)
     result = await db.execute(
-        select(AuthSession)
-        .where(AuthSession.refresh_token_hash == token_hash)
-        .with_for_update()
+        select(AuthSession).where(AuthSession.refresh_token_hash == token_hash).with_for_update()
     )
     current = result.scalar_one_or_none()
     if current is None:
@@ -97,9 +95,7 @@ async def revoke_auth_session(db: AsyncSession, raw_token: str) -> bool:
     if session is None:
         return False
     await db.execute(
-        update(AuthSession)
-        .where(AuthSession.family_id == session.family_id)
-        .values(revoked=True)
+        update(AuthSession).where(AuthSession.family_id == session.family_id).values(revoked=True)
     )
     await db.commit()
     return True

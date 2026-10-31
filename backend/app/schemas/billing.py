@@ -5,8 +5,8 @@ from enum import StrEnum
 
 class QuotaStatus(StrEnum):
     OK = "ok"
-    SOFT_WARNING = "soft_warning"   # >= 80 % of monthly quota
-    HARD_WARNING = "hard_warning"   # >= 120 % — triggers upsell email
+    SOFT_WARNING = "soft_warning"  # >= 80 % of monthly quota
+    HARD_WARNING = "hard_warning"  # >= 120 % — triggers upsell email
     TRIAL_EXPIRED = "trial_expired"
     SUSPENDED = "suspended"
 

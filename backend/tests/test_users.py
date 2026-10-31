@@ -31,9 +31,7 @@ async def test_authenticated_context_does_not_load_conversation_history(
     """Lightweight account endpoints must not hydrate chat messages."""
     async with db_session_factory() as session:
         user_id = (
-            await session.execute(
-                select(User.id).where(User.email == regular_user["email"])
-            )
+            await session.execute(select(User.id).where(User.email == regular_user["email"]))
         ).scalar_one()
         organisation = Organisation(name="Organisation volumineuse")
         session.add(organisation)
@@ -114,12 +112,16 @@ async def test_update_name(client: AsyncClient, regular_user: dict[str, str]):
 @pytest.mark.asyncio
 @pytest.mark.parametrize("profile", ["comptable_paie", "expert_comptable"])
 async def test_accounting_profile_is_personal_and_persisted(
-    client: AsyncClient, regular_user: dict[str, str], second_user: dict[str, str],
+    client: AsyncClient,
+    regular_user: dict[str, str],
+    second_user: dict[str, str],
     profile: str,
 ):
     headers = auth_header(regular_user["token"])
     response = await client.patch(
-        "/api/v1/users/me", headers=headers, json={"profil_metier": profile},
+        "/api/v1/users/me",
+        headers=headers,
+        json={"profil_metier": profile},
     )
     assert response.status_code == 200
     assert response.json()["profil_metier"] == profile
@@ -127,11 +129,14 @@ async def test_accounting_profile_is_personal_and_persisted(
     persisted = await client.get("/api/v1/users/me", headers=headers)
     assert persisted.json()["profil_metier"] == profile
     other = await client.get(
-        "/api/v1/users/me", headers=auth_header(second_user["token"]),
+        "/api/v1/users/me",
+        headers=auth_header(second_user["token"]),
     )
     assert other.json()["profil_metier"] is None
     invalid = await client.patch(
-        "/api/v1/users/me", headers=headers, json={"profil_metier": "unknown_profile"},
+        "/api/v1/users/me",
+        headers=headers,
+        json={"profil_metier": "unknown_profile"},
     )
     assert invalid.status_code == 422
     persisted = await client.get("/api/v1/users/me", headers=headers)
@@ -140,17 +145,21 @@ async def test_accounting_profile_is_personal_and_persisted(
 
 @pytest.mark.asyncio
 async def test_client_workspace_context_requires_membership(
-    client: AsyncClient, manager_user: dict[str, str], regular_user: dict[str, str],
+    client: AsyncClient,
+    manager_user: dict[str, str],
+    regular_user: dict[str, str],
 ):
     response = await client.post(
-        "/api/v1/organisations/", json={"name": "Client du cabinet"},
+        "/api/v1/organisations/",
+        json={"name": "Client du cabinet"},
         headers=auth_header(manager_user["token"]),
     )
     assert response.status_code == 201
     org_id = response.json()["id"]
     for profile in ("comptable_paie", "expert_comptable"):
         await client.patch(
-            "/api/v1/users/me", headers=auth_header(regular_user["token"]),
+            "/api/v1/users/me",
+            headers=auth_header(regular_user["token"]),
             json={"profil_metier": profile},
         )
         denied = await client.get(
@@ -168,12 +177,16 @@ async def test_client_workspace_context_requires_membership(
 
 @pytest.mark.asyncio
 async def test_accountants_profile_is_independent_from_selected_client_workspace(
-    client: AsyncClient, regular_user: dict[str, str], manager_user: dict[str, str],
+    client: AsyncClient,
+    regular_user: dict[str, str],
+    manager_user: dict[str, str],
     second_user: dict[str, str],
 ):
     headers = auth_header(regular_user["token"])
     response = await client.patch(
-        "/api/v1/users/me", headers=headers, json={"profil_metier": "expert_comptable"},
+        "/api/v1/users/me",
+        headers=headers,
+        json={"profil_metier": "expert_comptable"},
     )
     assert response.status_code == 200
     async with db_session_factory() as db:
@@ -185,21 +198,24 @@ async def test_accountants_profile_is_independent_from_selected_client_workspace
             (manager_user["email"], "Espace client A"),
             (second_user["email"], "Espace client B"),
         ):
-            owner = (
-                await db.execute(select(User).where(User.email == owner_email))
-            ).scalar_one()
+            owner = (await db.execute(select(User).where(User.email == owner_email))).scalar_one()
             owner.owned_account.name = workspace
             org = Organisation(name=workspace, account_id=owner.owned_account.id)
             db.add(org)
             await db.flush()
-            db.add(Membership(
-                user_id=accountant.id, organisation_id=org.id, role_in_org="user",
-            ))
+            db.add(
+                Membership(
+                    user_id=accountant.id,
+                    organisation_id=org.id,
+                    role_in_org="user",
+                )
+            )
             clients.append((org.id, workspace, str(owner.owned_account.id)))
         await db.commit()
     for org_id, workspace, account_id in clients:
         response = await client.get(
-            f"/api/v1/users/me?organisation_id={org_id}", headers=headers,
+            f"/api/v1/users/me?organisation_id={org_id}",
+            headers=headers,
         )
         assert response.status_code == 200
         assert response.json()["workspace_name"] == workspace
@@ -231,9 +247,7 @@ async def test_change_password_ok(client: AsyncClient, regular_user: dict[str, s
 
 
 @pytest.mark.asyncio
-async def test_change_password_wrong_current(
-    client: AsyncClient, regular_user: dict[str, str]
-):
+async def test_change_password_wrong_current(client: AsyncClient, regular_user: dict[str, str]):
     res = await client.post(
         "/api/v1/users/me/password",
         headers=auth_header(regular_user["token"]),

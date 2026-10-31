@@ -34,8 +34,11 @@ _ARTICLE_CHUNK_OVERLAP = CHUNK_OVERLAP  # Reused when falling back to LegalChunk
 _MIN_CHUNK_TOKENS = 15  # Discard chunks below this threshold (title-only ghosts)
 ARTICLE_METADATA_PREFIX = "Métadonnées article : "
 ARTICLE_METADATA_FIELDS = (
-    "article_id", "article_title", "article_status",
-    "article_effective_from", "article_effective_to",
+    "article_id",
+    "article_title",
+    "article_status",
+    "article_effective_from",
+    "article_effective_to",
 )
 
 # Structural subdivisions commonly found in laws, decrees and ordinances.
@@ -244,8 +247,10 @@ class ArticleChunker:
         metadata = {}
         for line in lines:
             if line.startswith(ARTICLE_METADATA_PREFIX):
-                parsed = json.loads(line[len(ARTICLE_METADATA_PREFIX):])
-                if not isinstance(parsed, dict) or any(not isinstance(v, str) for v in parsed.values()):
+                parsed = json.loads(line[len(ARTICLE_METADATA_PREFIX) :])
+                if not isinstance(parsed, dict) or any(
+                    not isinstance(v, str) for v in parsed.values()
+                ):
                     raise ValueError("invalid_article_metadata")
                 metadata = {key: parsed.get(key, "") for key in ARTICLE_METADATA_FIELDS}
                 break

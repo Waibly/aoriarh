@@ -8,7 +8,7 @@ import hashlib
 import json
 import re
 import uuid
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta
 
 import httpx
 from sqlalchemy import select
@@ -60,11 +60,7 @@ class SocialCaService:
             if not isinstance(data, dict) or not isinstance(data.get("results"), list):
                 raise ValueError("Invalid Judilibre inventory response")
             total = data.get("total")
-            if (
-                type(total) is not int
-                or total < 0
-                or (expected is not None and total != expected)
-            ):
+            if type(total) is not int or total < 0 or (expected is not None and total != expected):
                 raise ValueError("Judilibre inventory changed during pagination")
             expected = total
             for metadata in data["results"]:
@@ -80,15 +76,17 @@ class SocialCaService:
                     raise ValueError("Incomplete Judilibre inventory")
                 return records
             if (
-                following == cursor or following in visited_cursors
-                or not data["results"] or len(records) >= expected
+                following == cursor
+                or following in visited_cursors
+                or not data["results"]
+                or len(records) >= expected
             ):
                 raise ValueError("Judilibre cursor did not progress or total was exceeded")
             visited_cursors.add(following)
             cursor = following
 
     async def sync(self, db, *, apply=True, today=None):
-        today = today or datetime.now(timezone.utc).date()
+        today = today or datetime.now(UTC).date()
         state = self.archive.read_json(PREFIX + "state.json") or {
             "pending": {},
             "last_complete_end": None,
@@ -259,15 +257,19 @@ class SocialCaService:
                         result["review_pending"] += 1
                         del state["pending"][key]
                         continue
+                    import tiktoken
+
                     from app.rag.ingestion import IngestionPipeline
                     from app.rag.text_cleaner import clean_text
-                    import tiktoken
 
                     pipeline = IngestionPipeline()
                     doc = Document(
                         id=uuid.uuid5(uuid.NAMESPACE_URL, url),
                         organisation_id=None,
-                        name=f"{parsed.juridiction}, {parsed.chambre}, {parsed.date_decision:%d/%m/%Y}, n° {parsed.numero_pourvoi}",
+                        name=(
+                            f"{parsed.juridiction}, {parsed.chambre}, "
+                            f"{parsed.date_decision:%d/%m/%Y}, n° {parsed.numero_pourvoi}"
+                        ),
                         source_type="arret_cour_appel",
                         norme_niveau=4,
                         norme_poids=0.85,
@@ -294,8 +296,10 @@ class SocialCaService:
                     if (
                         not chunks
                         or tokens > MAX_DOCUMENT_TOKENS
-                        or (ledger["tokens_reserved"] + tokens
-                            > settings.social_ca_max_tokens_per_day)
+                        or (
+                            ledger["tokens_reserved"] + tokens
+                            > settings.social_ca_max_tokens_per_day
+                        )
                     ):
                         result["budget_pending"] += 1
                         continue

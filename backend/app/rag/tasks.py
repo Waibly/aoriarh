@@ -29,6 +29,7 @@ async def get_arq_pool() -> ArqRedis:
     if _pool is None:
         _pool = await create_pool(_parse_redis_settings())
         from app.observability.jobs import track_queue
+
         track_queue(_pool)
     return _pool
 
@@ -41,7 +42,9 @@ async def enqueue_ingestion(document_id: str, expected_source: str | None = None
 
 
 async def enqueue_kali_install(
-    org_convention_id: str, user_id: str, force_refetch: bool = False,
+    org_convention_id: str,
+    user_id: str,
+    force_refetch: bool = False,
 ) -> None:
     """Enqueue a KALI convention installation job to the ARQ worker."""
     pool = await get_arq_pool()
@@ -52,7 +55,11 @@ async def enqueue_kali_install(
         force_refetch,
         _job_id=f"kali_install_{org_convention_id}",
     )
-    logger.info("KALI install job enqueued for org_convention %s (force_refetch=%s)", org_convention_id, force_refetch)
+    logger.info(
+        "KALI install job enqueued for org_convention %s (force_refetch=%s)",
+        org_convention_id,
+        force_refetch,
+    )
 
 
 async def enqueue_bocc_sync(user_id: str, year: int | None = None, week: int | None = None) -> None:
@@ -150,7 +157,7 @@ async def enqueue_judilibre_sync(
 
 
 async def enqueue_full_jurisprudence_sync(user_id: str) -> None:
-    """Enqueue a FULL jurisprudence sync : Cass soc/cr/comm/civ2 + CA soc + Conseil constit (30j)."""
+    "Enqueue a FULL jurisprudence sync : Cass soc/cr/comm/civ2 + CA soc + Conseil constit (30j)."
     pool = await get_arq_pool()
     await pool.enqueue_job(
         "run_full_jurisprudence_sync",
@@ -179,7 +186,10 @@ async def enqueue_custom_jurisprudence_sync(
     )
     logger.info(
         "Custom jurisprudence sync enqueued: source=%s, %s → %s, cap=%s",
-        source, date_start, date_end, max_decisions,
+        source,
+        date_start,
+        date_end,
+        max_decisions,
     )
 
 

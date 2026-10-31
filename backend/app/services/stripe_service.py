@@ -21,7 +21,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
-from app.core.plans import BOOSTER_QUESTIONS, get_label as _get_plan_label
+from app.core.plans import BOOSTER_QUESTIONS
+from app.core.plans import get_label as _get_plan_label
 from app.models.account import Account
 from app.models.booster_purchase import BoosterPurchase
 from app.models.subscription import Subscription
@@ -138,9 +139,8 @@ class StripeService:
 
     @staticmethod
     def _success_url() -> str:
-        return (
-            settings.stripe_checkout_success_url
-            or f"{settings.frontend_url}/settings/billing?success=1&session_id={{CHECKOUT_SESSION_ID}}"
+        return settings.stripe_checkout_success_url or (
+            f"{settings.frontend_url}/settings/billing?success=1&session_id={{CHECKOUT_SESSION_ID}}"
         )
 
     @staticmethod
@@ -152,10 +152,7 @@ class StripeService:
 
     @staticmethod
     def _portal_return_url() -> str:
-        return (
-            settings.stripe_portal_return_url
-            or f"{settings.frontend_url}/settings/billing"
-        )
+        return settings.stripe_portal_return_url or f"{settings.frontend_url}/settings/billing"
 
     # ------------------------------------------------------------------
     # Customer management
@@ -174,9 +171,7 @@ class StripeService:
         )
         account.stripe_customer_id = customer["id"]
         await self.db.flush()
-        logger.info(
-            "Stripe customer created: %s for account %s", customer["id"], account.id
-        )
+        logger.info("Stripe customer created: %s for account %s", customer["id"], account.id)
         return customer["id"]
 
     # ------------------------------------------------------------------
@@ -237,9 +232,7 @@ class StripeService:
         await self.db.commit()
         return {"checkout_url": session["url"], "session_id": session["id"]}
 
-    async def create_booster_checkout(
-        self, account: Account, owner_email: str
-    ) -> dict[str, str]:
+    async def create_booster_checkout(self, account: Account, owner_email: str) -> dict[str, str]:
         """One-shot payment for a +500 questions booster pack."""
         self._ensure_configured()
         if not settings.stripe_price_booster:
@@ -292,9 +285,7 @@ class StripeService:
         "extra_docs": 1000,
     }
 
-    async def _get_active_subscription(
-        self, account_id: uuid.UUID
-    ) -> Subscription | None:
+    async def _get_active_subscription(self, account_id: uuid.UUID) -> Subscription | None:
         """Return the commercial subscription currently active for an account.
 
         Mirrors BillingService._get_active_subscription — duplicated here so
@@ -309,9 +300,7 @@ class StripeService:
         )
         return result.scalars().first()
 
-    async def change_plan(
-        self, account: Account, new_plan: str, new_cycle: str
-    ) -> dict[str, str]:
+    async def change_plan(self, account: Account, new_plan: str, new_cycle: str) -> dict[str, str]:
         """Modify the current Stripe subscription to a different plan/cycle.
 
         Locates the main subscription item (the non-addon one), swaps its
@@ -352,6 +341,7 @@ class StripeService:
                 PlanOverflowError,
                 _validate_plan_fits_existing_data,
             )
+
             try:
                 await _validate_plan_fits_existing_data(self.db, account.id, new_plan)
             except PlanOverflowError as exc:
@@ -367,9 +357,7 @@ class StripeService:
         # add-on item. We store add-on item IDs locally, so the odd one out
         # is the plan itself.
         addon_rows = await self.db.execute(
-            select(SubscriptionAddon).where(
-                SubscriptionAddon.subscription_id == sub.id
-            )
+            select(SubscriptionAddon).where(SubscriptionAddon.subscription_id == sub.id)
         )
         addon_item_ids = {
             a.stripe_subscription_item_id
@@ -406,9 +394,7 @@ class StripeService:
             "stripe_subscription_id": sub.stripe_subscription_id,
         }
 
-    async def preview_change_plan(
-        self, account: Account, new_plan: str, new_cycle: str
-    ) -> dict:
+    async def preview_change_plan(self, account: Account, new_plan: str, new_cycle: str) -> dict:
         """Compute the prorated amount that would be charged if the user
         switched to ``new_plan`` / ``new_cycle`` right now.
 
@@ -436,9 +422,7 @@ class StripeService:
         new_price_id = self.get_price_id(new_plan, new_cycle)
 
         addon_rows = await self.db.execute(
-            select(SubscriptionAddon).where(
-                SubscriptionAddon.subscription_id == sub.id
-            )
+            select(SubscriptionAddon).where(SubscriptionAddon.subscription_id == sub.id)
         )
         addon_item_ids = {
             a.stripe_subscription_item_id
@@ -494,13 +478,12 @@ class StripeService:
             "currency": currency,
             "next_billing_at": (
                 datetime.fromtimestamp(int(next_billing_ts), tz=UTC).isoformat()
-                if next_billing_ts else None
+                if next_billing_ts
+                else None
             ),
         }
 
-    async def cancel_subscription_at_period_end(
-        self, account: Account
-    ) -> dict[str, str]:
+    async def cancel_subscription_at_period_end(self, account: Account) -> dict[str, str]:
         """Schedule the active subscription to end at the current period end.
 
         Called from the /billing page so the user doesn't have to go through
@@ -531,9 +514,7 @@ class StripeService:
                 "Stripe cancel-at-period-end failed for %s",
                 sub.stripe_subscription_id,
             )
-            raise HTTPException(
-                status_code=502, detail=f"Erreur Stripe : {exc}"
-            ) from exc
+            raise HTTPException(status_code=502, detail=f"Erreur Stripe : {exc}") from exc
 
         sub.cancel_at_period_end = True
         sub.canceled_at = datetime.now(UTC)
@@ -573,12 +554,8 @@ class StripeService:
                 cancel_at_period_end=False,
             )
         except stripe.error.StripeError as exc:
-            logger.exception(
-                "Stripe reactivation failed for %s", sub.stripe_subscription_id
-            )
-            raise HTTPException(
-                status_code=502, detail=f"Erreur Stripe : {exc}"
-            ) from exc
+            logger.exception("Stripe reactivation failed for %s", sub.stripe_subscription_id)
+            raise HTTPException(status_code=502, detail=f"Erreur Stripe : {exc}") from exc
 
         # Mirror immediately; the webhook will confirm.
         sub.cancel_at_period_end = False
@@ -625,15 +602,12 @@ class StripeService:
 
         # Drop local add-on rows (their Stripe items are gone with the sub)
         await self.db.execute(
-            select(SubscriptionAddon).where(
-                SubscriptionAddon.subscription_id == sub.id
-            )
+            select(SubscriptionAddon).where(SubscriptionAddon.subscription_id == sub.id)
         )
         from sqlalchemy import delete as sql_delete
+
         await self.db.execute(
-            sql_delete(SubscriptionAddon).where(
-                SubscriptionAddon.subscription_id == sub.id
-            )
+            sql_delete(SubscriptionAddon).where(SubscriptionAddon.subscription_id == sub.id)
         )
 
         sub.status = "canceled"
@@ -652,9 +626,7 @@ class StripeService:
         """
         self._ensure_configured()
         if addon_type not in self._ADDON_PRICE_ATTR:
-            raise HTTPException(
-                status_code=400, detail=f"Add-on type inconnu : {addon_type}"
-            )
+            raise HTTPException(status_code=400, detail=f"Add-on type inconnu : {addon_type}")
         price_id = getattr(settings, self._ADDON_PRICE_ATTR[addon_type], "")
         if not price_id:
             raise HTTPException(
@@ -678,7 +650,7 @@ class StripeService:
         )
         existing = result.scalar_one_or_none()
 
-        stripe_sub = stripe.Subscription.retrieve(sub.stripe_subscription_id)
+        stripe.Subscription.retrieve(sub.stripe_subscription_id)
 
         if existing and existing.stripe_subscription_item_id:
             # Bump quantity on the Stripe side and mirror locally.
@@ -951,9 +923,7 @@ class StripeService:
         # Best-effort (try/except) so a Brevo hiccup never breaks the webhook.
         await self._send_subscription_confirmed_email(account, sub, sub_obj)
 
-    async def _create_booster_from_checkout(
-        self, account: Account, session: dict
-    ) -> None:
+    async def _create_booster_from_checkout(self, account: Account, session: dict) -> None:
         payment_intent_id = _get(session, "payment_intent")
         amount_total = _get(session, "amount_total", 0)
 
@@ -987,9 +957,7 @@ class StripeService:
         self.db.add(booster)
         await self.db.flush()
 
-    def _sync_plan_from_items(
-        self, sub: "Subscription", sub_obj: dict
-    ) -> bool:
+    def _sync_plan_from_items(self, sub: "Subscription", sub_obj: dict) -> bool:
         """Reconcile sub.plan / sub.billing_cycle with the Stripe items.
 
         Parses subscription.items.data and looks for an item whose price
@@ -1041,9 +1009,7 @@ class StripeService:
         previous_plan: str | None = None
         previous_cancel_flag: bool = False
         result0 = await self.db.execute(
-            select(Subscription).where(
-                Subscription.stripe_subscription_id == sub_obj["id"]
-            )
+            select(Subscription).where(Subscription.stripe_subscription_id == sub_obj["id"])
         )
         existing_for_plan_compare = result0.scalar_one_or_none()
         if existing_for_plan_compare is not None:
@@ -1051,9 +1017,7 @@ class StripeService:
             previous_cancel_flag = bool(existing_for_plan_compare.cancel_at_period_end)
 
         result = await self.db.execute(
-            select(Subscription).where(
-                Subscription.stripe_subscription_id == sub_obj["id"]
-            )
+            select(Subscription).where(Subscription.stripe_subscription_id == sub_obj["id"])
         )
         sub = result.scalar_one_or_none()
         if sub is None:
@@ -1109,14 +1073,13 @@ class StripeService:
         # than before. If the account already has more users/orgs/docs
         # than the new plan authorises, alert the owner by email so they
         # clean up before we do.
-        _COMMERCIAL_ORDER = ["solo", "equipe", "groupe"]
+        commercial_order = ["solo", "equipe", "groupe"]
         current_plan_after = sub.plan
         if (
             previous_plan is not None
-            and previous_plan in _COMMERCIAL_ORDER
-            and current_plan_after in _COMMERCIAL_ORDER
-            and _COMMERCIAL_ORDER.index(current_plan_after)
-                < _COMMERCIAL_ORDER.index(previous_plan)
+            and previous_plan in commercial_order
+            and current_plan_after in commercial_order
+            and commercial_order.index(current_plan_after) < commercial_order.index(previous_plan)
         ):
             await self._notify_downgrade_overflow(account, previous_plan, current_plan_after)
 
@@ -1147,7 +1110,7 @@ class StripeService:
             await _validate_plan_fits_existing_data(self.db, account.id, new_plan)
             return  # nothing to warn about
         except PlanOverflowError as exc:
-            pass
+            reasons = exc.reasons
         except Exception:
             logger.exception("downgrade overflow check failed for account %s", account.id)
             return
@@ -1160,7 +1123,7 @@ class StripeService:
             if owner is None or not owner.is_active:
                 return
 
-            reasons_html = "".join(f"<li>{r}</li>" for r in exc.reasons)
+            reasons_html = "".join(f"<li>{r}</li>" for r in reasons)
             subject = "Downgrade AORIA RH — action requise"
             body = f"""
 <p>Bonjour {owner.full_name},</p>
@@ -1172,16 +1135,14 @@ autorise&nbsp;:</p>
 sous les limites. Merci de supprimer les éléments excédentaires sous 14 jours.</p>
 <p>Si vous voulez garder l'existant, vous pouvez
 <a href="{settings.frontend_url}/billing">remonter d'offre ici</a>.</p>
-"""
+"""  # noqa: E501 -- Preserve literal text.
             await send_email(owner.email, owner.full_name, subject, body)
         except Exception:
             logger.exception("downgrade overflow email failed for account %s", account.id)
 
     async def _on_subscription_deleted(self, sub_obj: dict) -> None:
         result = await self.db.execute(
-            select(Subscription).where(
-                Subscription.stripe_subscription_id == sub_obj["id"]
-            )
+            select(Subscription).where(Subscription.stripe_subscription_id == sub_obj["id"])
         )
         sub = result.scalar_one_or_none()
         if sub is None:
@@ -1266,7 +1227,9 @@ sous les limites. Merci de supprimer les éléments excédentaires sous 14 jours
         if amount == 0 or amount_refunded < amount:
             logger.info(
                 "Partial refund ignored (charge=%s, %d/%d cents)",
-                _get(charge, "id"), amount_refunded, amount,
+                _get(charge, "id"),
+                amount_refunded,
+                amount,
             )
             return
 
@@ -1411,9 +1374,7 @@ sous les limites. Merci de supprimer les éléments excédentaires sous 14 jours
                 account.id,
             )
 
-    async def _send_subscription_canceled_email(
-        self, account: Account, sub: Subscription
-    ) -> None:
+    async def _send_subscription_canceled_email(self, account: Account, sub: Subscription) -> None:
         try:
             from app.models.user import User as UserModel
             from app.services.email.sender import send_email
@@ -1446,9 +1407,7 @@ sous les limites. Merci de supprimer les éléments excédentaires sous 14 jours
                 account.id,
             )
 
-    async def _latest_subscription(
-        self, account_id: uuid.UUID
-    ) -> Subscription | None:
+    async def _latest_subscription(self, account_id: uuid.UUID) -> Subscription | None:
         result = await self.db.execute(
             select(Subscription)
             .where(Subscription.account_id == account_id)

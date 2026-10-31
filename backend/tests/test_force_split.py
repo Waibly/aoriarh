@@ -1,4 +1,5 @@
 """Tests for boundary-aware force splitting (no mid-word cuts)."""
+
 from __future__ import annotations
 
 import re
@@ -57,9 +58,7 @@ class TestForceSplitOnBoundary:
         chunks = force_split_on_boundary(text, _ENC, 200, 20)
         for i in range(len(chunks) - 1):
             first_word_next = chunks[i + 1].split()[0].rstrip(".")
-            assert first_word_next in chunks[i], (
-                f"no overlap between chunk {i} and {i + 1}"
-            )
+            assert first_word_next in chunks[i], f"no overlap between chunk {i} and {i + 1}"
 
     def test_unbreakable_blob_terminates(self):
         # A long run with no whitespace at all: no word boundary to respect, but

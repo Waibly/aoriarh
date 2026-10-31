@@ -44,12 +44,8 @@ class PlanInvitationRedemption(TimestampMixin, Base):
     plan_invitation_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("plan_invitations.id"), nullable=False
     )
-    account_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("accounts.id"), nullable=False
-    )
-    user_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("users.id"), nullable=False
-    )
+    account_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("accounts.id"), nullable=False)
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), nullable=False)
     redeemed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
     plan_invitation = relationship("PlanInvitation", back_populates="redemptions")

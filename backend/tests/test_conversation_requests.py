@@ -224,6 +224,7 @@ async def test_live_contract_uses_one_call_and_preserves_raw():
 
 async def test_empty_fact_delta_does_not_reload_dossier_mid_preparation(dossier, monkeypatch):
     from unittest.mock import AsyncMock
+
     from app.services.case_file_service import CaseFileService
 
     conv, _ = await conversation(dossier)
@@ -239,9 +240,18 @@ async def test_empty_fact_delta_does_not_reload_dossier_mid_preparation(dossier,
 
     monkeypatch.setattr(CaseFileService, "observation_context", observed)
     result = await prepare_conversation_context(
-        planner(wire([request()])), db=dossier.db, conversation=conv, user=dossier.user,
-        query=msg.content, references=[], documents=[], document_continuity="", history=[],
-        legal_search=AsyncMock(), model="test", source_message_id=msg.id,
+        planner(wire([request()])),
+        db=dossier.db,
+        conversation=conv,
+        user=dossier.user,
+        query=msg.content,
+        references=[],
+        documents=[],
+        document_continuity="",
+        history=[],
+        legal_search=AsyncMock(),
+        model="test",
+        source_message_id=msg.id,
     )
     assert result.trace.error is None
     assert len(calls) == 2  # Initial state and final state; no intermediate full reload.
@@ -249,7 +259,9 @@ async def test_empty_fact_delta_does_not_reload_dossier_mid_preparation(dossier,
 
 async def test_empty_delta_still_detects_a_concurrent_version_change(dossier, monkeypatch):
     from unittest.mock import AsyncMock
+
     from sqlalchemy import update
+
     from app.models.case_file import CaseFile
     from app.services.case_file_service import CaseFileService
 
@@ -262,17 +274,28 @@ async def test_empty_delta_still_detects_a_concurrent_version_change(dossier, mo
     async def concurrent_change(self, **kwargs):
         result = await original(self, **kwargs)
         if not result["applied"]:
-            await self.db.execute(update(CaseFile).where(
-                CaseFile.id == kwargs["case_file"].id
-            ).values(version=CaseFile.version + 1))
+            await self.db.execute(
+                update(CaseFile)
+                .where(CaseFile.id == kwargs["case_file"].id)
+                .values(version=CaseFile.version + 1)
+            )
             await self.db.commit()
         return result
 
     monkeypatch.setattr(CaseFileService, "apply_planner_delta", concurrent_change)
     result = await prepare_conversation_context(
-        planner(wire([request()])), db=dossier.db, conversation=conv, user=dossier.user,
-        query=msg.content, references=[], documents=[], document_continuity="", history=[],
-        legal_search=AsyncMock(), model="test", source_message_id=msg.id,
+        planner(wire([request()])),
+        db=dossier.db,
+        conversation=conv,
+        user=dossier.user,
+        query=msg.content,
+        references=[],
+        documents=[],
+        document_continuity="",
+        history=[],
+        legal_search=AsyncMock(),
+        model="test",
+        source_message_id=msg.id,
     )
     assert result.trace.error == "case_execution_conflict"
 
@@ -313,8 +336,9 @@ async def test_default_pipeline_persists_facts_even_when_search_fails(dossier):
     )
     assert result.generate_without_sources
     assert result.case_context["tasks"][0]["status"] == "blocked"
-    assert result.case_context["tasks"][0]["answer_intent"] == (
-        task_payload("documents_and_law")["legal_search"]["answer_intent"]
+    assert (
+        result.case_context["tasks"][0]["answer_intent"]
+        == (task_payload("documents_and_law")["legal_search"]["answer_intent"])
     )
     assert result.case_context["tasks"][1]["status"] == "ready_for_generation"
     events = (
@@ -333,7 +357,9 @@ async def test_independent_legal_requests_are_parallel_with_drafting(dossier):
     import asyncio
 
     conv, _ = await conversation(dossier)
-    message = Message(conversation_id=conv.id, role="user", content="Comparer, puis procédure et mail")
+    message = Message(
+        conversation_id=conv.id, role="user", content="Comparer, puis procédure et mail"
+    )
     dossier.db.add(message)
     await dossier.db.commit()
     entered = []
@@ -348,12 +374,22 @@ async def test_independent_legal_requests_are_parallel_with_drafting(dossier):
 
     raw = wire(
         [
-            request("legal", "law1", search={
-                **task_payload("documents_and_law")["legal_search"], "answer_intent": "comparison",
-            }),
-            request("legal", "law2", search={
-                **task_payload("documents_and_law")["legal_search"], "answer_intent": "procedure",
-            }),
+            request(
+                "legal",
+                "law1",
+                search={
+                    **task_payload("documents_and_law")["legal_search"],
+                    "answer_intent": "comparison",
+                },
+            ),
+            request(
+                "legal",
+                "law2",
+                search={
+                    **task_payload("documents_and_law")["legal_search"],
+                    "answer_intent": "procedure",
+                },
+            ),
             request(),
         ]
     )
@@ -378,52 +414,96 @@ async def test_independent_legal_requests_are_parallel_with_drafting(dossier):
 
 
 def checked_wire(document_id, checks=None):
-    return json.dumps({"case_delta": {"entries": []}, "requests": [request()],
-        "document_checks": checks if checks is not None else [{"id": "check_clause",
-        "missing_information": "Quelle condition figure dans la clause ?",
-        "document_ids": [str(document_id)]}]})
+    return json.dumps(
+        {
+            "case_delta": {"entries": []},
+            "requests": [request()],
+            "document_checks": checks
+            if checks is not None
+            else [
+                {
+                    "id": "check_clause",
+                    "missing_information": "Quelle condition figure dans la clause ?",
+                    "document_ids": [str(document_id)],
+                }
+            ],
+        }
+    )
 
 
 def test_document_checks_scope_budget_and_continuation():
     import uuid
+
     active = uuid.uuid4()
     raw = checked_wire(active)
-    plan, _, _, errors = decode_requests(raw, previous=[], query="Question", continuation=False,
-                                         documents=[{"document_id": str(active)}])
+    plan, _, _, errors = decode_requests(
+        raw,
+        previous=[],
+        query="Question",
+        continuation=False,
+        documents=[{"document_id": str(active)}],
+    )
     assert not errors
     assert plan.actions[0].document_ids == [active]
     assert plan.actions[0].action == "search_documents"
     assert not plan.needs_continuation
     for documents, continuation in [([], False), ([{"document_id": str(active)}], True)]:
-        plan, _, _, errors = decode_requests(raw, previous=[], query="Question",
-                                             continuation=continuation, documents=documents)
+        plan, _, _, errors = decode_requests(
+            raw, previous=[], query="Question", continuation=continuation, documents=documents
+        )
         assert errors
         assert not plan.actions
     payload = json.loads(raw)
     payload["document_checks"] *= 3
-    plan, _, _, errors = decode_requests(json.dumps(payload), previous=[], query="Question",
-                                         continuation=False, documents=[{"document_id": str(active)}])
+    plan, _, _, errors = decode_requests(
+        json.dumps(payload),
+        previous=[],
+        query="Question",
+        continuation=False,
+        documents=[{"document_id": str(active)}],
+    )
     assert errors
     assert not plan.actions
 
 
-async def test_scoped_consultation_keeps_original_documents_and_does_not_replan(dossier, monkeypatch):
+async def test_scoped_consultation_keeps_original_documents_and_does_not_replan(
+    dossier, monkeypatch
+):
     import uuid
     from unittest.mock import AsyncMock
+
     from app.services import conversation_document_service as docs
+
     conv, _ = await conversation(dossier)
     ids = [dossier.doc.id, uuid.uuid4()]
     references = [{"document_id": str(i), "extraction_id": str(uuid.uuid4())} for i in ids]
-    documents = [{**r, "source_name": f"Pièce {n}", "text": f"Original {n}",
-                  "coverage": {}, "transmitted_scope": "targeted_passages"}
-                 for n, r in enumerate(references)]
+    documents = [
+        {
+            **r,
+            "source_name": f"Pièce {n}",
+            "text": f"Original {n}",
+            "coverage": {},
+            "transmitted_scope": "targeted_passages",
+        }
+        for n, r in enumerate(references)
+    ]
     extra = {**documents[0], "text": "Nouveau passage"}
     reader = AsyncMock(return_value=([extra], ""))
     monkeypatch.setattr(docs, "read_conversation_documents", reader)
     agent = planner(checked_wire(ids[0]))
-    prepared = await prepare_conversation_context(agent, db=dossier.db, conversation=conv,
-        user=dossier.user, query="Question", references=references, documents=documents,
-        document_continuity="", history=[], legal_search=AsyncMock(), model="test")
+    prepared = await prepare_conversation_context(
+        agent,
+        db=dossier.db,
+        conversation=conv,
+        user=dossier.user,
+        query="Question",
+        references=references,
+        documents=documents,
+        document_continuity="",
+        history=[],
+        legal_search=AsyncMock(),
+        model="test",
+    )
     assert prepared.trace.error is None
     assert reader.await_args.args[3] == [references[0]]
     assert prepared.references == references
@@ -434,38 +514,67 @@ async def test_scoped_consultation_keeps_original_documents_and_does_not_replan(
 async def test_failed_consultation_is_reported_without_retry_or_replacement(dossier, monkeypatch):
     import uuid
     from unittest.mock import AsyncMock
+
     from app.services import conversation_document_service as docs
+
     conv, _ = await conversation(dossier)
     ref = {"document_id": str(dossier.doc.id), "extraction_id": str(uuid.uuid4())}
     original = {**ref, "source_name": "Pièce", "text": "Original", "coverage": {}}
     reader = AsyncMock(side_effect=TimeoutError())
     monkeypatch.setattr(docs, "read_conversation_documents", reader)
     agent = planner(checked_wire(dossier.doc.id))
-    prepared = await prepare_conversation_context(agent, db=dossier.db, conversation=conv,
-        user=dossier.user, query="Question", references=[ref], documents=[original],
-        document_continuity="", history=[], legal_search=AsyncMock(), model="test")
+    prepared = await prepare_conversation_context(
+        agent,
+        db=dossier.db,
+        conversation=conv,
+        user=dossier.user,
+        query="Question",
+        references=[ref],
+        documents=[original],
+        document_continuity="",
+        history=[],
+        legal_search=AsyncMock(),
+        model="test",
+    )
     assert reader.await_count == 1
     assert [r.text for r in prepared.results] == ["Original"]
     assert prepared.trace.search_plan["tool_results"][0]["status"] == "document_read_error"
-    assert prepared.trace.search_plan_validation["request_errors"] == [{
-        "scope": "document_consultation", "id": "check_clause", "error": "document_read_error"
-    }]
+    assert prepared.trace.search_plan_validation["request_errors"] == [
+        {"scope": "document_consultation", "id": "check_clause", "error": "document_read_error"}
+    ]
 
 
 async def test_empty_checks_with_partial_document_do_not_trigger_consultation(dossier, monkeypatch):
     import uuid
     from unittest.mock import AsyncMock
+
     from app.services import conversation_document_service as docs
+
     conv, _ = await conversation(dossier)
     ref = {"document_id": str(dossier.doc.id), "extraction_id": str(uuid.uuid4())}
-    doc = {**ref, "source_name": "Pièce", "text": "Original", "coverage": {},
-           "transmitted_scope": "targeted_passages"}
+    doc = {
+        **ref,
+        "source_name": "Pièce",
+        "text": "Original",
+        "coverage": {},
+        "transmitted_scope": "targeted_passages",
+    }
     reader = AsyncMock()
     monkeypatch.setattr(docs, "read_conversation_documents", reader)
     agent = planner(checked_wire(dossier.doc.id, checks=[]))
-    prepared = await prepare_conversation_context(agent, db=dossier.db, conversation=conv,
-        user=dossier.user, query="Rédige le mail", references=[ref], documents=[doc],
-        document_continuity="", history=[], legal_search=AsyncMock(), model="test")
+    prepared = await prepare_conversation_context(
+        agent,
+        db=dossier.db,
+        conversation=conv,
+        user=dossier.user,
+        query="Rédige le mail",
+        references=[ref],
+        documents=[doc],
+        document_continuity="",
+        history=[],
+        legal_search=AsyncMock(),
+        model="test",
+    )
     assert prepared.trace.error is None
     reader.assert_not_called()
     assert agent.llm.chat.completions.create.await_count == 1

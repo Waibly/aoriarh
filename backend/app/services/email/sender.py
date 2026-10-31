@@ -18,7 +18,9 @@ _TEST_EMAIL_DOMAINS = {"example.com", "example.org", "example.net", "test.com", 
 
 def is_test_email(email: str) -> bool:
     domain = email.rpartition("@")[2].lower()
-    return domain in _TEST_EMAIL_DOMAINS or domain.endswith((".test", ".example", ".invalid", ".localhost"))
+    return domain in _TEST_EMAIL_DOMAINS or domain.endswith(
+        (".test", ".example", ".invalid", ".localhost")
+    )
 
 
 def _brevo_headers() -> dict[str, str]:

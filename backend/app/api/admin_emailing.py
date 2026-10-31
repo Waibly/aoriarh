@@ -59,7 +59,12 @@ async def create_template(
     db: AsyncSession = Depends(get_db),
 ) -> EmailTemplateRead:
     service = EmailTemplateService(db)
-    tpl = await service.create(name=data.name, subject=data.subject, preview_text=data.preview_text, html_body=data.html_body)
+    tpl = await service.create(
+        name=data.name,
+        subject=data.subject,
+        preview_text=data.preview_text,
+        html_body=data.html_body,
+    )
     return EmailTemplateRead.model_validate(tpl)
 
 
@@ -83,7 +88,11 @@ async def update_template(
 ) -> EmailTemplateRead:
     service = EmailTemplateService(db)
     tpl = await service.update(
-        template_id, name=data.name, subject=data.subject, preview_text=data.preview_text, html_body=data.html_body,
+        template_id,
+        name=data.name,
+        subject=data.subject,
+        preview_text=data.preview_text,
+        html_body=data.html_body,
     )
     return EmailTemplateRead.model_validate(tpl)
 
@@ -119,23 +128,27 @@ def _seq_to_read(seq) -> EmailSequenceRead:
     steps = []
     for s in sorted(seq.steps, key=lambda x: x.position):
         branches = []
-        for b in (s.branches or []):
-            branches.append(StepBranchRead(
-                id=b.id,
-                condition=b.condition,
-                template_id=b.template_id,
-                template_name=b.template.name if b.template else None,
-                template_subject=b.template.subject if b.template else None,
-            ))
-        steps.append(SequenceStepRead(
-            id=s.id,
-            template_id=s.template_id,
-            position=s.position,
-            delay_days=s.delay_days,
-            template_name=s.template.name if s.template else None,
-            template_subject=s.template.subject if s.template else None,
-            branches=branches,
-        ))
+        for b in s.branches or []:
+            branches.append(
+                StepBranchRead(
+                    id=b.id,
+                    condition=b.condition,
+                    template_id=b.template_id,
+                    template_name=b.template.name if b.template else None,
+                    template_subject=b.template.subject if b.template else None,
+                )
+            )
+        steps.append(
+            SequenceStepRead(
+                id=s.id,
+                template_id=s.template_id,
+                position=s.position,
+                delay_days=s.delay_days,
+                template_name=s.template.name if s.template else None,
+                template_subject=s.template.subject if s.template else None,
+                branches=branches,
+            )
+        )
     return EmailSequenceRead(
         id=seq.id,
         name=seq.name,
@@ -356,9 +369,7 @@ async def list_campaign_waves(
     return CampaignWavesOverview(**overview)
 
 
-@router.get(
-    "/campaigns/{campaign_id}/waves/preview", response_model=list[WaveContact]
-)
+@router.get("/campaigns/{campaign_id}/waves/preview", response_model=list[WaveContact])
 async def preview_next_wave_contacts(
     campaign_id: uuid.UUID,
     count: int = Query(100),

@@ -18,7 +18,6 @@ from app.schemas.document import (
     AdminDocumentRead,
     BatchUploadFileResult,
     BatchUploadResponse,
-    DocumentDownload,
     DocumentListResponse,
     DocumentRead,
 )
@@ -67,22 +66,34 @@ async def list_indexation_errors(
     from app.models.organisation import Organisation
 
     condition = Document.indexation_status == "error"
-    total = (await db.execute(
-        select(func.count()).select_from(Document).where(condition)
-    )).scalar_one()
-    rows = (await db.execute(
-        select(
-            Document.id, Document.name, Document.organisation_id,
-            Organisation.name.label("organisation_name"), Document.indexation_error,
+    total = (
+        await db.execute(select(func.count()).select_from(Document).where(condition))
+    ).scalar_one()
+    rows = (
+        (
+            await db.execute(
+                select(
+                    Document.id,
+                    Document.name,
+                    Document.organisation_id,
+                    Organisation.name.label("organisation_name"),
+                    Document.indexation_error,
+                )
+                .outerjoin(Organisation, Document.organisation_id == Organisation.id)
+                .where(condition)
+                .order_by(Document.updated_at.desc(), Document.id)
+                .offset((page - 1) * page_size)
+                .limit(page_size)
+            )
         )
-        .outerjoin(Organisation, Document.organisation_id == Organisation.id)
-        .where(condition)
-        .order_by(Document.updated_at.desc(), Document.id)
-        .offset((page - 1) * page_size).limit(page_size)
-    )).mappings().all()
+        .mappings()
+        .all()
+    )
     return IndexationErrorsResponse(
         items=[IndexationErrorItem(**row) for row in rows],
-        total=total, page=page, page_size=page_size,
+        total=total,
+        page=page,
+        page_size=page_size,
     )
 
 
@@ -100,12 +111,8 @@ async def get_storage_stats(
             func.count(Document.id).filter(s == "indexing").label("indexing"),
             func.count(Document.id).filter(s == "error").label("errors"),
             func.coalesce(func.sum(Document.file_size), 0).label("storage"),
-            func.count(Document.id).filter(
-                Document.organisation_id.is_(None)
-            ).label("common"),
-            func.count(Document.id).filter(
-                Document.organisation_id.isnot(None)
-            ).label("org"),
+            func.count(Document.id).filter(Document.organisation_id.is_(None)).label("common"),
+            func.count(Document.id).filter(Document.organisation_id.isnot(None)).label("org"),
         )
     )
     row = result.one()
@@ -201,19 +208,17 @@ async def upload_common_documents_batch(
     """Upload multiple common documents of the same type in one request."""
     if len(files) > MAX_FILES_PER_BATCH:
         from fastapi import HTTPException
+
         raise HTTPException(
             status_code=400,
             detail=f"Maximum {MAX_FILES_PER_BATCH} fichiers par lot",
         )
 
     # Validate all files first (size, format)
-    allowed_types = {
-        "application/pdf", "text/plain",
-        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-    }
     for file in files:
         if file.size and file.size > MAX_FILE_SIZE_ADMIN:
             from fastapi import HTTPException
+
             raise HTTPException(
                 status_code=400,
                 detail=f"Le fichier {file.filename} dépasse la taille maximale",
@@ -241,19 +246,23 @@ async def upload_common_documents_batch(
             )
             await db.commit()
             await enqueue_ingestion(str(doc.id), expected_source=doc.storage_path)
-            results.append(BatchUploadFileResult(
-                filename=file.filename or "unknown",
-                success=True,
-                document=DocumentRead.model_validate(doc),
-            ))
+            results.append(
+                BatchUploadFileResult(
+                    filename=file.filename or "unknown",
+                    success=True,
+                    document=DocumentRead.model_validate(doc),
+                )
+            )
         except Exception as exc:
             detail = getattr(exc, "detail", str(exc))
             logger.warning("Batch upload failed for %s: %s", file.filename, detail)
-            results.append(BatchUploadFileResult(
-                filename=file.filename or "unknown",
-                success=False,
-                error=detail,
-            ))
+            results.append(
+                BatchUploadFileResult(
+                    filename=file.filename or "unknown",
+                    success=False,
+                    error=detail,
+                )
+            )
 
     succeeded = sum(1 for r in results if r.success)
     return BatchUploadResponse(
@@ -275,6 +284,7 @@ async def list_common_documents(
 
 class DocumentGroupItem(BaseModel):
     """A group of common documents by source_type."""
+
     source_type: str
     label: str
     count: int
@@ -294,7 +304,6 @@ async def list_common_document_groups(
     db: AsyncSession = Depends(get_db),
 ) -> DocumentGroupsResponse:
     """Return common documents grouped by source_type with counts."""
-    from app.rag.norme_hierarchy import DOCUMENT_TYPE_HIERARCHY
 
     # Split CCN into KALI (indexed) and BOCC (reserve) for clarity
     is_bocc_reserve = (
@@ -308,9 +317,9 @@ async def list_common_document_groups(
             Document.source_type,
             func.count().label("count"),
             func.count().filter(Document.indexation_status == "indexed").label("indexed"),
-            func.count().filter(
-                (Document.indexation_status == "pending") & ~is_bocc_reserve
-            ).label("pending"),
+            func.count()
+            .filter((Document.indexation_status == "pending") & ~is_bocc_reserve)
+            .label("pending"),
             func.coalesce(func.sum(Document.chunk_count), 0).label("total_chunks"),
         )
         .where(Document.organisation_id.is_(None), Document.retired_at.is_(None), ~is_bocc_reserve)
@@ -321,9 +330,9 @@ async def list_common_document_groups(
 
     # Count BOCC reserve separately
     bocc_q = await db.execute(
-        select(func.count()).select_from(Document).where(
-            is_bocc_reserve, Document.retired_at.is_(None)
-        )
+        select(func.count())
+        .select_from(Document)
+        .where(is_bocc_reserve, Document.retired_at.is_(None))
     )
     bocc_reserve_count = bocc_q.scalar() or 0
 
@@ -345,7 +354,9 @@ async def list_common_document_groups(
         "code_securite_sociale": "Code de la sécurité sociale (législatif)",
         "code_securite_sociale_reglementaire": "Code de la sécurité sociale (réglementaire)",
         "code_action_sociale": "Code de l'action sociale et des familles (législatif)",
-        "code_action_sociale_reglementaire": "Code de l'action sociale et des familles (réglementaire)",
+        "code_action_sociale_reglementaire": (
+            "Code de l'action sociale et des familles (réglementaire)"
+        ),
         "code_sante_publique": "Code de la santé publique (législatif)",
         "code_sante_publique_reglementaire": "Code de la santé publique (réglementaire)",
         "accord_branche": "Accord de branche",
@@ -367,27 +378,33 @@ async def list_common_document_groups(
     total = 0
     for row in rows:
         label = source_labels.get(row.source_type, row.source_type)
-        groups.append(DocumentGroupItem(
-            source_type=row.source_type,
-            label=label,
-            count=row.count,
-            indexed=row.indexed,
-            pending=row.pending,
-            total_chunks=row.total_chunks,
-        ))
+        groups.append(
+            DocumentGroupItem(
+                source_type=row.source_type,
+                label=label,
+                count=row.count,
+                indexed=row.indexed,
+                pending=row.pending,
+                total_chunks=row.total_chunks,
+            )
+        )
         total += row.count
 
     # Add BOCC reserve as a separate virtual group
     if bocc_reserve_count > 0:
-        groups.append(DocumentGroupItem(
-            source_type="bocc_reserve",
-            label=(f"BOCC en réserve ({bocc_reserve_count} avenants "
-                   "— admission documentaire requise)"),
-            count=bocc_reserve_count,
-            indexed=0,
-            pending=0,
-            total_chunks=0,
-        ))
+        groups.append(
+            DocumentGroupItem(
+                source_type="bocc_reserve",
+                label=(
+                    f"BOCC en réserve ({bocc_reserve_count} avenants "
+                    "— admission documentaire requise)"
+                ),
+                count=bocc_reserve_count,
+                indexed=0,
+                pending=0,
+                total_chunks=0,
+            )
+        )
         total += bocc_reserve_count
 
     return DocumentGroupsResponse(groups=groups, total=total)
@@ -454,9 +471,7 @@ async def list_common_documents_by_type(
         base = base.where(Document.date_decision <= date_decision_end)
 
     # Total avec les mêmes filtres mais sans pagination
-    total = (await db.execute(
-        select(func.count()).select_from(base.subquery())
-    )).scalar_one()
+    total = (await db.execute(select(func.count()).select_from(base.subquery()))).scalar_one()
 
     # Tri (whitelist pour éviter SQLi via sort_by)
     sort_columns = {
@@ -470,9 +485,7 @@ async def list_common_documents_by_type(
     else:
         ordered = base.order_by(sort_col.desc().nullslast())
 
-    result = await db.execute(
-        ordered.offset((page - 1) * page_size).limit(page_size)
-    )
+    result = await db.execute(ordered.offset((page - 1) * page_size).limit(page_size))
     items = list(result.scalars().all())
     return DocumentListResponse(
         items=items,  # type: ignore[arg-type]
@@ -491,6 +504,7 @@ async def download_common_document(
     service = DocumentService(db)
     doc = await service.get_common_document(document_id)
     from app.services.storage_service import StorageService
+
     storage = StorageService()
     file_bytes = storage.get_file_bytes(doc.storage_path)
 
@@ -510,7 +524,8 @@ async def download_common_document(
         content=file_bytes,
         media_type=content_type,
         headers={
-            "Content-Disposition": "attachment; filename*=UTF-8''" + urllib.parse.quote(filename, safe=""),
+            "Content-Disposition": "attachment; filename*=UTF-8''"
+            + urllib.parse.quote(filename, safe=""),
         },
     )
 

@@ -14,7 +14,8 @@ def usage_details(usage) -> dict[str, int]:
             result[name] = value
     details = getattr(usage, "prompt_tokens_details", None)
     writes = (
-        details.get("cache_write_tokens_details") if isinstance(details, dict)
+        details.get("cache_write_tokens_details")
+        if isinstance(details, dict)
         else getattr(details, "cache_write_tokens_details", None)
     )
     for field, name in (

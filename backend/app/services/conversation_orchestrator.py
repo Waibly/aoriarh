@@ -33,6 +33,7 @@ from app.services.conversation_document_service import DocumentLegalSearch
 
 logger = logging.getLogger(__name__)
 
+
 class DocumentLookup(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
     name: str | None
@@ -64,7 +65,10 @@ class OrchestratorAction(BaseModel):
 
     @model_validator(mode="after")
     def arguments_match_action(self):
-        if self.action not in {"read_legal_sources", "search_documents"} and self.document_ids is not None:
+        if (
+            self.action not in {"read_legal_sources", "search_documents"}
+            and self.document_ids is not None
+        ):
             raise ValueError("action_arguments_mismatch")
         if self.action == "find_documents":
             valid = self.lookup is not None and all(
@@ -103,8 +107,13 @@ class OrchestratorAction(BaseModel):
             )
         elif self.action == "read_legal_sources":
             valid = bool(self.document_ids) and all(
-                value is None for value in (
-                    self.lookup, self.source, self.source_action_id, self.legal_search, self.response
+                value is None
+                for value in (
+                    self.lookup,
+                    self.source,
+                    self.source_action_id,
+                    self.legal_search,
+                    self.response,
                 )
             )
         if not valid:
@@ -273,10 +282,12 @@ async def plan_conversation(
             if item.get("document_id")
         ],
         legal_source_ids=legal_source_document_ids(
-            history if source_history is None else source_history, tool_results,
+            history if source_history is None else source_history,
+            tool_results,
         ),
         period_parameters_available=user_period_parameters_available(
-            query, history if isinstance(history, list) else source_history,
+            query,
+            history if isinstance(history, list) else source_history,
         ),
     )
     # The question is already supplied once; keep only search constraints here.
@@ -295,11 +306,17 @@ async def plan_conversation(
                     # Attachment continuity carries the original text history,
                     # but not its structured source references. Keep the latter
                     # available without parsing generated prose or duplicating it.
-                    **({"history_source_references": [
-                        {"sources": item["sources"]}
-                        for item in source_history
-                        if isinstance(item, dict) and item.get("sources")
-                    ]} if source_history is not None and not isinstance(history, list) else {}),
+                    **(
+                        {
+                            "history_source_references": [
+                                {"sources": item["sources"]}
+                                for item in source_history
+                                if isinstance(item, dict) and item.get("sources")
+                            ]
+                        }
+                        if source_history is not None and not isinstance(history, list)
+                        else {}
+                    ),
                     "active_documents": active_documents,
                     "documents_read": documents,
                     "tool_results": tool_results,
@@ -343,11 +360,13 @@ async def plan_conversation(
         "finish_reason": getattr(response.choices[0], "finish_reason", None),
     }
     if response.usage:
-        trace.search_plan_usage.update({
-            "tokens_input": response.usage.prompt_tokens,
-            "tokens_output": response.usage.completion_tokens,
-            **usage_details(response.usage),
-        })
+        trace.search_plan_usage.update(
+            {
+                "tokens_input": response.usage.prompt_tokens,
+                "tokens_output": response.usage.completion_tokens,
+                **usage_details(response.usage),
+            }
+        )
         from app.services.cost_tracker import cost_tracker
 
         cost_tracker.log_bg(
@@ -599,8 +618,11 @@ async def prepare_conversation_context(
 
     for pass_index in range(2):
         try:
-            progress("Prise en compte de votre situation…" if pass_index == 0
-                     else "Prise en compte des éléments consultés…")
+            progress(
+                "Prise en compte de votre situation…"
+                if pass_index == 0
+                else "Prise en compte des éléments consultés…"
+            )
             planned = await plan_conversation(
                 agent,
                 query=query,
@@ -683,9 +705,10 @@ async def prepare_conversation_context(
                     source_message_id=source_message_id,
                 )
                 observation_event_ids.append(str(observation_event.id))
-                case_perf["case_observation_save"] = case_perf.get("case_observation_save", 0) + (
-                    time.perf_counter() - observation_started
-                ) * 1000
+                case_perf["case_observation_save"] = (
+                    case_perf.get("case_observation_save", 0)
+                    + (time.perf_counter() - observation_started) * 1000
+                )
             except Exception:
                 await db.rollback()
                 observation_technical_errors.append("case_file_observation_persistence_error")
@@ -738,9 +761,10 @@ async def prepare_conversation_context(
                     if current_version != applicable_expected_version:
                         raise CaseFileApplyError("case_version_conflict")
                 application_result = fact_result
-                case_perf["case_facts_apply"] = case_perf.get("case_facts_apply", 0) + (
-                    time.perf_counter() - facts_started
-                ) * 1000
+                case_perf["case_facts_apply"] = (
+                    case_perf.get("case_facts_apply", 0)
+                    + (time.perf_counter() - facts_started) * 1000
+                )
             except CaseFileApplyError as exc:
                 await db.rollback()
                 await db.refresh(case_file)
@@ -769,9 +793,7 @@ async def prepare_conversation_context(
 
         prefetched = {}
         if parallel_legal_search:
-            remaining = min(
-                6 - executed_action_count, 3 - legal_search_count
-            )
+            remaining = min(6 - executed_action_count, 3 - legal_search_count)
             independent = [
                 action
                 for action in planned.plan.actions
@@ -837,16 +859,25 @@ async def prepare_conversation_context(
                 output = {"action_id": action.id, "action": action.action, "sources": []}
                 try:
                     read_results, coverage = await read_legal_sources(
-                        db, action.document_ids,
+                        db,
+                        action.document_ids,
                         source_exclusions=planned.legal_base.excluded_source_types,
                         source_restriction=planned.legal_base.exclusive_source_types or None,
                     )
                     results.extend(read_results)
-                    output.update(status="success", coverage=coverage, sources=[
-                        {"document_id": item.document_id, "chunk_index": item.chunk_index,
-                         "text": item.text, "name": item.doc_name}
-                        for item in read_results
-                    ])
+                    output.update(
+                        status="success",
+                        coverage=coverage,
+                        sources=[
+                            {
+                                "document_id": item.document_id,
+                                "chunk_index": item.chunk_index,
+                                "text": item.text,
+                                "name": item.doc_name,
+                            }
+                            for item in read_results
+                        ],
+                    )
                     legal_executed = True
                 except RetrievalError as exc:
                     output.update(status="search_retrieval_error", error=str(exc))
@@ -964,31 +995,58 @@ async def prepare_conversation_context(
                     wanted = {str(i) for i in action.document_ids}
                     available = {str(r["document_id"]) for r in current_references}
                     if not wanted.issubset(available):
-                        request_errors.append({"scope": "document_consultation", "id": action.id,
-                                               "error": "document_access_error"})
-                        output = {"action_id": action.id, "action": action.action,
-                                  "status": "document_access_error", "documents": []}
+                        request_errors.append(
+                            {
+                                "scope": "document_consultation",
+                                "id": action.id,
+                                "error": "document_access_error",
+                            }
+                        )
+                        output = {
+                            "action_id": action.id,
+                            "action": action.action,
+                            "status": "document_access_error",
+                            "documents": [],
+                        }
                         action_outputs[action.id] = output
                         tool_results.append(output)
                         continue
-                    selected_references = [r for r in current_references
-                                           if str(r["document_id"]) in wanted]
-                output = {"action_id": action.id, "action": action.action,
-                          "question": action.query, "status": "unresolved", "documents": []}
+                    selected_references = [
+                        r for r in current_references if str(r["document_id"]) in wanted
+                    ]
+                output = {
+                    "action_id": action.id,
+                    "action": action.action,
+                    "question": action.query,
+                    "status": "unresolved",
+                    "documents": [],
+                }
                 if selected_references:
                     try:
                         consulted, _ = await read_conversation_documents(
-                            db, conversation, user, selected_references, query=action.query or query,
+                            db,
+                            conversation,
+                            user,
+                            selected_references,
+                            query=action.query or query,
                         )
                         # Keep every original excerpt and every newly consulted excerpt.
                         # Other active documents and their references must remain available.
                         results.extend(_document_results(consulted))
                         output.update(
-                            status="success" if any(d.get("text") for d in consulted) else "no_results",
-                            documents=[{"document_id": str(d["document_id"]),
-                                        "name": d["source_name"],
-                                        "reading_scope": d.get("transmitted_scope", "full_extracted_text")}
-                                       for d in consulted],
+                            status="success"
+                            if any(d.get("text") for d in consulted)
+                            else "no_results",
+                            documents=[
+                                {
+                                    "document_id": str(d["document_id"]),
+                                    "name": d["source_name"],
+                                    "reading_scope": d.get(
+                                        "transmitted_scope", "full_extracted_text"
+                                    ),
+                                }
+                                for d in consulted
+                            ],
                         )
                         current_documents = [*current_documents, *consulted]
                     except SQLAlchemyError:
@@ -997,8 +1055,13 @@ async def prepare_conversation_context(
                     except Exception:
                         logger.exception("Targeted document consultation failed")
                         output["status"] = "document_read_error"
-                        request_errors.append({"scope": "document_consultation", "id": action.id,
-                                               "error": "document_read_error"})
+                        request_errors.append(
+                            {
+                                "scope": "document_consultation",
+                                "id": action.id,
+                                "error": "document_read_error",
+                            }
+                        )
                 action_outputs[action.id] = output
                 tool_results.append(output)
                 continue

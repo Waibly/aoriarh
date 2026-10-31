@@ -15,6 +15,7 @@ from app.core.config import settings
 from app.models.conversation import Conversation, Message
 from app.rag.agent import RAGAgent, RagTrace
 from app.rag.search import SearchResult
+from app.rag.text_extractor import TextExtractor
 from app.schemas.conversation import ChatDocumentReference
 from app.services.conversation_document_service import (
     active_references,
@@ -22,7 +23,6 @@ from app.services.conversation_document_service import (
     read_conversation_documents,
 )
 from app.services.document_extraction_service import SourceSnapshot
-from app.rag.text_extractor import TextExtractor
 from tests.test_chat_stream_timeouts import _passthrough_intent
 from tests.test_document_extraction_service import dossier as dossier
 from tests.test_document_extraction_service import prepare
@@ -43,38 +43,55 @@ def planner(raw):
 
 
 def task_payload(action="documents_and_law"):
-    return dict(action=action, objective="Répondre à la demande", legal_search=(dict(
-        needs_history=True, standalone_question="Question et faits du document inchangés",
-        legal_topics=["durée"], search_queries=["durée essai cadre CDI"],
-        hypothesized_articles=[], source_hints=["legislation"],
-        jurisprudence="optional", answer_intent="case_analysis", missing_facts=[],
-    ) if action == "documents_and_law" else None))
+    return dict(
+        action=action,
+        objective="Répondre à la demande",
+        legal_search=(
+            dict(
+                needs_history=True,
+                standalone_question="Question et faits du document inchangés",
+                legal_topics=["durée"],
+                search_queries=["durée essai cadre CDI"],
+                hypothesized_articles=[],
+                source_hints=["legislation"],
+                jurisprudence="optional",
+                answer_intent="case_analysis",
+                missing_facts=[],
+            )
+            if action == "documents_and_law"
+            else None
+        ),
+    )
 
 
 def orchestration_payload(action="documents_and_law"):
-    actions = [{
-        "id": "read_active",
-        "action": "read_documents",
-        "depends_on": [],
-        "lookup": None,
-        "source": "active",
-        "source_action_id": None,
-        "query": None,
-        "legal_search": None,
-        "response": None,
-    }]
-    if action == "documents_and_law":
-        actions.append({
-            "id": "search_law",
-            "action": "search_legal",
-            "depends_on": ["read_active"],
+    actions = [
+        {
+            "id": "read_active",
+            "action": "read_documents",
+            "depends_on": [],
             "lookup": None,
-            "source": None,
+            "source": "active",
             "source_action_id": None,
             "query": None,
-            "legal_search": task_payload(action)["legal_search"],
+            "legal_search": None,
             "response": None,
-        })
+        }
+    ]
+    if action == "documents_and_law":
+        actions.append(
+            {
+                "id": "search_law",
+                "action": "search_legal",
+                "depends_on": ["read_active"],
+                "lookup": None,
+                "source": None,
+                "source_action_id": None,
+                "query": None,
+                "legal_search": task_payload(action)["legal_search"],
+                "response": None,
+            }
+        )
     return {
         "objective": "Répondre à la demande",
         "actions": actions,
@@ -122,13 +139,14 @@ async def test_full_history_and_original_extraction_are_read(dossier, monkeypatc
     assert continuity.count("Intermédiaire") == 8
 
 
-async def test_long_document_uses_only_passages_from_the_explicit_document(
-    dossier, monkeypatch
-):
+async def test_long_document_uses_only_passages_from_the_explicit_document(dossier, monkeypatch):
     monkeypatch.setattr(settings, "document_extraction_enabled", True)
     conv = Conversation(
-        id=uuid.uuid4(), organisation_id=dossier.org.id, user_id=dossier.user.id,
-        messages=[], title="Long document",
+        id=uuid.uuid4(),
+        organisation_id=dossier.org.id,
+        user_id=dossier.user.id,
+        messages=[],
+        title="Long document",
     )
     dossier.db.add(conv)
     long_text = "Introduction\n" + ("contenu administratif\n" * 6000) + "Montant : 2 750 euros"
@@ -140,17 +158,32 @@ async def test_long_document_uses_only_passages_from_the_explicit_document(
     await dossier.db.commit()
     await dossier.service.extract(SourceSnapshot.from_document(dossier.doc), raw, TextExtractor())
     manifest = await dossier.service.status(dossier.doc.id, dossier.org.id, dossier.user.id)
-    refs = [{"document_id": str(dossier.doc.id),
-             "extraction_id": str(manifest["extraction_id"])}]
-    searcher = SimpleNamespace(search=AsyncMock(return_value=[SearchResult(
-        text="Montant : 2 750 euros", doc_name=dossier.doc.name,
-        document_id=str(dossier.doc.id), source_type="divers", norme_niveau=9,
-        norme_poids=.1, chunk_index=42, score=1,
-    )]))
+    refs = [{"document_id": str(dossier.doc.id), "extraction_id": str(manifest["extraction_id"])}]
+    searcher = SimpleNamespace(
+        search=AsyncMock(
+            return_value=[
+                SearchResult(
+                    text="Montant : 2 750 euros",
+                    doc_name=dossier.doc.name,
+                    document_id=str(dossier.doc.id),
+                    source_type="divers",
+                    norme_niveau=9,
+                    norme_poids=0.1,
+                    chunk_index=42,
+                    score=1,
+                )
+            ]
+        )
+    )
 
     documents, _ = await read_conversation_documents(
-        dossier.db, conv, dossier.user, refs, query="Quel est le montant ?",
-        reader=dossier.service, searcher=searcher,
+        dossier.db,
+        conv,
+        dossier.user,
+        refs,
+        query="Quel est le montant ?",
+        reader=dossier.service,
+        searcher=searcher,
     )
 
     assert documents[0]["text"] == "Montant : 2 750 euros"
@@ -162,8 +195,11 @@ async def test_long_document_uses_only_passages_from_the_explicit_document(
 async def test_long_document_waits_for_index_without_fallback_read(dossier, monkeypatch):
     monkeypatch.setattr(settings, "document_extraction_enabled", True)
     conv = Conversation(
-        id=uuid.uuid4(), organisation_id=dossier.org.id, user_id=dossier.user.id,
-        messages=[], title="Long document pending",
+        id=uuid.uuid4(),
+        organisation_id=dossier.org.id,
+        user_id=dossier.user.id,
+        messages=[],
+        title="Long document pending",
     )
     dossier.db.add(conv)
     raw = ("texte\n" * 20_000).encode()
@@ -174,12 +210,16 @@ async def test_long_document_waits_for_index_without_fallback_read(dossier, monk
     await dossier.db.commit()
     await dossier.service.extract(SourceSnapshot.from_document(dossier.doc), raw, TextExtractor())
     manifest = await dossier.service.status(dossier.doc.id, dossier.org.id, dossier.user.id)
-    refs = [{"document_id": str(dossier.doc.id),
-             "extraction_id": str(manifest["extraction_id"])}]
+    refs = [{"document_id": str(dossier.doc.id), "extraction_id": str(manifest["extraction_id"])}]
 
     with pytest.raises(HTTPException, match="encore en préparation") as exc:
         await read_conversation_documents(
-            dossier.db, conv, dossier.user, refs, query="Résume", reader=dossier.service,
+            dossier.db,
+            conv,
+            dossier.user,
+            refs,
+            query="Résume",
+            reader=dossier.service,
         )
     assert exc.value.status_code == 409
 
@@ -271,12 +311,20 @@ async def test_unified_plan_reaches_real_executor_without_second_planner(monkeyp
 
     async def legal(query, *, search_plan):
         return await prepare_rag_context(
-            agent, query=query, organisation_id="org-fixture", search_plan=search_plan,
+            agent,
+            query=query,
+            organisation_id="org-fixture",
+            search_plan=search_plan,
         )
 
     _, _, trace = await prepare_document_task(
-        agent, query="  Et mon document ?  ", documents=[], continuity="historique intégral",
-        legal_search=legal, model="test", org_idcc_list=["1486"],
+        agent,
+        query="  Et mon document ?  ",
+        documents=[],
+        continuity="historique intégral",
+        legal_search=legal,
+        model="test",
+        org_idcc_list=["1486"],
         org_context={"not_subject_to_ccn": True},
     )
     second_planner.assert_not_awaited()
@@ -284,8 +332,9 @@ async def test_unified_plan_reaches_real_executor_without_second_planner(monkeyp
     call = agent.llm.chat.completions.create.await_args.kwargs
     schema = call["response_format"]["json_schema"]["schema"]
     constraints = json.loads(call["messages"][1]["content"])["search_context"]["constraints"]
-    assert schema["$defs"]["DocumentLegalSearch"]["properties"]["search_queries"]["maxItems"] == (
-        constraints["query_budget"]
+    assert (
+        schema["$defs"]["DocumentLegalSearch"]["properties"]["search_queries"]["maxItems"]
+        == (constraints["query_budget"])
     )
     plan = agent._search_with_plan.await_args.args[0]
     assert plan.query_original == "  Et mon document ?  "
@@ -310,7 +359,12 @@ async def test_unexecutable_unified_plan_stops_without_repair(fault):
     raw = json.dumps(value)
     agent, legal = planner(raw), AsyncMock()
     _, _, trace = await prepare_document_task(
-        agent, query="question", documents=[], continuity="", legal_search=legal, model="test",
+        agent,
+        query="question",
+        documents=[],
+        continuity="",
+        legal_search=legal,
+        model="test",
     )
     assert trace.error == "search_planner_error"
     assert trace.router_raw_response == raw
@@ -364,21 +418,40 @@ async def test_http_second_turn_reads_same_documents_and_keeps_raw_answer(
 
     requests = [request("read", "read_active", source_request_id=None)]
     if action == "documents_and_law":
-        requests.append(request("legal", "law", depends_on=["read_active"],
-                                search=task_payload(action)["legal_search"]))
+        requests.append(
+            request(
+                "legal",
+                "law",
+                depends_on=["read_active"],
+                search=task_payload(action)["legal_search"],
+            )
+        )
     raw_plan = wire(requests)
     agent = planner(raw_plan)
     monkeypatch.setattr("app.api.conversations.RAGAgent", lambda: agent)
+
     async def prepared_legal_context(agent, *, query, search_plan, **kwargs):
         from app.rag.search import SearchResult
 
         assert search_plan.query_original in {"Lis cette pièce", "Et le train ?"}
         assert search_plan.standalone_question == query
         assert search_plan.planner_raw_response == raw_plan
-        return [SearchResult(text="Texte juridique de test", doc_name="Loi de test",
-                             document_id="legal", source_type="code_travail", norme_niveau=1,
-                             norme_poids=1, chunk_index=0, score=1)], query, RagTrace(
-                                 search_plan=search_plan.to_dict())
+        return (
+            [
+                SearchResult(
+                    text="Texte juridique de test",
+                    doc_name="Loi de test",
+                    document_id="legal",
+                    source_type="code_travail",
+                    norme_niveau=1,
+                    norme_poids=1,
+                    chunk_index=0,
+                    score=1,
+                )
+            ],
+            query,
+            RagTrace(search_plan=search_plan.to_dict()),
+        )
 
     legal = AsyncMock(side_effect=prepared_legal_context)
     monkeypatch.setattr("app.api.conversations.prepare_rag_context", legal)

@@ -6,8 +6,7 @@ contacted: the few flows that need a Stripe customer are bypassed or
 patched.
 """
 
-import uuid
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 
 import pytest
 from fastapi import HTTPException
@@ -18,13 +17,11 @@ from app.core.plans import LIMITS_GRATUIT, LIMITS_INVITE, LIMITS_SOLO
 from app.models.account import Account
 from app.models.account_member import AccountMember
 from app.models.booster_purchase import BoosterPurchase
-from app.models.organisation import Organisation
 from app.models.user import User
 from app.schemas.billing import QuotaStatus
 from app.services.billing_service import BillingService
 from app.services.plan_service import PlanOverflowError, assign_plan
 from tests.conftest import auth_header, test_session_factory
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -34,9 +31,7 @@ from tests.conftest import auth_header, test_session_factory
 async def _get_account_for_email(email: str) -> Account:
     """Look up the Account owned by the test user with this email."""
     async with test_session_factory() as session:
-        result = await session.execute(
-            User.__table__.select().where(User.email == email)
-        )
+        result = await session.execute(User.__table__.select().where(User.email == email))
         user_row = result.first()
         account_result = await session.execute(
             Account.__table__.select().where(Account.owner_id == user_row.id)
@@ -48,9 +43,7 @@ async def _get_account_for_email(email: str) -> Account:
 async def _force_plan(email: str, plan: str) -> None:
     """Directly set a plan on the test user's account (bypasses validation)."""
     async with test_session_factory() as session:
-        user_result = await session.execute(
-            User.__table__.select().where(User.email == email)
-        )
+        user_result = await session.execute(User.__table__.select().where(User.email == email))
         user_row = user_result.first()
         await session.execute(
             update(Account)

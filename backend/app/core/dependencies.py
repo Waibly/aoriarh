@@ -73,6 +73,7 @@ async def get_current_user(
     if user is None or not user.is_active:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
     from app.observability.store import context
+
     incident_context = context.get()
     if incident_context is not None:
         incident_context["user_id"] = str(user.id)

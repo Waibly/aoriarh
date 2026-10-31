@@ -12,6 +12,7 @@ c'est plus lent que d'habitude au lieu de laisser un écran figé.
   chaque token. Un flux lent mais vivant va TOUJOURS au bout ; un flux mort
   est abandonné en conservant et annotant le déjà-émis, puis chat_done.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -90,10 +91,15 @@ async def test_real_progress_is_forwarded_before_generation(client, manager_user
         yield "  Réponse originale\n"
 
     monkeypatch.setattr("app.api.conversations.classify_intent", _passthrough_intent)
-    monkeypatch.setattr("app.services.conversation_orchestrator.prepare_conversation_context", prepare)
+    monkeypatch.setattr(
+        "app.services.conversation_orchestrator.prepare_conversation_context", prepare
+    )
     monkeypatch.setattr("app.rag.agent.RAGAgent.stream_generate", generate)
-    res = await client.post(f"/api/v1/conversations/{conv_id}/chat/stream",
-                            headers=auth_header(manager_user["token"]), json={"message": "Question"})
+    res = await client.post(
+        f"/api/v1/conversations/{conv_id}/chat/stream",
+        headers=auth_header(manager_user["token"]),
+        json={"message": "Question"},
+    )
     assert res.text.index("Consultation des documents") < res.text.index("Recherche des références")
     assert res.text.index("Recherche des références") < res.text.index("event: chat_delta")
     assert "Traitement des éléments chiffrés" not in res.text
@@ -111,7 +117,11 @@ async def test_real_progress_is_forwarded_before_generation(client, manager_user
     ],
 )
 async def test_search_failure_emits_raw_details_before_technical_error(
-    client: AsyncClient, manager_user: dict, monkeypatch, error: str, raw: str,
+    client: AsyncClient,
+    manager_user: dict,
+    monkeypatch,
+    error: str,
+    raw: str,
 ) -> None:
     conv_id = await _make_conversation(client, manager_user)
 
@@ -120,7 +130,9 @@ async def test_search_failure_emits_raw_details_before_technical_error(
             results=[],
             reformulated=raw,
             trace=RagTrace(
-                query_original="question", model="test", error=error,
+                query_original="question",
+                model="test",
+                error=error,
                 search_plan={"planner_raw_response": raw},
             ),
             documents=[],
@@ -134,7 +146,8 @@ async def test_search_failure_emits_raw_details_before_technical_error(
     )
     res = await client.post(
         f"/api/v1/conversations/{conv_id}/chat/stream",
-        headers=auth_header(manager_user["token"]), json={"message": "Question"},
+        headers=auth_header(manager_user["token"]),
+        json={"message": "Question"},
     )
     assert res.status_code == 200
     events = []
@@ -168,7 +181,9 @@ def _patch_timings(monkeypatch, *, slow=0.05, context=0.2, idle=0.3):
 
 @pytest.mark.parametrize("provider_timeout", [False, True])
 async def test_context_timeout_yields_notice_then_clean_error(
-    client: AsyncClient, manager_user: dict, monkeypatch,
+    client: AsyncClient,
+    manager_user: dict,
+    monkeypatch,
     provider_timeout: bool,
 ) -> None:
     conv_id = await _make_conversation(client, manager_user)
@@ -201,7 +216,9 @@ async def test_context_timeout_yields_notice_then_clean_error(
 
 
 async def test_dead_stream_keeps_partial_answer(
-    client: AsyncClient, manager_user: dict, monkeypatch,
+    client: AsyncClient,
+    manager_user: dict,
+    monkeypatch,
 ) -> None:
     conv_id = await _make_conversation(client, manager_user)
 
@@ -237,13 +254,17 @@ async def test_dead_stream_keeps_partial_answer(
     loaded = await client.get(
         f"/api/v1/conversations/{conv_id}", headers=auth_header(manager_user["token"])
     )
-    answer = next(message for message in loaded.json()["messages"] if message["role"] == "assistant")
+    answer = next(
+        message for message in loaded.json()["messages"] if message["role"] == "assistant"
+    )
     assert answer["content"] == "Début de réponse."
     assert any("interrompue" in warning for warning in answer["search_details"]["warnings"])
 
 
 async def test_slow_but_alive_stream_is_never_cut(
-    client: AsyncClient, manager_user: dict, monkeypatch,
+    client: AsyncClient,
+    manager_user: dict,
+    monkeypatch,
 ) -> None:
     """Un flux qui avance lentement mais régulièrement va au bout, sans coupure.
 
@@ -285,11 +306,14 @@ async def test_slow_but_alive_stream_is_never_cut(
 
 
 async def test_orchestrator_can_generate_without_forcing_a_document_search(
-    client: AsyncClient, manager_user: dict, monkeypatch,
+    client: AsyncClient,
+    manager_user: dict,
+    monkeypatch,
 ) -> None:
     conv_id = await _make_conversation(client, manager_user)
     trace = RagTrace(query_original="Rédige un mail", model="test-model")
     from app.api import conversations as routes
+
     original_profile = routes._load_org_context
 
     async def delayed_profile(*args, **kwargs):
@@ -337,7 +361,9 @@ async def test_orchestrator_can_generate_without_forcing_a_document_search(
 
 
 async def test_applied_case_delta_emits_case_file_update_event(
-    client: AsyncClient, manager_user: dict, monkeypatch,
+    client: AsyncClient,
+    manager_user: dict,
+    monkeypatch,
 ) -> None:
     conv_id = await _make_conversation(client, manager_user)
     case_file_id = str(uuid.uuid4())
@@ -383,7 +409,9 @@ async def test_applied_case_delta_emits_case_file_update_event(
 
 
 async def test_quota_incremented_even_if_trace_persist_fails(
-    client: AsyncClient, manager_user: dict, monkeypatch,
+    client: AsyncClient,
+    manager_user: dict,
+    monkeypatch,
 ) -> None:
     """Le décompte de quota ne doit pas dépendre de la persistance de la trace.
 
@@ -407,7 +435,8 @@ async def test_quota_incremented_even_if_trace_persist_fails(
     monkeypatch.setattr(RagTrace, "to_dict", broken_to_dict)
 
     before = await client.get(
-        "/api/v1/billing/quota", headers=auth_header(manager_user["token"]),
+        "/api/v1/billing/quota",
+        headers=auth_header(manager_user["token"]),
     )
     assert before.status_code == 200
 
@@ -420,7 +449,8 @@ async def test_quota_incremented_even_if_trace_persist_fails(
     assert "chat_done" in res.text  # la réponse est servie malgré la trace KO
 
     after = await client.get(
-        "/api/v1/billing/quota", headers=auth_header(manager_user["token"]),
+        "/api/v1/billing/quota",
+        headers=auth_header(manager_user["token"]),
     )
     assert after.status_code == 200
     assert after.json()["used"] == before.json()["used"] + 1

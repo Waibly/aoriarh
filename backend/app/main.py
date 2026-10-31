@@ -1,3 +1,4 @@
+# ruff: noqa: E402 -- Configure logging before importing application modules.
 import os
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
@@ -36,10 +37,10 @@ from app.api import (
     auth,
     billing,
     case_files,
-    dossiers,
     conventions,
     conversations,
     documents,
+    dossiers,
     emailing_public,
     fiches,
     invitations,
@@ -48,17 +49,19 @@ from app.api import (
     public,
     public_tools,
     support,
-    telemetry,
     team,
+    telemetry,
     users,
     webhooks,
 )
-from app.observability.middleware import IncidentMiddleware  # noqa: E402 - initialize logging before app imports
 from app.core.config import settings
 from app.core.database import async_session_factory, get_db
 from app.core.limiter import limiter
 from app.core.security import hash_password
 from app.models.user import User
+from app.observability.middleware import (
+    IncidentMiddleware,  # noqa: E402 - initialize logging before app imports
+)
 from app.rag.qdrant_store import get_qdrant_client
 from app.services.storage_service import StorageService
 
@@ -68,7 +71,9 @@ logger = structlog.get_logger(__name__)
 _RATE_LIMIT_MESSAGES: dict[str, str] = {
     "/api/v1/auth/register": "Trop de tentatives d'inscription. Réessayez dans quelques minutes.",
     "/api/v1/auth/login": "Trop de tentatives de connexion. Réessayez dans quelques minutes.",
-    "/api/v1/auth/refresh": "Trop de rafraîchissements de session. Réessayez dans quelques minutes.",
+    "/api/v1/auth/refresh": (
+        "Trop de rafraîchissements de session. Réessayez dans quelques minutes."
+    ),
 }
 
 
@@ -213,11 +218,17 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_handler)
 async def _unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
     """Catch-all for unhandled exceptions: never expose internal details."""
     from app.observability.store import context
+
     request_id = getattr(request.state, "request_id", None)
-    token = context.set({"incident_key": "request:" + request_id, "request_id": request_id,
-                         "source": "site" if request.url.path.startswith("/api/v1/public/tools/")
-                         else "backend"}
-                        if request_id else None)
+    token = context.set(
+        {
+            "incident_key": "request:" + request_id,
+            "request_id": request_id,
+            "source": "site" if request.url.path.startswith("/api/v1/public/tools/") else "backend",
+        }
+        if request_id
+        else None
+    )
     try:
         logger.exception("Unhandled exception on %s %s", request.method, request.url.path)
     finally:
@@ -225,8 +236,13 @@ async def _unhandled_exception_handler(request: Request, exc: Exception) -> JSON
     headers = {"X-Request-ID": getattr(request.state, "request_id", "")}
     origin = request.headers.get("origin")
     if origin in settings.cors_origins:
-        headers.update({"Access-Control-Allow-Origin": origin,
-                        "Access-Control-Expose-Headers": "X-Request-ID", "Vary": "Origin"})
+        headers.update(
+            {
+                "Access-Control-Allow-Origin": origin,
+                "Access-Control-Expose-Headers": "X-Request-ID",
+                "Vary": "Origin",
+            }
+        )
     return JSONResponse(
         status_code=500,
         content={"detail": "Une erreur interne est survenue. Veuillez réessayer."},
@@ -241,10 +257,11 @@ app.add_exception_handler(Exception, _unhandled_exception_handler)
 async def public_demo_validation_error(request: Request, exc: RequestValidationError) -> Response:
     if request.url.path == "/api/v1/public/ask":
         # Ne jamais journaliser la question, les jetons ni les valeurs rejetées.
-        logger.error("demo_request_validation_failed", error_types=[
-            error["type"] for error in exc.errors()
-        ])
+        logger.error(
+            "demo_request_validation_failed", error_types=[error["type"] for error in exc.errors()]
+        )
     return await request_validation_exception_handler(request, exc)
+
 
 app.add_middleware(
     CORSMiddleware,

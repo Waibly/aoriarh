@@ -45,9 +45,7 @@ class Subscription(TimestampMixin, Base):
     cancel_at_period_end: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default="false"
     )
-    canceled_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
+    canceled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     # Relations
     account: Mapped["Account"] = relationship(  # noqa: F821

@@ -95,9 +95,7 @@ async def brevo_webhook(
     campaign = (
         await db.execute(
             select(EmailCampaign)
-            .options(
-                selectinload(EmailCampaign.sequence).selectinload(EmailSequence.steps)
-            )
+            .options(selectinload(EmailCampaign.sequence).selectinload(EmailSequence.steps))
             .where(EmailCampaign.id == recipient.campaign_id)
         )
     ).scalar_one_or_none()
@@ -134,7 +132,8 @@ async def brevo_webhook(
             event_type = "clicked_machine"
             logger.info(
                 "Clic machine ignoré (%s, +%.0fs après envoi)",
-                email, (datetime.now(UTC) - sent_at).total_seconds(),
+                email,
+                (datetime.now(UTC) - sent_at).total_seconds(),
             )
 
     # Dédup : Brevo peut renvoyer plusieurs fois la même ouverture / le même
@@ -166,7 +165,9 @@ async def brevo_webhook(
         recipient.status = event_type
         logger.info(
             "Recipient %s marked as %s (campaign %s)",
-            email, event_type, recipient.campaign_id,
+            email,
+            event_type,
+            recipient.campaign_id,
         )
 
     await db.commit()

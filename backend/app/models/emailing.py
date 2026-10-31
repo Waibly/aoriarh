@@ -66,9 +66,7 @@ class EmailSequenceStepBranch(TimestampMixin, Base):
         ForeignKey("email_sequence_steps.id", ondelete="CASCADE"), nullable=False
     )
     condition: Mapped[str] = mapped_column(String(30), nullable=False)
-    template_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("email_templates.id"), nullable=False
-    )
+    template_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("email_templates.id"), nullable=False)
 
     step = relationship("EmailSequenceStep", back_populates="branches")
     template = relationship("EmailTemplate")
@@ -79,19 +77,16 @@ class EmailCampaign(TimestampMixin, Base):
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=generate_uuid)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
-    sequence_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("email_sequences.id"), nullable=False
-    )
+    sequence_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("email_sequences.id"), nullable=False)
     brevo_list_ids: Mapped[list[int]] = mapped_column(
         # ARRAY n'existe qu'en PostgreSQL ; la variante JSON permet aux tests
         # (SQLite) de créer la table. Aucun impact en prod (dialecte postgres).
         ARRAY(Integer).with_variant(JSON(), "sqlite"),
-        nullable=False, default=list
+        nullable=False,
+        default=list,
     )
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="draft")
-    scheduled_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
+    scheduled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     current_step: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
     sequence = relationship("EmailSequence", back_populates="campaigns")
@@ -124,9 +119,7 @@ class EmailCampaignWave(TimestampMixin, Base):
         ForeignKey("email_campaigns.id", ondelete="CASCADE"), nullable=False
     )
     number: Mapped[int] = mapped_column(Integer, nullable=False)
-    scheduled_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False
-    )
+    scheduled_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     recipient_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
     campaign = relationship("EmailCampaign", back_populates="waves")
@@ -158,18 +151,12 @@ class EmailCampaignRecipient(TimestampMixin, Base):
     # Date d'envoi du 1er mail (= date de la vague). Les relances de la
     # séquence (J+3, J+7...) se calculent à partir de cette date, propre à
     # chaque vague. NULL = encore en stock, pas encore programmé.
-    scheduled_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
-    last_sent_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
+    scheduled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     # Date à laquelle le contact a été supprimé de Brevo après un rebond
     # (status="bounced"). NULL = pas encore purgé. Évite de rappeler l'API
     # Brevo pour les mêmes adresses à chaque passage du moteur.
-    brevo_purged_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
+    brevo_purged_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     campaign = relationship("EmailCampaign", back_populates="recipients")
     wave = relationship("EmailCampaignWave", back_populates="recipients")
@@ -187,9 +174,7 @@ class EmailUnsubscribe(Base):
     __tablename__ = "email_unsubscribes"
 
     email: Mapped[str] = mapped_column(String(320), primary_key=True)
-    unsubscribed_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False
-    )
+    unsubscribed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
 class EmailCampaignEvent(Base):
@@ -205,8 +190,6 @@ class EmailCampaignEvent(Base):
     step_position: Mapped[int] = mapped_column(Integer, nullable=False)
     event_type: Mapped[str] = mapped_column(String(20), nullable=False)
     branch_condition: Mapped[str | None] = mapped_column(String(30), nullable=True)
-    occurred_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False
-    )
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
     recipient = relationship("EmailCampaignRecipient", back_populates="events")

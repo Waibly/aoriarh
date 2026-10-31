@@ -30,8 +30,16 @@ def build_org_access_filter(
                     ]
                 )
             )
-    private_exclusion = Filter(must_not=[FieldCondition(key="private", match=MatchValue(value=True))])
+    private_exclusion = Filter(
+        must_not=[FieldCondition(key="private", match=MatchValue(value=True))]
+    )
     if authorized_private_document_ids:
-        private_exclusion = Filter(should=[private_exclusion, FieldCondition(
-            key="document_id", match=MatchAny(any=authorized_private_document_ids))])
+        private_exclusion = Filter(
+            should=[
+                private_exclusion,
+                FieldCondition(
+                    key="document_id", match=MatchAny(any=authorized_private_document_ids)
+                ),
+            ]
+        )
     return Filter(must=[Filter(should=should), private_exclusion])
