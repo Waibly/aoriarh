@@ -98,7 +98,11 @@ class LegalSearchArguments(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
     needs_history: bool
     legal_topics: list[str]
-    search_queries: list[str] = Field(min_length=1, max_length=4)
+    search_queries: list[str] = Field(min_length=1, max_length=4, description=(
+        "Requêtes courtes sur le mécanisme recherché, avec les formes complètes et équivalents "
+        "juridiques utiles. Chaque complément apporte un point nécessaire ou une formulation "
+        "lexicale différente utile sur le même point, sans quota à remplir ni fait inventé."
+    ))
     hypothesized_articles: list[ArticleCandidate] = Field(max_length=3)
     source_hints: list[Literal["legislation", "ccn", "jurisprudence", "internal", "boss"]]
     jurisprudence: Literal["required", "optional"]

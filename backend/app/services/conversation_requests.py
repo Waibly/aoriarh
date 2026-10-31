@@ -110,9 +110,10 @@ depends_on vise
 des demandes antérieures réellement nécessaires, sinon []. Ne crée pas de dépendance entre
 recherches indépendantes. Plusieurs livrables peuvent dépendre de la même recherche.
 replaces_task_id reprend une tâche ouverte du dossier si la demande la poursuit, sinon null.
-- legal : recherche une question juridique. search contient des requêtes complémentaires,
-  pas des copies de la demande. question est l'unique formulation autonome du besoin : elle
-  conserve périodes, réserves et faits utiles. Ne la répète pas dans search.
+- legal : recherche une question juridique. question est la formulation autonome du besoin,
+  clarifiée selon les consignes de préparation ; elle conserve périodes, réserves et faits utiles.
+  search.search_queries apporte les points nécessaires ou les formulations lexicales utiles,
+  avec les termes juridiques complets. Ne recopie pas la question sans apport de recherche.
   source_hints choisit legislation, ccn, jurisprudence, internal ou boss selon le besoin.
   La recherche doit établir la règle, pas confirmer une règle présupposée : n'ajoute pas de
   périodicité, seuil ou régime absent des faits et des sources déjà consultées. Une date de

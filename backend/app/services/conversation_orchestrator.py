@@ -330,7 +330,7 @@ async def plan_conversation(
             "json_schema": {"name": "conversation_plan", "strict": True, "schema": schema},
         },
         max_completion_tokens=8000,
-        reasoning_effort="low",
+        reasoning_effort="medium",
     )
     raw = response.choices[0].message.content or response.choices[0].message.refusal
     trace.router_raw_response = raw
@@ -356,6 +356,7 @@ async def plan_conversation(
             operation_type="conversation_orchestrator",
             tokens_input=response.usage.prompt_tokens,
             tokens_output=response.usage.completion_tokens,
+            usage=response.usage,
             organisation_id=agent._org_id,
             user_id=agent._user_id,
             context_type="question",

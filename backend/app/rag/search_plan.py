@@ -244,8 +244,9 @@ contraintes sont déjà établies par l'application.
 servent seulement à résoudre une référence comme « cet article ».
 - N'ajoute aucune hypothèse factuelle. Place les données nécessaires absentes \
 dans missing_facts.
-- standalone_question : question autonome fidèle, 1 à 2 phrases. Si la question \
-est déjà autonome, recopie-la exactement.
+- standalone_question : question autonome claire et fidèle, selon les consignes \
+de préparation ci-dessous. Corrige seulement les fautes et maladresses évidentes ; \
+conserve les faits, références et incertitudes. Garde une formulation déjà claire.
 - Résous les relances avec l'historique, même si needs_condensation est false : \
 ce signal déterministe peut manquer une anaphore. Une référence exacte ne \
 supprime pas le besoin de contexte. Si le sujet change, ne conserve pas l'ancien.
@@ -257,13 +258,12 @@ Elles décrivent le problème de droit indépendamment de la source demandée : 
 répète pas « CCN », le nom de la convention, l'IDCC, « Code du travail », \
 « jurisprudence » ou le nom du document, déjà présents dans constraints.
 - search_queries : respecte strictement constraints.query_budget (1 à 4) et \
-produis des requêtes courtes en vocabulaire juridique, sans dupliquer la \
-question originale entière ; conserve les précisions de contexte utiles. Chaque \
-requête doit couvrir un point explicite différent de la question. Regroupe les \
-points étroitement liés si leur nombre dépasse le budget. Pour un budget de 2, \
-la première couvre la règle ou le droit demandé, la seconde ses conditions, \
-exceptions, limites ou son interprétation. Ne reformule jamais deux fois le \
-même angle et n'omets aucun point explicitement demandé.
+produis des requêtes courtes avec les formes complètes et équivalents juridiques \
+utiles, selon les consignes de préparation ci-dessous. Chaque complément apporte \
+un point nécessaire ou une formulation lexicale différente utile sur le même point. \
+Conserve le mécanisme recherché et les faits discriminants ; regroupe les points \
+proches sans omettre les demandes explicites. Le maximum n'est pas un quota : \
+une seule requête suffit si elle couvre le besoin.
 - Si la question porte sur une modalité d'exécution, une récupération, une \
 retenue, un échéancier, un plafond ou une action en paie, la première requête \
 cherche la règle opérationnelle et sa limite chiffrée ; la seconde couvre la \

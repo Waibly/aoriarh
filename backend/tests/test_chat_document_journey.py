@@ -214,6 +214,11 @@ async def test_natural_filename_lookup_reads_and_attaches_unique_document(
     user_message = next(message for message in messages if message.role == "user")
     assert len(user_message.document_references) == 1
     assert agent.llm.chat.completions.create.await_count == 2
+    for call in agent.llm.chat.completions.create.await_args_list:
+        assert call.kwargs["model"] == "gpt-6-luna"
+        assert call.kwargs["reasoning_effort"] == "medium"
+        assert call.kwargs["response_format"]["type"] == "json_schema"
+        assert "tools" not in call.kwargs
 
 
 async def test_natural_ambiguous_name_asks_user_without_opening_a_file(

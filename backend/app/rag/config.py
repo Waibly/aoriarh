@@ -8,6 +8,8 @@ LLM_MODEL = settings.llm_model
 LLM_REASONING_EFFORT = settings.llm_reasoning_effort
 # Planificateur compact de recherche (nom conservé pour les consommateurs existants).
 EXPAND_MODEL = "gpt-5-mini"
+# Préparateur conversationnel, distinct des recherches compactes.
+CONVERSATION_PLANNER_MODEL = "gpt-6-luna"
 
 CHUNK_SIZE = 1024
 CHUNK_OVERLAP = 100

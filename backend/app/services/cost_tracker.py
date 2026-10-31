@@ -27,6 +27,7 @@ from sqlalchemy import select
 
 from app.core.database import async_session_factory
 from app.models.api_usage import ApiUsageLog
+from app.rag.usage_metrics import usage_details
 
 logger = logging.getLogger(__name__)
 
@@ -38,6 +39,7 @@ logger = logging.getLogger(__name__)
 PRICING: dict[tuple[str, str], tuple[float, float | None]] = {
     # OpenAI — https://platform.openai.com/docs/pricing
     ("openai", "gpt-5-mini"): (0.25, 2.00),
+    ("openai", "gpt-6-luna"): (0.10, 0.50),
     ("openai", "gpt-5.2"): (1.75, 14.00),
     ("openai", "gpt-5.6-terra"): (2.00, 12.00),
     ("openai", "gpt-5"): (1.25, 10.00),
@@ -48,14 +50,36 @@ PRICING: dict[tuple[str, str], tuple[float, float | None]] = {
     ("voyageai", "rerank-3"): (0.05, None),
 }
 
+# USD per million tokens. Cache reads/writes are subsets of prompt_tokens,
+# not additional tokens. Older models have no separate cache-write charge.
+CACHED_INPUT_PRICING: dict[tuple[str, str], float] = {
+    ("openai", "gpt-5-mini"): 0.025,
+    ("openai", "gpt-6-luna"): 0.01,
+    ("openai", "gpt-5.2"): 0.175,
+    ("openai", "gpt-5.6-terra"): 0.20,
+    ("openai", "gpt-5"): 0.125,
+    ("openai", "gpt-4o-mini"): 0.075,
+}
+CACHE_WRITE_PRICING: dict[tuple[str, str], tuple[float, float]] = {
+    ("openai", "gpt-6-luna"): (0.125, 0.25),  # 30 minutes / 12 hours
+    ("openai", "gpt-5.6-terra"): (2.50, 5.00),  # 30 minutes / 12 hours
+}
+
 
 def compute_cost(
     provider: str,
     model: str,
     tokens_input: int,
     tokens_output: int,
+    *,
+    usage: object | None = None,
 ) -> Decimal:
-    """Compute cost in USD from token counts and pricing table."""
+    """Standard-tier USD estimate, including provider-reported cache usage.
+
+    Without cache details, all input is priced at the ordinary input rate.
+    Cache writes without a TTL breakdown use the default 30-minute TTL.
+    Completion tokens already include reasoning tokens; do not add them again.
+    """
     key = (provider, model)
     prices = PRICING.get(key)
     if prices is None:
@@ -63,10 +87,40 @@ def compute_cost(
         return Decimal(0)
 
     input_price, output_price = prices
-    cost = Decimal(str(tokens_input)) * Decimal(str(input_price)) / Decimal("1000000")
+    # These models switch rate cards above 272K input tokens.
+    long_context = key in {
+        ("openai", "gpt-5.6-terra"), ("openai", "gpt-6-luna"),
+    } and tokens_input > 272_000
+    if long_context:
+        input_price *= 2
+        output_price *= 1.5
+    details = usage_details(usage)
+    cached = details.get("tokens_cached", 0)
+    writes_12h = details.get("tokens_cache_write_12h", 0)
+    writes = details.get(
+        "tokens_cache_write", details.get("tokens_cache_write_30m", 0) + writes_12h,
+    )
+    writes_30m = writes - writes_12h
+    if (
+        cached + writes > tokens_input or writes_30m < 0
+        or details.get("tokens_cache_write_30m", writes_30m) != writes_30m
+    ):
+        raise ValueError("Inconsistent provider cache token counts")
+
+    cost = Decimal(tokens_input - cached - writes) * Decimal(str(input_price))
+    if cached:
+        cached_price = CACHED_INPUT_PRICING[key] * (2 if long_context else 1)
+        cost += Decimal(cached) * Decimal(str(cached_price))
+    if writes:
+        price_30m, price_12h = CACHE_WRITE_PRICING[key]
+        if long_context:
+            price_30m *= 2
+            price_12h *= 2
+        cost += Decimal(writes_30m) * Decimal(str(price_30m))
+        cost += Decimal(writes_12h) * Decimal(str(price_12h))
     if output_price is not None and tokens_output > 0:
-        cost += Decimal(str(tokens_output)) * Decimal(str(output_price)) / Decimal("1000000")
-    return cost
+        cost += Decimal(tokens_output) * Decimal(str(output_price))
+    return cost / Decimal("1000000")
 
 
 @dataclass(frozen=True)
@@ -125,6 +179,7 @@ class CostTracker:
         operation_type: str,
         tokens_input: int,
         tokens_output: int = 0,
+        usage: object | None = None,
         organisation_id: str | None = None,
         user_id: str | None = None,
         user_email: str | None = None,
@@ -141,7 +196,7 @@ class CostTracker:
             user_id = None
         """Log a single API call. Non-blocking — errors are swallowed."""
         try:
-            cost = compute_cost(provider, model, tokens_input, tokens_output)
+            cost = compute_cost(provider, model, tokens_input, tokens_output, usage=usage)
 
             # Resolve snapshots if not provided
             resolved_email = user_email
@@ -156,7 +211,9 @@ class CostTracker:
                 if not resolved_org_name and organisation_id:
                     from app.models.organisation import Organisation
                     result = await session.execute(
-                        select(Organisation.name).where(Organisation.id == uuid.UUID(organisation_id))
+                        select(Organisation.name).where(
+                            Organisation.id == uuid.UUID(organisation_id)
+                        )
                     )
                     resolved_org_name = result.scalar_one_or_none()
 

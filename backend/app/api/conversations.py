@@ -1519,7 +1519,7 @@ async def chat_stream(
                     user_id=str(user.id), context_id=str(question_id),
                     **({"search_plan": search_plan} if search_plan is not None else {}),
                 )
-            from app.rag.config import EXPAND_MODEL
+            from app.rag.config import CONVERSATION_PLANNER_MODEL
             from app.services.conversation_orchestrator import prepare_conversation_context
 
             agent._org_id = str(conversation.organisation_id)
@@ -1541,7 +1541,7 @@ async def chat_stream(
                     document_continuity=document_continuity,
                     history=history,
                     legal_search=legal_context,
-                    model=EXPAND_MODEL,
+                    model=CONVERSATION_PLANNER_MODEL,
                     org_context=org_context,
                     org_idcc_list=org_idcc_list,
                     cited_sources=cited_sources or None,
