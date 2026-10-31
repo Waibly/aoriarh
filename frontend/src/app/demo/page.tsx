@@ -32,7 +32,7 @@ interface Turn {
   sources?: MessageSource[];
 }
 
-const MAX_LEN = 500;
+const MAX_LEN = 1000;
 
 // Ce qu'un compte gratuit débloque — cœur de la conversion.
 const PERKS = [

@@ -162,12 +162,12 @@ class Settings(BaseSettings):
     demo_daily_budget_eur: float = 2.0
     # Bornes de longueur de la question (anti-abus / anti-coût).
     demo_min_question_chars: int = 8
-    demo_max_question_chars: int = 500
+    demo_max_question_chars: int = 1000
     # Rate-limit par IP RÉELLE du visiteur (X-Forwarded-For), partagé entre les
     # workers via Redis (fail-open : si Redis est indisponible on laisse passer,
     # le plafond de budget reste le garde-fou financier).
-    demo_max_questions_per_ip_per_minute: int = 5
-    demo_max_questions_per_ip_per_day: int = 30
+    demo_max_questions_per_ip_per_minute: int = 2
+    demo_max_questions_per_ip_per_day: int = 5
     # Plafond global (toutes IP) par minute — garde-fou anti-flood distribué.
     demo_max_questions_global_per_minute: int = 120
     # Modèle de génération FORCÉ pour la démo : même modèle que l'application
