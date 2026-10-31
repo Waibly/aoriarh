@@ -778,7 +778,7 @@ def html_to_pdf(html_str: str) -> bytes:
     # Le protocole est refusé sans rendre la génération elle-même indisponible :
     # l'avertissement de format reste visible dans le PDF, le HTML reste brut.
     fetcher = URLFetcher(allowed_protocols={"data"}, fail_on_errors=False)
-    return HTML(string=html_str, url_fetcher=fetcher.fetch).write_pdf()
+    return HTML(string=html_str, url_fetcher=fetcher).write_pdf()
 
 
 # --- Orchestration -------------------------------------------------------

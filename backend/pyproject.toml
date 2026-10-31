@@ -36,7 +36,7 @@ dependencies = [
     "redis>=5.0.0",
     "structlog>=24.0.0",
     "prometheus-fastapi-instrumentator>=8.1.0",
-    "weasyprint>=63.0",
+    "weasyprint>=70.0,<71.0",
     # Planchers de sécurité de dépendances transitives utilisées par le RAG,
     # les clients HTTP et le traitement documentaire.
     "aiohttp>=3.14.3",

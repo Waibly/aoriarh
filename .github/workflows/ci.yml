@@ -70,7 +70,7 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
       - run: npm ci --prefix ../frontend
       - run: pytest tests/test_demo_client_contract.py tests/test_demo_observability.py -q
-      - run: pytest --cov=app --cov-report=term-missing -x
+      - run: pytest --cov=app --cov-report=term-missing
 
   frontend-lint:
     name: Frontend Lint
