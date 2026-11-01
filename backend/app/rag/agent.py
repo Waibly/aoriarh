@@ -982,6 +982,7 @@ class RAGAgent:
                     organisation_id=organisation_id,
                     org_idcc_list=org_idcc_list,
                     diagnostics=selection["groups"],
+                    follow_references=True,
                 ),
                 timeout=RAG_TIMEOUT_PER_STEP,
             )
@@ -1220,6 +1221,7 @@ class RAGAgent:
                 operation_type="generate",
                 tokens_input=stream_usage.prompt_tokens,
                 tokens_output=stream_usage.completion_tokens,
+                usage=stream_usage,
                 organisation_id=self._org_id,
                 user_id=self._user_id,
                 context_type="question",

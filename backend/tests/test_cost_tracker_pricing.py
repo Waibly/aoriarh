@@ -1,5 +1,6 @@
 from decimal import Decimal
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
 from openai.types.completion_usage import CompletionUsage
@@ -212,3 +213,55 @@ async def test_logged_cost_persists_cache_adjusted_amount(monkeypatch):
 def test_rerank_3_pricing_is_tracked_at_the_same_rate_as_rerank_2():
     assert PRICING[("voyageai", "rerank-3")] == PRICING[("voyageai", "rerank-2")]
     assert compute_cost("voyageai", "rerank-3", 10_000, 0) == Decimal("0.0005")
+
+
+async def test_streamed_response_records_provider_cache_usage(monkeypatch):
+    from app.rag.agent import RAGAgent
+    from app.services.cost_tracker import cost_tracker
+    from tests.conftest import test_session_factory
+
+    monkeypatch.setattr("app.services.cost_tracker.async_session_factory", test_session_factory)
+    usage = provider_usage(4000, 7000)
+    original = "  Réponse originale\n"
+
+    async def stream():
+        yield SimpleNamespace(
+            usage=None,
+            choices=[
+                SimpleNamespace(
+                    delta=SimpleNamespace(content=original),
+                    finish_reason=None,
+                )
+            ],
+        )
+        yield SimpleNamespace(usage=usage, choices=[])
+
+    agent = RAGAgent.__new__(RAGAgent)
+    agent._org_id = agent._user_id = agent._conversation_id = None
+    agent._is_replay = False
+    agent.llm = SimpleNamespace(
+        chat=SimpleNamespace(
+            completions=SimpleNamespace(
+                create=AsyncMock(return_value=stream()),
+            )
+        )
+    )
+    metrics = {}
+    answer = "".join(
+        [
+            part
+            async for part in agent.stream_generate(
+                "Question",
+                [],
+                model_override="gpt-5.6-terra",
+                generation_metrics=metrics,
+            )
+        ]
+    )
+    await cost_tracker.flush()
+    async with test_session_factory() as session:
+        row = (await session.execute(select(ApiUsageLog))).scalar_one()
+    assert answer == original
+    assert row.cost_usd == Decimal("0.032300")
+    assert metrics["tokens_cached"] == 4000
+    assert metrics["tokens_cache_write"] == 7000

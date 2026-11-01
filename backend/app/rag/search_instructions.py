@@ -28,6 +28,19 @@ pour multiplier les recherches. Une ambiguïté déterminante non résolue appel
 Le budget de requêtes est un maximum, pas un quota. Ne remplis pas une requête avec une
 liste de livrables, des instructions de rédaction ou des références supposées.
 Cherche aussi les conditions et exceptions qui déterminent réellement la règle demandée.
+Pour appliquer une loi, un accord ou une CCN, recherche leur champ d'application,
+leur articulation et leurs dispositions transitoires lorsque ces points peuvent
+changer la réponse à la question. Une durée ou un montant isolé ne suffit pas.
+N'élargis pas la demande à un audit général ni à des hypothèses non établies.
+Une demande de confirmation, de vérification ou une contestation juridique appelle
+une recherche juridique qui réexamine la règle et son applicabilité. L'affirmation
+précédente et l'accord de l'utilisateur ne prouvent pas sa justesse. Formule le besoin
+sans présupposer le chiffre ou la conclusion contestés. Une simple mise en forme peut
+réutiliser les passages consultés, en conservant leur portée et leurs limites.
+N'ajoute pas de délai, montant ou référence juridique non fourni par l'utilisateur
+ou une source consultée dans les requêtes complémentaires : cherche la règle sans
+préjuger sa réponse. Ces précautions ne demandent pas de multiplier les requêtes.
+
 jurisprudence=required pour une validité, une interprétation, une exception, une sanction,
 un licenciement, une discrimination ou la position des juridictions ; optional pour une
 donnée directement fixée par un texte qui ne soulève aucun de ces points.

@@ -1373,3 +1373,38 @@ async def test_manual_fact_without_key_has_stable_reference_in_planner_context(d
     fact = next(e for e in context["entries"] if e["id"] == str(entry.id))
     assert fact["key"] == str(entry.id)
     assert fact["value_text"] == "Lyon"
+
+
+@pytest.mark.parametrize("error", ["search_context_error", "search_reranking_error"])
+async def test_empty_legal_branch_preserves_technical_error_for_api(dossier, error):
+    conv, _ = await conversation(dossier)
+    message = Message(conversation_id=conv.id, role="user", content="Question")
+    dossier.db.add(message)
+    await dossier.db.commit()
+    raw = plan(
+        [
+            action(
+                "search_legal",
+                "law",
+                query="Question",
+                legal_search=task_payload("documents_and_law")["legal_search"],
+            )
+        ]
+    )
+    prepared = await prepare_conversation_context(
+        planner(raw),
+        db=dossier.db,
+        conversation=conv,
+        user=dossier.user,
+        query=message.content,
+        references=[],
+        documents=[],
+        document_continuity="",
+        history=[],
+        model="test",
+        source_message_id=message.id,
+        legal_search=AsyncMock(return_value=([], "Question", RagTrace(error=error))),
+    )
+    assert prepared.results == []
+    assert prepared.trace.error == error
+    assert prepared.case_context["branches"][0]["status"] == error

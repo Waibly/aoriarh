@@ -485,6 +485,7 @@ async def expand_to_parents(
     organisation_id: str | None = None,
     org_idcc_list: list[str] | None = None,
     diagnostics: list[dict] | None = None,
+    follow_references: bool = False,
 ) -> list[SearchResult]:
     """Select distinct parent groups by raw rank, then fetch their context.
 
@@ -567,4 +568,14 @@ async def expand_to_parents(
             }
         )
         expanded.append(merged)
+    if follow_references:
+        from app.rag.legal_references import extend_reference_context
+
+        expanded = await extend_reference_context(
+            expanded,
+            qdrant,
+            organisation_id=organisation_id,
+            org_idcc_list=org_idcc_list,
+            diagnostics=diagnostics,
+        )
     return expanded

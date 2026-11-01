@@ -1375,9 +1375,14 @@ async def prepare_conversation_context(
         time.perf_counter() - preparation_started
     ) * 1000
     results = list({(r.document_id, r.chunk_index, r.text): r for r in results}.values())
-    if not results and not generate_without_sources and branch_results:
+    if not results and branch_results:
+        technical_errors = {"search_context_error", "search_reranking_error"}
+        # Preserve the existing independent/no-tool response contract for retrieval.
+        # Failed ranking or assembly must reach the API's technical error handler.
+        if not generate_without_sources:
+            technical_errors.add("search_retrieval_error")
         final_trace.error = next(
-            (b["status"] for b in branch_results if b["status"] == "search_retrieval_error"),
+            (b["status"] for b in branch_results if b["status"] in technical_errors),
             final_trace.error,
         )
     return PreparedConversation(
