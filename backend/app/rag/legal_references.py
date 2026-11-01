@@ -214,10 +214,11 @@ async def extend_reference_context(
     organisation_id=None,
     org_idcc_list=None,
     diagnostics=None,
+    candidate_roots=None,
 ):
     """Append intact explicit linked passages; never replace baseline parents.
 
-    One highest-ranked article with supported explicit identifiers supplies the
+    One highest-ranked candidate article with supported explicit identifiers supplies the
     starting point. Outgoing links stay within its document/instrument/version;
     inverse links stay within its local legal unit. Two exploration rounds are
     reported, including unresolved links. No new LLM, reranking or global cutoff.
@@ -234,7 +235,11 @@ async def extend_reference_context(
     root = next(
         (
             r
-            for r in sorted(baseline, key=lambda r: r.score, reverse=True)
+            for r in sorted(
+                candidate_roots if candidate_roots is not None else baseline,
+                key=lambda r: r.score,
+                reverse=True,
+            )
             if _parent_key_for(r)[0] == "article"
             and any(refs(a) == {norm(a)} for a in r.article_nums)
         ),

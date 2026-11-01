@@ -577,5 +577,6 @@ async def expand_to_parents(
             organisation_id=organisation_id,
             org_idcc_list=org_idcc_list,
             diagnostics=diagnostics,
+            candidate_roots=results,
         )
     return expanded

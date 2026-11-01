@@ -217,3 +217,23 @@ async def test_linked_passages_keep_source_identity_and_exact_display_text():
     assert [p["text"] for p in source.context_passages] == [root.text, linked.text]
     assert source.context_passages[-1]["chunk_indices"] == [2]
     assert source.full_text == root.text + "\n\n" + linked.text
+
+
+async def test_article_displaced_by_ten_rulings_still_starts_reference_graph():
+    baseline = [
+        chunk(i, source_type="arret_cour_appel", document_id=f"ruling-{i}", article_nums=None)
+        for i in range(10)
+    ]
+    root = chunk(11, text="Voir L200-1", score=0.4)
+    linked = chunk(12, "L200-1", "Règle complémentaire intacte")
+    qdrant = MagicMock()
+    qdrant.scroll.return_value = ([SimpleNamespace(**point(r)) for r in [root, linked]], None)
+    output = await extend_reference_context(
+        baseline,
+        qdrant,
+        organisation_id="tenant",
+        candidate_roots=[*baseline, root],
+    )
+    assert output[:10] == baseline
+    assert {a for r in output for a in r.article_nums or []} == {"L100-1", "L200-1"}
+    assert all(r.text in [p.text for p in output] for r in [root, linked])
