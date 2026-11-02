@@ -1750,6 +1750,7 @@ class RAGAgent:
             for variant in variants
         ]
         leg_task_idx: int | None = None
+        code_task_idx: int | None = None
         if apply_legislation_floor:
             leg_task_idx = len(search_tasks)
             search_tasks.append(
@@ -1759,6 +1760,21 @@ class RAGAgent:
                     top_k=TOP_K,
                     org_idcc_list=org_idcc_list,
                     source_type_filter=_LEGISLATION_SOURCE_TYPES,
+                    cost_ctx=self._cost_ctx,
+                )
+            )
+            # Codes get their own bounded floor. Thousands of JORF decrees
+            # (notably public-service ones) can fill the whole written-law
+            # floor: measured, 0 Code chunk among 66 candidates while a
+            # Code-only search ranks L6315-1 first for the same question.
+            code_task_idx = len(search_tasks)
+            search_tasks.append(
+                self._search(
+                    legal_anchor or variants[0],
+                    organisation_id,
+                    top_k=TOP_K,
+                    org_idcc_list=org_idcc_list,
+                    source_type_filter=sorted(_CODE_SOURCE_TYPES),
                     cost_ctx=self._cost_ctx,
                 )
             )
@@ -1773,19 +1789,26 @@ class RAGAgent:
         ccn_already_searched = source_type_filter is not None and any(
             st in _CCN_SOURCE_TYPES for st in source_type_filter
         )
-        ccn_task_idx: int | None = None
+        ccn_task_indices: list[int] = []
         if org_idcc_list and not ccn_already_searched:
-            ccn_task_idx = len(search_tasks)
-            search_tasks.append(
-                self._search(
-                    variants[0],
-                    organisation_id,
-                    top_k=TOP_K,
-                    org_idcc_list=org_idcc_list,
-                    source_type_filter=sorted(_CCN_SOURCE_TYPES),
-                    cost_ctx=self._cost_ctx,
+            # One bounded CCN search per query angle (user wording, standalone
+            # question, planner queries). No single wording reaches every
+            # relevant clause: measured on CCN 66, the general trial-period
+            # clause (art. 13 bis) and the managers' annex (annexe 6 art. 5)
+            # rank in the top 5 for different wordings only. Each keeps its own
+            # cap; the common reranker orders the union.
+            for ccn_query in dict.fromkeys([legal_anchor or variants[0], *variants]):
+                ccn_task_indices.append(len(search_tasks))
+                search_tasks.append(
+                    self._search(
+                        ccn_query,
+                        organisation_id,
+                        top_k=TOP_K,
+                        org_idcc_list=org_idcc_list,
+                        source_type_filter=sorted(_CCN_SOURCE_TYPES),
+                        cost_ctx=self._cost_ctx,
+                    )
                 )
-            )
         search_results = await asyncio.gather(*search_tasks, return_exceptions=True)
         if any(isinstance(result, BaseException) for result in search_results):
             for result in search_results:
@@ -1797,12 +1820,15 @@ class RAGAgent:
         # Split variant results (RRF-fused) from the floor results (injected)
         valid_results: list[list[SearchResult]] = []
         leg_results: list[SearchResult] = []
-        ccn_results: list[SearchResult] = []
+        code_results: list[SearchResult] = []
+        ccn_results: list[list[SearchResult]] = []
         for i, result in enumerate(search_results):
             if i == leg_task_idx:
                 leg_results = result
-            elif i == ccn_task_idx:
-                ccn_results = result
+            elif i == code_task_idx:
+                code_results = result
+            elif i in ccn_task_indices:
+                ccn_results.append(result)
             else:
                 valid_results.append(result)
 
@@ -1842,8 +1868,10 @@ class RAGAgent:
 
         if leg_results:
             _inject(leg_results, LEGISLATION_FLOOR_TOP, "LEGFLOOR")
-        if ccn_results:
-            _inject(ccn_results, ccn_floor_cap, "CCNFLOOR")
+        if code_results:
+            _inject(code_results, LEGISLATION_FLOOR_TOP, "CODEFLOOR")
+        for angle_results in ccn_results:
+            _inject(angle_results, ccn_floor_cap, "CCNFLOOR")
 
         # Articles explicitement nommés par l'ancre législative : le LLM nomme
         # le bon article (ex. "L1235-3" pour le barème Macron) même quand son
@@ -2014,6 +2042,17 @@ class RAGAgent:
                     "Passages indexés inclus (sélection partielle possible) : "
                     f"{r.context_chunk_indices}\n"
                 )
+                if (
+                    r.context_available_chunk_count is not None
+                    and len(r.context_chunk_indices) < r.context_available_chunk_count
+                ):
+                    header += (
+                        "Lecture ciblée de la décision : "
+                        f"{len(r.context_chunk_indices)} passages sur "
+                        f"{r.context_available_chunk_count} (en-tête, passages pertinents et "
+                        "leurs voisins, fin de la décision). Les passages omis peuvent porter "
+                        "sur d'autres demandes ; ne conclus pas à une lecture intégrale.\n"
+                    )
 
             # Date of the text (CCN, avenants, lois…) so the LLM can apply the
             # recency rule ("l'avenant le plus récent gagne") on facts, not on

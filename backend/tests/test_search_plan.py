@@ -653,7 +653,7 @@ async def test_exact_reference_uses_direct_lookup_plus_one_general_safety_search
         )
 
     fetch.assert_awaited_once()
-    assert agent.search_engine.search.await_count == 3  # main + legislation + CCN
+    assert agent.search_engine.search.await_count == 4  # main + legislation + Code + CCN
     assert variants == [plan.query_original]
     assert [(result.document_id, result.chunk_index) for result in pool] == [
         ("code-direct", 0),
@@ -833,7 +833,8 @@ async def test_standard_plan_adds_ccn_priority_candidates_without_narrowing_main
         for call in agent.search_engine.search.await_args_list
         if "convention_collective_nationale" in (call.kwargs.get("source_type_filter") or [])
     ]
-    assert len(ccn_calls) == 1
+    # One bounded CCN search per distinct query angle.
+    assert len(ccn_calls) == len(_variants)
     priority_call = ccn_calls[0]
     assert priority_call.kwargs["top_k"] == 20
     assert set(priority_call.kwargs["source_type_filter"]) == {

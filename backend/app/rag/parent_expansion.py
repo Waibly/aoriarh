@@ -42,6 +42,9 @@ class RetrievalError(RuntimeError):
 MAX_CHUNKS_PER_GROUP = 30
 # Max characters per group. Whole passages only; no text slicing.
 MAX_CHARS_PER_GROUP = 9000
+# A decision longer than this is read in a focused way (header, ranked
+# passages with neighbours, final passage). Cassation rulings usually fit.
+MAX_CHARS_PER_DECISION = 15000
 # Max parent groups kept after expansion (token budget).
 MAX_PARENT_GROUPS = 10
 # Max chunks injected via identifier boost.
@@ -106,7 +109,22 @@ def reference_source_types(query: str) -> dict[str, list[str]]:
         if chosen:
             result.setdefault(article, [])
             result[article] = list(dict.fromkeys([*result[article], *chosen[2]]))
+        elif re.fullmatch(r"\d+(?:[-.]\d+)*", article):
+            # A bare number ("article 12") is never a Code article, which are
+            # always L/R/D-prefixed. Unscoped, it matched the same number in
+            # every law, ANI and agreement of the corpus (30 arbitrary chunks).
+            if re.search(r"\b(?:ccn|conventions?\s+collectives?|accords?\s+de\s+branche)\b",
+                         query, re.I):
+                result[article] = list(_NUMBERED_AGREEMENT_TYPES["ccn"])
+            elif re.search(r"\baccords?\s+(?:collectifs?\s+)?d['’]entreprise\b", query, re.I):
+                result[article] = list(_NUMBERED_AGREEMENT_TYPES["entreprise"])
     return result
+
+
+_NUMBERED_AGREEMENT_TYPES = {
+    "ccn": ("convention_collective_nationale", "accord_branche"),
+    "entreprise": ("accord_entreprise", "accord_performance_collective"),
+}
 
 
 # Source types treated as "full document = parent"
@@ -441,10 +459,25 @@ def _merge_group(chunks, best_score, seeds=None, *, complete_document: bool = Fa
     if len(best.text) > MAX_CHARS_PER_GROUP and not complete_document:
         raise ParentExpansionError("selected_passage_exceeds_context_budget")
     if complete_document:
-        # Jurisprudence is indexed as one document parent.  Once selected,
-        # preserve every fetched chunk in document order; never spend a
-        # character budget that could remove the answer or dispositif.
-        ordered = [by_index[i] for i in sorted(by_index)]
+        # Jurisprudence is indexed as one document parent. A short decision is
+        # kept whole. A long one (typically a cour d'appel ruling on several
+        # unrelated claims, 25-30 passages) keeps its header, its final
+        # passage (dispositif), every ranked passage and their neighbours.
+        # Whole passages only, in document order; partial coverage is declared
+        # through context_chunk_indices / context_available_chunk_count.
+        selected_indices = set(by_index)
+        if sum(len(r.text) for r in by_index.values()) > MAX_CHARS_PER_DECISION:
+            indices = sorted(by_index)
+            selected_indices = {indices[0], indices[-1], best.chunk_index}
+            chars = sum(len(by_index[i].text) for i in selected_indices)
+            for seed in ranked_seeds:
+                for i in (seed.chunk_index, seed.chunk_index - 1, seed.chunk_index + 1):
+                    if i in by_index and i not in selected_indices:
+                        if chars + len(by_index[i].text) > MAX_CHARS_PER_DECISION:
+                            continue
+                        selected_indices.add(i)
+                        chars += len(by_index[i].text)
+        ordered = [by_index[i] for i in sorted(selected_indices)]
         articles = list(dict.fromkeys(a for r in ordered for a in (r.article_nums or [])))
         return replace(
             best,
@@ -453,6 +486,7 @@ def _merge_group(chunks, best_score, seeds=None, *, complete_document: bool = Fa
             seed_text=best.text,
             article_nums=articles or best.article_nums,
             context_chunk_indices=[r.chunk_index for r in ordered],
+            context_available_chunk_count=len(by_index),
         )
     priorities = list(dict.fromkeys(r.chunk_index for r in ranked_seeds))
     priorities += sorted(

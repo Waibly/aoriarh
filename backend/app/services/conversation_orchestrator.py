@@ -18,6 +18,7 @@ import httpx
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from sqlalchemy.exc import SQLAlchemyError
 
+import app.rag.config as rag_config
 from app.rag.agent import RagTrace
 from app.rag.search import SearchResult
 from app.rag.search_plan import (
@@ -347,7 +348,7 @@ async def plan_conversation(
             "json_schema": {"name": "conversation_plan", "strict": True, "schema": schema},
         },
         max_completion_tokens=8000,
-        reasoning_effort="medium",
+        reasoning_effort=rag_config.CONVERSATION_PLANNER_REASONING_EFFORT,
     )
     raw = response.choices[0].message.content or response.choices[0].message.refusal
     trace.router_raw_response = raw
@@ -487,6 +488,15 @@ def legal_plan(planned: PlannedConversation, action: OrchestratorAction):
             ccn=SourceRequirement.DISABLED,
             warnings=[*base.warnings, "organisation_convention_not_applicable_to_case"],
         )
+    legal_actions = [
+        item for item in (getattr(getattr(planned, "plan", None), "actions", None) or [])
+        if item.action == "search_legal"
+    ]
+    if len(legal_actions) > 1 and action.query:
+        # Each branch searches and ranks for its own need. The full multi-part
+        # message would otherwise be a search variant and the reranking anchor
+        # of every branch, pulling all of them toward its dominant topic.
+        base = replace(base, query_original=action.query)
     return apply_compact_planner_payload(
         replace(
             base,
@@ -607,6 +617,7 @@ async def prepare_conversation_context(
     applicable_expected_version = case_file.version if case_file is not None else None
     application_result: dict | None = None
     branch_results: list[dict] = []
+    legal_branch_traces: list[dict] = []
     legal_search_count = 0
     previous_requests: list[dict] = []
     request_errors: list[dict] = []
@@ -1144,6 +1155,19 @@ async def prepare_conversation_context(
                     }
                 )
                 branch_error = legal_trace.error
+                # Keep every branch's retrieval evidence: the returned trace is
+                # the last branch, so earlier branches would otherwise vanish
+                # from the quality page.
+                legal_branch_traces.append({
+                    "action_id": action.id,
+                    "question": action.query or query,
+                    "query_condensed": legal_trace.query_condensed,
+                    "variants": legal_trace.variants,
+                    "rerank_results": legal_trace.rerank_results[:30],
+                    "parent_groups": legal_trace.parent_groups,
+                    "perf_ms": dict(legal_trace.perf_ms),
+                    "error": branch_error,
+                })
                 final_trace = legal_trace
                 final_trace.error = None  # Failures belong to their branch, not the other tasks.
                 legal_executed = True
@@ -1190,6 +1214,8 @@ async def prepare_conversation_context(
     plan_trace["orchestration"] = orchestration_plans
     plan_trace["orchestration_raw_responses"] = raw_plans
     plan_trace["tool_results"] = tool_results
+    if legal_branch_traces:
+        final_trace.search_plan_validation["legal_branches"] = legal_branch_traces
     if current_documents:
         plan_trace["document_task"] = {
             "action": "documents_and_law" if legal_executed else "documents",

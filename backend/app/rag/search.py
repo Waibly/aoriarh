@@ -114,6 +114,7 @@ class SearchResult:
     retrieval_score: float | None = None
     rerank_score: float | None = None
     context_chunk_indices: list[int] | None = None
+    context_available_chunk_count: int | None = None
     organisation_id: str | None = None
     article_id: str | None = None
     article_title: str | None = None

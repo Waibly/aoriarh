@@ -10,6 +10,9 @@ LLM_REASONING_EFFORT = settings.llm_reasoning_effort
 EXPAND_MODEL = "gpt-5-mini"
 # Préparateur conversationnel, distinct des recherches compactes.
 CONVERSATION_PLANNER_MODEL = "gpt-6-luna"
+# "low" : plans équivalents sur le banc de 5 questions (nov. 2026), 3-10 s au
+# lieu de 9-28 s en "medium".
+CONVERSATION_PLANNER_REASONING_EFFORT = "low"
 
 CHUNK_SIZE = 1024
 CHUNK_OVERLAP = 100

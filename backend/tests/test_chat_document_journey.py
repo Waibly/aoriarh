@@ -16,6 +16,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from sqlalchemy import delete, select
 
+import app.rag.config as rag_config
 from app.core.config import settings
 from app.core.dependencies import get_current_user
 from app.main import app
@@ -216,7 +217,7 @@ async def test_natural_filename_lookup_reads_and_attaches_unique_document(
     assert agent.llm.chat.completions.create.await_count == 2
     for call in agent.llm.chat.completions.create.await_args_list:
         assert call.kwargs["model"] == "gpt-6-luna"
-        assert call.kwargs["reasoning_effort"] == "medium"
+        assert call.kwargs["reasoning_effort"] == rag_config.CONVERSATION_PLANNER_REASONING_EFFORT
         assert call.kwargs["response_format"]["type"] == "json_schema"
         assert "tools" not in call.kwargs
 
