@@ -180,10 +180,10 @@ it("suspends rotation while the user reads or focuses the idea", () => {
 it.each([
   ["drh", "Modifier les horaires d’une équipe"],
   ["charge_rh", "Renouveler une période d’essai"],
-  ["dirigeant", "Réagir à une absence inexpliquée"],
-  ["elu_cse", "Mes heures de délégation sont refusées"],
+  ["dirigeant", "Un salarié ne vient plus"],
+  ["elu_cse", "Justifier mes heures de délégation"],
   ["juriste", "Passer d’un horaire de jour à un horaire de nuit"],
-  ["consultant_rh", "Faire évoluer le télétravail"],
+  ["consultant_rh", "Mettre en place le télétravail"],
   ["comptable_paie", "Maintenir le salaire pendant un arrêt maladie"],
   ["expert_comptable", "Mon client veut renouveler un CDD"],
 ])(
@@ -232,7 +232,7 @@ it("keeps the draft when changing profiles and can undo an example replacement",
     screen.getByRole("button", { name: "Mon client veut renouveler un CDD" })
   );
   const draft = (screen.getByRole("textbox") as HTMLTextAreaElement).value;
-  expect(draft).toMatch(/^Mon client souhaite renouveler un CDD/);
+  expect(draft).toMatch(/^Mon client veut renouveler un CDD/);
   expect(draft).not.toContain("Mes faits à conserver");
   expect(onSend).not.toHaveBeenCalled();
   fireEvent.click(
@@ -259,13 +259,13 @@ it("replaces the selected request on repeated and successive clicks instead of a
   );
   const first = (screen.getByRole("textbox") as HTMLTextAreaElement).value;
   fireEvent.click(
-    screen.getByRole("button", { name: "Comparer accord et contrat" })
+    screen.getByRole("button", { name: "Vérifier notre accord télétravail" })
   );
   const second = (screen.getByRole("textbox") as HTMLTextAreaElement).value;
-  expect(second).toMatch(/^Compare les dispositions/);
+  expect(second).toMatch(/^Voici notre accord télétravail/);
   expect(second).not.toContain(first);
   fireEvent.click(
-    screen.getByRole("button", { name: "Comparer accord et contrat" })
+    screen.getByRole("button", { name: "Vérifier notre accord télétravail" })
   );
   expect(screen.getByRole("textbox")).toHaveValue(second);
   fireEvent.click(
@@ -273,7 +273,7 @@ it("replaces the selected request on repeated and successive clicks instead of a
   );
   fireEvent.click(
     screen.getByRole("button", {
-      name: "Expliquer le forfait jours à la direction",
+      name: "Une note sur le forfait jours",
     })
   );
   expect(
@@ -289,7 +289,7 @@ it("recovers an edited draft when undoing a new example selection", () => {
   );
   fireEvent.click(
     screen.getByRole("button", {
-      name: "Répondre à une demande de congé tardive",
+      name: "Refuser une demande de congés",
     })
   );
   const edited = "  Ma demande personnalisée\navec mes faits et mes dates.  ";
@@ -304,7 +304,7 @@ it("recovers an edited draft when undoing a new example selection", () => {
   );
   fireEvent.click(
     screen.getByRole("button", {
-      name: "Un salarié demande un congé pour mariage",
+      name: "Un congé pour mariage",
     })
   );
   fireEvent.click(
@@ -329,7 +329,7 @@ it("filters the on-demand catalogue and returns focus to the editable request", 
   ).not.toBeInTheDocument();
   fireEvent.click(
     within(dialog).getByRole("button", {
-      name: /Préparer un entretien de reprise après un arrêt maladie/,
+      name: /Le retour d’un salarié après un arrêt/,
     })
   );
   await waitFor(() =>
@@ -338,7 +338,7 @@ it("filters the on-demand catalogue and returns focus to the editable request", 
   await waitFor(() =>
     expect(
       (screen.getByRole("textbox") as HTMLTextAreaElement).value
-    ).toContain("trame d’entretien")
+    ).toContain("trame pour l’entretien")
   );
   expect(screen.getByRole("textbox")).toHaveFocus();
   expect(onSend).not.toHaveBeenCalled();
@@ -350,14 +350,14 @@ it("opens attachment choices for documentary tasks without sending a request", (
   render(<WelcomeScreen onSend={onSend} onAttach={onAttach} />);
   fireEvent.click(
     screen.getByRole("button", {
-      name: "Examiner les heures supplémentaires dans un accord",
+      name: "Les heures supplémentaires d’un accord",
     })
   );
   expect(
     screen.getByRole("button", { name: /Importer un fichier/ })
   ).toBeVisible();
   expect((screen.getByRole("textbox") as HTMLTextAreaElement).value).toContain(
-    "Examine les dispositions sur les heures supplémentaires"
+    "Que prévoit cet accord sur les heures supplémentaires"
   );
   expect(onSend).not.toHaveBeenCalled();
   expect(onAttach).not.toHaveBeenCalled();
@@ -382,7 +382,7 @@ it("keeps document controls closed when a piece is already selected", () => {
   );
   fireEvent.click(
     screen.getByRole("button", {
-      name: "Examiner les heures supplémentaires dans un accord",
+      name: "Les heures supplémentaires d’un accord",
     })
   );
   expect(
@@ -408,7 +408,7 @@ it.each(["unknown", "juriste"])(
     ).toBe(2);
     expect(
       screen.queryByRole("button", {
-        name: "Examiner les heures supplémentaires dans un accord",
+        name: "Les heures supplémentaires d’un accord",
       })
     ).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Voir les exemples" }));
@@ -447,11 +447,11 @@ it("can advance ideas manually and invoke attachment/library actions", () => {
     within(tip).getByRole("button", { name: "Préparer une comparaison" })
   );
   expect((screen.getByRole("textbox") as HTMLTextAreaElement).value).toContain(
-    "Compare les deux versions"
+    "Compare ces deux versions"
   );
   expect(onSend).not.toHaveBeenCalled();
   fireEvent.keyDown(document, { key: "Escape" });
-  for (let i = 0; i < 6; i++)
+  for (let i = 0; i < 7; i++)
     fireEvent.click(
       within(tip).getByRole("button", { name: "Afficher le conseil suivant" })
     );
