@@ -116,6 +116,10 @@ def ensure_collection(client: QdrantClient) -> None:
     _ensure_payload_index(client, "instrument_id", PayloadSchemaType.KEYWORD)
     _ensure_payload_index(client, "content_date", PayloadSchemaType.DATETIME)
     _ensure_payload_index(client, "date_decision", PayloadSchemaType.DATETIME)
+    # Every organisation search excludes private documents (`private` != True).
+    # Without an index Qdrant reads each candidate's on-disk payload: measured in
+    # prod (Nov. 2026) 0.375 s per dense query, 0.041 s without that clause.
+    _ensure_payload_index(client, "private", PayloadSchemaType.BOOL)
 
 
 def _ensure_payload_index(

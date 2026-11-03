@@ -100,7 +100,6 @@ async def test_sandbox_generation_receives_same_context_as_chat(monkeypatch):
 
     generation_kwargs = agent.stream_generate.call_args.kwargs
     assert generation_kwargs["history"] == history
-    assert generation_kwargs["low_confidence"] is True
     assert generation_kwargs["condensed_query"] == "Question autonome condensée"
     assert generation_kwargs["carried_sources"] == [prior_source]
     assert generation_kwargs["answer_format"] == "direct_then_cases"

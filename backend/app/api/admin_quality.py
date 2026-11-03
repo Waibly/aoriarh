@@ -706,7 +706,6 @@ async def _run_sandbox_pipeline(
             results,
             org_context=org_context,
             history=history,
-            low_confidence=rag_trace.low_confidence,
             **(
                 {"chronology_context": rag_trace.search_plan_validation["chronology"]}
                 if rag_trace.search_plan_validation.get("chronology") is not None

@@ -1019,7 +1019,6 @@ class RAGAgent:
         org_context: dict[str, str | None] | None = None,
         history: list[dict[str, str]] | None = None,
         buffer_size: int = 10,
-        low_confidence: bool = False,
         condensed_query: str | None = None,
         model_override: str | None = None,
         carried_sources: list[dict] | None = None,
@@ -1049,7 +1048,6 @@ class RAGAgent:
             context,
             org_context,
             history,
-            low_confidence=low_confidence,
             condensed_query=condensed_query,
             carried_sources=carried_sources,
             # A branch's search format must not govern a multi-deliverable answer.
@@ -2322,7 +2320,6 @@ class RAGAgent:
         context: str,
         org_context: dict[str, str | None] | None = None,
         history: list[dict[str, str]] | None = None,
-        low_confidence: bool = False,
         condensed_query: str | None = None,
         carried_sources: list[dict] | None = None,
         answer_format: str | None = None,
@@ -2337,23 +2334,6 @@ class RAGAgent:
             f"{context}\n"
             "</retrieved_documents>"
         ]
-        if low_confidence:
-            parts.append(
-                "## RIGUEUR SUR LES SOURCES (pertinence limitée détectée)\n"
-                "Les sources ci-dessus ont une pertinence limitée pour cette "
-                "question précise. Règle stricte : n'avance AUCUN chiffre, délai, "
-                "durée, montant, seuil, article ou référence de jurisprudence qui "
-                "ne figure pas littéralement dans ces sources. Tu peux énoncer la "
-                "règle générale que tu connais en la présentant explicitement comme "
-                "telle (et non comme sourcée). Si un point précisément demandé "
-                "n'est pas couvert par les sources, dis-le en une phrase et invite "
-                "à reformuler ou préciser, plutôt que de produire une réponse "
-                "détaillée non sourcée. Si la question demande un CALCUL ou un "
-                "chiffre précis que les sources ne permettent pas d'établir, "
-                "commence par le dire clairement, puis donne quand même la "
-                "formule et la méthode générale complète ainsi que la donnée "
-                "manquante à fournir — jamais un exposé qui contourne la question."
-            )
         carried_block = self._build_carried_context(carried_sources)
         if carried_block:
             parts.append(carried_block)

@@ -516,7 +516,6 @@ async def public_ask(
                             # réponse générique, jamais « chez <une entreprise> ».
                             org_context=None,
                             history=None,
-                            low_confidence=rag_trace.low_confidence,
                             **(
                                 {
                                     "chronology_context": rag_trace.search_plan_validation[
