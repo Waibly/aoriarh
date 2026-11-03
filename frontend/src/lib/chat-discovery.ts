@@ -72,7 +72,8 @@ const PROFILE_SUGGESTIONS: Record<Profile, readonly ChatSuggestion[]> = {
       id: "hr-document",
       category: "analyze",
       title: "Relire un contrat avant signature",
-      description: "Clauses manquantes, illégales ou contraires à la convention ?",
+      description:
+        "Clauses manquantes, illégales ou contraires à la convention ?",
       prompt:
         "Relis ce contrat de travail avant signature. Y a-t-il des clauses manquantes, illégales ou contraires à notre convention collective ?",
       needsDocuments: true,
@@ -426,7 +427,7 @@ type TipAction =
 export interface DiscoveryTip {
   id: string;
   title: string;
-  description: string;
+  description?: string;
   action?: TipAction;
   needsDocuments?: boolean;
 }
@@ -434,17 +435,14 @@ export interface DiscoveryTip {
 export const DISCOVERY_TIPS: readonly DiscoveryTip[] = [
   {
     id: "documents",
-    title: "Analysez aussi vos documents",
-    description:
-      "Joignez un contrat, un accord ou un courrier (PDF, Word) et dites ce que vous voulez savoir.",
+    title:
+      "Joignez un contrat ou un accord à votre question pour qu’il soit analysé.",
     needsDocuments: true,
     action: { kind: "attach", label: "Ajouter une pièce" },
   },
   {
     id: "comparison",
-    title: "Comparez deux versions d’un document",
-    description:
-      "Joignez les deux versions : les changements ressortent dans un tableau.",
+    title: "Comparez deux versions d’un document.",
     needsDocuments: true,
     action: {
       kind: "attach",
@@ -454,73 +452,62 @@ export const DISCOVERY_TIPS: readonly DiscoveryTip[] = [
     },
   },
   {
-    id: "writing",
-    title: "Préparez un écrit à partir de votre situation",
-    description:
-      "Courrier, mail ou note : donnez les faits et le destinataire, le texte est rédigé pour vous.",
+    id: "agreement",
+    title: "Demandez un projet d’accord, une charte ou une note de service.",
     action: {
       kind: "prompt",
-      label: "Utiliser une trame",
+      label: "Essayer",
       prompt:
-        "Rédige un courrier.\nDestinataire : …\nSituation : …\nCe que je veux obtenir : …",
+        "Rédige un projet d’accord d’entreprise sur le télétravail : 2 jours par semaine, ouvert aux CDI après la période d’essai.",
     },
   },
   {
-    id: "convention",
-    title: "Votre convention collective est prise en compte",
-    description:
-      "Si elle est renseignée pour votre entreprise, inutile de la citer : les réponses s’appuient dessus.",
-  },
-  {
-    id: "context",
-    title: "Donnez les faits, pas seulement le sujet",
-    description:
-      "Dates, ancienneté, type de contrat : plus la question est précise, plus la réponse l’est.",
+    id: "letter",
+    title:
+      "Faites rédiger un courrier : convocation, avertissement, réponse à un salarié.",
     action: {
       kind: "prompt",
-      label: "Utiliser une trame",
+      label: "Essayer",
       prompt:
-        "Situation : …\nDates et ancienneté : …\nType de contrat : …\nMa question : …",
+        "Rédige la convocation à un entretien préalable à un licenciement pour faute.",
     },
   },
   {
-    id: "revision",
-    title: "Demandez une autre version",
-    description:
-      "Après une réponse, demandez « plus court », « plus formel » ou « pour un salarié », dans la même conversation.",
+    id: "calculation",
+    title: "Demandez un calcul : indemnité, préavis, congés payés.",
+    action: {
+      kind: "prompt",
+      label: "Essayer",
+      prompt:
+        "Calcule l’indemnité de licenciement d’une salariée : 8 ans d’ancienneté, 2 600 € brut par mois. Montre le calcul.",
+    },
+  },
+  {
+    id: "deadlines",
+    title: "Donnez une date et demandez les échéances de la procédure.",
+    action: {
+      kind: "prompt",
+      label: "Essayer",
+      prompt:
+        "L’entretien préalable a lieu le 15 novembre. Donne-moi les dates limites de chaque étape de la procédure de licenciement.",
+    },
   },
   {
     id: "structure",
-    title: "Choisissez la forme de la réponse",
-    description:
-      "Tableau, liste d’étapes ou calendrier : demandez-le dans votre question.",
+    title: "Demandez la réponse sous forme de tableau ou d’étapes.",
+  },
+  {
+    id: "revision",
+    title:
+      "Demandez « plus court » ou « plus simple » pour retravailler un texte.",
   },
   {
     id: "sources",
-    title: "Lisez le texte exact",
-    description:
-      "Cliquez sur une référence citée pour ouvrir l’article, la convention ou l’arrêt utilisé.",
-  },
-  {
-    id: "library",
-    title: "Réutilisez une pièce déjà enregistrée",
-    description:
-      "Choisissez un document de l’entreprise dans la bibliothèque, sans l’importer à nouveau.",
-    needsDocuments: true,
-    action: { kind: "browse", label: "Choisir un document" },
-  },
-  {
-    id: "dossier",
-    title: "Un sujet qui dure ? Créez un dossier",
-    description:
-      "Faits, pièces et conversations restent réunis, et vos questions suivantes en tiennent compte.",
-    action: { kind: "link", href: "/dossiers", label: "Voir mes dossiers" },
+    title: "Cliquez sur une source pour lire le texte exact.",
   },
   {
     id: "fiche",
-    title: "Gardez une fiche pratique en PDF",
-    description:
-      "Sous une réponse, cliquez sur « Créer une fiche pratique » quand le bouton est proposé. Retrouvez-la dans « Mes fiches ».",
+    title: "Gardez une réponse en PDF avec « Créer une fiche pratique ».",
     action: { kind: "link", href: "/fiches", label: "Voir mes fiches" },
   },
 ];

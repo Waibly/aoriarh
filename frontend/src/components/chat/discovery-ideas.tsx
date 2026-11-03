@@ -114,8 +114,12 @@ export function DiscoveryIdeas({
           className="min-w-0 flex-1 text-[13px] leading-5"
         >
           <span className="font-medium">{tip.title}</span>
-          {" · "}
-          <span className="text-muted-foreground">{tip.description}</span>{" "}
+          {tip.description && (
+            <>
+              {" · "}
+              <span className="text-muted-foreground">{tip.description}</span>
+            </>
+          )}{" "}
           {action &&
             (action.kind === "link" && !disabled ? (
               <Link href={action.href} className={actionClass}>

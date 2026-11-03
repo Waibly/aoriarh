@@ -37,9 +37,9 @@ it("rotates tips and two-card pages every five seconds without changing the draf
     .getAllByRole("button")
     .map((button) => button.getAttribute("aria-label"));
   expect(firstPair).toHaveLength(2);
-  expect(ideas).toHaveTextContent("Analysez aussi vos documents");
+  expect(ideas).toHaveTextContent("Joignez un contrat");
   act(() => jest.advanceTimersByTime(4_999));
-  expect(ideas).toHaveTextContent("Analysez aussi vos documents");
+  expect(ideas).toHaveTextContent("Joignez un contrat");
   act(() => jest.advanceTimersByTime(1));
   expect(ideas).toHaveTextContent("Comparez deux versions");
   expect(within(carousel).getAllByRole("button")).toHaveLength(2);
@@ -49,7 +49,7 @@ it("rotates tips and two-card pages every five seconds without changing the draf
       .map((button) => button.getAttribute("aria-label"))
   ).not.toEqual(firstPair);
   act(() => jest.advanceTimersByTime(5_000));
-  expect(ideas).toHaveTextContent("Préparez un écrit");
+  expect(ideas).toHaveTextContent("Demandez un projet d’accord");
   expect(
     within(carousel)
       .getAllByRole("button")
@@ -83,7 +83,7 @@ it("pauses and resumes cards without pausing tips", () => {
     screen.getByRole("button", { name: "Reprendre le défilement des idées" })
   );
   act(() => jest.advanceTimersByTime(5_000));
-  expect(ideas).toHaveTextContent("Préparez un écrit");
+  expect(ideas).toHaveTextContent("Demandez un projet d’accord");
   expect(
     within(carousel)
       .getAllByRole("button")
@@ -107,7 +107,7 @@ it("navigates tips and cards independently and pauses only the hovered carousel"
     screen.getByRole("button", { name: "Afficher les idées précédentes" })
   );
   expect(titles()).not.toEqual(firstPair);
-  expect(ideas).toHaveTextContent("Analysez aussi vos documents");
+  expect(ideas).toHaveTextContent("Joignez un contrat");
   fireEvent.click(
     screen.getByRole("button", { name: "Afficher les idées suivantes" })
   );
@@ -120,7 +120,7 @@ it("navigates tips and cards independently and pauses only the hovered carousel"
   fireEvent.click(
     within(ideas).getByRole("button", { name: "Afficher le conseil précédent" })
   );
-  expect(ideas).toHaveTextContent("Analysez aussi vos documents");
+  expect(ideas).toHaveTextContent("Joignez un contrat");
   expect(titles()).toEqual(firstPair);
   fireEvent.mouseEnter(within(carousel).getAllByRole("button")[0]);
   act(() => jest.advanceTimersByTime(5_000));
@@ -147,7 +147,7 @@ it("pauses tips without pausing card rotation", () => {
     within(ideas).getByRole("button", { name: "Mettre en pause les conseils" })
   );
   act(() => jest.advanceTimersByTime(5_000));
-  expect(ideas).toHaveTextContent("Analysez aussi vos documents");
+  expect(ideas).toHaveTextContent("Joignez un contrat");
   expect(titles()).not.toEqual(firstPair);
   fireEvent.click(
     within(ideas).getByRole("button", {
@@ -164,14 +164,14 @@ it("suspends rotation while the user reads or focuses the idea", () => {
   const ideas = screen.getByRole("complementary");
   fireEvent.mouseEnter(ideas);
   act(() => jest.advanceTimersByTime(20_000));
-  expect(ideas).toHaveTextContent("Analysez aussi vos documents");
+  expect(ideas).toHaveTextContent("Joignez un contrat");
   fireEvent.mouseLeave(ideas);
   const next = within(ideas).getByRole("button", {
     name: "Afficher le conseil suivant",
   });
   fireEvent.focus(next);
   act(() => jest.advanceTimersByTime(20_000));
-  expect(ideas).toHaveTextContent("Analysez aussi vos documents");
+  expect(ideas).toHaveTextContent("Joignez un contrat");
   fireEvent.blur(next, { relatedTarget: document.body });
   act(() => jest.advanceTimersByTime(5_000));
   expect(ideas).toHaveTextContent("Comparez deux versions");
@@ -432,7 +432,7 @@ it("remembers tip dismissal and lets the user restore it", () => {
   expect(screen.getByRole("complementary")).toBeVisible();
 });
 
-it("can advance ideas manually and invoke attachment/library actions", () => {
+it("can advance ideas manually and invoke attachment and prompt actions", () => {
   const onBrowse = jest.fn();
   const onSend = jest.fn();
   render(
@@ -451,14 +451,16 @@ it("can advance ideas manually and invoke attachment/library actions", () => {
   );
   expect(onSend).not.toHaveBeenCalled();
   fireEvent.keyDown(document, { key: "Escape" });
-  for (let i = 0; i < 7; i++)
-    fireEvent.click(
-      within(tip).getByRole("button", { name: "Afficher le conseil suivant" })
-    );
   fireEvent.click(
-    within(tip).getByRole("button", { name: "Choisir un document" })
+    within(tip).getByRole("button", { name: "Afficher le conseil suivant" })
   );
-  expect(onBrowse).toHaveBeenCalledTimes(1);
+  expect(tip).toHaveTextContent("Demandez un projet d’accord");
+  fireEvent.click(within(tip).getByRole("button", { name: "Essayer" }));
+  expect((screen.getByRole("textbox") as HTMLTextAreaElement).value).toContain(
+    "projet d’accord d’entreprise"
+  );
+  expect(onSend).not.toHaveBeenCalled();
+  expect(onBrowse).not.toHaveBeenCalled();
 });
 
 it("disables suggestion and tip actions while a request is unavailable", () => {
