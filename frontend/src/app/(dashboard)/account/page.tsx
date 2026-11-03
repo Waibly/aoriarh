@@ -561,7 +561,7 @@ function RenameWorkspaceDialog({
               id="workspace-name"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="Ex : Waibly, Mon cabinet RH"
+              placeholder="Ex : Mon cabinet RH"
               required
               autoFocus
             />

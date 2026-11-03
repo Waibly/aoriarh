@@ -72,7 +72,7 @@ export function OrgFormFields({
           id="org-name"
           value={values.name}
           onChange={(e) => set("name", e.target.value)}
-          placeholder="Ex : Waibly SAS"
+          placeholder="Ex : Dupont Conseil SAS"
           required
         />
       </div>
@@ -134,18 +134,15 @@ export function OrgFormFields({
 
       <div className="space-y-1.5">
         <Label htmlFor="secteur">
-          Secteur d&apos;activité / code APE{" "}
+          Secteur d&apos;activité{" "}
           <span className="text-muted-foreground text-xs font-normal">(facultatif)</span>
         </Label>
         <Input
           id="secteur"
           value={values.secteurActivite}
           onChange={(e) => set("secteurActivite", e.target.value)}
-          placeholder="Ex : 62.01Z — Programmation informatique"
+          placeholder="Ex : Restauration, BTP, Conseil…"
         />
-        <p className="text-xs text-muted-foreground">
-          Vous le trouverez sur votre Kbis ou pourrez l&apos;ajouter plus tard.
-        </p>
       </div>
 
       {!hideCcn && (

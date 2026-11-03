@@ -189,15 +189,15 @@ export function CcnSelector({
       )}
 
       <p className="text-xs text-muted-foreground">
-        Les textes seront installés automatiquement après la création.
-        Vous ne connaissez pas votre IDCC ?{" "}
+        Si vous en avez une, vos réponses en tiendront compte. Elle figure
+        sur vos bulletins de paie, ou{" "}
         <a
           href="https://www.elections-professionnelles.travail.gouv.fr/web/guest/recherche-idcc"
           target="_blank"
           rel="noopener noreferrer"
           className="text-primary underline underline-offset-2 hover:text-primary/80"
         >
-          Trouvez-le ici
+          retrouvez-la ici
         </a>.
       </p>
     </div>

@@ -46,6 +46,15 @@ const CYCLE_LABEL: Record<BillingCycle, string> = {
   yearly: "annuel",
 };
 
+// Mêmes règles que le backend (schemas/auth.py) : affichées en direct sous le
+// champ pour que l'utilisateur voie ce qui manque pendant la saisie.
+const PASSWORD_RULES: { label: string; test: (v: string) => boolean }[] = [
+  { label: "12 caractères", test: (v) => v.length >= 12 },
+  { label: "1 majuscule", test: (v) => /[A-Z]/.test(v) },
+  { label: "1 chiffre", test: (v) => /\d/.test(v) },
+  { label: "1 symbole", test: (v) => /[^A-Za-z0-9]/.test(v) },
+];
+
 function readCookie(name: string): string | null {
   if (typeof document === "undefined") return null;
   const match = document.cookie.match(
@@ -126,7 +135,6 @@ function RegisterForm() {
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [confirmPassword, setConfirmPassword] = useState("");
   const [profilMetier, setProfilMetier] = useState("");
 
   // --- Step 2 : Organisation ---
@@ -149,24 +157,11 @@ function RegisterForm() {
 
   function validateStep1(): boolean {
     setError(null);
-    if (password.length < 12) {
-      setError("Le mot de passe doit contenir au moins 12 caractères");
-      return false;
-    }
-    if (!/[A-Z]/.test(password)) {
-      setError("Le mot de passe doit contenir au moins une majuscule");
-      return false;
-    }
-    if (!/\d/.test(password)) {
-      setError("Le mot de passe doit contenir au moins un chiffre");
-      return false;
-    }
-    if (!/[^A-Za-z0-9]/.test(password)) {
-      setError("Le mot de passe doit contenir au moins un caractère spécial");
-      return false;
-    }
-    if (password !== confirmPassword) {
-      setError("Les mots de passe ne correspondent pas");
+    const missing = PASSWORD_RULES.filter((r) => !r.test(password));
+    if (missing.length > 0) {
+      setError(
+        `Mot de passe incomplet : il manque ${missing.map((r) => r.label).join(", ")}`
+      );
       return false;
     }
     if (!profilMetier) {
@@ -240,16 +235,34 @@ function RegisterForm() {
       }
 
       const org = await orgRes.json();
+      const ccnInstallErrors: string[] = [];
       if (!orgValues.notSubjectToCcn && orgValues.selectedCcn.length > 0) {
         for (const c of orgValues.selectedCcn) {
-          fetch(`${API_BASE_URL}/conventions/organisations/${org.id}`, {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              Authorization: `Bearer ${token}`,
-            },
-            body: JSON.stringify({ idcc: c.idcc }),
-          }).catch(() => {});
+          try {
+            const r = await fetch(
+              `${API_BASE_URL}/conventions/organisations/${org.id}`,
+              {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                  Authorization: `Bearer ${token}`,
+                },
+                body: JSON.stringify({ idcc: c.idcc }),
+              }
+            );
+            if (!r.ok) {
+              const data = await r.json().catch(() => null);
+              const detail =
+                typeof data?.detail === "string"
+                  ? data.detail
+                  : `Erreur ${r.status}`;
+              ccnInstallErrors.push(`IDCC ${c.idcc} : ${detail}`);
+            }
+          } catch (err) {
+            ccnInstallErrors.push(
+              `IDCC ${c.idcc} : ${err instanceof Error ? err.message : "erreur réseau"}`
+            );
+          }
         }
       }
 
@@ -305,12 +318,23 @@ function RegisterForm() {
             }
           }
         } catch {
-          router.replace("/billing");
-          return;
+          // handled below: the user asked to pay, send them to billing
         }
+        // Paiement demandé mais session Stripe non créée : on l'envoie sur la
+        // page Facturation (où il peut relancer) plutôt que dans le chat.
+        router.replace("/billing");
+        return;
       }
 
-      router.replace(safeCallback ?? "/chat");
+      const landing = safeCallback ?? "/chat";
+      if (ccnInstallErrors.length > 0) {
+        const params = new URLSearchParams({
+          ccn_install_error: ccnInstallErrors.join(" • "),
+        });
+        router.replace(`${landing}?${params.toString()}`);
+      } else {
+        router.replace(landing);
+      }
       router.refresh();
     } catch {
       setError("Une erreur est survenue. Veuillez réessayer.");
@@ -678,26 +702,35 @@ function RegisterForm() {
                 </Label>
                 <PasswordInput
                   id="password"
-                  placeholder="12 caractères, majuscule, chiffre et symbole"
+                  autoComplete="new-password"
+                  aria-describedby="password-rules"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   required
                   minLength={12}
                 />
-              </div>
-              <div className="grid gap-2">
-                <Label htmlFor="confirmPassword">
-                  Confirmer le mot de passe{" "}
-                  <span className="text-destructive">*</span>
-                </Label>
-                <PasswordInput
-                  id="confirmPassword"
-                  placeholder="Retapez votre mot de passe"
-                  value={confirmPassword}
-                  onChange={(e) => setConfirmPassword(e.target.value)}
-                  required
-                  minLength={8}
-                />
+                <ul
+                  id="password-rules"
+                  className="flex flex-wrap gap-x-3 gap-y-1 text-xs"
+                >
+                  {PASSWORD_RULES.map((r) => {
+                    const ok = r.test(password);
+                    return (
+                      <li
+                        key={r.label}
+                        className={`flex items-center gap-1 ${
+                          ok ? "text-primary" : "text-muted-foreground"
+                        }`}
+                      >
+                        <Check
+                          className={`h-3 w-3 ${ok ? "opacity-100" : "opacity-30"}`}
+                          aria-hidden
+                        />
+                        {r.label}
+                      </li>
+                    );
+                  })}
+                </ul>
               </div>
               <div className="grid gap-2">
                 <Label htmlFor="profilMetier">

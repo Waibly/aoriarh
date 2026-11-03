@@ -22,9 +22,8 @@ describe("RegisterPage", () => {
     expect(screen.getByLabelText(/Nom complet/)).toBeInTheDocument();
     expect(screen.getByLabelText(/Email/)).toBeInTheDocument();
     expect(screen.getByLabelText(/^Mot de passe/)).toBeInTheDocument();
-    expect(
-      screen.getByLabelText(/Confirmer le mot de passe/)
-    ).toBeInTheDocument();
+    expect(screen.queryByLabelText(/Confirmer le mot de passe/)).toBeNull();
+    expect(screen.getByText("12 caractères")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Suivant" })).toBeInTheDocument();
   });
 
