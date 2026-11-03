@@ -3,6 +3,8 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useSession } from "next-auth/react";
+import { apiFetch } from "@/lib/api";
+import type { User } from "@/types/api";
 import { toast } from "@/lib/toast";
 import { Clock, AlertTriangle, Zap, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -26,10 +28,18 @@ export function TrialBanner() {
   const { data: session } = useSession();
   const [quota, setQuota] = useState<QuotaInfo | null>(null);
   const [busy, setBusy] = useState(false);
+  const [canManageBilling, setCanManageBilling] = useState(false);
 
   useEffect(() => {
     const token = session?.access_token;
     if (!token) return;
+    let cancelled = false;
+    setCanManageBilling(false);
+    apiFetch<User>("/users/me", { token })
+      .then((user) => {
+        if (!cancelled) setCanManageBilling(user.is_workspace_owner === true);
+      })
+      .catch(() => {});
     const load = () => {
       fetchQuota(token)
         .then(setQuota)
@@ -39,7 +49,10 @@ export function TrialBanner() {
     };
     load();
     window.addEventListener("quota-updated", load);
-    return () => window.removeEventListener("quota-updated", load);
+    return () => {
+      cancelled = true;
+      window.removeEventListener("quota-updated", load);
+    };
   }, [session?.access_token]);
 
   const handleBuyBooster = async () => {
@@ -72,11 +85,13 @@ export function TrialBanner() {
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-4 border-b border-destructive/30 bg-destructive/10 px-4 py-3 text-sm sm:px-6">
           <div className="flex items-center gap-2 text-destructive">
             <AlertTriangle className="h-4 w-4" />
-            <span>Votre essai est terminé. Souscrivez pour continuer à utiliser AORIA RH.</span>
+            <span>{canManageBilling
+              ? "Votre essai est terminé. Souscrivez pour continuer à utiliser AORIA RH."
+              : "L'essai est terminé. Contactez le propriétaire pour souscrire une offre."}</span>
           </div>
-          <Button asChild size="sm">
+          {canManageBilling && <Button asChild size="sm">
             <Link href="/billing">Choisir une offre</Link>
-          </Button>
+          </Button>}
         </div>
       );
     }
@@ -90,9 +105,9 @@ export function TrialBanner() {
           <Clock className="h-4 w-4" />
           <span>Votre essai {dayLabel}.</span>
         </div>
-        <Button asChild size="sm" variant={daysLeft <= 3 ? "default" : "outline"}>
+        {canManageBilling && <Button asChild size="sm" variant={daysLeft <= 3 ? "default" : "outline"}>
           <Link href="/billing">Voir les offres</Link>
-        </Button>
+        </Button>}
       </div>
     );
   }
@@ -108,7 +123,7 @@ export function TrialBanner() {
 
     const isCommercial = COMMERCIAL_PLANS.has(quota.plan);
     const showBoosterCta =
-      severity === "hard" && isCommercial && quota.booster_remaining === 0;
+      canManageBilling && severity === "hard" && isCommercial && quota.booster_remaining === 0;
 
     return (
       <div className={`flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-4 border-b px-4 py-3 text-sm sm:px-6 ${classes}`}>
@@ -132,11 +147,11 @@ export function TrialBanner() {
             )}
             Acheter un pack booster (+500, 25 €)
           </Button>
-        ) : (
+        ) : canManageBilling ? (
           <Button asChild size="sm" variant={severity === "hard" ? "default" : "outline"}>
             <Link href="/billing">Gérer mon abonnement</Link>
           </Button>
-        )}
+        ) : <span>Contactez le propriétaire pour adapter l&apos;abonnement.</span>}
       </div>
     );
   }

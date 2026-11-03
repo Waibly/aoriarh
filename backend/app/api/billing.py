@@ -19,8 +19,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.database import get_db
-from app.core.dependencies import get_current_user
+from app.core.dependencies import get_current_user, require_account_owner
 from app.core.plans import get_limits
+from app.models.account import Account
 from app.models.subscription import Subscription
 from app.models.subscription_addon import SubscriptionAddon
 from app.models.user import User
@@ -47,13 +48,12 @@ router = APIRouter()
 @router.post("/checkout", response_model=CheckoutResponse)
 async def start_checkout(
     payload: CheckoutRequest,
-    user: User = Depends(get_current_user),
+    owner_data: tuple[User, Account] = Depends(require_account_owner),
     db: AsyncSession = Depends(get_db),
 ) -> CheckoutResponse:
-    billing = BillingService(db)
     stripe_svc = StripeService(db)
 
-    account = await billing.get_primary_account_for_user(user)
+    user, account = owner_data
     result = await stripe_svc.create_subscription_checkout(
         account=account,
         owner_email=user.email,
@@ -68,13 +68,12 @@ async def start_checkout(
 
 @router.post("/booster/checkout", response_model=BoosterCheckoutResponse)
 async def start_booster_checkout(
-    user: User = Depends(get_current_user),
+    owner_data: tuple[User, Account] = Depends(require_account_owner),
     db: AsyncSession = Depends(get_db),
 ) -> BoosterCheckoutResponse:
-    billing = BillingService(db)
     stripe_svc = StripeService(db)
 
-    account = await billing.get_primary_account_for_user(user)
+    user, account = owner_data
     result = await stripe_svc.create_booster_checkout(account=account, owner_email=user.email)
     return BoosterCheckoutResponse(
         checkout_url=result["checkout_url"],
@@ -95,7 +94,7 @@ class ChangePlanRequest(BaseModel):
 @router.post("/change-plan")
 async def change_plan(
     payload: ChangePlanRequest,
-    user: User = Depends(get_current_user),
+    owner_data: tuple[User, Account] = Depends(require_account_owner),
     db: AsyncSession = Depends(get_db),
 ) -> dict:
     """Switch the active subscription to a new plan/cycle in-place.
@@ -107,7 +106,7 @@ async def change_plan(
     billing = BillingService(db)
     stripe_svc = StripeService(db)
 
-    account = await billing.get_primary_account_for_user(user)
+    _, account = owner_data
     billing.ensure_plan_active(account)
     return await stripe_svc.change_plan(account, payload.plan, payload.cycle)
 
@@ -115,7 +114,7 @@ async def change_plan(
 @router.post("/preview-change-plan")
 async def preview_change_plan(
     payload: ChangePlanRequest,
-    user: User = Depends(get_current_user),
+    owner_data: tuple[User, Account] = Depends(require_account_owner),
     db: AsyncSession = Depends(get_db),
 ) -> dict:
     """Return the prorated invoice preview for a candidate plan change.
@@ -126,27 +125,26 @@ async def preview_change_plan(
     billing = BillingService(db)
     stripe_svc = StripeService(db)
 
-    account = await billing.get_primary_account_for_user(user)
+    _, account = owner_data
     billing.ensure_plan_active(account)
     return await stripe_svc.preview_change_plan(account, payload.plan, payload.cycle)
 
 
 @router.post("/reactivate")
 async def reactivate_subscription(
-    user: User = Depends(get_current_user),
+    owner_data: tuple[User, Account] = Depends(require_account_owner),
     db: AsyncSession = Depends(get_db),
 ) -> dict:
     """Cancel a scheduled cancellation — the user keeps their plan."""
-    billing = BillingService(db)
     stripe_svc = StripeService(db)
 
-    account = await billing.get_primary_account_for_user(user)
+    _, account = owner_data
     return await stripe_svc.reactivate_subscription(account)
 
 
 @router.post("/cancel")
 async def cancel_subscription(
-    user: User = Depends(get_current_user),
+    owner_data: tuple[User, Account] = Depends(require_account_owner),
     db: AsyncSession = Depends(get_db),
 ) -> dict:
     """Cancel the active subscription at the end of the current period.
@@ -154,10 +152,9 @@ async def cancel_subscription(
     The client keeps full access until ``current_period_end``. They can
     reactivate at any time before that date via /billing/reactivate.
     """
-    billing = BillingService(db)
     stripe_svc = StripeService(db)
 
-    account = await billing.get_primary_account_for_user(user)
+    _, account = owner_data
     return await stripe_svc.cancel_subscription_at_period_end(account)
 
 
@@ -178,7 +175,7 @@ class AddAddonRequest(BaseModel):
 @router.post("/addons")
 async def add_addon(
     payload: AddAddonRequest,
-    user: User = Depends(get_current_user),
+    owner_data: tuple[User, Account] = Depends(require_account_owner),
     db: AsyncSession = Depends(get_db),
 ) -> dict:
     """Increment an add-on quantity on the active subscription (+1).
@@ -187,7 +184,7 @@ async def add_addon(
     the max_extra_users cap defined in plans.py before hitting Stripe.
     """
     billing = BillingService(db)
-    account = await billing.get_primary_account_for_user(user)
+    _, account = owner_data
     billing.ensure_plan_active(account)
 
     # Cap on extra_user based on plan config.
@@ -250,25 +247,23 @@ async def list_addons(
 @router.delete("/addons/{addon_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def remove_addon(
     addon_id: uuid.UUID,
-    user: User = Depends(get_current_user),
+    owner_data: tuple[User, Account] = Depends(require_account_owner),
     db: AsyncSession = Depends(get_db),
 ) -> None:
     """Fully remove an add-on from the active subscription."""
-    billing = BillingService(db)
-    account = await billing.get_primary_account_for_user(user)
+    _, account = owner_data
     stripe_svc = StripeService(db)
     await stripe_svc.remove_addon(account, addon_id)
 
 
 @router.post("/portal", response_model=PortalResponse)
 async def open_portal(
-    user: User = Depends(get_current_user),
+    owner_data: tuple[User, Account] = Depends(require_account_owner),
     db: AsyncSession = Depends(get_db),
 ) -> PortalResponse:
-    billing = BillingService(db)
     stripe_svc = StripeService(db)
 
-    account = await billing.get_primary_account_for_user(user)
+    _, account = owner_data
     portal_url = await stripe_svc.create_portal_session(account)
     return PortalResponse(portal_url=portal_url)
 
@@ -342,7 +337,7 @@ async def get_usage_summary(
 
 @router.get("/invoices")
 async def list_invoices(
-    user: User = Depends(get_current_user),
+    owner_data: tuple[User, Account] = Depends(require_account_owner),
     db: AsyncSession = Depends(get_db),
 ) -> list[dict]:
     """Return the last 24 invoices for the current account.
@@ -351,8 +346,7 @@ async def list_invoices(
     use this to download their PDF receipts without going through the
     Stripe customer portal.
     """
-    billing = BillingService(db)
-    account = await billing.get_primary_account_for_user(user)
+    _, account = owner_data
 
     if not account.stripe_customer_id or not settings.stripe_secret_key:
         return []
@@ -394,7 +388,7 @@ async def list_invoices(
 
 @router.post("/payment-method/update")
 async def update_payment_method(
-    user: User = Depends(get_current_user),
+    owner_data: tuple[User, Account] = Depends(require_account_owner),
     db: AsyncSession = Depends(get_db),
 ) -> dict:
     """Return a Stripe Checkout session URL that collects a new card.
@@ -404,8 +398,7 @@ async def update_payment_method(
     and automatically uses it for the next invoice renewal. Simpler than
     embedding Stripe.js and covers 99% of the card-update flows.
     """
-    billing = BillingService(db)
-    account = await billing.get_primary_account_for_user(user)
+    _, account = owner_data
     if not account.stripe_customer_id or not settings.stripe_secret_key:
         raise HTTPException(
             status_code=400,

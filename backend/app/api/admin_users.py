@@ -246,6 +246,7 @@ async def delete_user(
     service = UserService(db)
     await service.delete_user_data(user.id)
     await db.commit()
+    await service.finish_deletions()
 
     return {"detail": "Utilisateur supprimé"}
 
@@ -326,4 +327,5 @@ async def delete_account(
         await service.delete_user_data(uid)
 
     await db.commit()
+    await service.finish_deletions()
     return {"detail": "Compte client supprimé"}

@@ -3,7 +3,7 @@ import uuid
 
 from fastapi import HTTPException, status
 from qdrant_client.models import FieldCondition, Filter, FilterSelector, MatchValue
-from sqlalchemy import delete, func, or_, select
+from sqlalchemy import delete, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -11,6 +11,7 @@ from app.models.account import default_workspace_name
 from app.models.ccn import OrganisationConvention
 from app.models.conversation import Conversation, Message
 from app.models.document import Document
+from app.models.dossier import Dossier
 from app.models.fiche import Fiche
 from app.models.invitation import Invitation
 from app.models.membership import Membership
@@ -153,7 +154,9 @@ class OrganisationService:
         await self.db.refresh(org)
         return org
 
-    async def delete_organisation(self, org_id: uuid.UUID, user: User) -> None:
+    async def delete_organisation(
+        self, org_id: uuid.UUID, user: User, *, commit: bool = True
+    ) -> None:
         org = await self.get_organisation(org_id, user)
 
         if user.role != "admin":
@@ -170,76 +173,93 @@ class OrganisationService:
                     detail="Seul un manager peut supprimer l'organisation",
                 )
 
-        # 1. Delete Qdrant vectors for this organisation
-        try:
-            client = get_qdrant_client()
-            client.delete(
-                collection_name=COLLECTION_NAME,
-                points_selector=FilterSelector(
-                    filter=Filter(
-                        must=[
-                            FieldCondition(
-                                key="organisation_id",
-                                match=MatchValue(value=str(org_id)),
-                            )
-                        ]
-                    )
-                ),
-            )
-        except Exception:
-            logger.warning("Failed to delete Qdrant vectors for org %s", org_id)
-
-        # 2. Delete MinIO files for each document
+        # Journal object erasure with the relational deletion. External cleanup
+        # must wait until the whole operation (possibly an account) has committed.
         docs_result = await self.db.execute(
             select(Document).where(Document.organisation_id == org_id)
         )
         documents = docs_result.scalars().all()
         storage = StorageService()
         from app.services.document_extraction_service import delete_extraction_artifacts
-        from app.services.storage_operation_service import (
-            finish_pending_storage_deletes,
-            queue_storage_delete,
-        )
+        from app.services.storage_operation_service import queue_storage_delete
 
         await delete_extraction_artifacts(self.db, storage, [doc.id for doc in documents])
         for doc in documents:
             await queue_storage_delete(self.db, storage, doc.id, doc.storage_path)
 
-        # 3. Delete practical sheets before their source messages and organisation
         await self.db.execute(delete(Fiche).where(Fiche.organisation_id == org_id))
 
-        # 4. Delete messages via conversation_ids
+        # Private pieces reference conversations/dossiers, so remove them first.
+        await self.db.execute(delete(Document).where(Document.organisation_id == org_id))
+
+        # Collect the conversation and dossier cases before breaking their links.
         conv_result = await self.db.execute(
             select(Conversation.id).where(Conversation.organisation_id == org_id)
         )
         conv_ids = [row[0] for row in conv_result.all()]
-        if conv_ids:
-            from app.services.case_file_service import delete_case_files_for_conversations
+        dossier_case_ids = list(
+            (
+                await self.db.scalars(
+                    select(Dossier.case_file_id).where(Dossier.organisation_id == org_id)
+                )
+            ).all()
+        )
+        # Break the dossier/conversation/case-file cycle, including empty and
+        # archived dossiers and dossiers owned by other members of this org.
+        await self.db.execute(
+            update(Conversation)
+            .where(Conversation.organisation_id == org_id)
+            .values(dossier_id=None)
+        )
+        await self.db.execute(delete(Dossier).where(Dossier.organisation_id == org_id))
+        from app.services.case_file_service import delete_case_files_for_conversations
 
-            await delete_case_files_for_conversations(self.db, conv_ids)
+        await delete_case_files_for_conversations(
+            self.db, conv_ids, additional_case_ids=dossier_case_ids
+        )
+        if conv_ids:
             await self.db.execute(delete(Message).where(Message.conversation_id.in_(conv_ids)))
 
-        # 5. Delete conversations
         await self.db.execute(delete(Conversation).where(Conversation.organisation_id == org_id))
 
-        # 6. Delete documents
-        await self.db.execute(delete(Document).where(Document.organisation_id == org_id))
-
-        # 7. Delete invitations
         await self.db.execute(delete(Invitation).where(Invitation.organisation_id == org_id))
 
-        # 8. Delete organisation_conventions
         await self.db.execute(
             delete(OrganisationConvention).where(OrganisationConvention.organisation_id == org_id)
         )
 
-        # 9. Delete memberships (NOT users)
+        # Remove access grants while preserving the members' user accounts.
         await self.db.execute(delete(Membership).where(Membership.organisation_id == org_id))
 
-        # 10. Delete organisation
         await self.db.delete(org)
-        await self.db.commit()
-        await finish_pending_storage_deletes(self.db, storage)
+        await self.db.flush()
+        self.db.info.setdefault("organisation_cleanup_ids", []).append(org_id)
+        if commit:
+            await self.db.commit()
+            await self.finish_deletions()
+
+    async def finish_deletions(self) -> None:
+        """Finish external cleanup only after the caller's transaction commits."""
+        from app.services.storage_operation_service import finish_pending_storage_deletes
+
+        org_ids = list(dict.fromkeys(self.db.info.pop("organisation_cleanup_ids", [])))
+        for org_id in org_ids:
+            try:
+                get_qdrant_client().delete(
+                    collection_name=COLLECTION_NAME,
+                    points_selector=FilterSelector(
+                        filter=Filter(
+                            must=[
+                                FieldCondition(
+                                    key="organisation_id", match=MatchValue(value=str(org_id))
+                                )
+                            ]
+                        )
+                    ),
+                )
+            except Exception:
+                logger.warning("Failed to delete Qdrant vectors for org %s", org_id)
+        await finish_pending_storage_deletes(self.db, StorageService())
 
     # --- Member management ---
 

@@ -4,6 +4,8 @@ import { useErrorState } from "@/hooks/use-error-state";
 
 import { useCallback, useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
+import { apiFetch } from "@/lib/api";
+import type { User } from "@/types/api";
 import { Loader2, ExternalLink, Zap, Check, CreditCard, FileText, Download } from "lucide-react";
 import { toast } from "@/lib/toast";
 import { Button } from "@/components/ui/button";
@@ -103,6 +105,7 @@ export default function BillingPage() {
   const [addons, setAddons] = useState<ActiveAddon[]>([]);
   const [invoices, setInvoices] = useState<InvoiceRow[]>([]);
   const [loading, setLoading] = useState(true);
+  const [canManageBilling, setCanManageBilling] = useState(false);
   const [cycle, setCycle] = useState<BillingCycle>("monthly");
   const [busy, setBusy] = useState(false);
 
@@ -118,13 +121,19 @@ export default function BillingPage() {
   const loadData = useCallback(async () => {
     if (!token) return;
     setLoading(true);
+    setCanManageBilling(false);
     try {
+      // Billing resolves the user's own account first, independently of the
+      // organisation currently selected in the application.
+      const user = await apiFetch<User>("/users/me", { token });
+      const isOwner = user.is_workspace_owner === true;
+      setCanManageBilling(isOwner);
       const [q, s, u, a, inv] = await Promise.all([
         fetchQuota(token),
         fetchSubscription(token),
         fetchUsageSummary(token),
         fetchAddons(token).catch(() => [] as ActiveAddon[]),
-        fetchInvoices(token).catch(() => [] as InvoiceRow[]),
+        isOwner ? fetchInvoices(token).catch(() => [] as InvoiceRow[]) : [],
       ]);
       setQuota(q);
       setSubscription(s);
@@ -363,7 +372,9 @@ export default function BillingPage() {
       <div>
         <h1 className="text-2xl font-semibold">Abonnement & facturation</h1>
         <p className="text-sm text-muted-foreground mt-1">
-          Gérez votre plan, votre consommation et vos factures.
+          {canManageBilling
+            ? "Gérez votre plan, votre consommation et vos factures."
+            : "Consultez la consommation partagée. Seul le propriétaire peut gérer l'abonnement."}
         </p>
       </div>
 
@@ -404,7 +415,7 @@ export default function BillingPage() {
                   )}
                 </CardDescription>
               </div>
-              {isCommercial && (
+              {canManageBilling && isCommercial && (
                 <div className="flex flex-wrap items-center gap-2">
                   <Button variant="outline" size="sm" onClick={handleUpdateCard} disabled={busy}>
                     <CreditCard className="mr-2 h-4 w-4" />
@@ -436,12 +447,12 @@ export default function BillingPage() {
                   <strong>{new Date(subscription.current_period_end).toLocaleDateString("fr-FR")}</strong>.
                   Au-delà, vos données sont conservées 30 jours avant suppression définitive (RGPD).
                 </p>
-                <div className="mt-3">
+                {canManageBilling && <div className="mt-3">
                   <Button size="sm" onClick={handleReactivate} disabled={busy}>
                     {busy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
                     Réactiver mon abonnement
                   </Button>
-                </div>
+                </div>}
               </div>
             )}
           </CardHeader>
@@ -469,12 +480,12 @@ export default function BillingPage() {
                 {" "}au {new Date(quota.period_end).toLocaleDateString("fr-FR")}
               </p>
             </div>
-            <div className="flex justify-end">
+            {canManageBilling && <div className="flex justify-end">
               <Button onClick={handleBooster} disabled={busy}>
                 {busy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Zap className="mr-2 h-4 w-4" />}
                 Acheter un pack booster (+500 questions, 25 €)
               </Button>
-            </div>
+            </div>}
           </CardContent>
         </Card>
       )}
@@ -519,7 +530,7 @@ export default function BillingPage() {
       )}
 
       {/* Add-ons — self-service */}
-      {isCommercial && (
+      {canManageBilling && isCommercial && (
         <Card>
           <CardHeader>
             <CardTitle>Add-ons</CardTitle>
@@ -595,7 +606,7 @@ export default function BillingPage() {
       )}
 
       {/* Plan catalog (upgrade / change plan) */}
-      <div>
+      {canManageBilling && <div>
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-4">
           <h2 className="text-lg font-semibold">Nos offres</h2>
           <div className="flex items-center gap-1 rounded-lg border p-1 bg-muted/30 self-start sm:self-auto">
@@ -673,10 +684,10 @@ export default function BillingPage() {
             );
           })}
         </div>
-      </div>
+      </div>}
 
       {/* Invoices history */}
-      {invoices.length > 0 && (
+      {canManageBilling && invoices.length > 0 && (
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">

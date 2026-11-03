@@ -1295,18 +1295,21 @@ class CaseFileService:
 
 
 async def delete_case_files_for_conversations(
-    db: AsyncSession, conversation_ids: list[uuid.UUID]
+    db: AsyncSession,
+    conversation_ids: list[uuid.UUID],
+    *,
+    additional_case_ids: list[uuid.UUID] | None = None,
 ) -> int:
-    """Explicitly erase dossiers for bulk-deletion paths and SQLite tests."""
-    if not conversation_ids:
-        return 0
-    ids = list(
-        (
-            await db.execute(
-                select(CaseFile.id).where(CaseFile.conversation_id.in_(conversation_ids))
-            )
-        ).scalars()
-    )
+    """Erase conversation cases and detached cases from already-deleted dossiers."""
+    ids = set(additional_case_ids or [])
+    if conversation_ids:
+        ids.update(
+            (
+                await db.scalars(
+                    select(CaseFile.id).where(CaseFile.conversation_id.in_(conversation_ids))
+                )
+            ).all()
+        )
     if not ids:
         return 0
     await db.execute(delete(CaseDocumentLink).where(CaseDocumentLink.case_file_id.in_(ids)))

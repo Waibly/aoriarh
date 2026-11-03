@@ -6,7 +6,7 @@ import { useEffect, useState } from "react";
 import { useSession, signOut } from "next-auth/react";
 import { Pencil, KeyRound, Briefcase, Trash2 } from "lucide-react";
 import { toast } from "@/lib/toast";
-import { apiFetch } from "@/lib/api";
+import { apiFetch, authFetch } from "@/lib/api";
 import { useOrg } from "@/lib/org-context";
 import type { User } from "@/types/api";
 import { PROFIL_METIER_OPTIONS } from "@/types/api";
@@ -236,7 +236,7 @@ export default function AccountPage() {
         open={deleteOpen}
         onOpenChange={setDeleteOpen}
         token={token}
-        isOwner={Boolean(workspaceName)}
+        isOwner={user.is_workspace_owner === true}
       />
 
       <EditProfileDialog
@@ -623,11 +623,20 @@ function DeleteAccountDialog({
     setError(null);
     setSubmitting(true);
     try {
-      await apiFetch("/users/me", {
+      const response = await authFetch("/users/me", {
         method: "DELETE",
+        headers: { "Content-Type": "application/json" },
         token,
         body: JSON.stringify({ confirmation }),
       });
+      if (!response.ok) {
+        const body = await response.json().catch(() => null);
+        throw new Error(
+          typeof body?.detail === "string"
+            ? body.detail
+            : "Impossible de supprimer le compte. Réessayez ou contactez le support."
+        );
+      }
       // Don't toast — the redirect will signal success.
       await signOut({ callbackUrl: "/login" });
     } catch (err) {
@@ -663,21 +672,16 @@ function DeleteAccountDialog({
                   </li>
                   <li>Tous les documents importés et leurs vecteurs</li>
                   <li>L&apos;historique de toutes les conversations</li>
-                  <li>Les membres invités sur votre espace de travail</li>
+                  <li>Les accès des membres invités à votre espace de travail</li>
                 </>
               )}
             </ul>
             {isOwner && (
               <p className="text-xs text-muted-foreground pt-1">
-                Si vous avez un abonnement payant actif, pensez à le résilier
-                au préalable depuis{" "}
-                <a
-                  href="/billing"
-                  className="underline hover:text-foreground"
-                >
-                  Abonnement
-                </a>{" "}
-                pour éviter une facturation parallèle.
+                Votre abonnement payant sera résilié immédiatement avant la
+                suppression des données. Si la résiliation ne peut pas être
+                confirmée, votre compte sera conservé pour vous permettre de
+                réessayer.
               </p>
             )}
           </div>

@@ -575,44 +575,73 @@ class StripeService:
             "stripe_subscription_id": sub.stripe_subscription_id,
         }
 
-    async def cancel_subscription_now(self, account: Account) -> None:
-        """Cancel the active Stripe subscription immediately (no grace).
+    async def cancel_subscription_now(
+        self, account: Account, *, include_customer_subscriptions: bool = False
+    ) -> None:
+        """Confirm immediate cancellation before allowing destructive local changes.
 
-        Removes add-on rows locally and marks the subscription canceled.
-        Used when an admin assigns a technical plan (invite / vip) to an
-        account that still has a paid commercial subscription — the two
-        are mutually exclusive. The webhook will eventually confirm, but
-        we mirror now so the plan_service overflow check runs against the
-        clean post-cancel state.
+        A retry after a SQL rollback reads the Stripe status again. Account
+        erasure also checks the customer for subscriptions whose checkout webhook
+        has not reached us yet. Never infer cancellation from a transport error.
+        This method flushes local mirrors; the caller owns the transaction.
         """
-        self._ensure_configured()
-        sub = await self._get_active_subscription(account.id)
-        if sub is None or not sub.stripe_subscription_id:
-            return
-
-        try:
-            stripe.Subscription.delete(sub.stripe_subscription_id)
-        except stripe.error.StripeError:
-            # Already canceled on Stripe's side, or the subscription no
-            # longer exists — don't block the local cleanup.
-            logger.exception(
-                "Stripe cancel-now failed for %s (already canceled?)",
-                sub.stripe_subscription_id,
-            )
-
-        # Drop local add-on rows (their Stripe items are gone with the sub)
-        await self.db.execute(
-            select(SubscriptionAddon).where(SubscriptionAddon.subscription_id == sub.id)
-        )
         from sqlalchemy import delete as sql_delete
 
-        await self.db.execute(
-            sql_delete(SubscriptionAddon).where(SubscriptionAddon.subscription_id == sub.id)
+        subscriptions = list(
+            (
+                await self.db.scalars(
+                    select(Subscription).where(Subscription.account_id == account.id)
+                )
+            ).all()
         )
+        subscription_ids = {
+            sub.stripe_subscription_id for sub in subscriptions if sub.stripe_subscription_id
+        }
+        check_customer = include_customer_subscriptions and bool(account.stripe_customer_id)
+        if not subscription_ids and not check_customer:
+            return
+        self._ensure_configured()
+        terminal_statuses = {"canceled", "incomplete_expired"}
+        confirmed: dict[str, str] = {}
+        try:
+            if check_customer:
+                remote_subscriptions = stripe.Subscription.list(
+                    customer=account.stripe_customer_id, status="all", limit=100
+                )
+                for remote in remote_subscriptions.auto_paging_iter():
+                    subscription_ids.add(remote["id"])
 
-        sub.status = "canceled"
-        sub.canceled_at = datetime.now(UTC)
-        sub.cancel_at_period_end = False
+            for subscription_id in sorted(subscription_ids):
+                remote = stripe.Subscription.retrieve(subscription_id)
+                if _get(remote, "status") not in terminal_statuses:
+                    remote = stripe.Subscription.delete(subscription_id)
+                remote_status = _get(remote, "status")
+                if remote_status not in terminal_statuses:
+                    raise HTTPException(
+                        status_code=502,
+                        detail="La résiliation de l'abonnement n'a pas été confirmée par Stripe.",
+                    )
+                confirmed[subscription_id] = remote_status
+        except stripe.error.StripeError as exc:
+            logger.exception("Stripe immediate cancellation failed for account %s", account.id)
+            raise HTTPException(
+                status_code=502,
+                detail=(
+                    "Impossible de confirmer la résiliation auprès de Stripe. "
+                    "Votre compte n'a pas été supprimé. Réessayez dans un instant."
+                ),
+            ) from exc
+
+        # Only update the mirrors once every external cancellation is confirmed.
+        for sub in subscriptions:
+            if sub.stripe_subscription_id not in confirmed:
+                continue
+            await self.db.execute(
+                sql_delete(SubscriptionAddon).where(SubscriptionAddon.subscription_id == sub.id)
+            )
+            sub.status = confirmed[sub.stripe_subscription_id]
+            sub.canceled_at = datetime.now(UTC)
+            sub.cancel_at_period_end = False
         await self.db.flush()
 
     async def add_addon(
