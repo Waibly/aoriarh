@@ -51,7 +51,7 @@ def main():
         raise SystemExit('URL de webhook Slack invalide.')
     # The test is deliberately identifiable and contains no production data.
     try:
-        req = urllib.request.Request(webhook, data=json.dumps({'text':'AORIA RH — TEST de configuration du canal incidents. Aucun incident utilisateur. Procédure : https://github.com/Waibly/aoriarh/blob/main/docs/exploitation/INCIDENTS_SLACK.md'}).encode(),headers={'Content-Type':'application/json'})
+        req = urllib.request.Request(webhook, data=json.dumps({'text':'AORIA RH — TEST de configuration du canal incidents. Aucun incident utilisateur.'}).encode(),headers={'Content-Type':'application/json'})
         with urllib.request.urlopen(req,timeout=10,context=tls_context()) as response:
             if response.status != 200 or response.read(100) != b'ok':
                 raise RuntimeError()
@@ -74,7 +74,6 @@ Ce canal reçoit uniquement les incidents de l’application (démo comprise), d
 
 Les messages n’incluent aucun contenu RH, question, réponse générée, document ou secret. Un refus 4xx peut être fonctionnel (droits, saisie, quota). Aucun système ne garantit une remontée depuis un navigateur totalement hors ligne ou fermé avant transmission.
 
-Procédure complète : https://github.com/Waibly/aoriarh/blob/main/docs/exploitation/INCIDENTS_SLACK.md
 """
     try:
         req = urllib.request.Request(webhook, data=json.dumps({'text':procedure}).encode(),

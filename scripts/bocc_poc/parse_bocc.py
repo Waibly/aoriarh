@@ -9,7 +9,7 @@ Structure identifiée (constante entre numéros) :
 - Footer     : "BOCC XXXX-XX TRA" + numéro de page → nettoyer
 
 Usage:
-    python scripts/bocc_poc/parse_bocc.py docs/boc_20250052_0001_p000.pdf
+    python scripts/bocc_poc/parse_bocc.py tmp/boc_20250052_0001_p000.pdf
 
 Résultat:
     scripts/bocc_poc/output/{idcc}/bocc_{date}_{nor}.txt

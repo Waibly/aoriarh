@@ -1,7 +1,7 @@
 """Prepare a local BOCC inventory; never writes to DB/storage or queues jobs.
 
 From backend: .venv/bin/python -m scripts.audit.prepare_bocc_inventory \
-  --manifest ../docs/recherche/lot-documentaire-2026-10-08/bocc-a-rattraper.json \
+  --manifest ../tmp/bocc-inventory/bocc-a-rattraper.json \
   --output /tmp/bocc-inventory.json --idcc 0413 1486 1408 2216 2247 7001
 
 Add --download to fetch and parse PDFs locally. No embeddings are generated.

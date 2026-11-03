@@ -241,7 +241,7 @@ def build_pairs():
 async def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--run", action="store_true")
-    parser.add_argument("--output", type=Path, default=Path("../docs/tests/continuite-2026-09-17"))
+    parser.add_argument("--output", type=Path, default=Path("../tmp/continuite-documentaire"))
     args = parser.parse_args()
     args.output.mkdir(parents=True, exist_ok=True)
     from openai import AsyncOpenAI

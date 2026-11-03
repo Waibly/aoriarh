@@ -2,7 +2,7 @@
 
 Example, from backend:
 .venv/bin/python -m scripts.audit.inventory_bocc_archives \
- --manifest ../docs/recherche/lot-documentaire-2026-10-08/bocc-a-rattraper.json \
+ --manifest ../tmp/bocc-inventory/bocc-a-rattraper.json \
  --archives /tmp/aoria-bocc-2026 --output /tmp/bocc-inventory
 
 All individual PDFs are listed, including unknown headers and agreements

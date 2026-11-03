@@ -13,9 +13,23 @@ Ces règles concernent les fonctionnalités LLM des applications développées o
 - Signaler les sorties vides, erreurs de transport et délais expirés comme des erreurs techniques. Toute politique de relance technique doit être explicite, bornée et ne jamais servir à corriger le contenu.
 - Les tests du code, des contrats techniques et des contrôles de sécurité restent autorisés et nécessaires ; ils ne doivent pas devenir des validateurs éditoriaux des générations.
 
+## Audits de code
+
+- Une demande d’audit seule n’autorise pas à modifier les fichiers.
+- Pour chaque constat, préciser l’emplacement, les conditions de déclenchement et la conséquence concrète. Examiner les appelants et les protections existantes avant de conclure.
+- Distinguer les défauts établis, les risques à confirmer et les améliorations facultatives. Justifier la priorité par l’impact et les conditions réelles.
+- Éviter les recommandations génériques ou disproportionnées. L’absence de test et les préférences de style ne suffisent pas à établir un défaut.
+- Ne pas chercher un nombre minimum de problèmes. Préciser le périmètre réellement examiné et les limites des conclusions.
+
+## Documentation commune
+
+- La documentation courante est dans le dépôt voisin [aoriarh-docs](../aoriarh-docs/README.md).
+- La documentation est reconstruite progressivement avec l’utilisateur. Pour les faits actuels, consulter le code de l’application et du site ; ne pas recréer automatiquement des guides.
+- Ne pas recréer de documentation concurrente ni d’archives dans ce dépôt. Les contenus applicatifs, données et preuves privées nécessaires restent dans leurs emplacements techniques.
+
 ## Déploiement en production
 
-- Avant toute livraison, lire intégralement `docs/exploitation/DEPLOIEMENT_PRODUCTION.md` et le fichier local non versionné `ACCES_PROD.md`.
+- Avant toute livraison, lire intégralement [la procédure centrale de livraison](../aoriarh-docs/LIVRAISON.md) et le fichier privé non versionné `../aoriarh-docs/.prive/application/ACCES_PROD.md`.
 - Suivre exclusivement la procédure et les accès indiqués dans ces deux fichiers.
 - Une demande explicite de déploiement vaut autorisation pour le commit, le push et les commandes de livraison prévues par la procédure. Ne pas redemander une confirmation déjà donnée.
 - Ne reconstruire que les services concernés et toujours employer `--no-deps` pour un déploiement isolé.
