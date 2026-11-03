@@ -31,19 +31,6 @@ import { formatLegalSourceMarkdown } from "@/lib/legal-source-format";
 import { sourceDate, sourceIdcc } from "@/lib/source-evidence";
 import type { MessageSource } from "@/types/api";
 
-export function formatJurisprudenceRef(source: MessageSource): string | null {
-  if (!source.numero_pourvoi && !source.date_decision) return null;
-  const parts: string[] = [];
-  if (source.juridiction) {
-    let j = source.juridiction;
-    if (source.chambre) j = `${j} ${source.chambre}`;
-    parts.push(j);
-  }
-  if (source.date_decision) parts.push(source.date_decision);
-  if (source.numero_pourvoi) parts.push(`n° ${source.numero_pourvoi}`);
-  return parts.join(", ");
-}
-
 interface SourceViewerValue {
   openSource: (source: MessageSource) => void;
   sourcesById: Map<string, MessageSource>;
@@ -83,7 +70,9 @@ export function SourceViewerProvider({
   // retrieval excerpt with the full text fetched from the storage.
   const [fullContent, setFullContent] = useState<string | null>(null);
   const [fullContentLoading, setFullContentLoading] = useState(false);
-  const [fullContentError, setFullContentError] = useErrorState<string | null>(null);
+  const [fullContentError, setFullContentError] = useErrorState<string | null>(
+    null
+  );
 
   // Reset the expanded full-content view each time we open a new source.
   useEffect(() => {
@@ -121,6 +110,10 @@ export function SourceViewerProvider({
   );
   const selectedIdcc = selectedSource ? sourceIdcc(selectedSource) : null;
   const selectedDate = selectedSource ? sourceDate(selectedSource) : null;
+  const selectedSolution =
+    selectedSource?.solution === "other"
+      ? "Autre solution"
+      : selectedSource?.solution;
   const isTruncated =
     fullContent === null &&
     typeof selectedSource?.full_text === "string" &&
@@ -165,10 +158,8 @@ export function SourceViewerProvider({
                 <FileText className="size-5 text-[#652bb0] dark:text-[#652bb0]" />
               </div>
               <div className="min-w-0">
-                <DialogTitle className="truncate text-base">
-                  {selectedSource &&
-                    (formatJurisprudenceRef(selectedSource) ||
-                      selectedSource.document_name)}
+                <DialogTitle className="pr-6 text-base break-words">
+                  {selectedSource?.document_name}
                 </DialogTitle>
                 <div className="mt-1 flex flex-wrap items-center gap-2">
                   <Badge
@@ -201,9 +192,9 @@ export function SourceViewerProvider({
                       {selectedSource.legal_status}
                     </Badge>
                   )}
-                  {selectedSource?.solution && (
+                  {selectedSolution && (
                     <Badge variant="outline" className="rounded-full text-xs">
-                      {selectedSource.solution}
+                      {selectedSolution}
                     </Badge>
                   )}
                   {selectedSource?.publication && (

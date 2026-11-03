@@ -227,6 +227,7 @@ export function MessageBubble({ message, onFeedback }: MessageBubbleProps) {
               {message.content}
             </ReactMarkdown>
           </div>
+          <MessageSources sources={messageSources} />
           {!isTemp && (
             <div className="my-8 space-y-2">
               <div className="border-primary/15 bg-primary/5 flex flex-wrap items-center gap-1.5 rounded-xl border px-2.5 py-2">
@@ -442,9 +443,6 @@ export function MessageBubble({ message, onFeedback }: MessageBubbleProps) {
                 <Send className="size-3.5" />
               </Button>
             </div>
-          )}
-          {messageSources.length > 0 && (
-            <MessageSources sources={messageSources} answer={message.content} />
           )}
         </div>
       </SourceViewerProvider>
