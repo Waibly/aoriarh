@@ -84,6 +84,9 @@ async def get_me(
         plan_expires_at=plan_expires_at,
         workspace_name=workspace_name,
         workspace_id=workspace_id,
+        is_workspace_owner=bool(
+            workspace_id and user.owned_account and user.owned_account.id == workspace_id
+        ),
     )
 
 
@@ -142,7 +145,10 @@ async def rename_workspace(
         raise HTTPException(
             status_code=403, detail="Vous n'êtes pas propriétaire d'un espace de travail"
         )
-    user.owned_account.name = data.name.strip()
+    name = data.name.strip()
+    if not name:
+        raise HTTPException(status_code=422, detail="Le nom ne peut pas être vide")
+    user.owned_account.name = name[:255]
     await db.commit()
     return {"detail": "Espace de travail renommé", "name": user.owned_account.name}
 

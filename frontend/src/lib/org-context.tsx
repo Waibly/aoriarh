@@ -30,6 +30,10 @@ interface OrgContextValue {
   refetchOrgs: () => Promise<void>;
   workspaceName: string | null;
   setWorkspaceName: (name: string) => void;
+  /** The user owns the displayed workspace and may rename it. */
+  isWorkspaceOwner: boolean;
+  /** The workspace only means something once it groups several organisations. */
+  showWorkspace: boolean;
   profilMetier: string | null;
   setProfilMetier: (profile: string | null) => void;
   createOrganisation: (data: CreateOrgData) => Promise<Organisation>;
@@ -43,6 +47,8 @@ const OrgContext = createContext<OrgContextValue>({
   refetchOrgs: async () => {},
   workspaceName: null,
   setWorkspaceName: () => {},
+  isWorkspaceOwner: false,
+  showWorkspace: false,
   profilMetier: null,
   setProfilMetier: () => {},
   createOrganisation: async () => {
@@ -58,6 +64,7 @@ export function OrgProvider({ children }: { children: React.ReactNode }) {
   const [currentOrgId, setCurrentOrgIdState] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [workspaceName, setWorkspaceNameState] = useState<string | null>(null);
+  const [isWorkspaceOwner, setIsWorkspaceOwner] = useState(false);
   const [profilMetier, setProfilMetier] = useState<string | null>(null);
 
   const token = session?.access_token;
@@ -68,6 +75,7 @@ export function OrgProvider({ children }: { children: React.ReactNode }) {
       const params = orgId ? `?organisation_id=${orgId}` : "";
       const data = await apiFetch<User>(`/users/me${params}`, { token });
       setWorkspaceNameState(data.workspace_name);
+      setIsWorkspaceOwner(Boolean(data.is_workspace_owner));
       setProfilMetier(data.profil_metier);
     } catch {
       // Non-blocking: workspace name is optional, continue without it
@@ -169,6 +177,8 @@ export function OrgProvider({ children }: { children: React.ReactNode }) {
         refetchOrgs: fetchOrgs,
         workspaceName,
         setWorkspaceName: setWorkspaceNameState,
+        isWorkspaceOwner,
+        showWorkspace: Boolean(workspaceName) && organisations.length > 1,
         profilMetier,
         setProfilMetier,
         createOrganisation,

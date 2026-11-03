@@ -103,7 +103,7 @@ ADMIN_NEW_SIGNUP_CONTENT = """\
     <td style="padding:8px 12px; background:#ffffff; border:1px solid #ede9fe; color:#3f3f46;">{email}</td>
   </tr>
   <tr>
-    <td style="padding:8px 12px; background:#f5f3ff; border:1px solid #ede9fe; color:#652BB0; font-weight:600;">Workspace</td>
+    <td style="padding:8px 12px; background:#f5f3ff; border:1px solid #ede9fe; color:#652BB0; font-weight:600;">Espace de travail</td>
     <td style="padding:8px 12px; background:#ffffff; border:1px solid #ede9fe; color:#3f3f46;">{workspace_name}</td>
   </tr>
   <tr>

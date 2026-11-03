@@ -7,6 +7,7 @@ from sqlalchemy import delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.models.account import default_workspace_name
 from app.models.ccn import OrganisationConvention
 from app.models.conversation import Conversation, Message
 from app.models.document import Document
@@ -38,6 +39,16 @@ class OrganisationService:
             account_id = user.owned_account.id
         elif user.account_memberships:
             account_id = user.account_memberships[0].account_id
+
+        # The workspace still carries its signup placeholder: name it after
+        # the first organisation, which is what the client recognises.
+        owned = user.owned_account
+        if owned is not None and owned.id == account_id:
+            existing = await self.db.scalar(
+                select(func.count(Organisation.id)).where(Organisation.account_id == account_id)
+            )
+            if not existing and owned.name == default_workspace_name(user.full_name):
+                owned.name = data.name.strip()[:255] or owned.name
 
         org = Organisation(
             name=data.name,

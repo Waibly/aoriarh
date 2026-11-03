@@ -48,7 +48,13 @@ export default function AccountPage() {
   const { data: session, update: updateSession } = useSession();
   const token = session?.access_token;
 
-  const { workspaceName, setWorkspaceName, setProfilMetier } = useOrg();
+  const {
+    workspaceName,
+    setWorkspaceName,
+    setProfilMetier,
+    isWorkspaceOwner,
+    showWorkspace,
+  } = useOrg();
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [editOpen, setEditOpen] = useState(false);
@@ -143,8 +149,8 @@ export default function AccountPage() {
         </CardContent>
       </Card>
 
-      {/* Espace de travail — visible pour tous, éditable par manager/admin */}
-      {workspaceName && (
+      {/* Espace de travail — utile dès plusieurs organisations, renommable par son propriétaire */}
+      {showWorkspace && (
         <Card>
           <CardHeader className="flex flex-row items-center justify-between">
             <div className="space-y-1.5">
@@ -157,7 +163,7 @@ export default function AccountPage() {
                 membres de votre équipe.
               </CardDescription>
             </div>
-            {(user.role === "manager" || user.role === "admin") && (
+            {isWorkspaceOwner && (
               <Button
                 variant="outline"
                 size="sm"

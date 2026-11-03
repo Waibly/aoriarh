@@ -39,6 +39,8 @@ class UserRead(BaseModel):
     plan_expires_at: datetime | None = None
     workspace_name: str | None = None
     workspace_id: uuid.UUID | None = None
+    # True when the displayed workspace is the one this user owns (and can rename).
+    is_workspace_owner: bool = False
 
 
 class UserUpdate(BaseModel):

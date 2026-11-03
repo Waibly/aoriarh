@@ -12,7 +12,7 @@ from app.core.security import (
     hash_password,
     verify_password,
 )
-from app.models.account import Account
+from app.models.account import Account, default_workspace_name
 from app.models.invitation import Invitation
 from app.models.user import User
 from app.schemas.auth import (
@@ -188,7 +188,7 @@ class AuthService:
         await self.db.flush()
 
         account = _new_trial_account(
-            name=data.workspace_name or f"Espace de {user.full_name}",
+            name=data.workspace_name or default_workspace_name(user.full_name),
             owner_id=user.id,
         )
         self.db.add(account)
@@ -335,7 +335,7 @@ class AuthService:
         await self.db.flush()
 
         account = _new_trial_account(
-            name=f"Espace de {user.full_name}",
+            name=default_workspace_name(user.full_name),
             owner_id=user.id,
         )
         self.db.add(account)

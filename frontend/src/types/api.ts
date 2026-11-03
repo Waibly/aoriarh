@@ -9,6 +9,7 @@ export interface User {
   profil_metier: string | null;
   workspace_name: string | null;
   workspace_id: string | null;
+  is_workspace_owner?: boolean;
 }
 
 export const PROFIL_METIER_OPTIONS = [

@@ -354,7 +354,7 @@ export function Sidebar({
 
   const fullName = session?.user?.full_name ?? "Utilisateur";
   const token = session?.access_token;
-  const { workspaceName, currentOrg } = useOrg();
+  const { workspaceName, showWorkspace, currentOrg } = useOrg();
 
   const [userPlan, setUserPlan] = useState<{
     plan: string;
@@ -615,7 +615,7 @@ export function Sidebar({
         {userPlan && (
           <div className="px-3 pb-2">
             <div className="space-y-2 rounded-lg border p-3">
-              {workspaceName && (
+              {showWorkspace && (
                 <p className="truncate text-xs font-semibold">
                   {workspaceName}
                 </p>

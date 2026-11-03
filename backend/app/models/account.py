@@ -7,6 +7,16 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.models.base import Base, TimestampMixin, generate_uuid
 
 
+def default_workspace_name(full_name: str) -> str:
+    """Placeholder name given at signup, before any organisation exists.
+
+    It is replaced by the first organisation's name (see
+    OrganisationService.create_organisation), so a client sees its company
+    name rather than "Espace de Prénom Nom".
+    """
+    return f"Espace de {full_name}"
+
+
 class Account(TimestampMixin, Base):
     __tablename__ = "accounts"
 

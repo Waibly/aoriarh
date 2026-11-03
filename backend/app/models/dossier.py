@@ -1,4 +1,4 @@
-"""Named workspaces reuse the conversation case file and chat pipeline."""
+"""Dossiers: named, persistent case files that reuse the conversation pipeline."""
 
 import uuid
 from datetime import datetime

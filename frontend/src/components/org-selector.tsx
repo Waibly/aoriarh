@@ -28,6 +28,7 @@ export function OrgSelector() {
     setCurrentOrgId,
     loading,
     workspaceName,
+    showWorkspace,
     createOrganisation,
   } = useOrg();
   const [open, setOpen] = useState(false);
@@ -86,7 +87,7 @@ export function OrgSelector() {
         <PopoverContent className="w-56 p-0" align="start">
           <Command>
             <CommandList>
-              {workspaceName && (
+              {showWorkspace && (
                 <div className="px-3 py-2 border-b">
                   <p className="text-xs font-semibold text-muted-foreground truncate">
                     {workspaceName}
