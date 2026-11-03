@@ -22,7 +22,10 @@ import {
   uploadDossierDocument,
   type DossierDetail,
 } from "@/lib/dossiers-api";
-import { EntryCard } from "@/components/chat/case-file-panel";
+import {
+  CalculationList,
+  EntryCard,
+} from "@/components/chat/case-file-panel";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -124,8 +127,8 @@ export function DossierContent({
     }
   }
   async function upload(file: File) {
-    if (file.size > 2 * 1024 * 1024) {
-      setError("Maximum 2 Mo par fichier");
+    if (file.size > 10 * 1024 * 1024) {
+      setError("Maximum 10 Mo par fichier");
       return;
     }
     if (
@@ -351,6 +354,7 @@ export function DossierContent({
               </p>
             )}
           </section>
+          <CalculationList entries={d.case_file.entries} />
           {!!old.length && (
             <details>
               <summary className="cursor-pointer text-sm">
@@ -642,7 +646,7 @@ export function DossierContent({
               {replacement
                 ? `Remplacer « ${replacement.name} ». La nouvelle pièce sera utilisée pour les prochaines questions. Les anciens échanges restent inchangés. `
                 : "Nouvelle pièce distincte. "}
-              {d.name} · Import privé au dossier · PDF, DOCX ou TXT, 2 Mo
+              {d.name} · Import privé au dossier · PDF, DOCX ou TXT, 10 Mo
               maximum.
             </DialogDescription>
           </DialogHeader>

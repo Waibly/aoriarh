@@ -257,7 +257,7 @@ async def test_empty_fact_delta_does_not_reload_dossier_mid_preparation(dossier,
     assert len(calls) == 2  # Initial state and final state; no intermediate full reload.
 
 
-async def test_empty_delta_still_detects_a_concurrent_version_change(dossier, monkeypatch):
+async def test_empty_delta_reloads_the_dossier_after_a_concurrent_change(dossier, monkeypatch):
     from unittest.mock import AsyncMock
 
     from sqlalchemy import update
@@ -283,6 +283,15 @@ async def test_empty_delta_still_detects_a_concurrent_version_change(dossier, mo
         return result
 
     monkeypatch.setattr(CaseFileService, "apply_planner_delta", concurrent_change)
+    observed = []
+    original_context = CaseFileService.observation_context
+
+    async def tracked_context(self, conversation):
+        result = await original_context(self, conversation)
+        observed.append(result[1]["version"])
+        return result
+
+    monkeypatch.setattr(CaseFileService, "observation_context", tracked_context)
     result = await prepare_conversation_context(
         planner(wire([request()])),
         db=dossier.db,
@@ -297,7 +306,10 @@ async def test_empty_delta_still_detects_a_concurrent_version_change(dossier, mo
         model="test",
         source_message_id=msg.id,
     )
-    assert result.trace.error == "case_execution_conflict"
+    # Nothing of this turn was lost: the answer proceeds from the reloaded dossier.
+    assert result.trace.error is None
+    assert result.trace.case_file_observation["not_saved"] is False
+    assert observed[-1] > observed[0]
 
 
 async def test_default_pipeline_persists_facts_even_when_search_fails(dossier):

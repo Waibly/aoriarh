@@ -1,5 +1,6 @@
 """Personal named dossiers; shared case editing and chat remain in existing services."""
 
+import logging
 from datetime import UTC, datetime
 
 from fastapi import HTTPException
@@ -9,16 +10,18 @@ from app.models.case_file import CaseDocumentLink, CaseEntry, CaseEvent, CaseFil
 from app.models.conversation import Conversation
 from app.models.document import Document
 from app.models.dossier import Dossier
-from app.services.case_file_service import CASE_FILE_LOAD_OPTIONS, CaseFileService
+from app.services.case_file_service import CASE_FILE_CONTENT_OPTIONS, CaseFileService
 from app.services.conversation_service import ConversationService
 from app.services.organisation_context_service import load_organisation_context
+
+logger = logging.getLogger(__name__)
 
 
 class DossierService:
     def __init__(self, db):
         self.db = db
 
-    async def get(self, dossier_id, user, *, write=False):
+    async def get(self, dossier_id, user, *, write=False, owner_required=False):
         query = (
             select(Dossier)
             .where(Dossier.id == dossier_id)
@@ -27,8 +30,21 @@ class DossierService:
         if write:
             query = query.with_for_update()
         dossier = (await self.db.execute(query)).scalar_one_or_none()
-        if dossier is None or (dossier.user_id != user.id and user.role != "admin"):
+        if dossier is None:
             raise HTTPException(404, "Dossier non accessible")
+        if dossier.user_id != user.id:
+            # Personal HR dossiers: staff may consult them (quality/support), never change
+            # or delete them, and every consultation is traced.
+            if user.role != "admin" or write or owner_required:
+                raise HTTPException(404, "Dossier non accessible")
+            logger.warning(
+                "Staff access to a personal dossier",
+                extra={
+                    "dossier_id": str(dossier.id),
+                    "owner_id": str(dossier.user_id),
+                    "staff_user_id": str(user.id),
+                },
+            )
         await ConversationService(self.db)._check_membership(dossier.organisation_id, user)
         if write and dossier.archived_at is not None:
             raise HTTPException(409, "Réactivez le dossier avant de le modifier")
@@ -48,7 +64,7 @@ class DossierService:
             queue_storage_delete,
         )
 
-        dossier = await self.get(dossier_id, user)
+        await self.get(dossier_id, user, owner_required=True)
         dossier = (
             await self.db.execute(
                 select(Dossier)
@@ -163,22 +179,20 @@ class DossierService:
         await finish_pending_storage_deletes(self.db, storage)
 
     async def conversation_references(self, dossier, references):
-        """The current dossier links, not historical message attachments, define shared context."""
+        """The current dossier links, not historical message attachments, define shared context.
+
+        Returns the references to read and the names of dossier pieces left out.
+        """
         import uuid
 
         case = await self.case(dossier)
-        if any(not link.document_id for link in case.document_links):
-            raise HTTPException(
-                409,
-                "Une pièce du dossier n’est plus disponible. "
-                "Retirez-la dans Documents avant de poursuivre.",
-            )
-        if any(link.document_id and not link.extraction_id for link in case.document_links):
-            raise HTTPException(
-                409,
-                "Un document du dossier n’est pas prêt. "
-                "Terminez sa préparation dans Documents avant de poser une question.",
-            )
+        # A removed or unprepared piece must not block every question of the dossier:
+        # it is left out and reported to the user.
+        unavailable = [
+            link.document_name
+            for link in case.document_links
+            if not link.document_id or not link.extraction_id
+        ]
         common = [
             {
                 "document_id": str(link.document_id),
@@ -206,14 +220,15 @@ class DossierService:
             for r in references
             if r.get("scope") != "dossier" and uuid.UUID(str(r["document_id"])) not in private_ids
         ]
-        return list({str(r["document_id"]): r for r in [*explicit, *common]}.values())
+        merged = list({str(r["document_id"]): r for r in [*explicit, *common]}.values())
+        return merged, unavailable
 
     async def case(self, dossier):
         return (
             await self.db.execute(
                 select(CaseFile)
                 .where(CaseFile.id == dossier.case_file_id)
-                .options(*CASE_FILE_LOAD_OPTIONS[:3])
+                .options(*CASE_FILE_CONTENT_OPTIONS)
                 .execution_options(populate_existing=True)
             )
         ).scalar_one()

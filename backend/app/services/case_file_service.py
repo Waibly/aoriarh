@@ -21,12 +21,16 @@ from app.models.conversation import Conversation, Message
 from app.models.user import User
 from app.services.organisation_context_service import load_organisation_context
 
-CASE_FILE_LOAD_OPTIONS = (
+# Everything shown to the user; events (audit history) are loaded only for exports.
+CASE_FILE_CONTENT_OPTIONS = (
     selectinload(CaseFile.entries),
     selectinload(CaseFile.tasks),
     selectinload(CaseFile.document_links),
-    selectinload(CaseFile.events),
 )
+CASE_FILE_LOAD_OPTIONS = (*CASE_FILE_CONTENT_OPTIONS, selectinload(CaseFile.events))
+
+HISTORY_IMPORT = "history_import"
+HISTORY_IMPORT_LABEL = "Message historique sélectionné par l’utilisateur"
 
 
 def conversation_case_condition(conversation_id):
@@ -40,6 +44,22 @@ def conversation_case_condition(conversation_id):
         CaseFile.id == shared_id,
         and_(dossier_id.is_(None), CaseFile.conversation_id == conversation_id),
     )
+
+
+def numeric_correction(previous_value_json: Any, corrected_text: str) -> dict | None:
+    """Keep a corrected amount usable by calculations when the original fact was numeric.
+
+    The unit is inherited from the corrected fact; a text that is not a whole number
+    ("environ 2 600") drops the structured value rather than guessing one.
+    """
+    if not isinstance(previous_value_json, dict) or "number" not in previous_value_json:
+        return None
+    from app.services.case_calculation import parse_decimal_text
+
+    number = parse_decimal_text(corrected_text)
+    if number is None:
+        return None
+    return {"number": format(number, "f"), "unit": previous_value_json.get("unit", "")}
 
 
 class CaseFileApplyError(RuntimeError):
@@ -73,10 +93,7 @@ class CaseFileService:
     ) -> None:
         case_file, _ = await self.get_case_file(conversation_id, user)
         conversation = await self.db.get(Conversation, conversation_id)
-        if conversation.dossier_id:
-            from app.services.dossier_service import DossierService
-
-            await DossierService(self.db).get(conversation.dossier_id, user, write=True)
+        await self._ensure_case_writer(conversation, user)
         messages = (
             (
                 await self.db.execute(
@@ -107,16 +124,25 @@ class CaseFileService:
         if changed.rowcount != 1:
             await self.db.rollback()
             raise HTTPException(409, "Le dossier a été modifié. Rechargez-le.")
-        existing_message_ids = set(
-            (
+        # Imported messages are identified by a structured marker (older imports by their
+        # fixed label), never by planner facts that merely cite the same message.
+        existing_message_ids = {
+            entry.source_message_id
+            for entry in (
                 await self.db.execute(
-                    select(CaseEntry.source_message_id).where(
+                    select(CaseEntry).where(
                         CaseEntry.case_file_id == case_file.id,
-                        CaseEntry.label == "Message historique sélectionné par l’utilisateur",
+                        CaseEntry.entry_type == "party_statement",
+                        CaseEntry.source_message_id.in_([m.id for m in messages]),
                     )
                 )
             ).scalars()
-        )
+            if (
+                isinstance(entry.value_json, dict)
+                and entry.value_json.get("origin") == HISTORY_IMPORT
+            )
+            or entry.label == HISTORY_IMPORT_LABEL
+        }
         for message in messages:
             if message.id in existing_message_ids:
                 continue
@@ -124,7 +150,8 @@ class CaseFileService:
                 CaseEntry(
                     case_file_id=case_file.id,
                     entry_type="party_statement",
-                    label="Message historique sélectionné par l’utilisateur",
+                    label=HISTORY_IMPORT_LABEL,
+                    value_json={"origin": HISTORY_IMPORT},
                     value_text=message.content,
                     status="active",
                     source_kind="user_message",
@@ -142,6 +169,15 @@ class CaseFileService:
             )
         )
         await self.db.commit()
+
+    async def _ensure_case_writer(self, conversation: Conversation, user: User) -> None:
+        """Reading is governed by the conversation ACL; changing facts is the owner's call."""
+        if conversation.user_id != user.id:
+            raise HTTPException(404, "Conversation non trouvée")
+        if conversation.dossier_id:
+            from app.services.dossier_service import DossierService
+
+            await DossierService(self.db).get(conversation.dossier_id, user, write=True)
 
     async def create_for_conversation(
         self,
@@ -210,7 +246,7 @@ class CaseFileService:
     async def _load_for_conversation(self, conversation_id: uuid.UUID) -> CaseFile | None:
         result = await self.db.execute(
             select(CaseFile)
-            .options(*CASE_FILE_LOAD_OPTIONS[:3])
+            .options(*CASE_FILE_CONTENT_OPTIONS)
             .where(conversation_case_condition(conversation_id))
             .execution_options(populate_existing=True)
         )
@@ -410,6 +446,43 @@ class CaseFileService:
         await self.db.refresh(event)
         return event
 
+    @staticmethod
+    def _new_planner_entry(
+        case_file_id: uuid.UUID,
+        proposal: dict,
+        source_message_id: uuid.UUID,
+        user_id: uuid.UUID,
+        *,
+        target: CaseEntry | None,
+    ) -> CaseEntry:
+        operation = proposal["operation"]
+        return CaseEntry(
+            case_file_id=case_file_id,
+            entry_type=proposal["entry_type"],
+            key=proposal.get("key"),
+            label=proposal["label"],
+            value_text=proposal.get("value_text"),
+            value_json=proposal.get("numeric_value"),
+            status="contested" if operation == "contest" else "active",
+            valid_from=_case_datetime(proposal.get("valid_from")),
+            valid_to=_case_datetime(proposal.get("valid_to")),
+            source_kind=proposal["source_kind"],
+            source_message_id=source_message_id,
+            source_document_id=(
+                uuid.UUID(str(proposal["source_document_id"]))
+                if proposal.get("source_document_id")
+                else None
+            ),
+            source_extraction_id=(
+                uuid.UUID(str(proposal["source_extraction_id"]))
+                if proposal.get("source_extraction_id")
+                else None
+            ),
+            source_excerpt=proposal.get("source_excerpt"),
+            supersedes_entry_id=target.id if operation == "revise" and target else None,
+            created_by_user_id=user_id,
+        )
+
     async def apply_planner_delta(
         self,
         *,
@@ -527,6 +600,7 @@ class CaseFileService:
             if entry.key:
                 key_to_entry_ids.setdefault(entry.key, []).append(str(entry.id))
 
+        entries_by_id = {str(entry.id): entry for entry in active_entries}
         created_entry_ids: list[str] = []
         changed_entry_ids: list[str] = []
         await self.invalidate_calculations(case_file.id, {str(item) for item in target_ids})
@@ -537,6 +611,40 @@ class CaseFileService:
                 if proposal.get("target_entry_id")
                 else None
             )
+            proposal_key = proposal.get("key")
+            colliding = (
+                [
+                    entries_by_id[entry_id]
+                    for entry_id in key_to_entry_ids.get(proposal_key, [])
+                    if entry_id in entries_by_id
+                    and entries_by_id[entry_id].status in {"active", "confirmed", "contested"}
+                ]
+                if operation == "add" and proposal_key
+                else []
+            )
+            if colliding and any(
+                entry.value_text == proposal.get("value_text") for entry in colliding
+            ):
+                # The planner repeated a fact already recorded under this key.
+                continue
+            if colliding:
+                # A second active value for the same key would make the dossier ambiguous
+                # (and every calculation bound to that key). The new value is kept as a
+                # divergence to verify; the user resolves it by confirming one version.
+                entry = self._new_planner_entry(
+                    case_file.id, proposal, source_message_id, user_id, target=None
+                )
+                entry.key = None
+                entry.status = "contested"
+                entry.value_json = {
+                    **(entry.value_json or {}),
+                    "contradicts_entry_ids": [str(item.id) for item in colliding],
+                    "proposed_key": proposal_key,
+                }
+                self.db.add(entry)
+                await self.db.flush()
+                created_entry_ids.append(str(entry.id))
+                continue
             if operation in {"revise", "contest", "archive"}:
                 if target is None or target.status not in {"active", "confirmed", "contested"}:
                     raise CaseFileApplyError("case_entry_target_not_active")
@@ -549,40 +657,18 @@ class CaseFileService:
             if operation == "archive":
                 continue
 
-            entry = CaseEntry(
-                case_file_id=case_file.id,
-                entry_type=proposal["entry_type"],
-                key=proposal.get("key"),
-                label=proposal["label"],
-                value_text=proposal.get("value_text"),
-                value_json=proposal.get("numeric_value"),
-                status="contested" if operation == "contest" else "active",
-                valid_from=_case_datetime(proposal.get("valid_from")),
-                valid_to=_case_datetime(proposal.get("valid_to")),
-                source_kind=proposal["source_kind"],
-                source_message_id=source_message_id,
-                source_document_id=(
-                    uuid.UUID(str(proposal["source_document_id"]))
-                    if proposal.get("source_document_id")
-                    else None
-                ),
-                source_extraction_id=(
-                    uuid.UUID(str(proposal["source_extraction_id"]))
-                    if proposal.get("source_extraction_id")
-                    else None
-                ),
-                source_excerpt=proposal.get("source_excerpt"),
-                supersedes_entry_id=target.id if operation == "revise" and target else None,
-                created_by_user_id=user_id,
+            entry = self._new_planner_entry(
+                case_file.id, proposal, source_message_id, user_id, target=target
             )
             self.db.add(entry)
             if operation == "contest" and target is not None:
                 entry.value_json = {
                     **(entry.value_json or {}),
-                    "contradicts_entry_id": str(target.id),
+                    "contradicts_entry_ids": [str(target.id)],
                 }
             await self.db.flush()
             created_entry_ids.append(str(entry.id))
+            entries_by_id[str(entry.id)] = entry
             if entry.key:
                 if operation == "revise" and target and target.key == entry.key:
                     key_to_entry_ids[entry.key] = [
@@ -956,10 +1042,7 @@ class CaseFileService:
         else:
             case_file, _ = await self.get_case_file(conversation_id, user)
             conversation = await self.db.get(Conversation, conversation_id)
-            if conversation.dossier_id:
-                from app.services.dossier_service import DossierService
-
-                await DossierService(self.db).get(conversation.dossier_id, user, write=True)
+            await self._ensure_case_writer(conversation, user)
         original = (
             await self.db.execute(
                 select(CaseEntry).where(
@@ -1003,11 +1086,16 @@ class CaseFileService:
         next_version = expected_version + 1
         affected_entry = original
         replacement = None
+        resolved_entry_ids: list[str] = []
         previous_status = original.status
         if operation in {"correct", "contest", "archive"}:
             await self.invalidate_calculations(case_file.id, {str(original.id)})
+        if operation == "confirm":
+            resolved_entry_ids = await self._resolve_divergence(case_file.id, original)
         if operation == "correct":
             original.status = "superseded"
+            if value_json is None and value_text is not None:
+                value_json = numeric_correction(original.value_json, value_text)
             replacement = CaseEntry(
                 case_file_id=case_file.id,
                 entry_type=original.entry_type,
@@ -1049,6 +1137,7 @@ class CaseFileService:
                     "previous_status": previous_status,
                     "resulting_status": affected_entry.status,
                     "replacement_entry_id": str(replacement.id) if replacement else None,
+                    "superseded_entry_ids": resolved_entry_ids,
                     "comment": comment,
                 },
             )
@@ -1057,6 +1146,37 @@ class CaseFileService:
         case_file.version = next_version
         await self.db.refresh(affected_entry)
         return affected_entry
+
+    async def _resolve_divergence(self, case_file_id: uuid.UUID, confirmed: CaseEntry) -> list[str]:
+        """Confirming a divergent version replaces the version(s) it contradicts."""
+        structured = confirmed.value_json if isinstance(confirmed.value_json, dict) else {}
+        contradicted = list(structured.get("contradicts_entry_ids") or [])
+        if structured.get("contradicts_entry_id"):  # Entries recorded before the list format.
+            contradicted.append(structured["contradicts_entry_id"])
+        if not contradicted:
+            return []
+        targets = list(
+            (
+                await self.db.execute(
+                    select(CaseEntry).where(
+                        CaseEntry.case_file_id == case_file_id,
+                        CaseEntry.id.in_([uuid.UUID(str(item)) for item in contradicted]),
+                        CaseEntry.status.in_(["active", "confirmed", "contested"]),
+                    )
+                )
+            ).scalars()
+        )
+        if not targets:
+            return []
+        resolved = [str(target.id) for target in targets]
+        await self.invalidate_calculations(case_file_id, set(resolved))
+        inherited_key = structured.get("proposed_key") or targets[0].key or str(targets[0].id)
+        for target in targets:
+            target.status = "superseded"
+        if confirmed.key is None:
+            confirmed.key = inherited_key
+        confirmed.supersedes_entry_id = targets[0].id
+        return resolved
 
     @staticmethod
     def public_payload(

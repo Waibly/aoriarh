@@ -168,6 +168,72 @@ class CaseDelta(BaseModel):
     entries: list[CaseEntryProposal] = Field(max_length=30)
 
 
+async def reload_after_rollback(db, *instances) -> None:
+    """A rollback expires every loaded instance; async code cannot lazy-load them back."""
+    from sqlalchemy import inspect as sa_inspect
+
+    for instance in instances:
+        state = sa_inspect(instance, raiseerr=False) if instance is not None else None
+        if state is not None and state.session is not None and instance in db:
+            await db.refresh(instance)
+
+
+USER_CONTROLLED_SOURCE_KINDS = frozenset({"user", "user_correction"})
+
+
+def is_user_controlled_entry(entry: dict) -> bool:
+    return (
+        entry.get("status") == "confirmed"
+        or entry.get("source_kind") in USER_CONTROLLED_SOURCE_KINDS
+    )
+
+
+def enforce_case_entry_rules(
+    delta: CaseDelta, case_file_context: dict | None
+) -> tuple[CaseDelta, list[dict]]:
+    """Make planner proposals executable instead of letting one of them abort the answer.
+
+    - one entry is targeted at most once per delta;
+    - in a named dossier, user-controlled entries are never replaced by the planner: the new
+      statement is kept as a divergence to verify (same key, resolved by the user).
+    """
+    context = case_file_context or {}
+    entries_by_id = {str(item["id"]): item for item in context.get("entries", []) if item.get("id")}
+    shared = bool(context.get("dossier"))
+    kept: list[CaseEntryProposal] = []
+    adjustments: list[dict] = []
+    targeted: set[str] = set()
+    for proposal in delta.entries:
+        if proposal.target_entry_id is not None:
+            target_id = str(proposal.target_entry_id)
+            if target_id in targeted:
+                adjustments.append(
+                    {"error": "duplicate_case_entry_target", "target_entry_id": target_id}
+                )
+                continue
+            targeted.add(target_id)
+            target = entries_by_id.get(target_id, {})
+            if shared and is_user_controlled_entry(target):
+                adjustments.append(
+                    {
+                        "error": "case_entry_requires_user_confirmation",
+                        "target_entry_id": target_id,
+                        "operation": proposal.operation,
+                    }
+                )
+                if proposal.operation == "archive":
+                    continue
+                proposal = proposal.model_copy(
+                    update={
+                        "operation": "add",
+                        "target_entry_id": None,
+                        "key": target.get("key") or target_id,
+                    }
+                )
+        kept.append(proposal)
+    return delta.model_copy(update={"entries": kept}), adjustments
+
+
 class CaseTaskProposal(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
     id: str = Field(min_length=1, max_length=40, pattern=r"^[a-z][a-z0-9_]*$")
@@ -397,6 +463,10 @@ async def plan_conversation(
             documents=[*active_documents, *documents],
         )
         trace.search_plan_validation["request_errors"] = errors
+        if fact_delta is not None:
+            fact_delta, adjustments = enforce_case_entry_rules(fact_delta, case_file_context)
+            if adjustments:
+                trace.search_plan_validation["case_delta_adjustments"] = adjustments
         if plan is None:
             trace.error = "search_planner_error"
             return PlannedConversation(None, base, trace, raw, fact_delta, requests)
@@ -573,20 +643,22 @@ async def prepare_conversation_context(
     }
     observation_event_ids: list[str] = []
     observation_technical_errors: list[str] = []
+    # Set when dossier information could not be recorded while the answer still proceeds.
+    case_not_saved = False
+    # A rollback expires the caller's ORM instances; the caller refreshes them.
+    session_rolled_back = False
     try:
         case_file, case_file_context = await case_service.observation_context(conversation)
         case_perf["case_context_load"] = (time.perf_counter() - preparation_started) * 1000
     except Exception:
+        # The dossier must not cost the user the answer: continue without it and say so.
         await db.rollback()
+        session_rolled_back = True
+        await reload_after_rollback(db, conversation, user)
+        case_file = None
+        case_not_saved = True
         observation_technical_errors.append("case_file_context_error")
         logger.exception("Case-file observation context could not be loaded")
-        return PreparedConversation(
-            results=[],
-            reformulated=query,
-            trace=RagTrace(query_original=query, error="case_execution_conflict"),
-            documents=list(documents),
-            references=list(references),
-        )
     current_documents = list(documents)
     current_references = list(references)
     continuity = document_continuity
@@ -677,6 +749,8 @@ async def prepare_conversation_context(
         observation_payload = None
         observation_error = None
         observation_event = None
+        # Captured at creation: a later rollback expires the ORM instance.
+        saved_observation_event_id: uuid.UUID | None = None
         if planned.plan is not None:
             observation_payload = {
                 "planner_pass": pass_index + 1,
@@ -715,23 +789,21 @@ async def prepare_conversation_context(
                     organisation_context_snapshot=org_context,
                     source_message_id=source_message_id,
                 )
-                observation_event_ids.append(str(observation_event.id))
+                saved_observation_event_id = observation_event.id
+                observation_event_ids.append(str(saved_observation_event_id))
                 case_perf["case_observation_save"] = (
                     case_perf.get("case_observation_save", 0)
                     + (time.perf_counter() - observation_started) * 1000
                 )
             except Exception:
+                # Without its audit record a delta is never applied, but the answer proceeds.
                 await db.rollback()
+                session_rolled_back = True
+                await reload_after_rollback(db, case_file, conversation, user)
+                case_not_saved = True
+                observation_event = None
                 observation_technical_errors.append("case_file_observation_persistence_error")
                 logger.exception("Case-file planner observation could not be persisted")
-                final_trace.error = "case_execution_conflict"
-                return PreparedConversation(
-                    results=results,
-                    reformulated=query,
-                    trace=final_trace,
-                    documents=current_documents,
-                    references=current_references,
-                )
         # Facts are their own transaction, independent of search execution. The
         # service checks source access, target ids and concurrent version changes.
         if (
@@ -770,34 +842,49 @@ async def prepare_conversation_context(
                         select(CaseFile.version).where(CaseFile.id == case_file.id)
                     )
                     if current_version != applicable_expected_version:
-                        raise CaseFileApplyError("case_version_conflict")
+                        # Nothing of this turn is lost; answer from the dossier as it is now.
+                        await db.refresh(case_file)
+                        _, case_file_context = await case_service.observation_context(conversation)
+                        applicable_expected_version = case_file.version
                 application_result = fact_result
                 case_perf["case_facts_apply"] = (
                     case_perf.get("case_facts_apply", 0)
                     + (time.perf_counter() - facts_started) * 1000
                 )
-            except CaseFileApplyError as exc:
-                await db.rollback()
-                await db.refresh(case_file)
-                await db.refresh(conversation)
-                final_trace.error = "case_execution_conflict"
-                observation_technical_errors.append(exc.code)
-                await case_service.record_delta_application_error(
-                    case_file=case_file,
-                    source_message_id=source_message_id,
-                    observation_event_id=observation_event_id,
-                    technical_error=exc.code,
+            except Exception as exc:
+                # The new facts are not recorded, but the answer is still produced from the
+                # dossier as it is now (reloaded below), never from a stale snapshot.
+                error_code = (
+                    exc.code if isinstance(exc, CaseFileApplyError) else "delta_application_error"
                 )
-                break
+                if not isinstance(exc, CaseFileApplyError):
+                    logger.exception("Case-file facts could not be applied")
+                await db.rollback()
+                session_rolled_back = True
+                await reload_after_rollback(db, case_file, conversation, user)
+                case_not_saved = True
+                observation_technical_errors.append(error_code)
+                try:
+                    await case_service.record_delta_application_error(
+                        case_file=case_file,
+                        source_message_id=source_message_id,
+                        observation_event_id=observation_event_id,
+                        technical_error=error_code,
+                    )
+                    _, case_file_context = await case_service.observation_context(conversation)
+                    applicable_expected_version = case_file_context["version"]
+                except Exception:
+                    await db.rollback()
+                    await reload_after_rollback(db, conversation, user)
+                    logger.exception("Case-file state could not be reloaded after a failed delta")
+                    case_file = None
         if planned.plan is None:
             break
         previous_requests = planned.requests or []
         # Generation is an application step, including a no-tool reply.
         generate_without_sources = True
         applicable_plan = planned.plan
-        applicable_observation_event_id = (
-            observation_event.id if observation_event is not None else None
-        )
+        applicable_observation_event_id = saved_observation_event_id
         orchestration_plans.append(planned.plan.model_dump(mode="json"))
         action_outputs: dict[str, dict] = {}
         discovery_read_reached = False
@@ -1158,16 +1245,18 @@ async def prepare_conversation_context(
                 # Keep every branch's retrieval evidence: the returned trace is
                 # the last branch, so earlier branches would otherwise vanish
                 # from the quality page.
-                legal_branch_traces.append({
-                    "action_id": action.id,
-                    "question": action.query or query,
-                    "query_condensed": legal_trace.query_condensed,
-                    "variants": legal_trace.variants,
-                    "rerank_results": legal_trace.rerank_results[:30],
-                    "parent_groups": legal_trace.parent_groups,
-                    "perf_ms": dict(legal_trace.perf_ms),
-                    "error": branch_error,
-                })
+                legal_branch_traces.append(
+                    {
+                        "action_id": action.id,
+                        "question": action.query or query,
+                        "query_condensed": legal_trace.query_condensed,
+                        "variants": legal_trace.variants,
+                        "rerank_results": legal_trace.rerank_results[:30],
+                        "parent_groups": legal_trace.parent_groups,
+                        "perf_ms": dict(legal_trace.perf_ms),
+                        "error": branch_error,
+                    }
+                )
                 final_trace = legal_trace
                 final_trace.error = None  # Failures belong to their branch, not the other tasks.
                 legal_executed = True
@@ -1252,14 +1341,23 @@ async def prepare_conversation_context(
                 observation_event_id=applicable_observation_event_id,
             )
         except Exception as exc:
+            # Tasks are bookkeeping: the answer is still generated from the current dossier
+            # (reloaded below); only the task records are missing.
             await db.rollback()
-            await db.refresh(case_file)
-            await db.refresh(conversation)
+            session_rolled_back = True
+            await reload_after_rollback(db, case_file, conversation, user)
             error_code = (
                 exc.code if isinstance(exc, CaseFileApplyError) else "delta_application_error"
             )
             observation_technical_errors.append(error_code)
-            final_trace.error = "case_execution_conflict"
+            case_not_saved = True
+            if application_result is not None:
+                # Facts saved earlier in this turn remain; only the tasks are missing.
+                application_result = {
+                    **application_result,
+                    "tasks_created": 0,
+                    "created_task_ids": [],
+                }
             logger.exception("Case-file planner delta could not be applied")
             try:
                 await case_service.record_delta_application_error(
@@ -1270,14 +1368,8 @@ async def prepare_conversation_context(
                 )
             except Exception:
                 await db.rollback()
+                await reload_after_rollback(db, case_file, conversation, user)
                 logger.exception("Case-file delta application error could not be persisted")
-                return PreparedConversation(
-                    results=results,
-                    reformulated=query,
-                    trace=final_trace,
-                    documents=current_documents,
-                    references=current_references,
-                )
     final_trace.case_file_observation = {
         "mode": "applied" if source_message_id is not None else "observation",
         "case_file_id": str(case_file.id) if case_file is not None else None,
@@ -1379,7 +1471,14 @@ async def prepare_conversation_context(
                 for result in tool_results
             ],
         }
-        if application_result and application_result.get("applied") and task_results:
+        if (
+            application_result
+            and application_result.get("applied")
+            and task_results
+            and len(application_result.get("created_task_ids") or []) == len(task_results)
+        ):
+            from app.services.case_file_service import CaseFileApplyError
+
             try:
                 await case_service.record_task_execution(
                     case_file=case_file,
@@ -1390,12 +1489,25 @@ async def prepare_conversation_context(
                 )
                 application_result["version"] = case_file.version
                 final_trace.case_file_observation["case_file_version"] = case_file.version
-            except CaseFileApplyError as exc:
+            except Exception as exc:
                 await db.rollback()
-                observation_technical_errors.append(exc.code)
-                # Never generate from a snapshot invalidated by a concurrent correction.
-                final_trace.error = "case_execution_conflict"
+                session_rolled_back = True
+                await reload_after_rollback(db, case_file, conversation, user)
+                error_code = (
+                    exc.code if isinstance(exc, CaseFileApplyError) else "task_execution_error"
+                )
+                if not isinstance(exc, CaseFileApplyError):
+                    logger.exception("Case-file task execution could not be recorded")
+                observation_technical_errors.append(error_code)
+                if any(item.get("status") == "executed" for item in task_results):
+                    # Never answer with a calculation whose inputs changed concurrently.
+                    final_trace.error = "case_execution_conflict"
+                else:
+                    case_not_saved = True
         final_trace.case_file_observation["execution"] = generation_case_context
+    if final_trace.case_file_observation is not None:
+        final_trace.case_file_observation["not_saved"] = case_not_saved
+        final_trace.case_file_observation["session_rolled_back"] = session_rolled_back
     final_trace.perf_ms.update(case_perf)
     final_trace.perf_ms["conversation_preparation"] = (
         time.perf_counter() - preparation_started

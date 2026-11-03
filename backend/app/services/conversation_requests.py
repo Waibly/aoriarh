@@ -74,7 +74,9 @@ Une consigne de livrable appartient à requests, pas à case_delta. Une conclusi
 nécessite une source réellement consultée ; n'en propose pas avant la recherche.
 Conserve exactement montants, dates, périodes, rôles et réserves. Distingue fait, hypothèse et
 position d'une partie. Un montant et sa période rémunérée sont tous deux importants.
-add pour un nouveau fait ; revise/contest/archive ciblent un identifiant existant. Une incertitude
+add pour un nouveau fait ; revise/contest/archive ciblent un identifiant existant. Une key désigne
+un seul fait : si sa valeur change, utilise revise sur son identifiant, jamais un second add avec la
+même key ; des éléments distincts (deux témoins, deux périodes) ont des key distinctes. Une incertitude
 n'est pas une certitude. source_excerpt reprend les mots de la source. Pour une pièce, indique
 ses document_id ET extraction_id réellement fournis. numeric_value contient le nombre décimal
 exact et son unité, sinon null. Ne déduis ni ne calcule une valeur manquante.

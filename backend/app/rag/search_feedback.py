@@ -16,8 +16,7 @@ def search_feedback(trace: dict | object | None) -> dict:
     if validation.get("request_errors"):
         warnings.append(
             "Une ou plusieurs opérations n’ont pas pu être exécutées. "
-            "La réponse peut être incomplète. Les erreurs techniques et la sortie "
-            "originale sont consultables dans le dossier."
+            "La réponse peut être incomplète."
         )
     if plan.get("generation_interrupted"):
         warnings.append("La génération s’est interrompue. Le texte original partiel est conservé.")

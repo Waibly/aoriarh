@@ -402,7 +402,7 @@ async def test_context_budget_is_explicit_and_does_not_call_or_truncate_llm():
         "record_task_execution",
     ],
 )
-async def test_dossier_write_failure_returns_explicit_error_after_rollback(
+async def test_dossier_write_failure_keeps_the_answer_and_reports_unsaved_facts(
     dossier, monkeypatch, failed_stage
 ):
     conv, _ = await conversation(dossier)
@@ -440,7 +440,15 @@ async def test_dossier_write_failure_returns_explicit_error_after_rollback(
         model="test",
         source_message_id=message.id,
     )
-    assert prepared.trace.error == "case_execution_conflict"
+    # A dossier bookkeeping failure no longer costs the user the answer.
+    assert prepared.trace.error is None
+    assert prepared.trace.case_file_observation["not_saved"] is True
+    assert prepared.trace.case_file_observation["session_rolled_back"] is True
+    assert {
+        "record_planner_observation": "case_file_observation_persistence_error",
+        "apply_planner_delta": "case_version_conflict",
+        "record_task_execution": "case_version_conflict",
+    }[failed_stage] in prepared.trace.case_file_observation["technical_errors"]
     assert prepared.trace.router_raw_response == request_payload(payload)
 
 

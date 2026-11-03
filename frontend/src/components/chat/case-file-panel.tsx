@@ -47,6 +47,22 @@ const FACT_TYPES = new Set([
   "deadline",
 ]);
 const CURRENT_STATUSES = new Set(["active", "confirmed", "contested"]);
+function structured(entry: CaseEntry): Record<string, unknown> {
+  return entry.value_json && !Array.isArray(entry.value_json)
+    ? entry.value_json
+    : {};
+}
+function isDivergence(entry: CaseEntry): boolean {
+  const value = structured(entry);
+  return (
+    entry.status === "contested" &&
+    (Array.isArray(value.contradicts_entry_ids) ||
+      typeof value.contradicts_entry_id === "string")
+  );
+}
+function errorMessage(error: unknown, fallback: string): string {
+  return error instanceof Error && error.message ? error.message : fallback;
+}
 function needsConfirmation(entry: CaseEntry): boolean {
   return (
     entry.status === "contested" ||
@@ -155,9 +171,11 @@ export function EntryCard({
       <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs text-slate-500 empty:hidden">
         {uncertain && (
           <span className="text-amber-700 dark:text-amber-400">
-            {entry.status === "contested"
-              ? "Information à vérifier"
-              : "Hypothèse à confirmer"}
+            {isDivergence(entry)
+              ? "Diffère d’une information déjà enregistrée : confirmez cette version pour la remplacer"
+              : entry.status === "contested"
+                ? "Information à vérifier"
+                : "Hypothèse à confirmer"}
           </span>
         )}
         {entry.status === "confirmed" && <span>Confirmé par vous</span>}
@@ -307,6 +325,46 @@ export function EntryCard({
   );
 }
 
+export function CalculationList({ entries }: { entries: CaseEntry[] }) {
+  const calculations = entries.filter(
+    (entry) =>
+      entry.entry_type === "calculation" &&
+      (entry.status === "active" || entry.status === "stale")
+  );
+  if (!calculations.length) return null;
+  return (
+    <section aria-label="Calculs">
+      <h3 className="mb-2 text-sm font-semibold">Calculs</h3>
+      <ul className="space-y-2">
+        {calculations.map((entry) => {
+          const spec = structured(entry).specification as
+            | { unit?: string }
+            | undefined;
+          return (
+            <li
+              key={entry.id}
+              className="rounded-lg border border-slate-200 bg-white p-3 text-slate-900"
+            >
+              <p className="text-xs font-medium break-words text-slate-500">
+                {entry.label}
+              </p>
+              <p className="mt-0.5 text-sm break-words">
+                {entry.value_text}
+                {spec?.unit ? ` ${spec.unit}` : ""}
+              </p>
+              {entry.status === "stale" && (
+                <p className="mt-1 text-xs text-amber-700 dark:text-amber-400">
+                  À recalculer : une information utilisée a changé depuis.
+                </p>
+              )}
+            </li>
+          );
+        })}
+      </ul>
+    </section>
+  );
+}
+
 export function CaseFilePanel({
   conversationId,
   token,
@@ -379,10 +437,13 @@ export function CaseFilePanel({
               : "Information confirmée."
       );
       return true;
-    } catch {
+    } catch (e) {
       if (request === sequence.current) {
         toast.error(
-          "La modification n’a pas pu être enregistrée. Vérifiez le dossier actualisé avant de réessayer."
+          errorMessage(
+            e,
+            "La modification n’a pas pu être enregistrée. Vérifiez le dossier actualisé avant de réessayer."
+          )
         );
         await load();
       }
@@ -398,6 +459,7 @@ export function CaseFilePanel({
   const needsChecking = current.filter(needsConfirmation);
   const retained = current.filter((entry) => !needsConfirmation(entry));
   const history = facts.filter((entry) => !CURRENT_STATUSES.has(entry.status));
+
   const company = Object.entries(COMPANY_FIELDS).filter(([key]) => {
     const value = caseFile?.inherited_context?.[key];
     return value !== undefined && value !== null && value !== "";
@@ -486,6 +548,7 @@ export function CaseFilePanel({
                     </p>
                   )}
                 </section>
+                <CalculationList entries={caseFile.entries} />
                 <div className="space-y-3 border-t pt-5">
                   {company.length > 0 && (
                     <details className="text-sm">

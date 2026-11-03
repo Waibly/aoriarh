@@ -641,7 +641,7 @@ async def test_dossier_references_use_current_links_and_exclude_retired_uploads(
             )
         )
         await db.commit()
-        result = await service.conversation_references(
+        result, unavailable = await service.conversation_references(
             dossier,
             [
                 {"document_id": str(old.id), "extraction_id": str(uuid.uuid4())},
@@ -660,9 +660,12 @@ async def test_dossier_references_use_current_links_and_exclude_retired_uploads(
                 "scope": "dossier",
             }
         ]
+        assert unavailable == []
 
 
-async def test_unprepared_dossier_document_is_not_silently_ignored(client, manager_user):
+async def test_unprepared_dossier_document_is_reported_without_blocking_the_dossier(
+    client, manager_user
+):
     from app.services.dossier_service import DossierService
 
     org, _ = await _create_org_and_conversation(client, manager_user)
@@ -686,9 +689,9 @@ async def test_unprepared_dossier_document_is_not_silently_ignored(client, manag
             )
         )
         await db.commit()
-        with pytest.raises(HTTPException) as err:
-            await service.conversation_references(dossier, [])
-        assert err.value.status_code == 409
+        references, unavailable = await service.conversation_references(dossier, [])
+        assert references == []
+        assert unavailable == ["not-ready"]
 
 
 async def test_unavailable_document_link_can_be_removed_without_a_document_id(client, manager_user):

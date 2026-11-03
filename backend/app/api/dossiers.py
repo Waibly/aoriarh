@@ -89,36 +89,51 @@ async def prepare_document(
     storage = StorageService()
     reader = DocumentExtractionService(db, storage, dossier_id=dossier_id)
     doc = await reader._authorize(document_id, dossier.organisation_id, user.id)
-    raw = await asyncio.to_thread(storage.get_file_bytes, doc.storage_path)
-    await reader.extract(SourceSnapshot.from_document(doc), raw, TextExtractor())
-    dossier = await service.get(dossier_id, user, write=True)
-    link = (
-        (
-            await db.execute(
-                select(CaseDocumentLink)
-                .where(
-                    CaseDocumentLink.case_file_id == dossier.case_file_id,
-                    CaseDocumentLink.document_id == document_id,
+    try:
+        raw = await asyncio.to_thread(storage.get_file_bytes, doc.storage_path)
+        await reader.extract(SourceSnapshot.from_document(doc), raw, TextExtractor())
+        dossier = await service.get(dossier_id, user, write=True)
+        link = (
+            (
+                await db.execute(
+                    select(CaseDocumentLink)
+                    .where(
+                        CaseDocumentLink.case_file_id == dossier.case_file_id,
+                        CaseDocumentLink.document_id == document_id,
+                    )
+                    .execution_options(populate_existing=True)
                 )
-                .execution_options(populate_existing=True)
             )
+            .scalars()
+            .first()
         )
-        .scalars()
-        .first()
-    )
-    if not link:
-        raise HTTPException(409, "Le document a été retiré pendant sa préparation.")
-    manifest = await reader.status(doc.id, dossier.organisation_id, user.id)
-    link.extraction_id = manifest["extraction_id"]
-    link.source_sha256 = doc.file_hash
-    await service.bump_case(
-        dossier,
-        (await service.case(dossier)).version,
-        "document_prepared",
-        {"document_id": str(doc.id)},
-    )
-    await db.commit()
-    await enqueue_ingestion(str(doc.id), expected_source=doc.storage_path)
+        if not link:
+            raise HTTPException(409, "Le document a été retiré pendant sa préparation.")
+        manifest = await reader.status(doc.id, dossier.organisation_id, user.id)
+        link.extraction_id = manifest["extraction_id"]
+        link.source_sha256 = doc.file_hash
+        await service.bump_case(
+            dossier,
+            (await service.case(dossier)).version,
+            "document_prepared",
+            {"document_id": str(doc.id)},
+        )
+        await db.commit()
+        await enqueue_ingestion(str(doc.id), expected_source=doc.storage_path)
+    except HTTPException:
+        await db.rollback()
+        raise
+    except Exception:
+        await db.rollback()
+        logger.exception(
+            "Dossier document preparation failed",
+            extra={"dossier_id": str(dossier_id), "document_id": str(document_id)},
+        )
+        raise HTTPException(
+            503,
+            "La préparation du document a échoué. Le fichier est conservé : réessayez "
+            "dans quelques instants ou remplacez-le par une version lisible (PDF texte, DOCX).",
+        ) from None
     return await service.detail(dossier)
 
 
@@ -225,7 +240,7 @@ async def update_dossier(
     db: AsyncSession = Depends(get_db),
 ):
     service = DossierService(db)
-    dossier = await service.update(await service.get(dossier_id, user), data)
+    dossier = await service.update(await service.get(dossier_id, user, owner_required=True), data)
     return await service.detail(dossier)
 
 
@@ -312,6 +327,7 @@ async def document_action(
     service = DossierService(db)
     dossier = await service.get(dossier_id, user, write=True)
     if data.operation == "remove" and data.link_id is not None:
+        # Also reaches links whose document has disappeared (no document_id left).
         link = (
             await db.execute(
                 select(CaseDocumentLink).where(
@@ -323,16 +339,7 @@ async def document_action(
         if link is None:
             raise HTTPException(404, "Pièce absente du dossier")
         doc = await db.get(Document, link.document_id) if link.document_id else None
-        await service.bump_case(
-            dossier,
-            data.expected_case_version,
-            "document_removed",
-            {"document_id": str(link.document_id) if link.document_id else None},
-        )
-        await db.delete(link)
-        if doc and doc.private_dossier_id == dossier.id:
-            doc.retired_at = datetime.now(UTC)
-        await db.commit()
+        await _remove_links(db, service, dossier, [link], doc, data.expected_case_version)
         return await service.detail(dossier)
     if data.document_id is None:
         raise HTTPException(422, "Le document est obligatoire pour cette opération")
@@ -380,6 +387,8 @@ async def document_action(
     else:
         if not links:
             raise HTTPException(404, "Document absent du dossier")
+        if data.operation == "rename" and (not data.name or not data.name.strip()):
+            raise HTTPException(422, "Le nom est obligatoire")
         await service.bump_case(
             dossier,
             data.expected_case_version,
@@ -387,19 +396,31 @@ async def document_action(
             {"document_id": str(doc.id)},
         )
         if data.operation == "rename":
-            if not data.name or not data.name.strip():
-                raise HTTPException(422, "Le nom est obligatoire")
             for link in links:
                 link.document_name = data.name
                 if data.description is not None:
                     link.description = data.description
         else:
-            for link in links:
-                await db.delete(link)
-            if doc.private_dossier_id == dossier.id:
-                doc.retired_at = datetime.now(UTC)
+            await _remove_links(db, service, dossier, links, doc, None)
+            return await service.detail(dossier)
     await db.commit()
     return await service.detail(dossier)
+
+
+async def _remove_links(db, service, dossier, links, doc, expected_case_version):
+    """Unlink a piece; a file private to this dossier is retired with it."""
+    if expected_case_version is not None:
+        await service.bump_case(
+            dossier,
+            expected_case_version,
+            "document_removed",
+            {"document_id": str(doc.id) if doc else None},
+        )
+    for link in links:
+        await db.delete(link)
+    if doc and doc.private_dossier_id == dossier.id:
+        doc.retired_at = datetime.now(UTC)
+    await db.commit()
 
 
 @router.post("/{dossier_id}/documents", status_code=201)
@@ -416,7 +437,7 @@ async def upload_document(
     from app.rag.text_extractor import TextExtractor
     from app.services.billing_service import BillingService
     from app.services.document_extraction_service import DocumentExtractionService, SourceSnapshot
-    from app.services.document_service import DocumentService, storage
+    from app.services.document_service import MAX_FILE_SIZE, DocumentService, storage
 
     service = DossierService(db)
     dossier = await service.get(dossier_id, user, write=True)
@@ -453,7 +474,7 @@ async def upload_document(
         dossier.organisation_id,
         user.id,
         private_dossier_id=dossier.id,
-        max_file_size=2 * 1024 * 1024,
+        max_file_size=MAX_FILE_SIZE,
     )
     uploaded_document_id = doc.id
     try:

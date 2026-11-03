@@ -1,9 +1,12 @@
+from decimal import Decimal
+
 import pytest
 
 from app.services.case_calculation import (
     CalculationSpec,
     CalculationVariable,
     calculate,
+    parse_decimal_text,
     validate_fact_bindings,
 )
 
@@ -13,7 +16,8 @@ from app.services.case_calculation import (
     [
         ("9999", "active", "value_mismatch"),
         ("3200.10", "contested", "not_active"),
-        ("3 200,10 €", "active", "requires_numeric_value"),
+        ("environ 3 200,10 € par mois selon le bulletin", "active", "requires_numeric_value"),
+        ("3.200", "active", "requires_numeric_value"),
     ],
 )
 def test_calculation_rejects_unbound_or_contested_fact(value, status, error):
@@ -77,3 +81,33 @@ def test_decimal_arithmetic():
 def test_unexecutable_arithmetic_is_rejected(expression):
     with pytest.raises((ValueError, ArithmeticError)):
         calculate(specification(expression))
+
+
+@pytest.mark.parametrize(
+    "text,expected",
+    [
+        ("3200.10", "3200.10"),
+        ("3 200,10 €", "3200.10"),
+        ("3\u202f200,10 euros", "3200.10"),
+        ("2600", "2600"),
+        ("35 heures", "35"),
+        ("-12,5 %", "-12.5"),
+        ("1E+3", "1000"),
+        ("3.200", None),
+        ("environ 2 600 €", None),
+        ("2 600 € puis 2 800 €", None),
+        ("", None),
+    ],
+)
+def test_user_typed_numbers_are_read_whole_or_not_at_all(text, expected):
+    assert parse_decimal_text(text) == (Decimal(expected) if expected is not None else None)
+
+
+def test_user_typed_fact_is_bound_to_the_calculation():
+    entry = {"id": "fact", "key": "salary", "value_text": "3 200,10 €", "status": "confirmed"}
+    assert validate_fact_bindings(specification("salary * 3"), [entry]) == ["fact"]
+
+
+def test_results_use_plain_notation_and_bounded_decimals():
+    assert calculate(specification("3000 / 3")) == "1000"
+    assert calculate(specification("1 / 3")) == "0.3333333333"

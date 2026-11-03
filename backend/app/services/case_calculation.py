@@ -1,9 +1,45 @@
 """Bounded arithmetic only: no eval, calls, attribute access or generated code."""
 
 import ast
-from decimal import Decimal, DecimalException, localcontext
+import re
+from decimal import Decimal, DecimalException, InvalidOperation, localcontext
 
 from pydantic import BaseModel, ConfigDict, Field
+
+# A whole value as users type it: "2600", "2 600", "2 600,50", "2600.5 €", "35 heures".
+# Only one number followed by an optional short unit is accepted: digits are never picked
+# out of a sentence. "2.600" is ambiguous (French thousands or decimal) and is refused.
+_GROUPED = r"\d{1,3}(?:[   ]\d{3})+"
+_NUMBER_TEXT = re.compile(
+    rf"^\s*(?P<sign>[+-]?)\s*(?P<int>{_GROUPED}|\d+)(?:(?P<sep>[.,])(?P<frac>\d+))?"
+    r"\s*(?P<unit>[€%]|[A-Za-zÀ-ÿ€%/.' ]{1,25})?\s*$"
+)
+
+
+def parse_decimal_text(text: str | None) -> Decimal | None:
+    """Return the decimal written as the whole text (French or plain notation), else None."""
+    if not isinstance(text, str):
+        return None
+    if re.fullmatch(r"\s*[+-]?(\d+(\.\d*)?|\.\d+)(E[+-]?\d+)?\s*", text, re.IGNORECASE):
+        # Plain decimal literal, including results previously stored as "1E+3".
+        if not re.fullmatch(r"\s*[+-]?\d{1,3}\.\d{3}\s*", text):
+            value = Decimal(text.strip())
+            return value if value.is_finite() else None
+    match = _NUMBER_TEXT.match(text)
+    if match is None:
+        return None
+    unit = (match["unit"] or "").strip()
+    if unit and not re.search(r"[A-Za-zÀ-ÿ€%]", unit):
+        return None
+    integer = re.sub(r"[   ]", "", match["int"])
+    fraction = match["frac"]
+    if match["sep"] == "." and len(fraction) == 3 and integer == match["int"] and len(integer) <= 3:
+        return None  # "2.600": thousands separator or decimal point, cannot tell.
+    try:
+        value = Decimal(f"{match['sign']}{integer}{'.' + fraction if fraction else ''}")
+    except InvalidOperation:
+        return None
+    return value if value.is_finite() else None
 
 
 class CalculationVariable(BaseModel):
@@ -50,14 +86,16 @@ def validate_fact_bindings(spec: CalculationSpec, entries: list[dict]) -> list[s
                 raise ValueError("calculation_fact_unit_mismatch")
         else:
             value = entry.get("value_text")
+        # Only a whole numeric value is accepted; never extract digits from prose.
+        actual = parse_decimal_text(value)
+        if actual is None:
+            raise ValueError("calculation_fact_requires_numeric_value")
         try:
-            # Only an entire decimal literal is accepted; never extract digits from prose.
-            actual = Decimal(value) if isinstance(value, str) else None
             proposed = Decimal(variable.value)
-            if actual is None or not actual.is_finite() or actual != proposed:
-                raise ValueError("calculation_fact_value_mismatch")
         except DecimalException as exc:
             raise ValueError("calculation_fact_requires_numeric_value") from exc
+        if actual != proposed:
+            raise ValueError("calculation_fact_value_mismatch")
         bound.append(entry["id"])
     return bound
 
@@ -101,6 +139,14 @@ def calculate(spec: CalculationSpec) -> str:
     try:
         with localcontext() as context:
             context.prec = 28
-            return str(visit(tree.body))
+            result = visit(tree.body)
     except DecimalException as exc:
         raise ValueError("calculation_arithmetic_error") from exc
+    return format_calculation_result(result)
+
+
+def format_calculation_result(value: Decimal) -> str:
+    """Plain notation (never "1E+3"); non-terminating quotients are kept to 10 decimals."""
+    if value.as_tuple().exponent < -10:
+        value = value.quantize(Decimal("1e-10")).normalize()
+    return format(value, "f")

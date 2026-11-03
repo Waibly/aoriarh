@@ -1364,12 +1364,17 @@ async def chat_stream(
     )
 
     references = active_references(conversation.messages, data.document_references)
+    dossier = None
+    unavailable_dossier_documents: list[str] = []
     if conversation.dossier_id:
         from app.services.dossier_service import DossierService
 
         dossier_service = DossierService(db)
         dossier = await dossier_service.get(conversation.dossier_id, user, write=True)
-        references = await dossier_service.conversation_references(dossier, references)
+        (
+            references,
+            unavailable_dossier_documents,
+        ) = await dossier_service.conversation_references(dossier, references)
     shared_reference_ids = {
         str(ref["document_id"]) for ref in references if ref.get("scope") == "dossier"
     }
@@ -1413,6 +1418,14 @@ async def chat_stream(
     async def sse_generator():  # noqa: C901
         nonlocal documents, references
         initial_perf["before_stream"] = (time.perf_counter() - t_total) * 1000
+        if unavailable_dossier_documents:
+            yield _sse_event(
+                "chat_warning",
+                {
+                    "message": "Pièces du dossier non prises en compte (indisponibles ou en "
+                    "cours de préparation) : " + ", ".join(unavailable_dossier_documents) + ".",
+                },
+            )
         agent = RAGAgent()
         recent_messages = conversation.messages[-6:]
         from app.services.conversation_history import planner_history
@@ -1695,6 +1708,13 @@ async def chat_stream(
             reformulated = prepared_context.reformulated
             rag_trace = prepared_context.trace
             rag_trace.perf_ms.update(initial_perf)
+            if (rag_trace.case_file_observation or {}).get("session_rolled_back"):
+                # A dossier write failed and was rolled back: reload expired instances.
+                from app.services.conversation_orchestrator import reload_after_rollback
+
+                await reload_after_rollback(
+                    db, conversation, user_message, account, user, dossier
+                )
             documents = prepared_context.documents
             references = [
                 {
@@ -1725,8 +1745,17 @@ async def chat_stream(
                     "chat_warning",
                     {
                         "message": "Une ou plusieurs opérations n’ont pas pu être exécutées. "
-                        "La réponse peut être incomplète. Les erreurs techniques et la sortie "
-                        "originale sont consultables dans le dossier.",
+                        "La réponse peut être incomplète.",
+                    },
+                )
+            if (rag_trace.case_file_observation or {}).get("not_saved"):
+                yield _sse_event(
+                    "chat_warning",
+                    {
+                        "message": "Les nouvelles informations de ce message n’ont pas pu être "
+                        "enregistrées dans le dossier. La réponse tient compte du dossier tel "
+                        "qu’il est actuellement ; vous pouvez les ajouter ou les corriger "
+                        "depuis le dossier.",
                     },
                 )
             case_observation = rag_trace.case_file_observation or {}
@@ -1749,8 +1778,8 @@ async def chat_stream(
                     "chat_error",
                     {
                         "error": "case_execution_conflict",
-                        "message": "Le dossier a changé ou son enregistrement a échoué. "
-                        "Rechargez-le avant de relancer votre demande ; aucun calcul obsolète "
+                        "message": "Le dossier a été modifié pendant le calcul. Relancez votre "
+                        "demande pour obtenir un résultat à jour ; aucun calcul obsolète "
                         "n’a été utilisé.",
                     },
                 )
