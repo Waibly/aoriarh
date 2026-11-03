@@ -38,7 +38,7 @@ export function MessageSources({ sources }: MessageSourcesProps) {
         Sources · {sources.length}
       </CollapsibleTrigger>
       <CollapsibleContent>
-        <ul className="border-border mt-2 divide-y overflow-hidden rounded-lg border">
+        <ul className="mt-3 space-y-2">
           {sources.map((source, index) => {
             const date = sourceDate(source);
             const idcc = sourceIdcc(source);
@@ -48,12 +48,11 @@ export function MessageSources({ sources }: MessageSourcesProps) {
                 <button
                   type="button"
                   onClick={() => openSource(source)}
-                  className="hover:bg-accent hover:text-accent-foreground focus-visible:ring-ring flex w-full items-center gap-3 px-3 py-3 text-left transition-colors focus-visible:ring-2 focus-visible:outline-none focus-visible:ring-inset sm:px-4"
+                  className="border-border bg-card hover:border-primary/30 hover:bg-accent hover:text-accent-foreground focus-visible:ring-ring flex w-full items-center gap-2 rounded-lg border px-3 py-2.5 text-left transition-colors focus-visible:ring-2 focus-visible:outline-none sm:gap-3 sm:px-4 sm:py-3"
                 >
-                  <FileText
-                    aria-hidden="true"
-                    className="text-muted-foreground size-4 shrink-0"
-                  />
+                  <span className="bg-primary/10 text-primary flex size-8 shrink-0 items-center justify-center rounded-md">
+                    <FileText aria-hidden="true" className="size-4" />
+                  </span>
                   <span className="min-w-0 flex-1 space-y-1">
                     <span className="text-foreground block text-sm font-medium break-words">
                       {source.document_name}
