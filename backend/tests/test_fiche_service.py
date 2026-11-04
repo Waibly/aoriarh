@@ -92,6 +92,13 @@ def test_prompt_derives_content_from_the_question_not_the_answer_length():
     assert "leur complétude prime sur la limite" in FICHE_SYSTEM_PROMPT
 
 
+def test_prompt_keeps_common_exceptions_next_to_their_rule_and_one_warning_box():
+    assert "à côté de la règle qu'il modifie" in FICHE_SYSTEM_PROMPT
+    assert "jamais dans une section séparée" in FICHE_SYSTEM_PROMPT
+    assert "les cas rares ou théoriques" in FICHE_SYSTEM_PROMPT
+    assert "Au plus un encadré de vigilance par fiche" in FICHE_SYSTEM_PROMPT
+
+
 def test_prompt_requires_highlighted_direct_answer_and_targeted_bold():
     assert "3 à 7 mots" in FICHE_SYSTEM_PROMPT
     assert "60 caractères maximum" in FICHE_SYSTEM_PROMPT

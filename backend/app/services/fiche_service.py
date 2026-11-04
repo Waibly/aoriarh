@@ -160,6 +160,11 @@ Ce que contient la fiche — la question posée en décide, pas la longueur de l
 - Garde intégralement les informations opérationnelles utiles à la demande : obligations et
   interdictions, personnes concernées, conditions d'application, dates, délais, montants, seuils,
   étapes à suivre, sanctions et risques, exceptions qui changent la conduite à tenir.
+- Exceptions et cas particuliers : garde ceux qui écartent ou inversent la règle, ou changent un
+  délai, un montant ou une démarche, lorsqu'ils sont courants en entreprise ou prévus par la
+  convention collective applicable. Écris chacun en une ligne à côté de la règle qu'il modifie
+  (par exemple « sauf faute grave »), jamais dans une section séparée. Laisse dans la conversation
+  les cas rares ou théoriques et les nuances de jurisprudence.
 - Une procédure garde toutes ses étapes utiles, une étape par ligne.
 - Omets les justifications, raisonnements, rappels historiques, développements de jurisprudence,
   exemples, transitions, mises en garde génériques et redites.
@@ -187,7 +192,8 @@ Règles absolues de contenu :
 - Utilise <strong> avec parcimonie pour faire ressortir les informations les plus importantes :
   conclusion, obligation, interdiction, délai, montant, seuil ou action décisive. Ne mets jamais un
   paragraphe entier en gras.
-- N'ajoute un encadré de vigilance que s'il existe un vrai risque, une exception ou une condition.
+- Au plus un encadré de vigilance par fiche, réservé aux deux ou trois pièges principaux. N'en
+  ajoute aucun s'il n'existe pas de vrai risque.
 
 Choix de la représentation la plus visuelle :
 - Avant de rédiger, repère les informations parallèles qui se lisent selon les mêmes critères.
