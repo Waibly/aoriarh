@@ -9,6 +9,7 @@ import {
   Eye,
   Loader2,
   MessageCircle,
+  RefreshCw,
   Search,
   Trash2,
   TriangleAlert,
@@ -22,6 +23,7 @@ import {
   viewFicheById,
   type Fiche,
 } from "@/lib/fiches-api";
+import { downloadFiche } from "@/lib/chat-api";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -56,9 +58,10 @@ import {
 } from "@/components/ui/table";
 
 // Au-delà de ce seuil, on signale que la fiche peut être périmée (le droit
-// social bouge) et invite à la régénérer.
+// social bouge) et invite à la régénérer. En deçà, on dit seulement qu'elle
+// est récente : l'outil ne peut pas garantir qu'elle est « à jour ».
 const STALE_AFTER_DAYS = 90;
-type FreshnessFilter = "all" | "current" | "stale";
+type FreshnessFilter = "all" | "recent" | "stale";
 
 function formatDate(value: string): string {
   return new Date(value).toLocaleDateString("fr-FR", {
@@ -93,7 +96,8 @@ export default function FichesPage() {
 
   const [fiches, setFiches] = useState<Fiche[]>([]);
   const [loading, setLoading] = useState(true);
-  const [busyId, setBusyId] = useState<string | null>(null);
+  // Actions en cours par fiche : les autres fiches restent utilisables.
+  const [busy, setBusy] = useState<Record<string, "view" | "download" | "regenerate">>({});
   const [toDelete, setToDelete] = useState<Fiche | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [search, setSearch] = useState("");
@@ -116,9 +120,10 @@ export default function FichesPage() {
     });
   }, [fiches, freshnessFilter, search]);
 
-  const fetchFiches = useCallback(async () => {
+  const fetchFiches = useCallback(async (silent = false) => {
     if (!currentOrg || !token) return;
-    setLoading(true);
+    // Rechargement discret après une régénération : pas de squelette.
+    if (!silent) setLoading(true);
     try {
       const data = await listFiches(currentOrg.id, token);
       setFiches(data);
@@ -133,36 +138,42 @@ export default function FichesPage() {
     fetchFiches();
   }, [fetchFiches]);
 
-  const handleView = useCallback(
-    async (fiche: Fiche) => {
-      if (!token || busyId) return;
-      setBusyId(fiche.id);
+  const runAction = useCallback(
+    async (
+      fiche: Fiche,
+      action: "view" | "download" | "regenerate",
+      fallbackError: string
+    ) => {
+      if (!token || busy[fiche.id]) return;
+      setBusy((prev) => ({ ...prev, [fiche.id]: action }));
       try {
-        await viewFicheById(fiche.id, token);
+        if (action === "view") {
+          await viewFicheById(fiche.id, token);
+        } else if (action === "download") {
+          await downloadFicheById(fiche.id, token);
+        } else if (fiche.message_id) {
+          const result = await downloadFiche(fiche.message_id, token);
+          if (result.truncated) {
+            toast.warning("La fiche est peut-être incomplète", {
+              description:
+                "La mise en forme s'est interrompue avant la fin. Vérifiez-la ou régénérez-la.",
+            });
+          } else {
+            toast.success("Fiche régénérée avec les règles actuelles.");
+          }
+          await fetchFiches(true);
+        }
       } catch (err) {
-        toast.error(err instanceof Error ? err.message : "L'aperçu a échoué.");
+        toast.error(err instanceof Error ? err.message : fallbackError);
       } finally {
-        setBusyId(null);
+        setBusy((prev) => {
+          const next = { ...prev };
+          delete next[fiche.id];
+          return next;
+        });
       }
     },
-    [token, busyId]
-  );
-
-  const handleDownload = useCallback(
-    async (fiche: Fiche) => {
-      if (!token || busyId) return;
-      setBusyId(fiche.id);
-      try {
-        await downloadFicheById(fiche.id, token);
-      } catch (err) {
-        toast.error(
-          err instanceof Error ? err.message : "Le téléchargement a échoué."
-        );
-      } finally {
-        setBusyId(null);
-      }
-    },
-    [token, busyId]
+    [token, busy, fetchFiches]
   );
 
   const handleDelete = useCallback(async () => {
@@ -247,7 +258,7 @@ export default function FichesPage() {
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="all">Toutes les fiches</SelectItem>
-                      <SelectItem value="current">À jour</SelectItem>
+                      <SelectItem value="recent">Récentes</SelectItem>
                       <SelectItem value="stale">À vérifier</SelectItem>
                     </SelectContent>
                   </Select>
@@ -260,7 +271,7 @@ export default function FichesPage() {
                         <TableHead>Titre</TableHead>
                         <TableHead className="w-[220px]">Mise à jour</TableHead>
                         <TableHead className="w-[170px]">Statut</TableHead>
-                        <TableHead className="w-[132px] text-right">
+                        <TableHead className="w-[164px] text-right">
                           Actions
                         </TableHead>
                       </TableRow>
@@ -279,7 +290,10 @@ export default function FichesPage() {
                         filteredFiches.map((fiche) => {
                           const months = monthsSince(fiche.updated_at);
                           const stale = isStale(fiche.updated_at);
-                          const busy = busyId === fiche.id;
+                          const action = busy[fiche.id];
+                          const canRegenerate =
+                            fiche.conversation_id !== null &&
+                            fiche.message_id !== null;
 
                           return (
                             <TableRow key={fiche.id}>
@@ -291,8 +305,10 @@ export default function FichesPage() {
                                   <button
                                     type="button"
                                     className="hover:text-primary focus-visible:ring-ring/50 cursor-pointer text-left font-medium underline-offset-4 outline-none hover:underline focus-visible:rounded-sm focus-visible:ring-[3px]"
-                                    onClick={() => handleView(fiche)}
-                                    disabled={busy}
+                                    onClick={() =>
+                                      runAction(fiche, "view", "L'aperçu a échoué.")
+                                    }
+                                    disabled={!!action}
                                   >
                                     {fiche.title}
                                   </button>
@@ -313,9 +329,9 @@ export default function FichesPage() {
                                 ) : (
                                   <Badge
                                     variant="outline"
-                                    className="border-emerald-500/40 text-emerald-700 dark:text-emerald-400"
+                                    className="text-muted-foreground"
                                   >
-                                    À jour
+                                    Récente
                                   </Badge>
                                 )}
                               </TableCell>
@@ -361,11 +377,13 @@ export default function FichesPage() {
                                         variant="ghost"
                                         size="icon-sm"
                                         className="text-muted-foreground hover:text-primary"
-                                        onClick={() => handleView(fiche)}
-                                        disabled={busy}
+                                        onClick={() =>
+                                          runAction(fiche, "view", "L'aperçu a échoué.")
+                                        }
+                                        disabled={!!action}
                                         aria-label="Voir la fiche"
                                       >
-                                        {busy ? (
+                                        {action === "view" ? (
                                           <Loader2 className="size-4 animate-spin" />
                                         ) : (
                                           <Eye className="size-4" />
@@ -380,14 +398,56 @@ export default function FichesPage() {
                                         variant="ghost"
                                         size="icon-sm"
                                         className="text-muted-foreground hover:text-primary"
-                                        onClick={() => handleDownload(fiche)}
-                                        disabled={busy}
+                                        onClick={() =>
+                                          runAction(
+                                            fiche,
+                                            "download",
+                                            "Le téléchargement a échoué."
+                                          )
+                                        }
+                                        disabled={!!action}
                                         aria-label="Télécharger la fiche"
                                       >
-                                        <Download className="size-4" />
+                                        {action === "download" ? (
+                                          <Loader2 className="size-4 animate-spin" />
+                                        ) : (
+                                          <Download className="size-4" />
+                                        )}
                                       </Button>
                                     </TooltipTrigger>
                                     <TooltipContent>Télécharger</TooltipContent>
+                                  </Tooltip>
+                                  <Tooltip>
+                                    <TooltipTrigger asChild>
+                                      {/* span : un bouton désactivé ne déclenche pas l'infobulle */}
+                                      <span>
+                                        <Button
+                                          variant="ghost"
+                                          size="icon-sm"
+                                          className="text-muted-foreground hover:text-primary"
+                                          onClick={() =>
+                                            runAction(
+                                              fiche,
+                                              "regenerate",
+                                              "La régénération a échoué."
+                                            )
+                                          }
+                                          disabled={!!action || !canRegenerate}
+                                          aria-label="Régénérer la fiche"
+                                        >
+                                          <RefreshCw
+                                            className={`size-4${action === "regenerate" ? " animate-spin" : ""}`}
+                                          />
+                                        </Button>
+                                      </span>
+                                    </TooltipTrigger>
+                                    <TooltipContent>
+                                      {action === "regenerate"
+                                        ? "Mise en forme… (jusqu'à une minute)"
+                                        : canRegenerate
+                                          ? "Régénérer à partir de la réponse d'origine"
+                                          : "Conversation d'origine supprimée : régénération impossible"}
+                                    </TooltipContent>
                                   </Tooltip>
                                   <Tooltip>
                                     <TooltipTrigger asChild>
@@ -431,8 +491,10 @@ export default function FichesPage() {
           <DialogHeader>
             <DialogTitle>Supprimer cette fiche ?</DialogTitle>
             <DialogDescription>
-              « {toDelete?.title} » sera définitivement supprimée. Vous pourrez
-              la régénérer depuis la réponse d&apos;origine dans le chat.
+              « {toDelete?.title} » sera définitivement supprimée.{" "}
+              {toDelete?.conversation_id
+                ? "Vous pourrez la recréer depuis la réponse d'origine dans le chat."
+                : "Sa conversation d'origine ayant été supprimée, vous ne pourrez pas la recréer."}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>

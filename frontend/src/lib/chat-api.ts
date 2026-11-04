@@ -140,15 +140,21 @@ export async function getSourceFullContent(
   );
 }
 
+export interface GeneratedFiche {
+  ficheId: string | null;
+  /** La génération s'est interrompue : la fiche peut être incomplète. */
+  truncated: boolean;
+}
+
 /**
- * Génère la fiche pratique PDF d'une réponse et déclenche son téléchargement.
- * Lève une erreur dont le message est affichable à l'utilisateur (notamment le
- * motif de refus quand la réponse ne se prête pas à une fiche — HTTP 422).
+ * Génère (ou régénère) la fiche pratique PDF d'une réponse, l'enregistre dans
+ * « Fiches pratiques » et déclenche son téléchargement. Lève une erreur dont le
+ * message est affichable à l'utilisateur.
  */
 export async function downloadFiche(
   messageId: string,
   token: string
-): Promise<void> {
+): Promise<GeneratedFiche> {
   const response = await authFetch(
     `/conversations/messages/${messageId}/fiche`,
     {
@@ -183,7 +189,13 @@ export async function downloadFiche(
   document.body.appendChild(link);
   link.click();
   link.remove();
-  window.URL.revokeObjectURL(url);
+  // Différé : certains navigateurs lisent le blob après le clic.
+  setTimeout(() => window.URL.revokeObjectURL(url), 10_000);
+
+  return {
+    ficheId: response.headers.get("X-Fiche-Id"),
+    truncated: response.headers.get("X-Fiche-Truncated") === "1",
+  };
 }
 
 export interface LinkedInPostResult {

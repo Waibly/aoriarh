@@ -46,6 +46,8 @@ class MessageRead(BaseModel):
     feedback: str | None
     feedback_comment: str | None
     created_at: datetime
+    # Fiche pratique déjà créée par l'utilisateur courant pour cette réponse.
+    fiche_id: uuid.UUID | None = None
     # Nécessaire au calcul mais jamais exposée telle quelle au client.
     rag_trace: dict | None = Field(default=None, exclude=True)
 

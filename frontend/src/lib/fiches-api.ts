@@ -89,5 +89,6 @@ export async function downloadFicheById(
   document.body.appendChild(link);
   link.click();
   link.remove();
-  window.URL.revokeObjectURL(url);
+  // Différé : certains navigateurs lisent le blob après le clic.
+  setTimeout(() => window.URL.revokeObjectURL(url), 10_000);
 }

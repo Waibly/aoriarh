@@ -211,8 +211,8 @@ async def test_generation_uses_terra_with_medium_reasoning():
             answer_markdown="Le certificat de travail doit être remis.",
         )
 
-    assert generation.content is not None
-    assert generation.content.body_html == raw
+    assert generation.body_html == raw
+    assert generation.truncated is False
     assert FICHE_MODEL == "gpt-5.6-terra"
     assert FICHE_REASONING_EFFORT == "medium"
     request = create.await_args.kwargs
@@ -389,13 +389,85 @@ def test_render_html_highlights_direct_answer_in_violet():
     assert ".essential strong, .essentiel strong { color:#652BB0; font-weight:800; }" in final_html
 
 
-def test_render_html_shows_warning_next_to_unmodified_generation():
+def test_render_html_keeps_format_warnings_out_of_client_pdf():
     raw = '<article class="fiche-content"><h1>Titre</h1><img src="x"></article>'
     content = parse_fiche_content(raw)
+    assert "balise <img> non prévue" in content.warnings
     final_html = render_fiche_html(content, [], generated_at=GEN_AT)
     assert raw in final_html
-    assert "Avertissement de mise en page" in final_html
-    assert "balise &lt;img&gt; non prévue" in final_html
+    assert "non prévue" not in final_html
+    assert "Fiche peut-être incomplète" not in final_html
+
+
+def test_render_html_flags_truncated_generation_without_rewriting_it():
+    raw = '<article class="fiche-content"><h1>Titre</h1><p>Début coupé'
+    content = parse_fiche_content(raw)
+    content.truncated = True
+    final_html = render_fiche_html(content, [], generated_at=GEN_AT)
+    assert raw in final_html
+    assert "Fiche peut-être incomplète" in final_html
+
+
+def test_render_html_dates_the_fiche_in_paris_time():
+    from datetime import UTC
+
+    late_utc = datetime(2026, 6, 15, 23, 30, tzinfo=UTC)  # 01:30 le 16 à Paris
+    final_html = render_fiche_html(_content(), [], generated_at=late_utc)
+    assert "Contenu généré le 16/06/2026" in final_html
+
+
+@pytest.mark.asyncio
+async def test_generation_keeps_truncated_output_and_flags_it():
+    raw = '<article class="fiche-content"><h1>Titre</h1><p>Coupé'
+    response = SimpleNamespace(
+        choices=[SimpleNamespace(message=SimpleNamespace(content=raw), finish_reason="length")],
+        usage=None,
+    )
+    with patch(
+        "app.services.fiche_service._llm.chat.completions.create",
+        new=AsyncMock(return_value=response),
+    ):
+        content = await generate_fiche_content(question="q", answer_markdown="r")
+    assert content.body_html == raw
+    assert content.truncated is True
+
+
+@pytest.mark.asyncio
+async def test_generation_reports_empty_output_as_technical_error():
+    from app.services.fiche_service import FicheGenerationError
+
+    response = SimpleNamespace(
+        choices=[SimpleNamespace(message=SimpleNamespace(content=""), finish_reason="length")],
+        usage=None,
+    )
+    with (
+        patch(
+            "app.services.fiche_service._llm.chat.completions.create",
+            new=AsyncMock(return_value=response),
+        ),
+        pytest.raises(FicheGenerationError),
+    ):
+        await generate_fiche_content(question="q", answer_markdown="r")
+
+
+@pytest.mark.asyncio
+async def test_generation_sends_previous_questions_as_context():
+    raw = '<article class="fiche-content"><h1>Titre</h1></article>'
+    response = SimpleNamespace(
+        choices=[SimpleNamespace(message=SimpleNamespace(content=raw))], usage=None
+    )
+    with patch(
+        "app.services.fiche_service._llm.chat.completions.create",
+        new=AsyncMock(return_value=response),
+    ) as create:
+        await generate_fiche_content(
+            question="Et pour un CDD ?",
+            answer_markdown="r",
+            previous_questions=["Quel préavis pour une démission en CDI ?"],
+        )
+    user_message = create.await_args.kwargs["messages"][1]["content"]
+    assert "Quel préavis pour une démission en CDI ?" in user_message
+    assert "question de suivi" in FICHE_SYSTEM_PROMPT
 
 
 def test_filename_preserves_accented_words_as_ascii():

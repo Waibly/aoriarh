@@ -51,8 +51,8 @@ def test_external_resource_is_ignored_without_hiding_generation():
     text = "\n".join(page.get_text() for page in document)
 
     assert "Le texte doit rester visible." in text
-    assert "Avertissement de mise en page" in text
-    assert "balise <img> non prévue" in text
+    # Les contrôles de format sont journalisés, pas imprimés pour le client.
+    assert "non prévue" not in text
 
 
 def test_legal_reference_and_its_topic_stay_on_the_same_page():

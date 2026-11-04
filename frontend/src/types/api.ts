@@ -138,6 +138,8 @@ export interface Message {
   feedback: string | null;
   feedback_comment: string | null;
   fiche_eligible?: boolean;
+  /** Fiche pratique déjà créée par l'utilisateur pour cette réponse. */
+  fiche_id?: string | null;
   search_details?: SearchDetails;
   created_at: string;
 }

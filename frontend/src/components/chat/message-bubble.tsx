@@ -8,6 +8,7 @@ import {
   type ComponentProps,
 } from "react";
 import { useSession } from "next-auth/react";
+import { useRouter } from "next/navigation";
 import { toast } from "@/lib/toast";
 import ReactMarkdown from "react-markdown";
 import rehypeSanitize from "rehype-sanitize";
@@ -27,6 +28,8 @@ import {
   ClipboardList,
   Images,
   Loader2,
+  Download,
+  RefreshCw,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -47,6 +50,7 @@ import { SocialMediaDialog } from "./social-media-dialog";
 import { XPostDialog } from "./x-post-dialog";
 import { ChatMarkdownTable } from "./chat-markdown-table";
 import { downloadFiche } from "@/lib/chat-api";
+import { downloadFicheById } from "@/lib/fiches-api";
 import { cn } from "@/lib/utils";
 import type { Message } from "@/types/api";
 
@@ -100,7 +104,13 @@ export function MessageBubble({ message, onFeedback }: MessageBubbleProps) {
   const [copied, setCopied] = useState(false);
   const [showCommentInput, setShowCommentInput] = useState(false);
   const [comment, setComment] = useState("");
-  const [ficheLoading, setFicheLoading] = useState(false);
+  const router = useRouter();
+  const [ficheLoading, setFicheLoading] = useState<
+    null | "generate" | "download"
+  >(null);
+  const [ficheId, setFicheId] = useState<string | null>(
+    message.fiche_id ?? null
+  );
   const [linkedinOpen, setLinkedinOpen] = useState(false);
   const [xPostOpen, setXPostOpen] = useState(false);
   const [socialMediaOpen, setSocialMediaOpen] = useState(false);
@@ -161,19 +171,58 @@ export function MessageBubble({ message, onFeedback }: MessageBubbleProps) {
   const handleFiche = useCallback(async () => {
     const token = session?.access_token;
     if (!token || ficheLoading) return;
-    setFicheLoading(true);
+    setFicheLoading("generate");
+    // La mise en forme prend souvent 20 à 60 s : on prévient tôt, et on dit
+    // où retrouver la fiche si l'utilisateur quitte la conversation.
+    const patience = setTimeout(() => {
+      toast("Mise en forme en cours…", {
+        id: `fiche-${message.id}`,
+        description:
+          "Cela peut prendre jusqu'à une minute. Vous la retrouverez aussi dans Fiches pratiques.",
+      });
+    }, 15_000);
     try {
-      await downloadFiche(message.id, token);
+      const result = await downloadFiche(message.id, token);
+      toast.dismiss(`fiche-${message.id}`);
+      if (result.ficheId) setFicheId(result.ficheId);
+      if (result.truncated) {
+        toast.warning("La fiche est peut-être incomplète", {
+          description:
+            "La mise en forme s'est interrompue avant la fin. Vérifiez-la ou régénérez-la.",
+        });
+      } else {
+        toast.success("Fiche enregistrée", {
+          description: "Retrouvez-la à tout moment dans Fiches pratiques.",
+          action: { label: "Voir", onClick: () => router.push("/fiches") },
+        });
+      }
     } catch (err) {
+      toast.dismiss(`fiche-${message.id}`);
       toast.error(
         err instanceof Error
           ? err.message
           : "La génération de la fiche a échoué."
       );
     } finally {
-      setFicheLoading(false);
+      clearTimeout(patience);
+      setFicheLoading(null);
     }
-  }, [message.id, session?.access_token, ficheLoading]);
+  }, [message.id, session?.access_token, ficheLoading, router]);
+
+  const handleFicheDownload = useCallback(async () => {
+    const token = session?.access_token;
+    if (!token || !ficheId || ficheLoading) return;
+    setFicheLoading("download");
+    try {
+      await downloadFicheById(ficheId, token);
+    } catch (err) {
+      toast.error(
+        err instanceof Error ? err.message : "Le téléchargement a échoué."
+      );
+    } finally {
+      setFicheLoading(null);
+    }
+  }, [ficheId, session?.access_token, ficheLoading]);
 
   const isTemp =
     message.id.startsWith("temp-") || message.id.startsWith("partial-");
@@ -317,12 +366,12 @@ export function MessageBubble({ message, onFeedback }: MessageBubbleProps) {
                 )}
 
                 {/* Une réponse de sécurité ne doit jamais devenir un document. */}
-                {message.fiche_eligible !== false && (
+                {message.fiche_eligible !== false && ficheId === null && (
                   <Button
                     variant="outline"
                     size="sm"
                     onClick={handleFiche}
-                    disabled={ficheLoading}
+                    disabled={ficheLoading !== null}
                     className="border-primary/40 text-primary hover:bg-primary/10 hover:text-primary dark:border-primary/40 dark:bg-card dark:text-primary dark:hover:bg-primary/15 ml-auto gap-1.5 bg-white"
                   >
                     {ficheLoading ? (
@@ -330,8 +379,52 @@ export function MessageBubble({ message, onFeedback }: MessageBubbleProps) {
                     ) : (
                       <ClipboardList className="size-4" />
                     )}
-                    {ficheLoading ? "Génération…" : "Créer une fiche pratique"}
+                    {ficheLoading ? "Mise en forme…" : "Créer une fiche pratique"}
                   </Button>
+                )}
+                {/* Fiche déjà créée : téléchargement immédiat, sans nouvel
+                    appel LLM ; la régénération reste un choix explicite. */}
+                {message.fiche_eligible !== false && ficheId !== null && (
+                  <div className="ml-auto flex items-center gap-1">
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="icon-sm"
+                          className="text-primary/70 hover:text-primary"
+                          onClick={handleFiche}
+                          disabled={ficheLoading !== null}
+                          aria-label="Régénérer la fiche pratique"
+                        >
+                          <RefreshCw
+                            className={cn(
+                              "size-4",
+                              ficheLoading === "generate" && "animate-spin"
+                            )}
+                          />
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        {ficheLoading === "generate"
+                          ? "Mise en forme…"
+                          : "Régénérer la fiche (remplace la précédente)"}
+                      </TooltipContent>
+                    </Tooltip>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handleFicheDownload}
+                      disabled={ficheLoading !== null}
+                      className="border-primary/40 text-primary hover:bg-primary/10 hover:text-primary dark:border-primary/40 dark:bg-card dark:text-primary dark:hover:bg-primary/15 gap-1.5 bg-white"
+                    >
+                      {ficheLoading === "download" ? (
+                        <Loader2 className="size-4 animate-spin" />
+                      ) : (
+                        <Download className="size-4" />
+                      )}
+                      Télécharger la fiche
+                    </Button>
+                  </div>
                 )}
               </div>
 

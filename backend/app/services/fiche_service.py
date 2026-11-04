@@ -7,12 +7,16 @@ s'il apporte quelque chose. L'application maîtrise uniquement le design system,
 l'en-tête, le pied de page et la pagination.
 
 Le fragment généré est stocké et rendu tel quel. Les contrôles de format ne le
-réécrivent jamais ; ils peuvent seulement ajouter un avertissement visible. Les
-anciennes fiches JSON restent prises en charge pendant la transition.
+réécrivent jamais : ils sont journalisés et conservés avec la fiche, sans être
+imprimés dans le PDF du client. Seule une génération interrompue (budget de
+tokens atteint) est signalée dans le PDF, car la fiche peut alors être
+incomplète. Les anciennes fiches JSON restent prises en charge pendant la
+transition.
 """
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import html
 import json
@@ -20,9 +24,10 @@ import logging
 import re
 import unicodedata
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import UTC, datetime
 from html.parser import HTMLParser
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import httpx
 from openai import AsyncOpenAI
@@ -39,12 +44,26 @@ FICHE_REASONING_EFFORT = "medium"
 # 2026-11-04 le raisonnement a consommé tout le budget et la sortie était vide.
 FICHE_MAX_COMPLETION_TOKENS = 12000
 
+# Durée totale maximale de l'appel LLM, relance comprise. Elle reste sous le
+# délai du navigateur (180 s, chat-api.ts) : sinon l'utilisateur voit un échec
+# alors que le serveur termine, facture et enregistre la fiche.
+FICHE_LLM_TOTAL_TIMEOUT_S = 150.0
+
 _llm = AsyncOpenAI(
     api_key=settings.openai_api_key,
     # Une fiche longue peut dépasser une minute de génération.
-    timeout=httpx.Timeout(connect=10.0, read=180.0, write=30.0, pool=30.0),
-    max_retries=2,
+    timeout=httpx.Timeout(connect=10.0, read=FICHE_LLM_TOTAL_TIMEOUT_S, write=30.0, pool=30.0),
+    # Une seule relance technique (erreur réseau / 5xx / 429), bornée par
+    # FICHE_LLM_TOTAL_TIMEOUT_S ; jamais pour corriger le contenu.
+    max_retries=1,
 )
+
+_PARIS = ZoneInfo("Europe/Paris")
+
+
+class FicheGenerationError(Exception):
+    """Erreur technique de génération (vide, délai dépassé, transport)."""
+
 
 # Couleurs de la charte (cf. app/services/email/templates.py).
 _VIOLET = "#652BB0"
@@ -142,6 +161,9 @@ Règles absolues de contenu :
   l'affirmation qu'elle fonde. N'invente jamais de référence.
 - Corrige uniquement l'orthographe, la grammaire et la ponctuation de la question utilisateur.
   Conserve strictement son sens, ses faits, ses chiffres et son niveau de précision.
+- Si la question est une question de suivi qui ne se comprend pas seule (« Et pour un CDD ? »),
+  rédige-la sous forme autonome en reprenant uniquement les éléments nécessaires des questions
+  précédentes fournies. N'y ajoute rien qui n'y figure pas.
 - Rédige un document autonome : en dehors du bloc « Question posée », ne parle jamais de
   « la réponse », « la source » ou « la question ».
 - Utilise des phrases courtes, concrètes et actionnables, sans répétition entre les sections.
@@ -224,21 +246,14 @@ class FicheContent:
     titre: str = ""
     body_html: str = ""
     warnings: list[str] = field(default_factory=list)
+    # Génération interrompue par le budget de tokens : contenu peut-être incomplet.
+    truncated: bool = False
     # Champs historiques : nécessaires pour relire les fiches déjà persistées.
     essentiel: str = ""
     points_cles: list[str] = field(default_factory=list)
     tableaux_markdown: list[str] = field(default_factory=list)
     exceptions: list[str] = field(default_factory=list)
     etapes: list[str] = field(default_factory=list)
-
-
-@dataclass
-class FicheGeneration:
-    """Résultat de l'appel LLM : fragment HTML brut ou erreur technique."""
-
-    eligible: bool
-    content: FicheContent | None
-    reason: str | None = None
 
 
 # --- Lecture et contrôle non bloquant du fragment ------------------------
@@ -333,7 +348,7 @@ def inspect_fiche_fragment(raw: str) -> tuple[str, list[str]]:
 def parse_fiche_content(raw: str) -> FicheContent:
     """Conserve le HTML brut ; accepte aussi l'ancien JSON pour compatibilité."""
     if not raw.strip():
-        raise ValueError("La génération de la fiche est vide")
+        raise FicheGenerationError("La génération de la fiche est vide")
 
     if not raw.lstrip().startswith("{"):
         title, warnings = inspect_fiche_fragment(raw)
@@ -511,8 +526,7 @@ def _format_source(src: dict) -> str:
         return html.escape(", ".join(parts))
 
     if articles:
-        article_label = "art." if len(articles) == 1 else "art."
-        citation = f"{article_label} {', '.join(articles)}"
+        citation = f"art. {', '.join(articles)}"
         return html.escape(f"{label}, {citation}" if label else citation)
 
     # Pour une CCN, un accord ou un document interne sans article stable, le
@@ -603,15 +617,11 @@ def _render_legacy_body(content: FicheContent, sources: list[dict]) -> str:
     return '<article class="fiche-content legacy-content">' + "\n".join(blocks) + "</article>"
 
 
-def _format_generation_warnings(warnings: list[str]) -> str:
-    """Affiche les contrôles sans toucher au fragment généré."""
-    if not warnings:
-        return ""
-    items = "".join(f"<li>{html.escape(warning)}</li>" for warning in warnings)
-    return (
-        '<aside class="generation-warning"><strong>Avertissement de mise en page</strong>'
-        f"<ul>{items}</ul></aside>"
-    )
+_TRUNCATED_NOTICE = (
+    '<aside class="generation-warning"><strong>Fiche peut-être incomplète</strong>'
+    "<p>La mise en forme s'est interrompue avant la fin. Reportez-vous à la réponse "
+    "complète dans AORIA RH, ou régénérez la fiche.</p></aside>"
+)
 
 
 def render_fiche_html(
@@ -622,14 +632,15 @@ def render_fiche_html(
     org_name: str | None = None,
 ) -> str:
     """Entoure le corps LLM brut du gabarit AORIA RH et du design system."""
+    if generated_at.tzinfo is None:
+        generated_at = generated_at.replace(tzinfo=UTC)
+    generated_at = generated_at.astimezone(_PARIS)
     date_str = generated_at.strftime("%d/%m/%Y")
 
     if content.body_html:
-        _title, current_warnings = inspect_fiche_fragment(content.body_html)
-        warnings = list(dict.fromkeys([*content.warnings, *current_warnings]))
-        # Le fragment est injecté strictement tel qu'il a été produit. Seul un
-        # avertissement séparé peut être ajouté, conformément aux règles projet.
-        body = content.body_html + _format_generation_warnings(warnings)
+        # Le fragment est injecté strictement tel qu'il a été produit. Seule une
+        # interruption technique est signalée à part, conformément aux règles projet.
+        body = content.body_html + (_TRUNCATED_NOTICE if content.truncated else "")
     else:
         body = _render_legacy_body(content, sources)
 
@@ -692,7 +703,7 @@ def render_fiche_html(
   .fiche-content .essential strong, .essentiel strong {{ color:{_VIOLET}; font-weight:800; }}
   .fiche-content .essential > :last-child {{ margin-bottom:0; }}
   .fiche-content .key-points {{ background:#fafafa; border-radius:8px;
-                               padding:12px 16px 6px; break-inside:avoid; }}
+                               padding:12px 16px 6px; }}
   .section-icon {{ width:14px; height:14px; flex-shrink:0; }}
   .fiche-content ul, .fiche-content ol {{ margin:0 0 16px; padding-left:20px; }}
   .fiche-content li {{ margin-bottom:6px; break-inside:avoid; }}
@@ -706,7 +717,9 @@ def render_fiche_html(
        position:absolute; left:10px; top:8px; width:20px; height:20px; border-radius:50%;
        background:{_VIOLET}; color:#fff; text-align:center; line-height:20px;
        font-weight:700; font-size:11px; }}
-  .table-wrapper {{ overflow:hidden; margin:8px 0 16px; break-inside:avoid; }}
+  /* Pas de break-inside:avoid : un long tableau laissait la page 1 presque vide.
+     Les lignes restent entières et l'en-tête se répète à chaque page. */
+  .table-wrapper {{ margin:8px 0 16px; }}
   table {{ width:100%; border-collapse:collapse; font-size:12.5px; }}
   thead {{ display:table-header-group; }}
   tr {{ break-inside:avoid; }}
@@ -739,8 +752,9 @@ def render_fiche_html(
   .exceptions li:last-child {{ margin-bottom:0; }}
   .sources {{ font-size:12px; color:#5f6b6a; }}
   .generation-warning {{ border:1px solid #fecdd3; background:#fff1f2; border-radius:6px;
-                         padding:8px 12px; margin:16px 0; font-size:10px; color:#881337; }}
-  .generation-warning ul {{ margin:4px 0 0; }}
+                         padding:8px 12px; margin:16px 0; font-size:11px; color:#881337;
+                         break-inside:avoid; }}
+  .generation-warning p {{ margin:4px 0 0; }}
   .footer {{ position:fixed; left:32px; right:32px; bottom:-17mm;
             border-top:1px solid #ede9fe; padding:7px 0 0; font-size:9.5px;
             padding-right:80px; line-height:1.35; color:#5f6b6a; }}
@@ -792,29 +806,46 @@ async def generate_fiche_content(
     *,
     question: str,
     answer_markdown: str,
+    previous_questions: list[str] | None = None,
     sources: list[dict] | None = None,
     organisation_id: str | None = None,
     user_id: str | None = None,
-) -> FicheGeneration:
-    """Appelle le LLM et conserve son fragment HTML exactement tel quel."""
+) -> FicheContent:
+    """Appelle le LLM et conserve son fragment HTML exactement tel quel.
+
+    Lève FicheGenerationError pour une erreur technique (délai, sortie vide).
+    Une sortie non vide mais interrompue est conservée et marquée `truncated`.
+    """
     references_context = _format_reference_context(sources or [])
 
+    context = ""
+    if previous_questions:
+        listed = "\n".join(f"- {q}" for q in previous_questions)
+        context = f"Questions précédentes de la conversation (contexte uniquement) :\n{listed}\n\n"
+
     user_content = (
+        f"{context}"
         f"Question posée : {question}\n\n"
         f"Réponse à mettre en forme :\n{answer_markdown}\n\n"
         "Références structurées autorisées, déjà citées dans la réponse :\n"
         f"{references_context}"
     )
 
-    response = await _llm.chat.completions.create(
-        model=FICHE_MODEL,
-        messages=[
-            {"role": "system", "content": FICHE_SYSTEM_PROMPT},
-            {"role": "user", "content": user_content},
-        ],
-        max_completion_tokens=FICHE_MAX_COMPLETION_TOKENS,
-        reasoning_effort=FICHE_REASONING_EFFORT,
-    )
+    try:
+        response = await asyncio.wait_for(
+            _llm.chat.completions.create(
+                model=FICHE_MODEL,
+                messages=[
+                    {"role": "system", "content": FICHE_SYSTEM_PROMPT},
+                    {"role": "user", "content": user_content},
+                ],
+                max_completion_tokens=FICHE_MAX_COMPLETION_TOKENS,
+                reasoning_effort=FICHE_REASONING_EFFORT,
+            ),
+            timeout=FICHE_LLM_TOTAL_TIMEOUT_S,
+        )
+    except TimeoutError as exc:
+        raise FicheGenerationError("Délai de génération dépassé") from exc
 
     if response.usage:
         cost_tracker.log_bg(
@@ -831,7 +862,8 @@ async def generate_fiche_content(
 
     choice = response.choices[0]
     raw = choice.message.content or ""
-    if getattr(choice, "finish_reason", None) == "length":
+    truncated = getattr(choice, "finish_reason", None) == "length"
+    if truncated:
         logger.warning(
             "fiche_token_budget_reached max_completion_tokens=%d completion_tokens=%s empty=%s",
             FICHE_MAX_COMPLETION_TOKENS,
@@ -839,7 +871,11 @@ async def generate_fiche_content(
             not raw.strip(),
         )
     content = parse_fiche_content(raw)
-    return FicheGeneration(eligible=True, content=content)
+    content.truncated = truncated
+    if content.warnings:
+        # Contrôles de format : utiles au diagnostic, pas au lecteur de la fiche.
+        logger.info("fiche_format_warnings user=%s warnings=%s", user_id, content.warnings)
+    return content
 
 
 def render_fiche_pdf(

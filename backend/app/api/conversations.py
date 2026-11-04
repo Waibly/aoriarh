@@ -303,11 +303,25 @@ async def get_conversation(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> ConversationReadWithMessages:
+    from app.models.fiche import Fiche
+
     service = ConversationService(db)
     conversation = await service.get_conversation(
         conversation_id=conversation_id,
         user=user,
     )
+    # Indique sous chaque réponse si l'utilisateur en a déjà tiré une fiche :
+    # le bouton propose alors de la télécharger sans nouvel appel LLM.
+    message_ids = [m.id for m in conversation.messages if m.role == "assistant"]
+    if message_ids:
+        fiche_rows = await db.execute(
+            select(Fiche.message_id, Fiche.id).where(
+                Fiche.user_id == user.id, Fiche.message_id.in_(message_ids)
+            )
+        )
+        fiche_by_message = dict(fiche_rows.all())
+        for m in conversation.messages:
+            m.fiche_id = fiche_by_message.get(m.id)
     return conversation  # type: ignore[return-value]
 
 
@@ -500,15 +514,17 @@ async def generate_fiche(
     """Transforme une réponse de l'assistant en fiche pratique PDF imprimable.
 
     Met en forme la réponse déjà générée (pas de nouvelle génération RAG) via
-    un appel LLM dédié, persiste la fiche (page « Mes fiches »), puis rend un PDF
-    à la charte AORIA RH. Renvoie 422 si la réponse ne se prête pas à une fiche
-    générale (cas particulier).
+    un appel LLM dédié, persiste la fiche (page « Fiches pratiques », une seule
+    par message et par utilisateur), puis rend un PDF à la charte AORIA RH.
+    Les en-têtes X-Fiche-Id et X-Fiche-Truncated renseignent le front.
     """
-    import dataclasses as _dc
-    from datetime import datetime
+    from datetime import UTC, datetime
+
+    from sqlalchemy.exc import IntegrityError
 
     from app.models.fiche import Fiche
     from app.services.fiche_service import (
+        FicheGenerationError,
         fiche_filename,
         generate_fiche_content,
         render_fiche_pdf,
@@ -546,13 +562,16 @@ async def generate_fiche(
             detail="Cette réponse de sécurité ne peut pas être transformée en fiche pratique.",
         )
 
-    # Retrouve la question (dernier message utilisateur avant cette réponse).
-    question = ""
-    for m in conversation.messages:
-        if m.created_at >= message.created_at:
-            break
-        if m.role == "user":
-            question = m.content
+    # Retrouve la question (dernier message utilisateur avant cette réponse) et
+    # les questions précédentes, pour qu'une question de suivi (« Et pour un
+    # CDD ? ») reste compréhensible dans la fiche.
+    user_questions = [
+        m.content
+        for m in conversation.messages
+        if m.role == "user" and m.created_at < message.created_at
+    ]
+    question = user_questions[-1] if user_questions else ""
+    previous_questions = user_questions[-4:-1]
 
     org = (
         await db.execute(
@@ -560,16 +579,29 @@ async def generate_fiche(
         )
     ).scalar_one_or_none()
 
+    answer_markdown = message.content
     sources = message.sources if isinstance(message.sources, list) else []
-    available_references = select_fiche_references(message.content, sources)
+    organisation_id = conversation.organisation_id
+    available_references = select_fiche_references(answer_markdown, sources)
+
+    # Libère la connexion avant l'appel LLM (jusqu'à 150 s) : on ne garde pas une
+    # connexion du pool bloquée pendant la génération.
+    await db.commit()
 
     try:
-        gen = await generate_fiche_content(
+        content = await generate_fiche_content(
             question=question,
-            answer_markdown=message.content,
+            answer_markdown=answer_markdown,
+            previous_questions=previous_questions,
             sources=available_references,
-            organisation_id=str(conversation.organisation_id),
+            organisation_id=str(organisation_id),
             user_id=str(user.id),
+        )
+    except FicheGenerationError as exc:
+        logger.warning("Génération de fiche impossible pour le message %s : %s", message_id, exc)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="La génération de la fiche n'a pas abouti. Veuillez réessayer.",
         )
     except Exception:
         logger.exception("Échec de génération de fiche pour le message %s", message_id)
@@ -578,49 +610,50 @@ async def generate_fiche(
             detail="La génération de la fiche a échoué. Veuillez réessayer.",
         )
 
-    if not gen.eligible or gen.content is None:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=gen.reason or "Cette réponse ne se prête pas à une fiche pratique.",
-        )
+    # Les métadonnées de référence suivent le corps final, pas la réponse
+    # conversationnelle plus longue dont il est issu.
+    references = select_fiche_references(content.body_html, sources)
+    content_dict = dataclasses.asdict(content)
 
-    # Les métadonnées de référence suivent désormais le corps final, pas la
-    # réponse conversationnelle plus longue dont il est issu.
-    references = select_fiche_references(gen.content.body_html, sources)
-
-    # Persiste (ou met à jour) la fiche : une seule par message source, pour
-    # éviter les doublons quand l'utilisateur reclique sur le bouton.
-    content_dict = _dc.asdict(gen.content)
-    existing = (
-        await db.execute(
-            select(Fiche).where(
-                Fiche.user_id == user.id,
-                Fiche.message_id == message.id,
+    async def _upsert() -> Fiche:
+        existing = (
+            await db.execute(
+                select(Fiche).where(Fiche.user_id == user.id, Fiche.message_id == message_id)
             )
+        ).scalar_one_or_none()
+        if existing is not None:
+            existing.title = content.titre[:200]
+            existing.content = content_dict
+            existing.sources = references
+            await db.commit()
+            return existing
+        fiche = Fiche(
+            organisation_id=organisation_id,
+            user_id=user.id,
+            message_id=message_id,
+            title=content.titre[:200],
+            content=content_dict,
+            sources=references,
         )
-    ).scalar_one_or_none()
-    if existing is not None:
-        existing.title = gen.content.titre[:200]
-        existing.content = content_dict
-        existing.sources = references
-    else:
-        db.add(
-            Fiche(
-                organisation_id=conversation.organisation_id,
-                user_id=user.id,
-                message_id=message.id,
-                title=gen.content.titre[:200],
-                content=content_dict,
-                sources=references,
-            )
-        )
-    await db.commit()
+        db.add(fiche)
+        await db.commit()
+        return fiche
 
-    generated_at = datetime.now()
-    pdf_bytes = render_fiche_pdf(
-        gen.content,
+    # Une seule fiche par message et par utilisateur (contrainte unique) : si un
+    # second onglet a inséré entre-temps, on met à jour sa fiche.
+    try:
+        fiche = await _upsert()
+    except IntegrityError:
+        await db.rollback()
+        fiche = await _upsert()
+
+    # WeasyPrint est synchrone et prend plusieurs secondes : hors de la boucle
+    # d'événements pour ne pas geler les autres requêtes.
+    pdf_bytes = await asyncio.to_thread(
+        render_fiche_pdf,
+        content,
         references,
-        generated_at=generated_at,
+        generated_at=datetime.now(UTC),
         org_name=org,
     )
 
@@ -628,7 +661,9 @@ async def generate_fiche(
         content=pdf_bytes,
         media_type="application/pdf",
         headers={
-            "Content-Disposition": f'attachment; filename="{fiche_filename(gen.content)}"',
+            "Content-Disposition": f'attachment; filename="{fiche_filename(content)}"',
+            "X-Fiche-Id": str(fiche.id),
+            "X-Fiche-Truncated": "1" if content.truncated else "0",
         },
     )
 

@@ -1,6 +1,6 @@
 import uuid
 
-from sqlalchemy import ForeignKey, String
+from sqlalchemy import ForeignKey, String, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.types import JSON
@@ -18,6 +18,8 @@ class Fiche(TimestampMixin, Base):
     """
 
     __tablename__ = "fiches"
+    # Une seule fiche par message et par utilisateur (la régénération met à jour).
+    __table_args__ = (UniqueConstraint("user_id", "message_id", name="uq_fiches_user_message"),)
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=generate_uuid)
     organisation_id: Mapped[uuid.UUID] = mapped_column(

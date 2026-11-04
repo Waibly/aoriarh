@@ -1,3 +1,4 @@
+import asyncio
 import uuid
 from datetime import datetime
 
@@ -9,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.dependencies import get_current_user
-from app.models.conversation import Message
+from app.models.conversation import Conversation, Message
 from app.models.fiche import Fiche
 from app.models.organisation import Organisation
 from app.models.user import User
@@ -38,11 +39,19 @@ async def list_fiches(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> list[FicheRead]:
-    """Liste les fiches de l'utilisateur courant dans cette organisation."""
+    """Liste les fiches de l'utilisateur courant dans cette organisation.
+
+    `conversation_id` n'est renseigné que si la conversation est encore visible :
+    une conversation supprimée (masquée) renverrait une 404 au clic.
+    """
     rows = (
         await db.execute(
-            select(Fiche, Message.conversation_id)
+            select(Fiche, Conversation.id)
             .outerjoin(Message, Fiche.message_id == Message.id)
+            .outerjoin(
+                Conversation,
+                (Message.conversation_id == Conversation.id) & Conversation.hidden_at.is_(None),
+            )
             .where(
                 Fiche.organisation_id == organisation_id,
                 Fiche.user_id == user.id,
@@ -96,7 +105,9 @@ async def download_fiche(
         ).scalar_one_or_none()
         if answer_markdown:
             sources = select_fiche_references(answer_markdown, sources)
-    pdf_bytes = render_fiche_pdf(
+    # WeasyPrint est synchrone (plusieurs secondes) : hors de la boucle d'événements.
+    pdf_bytes = await asyncio.to_thread(
+        render_fiche_pdf,
         content,
         sources,
         generated_at=fiche.updated_at or fiche.created_at,
