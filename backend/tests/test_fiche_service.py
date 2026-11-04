@@ -84,9 +84,12 @@ def test_parse_html_keeps_raw_generation_unchanged():
     assert content.warnings == []
 
 
-def test_prompt_forbids_arbitrary_step_limit():
-    assert "10 étapes utiles conserve" in FICHE_SYSTEM_PROMPT
-    assert "aucune limite arbitraire" in FICHE_SYSTEM_PROMPT
+def test_prompt_derives_content_from_the_question_not_the_answer_length():
+    assert "la question posée en décide" in FICHE_SYSTEM_PROMPT
+    assert "Chaque élément demandé figure dans la fiche" in FICHE_SYSTEM_PROMPT
+    assert "Une procédure garde toutes ses étapes utiles" in FICHE_SYSTEM_PROMPT
+    assert "Ne sépare jamais une règle de sa condition" in FICHE_SYSTEM_PROMPT
+    assert "leur complétude prime sur la limite" in FICHE_SYSTEM_PROMPT
 
 
 def test_prompt_requires_highlighted_direct_answer_and_targeted_bold():
@@ -106,7 +109,7 @@ def test_prompt_requires_tables_for_comparable_cases_even_from_prose():
     assert "au moins deux cas comparables" in FICHE_SYSTEM_PROMPT
     assert "même si ces données sont présentées en prose ou en liste" in FICHE_SYSTEM_PROMPT
     assert "Ne laisse jamais un barème" in FICHE_SYSTEM_PROMPT
-    assert "contient déjà un tableau, reproduis-le en HTML" in FICHE_SYSTEM_PROMPT
+    assert "contient déjà un tableau utile à la demande, reproduis-le" in FICHE_SYSTEM_PROMPT
     assert '<table class="data-table"><thead>' in FICHE_SYSTEM_PROMPT
 
 

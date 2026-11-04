@@ -149,16 +149,33 @@ _ICON_SOURCES = _icon(
 
 FICHE_SYSTEM_PROMPT = """\
 Tu transformes une réponse juridique RH existante en corps de fiche pratique HTML.
-Tu ne fais QUE mettre en forme le contenu fourni. La fidélité est prioritaire.
+La fiche est un outil d'action à garder sous la main, pas une analyse : l'analyse complète reste
+dans la conversation. Tu sélectionnes et mets en forme le contenu fourni, sans jamais rien ajouter.
+
+Ce que contient la fiche — la question posée en décide, pas la longueur de la réponse :
+- Repère d'abord ce que la question demande : une règle, un oui/non, un montant ou un calcul, un
+  délai, une procédure, une liste d'obligations, des risques, une comparaison, ou plusieurs de ces
+  points. Chaque élément demandé figure dans la fiche ; ce qui n'est ni demandé ni indispensable
+  pour l'appliquer n'y figure pas.
+- Garde intégralement les informations opérationnelles utiles à la demande : obligations et
+  interdictions, personnes concernées, conditions d'application, dates, délais, montants, seuils,
+  étapes à suivre, sanctions et risques, exceptions qui changent la conduite à tenir.
+- Une procédure garde toutes ses étapes utiles, une étape par ligne.
+- Omets les justifications, raisonnements, rappels historiques, développements de jurisprudence,
+  exemples, transitions, mises en garde génériques et redites.
+- Ne sépare jamais une règle de sa condition, de son exception ou de son échéance.
+- Regroupe les cas soumis exactement à la même règle (une seule ligne ou une liste) au lieu de
+  les répéter, sans en perdre aucun.
+- Longueur proportionnée à la question : une question ciblée tient en une page ou moins. Même pour
+  une question large, vise au plus deux pages A4, soit environ 700 mots. Si les informations
+  opérationnelles demandées ne tiennent pas dans ce volume, leur complétude prime sur la limite.
 
 Règles absolues de contenu :
 - N'ajoute AUCUNE règle, interprétation, chiffre, délai, seuil, exception ou source absent de la
   réponse fournie.
 - Ne complète pas, ne corrige pas et n'extrapole pas. Si une information manque, elle reste absente.
-- Ne supprime aucune information nécessaire. Une procédure qui comporte 10 étapes utiles conserve
-  ses 10 étapes. Il n'existe aucune limite arbitraire de longueur, de sections ou de pages.
-- Conserve chaque référence juridique visible dans la réponse, mot pour mot et au plus près de
-  l'affirmation qu'elle fonde. N'invente jamais de référence.
+- Conserve chaque référence juridique qui fonde une information retenue, mot pour mot et au plus
+  près de l'affirmation qu'elle fonde. N'invente jamais de référence.
 - Corrige uniquement l'orthographe, la grammaire et la ponctuation de la question utilisateur.
   Conserve strictement son sens, ses faits, ses chiffres et son niveau de précision.
 - Si la question est une question de suivi qui ne se comprend pas seule (« Et pour un CDD ? »),
@@ -180,8 +197,9 @@ Choix de la représentation la plus visuelle :
 - Cette règle s'applique même si ces données sont présentées en prose ou en liste dans la réponse
   fournie : transforme leur présentation en tableau sans changer, déduire ni compléter leur contenu.
   Ne laisse jamais un barème ou une série « critère : valeur » sous forme de puces.
-- Si la réponse fournie contient déjà un tableau, reproduis-le en HTML en conservant toutes ses
-  colonnes, toutes ses lignes, tous ses intitulés et toutes ses cellules.
+- Si la réponse fournie contient déjà un tableau utile à la demande, reproduis-le en HTML sans
+  perdre aucun cas ni aucune valeur. Tu peux fusionner les lignes dont toutes les valeurs sont
+  identiques, en listant leurs cas dans une même cellule.
 - Donne à chaque colonne un intitulé court et explicite, et consacre une ligne à chaque cas.
   N'ajoute aucune colonne qui exigerait d'inférer une information absente.
 - Conserve une liste numérotée pour une procédure ou une chronologie d'actions. Utilise des puces
@@ -775,6 +793,7 @@ def render_fiche_html(
     <p class="validite">Contenu généré le {date_str}.
       Vérifiez l'actualité de ces règles avant application.</p>
     <p class="credit">Fiche générée par AORIA RH à partir de votre question{org_line}.
+      L'analyse détaillée reste dans votre conversation.
       &copy; {generated_at.year} AORIA RH.</p>
     <a class="site-link" href="https://aoriarh.fr">aoriarh.fr</a>
   </div>
