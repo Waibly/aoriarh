@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.database import get_db
-from app.core.limiter import limiter
+from app.core.limiter import limiter, per_visitor
 from app.schemas.auth import (
     GoogleAuthRequest,
     LoginRequest,
@@ -31,7 +31,7 @@ async def register(
 
 
 @router.post("/login", response_model=TokenResponse)
-@limiter.limit("5/minute")
+@limiter.limit(per_visitor("5/minute", internal="60/minute"))
 async def login(
     request: Request, data: LoginRequest, db: AsyncSession = Depends(get_db)
 ) -> TokenResponse:
@@ -48,7 +48,7 @@ async def login(
 
 
 @router.post("/google", response_model=TokenResponse)
-@limiter.limit("10/minute")
+@limiter.limit(per_visitor("10/minute", internal="120/minute"))
 async def google_auth(
     request: Request, data: GoogleAuthRequest, db: AsyncSession = Depends(get_db)
 ) -> TokenResponse:
@@ -57,7 +57,7 @@ async def google_auth(
 
 
 @router.post("/refresh", response_model=TokenResponse)
-@limiter.limit("10/minute")
+@limiter.limit(per_visitor("10/minute"))
 async def refresh(
     request: Request, data: RefreshRequest, db: AsyncSession = Depends(get_db)
 ) -> TokenResponse:
@@ -80,6 +80,6 @@ async def refresh(
 
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
-@limiter.limit("20/minute")
+@limiter.limit(per_visitor("20/minute"))
 async def logout(request: Request, data: LogoutRequest, db: AsyncSession = Depends(get_db)) -> None:
     await revoke_auth_session(db, data.refresh_token)

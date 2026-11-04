@@ -44,9 +44,10 @@ declare module "@auth/core/jwt" {
 }
 
 // Plusieurs requêtes Next.js peuvent constater simultanément l'expiration du
-// même access token. Sans déduplication, elles réutiliseraient toutes le même
-// refresh token à usage unique et la protection anti-rejeu révoquerait la
-// session entière. Le cache ne vit que dans le processus et quelques secondes.
+// même access token. Ce cache évite les appels en double au sein d'un même
+// processus. Il ne couvre PAS le middleware, qui tourne dans un runtime séparé :
+// c'est le backend qui tolère une réutilisation du refresh token dans les
+// secondes qui suivent sa rotation (refresh_token_reuse_grace_seconds).
 const refreshInFlight = new Map<string, Promise<Record<string, unknown>>>();
 
 async function refreshAccessToken(token: {
@@ -64,18 +65,24 @@ async function refreshAccessToken(token: {
         body: JSON.stringify({ refresh_token: token.refresh_token }),
       });
 
-      if (!res.ok) throw new Error("Refresh failed");
+      // Seul un refus explicite signifie que la session est finie. Une panne
+      // passagère (5xx, 429, réseau) ne doit pas déconnecter l'utilisateur :
+      // le token est gardé tel quel et le prochain appel réessaiera.
+      if (res.status === 401) return { ...token, error: "RefreshTokenExpired" };
+      if (!res.ok) return { ...token, error: "RefreshUnavailable" };
 
       const data = await res.json();
+      const rest: Record<string, unknown> = { ...token };
+      delete rest.error;
 
       return {
-        ...token,
+        ...rest,
         access_token: data.access_token as string,
         refresh_token: data.refresh_token as string,
         expires_at: Math.floor(Date.now() / 1000) + (data.expires_in as number),
       };
     } catch {
-      return { ...token, error: "RefreshTokenExpired" };
+      return { ...token, error: "RefreshUnavailable" };
     }
   })();
 
@@ -103,15 +110,22 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         email: { label: "Email", type: "email" },
         password: { label: "Mot de passe", type: "password" },
       },
-      async authorize(credentials) {
+      async authorize(credentials, request) {
         if (!credentials?.email || !credentials?.password) {
           return null;
         }
 
         try {
+          // Transmet l'IP du visiteur (posée par Caddy) : sans elle, le backend
+          // ne voit que l'IP du serveur Next et la limite anti-brute-force
+          // devient commune à tous les utilisateurs.
+          const forwardedFor = request?.headers?.get("x-forwarded-for");
           const loginRes = await fetch(`${API_BASE_URL}/auth/login`, {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
+            headers: {
+              "Content-Type": "application/json",
+              ...(forwardedFor ? { "X-Forwarded-For": forwardedFor } : {}),
+            },
             body: JSON.stringify({
               email: credentials.email,
               password: credentials.password,
@@ -246,7 +260,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
   },
   session: {
     strategy: "jwt",
-    maxAge: 7 * 24 * 60 * 60, // 7 days — matches refresh token expiry
+    maxAge: 7 * 24 * 60 * 60, // 7 jours ; le refresh token backend expire avant (3 jours)
   },
   events: {
     async signOut(message) {

@@ -24,7 +24,6 @@ Trois garde-fous anti-abus / anti-coût :
 import asyncio
 import dataclasses
 import hashlib
-import ipaddress
 import logging
 import time
 import uuid
@@ -35,7 +34,8 @@ import httpx
 from fastapi import APIRouter, HTTPException, Request, status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
-from slowapi.util import get_remote_address
+
+from app.core.limiter import client_ip
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -87,26 +87,8 @@ def _get_redis():
 
 
 def _client_ip(request: Request) -> str:
-    """IP RÉELLE du visiteur derrière le reverse proxy Caddy.
-
-    `request.client.host` = IP interne de Caddy (réseau Docker). Caddy renseigne
-    l'IP d'origine dans X-Forwarded-For (le 1er maillon est le client réel).
-    """
-    peer = get_remote_address(request)
-    try:
-        peer_ip = ipaddress.ip_address(peer)
-        trusted_proxy = peer_ip.is_loopback or peer_ip.is_private
-    except ValueError:
-        trusted_proxy = False
-    if trusted_proxy:
-        xff = request.headers.get("x-forwarded-for")
-        if xff:
-            for candidate in reversed([part.strip() for part in xff.split(",")]):
-                try:
-                    return str(ipaddress.ip_address(candidate))
-                except ValueError:
-                    continue
-    return peer
+    """IP RÉELLE du visiteur derrière le reverse proxy Caddy."""
+    return client_ip(request)
 
 
 async def _demo_rate_limit_ok(request: Request) -> bool:

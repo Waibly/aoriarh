@@ -251,3 +251,19 @@ async def test_google_access_is_revoked_without_changing_roles_on_postgres(isola
         headers={"Authorization": "Bearer " + env.tokens["access_token"]},
     )
     assert result.status_code == 401
+
+
+async def test_truly_concurrent_refreshes_do_not_revoke_the_session(isolated_auth):
+    """Incident 2026-11-04: two refreshes of one token 12 ms apart logged the user out."""
+    env = isolated_auth
+    token = env.tokens["refresh_token"]
+    responses = await asyncio.gather(
+        *(env.client.post("/api/v1/auth/refresh", json={"refresh_token": token}) for _ in range(3))
+    )
+    assert [r.status_code for r in responses] == [200, 200, 200], [r.text for r in responses]
+    for response in responses:
+        me = await env.client.get(
+            "/api/v1/users/me",
+            headers={"Authorization": f"Bearer {response.json()['access_token']}"},
+        )
+        assert me.status_code == 200

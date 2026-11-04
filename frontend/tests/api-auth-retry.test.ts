@@ -38,3 +38,11 @@ it.each(['missing','rejected','still-401'])('reports a terminal auth failure: %s
   expect(signOut).toHaveBeenCalledTimes(1);
   expect(fetch).toHaveBeenCalledTimes(mode === 'still-401' ? 2 : 1);
 });
+
+it('keeps the user signed in when the refresh is only temporarily unavailable', async () => {
+  session.mockResolvedValue({access_token:'old', error:'RefreshUnavailable'});
+  (fetch as jest.Mock).mockResolvedValue(expired());
+  await expect(apiFetch('/private', {token:'old'})).rejects.toThrow('momentanément');
+  expect(signOut).not.toHaveBeenCalled();
+  expect(reportIncident).not.toHaveBeenCalled();
+});

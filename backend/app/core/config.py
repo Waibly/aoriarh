@@ -76,6 +76,10 @@ class Settings(BaseSettings):
     secret_key: str  # OBLIGATOIRE — pas de défaut
     access_token_expire_minutes: int = 30
     refresh_token_expire_days: int = 3
+    # Several Next.js runtimes (middleware, route handlers) can refresh the same
+    # expired session at the same instant. A token rotated less than this many
+    # seconds ago may be presented again without being treated as theft.
+    refresh_token_reuse_grace_seconds: int = 30
     algorithm: str = "HS256"
     google_client_id: str = ""
 

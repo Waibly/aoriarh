@@ -1,4 +1,5 @@
 import hashlib
+import logging
 import secrets
 import uuid
 from datetime import UTC, datetime, timedelta
@@ -10,6 +11,8 @@ from app.core.config import settings
 from app.core.security import create_access_token
 from app.models.auth_session import AuthSession
 from app.models.user import User
+
+logger = logging.getLogger(__name__)
 
 
 def _hash_refresh_token(token: str) -> str:
@@ -47,7 +50,9 @@ async def rotate_auth_session(
 ) -> tuple[AuthSession, str, str] | None:
     """Consume a refresh token once and return a rotated pair.
 
-    Reuse of an already-consumed token revokes the whole token family.
+    Reuse of an already-consumed token revokes the whole token family, except
+    within a short grace window after a legitimate rotation (concurrent refresh
+    of the same session by several Next.js runtimes).
     """
     token_hash = _hash_refresh_token(raw_token)
     # All session issuance takes the user lock before the session lock. A Google
@@ -72,29 +77,67 @@ async def rotate_auth_session(
     if expires_at.tzinfo is None:
         expires_at = expires_at.replace(tzinfo=UTC)
 
+    if expires_at <= now:
+        current.revoked = True
+        await db.commit()
+        return None
+
     if current.revoked:
+        if await _is_concurrent_rotation(db, current, now):
+            # The same client refreshed twice at once (e.g. Next.js middleware
+            # and /api/auth/session). Issue a sibling pair in the same family;
+            # whichever cookie the browser keeps remains valid.
+            access_token, new_refresh_token = await create_auth_session(
+                db,
+                current.user_id,
+                family_id=current.family_id,
+                expires_at=expires_at,
+            )
+            await db.commit()
+            return current, access_token, new_refresh_token
         await db.execute(
             update(AuthSession)
             .where(AuthSession.family_id == current.family_id)
             .values(revoked=True)
         )
         await db.commit()
-        return None
-    if expires_at <= now:
-        current.revoked = True
-        await db.commit()
+        logger.warning(
+            "refresh_token_reuse_detected family=%s user=%s", current.family_id, current.user_id
+        )
         return None
 
-    current.revoked = True
-    current.last_used_at = now
     access_token, new_refresh_token = await create_auth_session(
         db,
         current.user_id,
         family_id=current.family_id,
         expires_at=expires_at,
     )
+    successor_id = await db.scalar(
+        select(AuthSession.id).where(
+            AuthSession.refresh_token_hash == _hash_refresh_token(new_refresh_token)
+        )
+    )
+    current.revoked = True
+    current.last_used_at = now
+    current.replaced_by_id = successor_id
     await db.commit()
     return current, access_token, new_refresh_token
+
+
+async def _is_concurrent_rotation(db: AsyncSession, current: AuthSession, now: datetime) -> bool:
+    """True if `current` was consumed by a rotation moments ago and the session
+    it was rotated into is still live (not logged out, not revoked as stolen)."""
+    if current.replaced_by_id is None or current.last_used_at is None:
+        return False
+    rotated_at = current.last_used_at
+    if rotated_at.tzinfo is None:
+        rotated_at = rotated_at.replace(tzinfo=UTC)
+    if now - rotated_at > timedelta(seconds=settings.refresh_token_reuse_grace_seconds):
+        return False
+    successor_revoked = await db.scalar(
+        select(AuthSession.revoked).where(AuthSession.id == current.replaced_by_id)
+    )
+    return successor_revoked is False
 
 
 async def revoke_auth_session(db: AsyncSession, raw_token: str) -> bool:

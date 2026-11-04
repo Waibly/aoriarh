@@ -26,3 +26,7 @@ class AuthSession(Base):
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
     last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Set when this refresh token is rotated. Distinguishes a token consumed by a
+    # legitimate rotation (eligible for the short concurrent-reuse grace window)
+    # from one revoked by logout or theft detection.
+    replaced_by_id: Mapped[uuid.UUID | None] = mapped_column(nullable=True)

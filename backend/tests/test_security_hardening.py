@@ -51,6 +51,21 @@ async def test_google_auth_accepts_only_verified_server_side_claims(
     assert me.json()["email"] == "verified@example.com"
 
 
+async def _age_rotations() -> None:
+    """Move past the concurrent-refresh grace window."""
+    from datetime import UTC, datetime, timedelta
+
+    from app.models.auth_session import AuthSession
+
+    async with test_session_factory() as db:
+        await db.execute(
+            update(AuthSession)
+            .where(AuthSession.last_used_at.is_not(None))
+            .values(last_used_at=datetime.now(UTC) - timedelta(minutes=5))
+        )
+        await db.commit()
+
+
 @pytest.mark.asyncio
 async def test_refresh_token_is_single_use_and_reuse_revokes_family(client: AsyncClient) -> None:
     signup = await client.post(
@@ -68,6 +83,7 @@ async def test_refresh_token_is_single_use_and_reuse_revokes_family(client: Asyn
     )
     assert rotated.status_code == 200
     replacement = rotated.json()["refresh_token"]
+    await _age_rotations()
 
     reused = await client.post(
         "/api/v1/auth/refresh",

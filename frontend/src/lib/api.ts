@@ -42,6 +42,12 @@ async function fetchWithTimeout(
   }
 }
 
+class TransientAuthError extends Error {
+  constructor() {
+    super("Connexion momentanément impossible. Réessayez dans un instant.");
+  }
+}
+
 // Concurrent expired requests share a refresh, then each retries once.
 let refreshSession: ReturnType<typeof getSession> | null = null;
 
@@ -57,6 +63,10 @@ async function handleUnauthorized(
       refreshSession = getSession().finally(() => { refreshSession = null; });
     }
     const newSession = await refreshSession;
+    if (newSession?.error === "RefreshUnavailable") {
+      // Panne passagère du renouvellement : la session n'est pas perdue.
+      throw new TransientAuthError();
+    }
     if (newSession?.access_token && !newSession.error) {
       const { headers: _, token: _t, ...rest } = options;
       // No deferral header on the final attempt: all failures are reported.
@@ -67,7 +77,8 @@ async function handleUnauthorized(
       if (retryResponse.status !== 401) return retryResponse;
       failureResponse = retryResponse;
     }
-  } catch {
+  } catch (e) {
+    if (e instanceof TransientAuthError) throw e;
     // The first 401 was deferred; a failed refresh must still be reported.
   }
   reportIncident("http_error", {
