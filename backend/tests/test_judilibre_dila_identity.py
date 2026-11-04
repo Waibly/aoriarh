@@ -107,3 +107,48 @@ async def test_judilibre_withdrawal_audit_does_not_treat_dila_absence_as_withdra
         assert result.checked == result.present == 1
         assert not result.gone
         assert instance._api_get.await_count == 1
+
+
+@pytest.mark.asyncio
+async def test_presence_check_survives_an_upstream_error_on_one_decision():
+    """2026-11-01: one Judilibre 500 aborted the whole monthly presence check."""
+    import httpx
+
+    async with test_session_factory() as db:
+        db.add_all(
+            [
+                doc("24-21.567", "2026-10-20", "common/judilibre/a.txt"),
+                doc("24-12.345", "2026-10-21", "common/judilibre/b.txt"),
+            ]
+        )
+        await db.commit()
+        instance = service()
+        request = httpx.Request("GET", "https://api.piste.gouv.fr/x")
+        upstream_500 = httpx.HTTPStatusError(
+            "500", request=request, response=httpx.Response(500, request=request)
+        )
+        instance._api_get = AsyncMock(
+            side_effect=[upstream_500, dict(results=[dict(number="24-12.345")])]
+        )
+        result = await instance.find_deleted_decisions(db)
+    assert result.checked == 2
+    assert result.present == 1 and result.unknown == 1
+    assert not result.gone
+
+
+@pytest.mark.asyncio
+async def test_api_get_retries_transient_server_errors(monkeypatch):
+    import httpx
+
+    monkeypatch.setattr("app.services.judilibre_service.asyncio.sleep", AsyncMock())
+    instance = service()
+    instance._get_access_token = AsyncMock(return_value="t")
+    responses = iter([500, 502, 200])
+
+    def handler(request):
+        code = next(responses)
+        return httpx.Response(code, json={"results": []} if code == 200 else None)
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        data = await instance._api_get(client, "/search", {"query": "x"})
+    assert data == {"results": []}

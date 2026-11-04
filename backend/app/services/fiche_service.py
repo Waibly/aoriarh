@@ -35,10 +35,14 @@ logger = logging.getLogger(__name__)
 # Famille gpt-5 : pas de `temperature` (rejetée), budget via max_completion_tokens.
 FICHE_MODEL = "gpt-5.6-terra"
 FICHE_REASONING_EFFORT = "medium"
+# Raisonnement + fragment HTML. 5 000 ne suffisait pas aux réponses longues : le
+# 2026-11-04 le raisonnement a consommé tout le budget et la sortie était vide.
+FICHE_MAX_COMPLETION_TOKENS = 12000
 
 _llm = AsyncOpenAI(
     api_key=settings.openai_api_key,
-    timeout=httpx.Timeout(connect=10.0, read=60.0, write=30.0, pool=30.0),
+    # Une fiche longue peut dépasser une minute de génération.
+    timeout=httpx.Timeout(connect=10.0, read=180.0, write=30.0, pool=30.0),
     max_retries=2,
 )
 
@@ -808,7 +812,7 @@ async def generate_fiche_content(
             {"role": "system", "content": FICHE_SYSTEM_PROMPT},
             {"role": "user", "content": user_content},
         ],
-        max_completion_tokens=5000,
+        max_completion_tokens=FICHE_MAX_COMPLETION_TOKENS,
         reasoning_effort=FICHE_REASONING_EFFORT,
     )
 
@@ -825,7 +829,15 @@ async def generate_fiche_content(
             context_id=None,
         )
 
-    raw = response.choices[0].message.content or ""
+    choice = response.choices[0]
+    raw = choice.message.content or ""
+    if getattr(choice, "finish_reason", None) == "length":
+        logger.warning(
+            "fiche_token_budget_reached max_completion_tokens=%d completion_tokens=%s empty=%s",
+            FICHE_MAX_COMPLETION_TOKENS,
+            response.usage.completion_tokens if response.usage else None,
+            not raw.strip(),
+        )
     content = parse_fiche_content(raw)
     return FicheGeneration(eligible=True, content=content)
 

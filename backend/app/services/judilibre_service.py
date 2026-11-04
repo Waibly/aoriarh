@@ -678,11 +678,22 @@ class JudilibreService:
             # === Cour de cassation : recherche par numéro de pourvoi ===
             for r in cass:
                 result.checked += 1
-                data = await self._api_get(
-                    client,
-                    "/search",
-                    {"query": r.numero_pourvoi, "jurisdiction": ["cc"], "page_size": 10},
-                )
+                try:
+                    data = await self._api_get(
+                        client,
+                        "/search",
+                        {"query": r.numero_pourvoi, "jurisdiction": ["cc"], "page_size": 10},
+                    )
+                except httpx.HTTPError as exc:
+                    # Une erreur amont sur un arrêt ne doit pas annuler tout le
+                    # contrôle (2026-11-01 : un 500 Judilibre après 17 min).
+                    # Lecture seule : l'arrêt reste « indéterminé », jamais « disparu ».
+                    logger.warning(
+                        "presence check: Judilibre error for %s: %s",
+                        r.numero_pourvoi,
+                        type(exc).__name__,
+                    )
+                    data = None
                 if data is None:
                     result.unknown += 1
                     continue
@@ -701,7 +712,15 @@ class JudilibreService:
                     result.unknown += 1  # sans date, on ne peut pas vérifier
 
             for day, docs in by_day.items():
-                day_index = await self._export_ca_day_numbers(client, day)
+                try:
+                    day_index = await self._export_ca_day_numbers(client, day)
+                except httpx.HTTPError as exc:
+                    logger.warning(
+                        "presence check: Judilibre export error for %s: %s",
+                        day,
+                        type(exc).__name__,
+                    )
+                    day_index = None
                 for r in docs:
                     result.checked += 1
                     if day_index is None:
@@ -1090,6 +1109,15 @@ class JudilibreService:
                 if response.status_code == 429 and attempt < _MAX_RETRIES - 1:
                     delay = _RETRY_DELAY * (2**attempt)
                     logger.warning("Judilibre rate limit (429), retry in %.1fs", delay)
+                    await asyncio.sleep(delay)
+                    continue
+
+                # Erreur serveur passagère côté PISTE/Judilibre : relance bornée.
+                if response.status_code >= 500 and attempt < _MAX_RETRIES - 1:
+                    delay = _RETRY_DELAY * (2**attempt)
+                    logger.warning(
+                        "Judilibre %d on %s, retry in %.1fs", response.status_code, path, delay
+                    )
                     await asyncio.sleep(delay)
                     continue
 

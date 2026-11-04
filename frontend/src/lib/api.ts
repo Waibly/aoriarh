@@ -10,6 +10,8 @@ const DEFAULT_TIMEOUT_MS = 30_000;
 
 type FetchOptions = RequestInit & {
   token?: string;
+  /** Délai avant les en-têtes de réponse ; défaut DEFAULT_TIMEOUT_MS. */
+  timeoutMs?: number;
 };
 
 /** Wraps fetch with an AbortController so requests never hang indefinitely. */
@@ -68,12 +70,12 @@ async function handleUnauthorized(
       throw new TransientAuthError();
     }
     if (newSession?.access_token && !newSession.error) {
-      const { headers: _, token: _t, ...rest } = options;
+      const { headers: _, token: _t, timeoutMs, ...rest } = options;
       // No deferral header on the final attempt: all failures are reported.
       const retryResponse = await fetchWithTimeout(`${API_BASE_URL}${path}`, {
         ...rest,
         headers: buildHeaders(newSession.access_token),
-      });
+      }, timeoutMs);
       if (retryResponse.status !== 401) return retryResponse;
       failureResponse = retryResponse;
     }
@@ -99,7 +101,7 @@ export async function apiFetch<T>(
   path: string,
   options: FetchOptions = {}
 ): Promise<T> {
-  const { token, headers, ...rest } = options;
+  const { token, headers, timeoutMs, ...rest } = options;
 
   const buildHeaders = (t?: string): HeadersInit => ({
     "Content-Type": "application/json",
@@ -110,7 +112,7 @@ export async function apiFetch<T>(
   const response = await fetchWithTimeout(`${API_BASE_URL}${path}`, {
     headers: initialAuthHeaders(buildHeaders(token)),
     ...rest,
-  });
+  }, timeoutMs);
 
   if (response.status === 401) {
     const retryResponse = await handleUnauthorized(path, options, buildHeaders, response);
@@ -171,7 +173,7 @@ export async function authFetch(
   path: string,
   options: FetchOptions = {}
 ): Promise<Response> {
-  const { token, headers, ...rest } = options;
+  const { token, headers, timeoutMs, ...rest } = options;
 
   const buildHeaders = (t?: string): HeadersInit => ({
     ...(t ? { Authorization: `Bearer ${t}` } : {}),
@@ -182,7 +184,7 @@ export async function authFetch(
   const response = await fetchWithTimeout(`${API_BASE_URL}${path}`, {
     headers: initialAuthHeaders(buildHeaders(token)),
     ...rest,
-  });
+  }, timeoutMs);
 
   if (response.status === 401) {
     const retryResponse = await handleUnauthorized(path, options, buildHeaders, response);

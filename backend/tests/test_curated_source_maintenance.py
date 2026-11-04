@@ -468,3 +468,51 @@ def test_browser_capture_rejects_mismatched_canonical_even_with_valid_hash():
     capture["sha256"] = hashlib.sha256(capture["html"].encode()).hexdigest()
     with pytest.raises(ValueError, match="canonical"):
         validate_browser_capture(SPEC, capture)
+
+
+async def test_cellar_redirect_is_upgraded_to_https_and_sends_pdf_headers():
+    import httpx
+
+    from app.services.curated_source_service import fetch_source
+
+    seen = []
+
+    def handler(request):
+        seen.append((str(request.url), request.headers.get("accept")))
+        if request.url.path == "/resource/celex/32003L0088":
+            return httpx.Response(
+                303, headers={"location": "http://publications.europa.eu/resource/cellar/x/DOC_1"}
+            )
+        return httpx.Response(200, content=b"%PDF-1.3 test")
+
+    spec = {
+        "fetch_url": "https://publications.europa.eu/resource/celex/32003L0088",
+        "url": "https://eur-lex.europa.eu/legal-content/FR/ALL/?uri=CELEX%3A32003L0088",
+        "fetch_headers": {"Accept": "application/pdf"},
+        "upgrade_http_redirects": True,
+        "allowed_hosts": ["publications.europa.eu"],
+    }
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        raw, final_url = await fetch_source(client, spec)
+    assert raw.startswith(b"%PDF")
+    assert final_url == "https://publications.europa.eu/resource/cellar/x/DOC_1"
+    assert all(accept == "application/pdf" for _, accept in seen)
+
+
+async def test_http_redirect_without_opt_in_is_still_refused():
+    import httpx
+    import pytest as _pytest
+
+    from app.services.curated_source_service import fetch_source
+
+    def handler(request):
+        return httpx.Response(303, headers={"location": "http://publications.europa.eu/x"})
+
+    spec = {
+        "fetch_url": "https://publications.europa.eu/resource/celex/1",
+        "url": "https://eur-lex.europa.eu/x",
+        "allowed_hosts": ["publications.europa.eu"],
+    }
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        with _pytest.raises(Exception):
+            await fetch_source(client, spec)

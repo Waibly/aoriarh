@@ -310,11 +310,15 @@ SOURCES = [
         "name": "Directive 2003/88/CE — aménagement du temps de travail",
         "document_id": "d1825610-527c-57d5-8f4a-4967b0bd834c",
         "url": "https://eur-lex.europa.eu/legal-content/FR/ALL/?uri=CELEX%3A32003L0088",
-        "fetch_url": "https://eur-lex.europa.eu/legal-content/FR/TXT/PDF/?uri=CELEX%3A32003L0088",
+        # EUR-Lex renvoie désormais un challenge AWS WAF vide aux robots ; Cellar
+        # (même Office des publications) sert le même PDF français, à l'octet près.
+        "fetch_url": "https://publications.europa.eu/resource/celex/32003L0088",
+        "fetch_headers": {"Accept": "application/pdf", "Accept-Language": "fra"},
+        "upgrade_http_redirects": True,
         "source_type": "directive_europeenne",
         "format": "pdf",
         "policy": "review",
-        "allowed_hosts": ["eur-lex.europa.eu"],
+        "allowed_hosts": ["publications.europa.eu"],
         "baseline_document_sha256": (
             "324f9691f32519129cade45e3cf914aa9221d8082d382cfc6e6606831d8a3878"
         ),
@@ -326,11 +330,15 @@ SOURCES = [
         "name": "Directive 2000/78/CE — égalité de traitement en matière d’emploi et de travail",
         "document_id": "fdbbb3fe-e521-5566-8618-cb16334b754e",
         "url": "https://eur-lex.europa.eu/legal-content/FR/ALL/?uri=CELEX%3A32000L0078",
-        "fetch_url": "https://eur-lex.europa.eu/legal-content/FR/TXT/PDF/?uri=CELEX%3A32000L0078",
+        # EUR-Lex renvoie désormais un challenge AWS WAF vide aux robots ; Cellar
+        # (même Office des publications) sert le même PDF français, à l'octet près.
+        "fetch_url": "https://publications.europa.eu/resource/celex/32000L0078",
+        "fetch_headers": {"Accept": "application/pdf", "Accept-Language": "fra"},
+        "upgrade_http_redirects": True,
         "source_type": "directive_europeenne",
         "format": "pdf",
         "policy": "review",
-        "allowed_hosts": ["eur-lex.europa.eu"],
+        "allowed_hosts": ["publications.europa.eu"],
         "baseline_document_sha256": (
             "316d8e738f7c228ae1a0c5e106b606d5d008de621608baf9ff8369ec1498de4d"
         ),

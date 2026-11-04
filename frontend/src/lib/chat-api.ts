@@ -154,6 +154,9 @@ export async function downloadFiche(
     {
       method: "POST",
       token,
+      // Génération LLM + PDF : 15 à 35 s mesurées, davantage pour une longue
+      // réponse. Le délai par défaut (30 s) coupait des fiches en cours.
+      timeoutMs: 180_000,
     }
   );
 

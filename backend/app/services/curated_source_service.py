@@ -143,9 +143,13 @@ async def fetch_source(client, spec):
             from app.services.source_diagnostics import redirect_error
 
             raise redirect_error(url)
-        async with client.stream("GET", url) as response:
+        async with client.stream("GET", url, headers=spec.get("fetch_headers")) as response:
             if response.is_redirect:
                 url = urljoin(url, response.headers["location"])
+                if spec.get("upgrade_http_redirects") and url.startswith("http://"):
+                    # Cellar (Office des publications de l'UE) redirige en http://
+                    # alors que la même ressource est servie en https://.
+                    url = "https://" + url[len("http://") :]
                 continue
             response.raise_for_status()
             raw = bytearray()
