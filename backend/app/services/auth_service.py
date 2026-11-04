@@ -23,7 +23,7 @@ from app.schemas.auth import (
     TokenResponse,
 )
 from app.schemas.stripe_billing import BillingCycle, CommercialPlanCode
-from app.services.auth_session_service import create_auth_session
+from app.services.auth_session_service import create_auth_session, revoke_all_user_sessions
 from app.services.email.sender import is_test_email, send_email, sync_contact_to_brevo
 from app.services.email.templates import render_admin_new_signup_email
 from app.services.stripe_service import StripeService
@@ -98,8 +98,26 @@ def apply_attribution(user: User, attribution: SignupAttribution | None) -> None
 
 
 async def _build_token_response(
-    db: AsyncSession, user_id: uuid.UUID, checkout_url: str | None = None
+    db: AsyncSession,
+    user_id: uuid.UUID,
+    checkout_url: str | None = None,
+    *,
+    credentials_only: bool = False,
 ) -> TokenResponse:
+    # Signup can await email/checkout after its first commit. Lock and recheck
+    # the current identity before issuing a session: Google may have claimed the
+    # email in the meantime. Never mint a late password session after that claim.
+    identity = (
+        await db.execute(
+            select(User.auth_provider, User.google_sub).where(User.id == user_id).with_for_update()
+        )
+    ).one_or_none()
+    if identity is None:
+        raise HTTPException(status_code=401, detail="Compte non accessible")
+    if credentials_only and (
+        identity.auth_provider != "credentials" or identity.google_sub is not None
+    ):
+        raise HTTPException(status_code=409, detail="Ce compte utilise la connexion Google")
     access_token, refresh_token = await create_auth_session(db, user_id)
     await db.commit()
     return TokenResponse(
@@ -174,7 +192,7 @@ class AuthService:
             self.db.add(user)
             await self.db.commit()
             await self.db.refresh(user)
-            return await _build_token_response(self.db, user.id)
+            return await _build_token_response(self.db, user.id, credentials_only=True)
 
         # Self-registration: create Account + role=manager
         user = User(
@@ -213,14 +231,18 @@ class AuthService:
             requested_plan=data.requested_plan,
             requested_cycle=data.requested_cycle,
         )
-        return await _build_token_response(self.db, user.id, checkout_url=checkout_url)
+        return await _build_token_response(
+            self.db, user.id, checkout_url=checkout_url, credentials_only=True
+        )
 
     async def login(self, data: LoginRequest) -> TokenResponse | None:
         email = data.email.lower().strip()
-        result = await self.db.execute(select(User).where(User.email == email))
+        result = await self.db.execute(select(User).where(User.email == email).with_for_update())
         user = result.scalar_one_or_none()
         if (
             not user
+            or user.auth_provider == "google"
+            or user.google_sub is not None
             or not user.hashed_password
             or not verify_password(data.password, user.hashed_password)
         ):
@@ -230,7 +252,7 @@ class AuthService:
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Compte désactivé",
             )
-        return await _build_token_response(self.db, user.id)
+        return await _build_token_response(self.db, user.id, credentials_only=True)
 
     async def google_auth(self, data: GoogleAuthRequest) -> TokenResponse:
         """Login/register only after server-side verification of Google's ID token."""
@@ -271,13 +293,17 @@ class AuthService:
         if not email or not google_sub:
             raise HTTPException(status_code=401, detail="Identité Google incomplète")
 
-        by_sub = await self.db.execute(select(User).where(User.google_sub == google_sub))
+        by_sub = await self.db.execute(
+            select(User).where(User.google_sub == google_sub).with_for_update()
+        )
         user = by_sub.scalar_one_or_none()
         if user is not None and user.email.lower() != email:
             raise HTTPException(status_code=409, detail="Identité Google déjà liée")
 
         if user is None:
-            result = await self.db.execute(select(User).where(User.email == email))
+            result = await self.db.execute(
+                select(User).where(User.email == email).with_for_update()
+            )
             user = result.scalar_one_or_none()
 
         if user:
@@ -291,9 +317,19 @@ class AuthService:
                     status_code=409,
                     detail="Compte lié à une autre identité Google",
                 )
+            # Google has verified ownership of the email; a pre-existing password
+            # and its sessions may belong to someone who claimed that address at
+            # signup without owning it. Replace that access atomically with the
+            # new Google session. Also repair legacy Google/password links.
+            if (
+                user.google_sub is None
+                or user.hashed_password is not None
+                or user.auth_provider != "google"
+            ):
+                user.hashed_password = None
+                await revoke_all_user_sessions(self.db, user.id)
             user.google_sub = google_sub
             user.auth_provider = "google"
-            await self.db.commit()
             return await _build_token_response(self.db, user.id)
 
         # Check if there's a pending invitation for this email

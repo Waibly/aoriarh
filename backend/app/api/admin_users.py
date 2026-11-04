@@ -2,7 +2,7 @@ import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
-from sqlalchemy import delete, func, select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -10,13 +10,13 @@ from app.core.database import get_db
 from app.core.dependencies import get_current_user, require_role
 from app.models.account import Account
 from app.models.account_member import AccountMember
-from app.models.invitation import Invitation
 from app.models.membership import Membership
-from app.models.organisation import Organisation
 from app.models.user import User
 from app.schemas.account import AccountRead
 from app.schemas.organisation import PlanAssign
+from app.services.data_retention_service import DataRetentionService
 from app.services.plan_service import PlanOverflowError, assign_plan, resolve_expired_plans
+from app.services.stripe_service import StripeService
 from app.services.user_service import UserService
 
 router = APIRouter()
@@ -260,13 +260,15 @@ async def delete_account(
 ) -> dict:
     """Delete an entire client account and all associated data.
 
-    Deletes: all organisations (docs, Qdrant vectors, MinIO files, CCN links,
-    conversations, messages, memberships), all account members, the account
-    itself, and the owner user.
+    Delete this account's organisations and access grants only. Member identities
+    and their other workspaces are preserved; an owner still referenced outside
+    this account is retained too. Confirm the end of billing before erasure.
     Common documents and CCN references are never touched.
     api_usage_logs are preserved (FKs set to NULL).
     """
-    account = await db.get(Account, account_id)
+    account = (
+        await db.execute(select(Account).where(Account.id == account_id).with_for_update())
+    ).scalar_one_or_none()
     if not account:
         raise HTTPException(status_code=404, detail="Compte non trouvé")
 
@@ -305,27 +307,6 @@ async def delete_account(
                 ),
             )
 
-    # 1. Delete all organisations in this account (Qdrant, MinIO, docs, etc.)
-    from app.services.organisation_service import OrganisationService
-
-    org_service = OrganisationService(db)
-    org_result = await db.execute(select(Organisation).where(Organisation.account_id == account_id))
-    for org in org_result.scalars().all():
-        await org_service.delete_organisation(org.id, current_user)
-
-    # 2. Delete account-level invitations and account members, then the
-    #    account itself — BEFORE user cleanup so delete_user_data step 8
-    #    sees owned_account=None and doesn't try to double-delete.
-    await db.execute(delete(Invitation).where(Invitation.account_id == account_id))
-    await db.execute(delete(AccountMember).where(AccountMember.account_id == account_id))
-    await db.delete(account)
-    await db.flush()
-
-    # 3. Delete all member users' data
-    service = UserService(db)
-    for uid in member_user_ids:
-        await service.delete_user_data(uid)
-
-    await db.commit()
-    await service.finish_deletions()
+    await StripeService(db).cancel_subscription_now(account, include_customer_subscriptions=True)
+    await DataRetentionService(db).purge_account(account_id)
     return {"detail": "Compte client supprimé"}

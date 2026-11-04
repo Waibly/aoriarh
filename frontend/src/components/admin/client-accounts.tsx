@@ -698,9 +698,11 @@ export function ClientAccounts({
             <DialogTitle>Supprimer le client</DialogTitle>
             <DialogDescription>
               Cette action est <strong>irréversible</strong>. Toutes les
-              organisations, documents, conversations et membres de{" "}
+              organisations, documents et conversations de{" "}
               <strong>{deleteAccount?.name}</strong> seront définitivement
               supprimés.
+              Les accès des membres à cet espace seront retirés ; leurs comptes
+              et leurs données dans les autres espaces seront conservés.
               <br />
               <br />
               Pour confirmer, tapez{" "}

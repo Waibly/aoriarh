@@ -268,6 +268,10 @@ class AccountMemberService:
                         role_in_org=account_member.role_in_org,
                     )
                 )
+            else:
+                # Team role changes apply to existing access grants too. Leaving
+                # these untouched would preserve manager powers after demotion.
+                existing_memberships[org_id].role_in_org = account_member.role_in_org
 
         # Remove memberships no longer needed
         for org_id, ms in existing_memberships.items():

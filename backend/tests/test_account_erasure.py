@@ -58,6 +58,7 @@ async def erasure(monkeypatch):
     )
     monkeypatch.setattr("app.services.organisation_service.get_qdrant_client", lambda: index)
     monkeypatch.setattr("app.services.document_service.get_qdrant_client", lambda: index)
+    monkeypatch.setattr("app.rag.qdrant_store.get_qdrant_client", lambda: index)
     monkeypatch.setattr(settings, "stripe_secret_key", "sk_test_local_only")
     remote = {}
 
@@ -424,3 +425,121 @@ async def test_trial_account_can_be_erased_without_stripe_configuration(erasure,
     erasure.listing.assert_not_called()
     erasure.retrieve.assert_not_called()
     erasure.cancel.assert_not_called()
+
+
+@pytest.mark.parametrize("shared_owner", [False, True])
+async def test_admin_account_erasure_preserves_collaborators_and_other_workspaces(
+    erasure, shared_owner
+):
+    from app.models.membership import Membership
+
+    env = erasure
+    admin = await register(env, "erasure-admin@test.com")
+    owner = await register(env)
+    collaborator = await register(env, "independent-client@test.com")
+    erased = await seed_dossier(env, owner, full=True)
+    preserved = await seed_dossier(env, collaborator, full=True)
+    member_dossier = await seed_dossier(env, collaborator, full=True, organisation_id=erased.org_id)
+    if shared_owner:
+        shared_dossier = await seed_dossier(env, owner, full=True, organisation_id=preserved.org_id)
+    await make_paid(env, owner)
+    async with env.factory() as db:
+        admin_user = await db.get(User, admin.id)
+        admin_user.role = "admin"
+        db.add(AccountMember(account_id=owner.account_id, user_id=collaborator.id))
+        db.add(
+            Membership(user_id=collaborator.id, organisation_id=erased.org_id, role_in_org="user")
+        )
+        other = await db.get(Account, collaborator.account_id)
+        other.stripe_customer_id = "cus_independent"
+        db.add(
+            Subscription(
+                account_id=other.id,
+                plan="solo",
+                billing_cycle="monthly",
+                stripe_subscription_id="sub_independent",
+                status="active",
+            )
+        )
+        if shared_owner:
+            db.add(
+                Membership(user_id=owner.id, organisation_id=preserved.org_id, role_in_org="user")
+            )
+        await db.commit()
+        preserved_documents = list(
+            (
+                await db.scalars(
+                    select(Document.id).where(Document.organisation_id == preserved.org_id)
+                )
+            ).all()
+        )
+        preserved_conversations = list(
+            (
+                await db.scalars(
+                    select(Conversation.id).where(Conversation.organisation_id == preserved.org_id)
+                )
+            ).all()
+        )
+
+    response = await env.client.delete(
+        f"/api/v1/admin/users/accounts/{owner.account_id}", headers=admin.headers
+    )
+    assert response.status_code == 200, response.text
+    env.cancel.assert_called_once_with("sub_erasure_0")
+    async with env.factory() as db:
+        assert await db.get(Account, owner.account_id) is None
+        assert await db.get(Organisation, erased.org_id) is None
+        assert await db.get(Dossier, member_dossier.dossier_id) is None
+        assert await db.get(User, collaborator.id) is not None
+        assert await db.get(Account, collaborator.account_id) is not None
+        assert (await db.get(Organisation, preserved.org_id)).account_id == collaborator.account_id
+        for identifier in preserved_documents:
+            assert await db.get(Document, identifier) is not None
+        for identifier in preserved_conversations:
+            assert await db.get(Conversation, identifier) is not None
+        assert await db.get(Dossier, preserved.dossier_id) is not None
+        if shared_owner:
+            assert await db.get(User, owner.id) is not None
+            assert await db.get(Dossier, shared_dossier.dossier_id) is not None
+        else:
+            assert await db.get(User, owner.id) is None
+        subscription = (
+            await db.scalars(
+                select(Subscription).where(Subscription.account_id == collaborator.account_id)
+            )
+        ).one()
+        assert subscription.status == "active"
+    assert (
+        await env.client.get("/api/v1/users/me", headers=collaborator.headers)
+    ).status_code == 200
+    assert (await env.client.get("/api/v1/users/me", headers=owner.headers)).status_code == (
+        200 if shared_owner else 401
+    )
+    assert env.index.delete.call_count == 1
+    assert str(erased.org_id) in str(env.index.delete.call_args)
+    assert str(preserved.org_id) not in str(env.index.delete.call_args)
+    assert all(
+        call.args[0].startswith(f"{erased.org_id}/")
+        for call in env.storage.delete_file.call_args_list
+    )
+
+
+async def test_admin_erasure_does_not_start_if_stripe_cancellation_fails(erasure):
+    env = erasure
+    admin = await register(env, "erasure-admin@test.com")
+    owner = await register(env)
+    dossier = await seed_dossier(env, owner, full=True)
+    await make_paid(env, owner)
+    async with env.factory() as db:
+        (await db.get(User, admin.id)).role = "admin"
+        await db.commit()
+    env.cancel.side_effect = stripe.error.APIConnectionError("simulated outage")
+    response = await env.client.delete(
+        f"/api/v1/admin/users/accounts/{owner.account_id}", headers=admin.headers
+    )
+    assert response.status_code == 502
+    async with env.factory() as db:
+        assert await db.get(Account, owner.account_id) is not None
+        assert await db.get(Dossier, dossier.dossier_id) is not None
+    env.index.delete.assert_not_called()
+    env.storage.delete_file.assert_not_called()

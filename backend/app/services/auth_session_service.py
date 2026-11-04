@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.core.security import create_access_token
 from app.models.auth_session import AuthSession
+from app.models.user import User
 
 
 def _hash_refresh_token(token: str) -> str:
@@ -49,6 +50,16 @@ async def rotate_auth_session(
     Reuse of an already-consumed token revokes the whole token family.
     """
     token_hash = _hash_refresh_token(raw_token)
+    # All session issuance takes the user lock before the session lock. A Google
+    # claim must not miss a refresh session inserted while it revokes old access.
+    user_id = await db.scalar(
+        select(AuthSession.user_id).where(AuthSession.refresh_token_hash == token_hash)
+    )
+    if user_id is None:
+        return None
+    locked_user = await db.scalar(select(User.id).where(User.id == user_id).with_for_update())
+    if locked_user is None:
+        return None
     result = await db.execute(
         select(AuthSession).where(AuthSession.refresh_token_hash == token_hash).with_for_update()
     )
