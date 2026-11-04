@@ -12,8 +12,9 @@ Responsibilities:
 import logging
 import uuid
 from calendar import monthrange
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
+from dateutil.relativedelta import relativedelta
 from fastapi import HTTPException, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -150,6 +151,13 @@ class BillingService:
                 status_code=status.HTTP_402_PAYMENT_REQUIRED,
                 detail="Votre compte est suspendu. Merci de régulariser votre abonnement.",
             )
+        if account.status == "canceled":
+            raise HTTPException(
+                status_code=status.HTTP_402_PAYMENT_REQUIRED,
+                detail=(
+                    "Votre abonnement est résilié. Merci de souscrire à une offre pour continuer."
+                ),
+            )
         if self.is_plan_expired(account):
             raise HTTPException(
                 status_code=status.HTTP_402_PAYMENT_REQUIRED,
@@ -189,7 +197,7 @@ class BillingService:
                 and sub.current_period_start is not None
                 and sub.current_period_end is not None
             ):
-                return sub.current_period_start, sub.current_period_end
+                return _monthly_window(sub.current_period_start, sub.current_period_end, now)
 
         start = datetime(now.year, now.month, 1, tzinfo=UTC)
         last_day = monthrange(start.year, start.month)[1]
@@ -224,9 +232,15 @@ class BillingService:
             await self.db.flush()
         return usage
 
-    async def check_question_quota(self, account: Account) -> QuotaInfo:
-        """Return the current quota state without blocking anything."""
-        self.ensure_plan_active(account)
+    async def check_question_quota(self, account: Account, *, enforce: bool = True) -> QuotaInfo:
+        """Return the current quota state.
+
+        ``enforce=True`` (questions) raises 402 when the account cannot use the
+        service. Read-only views (billing page, banners) pass ``enforce=False``
+        so a suspended or canceled account can still see its state and pay.
+        """
+        if enforce:
+            self.ensure_plan_active(account)
 
         usage = await self.get_or_create_usage(account)
         booster_remaining = await self._active_booster_remaining(account.id)
@@ -338,7 +352,7 @@ class BillingService:
             )
 
         # Questions (current period)
-        quota_info = await self.check_question_quota(account)
+        quota_info = await self.check_question_quota(account, enforce=False)
 
         return {
             "users": {"used": total_users, "limit": int(limits["users_included"] or 0)},
@@ -572,3 +586,30 @@ class BillingService:
                     f"sur votre plan {plan_label}. {upgrade}"
                 ),
             )
+
+
+def _as_utc(value: datetime) -> datetime:
+    return value if value.tzinfo is not None else value.replace(tzinfo=UTC)
+
+
+def _monthly_window(
+    period_start: datetime, period_end: datetime, now: datetime
+) -> tuple[datetime, datetime]:
+    """Monthly quota window inside a Stripe billing period.
+
+    The quota is monthly while a yearly subscription has a one-year period:
+    slice that year into months anchored on the subscription day. A monthly
+    period is returned as is.
+    """
+    period_start = _as_utc(period_start)
+    period_end = _as_utc(period_end)
+    if period_end - period_start <= timedelta(days=32):
+        return period_start, period_end
+    months = (now.year - period_start.year) * 12 + now.month - period_start.month
+    months = max(0, months)
+    start = period_start + relativedelta(months=months)
+    if start > now and months > 0:
+        months -= 1
+        start = period_start + relativedelta(months=months)
+    end = min(period_start + relativedelta(months=months + 1), period_end)
+    return start, end

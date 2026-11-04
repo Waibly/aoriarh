@@ -195,11 +195,11 @@ async def add_addon(
             .join(Subscription, Subscription.id == SubscriptionAddon.subscription_id)
             .where(
                 Subscription.account_id == account.id,
+                Subscription.status.in_(["active", "trialing", "past_due"]),
                 SubscriptionAddon.addon_type == "extra_user",
             )
         )
-        row = existing.scalar_one_or_none()
-        current_extra = row.quantity if row else 0
+        current_extra = sum(row.quantity for row in existing.scalars())
         if current_extra + 1 > plan_limits.max_extra_users:
             raise HTTPException(
                 status_code=409,
@@ -305,7 +305,7 @@ async def get_current_quota(
     billing = BillingService(db)
     account = await billing.get_primary_account_for_user(user)
 
-    info = await billing.check_question_quota(account)
+    info = await billing.check_question_quota(account, enforce=False)
 
     return QuotaResponse(
         plan=account.plan,

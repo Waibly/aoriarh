@@ -30,6 +30,7 @@ from app.models.monthly_question_usage import MonthlyQuestionUsage
 from app.models.organisation import Organisation
 from app.models.plan_invitation import PlanInvitation, PlanInvitationRedemption
 from app.models.storage_operation import StorageOperation
+from app.models.stripe_webhook_event import StripeWebhookEvent
 from app.models.subscription import Subscription
 from app.models.subscription_addon import SubscriptionAddon
 from app.models.sync_log import SyncLog
@@ -77,6 +78,7 @@ __all__ = [
     "PlanInvitation",
     "PlanInvitationRedemption",
     "Subscription",
+    "StripeWebhookEvent",
     "SubscriptionAddon",
     "SyncLog",
     "User",

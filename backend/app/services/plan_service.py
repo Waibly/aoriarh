@@ -147,7 +147,9 @@ async def assign_plan(
             from app.services.stripe_service import StripeService
 
             await StripeService(db).cancel_subscription_now(account)
-            account.status = "active"
+        # An admin-assigned technical plan reopens access, including for an
+        # expired trial or a canceled/suspended commercial account.
+        account.status = "active"
 
     # Commercial plans (solo / equipe / groupe) assigned by an admin:
     # - if the account already has a Stripe sub, modify that sub to the

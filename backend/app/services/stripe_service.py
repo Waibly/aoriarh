@@ -18,13 +18,15 @@ from datetime import UTC, datetime
 import stripe
 from fastapi import HTTPException, status
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
-from app.core.plans import BOOSTER_QUESTIONS
+from app.core.plans import BOOSTER_QUESTIONS, is_commercial
 from app.core.plans import get_label as _get_plan_label
 from app.models.account import Account
 from app.models.booster_purchase import BoosterPurchase
+from app.models.stripe_webhook_event import StripeWebhookEvent
 from app.models.subscription import Subscription
 from app.models.subscription_addon import SubscriptionAddon
 
@@ -69,6 +71,31 @@ def _sub_period(sub_obj) -> tuple[int | None, int | None]:
             _get(first, "current_period_end") or end,
         )
     return start, end
+
+
+def _as_id(value) -> str | None:
+    """Stripe fields hold either an id string or an expanded object."""
+    if value is None or isinstance(value, str):
+        return value
+    return _get(value, "id")
+
+
+def _invoice_subscription_id(invoice) -> str | None:
+    """Subscription of an invoice, for every Stripe API version.
+
+    Since API 2025-03-31 (basil) the field moved from ``invoice.subscription``
+    to ``invoice.parent.subscription_details.subscription``. Our webhook runs
+    on 2026-03-25.dahlia, so the legacy field is absent.
+    """
+    legacy = _as_id(_get(invoice, "subscription"))
+    if legacy:
+        return legacy
+    details = _get(_get(invoice, "parent"), "subscription_details")
+    return _as_id(_get(details, "subscription"))
+
+
+# Subscription statuses that still grant access.
+_LIVE_SUB_STATUSES = ("active", "trialing", "past_due")
 
 
 class StripeNotConfiguredError(HTTPException):
@@ -188,6 +215,7 @@ class StripeService:
         """Create a Stripe Checkout session for a commercial plan subscription."""
         self._ensure_configured()
         price_id = self.get_price_id(plan, cycle)
+        await self._ensure_no_live_subscription(account)
         customer_id = await self.get_or_create_customer(account, owner_email)
 
         session = stripe.checkout.Session.create(
@@ -231,6 +259,37 @@ class StripeService:
         )
         await self.db.commit()
         return {"checkout_url": session["url"], "session_id": session["id"]}
+
+    async def _ensure_no_live_subscription(self, account: Account) -> None:
+        """Refuse a second subscription: the client would be billed twice.
+
+        Checks our mirror and Stripe itself, because a checkout paid a few
+        seconds ago may not have reached us through the webhook yet.
+        """
+        conflict = HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "Un abonnement est déjà actif sur ce compte. "
+                "Utilisez « Changer d'offre » depuis la page Abonnement."
+            ),
+        )
+        if await self._get_active_subscription(account.id) is not None:
+            raise conflict
+        if not account.stripe_customer_id:
+            return
+        try:
+            remote = stripe.Subscription.list(
+                customer=account.stripe_customer_id, status="all", limit=20
+            )
+        except stripe.error.StripeError as exc:
+            logger.exception("Stripe subscription list failed for account %s", account.id)
+            raise HTTPException(
+                status_code=502,
+                detail="Impossible de vérifier vos abonnements Stripe. Réessayez dans un instant.",
+            ) from exc
+        for item in _get(remote, "data") or []:
+            if _get(item, "status") in (*_LIVE_SUB_STATUSES, "unpaid", "incomplete"):
+                raise conflict
 
     async def create_booster_checkout(self, account: Account, owner_email: str) -> dict[str, str]:
         """One-shot payment for a +500 questions booster pack."""
@@ -741,11 +800,28 @@ class StripeService:
                     addon.stripe_subscription_item_id,
                     proration_behavior="create_prorations",
                 )
-            except stripe.error.StripeError:
+            except stripe.error.InvalidRequestError as exc:
+                # Already gone on Stripe's side: removing our row is correct.
+                if getattr(exc, "code", None) != "resource_missing":
+                    logger.exception(
+                        "Stripe item deletion failed for %s",
+                        addon.stripe_subscription_item_id,
+                    )
+                    raise HTTPException(
+                        status_code=502,
+                        detail="Stripe n'a pas pu retirer l'option. Elle n'a pas été supprimée.",
+                    ) from exc
+            except stripe.error.StripeError as exc:
+                # Keep the row: the client would otherwise keep paying for an
+                # option they no longer have.
                 logger.exception(
-                    "Stripe item deletion failed for %s — removing local row anyway",
+                    "Stripe item deletion failed for %s",
                     addon.stripe_subscription_item_id,
                 )
+                raise HTTPException(
+                    status_code=502,
+                    detail="Stripe n'a pas pu retirer l'option. Elle n'a pas été supprimée.",
+                ) from exc
 
         await self.db.delete(addon)
         await self.db.commit()
@@ -819,8 +895,21 @@ class StripeService:
         if handler is None:
             logger.debug("Stripe event ignored: %s", event_type)
             return
+
+        event_id = _get(event, "id")
+        if event_id and await self.db.get(StripeWebhookEvent, event_id) is not None:
+            logger.info("Stripe event %s already processed — skipped", event_id)
+            return
+
         await handler(data)
-        await self.db.commit()
+        if event_id:
+            self.db.add(StripeWebhookEvent(id=event_id, event_type=event_type))
+        try:
+            await self.db.commit()
+        except IntegrityError:
+            # The same event was processed concurrently by another worker.
+            await self.db.rollback()
+            logger.info("Stripe event %s processed concurrently — skipped", event_id)
 
     # ------------------------------------------------------------------
     # Webhook handlers
@@ -940,9 +1029,19 @@ class StripeService:
         sub.current_period_end = _ts_to_dt(_end)
         sub.cancel_at_period_end = bool(_get(sub_obj, "cancel_at_period_end"))
 
-        # Mirror onto the Account
+        # Mirror onto the Account only once Stripe confirms the payment: an
+        # incomplete subscription (3-D Secure abandoned…) must not lift the
+        # trial end date.
+        if sub_obj["status"] not in ("active", "trialing"):
+            await self.db.flush()
+            logger.warning(
+                "Checkout completed with subscription %s in status %s — access unchanged",
+                stripe_subscription_id,
+                sub_obj["status"],
+            )
+            return
         account.plan = plan or account.plan
-        account.status = "active" if sub_obj["status"] in ("active", "trialing") else account.status
+        account.status = "active"
         account.plan_assigned_at = datetime.now(UTC)
         account.plan_expires_at = None  # commercial plans don't expire unless canceled
 
@@ -1031,12 +1130,59 @@ class StripeService:
             _get(tax_id_obj, "value"),
         )
 
+    async def _has_other_live_subscription(
+        self, account_id: uuid.UUID, stripe_subscription_id: str
+    ) -> bool:
+        result = await self.db.execute(
+            select(Subscription.id).where(
+                Subscription.account_id == account_id,
+                Subscription.stripe_subscription_id != stripe_subscription_id,
+                Subscription.status.in_(_LIVE_SUB_STATUSES),
+            )
+        )
+        return result.first() is not None
+
+    async def _apply_subscription_status_to_account(
+        self, account: Account, sub: Subscription, remote_status: str
+    ) -> None:
+        """Mirror a Stripe subscription status on the Account's access state.
+
+        Only a commercial account is driven by Stripe: once an admin assigned a
+        technical plan (invite / vip), late events of the old subscription must
+        not cut the access. A stale event of an old subscription must not cut a
+        newer live one either.
+        """
+        if remote_status in ("active", "trialing") and account.plan in ("gratuit", "invite"):
+            # Paid subscription confirmed after the checkout (late payment
+            # confirmation): this is the moment the account becomes paid.
+            account.plan = sub.plan
+            account.plan_assigned_at = datetime.now(UTC)
+            account.plan_expires_at = None
+        if not is_commercial(account.plan):
+            return
+        if remote_status in ("active", "trialing"):
+            account.status = "active"
+            return
+        if await self._has_other_live_subscription(account.id, sub.stripe_subscription_id):
+            return
+        if remote_status == "past_due":
+            # Keep a suspension decided after repeated payment failures.
+            if account.status != "suspended":
+                account.status = "past_due"
+        elif remote_status in ("unpaid", "paused"):
+            account.status = "suspended"
+        elif remote_status in ("canceled", "incomplete_expired"):
+            account.status = "canceled"
+
     async def _on_subscription_updated(self, sub_obj: dict) -> None:
         # Remember the plan + cancel flag before we mutate the local row —
         # used to detect downgrades and cancellation/reactivation initiated
         # from the Stripe Customer Portal.
         previous_plan: str | None = None
         previous_cancel_flag: bool = False
+        # Events can arrive out of order: read the current state from Stripe
+        # so an older event never overwrites a newer one.
+        sub_obj = self._fresh_subscription(sub_obj)
         result0 = await self.db.execute(
             select(Subscription).where(Subscription.stripe_subscription_id == sub_obj["id"])
         )
@@ -1083,17 +1229,13 @@ class StripeService:
         # etc.) are ignored here.
         plan_changed = self._sync_plan_from_items(sub, sub_obj)
 
-        # Sync the Account status on known bad states
         account = await self.db.get(Account, sub.account_id)
         if account is None:
             return
-        if sub_obj["status"] == "past_due":
-            account.status = "past_due"
-        elif sub_obj["status"] in ("active", "trialing"):
-            account.status = "active"
-        # Mirror the plan change on Account.
-        if plan_changed:
+        # Mirror the plan change on Account (only while it is Stripe-driven).
+        if plan_changed and is_commercial(account.plan):
             account.plan = sub.plan
+        await self._apply_subscription_status_to_account(account, sub, sub_obj["status"])
 
         await self.db.flush()
 
@@ -1125,6 +1267,19 @@ class StripeService:
             # the Stripe portal). Confirm it by email so they have a
             # record that no interruption will happen.
             await self._send_subscription_reactivated_email(account, sub)
+
+    @staticmethod
+    def _fresh_subscription(sub_obj: dict) -> dict:
+        if not StripeService.is_configured():
+            return sub_obj
+        try:
+            return stripe.Subscription.retrieve(sub_obj["id"])
+        except Exception:
+            logger.warning(
+                "Stripe subscription refresh failed for %s — using event payload",
+                _get(sub_obj, "id"),
+            )
+            return sub_obj
 
     async def _notify_downgrade_overflow(
         self, account: Account, previous_plan: str, new_plan: str
@@ -1176,22 +1331,25 @@ sous les limites. Merci de supprimer les éléments excédentaires sous 14 jours
         sub = result.scalar_one_or_none()
         if sub is None:
             return
+        already_announced = bool(sub.cancel_at_period_end) or sub.status == "canceled"
         sub.status = "canceled"
-        sub.canceled_at = datetime.now(UTC)
+        sub.canceled_at = sub.canceled_at or datetime.now(UTC)
+        sub.cancel_at_period_end = False
 
         account = await self.db.get(Account, sub.account_id)
         if account is not None:
-            account.status = "canceled"
+            await self._apply_subscription_status_to_account(account, sub, "canceled")
 
         await self.db.flush()
 
-        # Transactional email: confirmation of cancellation.
-        if account is not None:
+        # The client already got the e-mail when the cancellation was
+        # scheduled (or done by us): don't send a second one at period end.
+        if account is not None and not already_announced and is_commercial(account.plan):
             await self._send_subscription_canceled_email(account, sub)
 
     async def _on_invoice_paid(self, invoice: dict) -> None:
         """On a successful renewal, bring the account back to 'active'."""
-        stripe_subscription_id = _get(invoice, "subscription")
+        stripe_subscription_id = _invoice_subscription_id(invoice)
         if not stripe_subscription_id:
             return
         result = await self.db.execute(
@@ -1200,16 +1358,20 @@ sous les limites. Merci de supprimer les éléments excédentaires sous 14 jours
             )
         )
         sub = result.scalar_one_or_none()
-        if sub is None:
+        if sub is None or sub.status in ("canceled", "incomplete_expired"):
             return
         sub.status = "active"
         account = await self.db.get(Account, sub.account_id)
-        if account is not None and account.status == "past_due":
+        if (
+            account is not None
+            and is_commercial(account.plan)
+            and account.status in ("past_due", "suspended")
+        ):
             account.status = "active"
         await self.db.flush()
 
     async def _on_invoice_payment_failed(self, invoice: dict) -> None:
-        stripe_subscription_id = _get(invoice, "subscription")
+        stripe_subscription_id = _invoice_subscription_id(invoice)
         if not stripe_subscription_id:
             return
         result = await self.db.execute(
@@ -1218,12 +1380,13 @@ sous les limites. Merci de supprimer les éléments excédentaires sous 14 jours
             )
         )
         sub = result.scalar_one_or_none()
-        if sub is None:
+        if sub is None or sub.status in ("canceled", "incomplete_expired"):
             return
         sub.status = "past_due"
         attempt_count = int(_get(invoice, "attempt_count") or 0)
         account = await self.db.get(Account, sub.account_id)
-        if account is None:
+        if account is None or not is_commercial(account.plan):
+            await self.db.flush()
             return
         # After 2 consecutive failures, suspend access until regularised.
         if attempt_count >= 2:
@@ -1262,45 +1425,9 @@ sous les limites. Merci de supprimer les éléments excédentaires sous 14 jours
             )
             return
 
-        # Subscription refund → cancel immediately
-        invoice_id = _get(charge, "invoice")
-        if invoice_id:
-            # Retrieve the invoice to get its subscription id
-            try:
-                inv = stripe.Invoice.retrieve(invoice_id)
-                stripe_subscription_id = _get(inv, "subscription")
-            except Exception:
-                logger.exception("Could not retrieve invoice %s", invoice_id)
-                stripe_subscription_id = None
-            if stripe_subscription_id:
-                result = await self.db.execute(
-                    select(Subscription).where(
-                        Subscription.stripe_subscription_id == stripe_subscription_id
-                    )
-                )
-                sub = result.scalar_one_or_none()
-                if sub is not None:
-                    try:
-                        stripe.Subscription.delete(stripe_subscription_id)
-                    except Exception:
-                        logger.exception(
-                            "Stripe cancel failed for refunded sub %s (already canceled?)",
-                            stripe_subscription_id,
-                        )
-                    sub.status = "canceled"
-                    sub.canceled_at = datetime.now(UTC)
-                    account = await self.db.get(Account, sub.account_id)
-                    if account is not None:
-                        account.status = "canceled"
-                    await self.db.flush()
-                    logger.info(
-                        "Refunded subscription %s → canceled locally and on Stripe",
-                        stripe_subscription_id,
-                    )
-                    return
+        payment_intent_id = _as_id(_get(charge, "payment_intent"))
 
         # One-shot booster refund → zero out remaining questions
-        payment_intent_id = _get(charge, "payment_intent")
         if payment_intent_id:
             result = await self.db.execute(
                 select(BoosterPurchase).where(
@@ -1315,6 +1442,63 @@ sous les limites. Merci de supprimer les éléments excédentaires sous 14 jours
                     "Refunded booster %s → questions_remaining set to 0",
                     booster.id,
                 )
+                return
+
+        # Subscription refund → cancel immediately
+        invoice_id = self._invoice_id_for_charge(charge, payment_intent_id)
+        if not invoice_id:
+            return
+        try:
+            inv = stripe.Invoice.retrieve(invoice_id)
+        except stripe.error.StripeError:
+            # Let Stripe redeliver the event rather than silently keep access.
+            logger.exception("Could not retrieve invoice %s", invoice_id)
+            raise
+        stripe_subscription_id = _invoice_subscription_id(inv)
+        if not stripe_subscription_id:
+            return
+        result = await self.db.execute(
+            select(Subscription).where(
+                Subscription.stripe_subscription_id == stripe_subscription_id
+            )
+        )
+        sub = result.scalar_one_or_none()
+        if sub is None:
+            return
+        try:
+            stripe.Subscription.cancel(stripe_subscription_id)
+        except stripe.error.InvalidRequestError:
+            logger.info("Refunded sub %s already canceled on Stripe", stripe_subscription_id)
+        sub.status = "canceled"
+        sub.canceled_at = datetime.now(UTC)
+        sub.cancel_at_period_end = False
+        account = await self.db.get(Account, sub.account_id)
+        if account is not None:
+            await self._apply_subscription_status_to_account(account, sub, "canceled")
+        await self.db.flush()
+        logger.info(
+            "Refunded subscription %s → canceled locally and on Stripe",
+            stripe_subscription_id,
+        )
+
+    @staticmethod
+    def _invoice_id_for_charge(charge: dict, payment_intent_id: str | None) -> str | None:
+        """Invoice paid by a charge, for every Stripe API version.
+
+        ``charge.invoice`` was removed in API 2025-03-31; the link now lives on
+        InvoicePayment objects.
+        """
+        legacy = _as_id(_get(charge, "invoice"))
+        if legacy:
+            return legacy
+        if not payment_intent_id:
+            return None
+        payments = stripe.InvoicePayment.list(
+            payment={"type": "payment_intent", "payment_intent": payment_intent_id},
+            limit=1,
+        )
+        data = _get(payments, "data") or []
+        return _as_id(_get(data[0], "invoice")) if data else None
 
     async def _send_subscription_confirmed_email(
         self,

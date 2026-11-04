@@ -34,8 +34,6 @@ import httpx
 from fastapi import APIRouter, HTTPException, Request, status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
-
-from app.core.limiter import client_ip
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -48,6 +46,7 @@ from app.api.conversations import (
 )
 from app.core.config import settings
 from app.core.database import async_session_factory
+from app.core.limiter import client_ip
 from app.models.api_usage import ApiUsageLog
 from app.models.conversation import Conversation
 from app.models.organisation import Organisation

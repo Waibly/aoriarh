@@ -358,7 +358,10 @@ export default function BillingPage() {
     );
   }
 
-  const isCommercial = quota && ["solo", "equipe", "groupe"].includes(quota.plan);
+  // Live paid subscription only: once canceled, the client must be able to
+  // subscribe again (including to the same plan) and has nothing to manage.
+  const isCommercial =
+    hasCommercialSub && !!quota && ["solo", "equipe", "groupe"].includes(quota.plan);
   const quotaPct = quota && quota.quota > 0 ? Math.min(100, Math.round((quota.used / quota.quota) * 100)) : 0;
   const quotaBarClass =
     quota?.quota_status === "hard_warning"
@@ -634,7 +637,7 @@ export default function BillingPage() {
           {COMMERCIAL_PLANS.map((code) => {
             const plan = PLANS[code];
             const price = cycle === "monthly" ? plan.priceMonthly : plan.priceYearly;
-            const isCurrent = quota?.plan === code;
+            const isCurrent = hasCommercialSub && quota?.plan === code;
             const featured = plan.featured === true;
             return (
               <Card

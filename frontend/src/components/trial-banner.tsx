@@ -112,6 +112,40 @@ export function TrialBanner() {
     );
   }
 
+  // Paid account blocked: canceled subscription or unpaid invoices.
+  if (
+    COMMERCIAL_PLANS.has(quota.plan) &&
+    (quota.status === "canceled" || quota.status === "suspended" || quota.status === "past_due")
+  ) {
+    const blocked = quota.status !== "past_due";
+    const message =
+      quota.status === "canceled"
+        ? "Votre abonnement est résilié. Souscrivez une offre pour continuer à utiliser AORIA RH."
+        : quota.status === "suspended"
+          ? "Votre accès est suspendu : le paiement de votre abonnement a échoué. Mettez à jour votre carte pour continuer."
+          : "Le dernier paiement de votre abonnement a échoué. Mettez à jour votre carte pour éviter une suspension.";
+    const classes = blocked
+      ? "border-destructive/30 bg-destructive/10 text-destructive"
+      : "border-orange-200 dark:border-orange-900 bg-orange-50 dark:bg-orange-950/30 text-orange-700 dark:text-orange-300";
+    return (
+      <div className={`flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-4 border-b px-4 py-3 text-sm sm:px-6 ${classes}`}>
+        <div className="flex items-center gap-2">
+          <AlertTriangle className="h-4 w-4" />
+          <span>
+            {canManageBilling
+              ? message
+              : "L'abonnement du compte demande une action du propriétaire. Contactez-le pour continuer."}
+          </span>
+        </div>
+        {canManageBilling && (
+          <Button asChild size="sm">
+            <Link href="/billing">Gérer mon abonnement</Link>
+          </Button>
+        )}
+      </div>
+    );
+  }
+
   // Quota soft/hard warning on any plan
   if (quota.quota_status === "soft_warning" || quota.quota_status === "hard_warning") {
     const pct = quota.quota > 0 ? Math.round((quota.used / quota.quota) * 100) : 0;
