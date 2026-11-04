@@ -205,7 +205,7 @@ async def test_google_claim_cannot_be_followed_by_late_password_or_refresh_sessi
             await asyncio.gather(pending, return_exceptions=True)
 
 
-async def test_existing_security_data_is_repaired_on_postgres(isolated_auth):
+async def test_google_access_is_revoked_without_changing_roles_on_postgres(isolated_auth):
     env = isolated_auth
     async with env.factory() as db:
         user = await db.get(User, env.user_id)
@@ -227,7 +227,7 @@ async def test_existing_security_data_is_repaired_on_postgres(isolated_auth):
         member_id = member.id
     path = (
         Path(__file__).resolve().parents[1]
-        / "alembic/versions/m2security01_revoke_legacy_google_access_and_sync_team_roles.py"
+        / "alembic/versions/m2security01_revoke_legacy_google_access.py"
     )
     spec = importlib.util.spec_from_file_location("pg_security_migration", path)
     migration = importlib.util.module_from_spec(spec)
@@ -245,7 +245,7 @@ async def test_existing_security_data_is_repaired_on_postgres(isolated_auth):
     async with env.factory() as db:
         assert (await db.get(User, env.user_id)).hashed_password is None
         grants = (await db.scalars(select(Membership).where(Membership.user_id == member_id))).all()
-        assert [grant.role_in_org for grant in grants] == ["user"]
+        assert [grant.role_in_org for grant in grants] == ["manager"]
     result = await env.client.get(
         "/api/v1/users/me",
         headers={"Authorization": "Bearer " + env.tokens["access_token"]},

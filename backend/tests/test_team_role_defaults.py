@@ -1,4 +1,4 @@
-"""Team roles must reach the organisation grants that enforce API permissions."""
+"""The documented team default must preserve explicit organisation roles."""
 
 import uuid
 
@@ -59,7 +59,7 @@ async def team(client, owner, role, access_all):
 
 @pytest.mark.parametrize("access_all", [False, True])
 @pytest.mark.parametrize("old_role,new_role", [("manager", "user"), ("user", "manager")])
-async def test_team_role_change_updates_existing_grants(
+async def test_team_default_change_preserves_existing_roles_and_applies_to_new_orgs(
     client, manager_user, access_all, old_role, new_role
 ):
     organisations, member, headers = await team(client, manager_user, old_role, access_all)
@@ -82,17 +82,17 @@ async def test_team_role_change_updates_existing_grants(
             )
         ).all()
         assert {str(grant.organisation_id): grant.role_in_org for grant in grants} == {
-            org_id: new_role for org_id in targets
+            org_id: old_role for org_id in targets
         }
     for org_id in targets:
         result = await client.patch(
             f"/api/v1/organisations/{org_id}", headers=headers, json={"name": "Updated"}
         )
-        assert result.status_code == (200 if new_role == "manager" else 403), result.text
-        if new_role == "user":
+        assert result.status_code == (200 if old_role == "manager" else 403), result.text
+        if old_role == "user":
             deletion = await client.delete(f"/api/v1/organisations/{org_id}", headers=headers)
             assert deletion.status_code == 403
-        # The member still has normal access to conversations after a demotion.
+        # Ordinary conversation access is unaffected by the default role.
         conversation = await client.post(
             "/api/v1/conversations/", headers=headers, json={"organisation_id": org_id}
         )
@@ -102,9 +102,24 @@ async def test_team_role_change_updates_existing_grants(
             f"/api/v1/organisations/{organisations[1]}", headers=headers, json={"name": "Denied"}
         )
         assert forbidden.status_code == 403
+    else:
+        created = await client.post(
+            "/api/v1/organisations/",
+            headers=auth_header(manager_user["token"]),
+            json={"name": "New organisation"},
+        )
+        assert created.status_code == 201, created.text
+        result = await client.patch(
+            f"/api/v1/organisations/{created.json()['id']}",
+            headers=headers,
+            json={"name": "New default applied"},
+        )
+        assert result.status_code == (200 if new_role == "manager" else 403), result.text
 
 
-async def test_team_demotion_preserves_roles_in_other_accounts(client, manager_user, regular_user):
+async def test_team_default_change_preserves_roles_in_other_accounts(
+    client, manager_user, regular_user
+):
     _, member, headers = await team(client, manager_user, "manager", True)
     async with session_factory() as db:
         other_owner = (
@@ -135,3 +150,26 @@ async def test_team_demotion_preserves_roles_in_other_accounts(client, manager_u
     async with session_factory() as db:
         grant = await db.get(AccountMember, uuid.UUID(member["id"]))
         assert grant.role_in_org == "user"
+
+
+async def test_explicit_organisation_demotion_removes_manager_permissions(client, manager_user):
+    organisations, member, headers = await team(client, manager_user, "manager", True)
+    memberships = await client.get(
+        f"/api/v1/organisations/{organisations[0]}/members",
+        headers=auth_header(manager_user["token"]),
+    )
+    grant = next(row for row in memberships.json() if row["user_id"] == member["user_id"])
+    result = await client.patch(
+        f"/api/v1/organisations/{organisations[0]}/members/{grant['id']}",
+        headers=auth_header(manager_user["token"]),
+        json={"role_in_org": "user"},
+    )
+    assert result.status_code == 200, result.text
+    result = await client.delete(f"/api/v1/organisations/{organisations[0]}", headers=headers)
+    assert result.status_code == 403
+    result = await client.patch(
+        f"/api/v1/organisations/{organisations[1]}",
+        headers=headers,
+        json={"name": "Other explicit role preserved"},
+    )
+    assert result.status_code == 200, result.text

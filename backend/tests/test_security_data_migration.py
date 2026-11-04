@@ -24,7 +24,7 @@ from tests.conftest import test_session_factory as session_factory
 async def upgrade():
     path = (
         Path(__file__).resolve().parents[1]
-        / "alembic/versions/m2security01_revoke_legacy_google_access_and_sync_team_roles.py"
+        / "alembic/versions/m2security01_revoke_legacy_google_access.py"
     )
     spec = importlib.util.spec_from_file_location("security_migration", path)
     migration = importlib.util.module_from_spec(spec)
@@ -113,8 +113,8 @@ async def test_security_migration_repairs_existing_access_without_touching_other
         grants = (await db.scalars(select(Membership))).all()
         roles = {(grant.user_id, grant.organisation_id): grant.role_in_org for grant in grants}
         assert roles == {
-            (legacy.id, organisation.id): "user",
-            (promoted.id, organisation.id): "manager",
+            (legacy.id, organisation.id): "manager",
+            (promoted.id, organisation.id): "user",
             (credentials.id, organisation.id): "manager",
             (legacy.id, outside.id): "manager",
         }
