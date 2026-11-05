@@ -100,14 +100,24 @@ def validate_fact_bindings(spec: CalculationSpec, entries: list[dict]) -> list[s
     return bound
 
 
+# Typographic operators the planner writes like a person would ("2500 × 3").
+_OPERATORS = str.maketrans({"×": "*", "·": "*", "⋅": "*", "÷": "/", "−": "-", "–": "-"})
+
+
+def normalize_expression(expression: str) -> str:
+    """Plain ASCII arithmetic: typographic operators and French decimal commas ("1,5")."""
+    return re.sub(r"(?<=\d),(?=\d)", ".", expression.translate(_OPERATORS))
+
+
 def calculate(spec: CalculationSpec) -> str:
     """Return exact decimal arithmetic (28 significant digits), or a technical error."""
+    expression = normalize_expression(spec.expression)
     values = {item.name: Decimal(item.value) for item in spec.variables}
     if len(values) != len(spec.variables):
         raise ValueError("duplicate_calculation_variable")
     if any(not value.is_finite() or abs(value) > Decimal("1e30") for value in values.values()):
         raise ValueError("calculation_value_out_of_bounds")
-    tree = ast.parse(spec.expression, mode="eval")
+    tree = ast.parse(expression, mode="eval")
     if len(list(ast.walk(tree))) > 100:
         raise ValueError("calculation_expression_too_complex")
 
@@ -115,7 +125,7 @@ def calculate(spec: CalculationSpec) -> str:
         if isinstance(node, ast.Name) and node.id in values:
             result = values[node.id]
         elif isinstance(node, ast.Constant) and type(node.value) in {int, float}:
-            result = Decimal(ast.get_source_segment(spec.expression, node))
+            result = Decimal(ast.get_source_segment(expression, node))
         elif isinstance(node, ast.UnaryOp) and isinstance(node.op, (ast.UAdd, ast.USub)):
             result = visit(node.operand) * (-1 if isinstance(node.op, ast.USub) else 1)
         elif isinstance(node, ast.BinOp) and isinstance(

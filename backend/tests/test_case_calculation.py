@@ -66,6 +66,19 @@ def test_decimal_arithmetic():
 
 
 @pytest.mark.parametrize(
+    "expression,expected",
+    [
+        ("salary × 3", "9600.30"),  # Seen in production: the planner writes like a person.
+        ("salary ÷ 2", "1600.05"),
+        ("salary − 0,10", "3200.00"),
+        ("salary · 1,5", "4800.150"),
+    ],
+)
+def test_typographic_operators_are_accepted(expression, expected):
+    assert calculate(specification(expression)) == expected
+
+
+@pytest.mark.parametrize(
     "expression",
     [
         "__import__('os').system('pwd')",

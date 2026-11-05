@@ -156,6 +156,13 @@ replaces_task_id reprend une tâche ouverte du dossier si la demande la poursuit
   et des variables liées aux faits exacts, ou null si les sources nécessaires manquent encore.
   Les constantes/scénarios sont explicités dans assumptions. Aucune qualification juridique
   ne découle automatiquement d'un résultat arithmétique.
+  Tout montant, durée ou taux du cas (déclaré par l'utilisateur ou lu dans une pièce) utilisé
+  par le calcul est d'abord un fait : add dans case_delta avec numeric_value, sauf s'il existe
+  déjà dans case_file.entries. Sa variable reprend cette key dans entry_key, avec exactement
+  la même valeur et la même unité que numeric_value, et la key figure dans fact_keys.
+  entry_key=null uniquement pour un paramètre de la question (« sur 3 mois ») ou une
+  constante sourcée. expression n'utilise que les noms de variables, des nombres,
+  + - * / et des parenthèses.
 
 CONTINUATION
 previous_requests est conservé par le code : ne le recopie pas. Ajoute uniquement les demandes
