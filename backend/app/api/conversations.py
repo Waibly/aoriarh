@@ -2100,6 +2100,24 @@ async def chat_stream(
                         ),
                     },
                 )
+            # The writing model may compute some amounts itself: recompute every written
+            # operation and append a correction, never rewrite the text already shown.
+            try:
+                from app.rag.answer_arithmetic import correction_notice, find_arithmetic_errors
+
+                arithmetic_errors = find_arithmetic_errors(full_answer)
+            except Exception:
+                logger.exception("Answer arithmetic check failed")
+                arithmetic_errors = []
+            if arithmetic_errors:
+                notice = correction_notice(arithmetic_errors)
+                full_answer += notice
+                yield _sse_event("chat_delta", {"content": notice})
+                rag_trace.search_plan = {
+                    **(rag_trace.search_plan or {}),
+                    "arithmetic_corrections": arithmetic_errors,
+                }
+                logger.warning("Answer arithmetic corrected: %s", arithmetic_errors)
             t_stream_done = time.perf_counter()
             if stream_dead or generation_interrupted:
                 rag_trace.search_plan = {

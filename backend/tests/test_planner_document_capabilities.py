@@ -150,3 +150,28 @@ def test_unscoped_contract_remains_available_to_standalone_contract_consumers():
         "enum"
         not in schema["$defs"]["ReadLegalSourcesRequest"]["properties"]["document_ids"]["items"]
     )
+
+
+def test_formula_completion_pass_cannot_search_again():
+    from app.services.conversation_requests import continuation_only_completes_calculations
+
+    pending = [
+        {"id": "law", "kind": "legal"},
+        {"id": "calc", "kind": "calculation", "specification": None},
+    ]
+    assert continuation_only_completes_calculations(pending)
+    schema = request_schema(
+        3, continuation=True, legal_source_ids=[CONSULTED], pending_calculation_only=True
+    )
+    assert "#/$defs/LegalRequest" not in choices(schema)
+    assert "#/$defs/ReadLegalSourcesRequest" not in choices(schema)
+    assert "#/$defs/CalculationRequest" in choices(schema)
+    # A discovered piece may still reveal new legal questions.
+    discovered = [
+        *pending,
+        {"id": "read", "kind": "read_existing_document", "source_request_id": "find"},
+    ]
+    assert not continuation_only_completes_calculations(discovered)
+    assert not continuation_only_completes_calculations(
+        [{"id": "calc", "kind": "calculation", "specification": {"expression": "1"}}]
+    )

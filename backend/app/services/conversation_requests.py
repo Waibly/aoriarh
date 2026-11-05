@@ -154,7 +154,8 @@ replaces_task_id reprend une tâche ouverte du dossier si la demande la poursuit
   Il n'exécute aucun outil. Un e-mail et une checklist peuvent partager les mêmes dépendances.
 - calculation : uniquement si un calcul est demandé. specification contient la formule sourcée
   et des variables liées aux faits exacts, ou null si les sources nécessaires manquent encore.
-  Les constantes/scénarios sont explicités dans assumptions. Aucune qualification juridique
+  Les constantes/scénarios sont explicités dans assumptions. Un calcul ne dépend pas d'une
+  demande de clarification : il est fait sur hypothèse explicite. Aucune qualification juridique
   ne découle automatiquement d'un résultat arithmétique.
   Tout montant, durée ou taux du cas (déclaré par l'utilisateur ou lu dans une pièce) utilisé
   par le calcul est d'abord un fait : add dans case_delta avec numeric_value, sauf s'il existe
@@ -162,12 +163,18 @@ replaces_task_id reprend une tâche ouverte du dossier si la demande la poursuit
   la même valeur et la même unité que numeric_value, et la key figure dans fact_keys.
   entry_key=null uniquement pour un paramètre de la question (« sur 3 mois ») ou une
   constante sourcée. expression n'utilise que les noms de variables, des nombres,
-  + - * / et des parenthèses.
+  + - * / et des parenthèses ; chaque variable y figure par son nom, jamais par sa valeur
+  recopiée (« salaire * 0.25 », pas « 3200 * 0.25 »).
 
 CONTINUATION
 previous_requests est conservé par le code : ne le recopie pas. Ajoute uniquement les demandes
-révélées par les pièces/sources obtenues. Pour compléter une demande de calcul sans formule,
-reprends son id avec sa specification renseignée. Les faits déjà enregistrés ne sont pas répétés.
+révélées par les pièces/sources obtenues. Une demande calculation encore sans specification
+DOIT être reprise avec son id et sa specification renseignée dès que les sources obtenues
+donnent la formule et l'assiette : c'est le dernier passage, sans specification le calcul
+n'est pas exécuté. Ne la remplace pas par une nouvelle recherche de la même formule. Une
+donnée incertaine (brut ou net, catégorie, prime variable) ne bloque pas le calcul : retiens
+l'hypothèse la plus probable dans assumptions, ou une demande calculation par hypothèse
+(ids distincts) si le résultat en dépend. Les faits déjà enregistrés ne sont pas répétés.
 Il n'y a aucun passage destiné à corriger une génération invalide.
 
 Exemples de répartition (pas de contenu à recopier) :
@@ -304,6 +311,17 @@ def legal_source_document_ids(history, tool_results: list[dict]) -> list[str]:
     return sorted(ids)
 
 
+def continuation_only_completes_calculations(previous: list[dict] | None) -> bool:
+    """The second pass was opened for a formula-less calculation, not for new pieces."""
+    previous = previous or []
+    return any(
+        item.get("kind") == "calculation" and item.get("specification") is None for item in previous
+    ) and not any(
+        item.get("kind") == "read_existing_document" and item.get("source_request_id")
+        for item in previous
+    )
+
+
 def request_schema(
     query_budget: int,
     *,
@@ -311,6 +329,7 @@ def request_schema(
     active_document_ids: list[str] | None = None,
     legal_source_ids: list[str] | None = None,
     period_parameters_available: bool = True,
+    pending_calculation_only: bool = False,
 ) -> dict:
     schema = RequestPlan.model_json_schema()
 
@@ -345,6 +364,11 @@ def request_schema(
         # The discovery phase is finished. This is an executable capability
         # boundary, not a semantic judgement on the proposed questions.
         unavailable.update({"#/$defs/FindRequest", "#/$defs/ReadRequest"})
+        if pending_calculation_only:
+            # This pass exists only to write the formula from the sources just found.
+            # Seen in production: a new search for the same formula left the calculation
+            # unexecuted and the answer computed it from memory, wrongly.
+            unavailable.update({"#/$defs/LegalRequest", "#/$defs/ReadLegalSourcesRequest"})
     schema["properties"]["requests"]["items"]["anyOf"] = [
         choice
         for choice in schema["properties"]["requests"]["items"]["anyOf"]

@@ -577,6 +577,22 @@ async def public_ask(
                         },
                     )
                     return
+                # Same arithmetic check as the app chat: a correction is appended, never cut.
+                try:
+                    from app.rag.answer_arithmetic import (
+                        correction_notice,
+                        find_arithmetic_errors,
+                    )
+
+                    arithmetic_errors = find_arithmetic_errors(full_answer)
+                except Exception:
+                    logger.exception("Démo: vérification des calculs impossible")
+                    arithmetic_errors = []
+                if arithmetic_errors:
+                    notice = correction_notice(arithmetic_errors)
+                    full_answer += notice
+                    yield _sse_event("chat_delta", {"content": notice})
+                    logger.warning("Démo: calcul corrigé %s", arithmetic_errors)
 
                 # 7. Persistance (pour analytics prospect + claim futur au signup).
                 await service.add_message(

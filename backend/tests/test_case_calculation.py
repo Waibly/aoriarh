@@ -7,6 +7,7 @@ from app.services.case_calculation import (
     CalculationVariable,
     calculate,
     parse_decimal_text,
+    units_compatible,
     validate_fact_bindings,
 )
 
@@ -59,6 +60,24 @@ def specification(expression):
         scenario="Trois mois",
         unit="EUR",
     )
+
+
+@pytest.mark.parametrize(
+    "fact_unit,variable_unit,compatible",
+    [
+        ("euros", "€ brut par mois", True),  # Seen in production (Syntec severance).
+        ("EUR brut/mois", "euros brut par mois", True),
+        ("euros par an", "€ par mois", False),
+        ("€/an", "EUR brut mensuel", False),
+        ("EUR", "USD", False),
+        ("heures", "jours", False),
+        ("mois", "mois", True),
+    ],
+)
+def test_amount_units_are_reconciled_but_not_across_currency_or_period(
+    fact_unit, variable_unit, compatible
+):
+    assert units_compatible(fact_unit, variable_unit) is compatible
 
 
 def test_decimal_arithmetic():

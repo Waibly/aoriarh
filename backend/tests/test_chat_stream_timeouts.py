@@ -454,3 +454,38 @@ async def test_quota_incremented_even_if_trace_persist_fails(
     )
     assert after.status_code == 200
     assert after.json()["used"] == before.json()["used"] + 1
+
+
+async def test_wrong_written_operation_gets_an_appended_correction(
+    client: AsyncClient,
+    manager_user: dict,
+    monkeypatch,
+) -> None:
+    conv_id = await _make_conversation(client, manager_user)
+
+    async def wrong_sum(self, *args, **kwargs):
+        # Seen on the replay bench: right formula, wrong result written by the model.
+        yield "Indemnité légale : 2 850 € × 1/4 × 9,5 = **7 125 €**."
+
+    monkeypatch.setattr("app.api.conversations.classify_intent", _passthrough_intent)
+    monkeypatch.setattr(
+        "app.services.conversation_orchestrator.prepare_conversation_context",
+        _fast_prepare_context,
+    )
+    monkeypatch.setattr("app.rag.agent.RAGAgent.stream_generate", wrong_sum)
+
+    res = await client.post(
+        f"/api/v1/conversations/{conv_id}/chat/stream",
+        headers=auth_header(manager_user["token"]),
+        json={"message": "Quelle indemnité ?"},
+    )
+    assert res.status_code == 200
+    assert "Vérification automatique des calculs" in res.text
+    assert "chat_done" in res.text
+    loaded = await client.get(
+        f"/api/v1/conversations/{conv_id}", headers=auth_header(manager_user["token"])
+    )
+    answer = next(m for m in loaded.json()["messages"] if m["role"] == "assistant")
+    # The streamed text is kept verbatim; the correction follows it.
+    assert answer["content"].startswith("Indemnité légale : 2 850 € × 1/4 × 9,5 = **7 125 €**.")
+    assert "**6 768,75 €** (et non 7 125 €)" in answer["content"]

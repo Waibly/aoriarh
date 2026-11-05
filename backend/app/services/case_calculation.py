@@ -62,6 +62,48 @@ class CalculationSpec(BaseModel):
     unit: str = Field(max_length=100)
 
 
+_CURRENCIES = {"eur": ("€", "eur", "euro"), "usd": ("$", "usd", "dollar")}
+_PERIODS = {
+    "hour": ("heure", "/h", "hour"),
+    "day": ("jour", "/j", "day"),
+    "week": ("semaine", "hebdo", "week"),
+    "month": ("mois", "mensuel", "month"),
+    "year": ("an", "année", "annuel", "year"),
+}
+
+
+def _unit_signature(unit: str | None) -> tuple[str | None, str | None]:
+    text = f" {(unit or '').lower()} "
+    currency = next(
+        (code for code, marks in _CURRENCIES.items() if any(m in text for m in marks)), None
+    )
+    period = next(
+        (
+            code
+            for code, marks in _PERIODS.items()
+            if any(
+                re.search(rf"(?<![a-zà-ÿ]){re.escape(m)}(?![a-zà-ÿ])", text)
+                if m.isalpha()
+                else m in text
+                for m in marks
+            )
+        ),
+        None,
+    )
+    return currency, period
+
+
+def units_compatible(fact_unit: str | None, variable_unit: str | None) -> bool:
+    """Same unit written differently ("euros" / "€ brut par mois"), never another currency
+    or another period ("€ par an" / "€ par mois")."""
+    if (fact_unit or "").strip().lower() == (variable_unit or "").strip().lower():
+        return True
+    fact, variable = _unit_signature(fact_unit), _unit_signature(variable_unit)
+    if fact[0] is None or fact[0] != variable[0]:
+        return False  # Only amounts are reconciled; other units must match exactly.
+    return fact[1] is None or variable[1] is None or fact[1] == variable[1]
+
+
 def validate_fact_bindings(spec: CalculationSpec, entries: list[dict]) -> list[str]:
     """Check exact typed inputs, never infer a number from prose or repair a proposal."""
     bound = []
@@ -82,7 +124,7 @@ def validate_fact_bindings(spec: CalculationSpec, entries: list[dict]) -> list[s
         structured = entry.get("value_json")
         if isinstance(structured, dict) and "number" in structured:
             value = structured["number"]
-            if structured.get("unit") != variable.unit:
+            if not units_compatible(structured.get("unit"), variable.unit):
                 raise ValueError("calculation_fact_unit_mismatch")
         else:
             value = entry.get("value_text")

@@ -336,6 +336,7 @@ async def plan_conversation(
     from app.services.conversation_requests import (
         REQUEST_PROMPT,
         compact_case_context,
+        continuation_only_completes_calculations,
         legal_source_document_ids,
         request_schema,
     )
@@ -356,6 +357,8 @@ async def plan_conversation(
             query,
             history if isinstance(history, list) else source_history,
         ),
+        pending_calculation_only=continuation
+        and continuation_only_completes_calculations(previous_requests),
     )
     # The question is already supplied once; keep only search constraints here.
     search_context.pop("query", None)
@@ -559,7 +562,8 @@ def legal_plan(planned: PlannedConversation, action: OrchestratorAction):
             warnings=[*base.warnings, "organisation_convention_not_applicable_to_case"],
         )
     legal_actions = [
-        item for item in (getattr(getattr(planned, "plan", None), "actions", None) or [])
+        item
+        for item in (getattr(getattr(planned, "plan", None), "actions", None) or [])
         if item.action == "search_legal"
     ]
     if len(legal_actions) > 1 and action.query:
