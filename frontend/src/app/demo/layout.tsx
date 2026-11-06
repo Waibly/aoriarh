@@ -6,7 +6,7 @@ export default function DemoLayout({
   children: React.ReactNode;
 }) {
   return (
-    <div className="flex min-h-svh flex-col bg-background">
+    <div className="flex min-h-svh flex-col bg-[#f4f4f7]">
       {/* Header seul en pleine largeur (max-w-6xl), comme le site aoriarh.fr. */}
       <header className="sticky top-0 z-50 border-b border-border bg-white/85 backdrop-blur-md">
         <div className="mx-auto flex h-16 w-full max-w-6xl items-center justify-between px-4 sm:px-6">
@@ -40,7 +40,7 @@ export default function DemoLayout({
           </div>
         </div>
       </header>
-      {/* Le contenu vit dans une carte blanche posée sur le fond commun de l'app. */}
+      {/* Le contenu vit dans une carte blanche posée sur le fond gris (comme l'app). */}
       <main className="mx-auto w-full max-w-3xl flex-1 px-4 py-6 sm:px-6 sm:py-10">
         {children}
       </main>
