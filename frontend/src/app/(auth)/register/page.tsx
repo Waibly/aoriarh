@@ -27,6 +27,7 @@ import {
 } from "@/components/org/org-form-fields";
 import { getAttribution, sendAttribution } from "@/lib/attribution";
 import { trackEssaiDemarre } from "@/lib/gtag";
+import { storePendingQuestion } from "@/lib/pending-question";
 
 const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
@@ -106,6 +107,11 @@ function RegisterForm() {
       : null;
   const hasPaidPlanRequested =
     requestedPlan !== null && requestedCycle !== null;
+
+  // Question préparée sur un outil du site : conservée jusqu'au premier écran du chat.
+  useEffect(() => {
+    storePendingQuestion(searchParams.get("q"));
+  }, [searchParams]);
 
   useEffect(() => {
     if (!inviteToken) return;

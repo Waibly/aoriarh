@@ -492,3 +492,19 @@ it("disables suggestion and tip actions while a request is unavailable", () => {
   expect(onSend).not.toHaveBeenCalled();
   expect(onBrowse).not.toHaveBeenCalled();
 });
+
+it("préremplit une fois la question transmise, sans l'envoyer", () => {
+  const onSend = jest.fn();
+  const onInitialPrefill = jest.fn();
+  const { rerender } = render(
+    <WelcomeScreen onSend={onSend} disabled initialPrefill="Entreprise de 12 salariés : DUERP ?" onInitialPrefill={onInitialPrefill} />
+  );
+  expect(screen.getByRole("textbox")).toHaveValue("");
+  expect(onInitialPrefill).not.toHaveBeenCalled();
+  rerender(
+    <WelcomeScreen onSend={onSend} initialPrefill="Entreprise de 12 salariés : DUERP ?" onInitialPrefill={onInitialPrefill} />
+  );
+  expect(screen.getByRole("textbox")).toHaveValue("Entreprise de 12 salariés : DUERP ?");
+  expect(onInitialPrefill).toHaveBeenCalledTimes(1);
+  expect(onSend).not.toHaveBeenCalled();
+});

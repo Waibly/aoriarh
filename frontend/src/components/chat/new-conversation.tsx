@@ -10,6 +10,7 @@ import { prepareLibraryDocument } from "@/lib/chat-document-library";
 import { attachmentBlocker } from "@/lib/chat-attachments";
 import { useAttachmentReadiness } from "@/hooks/use-attachment-readiness";
 import type { Conversation as ConversationData } from "@/types/api";
+import { clearPendingQuestion, peekPendingQuestion, storePendingQuestion } from "@/lib/pending-question";
 
 export function NewConversation({ organisationId, token, onSaved }: {
   organisationId?: string;
@@ -25,6 +26,11 @@ export function NewConversation({ organisationId, token, onSaved }: {
   const [libraryOpen, setLibraryOpen] = useState(false);
   const [firstMessage, setFirstMessage] = useState<string | null>(null);
   useAttachmentReadiness(draft?.id, token, attachments, setAttachments);
+  const [pendingQuestion, setPendingQuestion] = useState<string | null>(null);
+  useEffect(() => {
+    storePendingQuestion(new URLSearchParams(window.location.search).get("q"));
+    setPendingQuestion(peekPendingQuestion());
+  }, []);
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
 
   async function ensureConversation() {
@@ -69,6 +75,8 @@ export function NewConversation({ organisationId, token, onSaved }: {
 
   const disabled = busy || !organisationId || !token;
   return <><WelcomeScreen disabled={disabled} attachments={attachments}
+    initialPrefill={pendingQuestion}
+    onInitialPrefill={() => { clearPendingQuestion(); setPendingQuestion(null); }}
     onBrowse={draft?.document_attachments_enabled === false ? undefined : () => void run(async () => {
       const conversation = await ensureConversation();
       checkAttachments(conversation);

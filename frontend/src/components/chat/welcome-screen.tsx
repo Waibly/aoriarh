@@ -45,9 +45,22 @@ const CATEGORY_ICONS = {
 };
 const quietButton =
   "text-muted-foreground hover:text-primary focus-visible:outline-ring min-h-9 rounded px-2 text-xs transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 disabled:cursor-not-allowed disabled:opacity-50";
-export function WelcomeScreen(inputProps: ChatInputProps) {
+export function WelcomeScreen({
+  initialPrefill,
+  onInitialPrefill,
+  ...inputProps
+}: ChatInputProps & {
+  /** Question à placer une fois dans la zone de saisie (sans envoi). */
+  initialPrefill?: string | null;
+  onInitialPrefill?: () => void;
+}) {
   const { profilMetier } = useOrg();
   const inputRef = useRef<ChatInputHandle>(null);
+  useEffect(() => {
+    if (!initialPrefill || inputProps.disabled || !inputRef.current) return;
+    inputRef.current.prefill(initialPrefill);
+    onInitialPrefill?.();
+  }, [initialPrefill, inputProps.disabled, onInitialPrefill]);
   const pendingSelection = useRef<ChatSuggestion | null>(null);
   const [examplesOpen, setExamplesOpen] = useState(false);
   const [category, setCategory] = useState<DiscoveryCategory | "all">("all");

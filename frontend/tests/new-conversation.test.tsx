@@ -304,3 +304,19 @@ it("keeps the question visible and shows a persistent provider error", async () 
   );
   expect(streamMessage).toHaveBeenCalledTimes(1);
 });
+
+it("préremplit la question venue du site sans créer de conversation ni l'envoyer", async () => {
+  localStorage.setItem(
+    "aoria_pending_question",
+    JSON.stringify({ text: "Entreprise de 12 salariés. Que faire après un accident du travail ?", storedAt: Date.now() })
+  );
+  (createConversation as jest.Mock).mockClear();
+  (streamMessage as jest.Mock).mockClear();
+  render(<NewConversation organisationId="org" token="token" onSaved={jest.fn()} />);
+  await waitFor(() =>
+    expect(screen.getByRole("textbox")).toHaveValue("Entreprise de 12 salariés. Que faire après un accident du travail ?")
+  );
+  expect(localStorage.getItem("aoria_pending_question")).toBeNull();
+  expect(createConversation).not.toHaveBeenCalled();
+  expect(streamMessage).not.toHaveBeenCalled();
+});
