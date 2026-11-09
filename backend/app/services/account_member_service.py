@@ -15,6 +15,7 @@ from app.models.membership import Membership
 from app.models.organisation import Organisation
 from app.models.user import User
 from app.schemas.account_member import AccountInvitationCreate, AccountMemberUpdate
+from app.services.email.invitation_delivery import require_invitation_delivery
 from app.services.email.sender import send_email
 from app.services.email.templates import render_team_invitation_email
 
@@ -150,11 +151,13 @@ class AccountMemberService:
             role_in_org=data.role_in_org.value,
             accept_url=accept_url,
         )
-        await send_email(
-            to_email=data.email,
-            to_name=None,
-            subject=subject,
-            html_content=html,
+        await require_invitation_delivery(
+            send_email(
+                to_email=data.email,
+                to_name=None,
+                subject=subject,
+                html_content=html,
+            )
         )
 
         await self.db.commit()
@@ -423,11 +426,13 @@ class AccountMemberService:
             role_in_org=invitation.role_in_org,
             accept_url=accept_url,
         )
-        await send_email(
-            to_email=invitation.email,
-            to_name=None,
-            subject=subject,
-            html_content=html,
+        await require_invitation_delivery(
+            send_email(
+                to_email=invitation.email,
+                to_name=None,
+                subject=subject,
+                html_content=html,
+            )
         )
 
         await self.db.commit()

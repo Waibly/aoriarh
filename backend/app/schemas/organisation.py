@@ -56,6 +56,7 @@ class RoleInOrg(StrEnum):
 
 class OrganisationCreate(BaseModel):
     name: str
+    account_id: uuid.UUID | None = None
     forme_juridique: FormeJuridique | None = None
     taille: Taille | None = None
     convention_collective: str | None = None

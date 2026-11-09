@@ -18,6 +18,12 @@ async def test_invited_member_cannot_manage_billing(client, manager_user, monkey
         owner = (await db.scalars(select(User).where(User.email == manager_user["email"]))).one()
         owner.owned_account.plan = "equipe"
         await db.commit()
+    invitation = await client.post(
+        "/api/v1/team/invite",
+        headers=auth_header(manager_user["token"]),
+        json={"email": "invited-billing@test.com", "role_in_org": role},
+    )
+    assert invitation.status_code == 201, invitation.text
     registered = await client.post(
         "/api/v1/auth/register",
         json={
@@ -25,15 +31,10 @@ async def test_invited_member_cannot_manage_billing(client, manager_user, monkey
             "password": "SecurePass123!",
             "full_name": "Invited member",
             "invited": True,
+            "invitation_token": invitation.json()["token"],
         },
     )
     headers = auth_header(registered.json()["access_token"])
-    invitation = await client.post(
-        "/api/v1/team/invite",
-        headers=auth_header(manager_user["token"]),
-        json={"email": "invited-billing@test.com", "role_in_org": role},
-    )
-    assert invitation.status_code == 201, invitation.text
     accepted = await client.post(
         f"/api/v1/invitations/{invitation.json()['token']}/accept", headers=headers
     )

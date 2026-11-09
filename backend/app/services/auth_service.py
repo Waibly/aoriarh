@@ -3,7 +3,7 @@ import uuid
 from datetime import UTC, datetime, timedelta
 
 from fastapi import HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
@@ -132,6 +132,30 @@ class AuthService:
     def __init__(self, db: AsyncSession) -> None:
         self.db = db
 
+    async def _recover_unattached_account(self, user: User) -> None:
+        """Recover legacy signups left without an account or an invitation to accept."""
+        if (
+            user.role == "admin"
+            or user.owned_account
+            or user.memberships
+            or user.account_memberships
+        ):
+            return
+        pending = await self.db.scalar(
+            select(Invitation.id)
+            .where(
+                func.lower(Invitation.email) == user.email.lower(),
+                Invitation.status == "pending",
+                Invitation.expires_at > datetime.now(UTC),
+            )
+            .limit(1)
+        )
+        if pending is None:
+            user.owned_account = _new_trial_account(default_workspace_name(user.full_name), user.id)
+            user.role = "manager"
+            self.db.add(user.owned_account)
+            await self.db.flush()
+
     async def _maybe_start_paid_checkout(
         self,
         account: Account,
@@ -180,7 +204,23 @@ class AuthService:
                 detail="Un compte avec cet email existe déjà",
             )
 
-        if data.invited:
+        if data.invited or data.invitation_token:
+            invitation = (
+                await self.db.scalar(
+                    select(Invitation).where(
+                        Invitation.token == data.invitation_token,
+                        func.lower(Invitation.email) == email,
+                        Invitation.status == "pending",
+                        Invitation.expires_at > datetime.now(UTC),
+                    )
+                )
+                if data.invitation_token
+                else None
+            )
+            if invitation is None:
+                raise HTTPException(
+                    400, "Une invitation valide pour cette adresse email est requise"
+                )
             # Invited user: no Account, role=user
             user = User(
                 email=email,
@@ -252,6 +292,7 @@ class AuthService:
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Compte désactivé",
             )
+        await self._recover_unattached_account(user)
         return await _build_token_response(self.db, user.id, credentials_only=True)
 
     async def google_auth(self, data: GoogleAuthRequest) -> TokenResponse:
@@ -330,14 +371,18 @@ class AuthService:
                 await revoke_all_user_sessions(self.db, user.id)
             user.google_sub = google_sub
             user.auth_provider = "google"
+            await self._recover_unattached_account(user)
             return await _build_token_response(self.db, user.id)
 
         # Check if there's a pending invitation for this email
         inv_result = await self.db.execute(
-            select(Invitation).where(
-                Invitation.email.ilike(email),
+            select(Invitation)
+            .where(
+                func.lower(Invitation.email) == email,
                 Invitation.status == "pending",
+                Invitation.expires_at > datetime.now(UTC),
             )
+            .limit(1)
         )
         has_pending_invitation = inv_result.scalar_one_or_none() is not None
 

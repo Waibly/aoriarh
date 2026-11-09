@@ -2,14 +2,15 @@ import uuid
 from datetime import UTC, datetime, timedelta
 
 from fastapi import HTTPException, status
-from sqlalchemy import func, select
+from sqlalchemy import case, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.plans import PLAN_FEATURES, TECHNICAL_PLANS
+from app.models.account import Account
 from app.models.plan_invitation import PlanInvitation, PlanInvitationRedemption
 from app.models.user import User
-from app.services.plan_service import assign_plan
+from app.services.plan_service import PlanOverflowError, assign_plan, notify_plan_assignment
 
 
 def _utcnow() -> datetime:
@@ -91,15 +92,17 @@ class PlanInvitationService:
         }
 
     async def redeem(self, token: uuid.UUID, user: User) -> dict:
-        validation = await self.validate_token(token)
-        if not validation["valid"]:
+        invitation = await self.db.scalar(
+            select(PlanInvitation)
+            .where(PlanInvitation.token == token)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+        if invitation is None:
             raise HTTPException(
                 status_code=status.HTTP_410_GONE,
-                detail=f"Ce lien n'est plus valide ({validation['reason']})",
+                detail="Ce lien d'invitation n'existe pas",
             )
-
-        result = await self.db.execute(select(PlanInvitation).where(PlanInvitation.token == token))
-        invitation = result.scalar_one()
 
         if invitation.email and user.email.lower() != invitation.email.lower():
             raise HTTPException(
@@ -107,29 +110,20 @@ class PlanInvitationService:
                 detail="Ce lien est réservé à une autre adresse email",
             )
 
-        account = user.owned_account
+        account = await self.db.scalar(
+            select(Account)
+            .where(Account.owner_id == user.id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
         if not account:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Vous devez d'abord créer un compte pour activer ce plan",
             )
 
-        # Already on a commercial plan with active Stripe subscription
-        from app.models.subscription import Subscription
-
-        sub_result = await self.db.execute(
-            select(Subscription).where(
-                Subscription.account_id == account.id,
-                Subscription.status.in_(["active", "trialing", "past_due"]),
-            )
-        )
-        if sub_result.scalar_one_or_none():
-            return {
-                "status": "already_paid",
-                "message": "Votre compte a déjà un abonnement payant actif",
-            }
-
-        # Already redeemed this specific link
+        # A previous beneficiary can recover their receipt even after exhaustion,
+        # expiration or revocation. This never grants or extends access again.
         existing = await self.db.execute(
             select(PlanInvitationRedemption).where(
                 PlanInvitationRedemption.plan_invitation_id == invitation.id,
@@ -137,28 +131,82 @@ class PlanInvitationService:
             )
         )
         if existing.scalar_one_or_none():
-            return {
+            response = {
                 "status": "already_redeemed",
-                "message": "Vous avez déjà activé ce lien",
+                "message": "Ce lien a déjà été activé sur votre compte.",
+                "plan": account.plan,
+                "plan_expires_at": account.plan_expires_at,
+            }
+            await self.db.commit()
+            return response
+
+        if invitation.status != "active" or _is_expired(invitation.expires_at):
+            raise HTTPException(410, "Ce lien n'est plus disponible pour une nouvelle activation")
+
+        from app.models.subscription import Subscription
+
+        subscription = await self.db.scalar(
+            select(Subscription.id)
+            .where(
+                Subscription.account_id == account.id,
+                Subscription.status.in_(["active", "trialing", "past_due"]),
+            )
+            .limit(1)
+        )
+        if subscription is not None:
+            await self.db.commit()
+            return {
+                "status": "already_paid",
+                "message": "Votre compte a déjà un abonnement payant actif",
             }
 
-        account = await assign_plan(
-            self.db, account.id, invitation.plan, invitation.duration_months
+        # Reserve the last use with a conditional SQL increment as well as the
+        # row lock: the cap cannot be exceeded and rolls back with plan changes.
+        reserved = await self.db.execute(
+            update(PlanInvitation)
+            .where(
+                PlanInvitation.id == invitation.id,
+                PlanInvitation.status == "active",
+                PlanInvitation.expires_at > _utcnow(),
+                or_(
+                    PlanInvitation.max_uses.is_(None),
+                    PlanInvitation.use_count < PlanInvitation.max_uses,
+                ),
+            )
+            .values(
+                use_count=PlanInvitation.use_count + 1,
+                status=case(
+                    (PlanInvitation.use_count + 1 >= PlanInvitation.max_uses, "exhausted"),
+                    else_="active",
+                ),
+            )
+            .execution_options(synchronize_session=False)
         )
+        if reserved.rowcount != 1:
+            await self.db.rollback()
+            raise HTTPException(410, "Ce lien a atteint sa limite d'utilisations ou a expiré")
+        try:
+            account = await assign_plan(
+                self.db, account.id, invitation.plan, invitation.duration_months, commit=False
+            )
+            self.db.add(
+                PlanInvitationRedemption(
+                    plan_invitation_id=invitation.id,
+                    account_id=account.id,
+                    user_id=user.id,
+                    redeemed_at=_utcnow(),
+                )
+            )
+            await self.db.commit()
+            await self.db.refresh(invitation)
+        except PlanOverflowError as exc:
+            await self.db.rollback()
+            raise HTTPException(409, "Ce plan ne peut pas contenir vos données actuelles") from exc
+        except Exception:
+            await self.db.rollback()
+            raise
 
-        redemption = PlanInvitationRedemption(
-            plan_invitation_id=invitation.id,
-            account_id=account.id,
-            user_id=user.id,
-            redeemed_at=_utcnow(),
-        )
-        self.db.add(redemption)
-
-        invitation.use_count += 1
-        if invitation.max_uses is not None and invitation.use_count >= invitation.max_uses:
-            invitation.status = "exhausted"
-
-        await self.db.commit()
+        await notify_plan_assignment(self.db, account)
 
         return {
             "status": "redeemed",

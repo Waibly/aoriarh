@@ -27,16 +27,6 @@ async def team(client, owner, role, access_all):
         )
         assert response.status_code == 201, response.text
         organisations.append(response.json()["id"])
-    registration = await client.post(
-        "/api/v1/auth/register",
-        json={
-            "email": "role-member@test.com",
-            "full_name": "Member",
-            "password": "SecurePass123!",
-            "invited": True,
-        },
-    )
-    member_headers = auth_header(registration.json()["access_token"])
     invitation = await client.post(
         "/api/v1/team/invite",
         headers=auth_header(owner["token"]),
@@ -48,6 +38,17 @@ async def team(client, owner, role, access_all):
         },
     )
     assert invitation.status_code == 201, invitation.text
+    registration = await client.post(
+        "/api/v1/auth/register",
+        json={
+            "email": "role-member@test.com",
+            "full_name": "Member",
+            "password": "SecurePass123!",
+            "invited": True,
+            "invitation_token": invitation.json()["token"],
+        },
+    )
+    member_headers = auth_header(registration.json()["access_token"])
     accepted = await client.post(
         f"/api/v1/invitations/{invitation.json()['token']}/accept", headers=member_headers
     )

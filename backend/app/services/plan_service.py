@@ -1,3 +1,4 @@
+import logging
 import uuid
 from datetime import UTC, datetime, timedelta
 
@@ -12,6 +13,8 @@ from app.models.monthly_question_usage import MonthlyQuestionUsage
 from app.models.organisation import Organisation
 from app.models.subscription import Subscription
 from app.services.billing_service import BillingService
+
+logger = logging.getLogger(__name__)
 
 
 class PlanOverflowError(Exception):
@@ -121,6 +124,8 @@ async def assign_plan(
     account_id: uuid.UUID,
     plan: str,
     duration_months: int | None = None,
+    *,
+    commit: bool = True,
 ) -> Account:
     account = await db.get(Account, account_id)
     if account is None:
@@ -207,13 +212,21 @@ async def assign_plan(
     ):
         current_usage.quota_for_period = new_limits.questions_per_month
 
-    await db.commit()
-    await db.refresh(account)
+    if commit:
+        await db.commit()
+        await db.refresh(account)
+        await notify_plan_assignment(db, account)
+    else:
+        await db.flush()
+    return account
+
+
+async def notify_plan_assignment(db: AsyncSession, account: Account) -> None:
 
     # Notify the account owner when an admin offers the Invité plan.
     # Email failure is non-blocking — the plan assignment must persist
     # even if Brevo is down.
-    if plan == "invite" and account.plan_expires_at is not None:
+    if account.plan == "invite" and account.plan_expires_at is not None:
         from app.core.config import settings
         from app.models.user import User
         from app.services.email.sender import send_email
@@ -227,11 +240,14 @@ async def assign_plan(
                 plan_expires_at=account.plan_expires_at,
                 billing_url=billing_url,
             )
-            await send_email(
-                to_email=owner.email,
-                to_name=owner.full_name,
-                subject=subject,
-                html_content=html,
-            )
-
-    return account
+            try:
+                sent = await send_email(
+                    to_email=owner.email,
+                    to_name=owner.full_name,
+                    subject=subject,
+                    html_content=html,
+                )
+                if not sent:
+                    logger.warning("Plan assignment notification was not delivered")
+            except Exception:
+                logger.warning("Plan assignment notification transport failed")

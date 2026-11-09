@@ -1,3 +1,5 @@
+from unittest.mock import AsyncMock
+
 import pytest
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
@@ -17,6 +19,17 @@ limiter.enabled = False
 # et crée de faux contacts dans la liste de prod à chaque run de pytest.
 settings.brevo_api_key = ""
 settings.brevo_list_id = 0
+
+
+@pytest.fixture(autouse=True)
+def invitation_transport(monkeypatch):
+    # Tests simulate accepted delivery; failure cases override these stubs.
+    # No invitation email is ever sent to a real provider.
+    monkeypatch.setattr("app.services.invitation_service.send_email", AsyncMock(return_value=True))
+    monkeypatch.setattr(
+        "app.services.account_member_service.send_email", AsyncMock(return_value=True)
+    )
+
 
 TEST_DATABASE_URL = "sqlite+aiosqlite://"
 

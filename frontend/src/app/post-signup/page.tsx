@@ -1,11 +1,19 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { Loader2 } from "lucide-react";
 import { apiFetch } from "@/lib/api";
-import type { Organisation } from "@/types/api";
+import type { Organisation, User } from "@/types/api";
+import { Button } from "@/components/ui/button";
+import { useErrorState } from "@/hooks/use-error-state";
+import {
+  readSignupCookie as readCookie,
+  clearSignupCookie as clearCookie,
+  safeAppCallback,
+  redeemPendingPlan,
+} from "@/lib/signup-flow";
 
 // Callback page hit after a Google OAuth round-trip. Never shown for long —
 // just checks if the user already has an organisation and dispatches:
@@ -18,21 +26,52 @@ import type { Organisation } from "@/types/api";
 const PAID_PLANS = ["solo", "equipe", "groupe"] as const;
 const BILLING_CYCLES = ["monthly", "yearly"] as const;
 
-function readCookie(name: string): string | null {
-  const match = document.cookie.match(
-    new RegExp("(?:^|; )" + name.replace(/[.$?*|{}()[\]\\/+^]/g, "\\$&") + "=([^;]*)"),
-  );
-  return match ? decodeURIComponent(match[1]) : null;
-}
-
-function clearCookie(name: string) {
-  document.cookie = `${name}=; max-age=0; path=/; samesite=lax`;
-}
-
 export default function PostSignupPage() {
   const router = useRouter();
   const session = useSession();
   const hasRunRef = useRef(false);
+  const [error, setError] = useErrorState<string | null>(null);
+  const [attempt, setAttempt] = useState(0);
+
+  const continueAfterOrg = useCallback(
+    async (token: string) => {
+      await redeemPendingPlan(token);
+
+      const plan = readCookie("aoria_signup_plan");
+      const cycle = readCookie("aoria_signup_cycle");
+      const callback = readCookie("aoria_post_signup_callback");
+
+      const planValid =
+        plan && (PAID_PLANS as readonly string[]).includes(plan);
+      const cycleValid =
+        cycle && (BILLING_CYCLES as readonly string[]).includes(cycle);
+      const safeCallback = safeAppCallback(callback);
+
+      if (!planValid || !cycleValid) {
+        clearCookie("aoria_post_signup_callback");
+        clearCookie("aoria_signup_profil");
+        router.replace(safeCallback ?? "/chat");
+        return;
+      }
+
+      const checkout = await apiFetch<{ checkout_url: string }>(
+        "/billing/checkout",
+        {
+          method: "POST",
+          token,
+          body: JSON.stringify({ plan, cycle }),
+        }
+      );
+      if (!checkout.checkout_url)
+        throw new Error("Le paiement n'a pas pu être préparé. Réessayez.");
+      clearCookie("aoria_signup_plan");
+      clearCookie("aoria_signup_cycle");
+      clearCookie("aoria_post_signup_callback");
+      clearCookie("aoria_signup_profil");
+      window.location.href = checkout.checkout_url;
+    },
+    [router]
+  );
 
   useEffect(() => {
     if (hasRunRef.current) return;
@@ -48,7 +87,7 @@ export default function PostSignupPage() {
     const token = session.data.access_token;
 
     apiFetch<Organisation[]>("/organisations/", { token })
-      .then((orgs) => {
+      .then(async (orgs) => {
         if (!orgs || orgs.length === 0) {
           // No org yet. Special case: if the callback points at an invitation
           // acceptance page, respect it directly — the accept flow creates the
@@ -60,77 +99,54 @@ export default function PostSignupPage() {
             router.replace(callback);
             return;
           }
+          const user = await apiFetch<User>("/users/me", { token });
+          if (user.pending_invitation_token) {
+            router.replace(`/invite/accept/${user.pending_invitation_token}`);
+            return;
+          }
           // Otherwise show the onboarding screen. Plan/cycle/profil cookies
           // stay in place; /register reads them when it submits.
           router.replace("/register?onboard=1");
           return;
         }
-        continueAfterOrg(token);
+        await continueAfterOrg(token);
       })
-      .catch(() => {
-        // If we can't list orgs, default to the onboarding screen so the
-        // user is never dropped in /chat without an org.
-        router.replace("/register?onboard=1");
+      .catch((error) => {
+        setError(
+          error instanceof Error
+            ? error.message
+            : "Impossible de préparer votre espace."
+        );
       });
-  }, [router, session]);
-
-  function continueAfterOrg(token: string) {
-    const planInviteToken = readCookie("aoria_plan_invite_token");
-    if (planInviteToken) {
-      clearCookie("aoria_plan_invite_token");
-      apiFetch(`/plan-invitations/${planInviteToken}/redeem`, {
-        method: "POST",
-        token,
-      })
-        .catch(() => {})
-        .finally(() => {
-          window.location.href = "/chat";
-        });
-      return;
-    }
-
-    const plan = readCookie("aoria_signup_plan");
-    const cycle = readCookie("aoria_signup_cycle");
-    const callback = readCookie("aoria_post_signup_callback");
-    clearCookie("aoria_signup_plan");
-    clearCookie("aoria_signup_cycle");
-    clearCookie("aoria_post_signup_callback");
-    clearCookie("aoria_signup_profil");
-
-    const planValid = plan && (PAID_PLANS as readonly string[]).includes(plan);
-    const cycleValid =
-      cycle && (BILLING_CYCLES as readonly string[]).includes(cycle);
-    const safeCallback =
-      callback && callback.startsWith("/") ? callback : null;
-
-    if (!planValid || !cycleValid) {
-      router.replace(safeCallback ?? "/chat");
-      return;
-    }
-
-    apiFetch<{ checkout_url: string }>("/billing/checkout", {
-      method: "POST",
-      token,
-      body: JSON.stringify({ plan, cycle }),
-    })
-      .then((data) => {
-        if (data?.checkout_url) {
-          window.location.href = data.checkout_url;
-        } else {
-          router.replace(safeCallback ?? "/chat");
-        }
-      })
-      .catch(() => {
-        router.replace("/billing");
-      });
-  }
+  }, [router, session, attempt, setError, continueAfterOrg]);
 
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center gap-3 bg-background px-4 text-center">
-      <Loader2 className="text-primary h-8 w-8 animate-spin" />
+    <div className="bg-background flex min-h-screen flex-col items-center justify-center gap-3 px-4 text-center">
+      {!error && <Loader2 className="text-primary h-8 w-8 animate-spin" />}
       <p className="text-foreground text-sm font-medium">
-        Préparation de votre espace…
+        {error
+          ? "Votre inscription demande une nouvelle tentative"
+          : "Préparation de votre espace…"}
       </p>
+      {error && (
+        <>
+          <p role="alert" className="text-destructive max-w-md text-sm">
+            {error}
+          </p>
+          <Button
+            onClick={() => {
+              setError(null);
+              hasRunRef.current = false;
+              setAttempt((value) => value + 1);
+            }}
+          >
+            Réessayer
+          </Button>
+          <Button variant="outline" onClick={() => router.push("/billing")}>
+            Consulter mon accès et mes offres
+          </Button>
+        </>
+      )}
     </div>
   );
 }

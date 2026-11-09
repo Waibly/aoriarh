@@ -3,13 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
-import {
-  Building2,
-  ChevronRight,
-  FileText,
-  Plus,
-  Users,
-} from "lucide-react";
+import { Building2, ChevronRight, FileText, Plus, Users } from "lucide-react";
 import { toast } from "@/lib/toast";
 import { useOrg } from "@/lib/org-context";
 import { apiFetch } from "@/lib/api";
@@ -24,10 +18,7 @@ import {
 } from "@/lib/billing-api";
 import { LimitReachedDialog } from "@/components/limit-reached-dialog";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-} from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { OrgFormDialog } from "@/components/org-form-dialog";
 
@@ -35,7 +26,8 @@ export default function OrganisationListPage() {
   const { data: session } = useSession();
   const token = session?.access_token;
   const router = useRouter();
-  const { organisations, loading, createOrganisation } = useOrg();
+  const { organisations, loading, createOrganisation, canCreateOrganisation } =
+    useOrg();
 
   const [usage, setUsage] = useState<UsageSummary | null>(null);
   const [addons, setAddons] = useState<ActiveAddon[]>([]);
@@ -73,8 +65,7 @@ export default function OrganisationListPage() {
     .reduce((sum, a) => sum + a.quantity, 0);
   const orgLimitReached = orgUsed >= orgIncluded && orgIncluded > 0;
   const currentPlan = quota?.plan ?? "gratuit";
-  const canCreateOrg =
-    session?.user?.role === "admin" || session?.user?.role === "manager";
+  const canCreateOrg = canCreateOrganisation;
 
   const handleCreateClick = () => {
     if (orgLimitReached) {
@@ -88,15 +79,18 @@ export default function OrganisationListPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between gap-4 flex-wrap">
+      <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Organisations</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">
+            Organisations
+          </h1>
           {usage && (
-            <p className="text-sm text-muted-foreground mt-1">
+            <p className="text-muted-foreground mt-1 text-sm">
               <strong>{orgUsed}</strong> / {orgIncluded} organisation
-              {orgIncluded > 1 ? "s" : ""} utilisée{orgUsed > 1 ? "s" : ""} sur votre plan
+              {orgIncluded > 1 ? "s" : ""} utilisée{orgUsed > 1 ? "s" : ""} sur
+              votre plan
               {pct >= 0.8 && pct < 1 && (
-                <span className="ml-2 inline-block rounded-full bg-orange-500/10 text-orange-600 dark:text-orange-400 px-2 py-0.5 text-xs font-medium">
+                <span className="ml-2 inline-block rounded-full bg-orange-500/10 px-2 py-0.5 text-xs font-medium text-orange-600 dark:text-orange-400">
                   Proche de la limite
                 </span>
               )}
@@ -119,10 +113,11 @@ export default function OrganisationListPage() {
         </div>
       ) : organisations.length === 0 ? (
         <Card>
-          <CardContent className="py-12 text-center space-y-3">
-            <Building2 className="h-10 w-10 mx-auto text-muted-foreground" />
+          <CardContent className="space-y-3 py-12 text-center">
+            <Building2 className="text-muted-foreground mx-auto h-10 w-10" />
             <p className="text-muted-foreground">
-              Aucune organisation pour l&apos;instant. Créez-en une pour commencer à ajouter des documents et poser des questions.
+              Aucune organisation pour l&apos;instant. Créez-en une pour
+              commencer à ajouter des documents et poser des questions.
             </p>
             {canCreateOrg && (
               <Button onClick={handleCreateClick}>
@@ -135,7 +130,9 @@ export default function OrganisationListPage() {
       ) : (
         <div className="space-y-3">
           {organisations.map((o) => {
-            const docEntry = usage?.documents_by_org.find((d) => d.org_id === o.id);
+            const docEntry = usage?.documents_by_org.find(
+              (d) => d.org_id === o.id
+            );
             return (
               <OrgCard
                 key={o.id}
@@ -201,26 +198,26 @@ function OrgCard({
 
   return (
     <Card
-      className="cursor-pointer transition hover:border-primary/60 hover:shadow-sm"
+      className="hover:border-primary/60 cursor-pointer transition hover:shadow-sm"
       onClick={onClick}
     >
-      <CardContent className="p-4 flex items-center gap-4">
-        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/10">
-          <Building2 className="h-5 w-5 text-primary" />
+      <CardContent className="flex items-center gap-4 p-4">
+        <div className="bg-primary/10 flex h-10 w-10 shrink-0 items-center justify-center rounded-lg">
+          <Building2 className="text-primary h-5 w-5" />
         </div>
 
         <div className="min-w-0 flex-1">
-          <h3 className="font-semibold truncate" title={org.name}>
+          <h3 className="truncate font-semibold" title={org.name}>
             {org.name}
           </h3>
           {metaParts.length > 0 && (
-            <p className="text-xs text-muted-foreground truncate">
+            <p className="text-muted-foreground truncate text-xs">
               {metaParts.join(" · ")}
             </p>
           )}
         </div>
 
-        <div className="hidden sm:flex items-center gap-5 text-xs text-muted-foreground shrink-0">
+        <div className="text-muted-foreground hidden shrink-0 items-center gap-5 text-xs sm:flex">
           <div className="flex items-center gap-1.5" title="Membres">
             <Users className="h-3.5 w-3.5" />
             <span className="tabular-nums">
@@ -245,10 +242,9 @@ function OrgCard({
           }}
         >
           Gérer
-          <ChevronRight className="h-3.5 w-3.5 ml-1" />
+          <ChevronRight className="ml-1 h-3.5 w-3.5" />
         </Button>
       </CardContent>
     </Card>
   );
 }
-

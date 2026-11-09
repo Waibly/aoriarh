@@ -2,7 +2,7 @@
 
 import { useErrorState } from "@/hooks/use-error-state";
 
-import { useState, useEffect, Suspense } from "react";
+import { useState, useEffect, useRef, Suspense } from "react";
 import { signIn, useSession } from "next-auth/react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
@@ -19,6 +19,18 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { PROFIL_METIER_OPTIONS } from "@/types/api";
+import { apiFetch } from "@/lib/api";
+import {
+  setupOrganisation,
+  type OrganisationSetupProgress,
+} from "@/lib/organisation-setup";
+import {
+  readSignupCookie as readCookie,
+  clearSignupCookie as clearCookie,
+  safeAppCallback,
+  redeemPendingPlan,
+  withSetupWarnings,
+} from "@/lib/signup-flow";
 import {
   OrgFormFields,
   emptyOrgFormFields,
@@ -56,21 +68,6 @@ const PASSWORD_RULES: { label: string; test: (v: string) => boolean }[] = [
   { label: "1 symbole", test: (v) => /[^A-Za-z0-9]/.test(v) },
 ];
 
-function readCookie(name: string): string | null {
-  if (typeof document === "undefined") return null;
-  const match = document.cookie.match(
-    new RegExp(
-      "(?:^|; )" + name.replace(/[.$?*|{}()[\]\\/+^]/g, "\\$&") + "=([^;]*)"
-    )
-  );
-  return match ? decodeURIComponent(match[1]) : null;
-}
-
-function clearCookie(name: string) {
-  if (typeof document === "undefined") return;
-  document.cookie = `${name}=; max-age=0; path=/; samesite=lax`;
-}
-
 export default function RegisterPage() {
   return (
     <Suspense>
@@ -84,7 +81,7 @@ function RegisterForm() {
   const searchParams = useSearchParams();
   const session = useSession();
   const rawCallback = searchParams.get("callbackUrl");
-  const callbackUrl = rawCallback?.startsWith("/") ? rawCallback : null;
+  const callbackUrl = safeAppCallback(rawCallback);
   const inviteToken =
     callbackUrl?.match(/\/invite\/accept\/([^/?]+)/)?.[1] ?? null;
   const [isInvitation, setIsInvitation] = useState(false);
@@ -118,7 +115,10 @@ function RegisterForm() {
     fetch(`${API_BASE_URL}/invitations/${inviteToken}/validate`)
       .then((res) => (res.ok ? res.json() : null))
       .then((data) => {
-        if (data?.valid) setIsInvitation(true);
+        if (data?.valid) {
+          setIsInvitation(true);
+          setEmail(data.email);
+        }
       })
       .catch(() => {});
   }, [inviteToken]);
@@ -149,6 +149,15 @@ function RegisterForm() {
 
   const [error, setError] = useErrorState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [accountCreated, setAccountCreated] = useState(false);
+  const [organisationReady, setOrganisationReady] = useState(false);
+  const setupProgress = useRef<OrganisationSetupProgress>({});
+  const registration = useRef<{
+    access_token: string;
+    checkout_url?: string | null;
+  } | null>(null);
+  const signedIn = useRef(false);
+  const tracked = useRef(false);
 
   // Onboarding mode: pre-fill the profil from the cookie set by /register
   // before the Google round-trip, so the user doesn't have to re-pick it.
@@ -179,352 +188,177 @@ function RegisterForm() {
 
   // --- Submit handlers ---
 
-  // Onboarding (Google, already authenticated): patch profil, create org,
-  // install CCN, then run Stripe checkout if a paid plan was requested.
+  function organisationData() {
+    return {
+      name: orgValues.name.trim(),
+      forme_juridique: orgValues.formeJuridique || null,
+      taille: orgValues.taille || null,
+      secteur_activite: orgValues.secteurActivite.trim() || null,
+      convention_collective: orgValues.notSubjectToCcn
+        ? null
+        : orgValues.selectedCcn
+            .map((c) => `${c.titre_court || c.titre} (IDCC ${c.idcc})`)
+            .join(", ") || null,
+      not_subject_to_ccn: orgValues.notSubjectToCcn,
+      profil_metier: profilMetier || null,
+      selectedCcn: orgValues.selectedCcn,
+    };
+  }
+
   async function handleOnboardingSubmit() {
-    setIsLoading(true);
-    setError(null);
     const token = session.data?.access_token;
     if (!token) {
-      setIsLoading(false);
       router.replace("/login");
       return;
     }
-
-    // Parcours Google : le compte a été créé côté serveur (callback NextAuth)
-    // sans accès aux cookies du navigateur — on rattache l'attribution ici.
-    // Le backend conserve le premier contact, un doublon est ignoré.
+    setIsLoading(true);
+    setError(null);
     void sendAttribution(token);
-    trackEssaiDemarre();
-
+    if (!tracked.current) {
+      trackEssaiDemarre();
+      tracked.current = true;
+    }
     try {
-      if (profilMetier) {
-        await fetch(`${API_BASE_URL}/users/me`, {
-          method: "PATCH",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify({ profil_metier: profilMetier }),
-        }).catch(() => {});
-      }
-
-      const ccnLabel = orgValues.notSubjectToCcn
-        ? null
-        : orgValues.selectedCcn.length > 0
-          ? orgValues.selectedCcn
-              .map((c) => `${c.titre_court || c.titre} (IDCC ${c.idcc})`)
-              .join(", ")
-          : null;
-
-      const orgRes = await fetch(`${API_BASE_URL}/organisations/`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          name: orgValues.name.trim(),
-          forme_juridique: orgValues.formeJuridique || null,
-          taille: orgValues.taille || null,
-          secteur_activite: orgValues.secteurActivite.trim() || null,
-          convention_collective: ccnLabel,
-          not_subject_to_ccn: orgValues.notSubjectToCcn,
-        }),
-      });
-
-      if (!orgRes.ok) {
-        setError(
-          "Impossible de créer votre organisation. Vérifiez vos informations puis réessayez."
-        );
-        return;
-      }
-
-      const org = await orgRes.json();
-      const ccnInstallErrors: string[] = [];
-      if (!orgValues.notSubjectToCcn && orgValues.selectedCcn.length > 0) {
-        for (const c of orgValues.selectedCcn) {
-          try {
-            const r = await fetch(
-              `${API_BASE_URL}/conventions/organisations/${org.id}`,
-              {
-                method: "POST",
-                headers: {
-                  "Content-Type": "application/json",
-                  Authorization: `Bearer ${token}`,
-                },
-                body: JSON.stringify({ idcc: c.idcc }),
-              }
-            );
-            if (!r.ok) {
-              const data = await r.json().catch(() => null);
-              const detail =
-                typeof data?.detail === "string"
-                  ? data.detail
-                  : `Erreur ${r.status}`;
-              ccnInstallErrors.push(`IDCC ${c.idcc} : ${detail}`);
-            }
-          } catch (err) {
-            ccnInstallErrors.push(
-              `IDCC ${c.idcc} : ${err instanceof Error ? err.message : "erreur réseau"}`
-            );
-          }
-        }
-      }
-
-      // Redeem plan invitation if a promo token cookie exists
-      const planInviteToken = readCookie("aoria_plan_invite_token");
-      if (planInviteToken) {
-        clearCookie("aoria_plan_invite_token");
-        try {
-          await fetch(
-            `${API_BASE_URL}/plan-invitations/${planInviteToken}/redeem`,
-            {
-              method: "POST",
-              headers: {
-                Authorization: `Bearer ${token}`,
-              },
-            }
-          );
-        } catch {
-          // Non-blocking
-        }
-      }
-
-      // Stripe checkout if a paid plan was stashed in cookies before the OAuth
+      const { warnings } = await setupOrganisation(
+        organisationData(),
+        token,
+        setupProgress.current
+      );
+      setOrganisationReady(true);
+      await redeemPendingPlan(token);
       const plan = readCookie("aoria_signup_plan");
       const cycle = readCookie("aoria_signup_cycle");
-      const callback = readCookie("aoria_post_signup_callback");
-      clearCookie("aoria_signup_plan");
-      clearCookie("aoria_signup_cycle");
-      clearCookie("aoria_post_signup_callback");
-
-      const planValid =
-        plan && (PAID_PLANS as readonly string[]).includes(plan);
-      const cycleValid =
-        cycle && (BILLING_CYCLES as readonly string[]).includes(cycle);
-      const safeCallback =
-        callback && callback.startsWith("/") ? callback : null;
-
-      if (planValid && cycleValid) {
-        try {
-          const checkout = await fetch(`${API_BASE_URL}/billing/checkout`, {
+      const callback = safeAppCallback(
+        readCookie("aoria_post_signup_callback")
+      );
+      if (
+        plan &&
+        cycle &&
+        (PAID_PLANS as readonly string[]).includes(plan) &&
+        (BILLING_CYCLES as readonly string[]).includes(cycle)
+      ) {
+        const checkout = await apiFetch<{ checkout_url: string }>(
+          "/billing/checkout",
+          {
             method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              Authorization: `Bearer ${token}`,
-            },
+            token,
             body: JSON.stringify({ plan, cycle }),
-          });
-          if (checkout.ok) {
-            const data = await checkout.json();
-            if (data?.checkout_url) {
-              window.location.href = data.checkout_url;
-              return;
-            }
           }
-        } catch {
-          // handled below: the user asked to pay, send them to billing
-        }
-        // Paiement demandé mais session Stripe non créée : on l'envoie sur la
-        // page Facturation (où il peut relancer) plutôt que dans le chat.
-        router.replace("/billing");
+        );
+        if (!checkout.checkout_url)
+          throw new Error("Le paiement n'a pas pu être préparé. Réessayez.");
+        clearCookie("aoria_signup_plan");
+        clearCookie("aoria_signup_cycle");
+        clearCookie("aoria_post_signup_callback");
+        window.location.href = checkout.checkout_url;
         return;
       }
-
-      const landing = safeCallback ?? "/chat";
-      if (ccnInstallErrors.length > 0) {
-        const params = new URLSearchParams({
-          ccn_install_error: ccnInstallErrors.join(" • "),
-        });
-        router.replace(`${landing}?${params.toString()}`);
-      } else {
-        router.replace(landing);
-      }
+      clearCookie("aoria_post_signup_callback");
+      router.replace(withSetupWarnings(callback ?? "/chat", warnings));
       router.refresh();
-    } catch {
-      setError("Une erreur est survenue. Veuillez réessayer.");
+    } catch (error) {
+      setError(
+        error instanceof Error
+          ? error.message
+          : "Impossible de terminer votre inscription. Réessayez."
+      );
     } finally {
       setIsLoading(false);
     }
   }
 
-  // Standard registration (email/password) + optional first org.
   async function handleSubmit() {
     setIsLoading(true);
     setError(null);
-
     try {
-      const res = await fetch(`${API_BASE_URL}/auth/register`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+      if (!registration.current) {
+        const res = await fetch(`${API_BASE_URL}/auth/register`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            email,
+            password,
+            full_name: fullName,
+            workspace_name: null,
+            invited: isInvitation,
+            invitation_token: isInvitation ? inviteToken : null,
+            requested_plan:
+              !isInvitation && hasPaidPlanRequested ? requestedPlan : null,
+            requested_cycle:
+              !isInvitation && hasPaidPlanRequested ? requestedCycle : null,
+            attribution: getAttribution(),
+          }),
+        });
+        if (!res.ok) {
+          const data = await res.json().catch(() => null);
+          if (res.status === 409) {
+            setError("Un compte avec cet email existe déjà");
+            setStep(1);
+          } else {
+            const detail = data?.detail;
+            setError(
+              typeof detail === "string"
+                ? detail
+                : Array.isArray(detail)
+                  ? detail.map((d: { msg: string }) => d.msg).join(". ")
+                  : "Erreur lors de l'inscription. Veuillez réessayer."
+            );
+            if (res.status === 422) setStep(1);
+          }
+          return;
+        }
+        registration.current = await res.json();
+        setAccountCreated(true);
+        trackEssaiDemarre();
+      }
+      const token = registration.current?.access_token;
+      if (!token)
+        throw new Error("La création du compte n'a pas été confirmée.");
+      if (!signedIn.current) {
+        const result = await signIn("credentials", {
           email,
           password,
-          full_name: fullName,
-          workspace_name: null,
-          invited: isInvitation,
-          requested_plan:
-            !isInvitation && hasPaidPlanRequested ? requestedPlan : null,
-          requested_cycle:
-            !isInvitation && hasPaidPlanRequested ? requestedCycle : null,
-          attribution: getAttribution(),
-        }),
-      });
-
-      if (!res.ok) {
-        const data = await res.json().catch(() => null);
-        if (res.status === 409) {
-          setError("Un compte avec cet email existe déjà");
-          setStep(1);
-        } else if (res.status === 422 && data?.detail) {
-          const messages = Array.isArray(data.detail)
-            ? data.detail.map((d: { msg: string }) => d.msg).join(". ")
-            : data.detail;
-          setError(messages);
-          setStep(1);
-        } else {
-          setError("Erreur lors de l'inscription. Veuillez réessayer.");
-        }
-        return;
+          redirect: false,
+        });
+        if (!result?.ok)
+          throw new Error(
+            "Votre compte est créé. Connectez-vous pour terminer votre inscription."
+          );
+        signedIn.current = true;
       }
-
-      const registerData = await res.json().catch(() => null);
-      const accessToken = registerData?.access_token as string | undefined;
-
-      // Conversion principale : le compte d'essai vient d'être créé.
-      trackEssaiDemarre();
-
-      if (profilMetier && accessToken) {
-        try {
-          await fetch(`${API_BASE_URL}/users/me`, {
+      let warnings: string[] = [];
+      if (isInvitation) {
+        if (profilMetier)
+          await apiFetch("/users/me", {
             method: "PATCH",
-            headers: {
-              "Content-Type": "application/json",
-              Authorization: `Bearer ${accessToken}`,
-            },
+            token,
             body: JSON.stringify({ profil_metier: profilMetier }),
           });
-        } catch {
-          // Non-blocking
-        }
-      }
-
-      const ccnInstallErrors: string[] = [];
-      if (!isInvitation && orgValues.name.trim() && accessToken) {
-        try {
-          const ccnLabel = orgValues.notSubjectToCcn
-            ? null
-            : orgValues.selectedCcn.length > 0
-              ? orgValues.selectedCcn
-                  .map((c) => `${c.titre_court || c.titre} (IDCC ${c.idcc})`)
-                  .join(", ")
-              : null;
-
-          const orgRes = await fetch(`${API_BASE_URL}/organisations/`, {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              Authorization: `Bearer ${accessToken}`,
-            },
-            body: JSON.stringify({
-              name: orgValues.name.trim(),
-              forme_juridique: orgValues.formeJuridique || null,
-              taille: orgValues.taille || null,
-              secteur_activite: orgValues.secteurActivite.trim() || null,
-              convention_collective: ccnLabel,
-              not_subject_to_ccn: orgValues.notSubjectToCcn,
-            }),
-          });
-
-          if (
-            orgRes.ok &&
-            !orgValues.notSubjectToCcn &&
-            orgValues.selectedCcn.length > 0
-          ) {
-            const orgData = await orgRes.json();
-            for (const c of orgValues.selectedCcn) {
-              try {
-                const r = await fetch(
-                  `${API_BASE_URL}/conventions/organisations/${orgData.id}`,
-                  {
-                    method: "POST",
-                    headers: {
-                      "Content-Type": "application/json",
-                      Authorization: `Bearer ${accessToken}`,
-                    },
-                    body: JSON.stringify({ idcc: c.idcc }),
-                  }
-                );
-                if (!r.ok) {
-                  const data = await r.json().catch(() => null);
-                  const detail =
-                    typeof data?.detail === "string"
-                      ? data.detail
-                      : `Erreur ${r.status}`;
-                  ccnInstallErrors.push(`IDCC ${c.idcc} : ${detail}`);
-                }
-              } catch (err) {
-                ccnInstallErrors.push(
-                  `IDCC ${c.idcc} : ${err instanceof Error ? err.message : "erreur réseau"}`
-                );
-              }
-            }
-          }
-        } catch {
-          // Non-blocking — org can be re-created later
-        }
-      }
-
-      const result = await signIn("credentials", {
-        email,
-        password,
-        redirect: false,
-      });
-
-      if (result?.error) {
-        router.push(
-          callbackUrl
-            ? `/login?callbackUrl=${encodeURIComponent(callbackUrl)}`
-            : "/login"
-        );
-        return;
-      }
-
-      if (registerData?.checkout_url) {
-        window.location.href = registerData.checkout_url;
-        return;
-      }
-
-      // Redeem plan invitation if a promo token cookie exists
-      const planInviteToken = readCookie("aoria_plan_invite_token");
-      if (planInviteToken && accessToken) {
-        clearCookie("aoria_plan_invite_token");
-        try {
-          await fetch(
-            `${API_BASE_URL}/plan-invitations/${planInviteToken}/redeem`,
-            {
-              method: "POST",
-              headers: { Authorization: `Bearer ${accessToken}` },
-            }
-          );
-        } catch {
-          // Non-blocking — user can redeem later via the link
-        }
-      }
-
-      const landing = callbackUrl || "/chat";
-      if (ccnInstallErrors.length > 0) {
-        const params = new URLSearchParams({
-          ccn_install_error: ccnInstallErrors.join(" • "),
-        });
-        router.push(`${landing}?${params.toString()}`);
       } else {
-        router.push(landing);
+        ({ warnings } = await setupOrganisation(
+          organisationData(),
+          token,
+          setupProgress.current
+        ));
+        setOrganisationReady(true);
+      }
+      await redeemPendingPlan(token);
+      if (registration.current?.checkout_url) {
+        window.location.href = registration.current.checkout_url;
+        return;
+      }
+      if (!isInvitation && hasPaidPlanRequested) {
+        router.push(withSetupWarnings("/billing", warnings));
+      } else {
+        router.push(withSetupWarnings(callbackUrl ?? "/chat", warnings));
       }
       router.refresh();
-    } catch {
-      setError("Une erreur est survenue. Veuillez réessayer.");
+    } catch (error) {
+      setError(
+        error instanceof Error
+          ? error.message
+          : "Impossible de terminer votre inscription. Réessayez."
+      );
     } finally {
       setIsLoading(false);
     }
@@ -562,7 +396,7 @@ function RegisterForm() {
           }}
           className="grid gap-5"
         >
-          {!profilMetier && (
+          <fieldset disabled={organisationReady} className="contents">
             <div className="grid gap-2">
               <Label htmlFor="profilMetierOnboarding">
                 Votre rôle <span className="text-destructive">*</span>
@@ -580,13 +414,13 @@ function RegisterForm() {
                 </SelectContent>
               </Select>
             </div>
-          )}
 
-          <OrgFormFields
-            values={orgValues}
-            onChange={setOrgValues}
-            token={session.data?.access_token ?? ""}
-          />
+            <OrgFormFields
+              values={orgValues}
+              onChange={setOrgValues}
+              token={session.data?.access_token ?? ""}
+            />
+          </fieldset>
 
           <Button
             type="submit"
@@ -594,7 +428,11 @@ function RegisterForm() {
               !isOrgFormFieldsValid(orgValues) || !profilMetier || isLoading
             }
           >
-            {isLoading ? "Création en cours..." : "Continuer"}
+            {isLoading
+              ? "En cours..."
+              : organisationReady
+                ? "Terminer l'activation de mon accès"
+                : "Continuer"}
           </Button>
         </form>
       </>
@@ -684,6 +522,7 @@ function RegisterForm() {
                   onChange={(e) => setFullName(e.target.value)}
                   required
                   autoFocus
+                  disabled={accountCreated}
                 />
               </div>
               <div className="grid gap-2">
@@ -698,6 +537,7 @@ function RegisterForm() {
                   autoComplete="email"
                   autoCorrect="off"
                   value={email}
+                  readOnly={isInvitation || accountCreated}
                   onChange={(e) => setEmail(e.target.value)}
                   required
                 />
@@ -709,6 +549,7 @@ function RegisterForm() {
                 <PasswordInput
                   id="password"
                   autoComplete="new-password"
+                  disabled={accountCreated}
                   aria-describedby="password-rules"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
@@ -760,7 +601,11 @@ function RegisterForm() {
               </div>
               {isInvitation ? (
                 <Button type="submit" disabled={isLoading}>
-                  {isLoading ? "Création en cours..." : "Créer mon compte"}
+                  {isLoading
+                    ? "En cours..."
+                    : accountCreated
+                      ? "Terminer mon inscription"
+                      : "Créer mon compte"}
                 </Button>
               ) : (
                 <Button type="submit">
@@ -780,11 +625,13 @@ function RegisterForm() {
             }}
           >
             <div className="grid gap-5">
-              <OrgFormFields
-                values={orgValues}
-                onChange={setOrgValues}
-                token=""
-              />
+              <fieldset disabled={organisationReady} className="contents">
+                <OrgFormFields
+                  values={orgValues}
+                  onChange={setOrgValues}
+                  token=""
+                />
+              </fieldset>
               <div className="flex gap-3">
                 <Button
                   type="button"
@@ -800,7 +647,11 @@ function RegisterForm() {
                   className="flex-1"
                   disabled={!isOrgFormFieldsValid(orgValues) || isLoading}
                 >
-                  {isLoading ? "Création en cours..." : "Créer mon compte"}
+                  {isLoading
+                    ? "En cours..."
+                    : accountCreated
+                      ? "Terminer mon inscription"
+                      : "Créer mon compte"}
                 </Button>
               </div>
             </div>
@@ -831,6 +682,8 @@ function RegisterForm() {
                 if (profilMetier) {
                   document.cookie = `aoria_signup_profil=${profilMetier}; max-age=600; path=/; samesite=lax`;
                 }
+                if (callbackUrl)
+                  document.cookie = `aoria_post_signup_callback=${encodeURIComponent(callbackUrl)}; max-age=600; path=/; samesite=lax`;
                 signIn("google", { callbackUrl: "/post-signup" });
               }}
             >

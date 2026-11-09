@@ -1,7 +1,7 @@
 """Deletion with enforced foreign keys, isolated storage and simulated Stripe."""
 
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from unittest.mock import Mock
 
@@ -102,6 +102,20 @@ async def erasure(monkeypatch):
 
 
 async def register(env, email="erasure@test.com", *, invited=False):
+    invitation_token = None
+    if invited:
+        async with env.factory() as db:
+            account = (await db.scalars(select(Account))).first()
+            invitation = Invitation(
+                account_id=account.id,
+                invited_by=account.owner_id,
+                email=email,
+                role_in_org="user",
+                expires_at=datetime.now(UTC) + timedelta(days=1),
+            )
+            db.add(invitation)
+            await db.commit()
+            invitation_token = str(invitation.token)
     response = await env.client.post(
         "/api/v1/auth/register",
         json={
@@ -109,6 +123,7 @@ async def register(env, email="erasure@test.com", *, invited=False):
             "full_name": "Erasure test",
             "password": "SecurePass123!",
             "invited": invited,
+            "invitation_token": invitation_token,
         },
     )
     assert response.status_code == 201, response.text

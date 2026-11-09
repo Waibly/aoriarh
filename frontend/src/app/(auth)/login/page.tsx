@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { PasswordInput } from "@/components/password-input";
+import { safeAppCallback } from "@/lib/signup-flow";
 
 export default function LoginPage() {
   return (
@@ -23,7 +24,7 @@ function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const rawCallback = searchParams.get("callbackUrl");
-  const callbackUrl = rawCallback?.startsWith("/") ? rawCallback : null;
+  const callbackUrl = safeAppCallback(rawCallback);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useErrorState<string | null>(null);
@@ -106,9 +107,7 @@ function LoginForm() {
             <span className="w-full border-t" />
           </div>
           <div className="relative flex justify-center text-xs uppercase">
-            <span className="bg-background text-muted-foreground px-2">
-              Ou
-            </span>
+            <span className="bg-background text-muted-foreground px-2">Ou</span>
           </div>
         </div>
         <Button
@@ -153,7 +152,11 @@ function LoginForm() {
       <p className="text-muted-foreground px-8 text-center text-sm">
         Pas encore de compte ?{" "}
         <Link
-          href={callbackUrl ? `/register?callbackUrl=${encodeURIComponent(callbackUrl)}` : "/register"}
+          href={
+            callbackUrl
+              ? `/register?callbackUrl=${encodeURIComponent(callbackUrl)}`
+              : "/register"
+          }
           className="hover:text-primary underline underline-offset-4"
         >
           Créer un compte

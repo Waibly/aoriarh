@@ -5,22 +5,18 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useRef,
   useState,
 } from "react";
 import { useSession } from "next-auth/react";
-import type { Organisation, CcnReference, User } from "@/types/api";
+import type { Organisation, User } from "@/types/api";
 import { apiFetch } from "@/lib/api";
-
-export interface CreateOrgData {
-  name: string;
-  forme_juridique?: string | null;
-  taille?: string | null;
-  convention_collective?: string | null;
-  secteur_activite?: string | null;
-  not_subject_to_ccn?: boolean;
-  profil_metier?: string | null;
-  selectedCcn?: CcnReference[];
-}
+import {
+  setupOrganisation,
+  type CreateOrgData,
+} from "@/lib/organisation-setup";
+import { toast } from "@/lib/toast";
+export type { CreateOrgData } from "@/lib/organisation-setup";
 
 interface OrgContextValue {
   organisations: Organisation[];
@@ -32,6 +28,7 @@ interface OrgContextValue {
   setWorkspaceName: (name: string) => void;
   /** The user owns the displayed workspace and may rename it. */
   isWorkspaceOwner: boolean;
+  canCreateOrganisation: boolean;
   /** The workspace only means something once it groups several organisations. */
   showWorkspace: boolean;
   profilMetier: string | null;
@@ -48,6 +45,7 @@ const OrgContext = createContext<OrgContextValue>({
   workspaceName: null,
   setWorkspaceName: () => {},
   isWorkspaceOwner: false,
+  canCreateOrganisation: false,
   showWorkspace: false,
   profilMetier: null,
   setProfilMetier: () => {},
@@ -65,22 +63,32 @@ export function OrgProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [workspaceName, setWorkspaceNameState] = useState<string | null>(null);
   const [isWorkspaceOwner, setIsWorkspaceOwner] = useState(false);
+  const [workspaceId, setWorkspaceId] = useState<string | null>(null);
+  const [canCreateOrganisation, setCanCreateOrganisation] = useState(false);
+  const contextRequest = useRef(0);
   const [profilMetier, setProfilMetier] = useState<string | null>(null);
 
   const token = session?.access_token;
 
-  const fetchUserContext = useCallback(async (orgId: string | null) => {
-    if (!token) return;
-    try {
-      const params = orgId ? `?organisation_id=${orgId}` : "";
-      const data = await apiFetch<User>(`/users/me${params}`, { token });
-      setWorkspaceNameState(data.workspace_name);
-      setIsWorkspaceOwner(Boolean(data.is_workspace_owner));
-      setProfilMetier(data.profil_metier);
-    } catch {
-      // Non-blocking: workspace name is optional, continue without it
-    }
-  }, [token]);
+  const fetchUserContext = useCallback(
+    async (orgId: string | null) => {
+      if (!token) return;
+      const request = ++contextRequest.current;
+      try {
+        const params = orgId ? `?organisation_id=${orgId}` : "";
+        const data = await apiFetch<User>(`/users/me${params}`, { token });
+        if (request !== contextRequest.current) return;
+        setWorkspaceNameState(data.workspace_name);
+        setWorkspaceId(data.workspace_id);
+        setIsWorkspaceOwner(Boolean(data.is_workspace_owner));
+        setCanCreateOrganisation(data.can_create_organisation === true);
+        setProfilMetier(data.profil_metier);
+      } catch {
+        // Non-blocking: workspace name is optional, continue without it
+      }
+    },
+    [token]
+  );
 
   const fetchOrgs = useCallback(async () => {
     if (!token) {
@@ -127,45 +135,40 @@ export function OrgProvider({ children }: { children: React.ReactNode }) {
 
   const createOrganisation = useCallback(
     async (data: CreateOrgData): Promise<Organisation> => {
-      const { profil_metier, selectedCcn, not_subject_to_ccn, ...orgData } = data;
-      const org = await apiFetch<Organisation>("/organisations/", {
-        method: "POST",
-        token,
-        body: JSON.stringify({
-          ...orgData,
-          not_subject_to_ccn: !!not_subject_to_ccn,
-        }),
-      });
-      if (profil_metier) {
-        await apiFetch("/users/me", {
-          method: "PATCH",
-          token,
-          body: JSON.stringify({ profil_metier }),
-        });
-        setProfilMetier(profil_metier);
+      if (!token) throw new Error("Connectez-vous pour créer une organisation");
+      const { organisation: org, warnings } = await setupOrganisation(
+        { ...data, account_id: data.account_id ?? workspaceId },
+        token
+      );
+      if (data.profil_metier) setProfilMetier(data.profil_metier);
+      setOrganisations((previous) => [
+        ...previous.filter((item) => item.id !== org.id),
+        org,
+      ]);
+      setCurrentOrgIdState(org.id);
+      try {
+        localStorage.setItem(STORAGE_KEY, org.id);
+      } catch {
+        /* Optional preference. */
       }
-      if (!not_subject_to_ccn && selectedCcn && selectedCcn.length > 0) {
-        for (const ccn of selectedCcn) {
-          apiFetch(`/conventions/organisations/${org.id}`, {
-            method: "POST",
-            token,
-            body: JSON.stringify({ idcc: ccn.idcc }),
-          }).catch(() => {});
-        }
+      if (warnings.length) {
+        toast.warning(
+          "Organisation créée, mais certaines conventions n'ont pas pu être installées",
+          {
+            description: `${warnings.join(" • ")} — Réessayez depuis Documents.`,
+            duration: 10000,
+          }
+        );
       }
       if (typeof window !== "undefined") {
         window.dispatchEvent(new Event("quota-updated"));
       }
-      await fetchOrgs();
-      setCurrentOrgIdState(org.id);
-      localStorage.setItem(STORAGE_KEY, org.id);
       return org;
     },
-    [token, fetchOrgs],
+    [token, workspaceId]
   );
 
-  const currentOrg =
-    organisations.find((o) => o.id === currentOrgId) ?? null;
+  const currentOrg = organisations.find((o) => o.id === currentOrgId) ?? null;
 
   return (
     <OrgContext.Provider
@@ -178,6 +181,7 @@ export function OrgProvider({ children }: { children: React.ReactNode }) {
         workspaceName,
         setWorkspaceName: setWorkspaceNameState,
         isWorkspaceOwner,
+        canCreateOrganisation,
         showWorkspace: Boolean(workspaceName) && organisations.length > 1,
         profilMetier,
         setProfilMetier,

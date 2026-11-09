@@ -1,13 +1,15 @@
+from datetime import UTC, datetime
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.dependencies import get_current_user, verify_org_membership
 from app.models.account import Account
+from app.models.invitation import Invitation
 from app.models.organisation import Organisation
 from app.models.user import User
 from app.schemas.auth import SignupAttribution
@@ -70,6 +72,33 @@ async def get_me(
                 workspace_name = team_acc.name
                 workspace_id = team_acc.id
 
+    is_owner = bool(workspace_id and user.owned_account and user.owned_account.id == workspace_id)
+    can_create = (
+        user.role == "admin"
+        or (is_owner and user.role == "manager")
+        or any(
+            m.account_id == workspace_id and m.role_in_org == "manager"
+            for m in user.account_memberships
+        )
+    )
+    pending_invitation_token = None
+    if (
+        user.auth_provider == "google"
+        and not user.owned_account
+        and not user.memberships
+        and not user.account_memberships
+    ):
+        pending_invitation_token = await db.scalar(
+            select(Invitation.token)
+            .where(
+                func.lower(Invitation.email) == user.email.lower(),
+                Invitation.status == "pending",
+                Invitation.expires_at > datetime.now(UTC),
+            )
+            .order_by(Invitation.created_at, Invitation.id)
+            .limit(1)
+        )
+
     return UserRead(
         id=user.id,
         email=user.email,
@@ -84,9 +113,9 @@ async def get_me(
         plan_expires_at=plan_expires_at,
         workspace_name=workspace_name,
         workspace_id=workspace_id,
-        is_workspace_owner=bool(
-            workspace_id and user.owned_account and user.owned_account.id == workspace_id
-        ),
+        is_workspace_owner=is_owner,
+        can_create_organisation=can_create,
+        pending_invitation_token=pending_invitation_token,
     )
 
 

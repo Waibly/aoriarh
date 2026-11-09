@@ -41,6 +41,8 @@ class UserRead(BaseModel):
     workspace_id: uuid.UUID | None = None
     # True when the displayed workspace is the one this user owns (and can rename).
     is_workspace_owner: bool = False
+    can_create_organisation: bool = False
+    pending_invitation_token: uuid.UUID | None = None
 
 
 class UserUpdate(BaseModel):

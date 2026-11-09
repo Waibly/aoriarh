@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import { Building2, Plus, ChevronsUpDown, Check } from "lucide-react";
-import { useSession } from "next-auth/react";
 import { useOrg } from "@/lib/org-context";
 import { Button } from "@/components/ui/button";
 import {
@@ -21,7 +20,6 @@ import { cn } from "@/lib/utils";
 import { OrgFormDialog } from "@/components/org-form-dialog";
 
 export function OrgSelector() {
-  const { data: session } = useSession();
   const {
     organisations,
     currentOrg,
@@ -30,15 +28,12 @@ export function OrgSelector() {
     workspaceName,
     showWorkspace,
     createOrganisation,
+    canCreateOrganisation,
   } = useOrg();
   const [open, setOpen] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
 
-  // Can create orgs: admin, workspace owner, or invited manager in a workspace
-  const isAdmin = session?.user?.role === "admin";
-  const isManager = session?.user?.role === "manager";
-  const hasWorkspace = !!workspaceName;
-  const canCreate = isAdmin || isManager || hasWorkspace;
+  const canCreate = canCreateOrganisation;
 
   if (loading) {
     return (
@@ -88,8 +83,8 @@ export function OrgSelector() {
           <Command>
             <CommandList>
               {showWorkspace && (
-                <div className="px-3 py-2 border-b">
-                  <p className="text-xs font-semibold text-muted-foreground truncate">
+                <div className="border-b px-3 py-2">
+                  <p className="text-muted-foreground truncate text-xs font-semibold">
                     {workspaceName}
                   </p>
                 </div>
@@ -106,9 +101,7 @@ export function OrgSelector() {
                     <Check
                       className={cn(
                         "mr-2 h-4 w-4",
-                        currentOrg?.id === org.id
-                          ? "opacity-100"
-                          : "opacity-0"
+                        currentOrg?.id === org.id ? "opacity-100" : "opacity-0"
                       )}
                     />
                     {org.name}

@@ -122,7 +122,9 @@ export default function TeamPage() {
   const fetchOrganisations = useCallback(async () => {
     if (!token) return;
     try {
-      const data = await apiFetch<Organisation[]>("/team/organisations", { token });
+      const data = await apiFetch<Organisation[]>("/team/organisations", {
+        token,
+      });
       setOrganisations(data);
     } catch {
       setOrganisations([]);
@@ -130,9 +132,11 @@ export default function TeamPage() {
   }, [token]);
 
   useEffect(() => {
-    Promise.all([fetchMembers(), fetchInvitations(), fetchOrganisations()]).finally(
-      () => setLoading(false)
-    );
+    Promise.all([
+      fetchMembers(),
+      fetchInvitations(),
+      fetchOrganisations(),
+    ]).finally(() => setLoading(false));
   }, [fetchMembers, fetchInvitations, fetchOrganisations]);
 
   const handleRemoveConfirm = async () => {
@@ -145,12 +149,17 @@ export default function TeamPage() {
       toast.success("Membre retiré de l'équipe");
       fetchMembers();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Impossible de retirer ce membre");
+      toast.error(
+        err instanceof Error ? err.message : "Impossible de retirer ce membre"
+      );
     }
     setRemoveTarget(null);
   };
 
-  if (!session?.user || (session.user.role !== "manager" && session.user.role !== "admin")) {
+  if (
+    !session?.user ||
+    (session.user.role !== "manager" && session.user.role !== "admin")
+  ) {
     return (
       <div>
         <h1 className="mb-6 text-2xl font-semibold tracking-tight">Équipe</h1>
@@ -176,15 +185,18 @@ export default function TeamPage() {
         <h1 className="text-2xl font-semibold tracking-tight">
           Équipe{workspaceName ? ` — ${workspaceName}` : ""}
         </h1>
-        <p className="text-sm text-muted-foreground mt-1">
-          Gérez les membres de votre espace de travail et leurs accès aux organisations.
+        <p className="text-muted-foreground mt-1 text-sm">
+          Gérez les membres de votre espace de travail et leurs accès aux
+          organisations.
         </p>
       </div>
 
       {/* Owner card */}
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Propriétaire de l&apos;espace de travail</CardTitle>
+          <CardTitle className="text-base">
+            Propriétaire de l&apos;espace de travail
+          </CardTitle>
         </CardHeader>
         <CardContent>
           <div className="flex flex-wrap items-center gap-3 sm:gap-4">
@@ -193,9 +205,11 @@ export default function TeamPage() {
                 {ownerInitials}
               </AvatarFallback>
             </Avatar>
-            <div className="flex-1 min-w-0 basis-[60%] sm:basis-0">
-              <p className="font-medium truncate">{ownerName}</p>
-              <p className="text-sm text-muted-foreground truncate">{ownerEmail}</p>
+            <div className="min-w-0 flex-1 basis-[60%] sm:basis-0">
+              <p className="truncate font-medium">{ownerName}</p>
+              <p className="text-muted-foreground truncate text-sm">
+                {ownerEmail}
+              </p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
               <Badge
@@ -231,10 +245,13 @@ export default function TeamPage() {
                   <>
                     <strong>{used}</strong>
                     {limit > 0 && (
-                      <> / {limit} utilisateur{limit > 1 ? "s" : ""} inclus</>
+                      <>
+                        {" "}
+                        / {limit} utilisateur{limit > 1 ? "s" : ""} inclus
+                      </>
                     )}
                     {pct >= 0.8 && pct < 1 && (
-                      <span className="ml-2 inline-block rounded-full bg-orange-500/10 text-orange-600 dark:text-orange-400 px-2 py-0.5 text-xs font-medium">
+                      <span className="ml-2 inline-block rounded-full bg-orange-500/10 px-2 py-0.5 text-xs font-medium text-orange-600 dark:text-orange-400">
                         Proche de la limite
                       </span>
                     )}
@@ -266,7 +283,7 @@ export default function TeamPage() {
               <Skeleton className="h-10 w-full" />
             </div>
           ) : members.length === 0 ? (
-            <p className="py-4 text-center text-sm text-muted-foreground">
+            <p className="text-muted-foreground py-4 text-center text-sm">
               Aucun collaborateur. Invitez votre premier membre d&apos;équipe.
             </p>
           ) : (
@@ -279,10 +296,11 @@ export default function TeamPage() {
                     <div className="flex items-center gap-1">
                       Rôle par défaut
                       <InfoTooltip>
-                        Rôle appliqué par défaut aux nouvelles organisations auxquelles
-                        cette personne aura accès. Pour régler son rôle précis sur une
-                        organisation donnée (par exemple manager sur l&apos;org A mais
-                        simple utilisateur sur l&apos;org B), passez par la fiche de
+                        Rôle appliqué par défaut aux nouvelles organisations
+                        auxquelles cette personne aura accès. Pour régler son
+                        rôle précis sur une organisation donnée (par exemple
+                        manager sur l&apos;org A mais simple utilisateur sur
+                        l&apos;org B), passez par la fiche de
                         l&apos;organisation concernée.
                       </InfoTooltip>
                     </div>
@@ -322,10 +340,7 @@ export default function TeamPage() {
                           Toutes les orgs
                         </Badge>
                       ) : (
-                        <Badge
-                          variant="outline"
-                          className="rounded-full"
-                        >
+                        <Badge variant="outline" className="rounded-full">
                           <Building2 className="mr-1 h-3 w-3" />
                           {member.organisation_names.length} org
                           {member.organisation_names.length > 1 ? "s" : ""}
@@ -504,7 +519,9 @@ function InviteTeamDialog({
 
   function toggleOrg(orgId: string) {
     setSelectedOrgIds((prev) =>
-      prev.includes(orgId) ? prev.filter((id) => id !== orgId) : [...prev, orgId]
+      prev.includes(orgId)
+        ? prev.filter((id) => id !== orgId)
+        : [...prev, orgId]
     );
   }
 
@@ -535,7 +552,7 @@ function InviteTeamDialog({
       setError(
         err instanceof Error && err.message
           ? err.message
-          : "L'invitation n'a pas pu être envoyée. Réessayez ou contactez le support.",
+          : "L'invitation n'a pas pu être envoyée. Réessayez ou contactez le support."
       );
     } finally {
       setSubmitting(false);
@@ -592,11 +609,12 @@ function InviteTeamDialog({
                 Manager
               </button>
             </div>
-            <div className="flex items-start gap-1.5 rounded-md bg-muted/50 p-2">
-              <Info className="h-3.5 w-3.5 text-muted-foreground mt-0.5 shrink-0" />
-              <p className="text-xs text-muted-foreground">
-                <strong>Utilisateur</strong> : peut consulter le chat et les documents.{" "}
-                <strong>Manager</strong> : peut aussi ajouter des documents, gérer les membres et créer des organisations.
+            <div className="bg-muted/50 flex items-start gap-1.5 rounded-md p-2">
+              <Info className="text-muted-foreground mt-0.5 h-3.5 w-3.5 shrink-0" />
+              <p className="text-muted-foreground text-xs">
+                <strong>Utilisateur</strong> : peut consulter le chat et les
+                documents. <strong>Manager</strong> : peut aussi ajouter des
+                documents, gérer les membres et créer des organisations.
               </p>
             </div>
           </div>
@@ -635,7 +653,7 @@ function InviteTeamDialog({
             <div className="space-y-2">
               <Label>Organisations</Label>
               {organisations.length === 0 ? (
-                <p className="py-3 text-center text-sm text-muted-foreground">
+                <p className="text-muted-foreground py-3 text-center text-sm">
                   Aucune organisation disponible.
                 </p>
               ) : (
@@ -682,7 +700,7 @@ function InviteTeamDialog({
             </div>
           )}
 
-          {error && <p className="text-sm text-destructive">{error}</p>}
+          {error && <p className="text-destructive text-sm">{error}</p>}
           <DialogFooter>
             <Button
               type="submit"
@@ -730,7 +748,9 @@ function EditMemberDialog({
 
   function toggleOrg(orgId: string) {
     setSelectedOrgIds((prev) =>
-      prev.includes(orgId) ? prev.filter((id) => id !== orgId) : [...prev, orgId]
+      prev.includes(orgId)
+        ? prev.filter((id) => id !== orgId)
+        : [...prev, orgId]
     );
   }
 
@@ -751,7 +771,11 @@ function EditMemberDialog({
       onUpdated();
       onOpenChange(false);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Impossible de mettre à jour ce membre");
+      toast.error(
+        err instanceof Error
+          ? err.message
+          : "Impossible de mettre à jour ce membre"
+      );
     } finally {
       setSubmitting(false);
     }
@@ -873,7 +897,9 @@ function EditMemberDialog({
           <DialogFooter>
             <Button
               type="submit"
-              disabled={submitting || (!accessAll && selectedOrgIds.length === 0)}
+              disabled={
+                submitting || (!accessAll && selectedOrgIds.length === 0)
+              }
             >
               {submitting ? "Enregistrement..." : "Enregistrer"}
             </Button>
@@ -906,18 +932,32 @@ function InvitationRow({
       });
       toast.success("Invitation renvoyée");
       onUpdated();
+    } catch (error) {
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : "L'invitation n'a pas pu être renvoyée."
+      );
     } finally {
       setResending(false);
     }
   }
 
   async function handleCancel() {
-    await apiFetch(`/team/invitations/${invitation.id}`, {
-      method: "DELETE",
-      token,
-    });
-    toast.success("Invitation annulée");
-    onUpdated();
+    try {
+      await apiFetch(`/team/invitations/${invitation.id}`, {
+        method: "DELETE",
+        token,
+      });
+      toast.success("Invitation annulée");
+      onUpdated();
+    } catch (error) {
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : "L'invitation n'a pas pu être annulée."
+      );
+    }
   }
 
   return (

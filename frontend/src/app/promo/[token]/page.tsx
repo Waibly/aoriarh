@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/card";
 import { Loader2, CheckCircle2, XCircle, Gift } from "lucide-react";
 import { apiFetch, API_BASE_URL } from "@/lib/api";
+import { clearSignupCookie, readSignupCookie } from "@/lib/signup-flow";
 
 interface ValidateResponse {
   valid: boolean;
@@ -62,7 +63,7 @@ export default function PromoPage() {
     async function validate() {
       try {
         const res = await fetch(
-          `${API_BASE_URL}/plan-invitations/${token}/validate`,
+          `${API_BASE_URL}/plan-invitations/${token}/validate`
         );
         if (!res.ok) {
           setPageState("invalid");
@@ -80,7 +81,7 @@ export default function PromoPage() {
   }, [token, setErrorMessage]);
 
   useEffect(() => {
-    if (pageState !== "valid") return;
+    if (pageState !== "valid" && pageState !== "invalid") return;
     if (sessionStatus === "loading") return;
     if (sessionStatus !== "authenticated" || !session?.access_token) return;
     if (redeemAttempted.current) return;
@@ -93,10 +94,18 @@ export default function PromoPage() {
       token: session.access_token as string,
     })
       .then((data) => {
+        if (
+          ["redeemed", "already_redeemed", "already_paid"].includes(
+            data.status
+          ) &&
+          readSignupCookie("aoria_plan_invite_token") === token
+        ) {
+          clearSignupCookie("aoria_plan_invite_token");
+        }
         if (data.status === "redeemed") {
           setPageState("redeemed");
           setTimeout(() => {
-            window.location.href = "/chat";
+            window.location.href = "/post-signup";
           }, 2000);
         } else if (data.status === "already_paid") {
           setPageState("already_paid");
@@ -109,9 +118,7 @@ export default function PromoPage() {
       })
       .catch((err) => {
         setPageState("error");
-        setErrorMessage(
-          err instanceof Error ? err.message : "Erreur réseau",
-        );
+        setErrorMessage(err instanceof Error ? err.message : "Erreur réseau");
       });
   }, [pageState, sessionStatus, session, token, setErrorMessage]);
 
@@ -134,7 +141,7 @@ export default function PromoPage() {
     return (
       <Card>
         <CardContent className="flex flex-col items-center gap-4 py-12">
-          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+          <Loader2 className="text-muted-foreground h-8 w-8 animate-spin" />
           <p className="text-muted-foreground">Vérification...</p>
         </CardContent>
       </Card>
@@ -145,16 +152,18 @@ export default function PromoPage() {
     return (
       <Card>
         <CardHeader className="text-center">
-          <div className="flex justify-center mb-2">
-            <XCircle className="h-12 w-12 text-destructive" />
+          <div className="mb-2 flex justify-center">
+            <XCircle className="text-destructive h-12 w-12" />
           </div>
           <CardTitle>Lien expiré ou invalide</CardTitle>
           <CardDescription>
-            Ce lien n&apos;est plus actif. Vous pouvez toujours créer un
-            compte avec l&apos;essai gratuit de 14 jours.
+            Ce lien n&apos;est plus disponible pour une nouvelle activation. Si
+            vous l&apos;avez déjà utilisé, connectez-vous pour retrouver votre
+            accès.
           </CardDescription>
         </CardHeader>
-        <CardContent className="flex justify-center">
+        <CardContent className="flex flex-wrap justify-center gap-3">
+          <Button onClick={handleLogin}>Se connecter</Button>
           <Button onClick={() => router.push("/register")}>
             Créer un compte
           </Button>
@@ -167,10 +176,8 @@ export default function PromoPage() {
     return (
       <Card>
         <CardContent className="flex flex-col items-center gap-4 py-12">
-          <Loader2 className="h-8 w-8 animate-spin text-primary" />
-          <p className="text-muted-foreground">
-            Activation de votre plan...
-          </p>
+          <Loader2 className="text-primary h-8 w-8 animate-spin" />
+          <p className="text-muted-foreground">Activation de votre plan...</p>
         </CardContent>
       </Card>
     );
@@ -180,7 +187,7 @@ export default function PromoPage() {
     return (
       <Card>
         <CardHeader className="text-center">
-          <div className="flex justify-center mb-2">
+          <div className="mb-2 flex justify-center">
             <CheckCircle2 className="h-12 w-12 text-green-500" />
           </div>
           <CardTitle>Plan Invité activé</CardTitle>
@@ -189,7 +196,7 @@ export default function PromoPage() {
           </CardDescription>
         </CardHeader>
         <CardContent className="flex justify-center">
-          <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+          <Loader2 className="text-muted-foreground h-5 w-5 animate-spin" />
         </CardContent>
       </Card>
     );
@@ -206,8 +213,8 @@ export default function PromoPage() {
           </CardDescription>
         </CardHeader>
         <CardContent className="flex justify-center">
-          <Button onClick={() => router.push("/chat")}>
-            Accéder au chat
+          <Button onClick={() => router.push("/post-signup")}>
+            Accéder à mon espace
           </Button>
         </CardContent>
       </Card>
@@ -220,12 +227,13 @@ export default function PromoPage() {
         <CardHeader className="text-center">
           <CardTitle>Déjà activé</CardTitle>
           <CardDescription>
-            Vous avez déjà utilisé ce lien. Votre plan Invité est actif.
+            Vous avez déjà activé ce lien sur votre compte. Consultez votre
+            espace pour retrouver votre accès et son échéance.
           </CardDescription>
         </CardHeader>
         <CardContent className="flex justify-center">
-          <Button onClick={() => router.push("/chat")}>
-            Accéder au chat
+          <Button onClick={() => router.push("/post-signup")}>
+            Accéder à mon espace
           </Button>
         </CardContent>
       </Card>
@@ -236,15 +244,19 @@ export default function PromoPage() {
     return (
       <Card>
         <CardHeader className="text-center">
-          <div className="flex justify-center mb-2">
-            <XCircle className="h-12 w-12 text-destructive" />
+          <div className="mb-2 flex justify-center">
+            <XCircle className="text-destructive h-12 w-12" />
           </div>
           <CardTitle>Erreur</CardTitle>
           <CardDescription>{errorMessage}</CardDescription>
         </CardHeader>
-        <CardContent className="flex justify-center">
-          <Button variant="outline" onClick={() => router.push("/register")}>
-            Créer un compte
+        <CardContent className="flex flex-wrap justify-center gap-3">
+          <Button onClick={() => window.location.reload()}>Réessayer</Button>
+          <Button
+            variant="outline"
+            onClick={() => signIn("google", { callbackUrl: `/promo/${token}` })}
+          >
+            Choisir un compte Google
           </Button>
         </CardContent>
       </Card>
@@ -260,12 +272,10 @@ export default function PromoPage() {
   return (
     <Card>
       <CardHeader className="text-center">
-        <div className="flex justify-center mb-2">
-          <Gift className="h-12 w-12 text-primary" />
+        <div className="mb-2 flex justify-center">
+          <Gift className="text-primary h-12 w-12" />
         </div>
-        <CardTitle className="text-xl">
-          Accès Invité AORIA RH
-        </CardTitle>
+        <CardTitle className="text-xl">Accès Invité AORIA RH</CardTitle>
         <CardDescription>
           Vous avez été sélectionné(e) pour un accès gratuit de{" "}
           <strong>{durationLabel}</strong> à l&apos;assistant juridique RH.
@@ -273,7 +283,7 @@ export default function PromoPage() {
       </CardHeader>
       <CardContent className="space-y-4">
         {promoData?.features && promoData.features.length > 0 && (
-          <ul className="space-y-1.5 text-sm text-muted-foreground">
+          <ul className="text-muted-foreground space-y-1.5 text-sm">
             {promoData.features.map((f) => (
               <li key={f} className="flex items-start gap-2">
                 <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-green-500" />
@@ -283,12 +293,28 @@ export default function PromoPage() {
           </ul>
         )}
 
-        <Button className="w-full" variant="outline" onClick={handleGoogleSignIn}>
+        <Button
+          className="w-full"
+          variant="outline"
+          onClick={handleGoogleSignIn}
+        >
           <svg className="mr-2 h-4 w-4" viewBox="0 0 24 24">
-            <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z" fill="#4285F4" />
-            <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853" />
-            <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05" />
-            <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335" />
+            <path
+              d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z"
+              fill="#4285F4"
+            />
+            <path
+              d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
+              fill="#34A853"
+            />
+            <path
+              d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"
+              fill="#FBBC05"
+            />
+            <path
+              d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
+              fill="#EA4335"
+            />
           </svg>
           Continuer avec Google
         </Button>
@@ -311,7 +337,7 @@ export default function PromoPage() {
           </Button>
         </div>
 
-        <p className="text-center text-xs text-muted-foreground">
+        <p className="text-muted-foreground text-center text-xs">
           Pas de carte bancaire requise. Sans engagement.
         </p>
       </CardContent>

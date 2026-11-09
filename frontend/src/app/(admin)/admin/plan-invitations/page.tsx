@@ -1,28 +1,15 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useSession } from "next-auth/react";
-import {
-  Copy,
-  Gift,
-  Loader2,
-  Plus,
-  Trash2,
-  Eye,
-} from "lucide-react";
+import { Copy, Gift, Loader2, Plus, Trash2, Eye } from "lucide-react";
 import { toast } from "@/lib/toast";
 import { apiFetch } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import {
   Dialog,
   DialogContent,
@@ -75,7 +62,13 @@ interface PlanInvitationDetail extends PlanInvitation {
   redemptions: Redemption[];
 }
 
-const STATUS_BADGE: Record<string, { label: string; variant: "default" | "secondary" | "destructive" | "outline" }> = {
+const STATUS_BADGE: Record<
+  string,
+  {
+    label: string;
+    variant: "default" | "secondary" | "destructive" | "outline";
+  }
+> = {
   active: { label: "Actif", variant: "default" },
   exhausted: { label: "Épuisé", variant: "secondary" },
   expired: { label: "Expiré", variant: "outline" },
@@ -103,31 +96,43 @@ export default function AdminPlanInvitationsPage() {
   const [loadingDetail, setLoadingDetail] = useState(false);
 
   const [revokeTarget, setRevokeTarget] = useState<PlanInvitation | null>(null);
-  const [statusFilter, setStatusFilter] = useState<string>("active");
+  const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [page, setPage] = useState(1);
+  const pageSize = 20;
+  const listRequest = useRef(0);
 
   const fetchList = useCallback(async () => {
     if (!token) return;
+    const request = ++listRequest.current;
     setLoading(true);
     try {
-      const params = statusFilter && statusFilter !== "all"
-        ? `?status=${statusFilter}`
-        : "";
+      const params = new URLSearchParams({
+        page: String(page),
+        page_size: String(pageSize),
+      });
+      if (statusFilter !== "all") params.set("status", statusFilter);
       const data = await apiFetch<{ items: PlanInvitation[]; total: number }>(
-        `/admin/plan-invitations${params}`,
-        { token },
+        `/admin/plan-invitations?${params}`,
+        { token }
       );
+      if (request !== listRequest.current) return;
+      const lastPage = Math.max(1, Math.ceil(data.total / pageSize));
+      if (page > lastPage) {
+        setPage(lastPage);
+        return;
+      }
       setInvitations(data.items);
       setTotal(data.total);
     } catch {
       toast.error("Erreur lors du chargement des invitations plan");
     } finally {
-      setLoading(false);
+      if (request === listRequest.current) setLoading(false);
     }
-  }, [token]);
+  }, [token, statusFilter, page]);
 
   useEffect(() => {
     fetchList();
-  }, [fetchList, statusFilter]);
+  }, [fetchList]);
 
   async function handleCreate() {
     if (!token || !formLabel.trim()) return;
@@ -148,22 +153,27 @@ export default function AdminPlanInvitationsPage() {
           method: "POST",
           token,
           body: JSON.stringify(body),
-        },
+        }
       );
-
-      if (created.shareable_url) {
-        await navigator.clipboard.writeText(created.shareable_url);
-        toast.success("Lien créé et copié dans le presse-papiers");
-      } else {
-        toast.success("Lien créé");
-      }
 
       setCreateOpen(false);
       resetForm();
-      fetchList();
+      setDetail({ ...created, redemptions: [] });
+      setDetailOpen(true);
+      if (page === 1 && statusFilter === "all") void fetchList();
+      else {
+        setPage(1);
+        setStatusFilter("all");
+      }
+      if (created.shareable_url) {
+        await copyUrl(
+          created.shareable_url,
+          "Lien créé et copié dans le presse-papiers"
+        );
+      } else toast.success("Lien créé");
     } catch (err) {
       toast.error(
-        err instanceof Error ? err.message : "Erreur lors de la création",
+        err instanceof Error ? err.message : "Erreur lors de la création"
       );
     } finally {
       setCreating(false);
@@ -185,7 +195,7 @@ export default function AdminPlanInvitationsPage() {
     try {
       const data = await apiFetch<PlanInvitationDetail>(
         `/admin/plan-invitations/${inv.id}`,
-        { token },
+        { token }
       );
       setDetail(data);
     } catch {
@@ -207,14 +217,20 @@ export default function AdminPlanInvitationsPage() {
       fetchList();
     } catch (err) {
       toast.error(
-        err instanceof Error ? err.message : "Erreur lors de la révocation",
+        err instanceof Error ? err.message : "Erreur lors de la révocation"
       );
     }
   }
 
-  function copyUrl(url: string) {
-    navigator.clipboard.writeText(url);
-    toast.success("Lien copié");
+  async function copyUrl(url: string, successMessage = "Lien copié") {
+    try {
+      await navigator.clipboard.writeText(url);
+      toast.success(successMessage);
+    } catch {
+      toast.warning(
+        "Le lien est enregistré. La copie automatique a échoué : sélectionnez le lien pour le copier."
+      );
+    }
   }
 
   const fmt = (d: string) =>
@@ -226,11 +242,12 @@ export default function AdminPlanInvitationsPage() {
 
   return (
     <div className="space-y-6 p-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold">Liens promo</h1>
-          <p className="text-sm text-muted-foreground">
-            Créez et gérez les liens d&apos;invitation au plan Invité ({total} au total)
+          <p className="text-muted-foreground text-sm">
+            Créez et gérez les liens d&apos;invitation au plan Invité ({total}{" "}
+            dans cette sélection)
           </p>
         </div>
         <Button onClick={() => setCreateOpen(true)}>
@@ -240,7 +257,13 @@ export default function AdminPlanInvitationsPage() {
       </div>
 
       <div className="flex items-center gap-2">
-        <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v)}>
+        <Select
+          value={statusFilter}
+          onValueChange={(v) => {
+            setPage(1);
+            setStatusFilter(v);
+          }}
+        >
           <SelectTrigger className="w-[160px]">
             <SelectValue placeholder="Filtrer par statut" />
           </SelectTrigger>
@@ -253,6 +276,11 @@ export default function AdminPlanInvitationsPage() {
           </SelectContent>
         </Select>
       </div>
+
+      <p className="text-muted-foreground text-sm">
+        Un lien épuisé reste consultable. Les accès déjà activés restent
+        valables jusqu&apos;à leur échéance.
+      </p>
 
       <Card>
         <CardContent className="p-4">
@@ -273,13 +301,16 @@ export default function AdminPlanInvitationsPage() {
             <TableBody>
               {loading ? (
                 <TableRow>
-                  <TableCell colSpan={9} className="text-center py-8">
-                    <Loader2 className="mx-auto h-6 w-6 animate-spin text-muted-foreground" />
+                  <TableCell colSpan={9} className="py-8 text-center">
+                    <Loader2 className="text-muted-foreground mx-auto h-6 w-6 animate-spin" />
                   </TableCell>
                 </TableRow>
               ) : invitations.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={9} className="text-center py-8 text-muted-foreground">
+                  <TableCell
+                    colSpan={9}
+                    className="text-muted-foreground py-8 text-center"
+                  >
                     Aucun lien promo créé
                   </TableCell>
                 </TableRow>
@@ -296,10 +327,15 @@ export default function AdminPlanInvitationsPage() {
                         {inv.shareable_url ? (
                           <button
                             onClick={() => copyUrl(inv.shareable_url!)}
-                            className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors max-w-[200px]"
+                            className="text-muted-foreground hover:text-foreground flex max-w-[200px] items-center gap-1.5 text-xs transition-colors"
                             title={inv.shareable_url}
                           >
-                            <code className="truncate">{inv.shareable_url.replace("https://app.aoriarh.fr", "")}</code>
+                            <code className="truncate">
+                              {inv.shareable_url.replace(
+                                "https://app.aoriarh.fr",
+                                ""
+                              )}
+                            </code>
                             <Copy className="h-3 w-3 shrink-0" />
                           </button>
                         ) : (
@@ -336,7 +372,7 @@ export default function AdminPlanInvitationsPage() {
                               onClick={() => setRevokeTarget(inv)}
                               title="Révoquer"
                             >
-                              <Trash2 className="h-4 w-4 text-destructive" />
+                              <Trash2 className="text-destructive h-4 w-4" />
                             </Button>
                           )}
                         </div>
@@ -350,14 +386,37 @@ export default function AdminPlanInvitationsPage() {
         </CardContent>
       </Card>
 
+      <nav
+        aria-label="Pagination des liens promo"
+        className="flex flex-wrap items-center justify-between gap-3"
+      >
+        <Button
+          variant="outline"
+          disabled={loading || page <= 1}
+          onClick={() => setPage((value) => value - 1)}
+        >
+          Précédent
+        </Button>
+        <span className="text-sm">
+          Page {page} sur {Math.max(1, Math.ceil(total / pageSize))}
+        </span>
+        <Button
+          variant="outline"
+          disabled={loading || page * pageSize >= total}
+          onClick={() => setPage((value) => value + 1)}
+        >
+          Suivant
+        </Button>
+      </nav>
+
       {/* Dialog : Créer un lien */}
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Nouveau lien promo</DialogTitle>
             <DialogDescription>
-              Créez un lien d&apos;invitation au plan Invité. Le lien sera copié
-              automatiquement.
+              Créez un lien d&apos;invitation au plan Invité. Il restera
+              disponible dans cette liste et dans son détail.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
@@ -403,9 +462,7 @@ export default function AdminPlanInvitationsPage() {
               </div>
             </div>
             <div className="space-y-2">
-              <Label htmlFor="email">
-                Email (facultatif)
-              </Label>
+              <Label htmlFor="email">Email (facultatif)</Label>
               <Input
                 id="email"
                 type="email"
@@ -440,7 +497,15 @@ export default function AdminPlanInvitationsPage() {
             </Button>
             <Button
               onClick={handleCreate}
-              disabled={creating || !formLabel.trim()}
+              disabled={
+                creating ||
+                !formLabel.trim() ||
+                !!(
+                  formMaxUses.trim() &&
+                  (!Number.isInteger(Number(formMaxUses)) ||
+                    Number(formMaxUses) < 1)
+                )
+              }
             >
               {creating ? (
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -460,20 +525,20 @@ export default function AdminPlanInvitationsPage() {
             <DialogTitle>{detail?.label ?? "Détail"}</DialogTitle>
             {detail?.shareable_url && (
               <div
-                className="flex items-center gap-2 mt-1 cursor-pointer"
+                className="mt-1 flex cursor-pointer items-center gap-2"
                 onClick={() => copyUrl(detail.shareable_url!)}
                 title="Cliquer pour copier"
               >
-                <code className="text-xs bg-muted px-2 py-1 rounded whitespace-nowrap">
+                <code className="bg-muted min-w-0 rounded px-2 py-1 text-xs break-all select-all">
                   {detail.shareable_url}
                 </code>
-                <Copy className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                <Copy className="text-muted-foreground h-3.5 w-3.5 shrink-0" />
               </div>
             )}
           </DialogHeader>
           {loadingDetail ? (
             <div className="flex justify-center py-8">
-              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+              <Loader2 className="text-muted-foreground h-6 w-6 animate-spin" />
             </div>
           ) : detail?.redemptions && detail.redemptions.length > 0 ? (
             <div className="space-y-2">
@@ -502,7 +567,7 @@ export default function AdminPlanInvitationsPage() {
               </Table>
             </div>
           ) : (
-            <p className="text-sm text-muted-foreground py-4 text-center">
+            <p className="text-muted-foreground py-4 text-center text-sm">
               Aucune activation pour ce lien
             </p>
           )}

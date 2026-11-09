@@ -25,6 +25,14 @@ export default auth((req) => {
   }
 
   if (isAuthPage) {
+    if (
+      req.nextUrl.pathname === "/register" &&
+      req.nextUrl.searchParams.get("onboard") === "1"
+    ) {
+      return isLoggedIn
+        ? NextResponse.next()
+        : NextResponse.redirect(new URL("/login", req.nextUrl.origin));
+    }
     if (isLoggedIn) {
       return NextResponse.redirect(new URL("/chat", req.nextUrl.origin));
     }

@@ -4,6 +4,11 @@ import { MessageBubble } from "@/components/chat/message-bubble";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import type { Message } from "@/types/api";
 
+jest.mock("next/navigation", () => ({
+  useRouter: () => ({ push: jest.fn() }),
+  useParams: () => ({}),
+}));
+
 jest.mock("react-markdown", () => ({
   __esModule: true,
   default: ({ children }: { children: React.ReactNode }) => <>{children}</>,

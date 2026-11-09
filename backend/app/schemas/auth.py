@@ -1,3 +1,4 @@
+import uuid
 from datetime import datetime
 
 from pydantic import BaseModel, EmailStr, Field, field_validator
@@ -76,6 +77,7 @@ class RegisterRequest(BaseModel):
     full_name: str
     workspace_name: str | None = None
     invited: bool = False
+    invitation_token: uuid.UUID | None = None
     requested_plan: CommercialPlanCode | None = None
     requested_cycle: BillingCycle | None = None
     attribution: SignupAttribution | None = None

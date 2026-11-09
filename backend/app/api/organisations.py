@@ -14,7 +14,6 @@ from app.schemas.organisation import (
     OrganisationRead,
     OrganisationUpdate,
 )
-from app.services.billing_service import BillingService
 from app.services.organisation_service import OrganisationService
 
 router = APIRouter()
@@ -26,25 +25,6 @@ async def create_organisation(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> OrganisationRead:
-    # Allow: admin, manager (workspace owner), or invited manager in a workspace
-    can_create = user.role in ("admin", "manager") or any(
-        m.role_in_org == "manager" for m in user.account_memberships
-    )
-    if not can_create:
-        from fastapi import HTTPException
-
-        raise HTTPException(
-            status_code=403, detail="Vous n'avez pas les droits pour créer une organisation"
-        )
-
-    # Enforce plan limit on number of organisations per account.
-    # Admins (role='admin') are AORIA RH staff and bypass quota checks.
-    if user.role != "admin":
-        billing = BillingService(db)
-        account = await billing.get_primary_account_for_user(user)
-        billing.ensure_plan_active(account)
-        await billing.check_organisation_limit(account)
-
     service = OrganisationService(db)
     return await service.create_organisation(data, user)
 

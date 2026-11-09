@@ -7,7 +7,7 @@ from sqlalchemy import delete, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.models.account import default_workspace_name
+from app.models.account import Account, default_workspace_name
 from app.models.ccn import OrganisationConvention
 from app.models.conversation import Conversation, Message
 from app.models.document import Document
@@ -33,13 +33,45 @@ class OrganisationService:
     def __init__(self, db: AsyncSession) -> None:
         self.db = db
 
+    async def creation_account(self, user: User, account_id: uuid.UUID | None) -> Account | None:
+        if account_id is None:
+            if user.owned_account:
+                account_id = user.owned_account.id
+            elif user.account_memberships:
+                account_id = user.account_memberships[0].account_id
+        if account_id is None:
+            if user.role == "admin":
+                return None
+            raise HTTPException(
+                403, "Aucun espace de travail disponible pour créer une organisation"
+            )
+        account = await self.db.scalar(
+            select(Account)
+            .where(Account.id == account_id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+        allowed = account is not None and (
+            user.role == "admin"
+            or (account.owner_id == user.id and user.role == "manager")
+            or any(
+                m.account_id == account_id and m.role_in_org == "manager"
+                for m in user.account_memberships
+            )
+        )
+        if not allowed:
+            raise HTTPException(403, "Vous ne pouvez pas créer d'organisation dans cet espace")
+        return account
+
     async def create_organisation(self, data: OrganisationCreate, user: User) -> Organisation:
-        # Resolve account_id: own workspace first, then invited workspace
-        account_id = None
-        if user.owned_account:
-            account_id = user.owned_account.id
-        elif user.account_memberships:
-            account_id = user.account_memberships[0].account_id
+        from app.services.billing_service import BillingService
+
+        account = await self.creation_account(user, data.account_id)
+        account_id = account.id if account else None
+        if user.role != "admin":
+            billing = BillingService(self.db)
+            billing.ensure_plan_active(account)
+            await billing.check_organisation_limit(account)
 
         # The workspace still carries its signup placeholder: name it after
         # the first organisation, which is what the client recognises.
@@ -57,6 +89,7 @@ class OrganisationService:
             taille=data.taille.value if data.taille else None,
             convention_collective=data.convention_collective,
             secteur_activite=data.secteur_activite,
+            not_subject_to_ccn=data.not_subject_to_ccn,
             account_id=account_id,
         )
         self.db.add(org)

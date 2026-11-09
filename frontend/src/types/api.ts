@@ -10,6 +10,8 @@ export interface User {
   workspace_name: string | null;
   workspace_id: string | null;
   is_workspace_owner?: boolean;
+  can_create_organisation?: boolean;
+  pending_invitation_token?: string | null;
 }
 
 export const PROFIL_METIER_OPTIONS = [
@@ -132,7 +134,12 @@ export interface Message {
   role: "user" | "assistant";
   content: string;
   document_references?:
-    | { document_id: string; extraction_id: string; name?: string; scope?: "dossier" }[]
+    | {
+        document_id: string;
+        extraction_id: string;
+        name?: string;
+        scope?: "dossier";
+      }[]
     | null;
   sources: MessageSource[] | null;
   feedback: string | null;
@@ -318,7 +325,8 @@ export const SOURCE_TYPE_OPTIONS: {
   },
   {
     value: "code_general_collectivites_territoriales_reglementaire",
-    label: "Code général des collectivités territoriales (partie réglementaire)",
+    label:
+      "Code général des collectivités territoriales (partie réglementaire)",
     niveau: 5,
   },
   { value: "code_penal", label: "Code pénal", niveau: 3 },
@@ -347,7 +355,11 @@ export const SOURCE_TYPE_OPTIONS: {
     niveau: 4,
   },
   // Niveau 5 — Réglementaire
-  { value: "code_procedure_civile", label: "Code de procédure civile (sélection)", niveau: 5 },
+  {
+    value: "code_procedure_civile",
+    label: "Code de procédure civile (sélection)",
+    niveau: 5,
+  },
   { value: "decret", label: "Décret", niveau: 5 },
   { value: "arrete", label: "Arrêté", niveau: 5 },
   { value: "circulaire", label: "Circulaire", niveau: 5 },
@@ -382,7 +394,11 @@ export const SOURCE_TYPE_OPTIONS: {
   // Niveau 9 — Contrat de travail
   { value: "contrat_travail", label: "Contrat de travail", niveau: 9 },
   // Niveau 10 — Divers
-  { value: "documentation_officielle", label: "Documentation pratique officielle", niveau: 10 },
+  {
+    value: "documentation_officielle",
+    label: "Documentation pratique officielle",
+    niveau: 10,
+  },
   { value: "divers", label: "Divers", niveau: 10 },
 ];
 

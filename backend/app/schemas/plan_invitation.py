@@ -1,16 +1,16 @@
 import uuid
 from datetime import datetime
 
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, Field
 
 
 class PlanInvitationCreate(BaseModel):
-    label: str
+    label: str = Field(min_length=1, max_length=255)
     plan: str = "invite"
-    duration_months: int = 1
+    duration_months: int = Field(default=1, ge=1, le=12)
     email: EmailStr | None = None
-    max_uses: int | None = None
-    expires_in_days: int = 30
+    max_uses: int | None = Field(default=None, ge=1)
+    expires_in_days: int = Field(default=30, ge=1, le=365)
 
 
 class PlanInvitationRead(BaseModel):
