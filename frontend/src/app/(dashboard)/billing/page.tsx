@@ -484,7 +484,7 @@ export default function BillingPage() {
               </p>
             </div>
             {canManageBilling && <div className="flex justify-end">
-              <Button onClick={handleBooster} disabled={busy}>
+              <Button className="h-auto min-h-9 w-full whitespace-normal sm:w-auto" onClick={handleBooster} disabled={busy}>
                 {busy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Zap className="mr-2 h-4 w-4" />}
                 Acheter un pack booster (+500 questions, 25 € HT)
               </Button>

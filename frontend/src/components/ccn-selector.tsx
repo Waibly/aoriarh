@@ -113,20 +113,20 @@ export function CcnSelector({
           </Button>
         </PopoverTrigger>
         <PopoverContent
-          className="w-[var(--radix-popover-trigger-width)] p-0"
+          className="flex max-h-[var(--radix-popover-content-available-height)] w-[var(--radix-popover-trigger-width)] max-w-[calc(100vw-1rem)] flex-col overflow-hidden p-0"
           align="start"
           side="bottom"
           sideOffset={4}
           avoidCollisions={true}
           collisionPadding={8}
         >
-          <Command shouldFilter={false}>
+          <Command className="min-h-0 [&_[data-slot=command-input-wrapper]]:shrink-0" shouldFilter={false}>
             <CommandInput
               placeholder="Rechercher par nom ou IDCC..."
               value={query}
               onValueChange={handleSearch}
             />
-            <CommandList className="max-h-[360px] overflow-y-auto">
+            <CommandList className="min-h-0 max-h-[360px] overflow-y-auto">
               <CommandEmpty>
                 {loading ? "Recherche..." : "Aucune convention trouvée"}
               </CommandEmpty>

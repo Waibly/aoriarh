@@ -453,16 +453,17 @@ export function UploadDialog({
                 </Button>
               </PopoverTrigger>
               <PopoverContent
-                className="w-[--radix-popover-trigger-width] p-0"
+                className="flex max-h-[var(--radix-popover-content-available-height)] w-[var(--radix-popover-trigger-width)] max-w-[calc(100vw-1rem)] flex-col overflow-hidden p-0"
                 align="start"
+                collisionPadding={8}
               >
-                <Command shouldFilter={false}>
+                <Command className="min-h-0 [&_[data-slot=command-input-wrapper]]:shrink-0" shouldFilter={false}>
                   <CommandInput
                     placeholder="Rechercher un type..."
                     value={typeSearch}
                     onValueChange={setTypeSearch}
                   />
-                  <CommandList className="max-h-none">
+                  <CommandList className="min-h-0">
                     <CommandEmpty>Aucun type trouvé.</CommandEmpty>
                     {Array.from(grouped.entries()).map(([niv, options]) => {
                       const filtered = typeSearch

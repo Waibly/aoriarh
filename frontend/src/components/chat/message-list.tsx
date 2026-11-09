@@ -62,7 +62,7 @@ export function MessageList({
   const showStreaming = isStreaming && !!streamingContent;
 
   return (
-    <ScrollArea className="min-h-0 min-w-0 flex-1" viewportRef={viewportRef}>
+    <ScrollArea className="min-h-24 min-w-0 flex-1" viewportRef={viewportRef}>
       <div className="mx-auto w-full max-w-4xl min-w-0 space-y-6 px-2 py-4 sm:px-6">
         {messages.map((message) => (
           <div
