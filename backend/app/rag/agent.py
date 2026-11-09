@@ -1,4 +1,5 @@
 import asyncio
+import dataclasses
 import datetime
 import json
 import logging
@@ -13,6 +14,7 @@ from openai import AsyncOpenAI
 
 import app.rag.config as rag_config
 from app.core.config import settings
+from app.rag.access_filter import build_org_access_filter
 from app.rag.chronology import ChronologyRequest
 from app.rag.config import (
     CCN_FLOOR_TOP,
@@ -22,6 +24,14 @@ from app.rag.config import (
     TOP_K,
 )
 from app.rag.document_generation import document_generation_instructions, document_task_block
+from app.rag.instrument_references import (
+    amended_code_articles,
+    detect_instrument_references,
+    read_article_passages,
+    read_document_passages,
+    read_section_neighbours,
+    resolve_instrument_references,
+)
 from app.rag.norme_hierarchy import DOCUMENT_TYPE_HIERARCHY
 from app.rag.parent_expansion import (
     ParentExpansionError,
@@ -75,6 +85,17 @@ _CODE_SOURCE_TYPES: frozenset[str] = frozenset(
 )
 _MAX_PLAN_HYPOTHESIS_CHUNKS_PER_ARTICLE = 2
 _MAX_PLAN_HYPOTHESIS_CHUNKS_TOTAL = 6
+
+# Textes datés cités par l'utilisateur (loi du..., décret n°...) : recherche
+# limitée à ces textes, puis articles de Code qu'ils modifient. Bornes techniques.
+_INSTRUMENT_MAX_PASSAGES_READ = 400
+_INSTRUMENT_READ_BUDGET = 600
+_INSTRUMENT_HYBRID_CANDIDATES = 20
+_INSTRUMENT_PASSAGES_TOTAL = 4
+_INSTRUMENT_AMENDING_PASSAGES = 3
+_INSTRUMENT_ARTICLES_PER_PASSAGE = 3
+_INSTRUMENT_ARTICLES_TOTAL = 6
+_INSTRUMENT_LINKED_GROUPS = 4
 
 # Compléments d'une recherche explicitement dirigée vers une source (CCN,
 # document interne, Code…). Ils restent bornés mais couvrent les normes écrites
@@ -914,6 +935,28 @@ class RAGAgent:
                     trace.identifiers_detected,
                 )
 
+        # Step 1.55: explicitly cited laws, decrees, ordinances and orders.
+        # Their passages are searched with the executed queries and appended
+        # (never promoted); amended Code articles follow. The reranker decides.
+        t_cited = time.perf_counter()
+        results, instrument_trace = await self._inject_instrument_candidates(
+            [trace.query_original, query],
+            list(dict.fromkeys([trace.query_original, query, *(variants or [])])),
+            build_rerank_query(
+                trace.query_original,
+                org_context,
+                search_plan.standalone_question if search_plan else query,
+            ),
+            results,
+            organisation_id,
+            org_idcc_list,
+        )
+        instrument_links = (instrument_trace or {}).pop("_links", {})
+        if instrument_trace:
+            trace.perf_ms["cited_texts"] = (time.perf_counter() - t_cited) * 1000
+        if instrument_trace:
+            trace.search_plan_validation["instrument_references"] = instrument_trace
+
         # Step 1.6 (adaptive only): validate article hypotheses against the
         # tenant-filtered corpus, append a tiny candidate set, then let the
         # normal reranker decide whether any of them is relevant. A guessed
@@ -999,6 +1042,7 @@ class RAGAgent:
                 reason=("parent_timeout" if isinstance(exc, TimeoutError) else str(exc)),
             )
             return [], reformulated, trace
+        results = self._append_instrument_links(results, instrument_links, selection["groups"])
         trace.perf_ms["parent_expansion"] = (time.perf_counter() - t_exp) * 1000
         trace.parent_groups = _serialize_chunks(results, limit=len(results), text_chars=400)
         selection["status"] = "complete"
@@ -1343,6 +1387,254 @@ class RAGAgent:
                     )
                 )
         return sorted(retained)
+
+    async def _inject_instrument_candidates(
+        self,
+        question_texts: list[str],
+        executed_queries: list[str],
+        rerank_query: str,
+        results: list[SearchResult],
+        organisation_id: str,
+        org_idcc_list: list[str] | None,
+    ) -> tuple[list[SearchResult], dict | None]:
+        """Step 1.55: search the dated texts the user explicitly cites.
+
+        Only the user's question (original and standalone form) is parsed.
+        A resolved text is read whole when short (else hybrid candidates
+        restricted to it), under the same access and source policies, and its
+        passages are scored by the common reranker. The best few are appended
+        to the pool (never promoted) and scored again with it. The Code articles
+        they amend or cite are returned as links, appended after selection only
+        for a selected passage (see _append_instrument_links).
+        """
+        references = detect_instrument_references(*question_texts)
+        if not references:
+            return results, None
+        try:
+            resolved = await resolve_instrument_references(references)
+        except Exception as exc:
+            logger.exception("[INSTRUMENT] Resolution failed")
+            raise RetrievalError("instrument_resolution_failed") from exc
+        info: dict = {"references": resolved, "passages_added": [], "amended_articles": []}
+        document_ids = list(
+            dict.fromkeys(
+                d["document_id"]
+                for r in resolved
+                if r["status"] == "resolved"
+                for d in r["documents"]
+            )
+        )
+        if not document_ids:
+            return results, info
+
+        access = build_org_access_filter(organisation_id, org_idcc_list)
+        qdrant = self.search_engine.qdrant
+        plan = getattr(self, "_active_search_plan", None)
+        excluded = set(plan.excluded_source_types) if plan else set()
+        exclusive = set(plan.exclusive_source_types or []) if plan else set()
+
+        # A cited text is short enough to be read whole: every passage is scored
+        # by the common reranker (it reads acronyms and paraphrases that vector
+        # and lexical search miss). Longer texts: bounded hybrid candidates.
+        candidates: list[SearchResult] = []
+        info["texts"] = []
+        budget = _INSTRUMENT_READ_BUDGET
+        for document_id in document_ids:
+            passages, complete = await asyncio.to_thread(
+                read_document_passages,
+                qdrant,
+                document_id,
+                access,
+                min(_INSTRUMENT_MAX_PASSAGES_READ, budget),
+            )
+            if complete:
+                budget -= len(passages)
+            passages = [
+                p
+                for p in passages
+                if p.source_type not in excluded and (not exclusive or p.source_type in exclusive)
+            ]
+            mode = "complete_text_reranked"
+            if not complete:
+                mode = "hybrid_candidates_reranked"
+                per_query = await asyncio.gather(
+                    *(
+                        self._search(
+                            q,
+                            organisation_id,
+                            top_k=_INSTRUMENT_HYBRID_CANDIDATES,
+                            org_idcc_list=org_idcc_list,
+                            document_ids=[document_id],
+                            candidate_pool=True,
+                        )
+                        for q in executed_queries
+                    )
+                )
+                passages = [r for query_hits in per_query for r in query_hits]
+            info["texts"].append(
+                {"document_id": document_id, "mode": mode, "passages_scored": len(passages)}
+            )
+            candidates.extend(passages)
+        unique: dict[tuple[str, int], SearchResult] = {}
+        for candidate in candidates:
+            unique.setdefault((candidate.document_id, candidate.chunk_index), candidate)
+        hits: list[SearchResult] = []
+        if unique:
+            try:
+                ranked = await asyncio.wait_for(
+                    self.reranker.rerank(
+                        rerank_query, list(unique.values()), cost_ctx=self._cost_ctx
+                    ),
+                    timeout=RAG_TIMEOUT_PER_STEP,
+                )
+            except (RerankingError, TimeoutError) as exc:
+                raise RetrievalError("instrument_rerank_failed") from exc
+            hits = ranked[:_INSTRUMENT_PASSAGES_TOTAL]
+
+        # Explicit link: a retained passage of the cited text -> the current
+        # version of the Code articles it amends (with the passages next to
+        # it in the same section, e.g. the amount) or cites.
+        links: dict[tuple[str, int], list[SearchResult]] = {}
+        fetched_by_article: dict[str, list[SearchResult]] = {}
+        # When a date designates several texts, the reranker's best text is
+        # the one followed; passages of the other texts only compete as such.
+        followed = [h for h in hits if hits and h.document_id == hits[0].document_id]
+        for hit in followed[:_INSTRUMENT_AMENDING_PASSAGES]:
+            if not hit.article_nums:
+                continue
+            passages = await asyncio.to_thread(
+                read_article_passages, qdrant, hit.document_id, hit.article_nums[:1], access
+            )
+            text, start = "", None
+            for passage in passages:
+                if passage.chunk_index == hit.chunk_index:
+                    start = len(text)
+                text += passage.text + "\n\n"
+                if passage.chunk_index == hit.chunk_index:
+                    break
+            if start is None:
+                continue
+            linked: list[SearchResult] = []
+            for item in amended_code_articles(text, start)[:_INSTRUMENT_ARTICLES_PER_PASSAGE]:
+                article = item["article"]
+                if article not in fetched_by_article:
+                    if len(fetched_by_article) >= _INSTRUMENT_ARTICLES_TOTAL:
+                        break
+                    found = await fetch_by_identifiers(
+                        qdrant,
+                        {"numero_pourvoi": [], "article_nums": [article]},
+                        organisation_id=organisation_id,
+                        org_idcc_list=org_idcc_list,
+                        article_source_filters={article: item["source_types"]},
+                        excluded_source_types=plan.excluded_source_types if plan else None,
+                        source_type_filter=(plan.exclusive_source_types or None) if plan else None,
+                        diagnostics=self._branch_diagnostics,
+                    )
+                    found = [r for r in found if r.source_type in _CODE_SOURCE_TYPES]
+                    if item["role"] == "amended":
+                        for seed in found[-1:]:
+                            found += await asyncio.to_thread(
+                                read_section_neighbours, qdrant, seed, access
+                            )
+                    fetched_by_article[article] = found
+                    info["amended_articles"].append(
+                        {**item, "chunks": sorted({r.chunk_index for r in found})}
+                    )
+                linked.extend(fetched_by_article[article])
+            if linked:
+                links[(hit.document_id, hit.chunk_index)] = linked
+        info["_links"] = links
+
+        seen = {(r.document_id, r.chunk_index) for r in results}
+        # Only passages of the cited text join the pool. Linked Code articles
+        # are appended after selection, and only for a selected passage.
+        for candidate in hits:
+            key = (candidate.document_id, candidate.chunk_index)
+            if key in seen:
+                continue
+            seen.add(key)
+            results.append(candidate)
+            info["passages_added"].append(
+                {
+                    "document_id": candidate.document_id,
+                    "doc_name": candidate.doc_name,
+                    "chunk_index": candidate.chunk_index,
+                    "articles": candidate.article_nums,
+                    "reason": "cited_text_search",
+                    "text_rerank_score": round(candidate.score, 4),
+                }
+            )
+        logger.info(
+            "[INSTRUMENT] %d reference(s), %d text(s), %d passage(s) added",
+            len(references),
+            len(document_ids),
+            len(info["passages_added"]),
+        )
+        return results, info
+
+    @staticmethod
+    def _append_instrument_links(
+        results: list[SearchResult],
+        links: dict[tuple[str, int], list[SearchResult]],
+        diagnostics: list[dict],
+    ) -> list[SearchResult]:
+        """Append Code articles amended or cited by a *selected* cited-text passage.
+
+        Same principle as explicit reference links: the selected sources are
+        never edited, removed or re-scored; linked passages are appended intact,
+        grouped by article, in document order, if not already transmitted.
+        """
+        if not links:
+            return results
+        transmitted = {
+            (r.document_id, i)
+            for r in results
+            for i in (r.context_chunk_indices or [r.chunk_index])
+        }
+        info = {"status": "cited_text_links", "added_passages": []}
+        diagnostics.append(info)
+        groups: dict[tuple, list[SearchResult]] = {}
+        # Best-ranked selected passages first; a bounded number of article groups.
+        for selected in sorted(results, key=lambda r: r.score, reverse=True):
+            for index in selected.context_chunk_indices or [selected.chunk_index]:
+                for linked in links.get((selected.document_id, index), []):
+                    key = (linked.document_id, linked.chunk_index)
+                    group = (
+                        linked.document_id,
+                        linked.section_path,
+                        (linked.article_nums or [""])[0],
+                    )
+                    if key in transmitted or (
+                        group not in groups and len(groups) >= _INSTRUMENT_LINKED_GROUPS
+                    ):
+                        continue
+                    transmitted.add(key)
+                    groups.setdefault(group, []).append(linked)
+                    info["added_passages"].append(
+                        {
+                            "document_id": linked.document_id,
+                            "chunk_index": linked.chunk_index,
+                            "articles": linked.article_nums,
+                            "linked_from": [selected.document_id, index],
+                            "selection_reason": "amended_or_cited_by_selected_text",
+                        }
+                    )
+        additions = []
+        for chunks in groups.values():
+            chunks.sort(key=lambda r: r.chunk_index)
+            additions.append(
+                dataclasses.replace(
+                    chunks[0],
+                    score=0.0,
+                    text="\n\n".join(r.text for r in chunks),
+                    article_nums=list(
+                        dict.fromkeys(a for r in chunks for a in r.article_nums or [])
+                    ),
+                    context_chunk_indices=[r.chunk_index for r in chunks],
+                )
+            )
+        info["added_groups"] = len(additions)
+        return [*results, *additions]
 
     async def _inject_plan_hypothesis_candidates(
         self,
