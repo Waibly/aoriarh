@@ -33,7 +33,9 @@ it("retains successful writes and reports convention errors on manual retry", as
   const progress: OrganisationSetupProgress = {};
   const input = {
     ...data,
-    selectedCcn: [{ idcc: "1486", titre: "Syntec", titre_court: "Syntec" }],
+    selectedCcn: [
+      { idcc: "1486", titre: "Syntec", titre_court: "Syntec", etat: null },
+    ],
   };
   request
     .mockResolvedValueOnce({})
