@@ -126,7 +126,7 @@ export function LimitReachedDialog({
               Ajouter un add-on
             </div>
             <p className="text-xs text-muted-foreground mt-2 flex-1">
-              {meta.addonUnit} pour <strong>{meta.addonPriceEur} €/mois</strong>.
+              {meta.addonUnit} pour <strong>{meta.addonPriceEur} € HT/mois</strong>.
               Facturation au prorata sur la période en cours, renouvelé automatiquement
               à chaque échéance. Retirable à tout moment.
             </p>
@@ -165,7 +165,7 @@ export function LimitReachedDialog({
               <>
                 <p className="text-xs text-muted-foreground mt-2 flex-1">
                   <strong>{nextPlanMeta.label}</strong> à{" "}
-                  <strong>{nextPlanMeta.priceMonthly} €/mois</strong>. Inclut{" "}
+                  <strong>{nextPlanMeta.priceMonthly} € HT/mois</strong>. Inclut{" "}
                   {nextPlanMeta.features.slice(0, 3).join(" · ")}.
                   Prorata appliqué immédiatement.
                 </p>

@@ -179,7 +179,7 @@ export function TrialBanner() {
             ) : (
               <Zap className="mr-2 h-4 w-4" />
             )}
-            Acheter un pack booster (+500, 25 €)
+            Acheter un pack booster (+500, 25 € HT)
           </Button>
         ) : canManageBilling ? (
           <Button asChild size="sm" variant={severity === "hard" ? "default" : "outline"}>

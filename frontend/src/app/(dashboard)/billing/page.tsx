@@ -486,7 +486,7 @@ export default function BillingPage() {
             {canManageBilling && <div className="flex justify-end">
               <Button onClick={handleBooster} disabled={busy}>
                 {busy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Zap className="mr-2 h-4 w-4" />}
-                Acheter un pack booster (+500 questions, 25 €)
+                Acheter un pack booster (+500 questions, 25 € HT)
               </Button>
             </div>}
           </CardContent>
@@ -549,21 +549,21 @@ export default function BillingPage() {
                 disabled={busy}
                 onClick={() => handleAddAddon("extra_user")}
               >
-                +1 utilisateur · 15 €/mois
+                +1 utilisateur · 15 € HT/mois
               </Button>
               <Button
                 variant="outline"
                 disabled={busy}
                 onClick={() => handleAddAddon("extra_org")}
               >
-                +1 organisation · 19 €/mois
+                +1 organisation · 19 € HT/mois
               </Button>
               <Button
                 variant="outline"
                 disabled={busy}
                 onClick={() => handleAddAddon("extra_docs")}
               >
-                +500 documents · 10 €/mois
+                +500 documents · 10 € HT/mois
               </Button>
               <Button
                 disabled={busy}
@@ -571,7 +571,7 @@ export default function BillingPage() {
                 className="border-2 border-primary"
               >
                 <Zap className="mr-2 h-4 w-4" />
-                Pack booster · +500 questions · 25 €
+                Pack booster · +500 questions · 25 € HT
               </Button>
             </div>
             <p className="text-xs text-muted-foreground">
@@ -589,7 +589,7 @@ export default function BillingPage() {
                     <span>
                       <strong>{a.quantity}×</strong> {ADDON_LABELS[a.addon_type]}
                       <span className="text-muted-foreground ml-2">
-                        ({((a.unit_price_cents * a.quantity) / 100).toFixed(0)} €/mois)
+                        ({((a.unit_price_cents * a.quantity) / 100).toFixed(0)} € HT/mois)
                       </span>
                     </span>
                     <Button
@@ -656,6 +656,7 @@ export default function BillingPage() {
                   </CardDescription>
                   <div className="flex items-baseline gap-1 pt-2">
                     <span className="text-3xl font-bold">{price} €</span>
+                    <span className="text-sm text-muted-foreground">HT</span>
                     <span className="text-sm text-muted-foreground">
                       /{cycle === "monthly" ? "mois" : "an"}
                     </span>
