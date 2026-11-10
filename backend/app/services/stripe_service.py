@@ -94,6 +94,18 @@ def _invoice_subscription_id(invoice) -> str | None:
     return _as_id(_get(details, "subscription"))
 
 
+def _invoice_tax_cents(invoice) -> int:
+    """Total tax of an invoice, for every Stripe API version.
+
+    Since API 2025-03-31 (basil) the ``tax`` field is gone: taxes are listed
+    in ``total_taxes`` (one entry per rate).
+    """
+    total_taxes = _get(invoice, "total_taxes")
+    if total_taxes is not None:
+        return sum(int(_get(t, "amount") or 0) for t in total_taxes)
+    return int(_get(invoice, "tax") or 0)
+
+
 # Subscription statuses that still grant access.
 _LIVE_SUB_STATUSES = ("active", "trialing", "past_due")
 
@@ -517,7 +529,7 @@ class StripeService:
             ) from exc
 
         amount_due = int(_get(upcoming, "amount_due") or 0)
-        amount_tax = int(_get(upcoming, "tax") or 0)
+        amount_tax = _invoice_tax_cents(upcoming)
         amount_subtotal = int(_get(upcoming, "subtotal") or 0)
         currency = _get(upcoming, "currency", "eur") or "eur"
         next_billing_ts = _get(upcoming, "period_end") or _get(upcoming, "next_payment_attempt")

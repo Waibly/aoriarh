@@ -40,7 +40,9 @@ async def test_checkout_uses_dashboard_payment_methods(
         if params["mode"] == "setup" and "currency" not in params:
             raise stripe.InvalidRequestError("Missing required param", "currency")
         calls.append(params)
-        return {"id": "cs_test_checkout", "url": "https://checkout.stripe.com/test"}
+        return stripe.checkout.Session.construct_from(
+            {"id": "cs_test_checkout", "url": "https://checkout.stripe.com/test"}, "sk_test_fake"
+        )
 
     monkeypatch.setattr(stripe.checkout.Session, "create", create_session)
     response = await client.post(

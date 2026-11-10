@@ -78,14 +78,19 @@ def _dahlia_invoice(attempt_count=1):
 
 
 async def _deliver(event_type, obj, event_id=None):
+    # Same object type as stripe.Webhook.construct_event in production: a
+    # StripeObject, which has no dict methods such as .get().
+    event = stripe.Event.construct_from(
+        {
+            "id": event_id or f"evt_{uuid.uuid4().hex}",
+            "object": "event",
+            "type": event_type,
+            "data": {"object": obj},
+        },
+        "sk_test_fake",
+    )
     async with test_session_factory() as session:
-        await StripeService(session).handle_webhook_event(
-            {
-                "id": event_id or f"evt_{uuid.uuid4().hex}",
-                "type": event_type,
-                "data": {"object": obj},
-            }
-        )
+        await StripeService(session).handle_webhook_event(event)
 
 
 # ---------------------------------------------------------------------------

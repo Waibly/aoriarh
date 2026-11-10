@@ -7,6 +7,7 @@ from app.core.logging import setup_logging
 
 setup_logging(json_output=os.getenv("LOG_FORMAT", "json") == "json")
 
+import stripe
 import structlog
 from fastapi import Depends, FastAPI, Request, Response
 from fastapi.exception_handlers import request_validation_exception_handler
@@ -218,6 +219,22 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_handler)
 
 async def _unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
     """Catch-all for unhandled exceptions: never expose internal details."""
+    return _logged_error_response(
+        request, 500, "Une erreur interne est survenue. Veuillez réessayer."
+    )
+
+
+async def _stripe_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+    """Stripe refused or failed a call: tell the user, keep the incident trail."""
+    return _logged_error_response(
+        request,
+        502,
+        "Le service de paiement n'a pas pu traiter la demande. "
+        "Réessayez dans un instant ; si le problème persiste, contactez-nous.",
+    )
+
+
+def _logged_error_response(request: Request, status_code: int, detail: str) -> JSONResponse:
     from app.observability.store import context
 
     request_id = getattr(request.state, "request_id", None)
@@ -244,14 +261,11 @@ async def _unhandled_exception_handler(request: Request, exc: Exception) -> JSON
                 "Vary": "Origin",
             }
         )
-    return JSONResponse(
-        status_code=500,
-        content={"detail": "Une erreur interne est survenue. Veuillez réessayer."},
-        headers=headers,
-    )
+    return JSONResponse(status_code=status_code, content={"detail": detail}, headers=headers)
 
 
 app.add_exception_handler(Exception, _unhandled_exception_handler)
+app.add_exception_handler(stripe.StripeError, _stripe_exception_handler)
 
 
 @app.exception_handler(RequestValidationError)
