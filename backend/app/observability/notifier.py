@@ -70,12 +70,26 @@ def slack_message(row, batch=None):
     }
 
 
+# Browser-side connectivity loss (sleep/wake, Wi-Fi, tab resumed, restart during a
+# deployment) and the generic error message it displays do not identify a fault of
+# AORIA. Real outages are detected by the public probe and server-side alerts.
+CLIENT_ONLY_CODES = ("network_error", "ui_error")
+
+
 def exclude_site_incidents():
-    """Retain historical records, but never send/retry marketing-site incidents."""
+    """Retain historical records, but never send/retry non-actionable incidents."""
     with connection() as db:
         db.execute(
             "UPDATE incidents SET state='ignored',last_error='site_notifications_disabled' "
             "WHERE state IN ('pending','failed') AND json_extract(payload, '$.source')='site'"
+        )
+        db.execute(
+            "UPDATE incidents SET state='ignored',last_error='client_connectivity_not_notified' "
+            "WHERE state IN ('pending','failed') AND json_extract(payload, '$.source')='app' "
+            "AND json_extract(payload, '$.code') IN ("
+            + ",".join("?" for _ in CLIENT_ONLY_CODES)
+            + ")",
+            CLIENT_ONLY_CODES,
         )
 
 

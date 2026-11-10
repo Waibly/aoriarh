@@ -342,7 +342,7 @@ async def test_slack_groups_occurrences_but_keeps_individual_records(spool):
 
 async def test_slack_cooldown_survives_new_events_and_does_not_block_other_groups(spool):
     def add(source):
-        store.capture("ui_error", source=source)
+        store.capture("react_error", source=source)
         with store.connection() as db:
             db.execute("UPDATE incidents SET created=? WHERE state='pending'", (time.time() - 10,))
 
@@ -606,3 +606,28 @@ async def test_auth_retry_header_is_allowed_by_cors(client):
     )
     assert response.status_code == 200
     assert "x-aoria-auth-retry" in response.headers["access-control-allow-headers"].lower()
+
+
+async def test_browser_connectivity_is_recorded_but_not_sent_to_slack(spool):
+    store.capture("network_error", source="app", location="/chat")
+    store.capture("ui_error", source="app", location="/chat")
+    store.capture("react_error", source="app", location="/chat")
+    store.capture("http_error", source="app", location="/chat", status=502)
+    with store.connection() as db:
+        db.execute("UPDATE incidents SET created=?", (time.time() - 10,))
+    messages = []
+
+    def accept(request):
+        messages.append(json.loads(request.content))
+        return httpx.Response(200, text="ok")
+
+    async with AsyncClient(transport=httpx.MockTransport(accept)) as client:
+        while await deliver_one(client, "https://hooks.slack.com/services/test"):
+            pass
+    sent = " ".join(m["blocks"][0]["text"]["text"] for m in messages)
+    assert len(messages) == 2
+    assert "react_error" in sent and "status : 502" in sent
+    assert "network_error" not in sent and "ui_error" not in sent
+    states = {json.loads(r["payload"])["code"]: (r["state"], r["last_error"]) for r in records()}
+    assert states["network_error"] == ("ignored", "client_connectivity_not_notified")
+    assert states["ui_error"] == ("ignored", "client_connectivity_not_notified")
