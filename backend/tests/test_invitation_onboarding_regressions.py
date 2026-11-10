@@ -356,3 +356,51 @@ async def test_admin_can_read_every_page_and_filter_used_links(client, admin_use
     assert first.json()["total"] == 21
     assert len(first.json()["items"]) == 20
     assert len(second.json()["items"]) == len(used.json()["items"]) == 1
+
+
+async def test_expired_promo_does_not_leave_permanent_free_access(
+    client, admin_user, manager_user
+):
+    from app.services.billing_service import BillingService
+    from app.services.plan_service import resolve_expired_plans
+
+    link = await promo(client, admin_user, duration_months=1)
+    response = await client.post(
+        f"/api/v1/plan-invitations/{link['token']}/redeem",
+        headers=auth_header(manager_user["token"]),
+    )
+    assert response.status_code == 200, response.text
+
+    async with session_factory() as db:
+        user = await db.scalar(select(User).where(User.email == manager_user["email"]))
+        account = await db.get(Account, user.owned_account.id)
+        ended_at = datetime.now(UTC) - timedelta(days=1)
+        account.plan_expires_at = ended_at
+        await db.commit()
+
+        assert await resolve_expired_plans(db) == 1
+        await db.commit()
+        await db.refresh(account)
+
+        assert account.plan == "gratuit"
+        assert account.plan_expires_at is not None
+        with pytest.raises(HTTPException) as exc:
+            BillingService(db).ensure_plan_active(account)
+        assert exc.value.status_code == 402
+
+
+async def test_shorter_promo_link_does_not_cut_running_offer(client, admin_user, manager_user):
+    long_link = await promo(client, admin_user, duration_months=3)
+    short_link = await promo(client, admin_user, duration_months=1)
+    first = await client.post(
+        f"/api/v1/plan-invitations/{long_link['token']}/redeem",
+        headers=auth_header(manager_user["token"]),
+    )
+    second = await client.post(
+        f"/api/v1/plan-invitations/{short_link['token']}/redeem",
+        headers=auth_header(manager_user["token"]),
+    )
+    assert first.status_code == second.status_code == 200, second.text
+    first_end = datetime.fromisoformat(first.json()["plan_expires_at"]).replace(tzinfo=UTC)
+    second_end = datetime.fromisoformat(second.json()["plan_expires_at"]).replace(tzinfo=UTC)
+    assert second_end == first_end

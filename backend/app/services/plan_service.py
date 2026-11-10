@@ -31,11 +31,16 @@ class PlanOverflowError(Exception):
 
 
 async def resolve_expired_plans(db: AsyncSession) -> int:
-    """Batch-revoke expired invite plans back to gratuit. Returns count of revoked."""
+    """Batch-revoke expired invite plans back to gratuit. Returns count of revoked.
+
+    The past end date is kept: the account becomes an expired trial, so access
+    stays blocked and the trial lifecycle (email, suspension) takes over.
+    Clearing it would make the free plan permanent.
+    """
     result = await db.execute(
         update(Account)
         .where(Account.plan == "invite", Account.plan_expires_at < datetime.now(UTC))
-        .values(plan="gratuit", plan_expires_at=None)
+        .values(plan="gratuit")
     )
     return result.rowcount
 

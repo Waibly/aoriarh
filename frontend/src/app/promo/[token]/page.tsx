@@ -44,6 +44,10 @@ type PageState =
   | "invalid"
   | "error";
 
+// Keeps the link through a slow signup (CCN search, Google, interruption):
+// at 10 minutes the offer was silently lost and the user got a plain trial.
+const PROMO_COOKIE_MAX_AGE = 24 * 60 * 60;
+
 function setCookie(name: string, value: string, maxAge: number) {
   document.cookie = `${name}=${encodeURIComponent(value)}; max-age=${maxAge}; path=/; samesite=lax`;
 }
@@ -123,17 +127,17 @@ export default function PromoPage() {
   }, [pageState, sessionStatus, session, token, setErrorMessage]);
 
   function handleSignup() {
-    setCookie("aoria_plan_invite_token", token, 600);
+    setCookie("aoria_plan_invite_token", token, PROMO_COOKIE_MAX_AGE);
     router.push("/register");
   }
 
   function handleLogin() {
-    setCookie("aoria_plan_invite_token", token, 600);
+    setCookie("aoria_plan_invite_token", token, PROMO_COOKIE_MAX_AGE);
     router.push(`/login?callbackUrl=${encodeURIComponent(`/promo/${token}`)}`);
   }
 
   function handleGoogleSignIn() {
-    setCookie("aoria_plan_invite_token", token, 600);
+    setCookie("aoria_plan_invite_token", token, PROMO_COOKIE_MAX_AGE);
     signIn("google", { callbackUrl: `/promo/${token}` });
   }
 

@@ -24,6 +24,10 @@ def _is_expired(expires_at: datetime) -> bool:
     return expires_at < now
 
 
+def _as_utc(value: datetime) -> datetime:
+    return value if value.tzinfo is not None else value.replace(tzinfo=UTC)
+
+
 class PlanInvitationService:
     def __init__(self, db: AsyncSession) -> None:
         self.db = db
@@ -185,10 +189,20 @@ class PlanInvitationService:
         if reserved.rowcount != 1:
             await self.db.rollback()
             raise HTTPException(410, "Ce lien a atteint sa limite d'utilisations ou a expiré")
+        previous_invite_end = account.plan_expires_at if account.plan == "invite" else None
         try:
             account = await assign_plan(
                 self.db, account.id, invitation.plan, invitation.duration_months, commit=False
             )
+            # A shorter link must never cut an offer already running.
+            if (
+                previous_invite_end is not None
+                and account.plan == "invite"
+                and account.plan_expires_at is not None
+                and not _is_expired(previous_invite_end)
+                and _as_utc(previous_invite_end) > _as_utc(account.plan_expires_at)
+            ):
+                account.plan_expires_at = previous_invite_end
             self.db.add(
                 PlanInvitationRedemption(
                     plan_invitation_id=invitation.id,
