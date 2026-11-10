@@ -34,7 +34,7 @@ from app.schemas.stripe_billing import (
     SubscriptionRead,
 )
 from app.services.billing_service import BillingService
-from app.services.stripe_service import StripeService
+from app.services.stripe_service import StripeService, _get
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -371,14 +371,14 @@ async def list_invoices(
         rows.append(
             {
                 "id": inv["id"],
-                "number": inv.get("number"),
-                "status": inv.get("status"),
-                "amount_paid_cents": int(inv.get("amount_paid") or 0),
-                "amount_due_cents": int(inv.get("amount_due") or 0),
-                "currency": inv.get("currency", "eur"),
-                "created": inv.get("created"),
-                "hosted_invoice_url": inv.get("hosted_invoice_url"),
-                "invoice_pdf": inv.get("invoice_pdf"),
+                "number": _get(inv, "number"),
+                "status": _get(inv, "status"),
+                "amount_paid_cents": int(_get(inv, "amount_paid") or 0),
+                "amount_due_cents": int(_get(inv, "amount_due") or 0),
+                "currency": _get(inv, "currency") or "eur",
+                "created": _get(inv, "created"),
+                "hosted_invoice_url": _get(inv, "hosted_invoice_url"),
+                "invoice_pdf": _get(inv, "invoice_pdf"),
             }
         )
         if len(rows) >= 24:
