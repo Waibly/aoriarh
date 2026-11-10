@@ -77,6 +77,13 @@ export interface SearchPlanTrace {
   warnings: string[];
 }
 
+export interface OrchestrationPlanTrace {
+  orchestration?: Record<string, unknown>[];
+  orchestration_raw_responses?: string[];
+  document_task?: Record<string, unknown>;
+  tool_results?: Record<string, unknown>[];
+}
+
 export interface RagTrace {
   query_original: string;
   query_condensed: string | null;
@@ -91,8 +98,9 @@ export interface RagTrace {
   model: string | null;
   out_of_scope: boolean;
   no_results: boolean;
-  search_plan?: SearchPlanTrace | null;
+  search_plan?: SearchPlanTrace | OrchestrationPlanTrace | null;
   search_plan_usage?: {
+    [key: string]: unknown;
     model?: string;
     prompt_tokens?: number;
     completion_tokens?: number;
@@ -268,6 +276,68 @@ function PerfBar({ perf }: { perf: { [key: string]: number } }) {
 }
 
 function SearchPlanPanel({
+  plan,
+  usage,
+  validation,
+}: {
+  plan: NonNullable<RagTrace["search_plan"]>;
+  usage?: RagTrace["search_plan_usage"];
+  validation?: RagTrace["search_plan_validation"];
+}) {
+  // Stored traces include both the historical RAG plan and current document
+  // orchestration. A trace can contain both after a legal search branch.
+  const hasLegacyPlan = "explicit_identifiers" in plan;
+  const hasOrchestration = "orchestration" in plan || "document_task" in plan;
+
+  return (
+    <>
+      {hasLegacyPlan && (
+        <LegacySearchPlanPanel
+          plan={plan}
+          usage={usage}
+          validation={validation}
+        />
+      )}
+      {(hasOrchestration || !hasLegacyPlan) && (
+        <Section
+          title="Plan d’orchestration et actions documentaires"
+          icon={<FileSearch className="h-4 w-4" />}
+        >
+          <div className="space-y-3 text-xs">
+            <details open>
+              <summary>Plan et résultats des actions</summary>
+              <pre className="bg-muted/40 mt-2 max-h-96 overflow-auto rounded p-2 break-words whitespace-pre-wrap">
+                {JSON.stringify(plan, null, 2)}
+              </pre>
+            </details>
+            {"orchestration_raw_responses" in plan &&
+              plan.orchestration_raw_responses?.map((raw, index) => (
+                <details key={index}>
+                  <summary>
+                    Sortie brute intégrale du planificateur — passage{" "}
+                    {index + 1}
+                  </summary>
+                  <pre className="bg-muted/40 mt-2 max-h-96 overflow-auto rounded p-2 break-words whitespace-pre-wrap">
+                    {raw}
+                  </pre>
+                </details>
+              ))}
+            {usage && (
+              <details>
+                <summary>Métriques de planification et d’exécution</summary>
+                <pre className="bg-muted/40 mt-2 max-h-96 overflow-auto rounded p-2 break-words whitespace-pre-wrap">
+                  {JSON.stringify(usage, null, 2)}
+                </pre>
+              </details>
+            )}
+          </div>
+        </Section>
+      )}
+    </>
+  );
+}
+
+function LegacySearchPlanPanel({
   plan,
   usage,
   validation,

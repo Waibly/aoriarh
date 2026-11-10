@@ -14,6 +14,8 @@ jest.mock("next-auth/react", () => ({
 import {
   InspectorBody,
   type InspectorPayload,
+  type RagTrace,
+  type SearchPlanTrace,
 } from "@/app/(admin)/admin/quality/InspectorBody";
 
 test("exposes technical document selection diagnostics without rendering their HTML", () => {
@@ -21,16 +23,26 @@ test("exposes technical document selection diagnostics without rendering their H
   data.rag_trace!.search_plan_validation = {
     selection: {
       status: "complete",
-      groups: [{ status: "selected", fetch_limited: true, parent_key: ["<script>unsafe</script>"] }],
+      groups: [
+        {
+          status: "selected",
+          fetch_limited: true,
+          parent_key: ["<script>unsafe</script>"],
+        },
+      ],
     },
   };
   const { container } = render(<InspectorBody data={data} />);
-  expect(screen.getByText("Traçabilité de la sélection documentaire")).toBeInTheDocument();
+  expect(
+    screen.getByText("Traçabilité de la sélection documentaire")
+  ).toBeInTheDocument();
   expect(screen.getByText(/"fetch_limited": true/)).toBeInTheDocument();
   expect(container.querySelector("script")).toBeNull();
 });
 
-function payload(): InspectorPayload {
+function payload(): InspectorPayload & {
+  rag_trace: RagTrace & { search_plan: SearchPlanTrace };
+} {
   return {
     question: "Et pour un cadre ?",
     answer: null,
@@ -90,6 +102,85 @@ function payload(): InspectorPayload {
 }
 
 describe("Quality search plan", () => {
+  it.each([
+    {
+      orchestration: [{ objective: "Examiner le dossier", actions: [] }],
+      orchestration_raw_responses: [
+        '  {"objective":"Examiner le dossier"}\n<script>unsafe</script>  ',
+      ],
+      tool_results: [],
+    },
+    {
+      document_task: {
+        action: "documents",
+        objective: "Lire la pièce jointe",
+        legal_search: null,
+      },
+    },
+  ])("renders current plans without requiring legacy fields: %j", (plan) => {
+    const data = payload();
+    data.answer = "Réponse intégrale conservée.";
+    Object.assign(data.rag_trace!, {
+      search_plan: plan,
+      search_plan_usage: {
+        planning: "conversation_orchestrator",
+        execution: "document_actions",
+        planner_calls: 1,
+      },
+    });
+
+    const { container } = render(<InspectorBody data={data} />);
+
+    expect(screen.getByText(data.answer)).toBeInTheDocument();
+    expect(
+      screen.getByText(JSON.stringify(plan, null, 2), {
+        exact: true,
+        normalizer: (value) => value,
+      })
+    ).toBeInTheDocument();
+    expect(screen.getByText(/"planner_calls": 1/)).toBeInTheDocument();
+    for (const raw of plan.orchestration_raw_responses ?? []) {
+      expect(
+        screen.getByText(raw, { exact: true, normalizer: (value) => value })
+      ).toBeInTheDocument();
+    }
+    expect(container.querySelector("script")).toBeNull();
+  });
+
+  it("shows both plan formats when orchestration includes a legacy legal search", () => {
+    const data = payload();
+    const plan = {
+      ...data.rag_trace.search_plan,
+      orchestration: [
+        { objective: "Rechercher les règles applicables", actions: [] },
+      ],
+      orchestration_raw_responses: ["  Sortie brute du planificateur.\n  "],
+      tool_results: [{ action: "search_legal", status: "success" }],
+    };
+    data.rag_trace.search_plan = plan;
+
+    render(<InspectorBody data={data} />);
+
+    expect(
+      screen.getByText("Plan de recherche déterministe")
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText("Plan d’orchestration et actions documentaires")
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(JSON.stringify(plan, null, 2), {
+        exact: true,
+        normalizer: (value) => value,
+      })
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(plan.orchestration_raw_responses[0], {
+        exact: true,
+        normalizer: (value) => value,
+      })
+    ).toBeInTheDocument();
+  });
+
   it("renders the deterministic plan without presenting guessed articles as used", () => {
     render(<InspectorBody data={payload()} />);
 
