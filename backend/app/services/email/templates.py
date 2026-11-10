@@ -289,6 +289,10 @@ _CHOICE_STYLE = (
     "display:block; margin:0 0 8px 0; padding:12px 16px; border:1px solid #ddd6fe; "
     "border-radius:8px; color:#652BB0; text-decoration:none; font-weight:600; font-size:15px;"
 )
+# Les cinq étoiles mènent toutes au même lien Google (pas de tri des avis).
+_STARS_STYLE = (
+    "color:#F5B301; font-size:34px; letter-spacing:6px; line-height:1; text-decoration:none;"
+)
 _TEXT_STYLE = "color:#3f3f46; line-height:1.6;"
 _SMALL_STYLE = "color:#71717a; font-size:13px; line-height:1.5;"
 
@@ -316,9 +320,12 @@ def render_trial_feedback_email(
         review_block = f"""
 <hr style="border:0; border-top:1px solid #ede9fe; margin:32px 0;">
 <p style="{_TEXT_STYLE}"><strong>Vous avez trouvé l'essai utile ?</strong><br>
-  Votre avis sur Google aide d'autres professionnels RH à découvrir AORIA RH
-  et nous aide à continuer de l'améliorer. Cela prend une minute.</p>
-<p style="text-align:center; margin:24px 0;">
+  Votre avis sur Google nous aide à continuer d'améliorer AORIA RH.
+  Cela prend une minute.</p>
+<p style="text-align:center; margin:24px 0 8px 0;">
+  <a href="{escape(review_url)}" style="{_STARS_STYLE}">★★★★★</a>
+</p>
+<p style="text-align:center; margin:0 0 24px 0;">
   <a href="{escape(review_url)}" style="{_BUTTON_STYLE}">Laisser un avis</a>
 </p>"""
     content = f"""\
