@@ -137,3 +137,29 @@ async def test_stripe_refusal_returns_502_not_500(client, regular_user, monkeypa
 
     assert response.status_code == 502
     assert "paiement" in response.json()["detail"]
+
+
+async def test_new_customer_gets_french_invoices_with_legal_footer(regular_user, monkeypatch):
+    from sqlalchemy import select
+
+    from app.models.account import Account
+    from app.services.stripe_service import INVOICE_FOOTER, StripeService
+    from tests.conftest import test_session_factory
+
+    monkeypatch.setattr(settings, "stripe_secret_key", "sk_test_fake")
+    calls = []
+
+    def create(**params):
+        calls.append(params)
+        return _obj({"id": "cus_new"}, stripe.Customer)
+
+    monkeypatch.setattr(stripe.Customer, "create", create)
+    async with test_session_factory() as db:
+        account = (await db.scalars(select(Account))).one()
+        account.stripe_customer_id = None
+        assert await StripeService(db).get_or_create_customer(account, "a@b.fr") == "cus_new"
+
+    assert calls[0]["preferred_locales"] == ["fr"]
+    assert calls[0]["invoice_settings"] == {"footer": INVOICE_FOOTER}
+    for mention in ("SAS au capital", "RCS Melun", "FR36988724985", "40 €"):
+        assert mention in INVOICE_FOOTER

@@ -106,6 +106,17 @@ def _invoice_tax_cents(invoice) -> int:
     return int(_get(invoice, "tax") or 0)
 
 
+# Mandatory French B2B invoice mentions (Code de commerce L441-9 / L441-10,
+# CGI 242 nonies A). Printed in the footer of every Stripe invoice.
+INVOICE_FOOTER = (
+    "Aoria RH, SAS au capital de 19 000 € - RCS Melun 988 724 985 - "
+    "SIRET 988 724 985 00011 - TVA intracommunautaire FR36988724985. "
+    "Pénalités de retard : trois fois le taux d'intérêt légal. "
+    "Indemnité forfaitaire pour frais de recouvrement : 40 € "
+    "(art. L441-10 du Code de commerce). Pas d'escompte pour paiement anticipé."
+)
+
+
 # Subscription statuses that still grant access.
 _LIVE_SUB_STATUSES = ("active", "trialing", "past_due")
 
@@ -212,6 +223,7 @@ class StripeService:
             name=account.name,
             # Invoices, receipts and emails from Stripe in French.
             preferred_locales=["fr"],
+            invoice_settings={"footer": INVOICE_FOOTER},
             metadata={"account_id": str(account.id)},
         )
         account.stripe_customer_id = customer["id"]
