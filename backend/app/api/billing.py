@@ -410,7 +410,6 @@ async def update_payment_method(
         session = stripe.checkout.Session.create(
             mode="setup",
             customer=account.stripe_customer_id,
-            payment_method_types=["card"],
             success_url=(
                 settings.stripe_checkout_success_url
                 or f"{settings.frontend_url}/billing?card_updated=1"

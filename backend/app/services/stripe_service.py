@@ -221,11 +221,8 @@ class StripeService:
             line_items=[{"price": price_id, "quantity": 1}],
             success_url=self._success_url(),
             cancel_url=self._cancel_url(),
-            # Only accept credit/debit cards. Even if the Stripe dashboard
-            # is ever reconfigured to enable wallets or SEPA, our checkout
-            # stays card-only — simpler accounting, zero async payment
-            # flow to monitor.
-            payment_method_types=["card"],
+            # Payment methods are managed in the Stripe Dashboard.
+            # API 2026-10-28.endive rejects payment_method_types on Checkout.
             # Promo codes only on monthly subscriptions. Coupons in Stripe
             # are configured with duration=once → on yearly that would mean
             # "first 12 months", on monthly it means "1 month". Restricting
@@ -304,8 +301,7 @@ class StripeService:
             line_items=[{"price": settings.stripe_price_booster, "quantity": 1}],
             success_url=self._success_url(),
             cancel_url=self._cancel_url(),
-            # Card-only — consistent with the subscription checkout.
-            payment_method_types=["card"],
+            # Payment methods are managed in the Stripe Dashboard.
             # Same tax settings as the subscription flow so the VAT is
             # calculated consistently for the booster purchase.
             automatic_tax={"enabled": True},
