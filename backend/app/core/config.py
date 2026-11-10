@@ -103,6 +103,9 @@ class Settings(BaseSettings):
     stripe_secret_key: str = ""
     stripe_webhook_secret: str = ""
     stripe_publishable_key: str = ""
+    # Our own VAT number registered in Stripe (txi_…), printed on invoices.
+    # Stripe only lets the dashboard set an account-wide default.
+    stripe_account_tax_id: str = ""
 
     # Stripe price IDs — fill in from the Stripe dashboard once products are created.
     # If empty, billing endpoints return 501 Not Implemented (module disabled).

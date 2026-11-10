@@ -25,6 +25,7 @@ async def test_checkout_uses_dashboard_payment_methods(
     monkeypatch.setattr(settings, "stripe_price_solo_monthly", "price_monthly")
     monkeypatch.setattr(settings, "stripe_price_solo_yearly", "price_yearly")
     monkeypatch.setattr(settings, "stripe_price_booster", "price_booster")
+    monkeypatch.setattr(settings, "stripe_account_tax_id", "txi_ours")
     async with test_session_factory() as db:
         account = (await db.scalars(select(Account))).one()
         account.stripe_customer_id = "cus_checkout_test"
@@ -60,6 +61,7 @@ async def test_checkout_uses_dashboard_payment_methods(
     params = calls[0]
     assert params["mode"] == mode
     assert params["customer"] == "cus_checkout_test"
+    assert params["locale"] == "fr"
     if mode == "subscription":
         assert params["allow_promotion_codes"] is promotion_codes
         expected_price = "price_monthly" if promotion_codes else "price_yearly"
@@ -70,3 +72,6 @@ async def test_checkout_uses_dashboard_payment_methods(
     else:
         assert params["currency"] == "eur"
         assert params["setup_intent_data"]["metadata"]["purpose"] == "update_default_payment_method"
+    if mode == "subscription":
+        assert params["name_collection"] == {"business": {"enabled": True, "optional": False}}
+        assert params["subscription_data"]["invoice_settings"] == {"account_tax_ids": ["txi_ours"]}

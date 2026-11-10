@@ -177,6 +177,13 @@ class StripeService:
         return price_id
 
     @staticmethod
+    def _subscription_invoice_settings() -> dict:
+        """Print our VAT number on every subscription invoice."""
+        if not settings.stripe_account_tax_id:
+            return {}
+        return {"invoice_settings": {"account_tax_ids": [settings.stripe_account_tax_id]}}
+
+    @staticmethod
     def _success_url() -> str:
         return settings.stripe_checkout_success_url or (
             f"{settings.frontend_url}/billing?success=1&session_id={{CHECKOUT_SESSION_ID}}"
@@ -203,6 +210,8 @@ class StripeService:
         customer = stripe.Customer.create(
             email=owner_email,
             name=account.name,
+            # Invoices, receipts and emails from Stripe in French.
+            preferred_locales=["fr"],
             metadata={"account_id": str(account.id)},
         )
         account.stripe_customer_id = customer["id"]
@@ -229,6 +238,7 @@ class StripeService:
 
         session = stripe.checkout.Session.create(
             mode="subscription",
+            locale="fr",
             customer=customer_id,
             line_items=[{"price": price_id, "quantity": 1}],
             success_url=self._success_url(),
@@ -250,12 +260,15 @@ class StripeService:
             # Let B2B customers enter their VAT number (reverse-charge when
             # they are in another EU country).
             tax_id_collection={"enabled": True},
+            # The invoice must name the client company, not the card holder.
+            name_collection={"business": {"enabled": True, "optional": False}},
             subscription_data={
                 "metadata": {
                     "account_id": str(account.id),
                     "plan": plan,
                     "cycle": cycle,
-                }
+                },
+                **self._subscription_invoice_settings(),
             },
             metadata={
                 "account_id": str(account.id),
@@ -309,6 +322,7 @@ class StripeService:
 
         session = stripe.checkout.Session.create(
             mode="payment",
+            locale="fr",
             customer=customer_id,
             line_items=[{"price": settings.stripe_price_booster, "quantity": 1}],
             success_url=self._success_url(),
@@ -841,6 +855,7 @@ class StripeService:
             )
         session = stripe.billing_portal.Session.create(
             customer=account.stripe_customer_id,
+            locale="fr",
             return_url=self._portal_return_url(),
         )
         return session["url"]
