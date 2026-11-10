@@ -31,6 +31,10 @@ Cherche aussi les conditions et exceptions qui déterminent réellement la règl
 Pour appliquer une loi, un accord ou une CCN, recherche leur champ d'application,
 leur articulation et leurs dispositions transitoires lorsque ces points peuvent
 changer la réponse à la question. Une durée ou un montant isolé ne suffit pas.
+Si le territoire du profil d'organisation n'est pas « France métropolitaine » et que la règle
+peut y être adaptée (jours fériés, cotisations, salaires minima, organismes, champ
+territorial d'une CCN), consacre une requête aux dispositions propres à ce territoire
+en le nommant (ex. « La Réunion », « outre-mer », « Alsace-Moselle droit local »).
 N'élargis pas la demande à un audit général ni à des hypothèses non établies.
 Une demande de confirmation, de vérification ou une contestation juridique appelle
 une recherche juridique qui réexamine la règle et son applicabilité. L'affirmation

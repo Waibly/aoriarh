@@ -154,6 +154,7 @@ async def test_conversation_initialises_case_file_with_inherited_context(
         "convention_collective": "Convention test",
         "secteur_activite": "Conseil",
         "not_subject_to_ccn": False,
+        "territoire": "France métropolitaine",
     }
 
     async with session_factory() as db:

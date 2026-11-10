@@ -39,6 +39,7 @@ const COMPANY_FIELDS: Record<string, string> = {
   taille: "Effectif",
   convention_collective: "Convention collective",
   secteur_activite: "Secteur d’activité",
+  territoire: "Lieu d’implantation",
 };
 const FACT_TYPES = new Set([
   "fact",

@@ -18,6 +18,11 @@ class Organisation(TimestampMixin, Base):
     not_subject_to_ccn: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default="false"
     )
+    # Lieu d'implantation (app.services.territoire.Territoire) : change le droit
+    # applicable (Alsace-Moselle, outre-mer). Toujours renseigné, métropole par défaut.
+    territoire: Mapped[str] = mapped_column(
+        String(40), nullable=False, default="metropole", server_default="metropole"
+    )
     account_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("accounts.id"), nullable=True, index=True
     )

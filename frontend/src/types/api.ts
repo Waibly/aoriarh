@@ -33,6 +33,7 @@ export interface Organisation {
   convention_collective: string | null;
   secteur_activite: string | null;
   not_subject_to_ccn: boolean;
+  territoire: Territoire;
   created_at: string;
 }
 
@@ -283,6 +284,34 @@ export const TAILLE_OPTIONS = [
   "1000-4999",
   "5000+",
 ] as const;
+
+/** Lieu d'implantation : change le droit applicable (Alsace-Moselle, outre-mer).
+ *  Codes alignés sur backend/app/services/territoire.py. */
+export const TERRITOIRE_OPTIONS = [
+  { value: "metropole", label: "France métropolitaine" },
+  { value: "alsace_moselle", label: "Alsace-Moselle (Bas-Rhin, Haut-Rhin, Moselle)" },
+  { value: "guadeloupe", label: "Guadeloupe" },
+  { value: "martinique", label: "Martinique" },
+  { value: "guyane", label: "Guyane" },
+  { value: "la_reunion", label: "La Réunion" },
+  { value: "mayotte", label: "Mayotte" },
+  { value: "saint_pierre_miquelon", label: "Saint-Pierre-et-Miquelon" },
+  { value: "saint_barthelemy", label: "Saint-Barthélemy" },
+  { value: "saint_martin", label: "Saint-Martin" },
+  { value: "nouvelle_caledonie", label: "Nouvelle-Calédonie" },
+  { value: "polynesie", label: "Polynésie française" },
+  { value: "wallis_futuna", label: "Wallis-et-Futuna" },
+] as const;
+
+export type Territoire = (typeof TERRITOIRE_OPTIONS)[number]["value"];
+export const DEFAULT_TERRITOIRE: Territoire = "metropole";
+
+export function territoireLabel(value: string | null | undefined): string {
+  return (
+    TERRITOIRE_OPTIONS.find((t) => t.value === value)?.label ??
+    TERRITOIRE_OPTIONS[0].label
+  );
+}
 
 export type FormeJuridique = (typeof FORME_JURIDIQUE_OPTIONS)[number];
 export type Taille = (typeof TAILLE_OPTIONS)[number];

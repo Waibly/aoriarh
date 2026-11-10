@@ -4,6 +4,8 @@ from enum import StrEnum
 
 from pydantic import BaseModel, EmailStr, model_validator
 
+from app.services.territoire import DEFAULT_TERRITOIRE, Territoire
+
 
 class FormeJuridique(StrEnum):
     SAS = "SAS"
@@ -62,6 +64,7 @@ class OrganisationCreate(BaseModel):
     convention_collective: str | None = None
     secteur_activite: str | None = None
     not_subject_to_ccn: bool = False
+    territoire: Territoire = DEFAULT_TERRITOIRE
 
 
 class OrganisationRead(BaseModel):
@@ -74,6 +77,7 @@ class OrganisationRead(BaseModel):
     convention_collective: str | None = None
     secteur_activite: str | None = None
     not_subject_to_ccn: bool = False
+    territoire: str = DEFAULT_TERRITOIRE.value
     account_id: uuid.UUID | None = None
     created_at: datetime
 
@@ -85,6 +89,7 @@ class OrganisationUpdate(BaseModel):
     convention_collective: str | None = None
     secteur_activite: str | None = None
     not_subject_to_ccn: bool | None = None
+    territoire: Territoire | None = None
 
 
 class MembershipRead(BaseModel):

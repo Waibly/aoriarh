@@ -9,6 +9,7 @@ export interface CreateOrgData {
   convention_collective?: string | null;
   secteur_activite?: string | null;
   not_subject_to_ccn?: boolean;
+  territoire?: string;
   profil_metier?: string | null;
   selectedCcn?: CcnReference[];
 }

@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.ccn import CcnReference, OrganisationConvention
 from app.models.organisation import Organisation
+from app.services.territoire import territoire_label
 
 
 async def load_organisation_context(
@@ -40,4 +41,5 @@ async def load_organisation_context(
         "convention_collective": convention_str,
         "secteur_activite": org.secteur_activite,
         "not_subject_to_ccn": bool(org.not_subject_to_ccn),
+        "territoire": territoire_label(org.territoire),
     }

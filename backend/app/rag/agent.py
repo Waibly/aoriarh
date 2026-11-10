@@ -55,6 +55,7 @@ from app.rag.source_intent import detect_source_intent
 from app.services.cost_tracker import CostContext, compute_cost, cost_tracker
 from app.services.jurisprudence_publication import publication_significance
 from app.services.jurisprudence_references import CASE_REFERENCES_CONTEXT_LIMIT
+from app.services.territoire import territoire_instruction
 
 logger = logging.getLogger(__name__)
 
@@ -2499,6 +2500,7 @@ class RAGAgent:
             "taille": "Effectif",
             "convention_collective": "Convention collective",
             "secteur_activite": "Secteur d'activité / code APE",
+            "territoire": "Lieu d'implantation",
         }
         for key, label in field_labels.items():
             # Si l'org n'est pas soumise à une CCN, on n'affiche pas le champ CCN
@@ -2521,6 +2523,9 @@ class RAGAgent:
                 "N'invoque aucune CCN ; si la question "
                 "porte explicitement sur une CCN, indique qu'elle ne s'applique pas."
             )
+        territoire_rule = territoire_instruction(org_context.get("territoire"))
+        if territoire_rule:
+            lines.append(f"\n**Territoire** : {territoire_rule}")
         lines.append(
             "\n**Ces dimensions sont indépendantes.** Ne les combine pas en une "
             'catégorie mixte (ex: "TPE associative" ou "PME associative" n\'existent '

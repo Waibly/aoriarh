@@ -28,6 +28,7 @@ from app.models.ccn import CcnReference, OrganisationConvention
 from app.models.conversation import Conversation, Message
 from app.models.organisation import Organisation
 from app.models.user import User
+from app.services.territoire import territoire_label
 
 logger = logging.getLogger(__name__)
 
@@ -666,6 +667,7 @@ async def _run_sandbox_pipeline(
         "taille": getattr(org, "taille", None),
         "profil_metier": user_profile,
         "not_subject_to_ccn": not_subject_to_ccn,
+        "territoire": territoire_label(getattr(org, "territoire", None)),
     }
 
     sandbox_id = uuid.uuid4()

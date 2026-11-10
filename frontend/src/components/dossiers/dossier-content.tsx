@@ -386,6 +386,7 @@ export function DossierContent({
                             taille: "Effectif",
                             convention_collective: "Convention collective",
                             secteur_activite: "Secteur d’activité",
+                            territoire: "Lieu d’implantation",
                           } as Record<string, string>
                         )[k] || k}
                       </dt>

@@ -90,6 +90,7 @@ class OrganisationService:
             convention_collective=data.convention_collective,
             secteur_activite=data.secteur_activite,
             not_subject_to_ccn=data.not_subject_to_ccn,
+            territoire=data.territoire.value,
             account_id=account_id,
         )
         self.db.add(org)
@@ -179,6 +180,12 @@ class OrganisationService:
             update_data["forme_juridique"] = update_data["forme_juridique"].value
         if "taille" in update_data and update_data["taille"] is not None:
             update_data["taille"] = update_data["taille"].value
+        if "territoire" in update_data:
+            # Champ obligatoire : un null explicite ne vide pas le territoire.
+            if update_data["territoire"] is None:
+                del update_data["territoire"]
+            else:
+                update_data["territoire"] = update_data["territoire"].value
 
         for field, value in update_data.items():
             setattr(org, field, value)

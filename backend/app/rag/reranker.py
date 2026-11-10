@@ -42,6 +42,7 @@ def build_rerank_query(question: str, org_context: dict | None, standalone: str)
             "secteur_activite",
             "forme_juridique",
             "not_subject_to_ccn",
+            "territoire",
             "profil_metier",
         }
     }

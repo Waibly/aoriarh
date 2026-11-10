@@ -10,7 +10,12 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
-import { FORME_JURIDIQUE_OPTIONS, TAILLE_OPTIONS } from "@/types/api";
+import {
+  DEFAULT_TERRITOIRE,
+  FORME_JURIDIQUE_OPTIONS,
+  TAILLE_OPTIONS,
+  TERRITOIRE_OPTIONS,
+} from "@/types/api";
 import type { CcnReference } from "@/types/api";
 import { CcnSelector } from "@/components/ccn-selector";
 
@@ -24,6 +29,8 @@ export interface OrgFormFieldsValues {
   formeJuridique: string;
   taille: string;
   secteurActivite: string;
+  /** Toujours renseigné : France métropolitaine par défaut. */
+  territoire: string;
   selectedCcn: CcnReference[];
   notSubjectToCcn: boolean;
 }
@@ -145,6 +152,28 @@ export function OrgFormFields({
         />
       </div>
 
+      <div className="space-y-1.5">
+        <Label htmlFor="territoire">Lieu d&apos;implantation</Label>
+        <Select
+          value={values.territoire || DEFAULT_TERRITOIRE}
+          onValueChange={(v) => set("territoire", v)}
+        >
+          <SelectTrigger id="territoire">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {TERRITOIRE_OPTIONS.map((t) => (
+              <SelectItem key={t.value} value={t.value}>
+                {t.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <p className="text-xs text-muted-foreground">
+          Certaines règles changent en Alsace-Moselle et en outre-mer.
+        </p>
+      </div>
+
       {!hideCcn && (
         <div className="space-y-3 rounded-lg border bg-muted/30 p-4">
           <div className="space-y-1.5">
@@ -191,6 +220,7 @@ export function emptyOrgFormFields(): OrgFormFieldsValues {
     formeJuridique: "",
     taille: "",
     secteurActivite: "",
+    territoire: DEFAULT_TERRITOIRE,
     selectedCcn: [],
     notSubjectToCcn: false,
   };

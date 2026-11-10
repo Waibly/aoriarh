@@ -18,7 +18,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { PROFIL_METIER_OPTIONS } from "@/types/api";
+import { DEFAULT_TERRITOIRE, PROFIL_METIER_OPTIONS } from "@/types/api";
 import { apiFetch } from "@/lib/api";
 import {
   setupOrganisation,
@@ -200,6 +200,7 @@ function RegisterForm() {
             .map((c) => `${c.titre_court || c.titre} (IDCC ${c.idcc})`)
             .join(", ") || null,
       not_subject_to_ccn: orgValues.notSubjectToCcn,
+      territoire: orgValues.territoire || DEFAULT_TERRITOIRE,
       profil_metier: profilMetier || null,
       selectedCcn: orgValues.selectedCcn,
     };

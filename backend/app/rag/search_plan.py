@@ -569,6 +569,7 @@ def _planner_user_message(
         "taille",
         "forme_juridique",
         "not_subject_to_ccn",
+        "territoire",
     ):
         if org_context and org_context.get(key) is not None:
             safe_org[key] = org_context[key]

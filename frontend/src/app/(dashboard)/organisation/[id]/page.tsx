@@ -14,6 +14,7 @@ import { toast } from "@/lib/toast";
 import { useOrg } from "@/lib/org-context";
 import { apiFetch } from "@/lib/api";
 import type { Membership, Organisation } from "@/types/api";
+import { territoireLabel } from "@/types/api";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -221,9 +222,13 @@ export default function OrganisationDetailPage() {
               {org.taille ? `${org.taille} salariés` : "Non renseigné"}
             </p>
           </div>
-          <div className="sm:col-span-2">
+          <div>
             <p className="text-sm text-muted-foreground">Secteur d&apos;activité</p>
             <p className="font-medium">{org.secteur_activite ?? "Non renseigné"}</p>
+          </div>
+          <div>
+            <p className="text-sm text-muted-foreground">Lieu d&apos;implantation</p>
+            <p className="font-medium">{territoireLabel(org.territoire)}</p>
           </div>
         </CardContent>
       </Card>

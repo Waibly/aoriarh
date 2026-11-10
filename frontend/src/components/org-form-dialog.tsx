@@ -22,7 +22,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { PROFIL_METIER_OPTIONS } from "@/types/api";
+import { DEFAULT_TERRITOIRE, PROFIL_METIER_OPTIONS } from "@/types/api";
 import type { Organisation, CcnReference } from "@/types/api";
 import {
   OrgFormFields,
@@ -44,6 +44,7 @@ interface OrgFormDialogProps {
     convention_collective: string | null;
     secteur_activite: string | null;
     not_subject_to_ccn?: boolean;
+    territoire: string;
     profil_metier?: string | null;
     selectedCcn?: CcnReference[];
   }) => Promise<void>;
@@ -81,6 +82,7 @@ export function OrgFormDialog({
         formeJuridique: org?.forme_juridique ?? "",
         taille: org?.taille ?? "",
         secteurActivite: org?.secteur_activite ?? "",
+        territoire: org?.territoire ?? DEFAULT_TERRITOIRE,
         selectedCcn: [],
         notSubjectToCcn: org?.not_subject_to_ccn ?? false,
       });
@@ -108,6 +110,7 @@ export function OrgFormDialog({
         convention_collective: ccnLabel,
         secteur_activite: orgValues.secteurActivite.trim() || null,
         not_subject_to_ccn: orgValues.notSubjectToCcn,
+        territoire: orgValues.territoire || DEFAULT_TERRITOIRE,
         ...(!isEdit
           ? {
               profil_metier: profilMetier || null,
