@@ -1345,6 +1345,8 @@ async def run_billing_lifecycle(ctx: dict) -> None:
       many days from now.
     - Suspends trials whose expiry is in the past (status='trialing' →
       'suspended') and sends the final notice email.
+    - After an unconverted trial: feedback question at J+3 and data deletion
+      warning at J+23 (purge at J+30).
     - Revokes expired 'invite' plans back to 'gratuit' (existing behaviour
       preserved via plan_service.resolve_expired_plans).
 
@@ -1352,27 +1354,37 @@ async def run_billing_lifecycle(ctx: dict) -> None:
     on one of the exact values (7/3/1). Since the cron runs once a day, each
     account receives each reminder at most once.
     """
-    from datetime import UTC, datetime
+    from datetime import UTC, datetime, timedelta
 
     from sqlalchemy import select
 
     from app.core.config import settings as app_settings
+    from app.core.plans import GRACE_AFTER_TRIAL_END_DAYS
     from app.models.account import Account
     from app.models.user import User
     from app.services.email.sender import send_email
     from app.services.email.templates import (
+        render_trial_deletion_warning_email,
         render_trial_expired_email,
+        render_trial_feedback_email,
         render_trial_reminder_email,
     )
     from app.services.plan_service import resolve_expired_plans
+    from app.services.trial_feedback_service import (
+        DELETION_WARNING_EMAIL_DAY,
+        FEEDBACK_EMAIL_DAY,
+        REASONS,
+        feedback_url,
+    )
 
     logger.info("Worker: billing lifecycle job started")
     session_factory = ctx["session_factory"]
     now = datetime.now(UTC)
-    upgrade_url = f"{app_settings.frontend_url}/settings/billing"
+    upgrade_url = f"{app_settings.frontend_url}/billing"
 
     reminders_sent = 0
     expirations = 0
+    post_trial_emails = 0
 
     async with session_factory() as db:
         # 1) Revoke expired 'invite' plans (existing behaviour)
@@ -1395,7 +1407,10 @@ async def run_billing_lifecycle(ctx: dict) -> None:
             if owner is None or not owner.is_active:
                 continue
 
-            remaining = (account.plan_expires_at - now).total_seconds() / 86400
+            expires_at = account.plan_expires_at
+            if expires_at.tzinfo is None:  # SQLite (tests) returns naive datetimes
+                expires_at = expires_at.replace(tzinfo=UTC)
+            remaining = (expires_at - now).total_seconds() / 86400
 
             # Reminders — fire on days where remaining lands in [n-1, n]
             # (cron runs once a day, so this window covers exactly one tick).
@@ -1428,13 +1443,40 @@ async def run_billing_lifecycle(ctx: dict) -> None:
                 await send_email(owner.email, owner.full_name, subject, html)
                 account.status = "suspended"
                 expirations += 1
+                continue
+
+            # After an unconverted trial: one question at J+3, deletion
+            # warning at J+23. Same once-a-day window as the reminders.
+            if account.status == "suspended" and remaining < 0:
+                elapsed = -remaining
+                deletion_at = expires_at + timedelta(days=GRACE_AFTER_TRIAL_END_DAYS)
+                if FEEDBACK_EMAIL_DAY <= elapsed < FEEDBACK_EMAIL_DAY + 1:
+                    subject, html = render_trial_feedback_email(
+                        full_name=owner.full_name,
+                        choices=[(r.label, feedback_url(account.id, r.code)) for r in REASONS],
+                        deletion_at=deletion_at,
+                        upgrade_url=upgrade_url,
+                        review_url=app_settings.google_review_url,
+                    )
+                    await send_email(owner.email, owner.full_name, subject, html)
+                    post_trial_emails += 1
+                elif DELETION_WARNING_EMAIL_DAY <= elapsed < DELETION_WARNING_EMAIL_DAY + 1:
+                    subject, html = render_trial_deletion_warning_email(
+                        full_name=owner.full_name,
+                        deletion_at=deletion_at,
+                        upgrade_url=upgrade_url,
+                    )
+                    await send_email(owner.email, owner.full_name, subject, html)
+                    post_trial_emails += 1
 
         await db.commit()
 
     logger.info(
-        "Worker: billing lifecycle done — %d reminders sent, %d trials expired",
+        "Worker: billing lifecycle done — %d reminders sent, %d trials expired, "
+        "%d post-trial emails sent",
         reminders_sent,
         expirations,
+        post_trial_emails,
     )
 
 

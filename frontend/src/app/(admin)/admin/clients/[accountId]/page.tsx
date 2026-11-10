@@ -20,6 +20,7 @@ import {
 } from "@/components/admin/page-header";
 import { ClientAccounts } from "@/components/admin/client-accounts";
 import { BillingPanel } from "@/components/admin/billing-panel";
+import { TrialFeedbackCard } from "@/components/admin/trial-feedback";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -216,6 +217,7 @@ function ClientDetail() {
                   </div>
                 </CardContent>
               </Card>
+              <TrialFeedbackCard accountId={client.account_id} />
               {session?.user?.staff_role !== "business" && (
                 <Button variant="outline" asChild>
                   <Link

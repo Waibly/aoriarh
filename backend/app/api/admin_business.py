@@ -602,3 +602,88 @@ async def get_signups_by_source(
         attributed_signups=sum(r.signups for r in rows),
         rows=rows,
     )
+
+
+# ---------------------------------------------------------------------------
+# End-of-trial answers
+# ---------------------------------------------------------------------------
+
+
+class TrialFeedbackReasonCount(BaseModel):
+    reason: str
+    label: str
+    count: int
+
+
+class TrialFeedbackRow(BaseModel):
+    id: UUID
+    reason: str
+    reason_label: str
+    comment: str | None
+    questions_used: int
+    responded_at: datetime
+    # None once the account has been purged (anonymised answer).
+    account_id: UUID | None
+    account_name: str | None
+    owner_email: str | None
+
+
+class TrialFeedbackResponse(BaseModel):
+    total: int
+    by_reason: list[TrialFeedbackReasonCount]
+    rows: list[TrialFeedbackRow]
+
+
+@router.get("/trial-feedback", response_model=TrialFeedbackResponse)
+async def get_trial_feedback(
+    account_id: UUID | None = None,
+    limit: int = Query(50, ge=1, le=200),
+    _: User = Depends(require_role(["admin"])),
+    db: AsyncSession = Depends(get_db),
+) -> TrialFeedbackResponse:
+    """Answers to the end-of-trial question, kept anonymised after purge."""
+    from app.models.trial_feedback import TrialFeedback
+    from app.services.trial_feedback_service import REASONS, REASONS_BY_CODE
+
+    scope = [TrialFeedback.account_id == account_id] if account_id else []
+    counts = dict(
+        (
+            await db.execute(
+                select(TrialFeedback.reason, func.count(TrialFeedback.id))
+                .where(*scope)
+                .group_by(TrialFeedback.reason)
+            )
+        ).all()
+    )
+    result = await db.execute(
+        select(TrialFeedback, Account.name, User.email)
+        .outerjoin(Account, Account.id == TrialFeedback.account_id)
+        .outerjoin(User, User.id == Account.owner_id)
+        .where(*scope)
+        .order_by(TrialFeedback.responded_at.desc())
+        .limit(limit)
+    )
+    rows = [
+        TrialFeedbackRow(
+            id=fb.id,
+            reason=fb.reason,
+            reason_label=(
+                REASONS_BY_CODE[fb.reason].label if fb.reason in REASONS_BY_CODE else fb.reason
+            ),
+            comment=fb.comment,
+            questions_used=fb.questions_used,
+            responded_at=fb.responded_at,
+            account_id=fb.account_id,
+            account_name=name,
+            owner_email=email,
+        )
+        for fb, name, email in result.all()
+    ]
+    return TrialFeedbackResponse(
+        total=sum(counts.values()),
+        by_reason=[
+            TrialFeedbackReasonCount(reason=r.code, label=r.label, count=counts.get(r.code, 0))
+            for r in REASONS
+        ],
+        rows=rows,
+    )

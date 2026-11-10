@@ -34,6 +34,7 @@ from app.models.stripe_webhook_event import StripeWebhookEvent
 from app.models.subscription import Subscription
 from app.models.subscription_addon import SubscriptionAddon
 from app.models.sync_log import SyncLog
+from app.models.trial_feedback import TrialFeedback
 from app.models.user import User
 
 __all__ = [
@@ -78,6 +79,7 @@ __all__ = [
     "PlanInvitation",
     "PlanInvitationRedemption",
     "Subscription",
+    "TrialFeedback",
     "StripeWebhookEvent",
     "SubscriptionAddon",
     "SyncLog",

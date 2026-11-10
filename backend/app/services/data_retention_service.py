@@ -44,6 +44,7 @@ from app.models.invitation import Invitation
 from app.models.membership import Membership
 from app.models.organisation import Organisation
 from app.models.plan_invitation import PlanInvitation, PlanInvitationRedemption
+from app.models.trial_feedback import TrialFeedback
 from app.models.user import User
 from app.services.case_file_service import (
     CASE_FILE_LOAD_OPTIONS,
@@ -293,8 +294,13 @@ class DataRetentionService:
     # Erasure (GDPR art. 17)
     # ------------------------------------------------------------------
 
-    async def purge_account(self, account_id: uuid.UUID) -> dict[str, int]:
+    async def purge_account(
+        self, account_id: uuid.UUID, *, erase_trial_feedback: bool = False
+    ) -> dict[str, int]:
         """Delete all personal data for an account.
+
+        ``erase_trial_feedback`` also deletes the end-of-trial answer (explicit
+        erasure request); otherwise the answer is kept, detached from the account.
 
         Cascades handle subscription-related rows; we explicitly clean
         orphans (org-level data, documents, Qdrant points, MinIO files).
@@ -458,6 +464,20 @@ class DataRetentionService:
         )
         summary["members"] = len(list(members_result.scalars()))
         await self.db.execute(delete(AccountMember).where(AccountMember.account_id == account_id))
+
+        # End-of-trial answers: kept without identity for conversion
+        # statistics after an automatic purge; deleted on an explicit erasure
+        # request since the free comment may contain personal data.
+        if erase_trial_feedback:
+            await self.db.execute(
+                delete(TrialFeedback).where(TrialFeedback.account_id == account_id)
+            )
+        else:
+            await self.db.execute(
+                update(TrialFeedback)
+                .where(TrialFeedback.account_id == account_id)
+                .values(account_id=None)
+            )
 
         # Account (cascade deletes Subscription, SubscriptionAddon,
         # BoosterPurchase, MonthlyQuestionUsage via the model cascade config).

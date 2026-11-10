@@ -167,19 +167,16 @@ class StripeService:
     @staticmethod
     def _success_url() -> str:
         return settings.stripe_checkout_success_url or (
-            f"{settings.frontend_url}/settings/billing?success=1&session_id={{CHECKOUT_SESSION_ID}}"
+            f"{settings.frontend_url}/billing?success=1&session_id={{CHECKOUT_SESSION_ID}}"
         )
 
     @staticmethod
     def _cancel_url() -> str:
-        return (
-            settings.stripe_checkout_cancel_url
-            or f"{settings.frontend_url}/settings/billing?canceled=1"
-        )
+        return settings.stripe_checkout_cancel_url or f"{settings.frontend_url}/billing?canceled=1"
 
     @staticmethod
     def _portal_return_url() -> str:
-        return settings.stripe_portal_return_url or f"{settings.frontend_url}/settings/billing"
+        return settings.stripe_portal_return_url or f"{settings.frontend_url}/billing"
 
     # ------------------------------------------------------------------
     # Customer management

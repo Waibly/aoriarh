@@ -366,7 +366,7 @@ async def erase_account(
     """GDPR art. 17 — immediately and permanently delete an account."""
     service = DataRetentionService(db)
     try:
-        summary = await service.purge_account(account_id)
+        summary = await service.purge_account(account_id, erase_trial_feedback=True)
     except ValueError as exc:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

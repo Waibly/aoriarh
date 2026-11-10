@@ -38,6 +38,7 @@ import {
   AdminLoadError,
 } from "@/components/admin/page-header";
 import { cn } from "@/lib/utils";
+import { TrialFeedbackCard } from "@/components/admin/trial-feedback";
 
 type AtRiskAccount = {
   account_id: string;
@@ -387,6 +388,7 @@ export default function AdminPilotagePage() {
           }
         />
       </div>
+      <TrialFeedbackCard />
       <details className="group bg-card rounded-xl border p-5">
         <summary className="cursor-pointer text-sm font-semibold">
           Explorer la croissance, les abonnements et les retours utilisateurs

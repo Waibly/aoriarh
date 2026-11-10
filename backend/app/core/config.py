@@ -122,13 +122,13 @@ class Settings(BaseSettings):
     stripe_price_booster: str = ""
 
     # Redirect URLs after Stripe checkout / portal
-    stripe_checkout_success_url: str = (
-        ""  # defaults to frontend_url + "/settings/billing?success=1"
-    )
-    stripe_checkout_cancel_url: str = (
-        ""  # defaults to frontend_url + "/settings/billing?canceled=1"
-    )
-    stripe_portal_return_url: str = ""  # defaults to frontend_url + "/settings/billing"
+    stripe_checkout_success_url: str = ""  # defaults to frontend_url + "/billing?success=1"
+    stripe_checkout_cancel_url: str = ""  # defaults to frontend_url + "/billing?canceled=1"
+    stripe_portal_return_url: str = ""  # defaults to frontend_url + "/billing"
+
+    # Lien « Laisser un avis » de l'email envoyé après la fin de l'essai.
+    # Vide : le bloc avis n'est pas affiché dans l'email.
+    google_review_url: str = "https://share.google/oACvT309uniEJYaDI"
 
     # Admin seed
     seed_admin: bool = False  # Activer uniquement en dev / premier déploiement

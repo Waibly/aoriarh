@@ -51,6 +51,7 @@ from app.api import (
     support,
     team,
     telemetry,
+    trial_feedback_public,
     users,
     webhooks,
 )
@@ -370,6 +371,11 @@ app.include_router(
     emailing_public.router,
     prefix="/api/v1/emailing",
     tags=["emailing-public"],
+)
+app.include_router(
+    trial_feedback_public.router,
+    prefix="/api/v1/trial-feedback",
+    tags=["trial-feedback-public"],
 )
 app.include_router(
     public.router,

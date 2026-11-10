@@ -1,5 +1,7 @@
 from datetime import datetime
+from html import escape
 
+from app.core.config import settings
 from app.core.plans import PLAN_FEATURES
 
 BASE_TEMPLATE = """\
@@ -14,7 +16,7 @@ BASE_TEMPLATE = """\
   <div style="padding:24px;">
     <div style="max-width:600px; margin:0 auto; background:#ffffff; border-radius:12px; overflow:hidden; border:1px solid #ede9fe;">
       <div style="background-color:#652BB0; padding:28px 32px; text-align:center;">
-        <h1 style="color:#ffffff; font-size:22px; margin:0; font-weight:700; letter-spacing:0.5px;">AORIA RH</h1>
+        <img src="EMAIL_LOGO_URL" width="174" height="37" alt="AORIA RH" style="display:inline-block; width:174px; height:auto; border:0; color:#ffffff; font-size:22px; font-weight:700;">
       </div>
       <div style="padding:32px;">
         {content}
@@ -27,6 +29,10 @@ BASE_TEMPLATE = """\
   </div>
 </body>
 </html>"""
+
+# Logo blanc servi par l'application (PNG : les messageries n'affichent pas le SVG).
+EMAIL_LOGO_URL = f"{settings.frontend_url.rstrip('/')}/email-logo-white.png"
+BASE_TEMPLATE = BASE_TEMPLATE.replace("EMAIL_LOGO_URL", EMAIL_LOGO_URL)
 
 INVITATION_CONTENT = """\
 <h2 style="margin-top:0; color:#652BB0; font-size:20px;">Vous êtes invité(e) !</h2>
@@ -272,6 +278,100 @@ def render_trial_expired_email(
         content=content,
         year=datetime.now().year,
     )
+    return subject, html
+
+
+_BUTTON_STYLE = (
+    "display:inline-block; background-color:#652BB0; color:#ffffff; padding:14px 32px; "
+    "border-radius:8px; text-decoration:none; font-weight:600; font-size:15px;"
+)
+_CHOICE_STYLE = (
+    "display:block; margin:0 0 8px 0; padding:12px 16px; border:1px solid #ddd6fe; "
+    "border-radius:8px; color:#652BB0; text-decoration:none; font-weight:600; font-size:15px;"
+)
+_TEXT_STYLE = "color:#3f3f46; line-height:1.6;"
+_SMALL_STYLE = "color:#71717a; font-size:13px; line-height:1.5;"
+
+
+def render_trial_feedback_email(
+    full_name: str,
+    choices: list[tuple[str, str]],
+    deletion_at: datetime,
+    upgrade_url: str,
+    review_url: str,
+) -> tuple[str, str]:
+    """Email J+3 after an unconverted trial: one question, review, offers.
+
+    ``choices`` is a list of (label, url); each url opens the answer page with
+    that reason preselected.
+    """
+    deletion_date = _format_french_date(deletion_at)
+    subject = "Une question sur votre essai AORIA RH"
+    buttons = "".join(
+        f'<a href="{escape(url)}" style="{_CHOICE_STYLE}">{escape(label)}</a>'
+        for label, url in choices
+    )
+    review_block = ""
+    if review_url:
+        review_block = f"""
+<hr style="border:0; border-top:1px solid #ede9fe; margin:32px 0;">
+<p style="{_TEXT_STYLE}"><strong>Vous avez trouvé l'essai utile ?</strong><br>
+  Votre avis sur Google aide d'autres professionnels RH à découvrir AORIA RH
+  et nous aide à continuer de l'améliorer. Cela prend une minute.</p>
+<p style="text-align:center; margin:24px 0;">
+  <a href="{escape(review_url)}" style="{_BUTTON_STYLE}">Laisser un avis</a>
+</p>"""
+    content = f"""\
+<h2 style="margin-top:0; color:#652BB0; font-size:20px;">Une question sur votre essai</h2>
+<p style="{_TEXT_STYLE}">Bonjour {escape(full_name)},</p>
+<p style="{_TEXT_STYLE}">
+  Votre essai d'AORIA RH s'est terminé il y a 3 jours. Pour améliorer l'outil,
+  nous aimerions savoir ce qui vous a retenu de souscrire.
+</p>
+<p style="{_TEXT_STYLE}"><strong>Choisissez votre réponse :</strong></p>
+<div style="margin:16px 0 8px 0;">{buttons}</div>
+{review_block}
+<hr style="border:0; border-top:1px solid #ede9fe; margin:32px 0;">
+<p style="{_TEXT_STYLE}">
+  Vos documents et conversations sont conservés jusqu'au <strong>{escape(deletion_date)}</strong>.
+  Vous pouvez souscrire à tout moment pour les retrouver :
+  <a href="{escape(upgrade_url)}" style="color:#652BB0;">voir les offres</a>.
+</p>
+<p style="{_SMALL_STYLE}">Une question ? Écrivez-nous à
+  <a href="mailto:hello@aoriarh.fr" style="color:#652BB0;">hello@aoriarh.fr</a>.</p>"""
+    html = BASE_TEMPLATE.format(subject=subject, content=content, year=datetime.now().year)
+    return subject, html
+
+
+def render_trial_deletion_warning_email(
+    full_name: str,
+    deletion_at: datetime,
+    upgrade_url: str,
+) -> tuple[str, str]:
+    """Email J+23 after an unconverted trial: data deleted in 7 days."""
+    deletion_date = _format_french_date(deletion_at)
+    subject = f"Vos données AORIA RH seront supprimées le {deletion_date}"
+    content = f"""\
+<h2 style="margin-top:0; color:#652BB0; font-size:20px;">Vos données seront supprimées le {escape(deletion_date)}</h2>
+<p style="{_TEXT_STYLE}">Bonjour {escape(full_name)},</p>
+<p style="{_TEXT_STYLE}">
+  Votre essai d'AORIA RH est terminé depuis 3 semaines. Comme prévu, vos documents,
+  conversations et paramètres seront <strong>définitivement supprimés le {escape(deletion_date)}</strong>.
+</p>
+<p style="{_TEXT_STYLE}">
+  Pour les conserver, il suffit de choisir une offre avant cette date. Vous retrouverez
+  votre compte tel que vous l'avez laissé.
+</p>
+<p style="text-align:center; margin:32px 0;">
+  <a href="{escape(upgrade_url)}" style="{_BUTTON_STYLE}">Choisir une offre</a>
+</p>
+<p style="{_TEXT_STYLE}">
+  Si vous ne souhaitez pas continuer, vous n'avez rien à faire. Ce message est le dernier
+  que vous recevrez à ce sujet.
+</p>
+<p style="{_SMALL_STYLE}">Une question ? Écrivez-nous à
+  <a href="mailto:hello@aoriarh.fr" style="color:#652BB0;">hello@aoriarh.fr</a>.</p>"""
+    html = BASE_TEMPLATE.format(subject=subject, content=content, year=datetime.now().year)
     return subject, html
 
 
