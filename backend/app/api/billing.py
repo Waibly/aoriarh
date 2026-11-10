@@ -409,6 +409,7 @@ async def update_payment_method(
     try:
         session = stripe.checkout.Session.create(
             mode="setup",
+            currency="eur",
             customer=account.stripe_customer_id,
             success_url=(
                 settings.stripe_checkout_success_url

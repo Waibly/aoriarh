@@ -37,6 +37,8 @@ async def test_checkout_uses_dashboard_payment_methods(
         # This is the parameter rejected by Stripe in the production incident.
         if "payment_method_types" in params:
             raise stripe.InvalidRequestError("Unsupported parameter", "payment_method_types")
+        if params["mode"] == "setup" and "currency" not in params:
+            raise stripe.InvalidRequestError("Missing required param", "currency")
         calls.append(params)
         return {"id": "cs_test_checkout", "url": "https://checkout.stripe.com/test"}
 
@@ -64,4 +66,5 @@ async def test_checkout_uses_dashboard_payment_methods(
         assert params["automatic_tax"] == {"enabled": True}
         assert params["billing_address_collection"] == "required"
     else:
+        assert params["currency"] == "eur"
         assert params["setup_intent_data"]["metadata"]["purpose"] == "update_default_payment_method"
