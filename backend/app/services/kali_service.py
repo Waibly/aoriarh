@@ -470,7 +470,7 @@ class KaliService:
             doc_ids, _ = await self._create_common_docs(db, ccn_ref, all_articles, user_id)
             result.documents_created = len(doc_ids)
             if old_kali_ids:
-                await self._enqueue_old_docs_cleanup(old_kali_ids)
+                await self._enqueue_old_docs_cleanup(old_kali_ids, replacement_ids=doc_ids)
 
             org_conv.status = "ready"
             org_conv.articles_count = result.articles_count
@@ -618,14 +618,20 @@ class KaliService:
             for doc in await self._find_common_ccn_docs(db, idcc)
             if self._is_generated_kali_document(doc)
         ]
-        unchanged = any(doc.file_hash == snapshot_hash for doc in existing)
+        # A snapshot that failed to index is not current: comparing with it
+        # would keep serving the previous version and never retry.
+        unchanged = any(
+            doc.file_hash == snapshot_hash and doc.indexation_status != "error" for doc in existing
+        )
         if not unchanged or force:
             sync_result.update_needed = True
             sync_result.old_document_ids = [str(doc.id) for doc in existing]
             doc_ids, _ = await self._create_common_docs(db, ccn_ref, all_articles, user_id)
             sync_result.new_document_id = doc_ids[0]
             if sync_result.old_document_ids:
-                await self._enqueue_old_docs_cleanup(sync_result.old_document_ids)
+                await self._enqueue_old_docs_cleanup(
+                    sync_result.old_document_ids, replacement_ids=doc_ids
+                )
 
         now = datetime.now(UTC)
         org_convs = (
@@ -1133,10 +1139,18 @@ class KaliService:
         return doc
 
     @staticmethod
-    async def _cleanup_old_ccn_docs(db: AsyncSession, old_doc_ids: list[str]) -> int:
+    async def _cleanup_old_ccn_docs(
+        db: AsyncSession,
+        old_doc_ids: list[str],
+        replacement_ids: list[str] | None = None,
+    ) -> int:
         """Delete old CCN documents and their Qdrant vectors (blue-green cleanup).
 
-        Call this after the new document has been successfully indexed.
+        ``replacement_ids``: the complete new snapshot. When given, the old
+        documents are removed once EVERY replacement is fully indexed, whatever
+        their names: a part that no longer exists in KALI (no more salary grid,
+        renamed convention) must not keep its old, superseded text forever.
+        Without it, each old document waits for an indexed one of the same name.
         Returns the number of documents cleaned up.
         """
         from qdrant_client.models import FieldCondition, Filter, FilterSelector, MatchValue
@@ -1146,6 +1160,37 @@ class KaliService:
 
         storage = StorageService()
         cleaned = 0
+        qdrant = get_qdrant_client()
+
+        def fully_indexed(replacement: Document) -> bool:
+            count = qdrant.count(
+                COLLECTION_NAME,
+                count_filter=Filter(
+                    must=[
+                        FieldCondition(
+                            key="document_id",
+                            match=MatchValue(value=str(replacement.id)),
+                        ),
+                        FieldCondition(key="organisation_id", match=MatchValue(value="common")),
+                        FieldCondition(key="private", match=MatchValue(value=False)),
+                    ]
+                ),
+                exact=True,
+            ).count
+            return count == replacement.chunk_count
+
+        snapshot_ready: bool | None = None
+        if replacement_ids:
+            replacements = [await db.get(Document, uuid.UUID(value)) for value in replacement_ids]
+            snapshot_ready = all(
+                doc is not None
+                and doc.retired_at is None
+                and doc.organisation_id is None
+                and doc.indexation_status == "indexed"
+                and (doc.chunk_count or 0) > 0
+                and fully_indexed(doc)
+                for doc in replacements
+            )
 
         for doc_id_str in old_doc_ids:
             doc_id = uuid.UUID(doc_id_str)
@@ -1163,50 +1208,34 @@ class KaliService:
             ):
                 logger.warning("Refusing public-source cleanup for private doc %s", doc_id)
                 continue
-            replacements = (
-                (
-                    await db.execute(
-                        select(Document).where(
-                            Document.organisation_id.is_(None),
-                            Document.private_dossier_id.is_(None),
-                            Document.private_conversation_id.is_(None),
-                            Document.retired_at.is_(None),
-                            Document.id.not_in([uuid.UUID(value) for value in old_doc_ids]),
-                            Document.name == doc.name,
-                            Document.source_type == doc.source_type,
-                            Document.indexation_status == "indexed",
-                            Document.chunk_count > 0,
+            if snapshot_ready is not None:
+                if not snapshot_ready:
+                    logger.warning("Keeping old doc %s: new snapshot is not ready", doc_id)
+                    continue
+                replacements = []
+            else:
+                replacements = (
+                    (
+                        await db.execute(
+                            select(Document).where(
+                                Document.organisation_id.is_(None),
+                                Document.private_dossier_id.is_(None),
+                                Document.private_conversation_id.is_(None),
+                                Document.retired_at.is_(None),
+                                Document.id.not_in([uuid.UUID(value) for value in old_doc_ids]),
+                                Document.name == doc.name,
+                                Document.source_type == doc.source_type,
+                                Document.indexation_status == "indexed",
+                                Document.chunk_count > 0,
+                            )
                         )
                     )
+                    .scalars()
+                    .all()
                 )
-                .scalars()
-                .all()
-            )
-            qdrant = get_qdrant_client()
-            replacement_ready = False
-            for replacement in replacements:
-                count = qdrant.count(
-                    COLLECTION_NAME,
-                    count_filter=Filter(
-                        must=[
-                            FieldCondition(
-                                key="document_id",
-                                match=MatchValue(
-                                    value=str(replacement.id),
-                                ),
-                            ),
-                            FieldCondition(key="organisation_id", match=MatchValue(value="common")),
-                            FieldCondition(key="private", match=MatchValue(value=False)),
-                        ]
-                    ),
-                    exact=True,
-                ).count
-                if count == replacement.chunk_count:
-                    replacement_ready = True
-                    break
-            if not replacement_ready:
-                logger.warning("Keeping old doc %s: replacement is not ready", doc_id)
-                continue
+                if not any(fully_indexed(replacement) for replacement in replacements):
+                    logger.warning("Keeping old doc %s: replacement is not ready", doc_id)
+                    continue
 
             # Delete Qdrant vectors
             try:
@@ -1224,7 +1253,10 @@ class KaliService:
                     ),
                 )
             except Exception:
+                # Keep the row: deleting it would leave orphan vectors that
+                # stay searchable with no document behind them.
                 logger.warning("Failed to delete Qdrant chunks for old doc %s", doc_id)
+                continue
 
             # Delete storage file
             try:
@@ -1243,7 +1275,9 @@ class KaliService:
         return cleaned
 
     @staticmethod
-    async def _enqueue_old_docs_cleanup(old_doc_ids: list[str]) -> None:
+    async def _enqueue_old_docs_cleanup(
+        old_doc_ids: list[str], replacement_ids: list[str] | None = None
+    ) -> None:
         """Enqueue a job to clean up old CCN documents after new one is indexed."""
         from app.rag.tasks import get_arq_pool
 
@@ -1252,6 +1286,7 @@ class KaliService:
         await pool.enqueue_job(
             "run_ccn_blue_green_cleanup",
             old_doc_ids,
+            replacement_ids=replacement_ids,
             _job_id=job_id,
             _defer_by=120,  # Wait 2 minutes for ingestion to complete
         )

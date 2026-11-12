@@ -107,7 +107,10 @@ async def test_changed_snapshot_replaces_the_shared_documents_never_a_private_co
     assert all(d.storage_path.startswith("common/") for d in docs)
     new = [d for d in docs if str(d.id) != old_id]
     assert {d.source_type for d in new} == {"convention_collective_nationale", "accord_branche"}
-    cleanup.assert_awaited_once_with([old_id])
+    # The whole new snapshot is the replacement, whatever the part names.
+    cleanup.assert_awaited_once()
+    assert cleanup.await_args.args == ([old_id],)
+    assert sorted(cleanup.await_args.kwargs["replacement_ids"]) == sorted(str(d.id) for d in new)
     assert org_conv.source_date == "2026-11-12"
 
 
@@ -132,4 +135,18 @@ async def test_forced_refresh_rebuilds_an_unchanged_snapshot(installed):
     async with session_factory() as db:
         result = await service.refresh_common_ccn(db, IDCC, uuid.uuid4(), force=True)
     assert result.update_needed
-    cleanup.assert_awaited_once_with([old_id])
+    cleanup.assert_awaited_once()
+    assert cleanup.await_args.args == ([old_id],)
+    assert len(cleanup.await_args.kwargs["replacement_ids"]) == 2
+
+
+async def test_snapshot_that_failed_to_index_is_not_treated_as_current(installed):
+    """Same hash but indexing failed: rebuild instead of serving the old text forever."""
+    service, old_id, cleanup = installed
+    async with session_factory() as db:
+        old = await db.get(Document, uuid.UUID(old_id))
+        old.indexation_status = "error"
+        await db.commit()
+        result = await service.refresh_common_ccn(db, IDCC, uuid.uuid4())
+    assert result.update_needed
+    cleanup.assert_awaited_once()

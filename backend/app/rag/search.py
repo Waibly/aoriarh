@@ -191,8 +191,9 @@ class HybridSearch:
             )
 
         # Dedicated chronological branches use this range. Both fields are
-        # accepted because legislation/CCN generally expose ``content_date``
-        # while case law and JORF documents expose ``date_decision``.
+        # accepted: written law, CCN, JORF and BOSS expose ``content_date``
+        # (official date only, see ingestion.document_content_date) while case
+        # law exposes ``date_decision``.
         if date_from or date_to:
             date_range = DatetimeRange(gte=date_from, lte=date_to)
             org_filter = Filter(

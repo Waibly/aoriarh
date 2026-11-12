@@ -48,13 +48,17 @@ async def enqueue_kali_install(
 ) -> None:
     """Enqueue a KALI convention installation job to the ARQ worker."""
     pool = await get_arq_pool()
-    await pool.enqueue_job(
+    job = await pool.enqueue_job(
         "run_kali_install",
         org_convention_id,
         user_id,
         force_refetch,
         _job_id=f"kali_install_{org_convention_id}",
     )
+    if job is None:
+        # Same installation already queued or running: it will set the status.
+        logger.info("KALI install already queued or running for %s", org_convention_id)
+        return
     logger.info(
         "KALI install job enqueued for org_convention %s (force_refetch=%s)",
         org_convention_id,

@@ -17,6 +17,7 @@ setup_logging(json_output=os.getenv("LOG_FORMAT", "json") == "json")
 import structlog
 from arq.connections import RedisSettings
 from arq.cron import cron
+from arq.worker import func
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
@@ -1586,7 +1587,12 @@ async def run_data_retention_purge(ctx: dict) -> None:
     )
 
 
-async def run_ccn_blue_green_cleanup(ctx: dict, old_doc_ids: list[str], attempt: int = 0) -> None:
+async def run_ccn_blue_green_cleanup(
+    ctx: dict,
+    old_doc_ids: list[str],
+    attempt: int = 0,
+    replacement_ids: list[str] | None = None,
+) -> None:
     """Remove superseded public documents once their replacement is indexed.
 
     A replacement still being indexed keeps the old document; the job then
@@ -1599,7 +1605,7 @@ async def run_ccn_blue_green_cleanup(ctx: dict, old_doc_ids: list[str], attempt:
         from app.services.kali_service import KaliService
 
         async with session_factory() as db:
-            cleaned = await KaliService._cleanup_old_ccn_docs(db, old_doc_ids)
+            cleaned = await KaliService._cleanup_old_ccn_docs(db, old_doc_ids, replacement_ids)
             remaining = [
                 doc_id
                 for doc_id in old_doc_ids
@@ -1616,6 +1622,7 @@ async def run_ccn_blue_green_cleanup(ctx: dict, old_doc_ids: list[str], attempt:
                 "run_ccn_blue_green_cleanup",
                 remaining,
                 attempt + 1,
+                replacement_ids=replacement_ids,
                 _job_id=f"ccn_cleanup_{'_'.join(remaining[:3])}_{attempt + 1}",
                 _defer_by=_CLEANUP_RETRY_SECONDS,
             )
@@ -1933,7 +1940,10 @@ class WorkerSettings:
         run_full_jurisprudence_sync,
         run_jurisprudence_initialization,
         run_custom_jurisprudence_sync,
-        run_kali_install,
+        # No stored result: a fixed job id (one install per organisation
+        # convention) would otherwise silently refuse a new request for an
+        # hour after the previous run, leaving the convention « pending ».
+        func(run_kali_install, keep_result=0),
         run_ccn_blue_green_cleanup,
         run_bocc_sync,
         run_bocc_backfill,

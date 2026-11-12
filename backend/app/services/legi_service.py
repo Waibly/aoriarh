@@ -404,9 +404,33 @@ class LegiService:
         )
         existing_docs = list(existing_result.scalars().all())
 
-        # Check if content changed
-        if existing_docs and existing_docs[0].file_hash == new_hash:
+        # Compare with the most recent usable version, not an arbitrary row:
+        # an earlier replacement whose cleanup was missed must not make an
+        # unchanged code look modified (one more full copy every Saturday).
+        # A version that failed to index does not count as current.
+        existing_docs.sort(key=lambda d: d.created_at, reverse=True)
+        current = next(
+            (
+                d
+                for d in existing_docs
+                if d.file_hash == new_hash and d.indexation_status != "error"
+            ),
+            None,
+        )
+        if current is not None:
             logger.info("LegiService: %s unchanged (hash match)", doc_name)
+            superseded = [str(d.id) for d in existing_docs if d.id != current.id]
+            if superseded:
+                # Older copies left behind by a previous run: remove them
+                # once the current version is indexed.
+                from app.services.kali_service import KaliService
+
+                await KaliService._enqueue_old_docs_cleanup(superseded)
+                logger.info(
+                    "LegiService: %s — %d older version(s) scheduled for removal",
+                    doc_name,
+                    len(superseded),
+                )
             return False, None
 
         # Create new document (blue)

@@ -76,41 +76,25 @@ MAX_RETRIES = 3
 RETRY_BASE_DELAY = 2.0
 EMBEDDING_BATCH_SIZE = 32  # Reduced from 64 to handle large legal code chunks
 
-# --- Date extraction for recency boosting ---
-_FRENCH_MONTHS = {
-    "janvier": "01",
-    "février": "02",
-    "mars": "03",
-    "avril": "04",
-    "mai": "05",
-    "juin": "06",
-    "juillet": "07",
-    "août": "08",
-    "septembre": "09",
-    "octobre": "10",
-    "novembre": "11",
-    "décembre": "12",
-}
-_DATE_PATTERN = re.compile(
-    r"(?:1er|(\d{1,2}))\s+(janvier|février|mars|avril|mai|juin|juillet|août|septembre|octobre|novembre|décembre)\s+(\d{4})",
-    re.IGNORECASE,
-)
 
+def document_content_date(doc: Document) -> str | None:
+    """Official date of a non-jurisprudence document, or None.
 
-def _extract_content_date(text: str) -> str | None:
-    """Extract the most recent date from a chunk text (YYYY-MM-DD format).
-
-    Looks for French date patterns like '1er février 2021' or '15 mars 2023'.
-    Returns the most recent date found, or None.
+    Publication date first (JORF), then entry into force, last official
+    update (BOSS) and signature date (ANI, BOCC). Never guessed from the text:
+    the most recent date written in a passage is usually a cited text or a
+    future deadline, which made old Code articles look new and dated in the
+    future (recency boost, period filters, « Date du texte » shown to the LLM).
     """
-    dates = []
-    for m in _DATE_PATTERN.finditer(text):
-        day = m.group(1) or "01"  # "1er" → day=01
-        month = _FRENCH_MONTHS.get(m.group(2).lower())
-        year = m.group(3)
-        if month and 1990 <= int(year) <= 2030:
-            dates.append(f"{year}-{month}-{day.zfill(2)}")
-    return max(dates) if dates else None
+    for value in (
+        doc.publication_date,
+        doc.effective_date,
+        doc.source_updated_date,
+        doc.date_decision,
+    ):
+        if value is not None:
+            return value.isoformat()
+    return None
 
 
 async def _get_embeddings_batch(
@@ -496,6 +480,11 @@ class IngestionPipeline:
 
             # 8. Build Qdrant points with metadata
             org_id_str = str(doc.organisation_id) if doc.organisation_id else "common"
+            doc_content_date = (
+                None
+                if doc.source_type in JURISPRUDENCE_SOURCE_TYPES
+                else document_content_date(doc)
+            )
             # Accord publié seul (BOCC) propre à un territoire : son nom le dit.
             doc_territoires: list[str] = []
             if doc.source_type in ("convention_collective_nationale", "accord_branche"):
@@ -535,10 +524,6 @@ class IngestionPipeline:
                     idcc_match = re.search(r"IDCC\s+(\d{4})", doc.name)
                     if idcc_match:
                         payload["idcc"] = idcc_match.group(1)
-                    # Extract most recent date from chunk for recency boosting
-                    content_date = _extract_content_date(chunk_text)
-                    if content_date:
-                        payload["content_date"] = content_date
                     # Structural metadata from ArticleChunker
                     if chunks_meta:
                         meta = chunks_meta[i]
@@ -570,6 +555,9 @@ class IngestionPipeline:
                             payload["effective_to"] = meta.effective_to
                         if meta.instrument_status:
                             payload["instrument_status"] = meta.instrument_status
+
+                if doc_content_date and "content_date" not in payload:
+                    payload["content_date"] = doc_content_date
 
                 if doc_territoires and "territoires" not in payload:
                     payload["territoires"] = doc_territoires
