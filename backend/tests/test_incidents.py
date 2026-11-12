@@ -102,6 +102,115 @@ async def test_public_collector_rejects_secrets_and_deduplicates(spool):
     assert len(records()) == 1
 
 
+async def test_browser_diagnostics_use_only_verified_identity(client, regular_user, spool):
+    from app.core.security import decode_access_token
+
+    data = {
+        "id": str(uuid.uuid4()),
+        "source": "app",
+        "code": "request_timeout",
+        "location": "/chat",
+        "request_id": str(uuid.uuid4()),
+        "operation": "users.me",
+        "method": "GET",
+        "elapsed_ms": 30050,
+        "timeout_ms": 30000,
+        "occurred_at": 1_794_486_880_000,
+        "online": False,
+        "visibility": "hidden",
+    }
+    headers = {
+        "Origin": "https://app.aoriarh.fr",
+        "Authorization": "Bearer " + regular_user["token"],
+    }
+    result = await client.post("/api/v1/telemetry/incidents", json=data, headers=headers)
+    assert result.status_code == 202
+    payload = json.loads(records()[0]["payload"])
+    assert payload["user_id"] == decode_access_token(regular_user["token"])["sub"]
+    assert payload["identity_status"] == "authenticated"
+    assert payload["occurred_at"] == data["occurred_at"] and payload["online"] is False
+    assert payload["operation"] == "users.me" and payload["elapsed_ms"] == 30050
+    for extra in ({"user_id": str(uuid.uuid4())}, {"operation": "/private/SECRET"}):
+        rejected = await client.post(
+            "/api/v1/telemetry/incidents", json={**data, **extra}, headers=headers
+        )
+        assert rejected.status_code == 422
+    assert regular_user["token"] not in str(records())
+
+
+async def test_expired_authentication_does_not_drop_the_browser_incident(client, spool):
+    result = await client.post(
+        "/api/v1/telemetry/incidents",
+        headers={"Origin": "https://app.aoriarh.fr", "Authorization": "Bearer invalid"},
+        json={"id": str(uuid.uuid4()), "source": "app", "code": "request_timeout"},
+    )
+    assert result.status_code == 202
+    payload = json.loads(records()[0]["payload"])
+    assert payload["identity_status"] == "unverified" and "user_id" not in payload
+
+
+async def test_identity_database_outage_does_not_drop_the_incident(client, spool, monkeypatch):
+    from unittest.mock import AsyncMock
+
+    from sqlalchemy.exc import SQLAlchemyError
+
+    monkeypatch.setattr(telemetry, "get_current_user", AsyncMock(side_effect=SQLAlchemyError()))
+    result = await client.post(
+        "/api/v1/telemetry/incidents",
+        headers={"Origin": "https://app.aoriarh.fr", "Authorization": "Bearer unavailable"},
+        json={"id": str(uuid.uuid4()), "source": "app", "code": "request_timeout"},
+    )
+    assert result.status_code == 202
+    assert json.loads(records()[0]["payload"])["identity_status"] == "unavailable"
+
+
+async def test_request_logs_correlate_the_authenticated_user(client, regular_user, monkeypatch):
+    from unittest.mock import Mock
+
+    from app.core.security import decode_access_token
+
+    log = Mock()
+    monkeypatch.setattr("app.main.logger.info", log)
+    request_id = str(uuid.uuid4())
+    response = await client.get(
+        "/api/v1/users/me",
+        headers={
+            "Authorization": "Bearer " + regular_user["token"],
+            "X-Aoria-Request-ID": request_id,
+        },
+    )
+    assert response.status_code == 200 and response.headers["x-request-id"] == request_id
+    request_logs = [call.kwargs for call in log.call_args_list if call.args == ("http_request",)]
+    assert request_logs[-1]["request_id"] == request_id
+    assert request_logs[-1]["user_id"] == decode_access_token(regular_user["token"])["sub"]
+    invalid = await client.get("/api/v1/users/me", headers={"X-Aoria-Request-ID": "SECRET"})
+    uuid.UUID(invalid.headers["x-request-id"])
+    assert invalid.headers["x-request-id"] != "SECRET"
+
+
+async def test_admin_can_identify_the_reporter_but_regular_users_cannot(
+    client, regular_user, admin_user, spool
+):
+    from app.core.security import decode_access_token
+
+    store.capture(
+        "request_timeout",
+        source="app",
+        user_id=decode_access_token(regular_user["token"])["sub"],
+    )
+    response = await client.get(
+        "/api/v1/telemetry/admin/incidents",
+        headers={"Authorization": "Bearer " + admin_user["token"]},
+    )
+    assert response.status_code == 200
+    assert response.json()["items"][0]["user"]["email"] == regular_user["email"]
+    denied = await client.get(
+        "/api/v1/telemetry/admin/incidents",
+        headers={"Authorization": "Bearer " + regular_user["token"]},
+    )
+    assert denied.status_code == 403
+
+
 @pytest.mark.parametrize(
     "reason",
     [

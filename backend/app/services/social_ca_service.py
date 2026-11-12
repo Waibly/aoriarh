@@ -40,6 +40,62 @@ class SocialCaService:
         self.archive = CuratedSourceService(storage)
         self.api = api or JudilibreService()
 
+    async def _decision(self, client, key):
+        # Strict transport errors distinguish a missing source from a scope change.
+        raw = await self.api._api_get(client, "/decision", params={"id": key}, strict=True)
+        if not isinstance(raw, dict):
+            raise ValueError("Invalid decision response type: " + type(raw).__name__)
+        sha = hashlib.sha256(json.dumps(raw, sort_keys=True).encode()).hexdigest()
+        self.archive.save_json(PREFIX + "responses/" + key + "/" + sha + ".json", raw)
+        if source_id(raw) != key:
+            raise ValueError("Decision source identity mismatch")
+        return raw
+
+    async def _index(self, db, doc, body, ledger, ledger_key, *, new=False):
+        """Resume only our own archived sources, within the same daily paid-call cap."""
+        import tiktoken
+
+        from app.rag.ingestion import IngestionPipeline
+        from app.rag.text_cleaner import clean_text
+
+        pipeline = IngestionPipeline()
+        chunks = pipeline.jurisprudence_chunker.chunk(
+            clean_text(body.decode("utf-8")),
+            metadata_header=pipeline._build_jurisprudence_header(doc),
+        )
+        if not chunks:
+            raise ValueError("Empty decision chunks")
+        enc = tiktoken.get_encoding("cl100k_base")
+        tokens = sum(len(enc.encode(c, disallowed_special=())) for c in chunks)
+        if (
+            ledger["documents_reserved"] >= settings.social_ca_max_documents_per_day
+            or tokens > MAX_DOCUMENT_TOKENS
+            or ledger["tokens_reserved"] + tokens > settings.social_ca_max_tokens_per_day
+        ):
+            return False
+        ledger["tokens_reserved"] += tokens
+        ledger["documents_reserved"] += 1
+        self.archive.save_json(ledger_key, ledger)
+        if new:
+            self.archive.storage.put_file_bytes(doc.storage_path, body, "text/plain; charset=utf-8")
+            if self.archive.storage.get_file_bytes_bounded(doc.storage_path, len(body) + 1) != body:
+                raise ValueError("Decision source archive verification failed")
+            db.add(doc)
+            await db.commit()
+
+        async def plain_extract(document, file_bytes, session):
+            return file_bytes.decode("utf-8")
+
+        pipeline._extract_document_text = plain_extract
+        await pipeline.ingest(
+            doc.id, db, expected_source=doc.storage_path, max_embedding_tokens=tokens
+        )
+        await db.refresh(doc)
+        if doc.indexation_status != "indexed":
+            pipeline._cleanup_old_chunks(str(doc.id), set(), strict=True)
+            raise ValueError("Decision indexing failed: " + str(doc.indexation_error))
+        return True
+
     async def inventory(self, client, start, end):
         if start > end:
             raise ValueError("Invalid Judilibre inventory date range")
@@ -56,7 +112,7 @@ class SocialCaService:
             }
             if cursor:
                 params["searchAfter"] = cursor
-            data = await self.api._api_get(client, "/scan", params=params)
+            data = await self.api._api_get(client, "/scan", params=params, strict=True)
             if not isinstance(data, dict) or not isinstance(data.get("results"), list):
                 raise ValueError("Invalid Judilibre inventory response")
             total = data.get("total")
@@ -99,11 +155,15 @@ class SocialCaService:
         )
         end = today - timedelta(days=1)
         result = {
+            "run_id": str(uuid.uuid4()),
+            "started_at": datetime.now(UTC).isoformat(),
+            "completed_at": None,
             "window_start": str(start),
             "window_end": str(end),
             "inventoried": 0,
             "eligible": 0,
             "created": 0,
+            "recovered": 0,
             "existing": 0,
             "review_pending": 0,
             "budget_pending": 0,
@@ -116,8 +176,17 @@ class SocialCaService:
                 "detail_checks_per_run": settings.social_ca_max_detail_checks,
             },
         }
+        run_key = PREFIX + "runs/" + result["run_id"] + ".json"
+        self.archive.save_json(run_key, result)
         async with httpx.AsyncClient(timeout=60) as client:
-            records = await self.inventory(client, start, end)
+            try:
+                records = await self.inventory(client, start, end)
+            except Exception as exc:
+                result["errors"].append(type(exc).__name__ + ": " + str(exc)[:500])
+                result["completed_at"] = datetime.now(UTC).isoformat()
+                self.archive.save_json(run_key, result)
+                self.archive.save_json(PREFIX + "latest.json", result)
+                raise
             inventory_hash = hashlib.sha256(
                 json.dumps(records, sort_keys=True).encode()
             ).hexdigest()
@@ -137,6 +206,17 @@ class SocialCaService:
                 "tokens_reserved": 0,
                 "documents_reserved": 0,
             }
+
+            def checkpoint():
+                result["remaining_eligible"] = len(state["pending"])
+                result["daily_tokens_reserved"] = ledger["tokens_reserved"]
+                result["daily_documents_reserved"] = ledger["documents_reserved"]
+                self.archive.save_json(PREFIX + "state.json", state)
+                # Preserve each run's full errors even after latest.json is replaced.
+                self.archive.save_json(run_key, result)
+                self.archive.save_json(PREFIX + "latest.json", result)
+
+            checkpoint()
             detail_checks = 0
             for key, metadata in list(state["pending"].items()):
                 url = "https://www.courdecassation.fr/decision/" + key
@@ -159,9 +239,57 @@ class SocialCaService:
                     doc = existing[0]
                     # Existing frozen decisions are not overwritten automatically.
                     # Updated source metadata remains in the per-window evidence.
-                    if doc.retired_at or doc.indexation_status != "indexed":
+                    if doc.retired_at:
                         result["review_pending"] += 1
                         del state["pending"][key]
+                        continue
+                    if doc.indexation_status != "indexed":
+                        # A previous run may have committed the document before indexing failed.
+                        # Never drop it from pending or overwrite unrelated/retired material.
+                        owned = (
+                            getattr(doc, "id", None) == uuid.uuid5(uuid.NAMESPACE_URL, url)
+                            and getattr(doc, "source_type", None) == "arret_cour_appel"
+                            and isinstance(getattr(doc, "file_hash", None), str)
+                            and re.fullmatch(r"[a-f0-9]{64}", doc.file_hash)
+                            and getattr(doc, "storage_path", None)
+                            == PREFIX + "published/" + key + "/" + doc.file_hash + ".txt"
+                        )
+                        if not owned:
+                            result["review_pending"] += 1
+                            continue
+                        if not apply:
+                            continue
+                        if (
+                            ledger["documents_reserved"] >= settings.social_ca_max_documents_per_day
+                            or ledger["tokens_reserved"] >= settings.social_ca_max_tokens_per_day
+                        ):
+                            result["budget_pending"] += 1
+                            continue
+                        try:
+                            body = self.archive.storage.get_file_bytes_bounded(
+                                doc.storage_path, 8_000_000
+                            )
+                            if hashlib.sha256(body).hexdigest() != doc.file_hash:
+                                raise ValueError("Archived decision hash mismatch")
+                            if await self._index(db, doc, body, ledger, ledger_key):
+                                result["recovered"] += 1
+                                result["documents"].append(
+                                    {
+                                        "source_id": key,
+                                        "document_id": str(doc.id),
+                                        "status": "recovered",
+                                        "chunks": doc.chunk_count,
+                                    }
+                                )
+                                del state["pending"][key]
+                            else:
+                                result["budget_pending"] += 1
+                        except Exception as exc:
+                            await db.rollback()
+                            result["errors"].append(
+                                key + ": " + type(exc).__name__ + ": " + str(exc)[:200]
+                            )
+                        checkpoint()
                         continue
                     if not apply:
                         result["existing"] += 1
@@ -171,7 +299,7 @@ class SocialCaService:
                         continue
                     detail_checks += 1
                     try:
-                        raw = await self.api._api_get(client, "/decision", params={"id": key})
+                        raw = await self._decision(client, key)
                         if (
                             not isinstance(raw, dict)
                             or source_id(raw) != key
@@ -231,9 +359,15 @@ class SocialCaService:
                     continue
                 try:
                     detail_checks += 1
-                    raw = await self.api._api_get(client, "/decision", params={"id": key})
-                    if not isinstance(raw, dict) or source_id(raw) != key or not admitted(raw):
-                        raise ValueError("Source identity or official NAC changed")
+                    raw = await self._decision(client, key)
+                    scope = classify_ca_scope(raw)
+                    if scope["status"] != "admitted":
+                        raise ValueError(
+                            "Decision scope requires review: "
+                            + scope["reason"]
+                            + "; nac="
+                            + repr(raw.get("nac"))[:30]
+                        )
                     # Do not allow the legacy parser to invent a decision date.
                     date.fromisoformat(raw["decision_date"])
                     parsed = self.api._parse_decision(raw)
@@ -257,12 +391,6 @@ class SocialCaService:
                         result["review_pending"] += 1
                         del state["pending"][key]
                         continue
-                    import tiktoken
-
-                    from app.rag.ingestion import IngestionPipeline
-                    from app.rag.text_cleaner import clean_text
-
-                    pipeline = IngestionPipeline()
                     doc = Document(
                         id=uuid.uuid5(uuid.NAMESPACE_URL, url),
                         organisation_id=None,
@@ -287,48 +415,9 @@ class SocialCaService:
                         indexation_status="pending",
                         storage_path=PREFIX + "published/" + key + "/" + sha + ".txt",
                     )
-                    chunks = pipeline.jurisprudence_chunker.chunk(
-                        clean_text(parsed.text),
-                        metadata_header=pipeline._build_jurisprudence_header(doc),
-                    )
-                    enc = tiktoken.get_encoding("cl100k_base")
-                    tokens = sum(len(enc.encode(c, disallowed_special=())) for c in chunks)
-                    if (
-                        not chunks
-                        or tokens > MAX_DOCUMENT_TOKENS
-                        or (
-                            ledger["tokens_reserved"] + tokens
-                            > settings.social_ca_max_tokens_per_day
-                        )
-                    ):
+                    if not await self._index(db, doc, body, ledger, ledger_key, new=True):
                         result["budget_pending"] += 1
                         continue
-                    # Reserve before the paid call; crashes/retries cannot bypass the daily cap.
-                    ledger["tokens_reserved"] += tokens
-                    ledger["documents_reserved"] += 1
-                    self.archive.save_json(ledger_key, ledger)
-                    self.archive.storage.put_file_bytes(
-                        doc.storage_path, body, "text/plain; charset=utf-8"
-                    )
-                    if (
-                        self.archive.storage.get_file_bytes_bounded(doc.storage_path, len(body) + 1)
-                        != body
-                    ):
-                        raise ValueError("Decision source archive verification failed")
-                    db.add(doc)
-                    await db.commit()
-
-                    async def plain_extract(document, file_bytes, session):
-                        return file_bytes.decode("utf-8")
-
-                    pipeline._extract_document_text = plain_extract
-                    await pipeline.ingest(
-                        doc.id, db, expected_source=doc.storage_path, max_embedding_tokens=tokens
-                    )
-                    await db.refresh(doc)
-                    if doc.indexation_status != "indexed":
-                        pipeline._cleanup_old_chunks(str(doc.id), set(), strict=True)
-                        raise ValueError("Decision indexing failed: " + str(doc.indexation_error))
                     result["created"] += 1
                     result["documents"].append(
                         {
@@ -342,11 +431,7 @@ class SocialCaService:
                 except Exception as exc:
                     await db.rollback()
                     result["errors"].append(key + ": " + type(exc).__name__ + ": " + str(exc)[:200])
-                self.archive.save_json(PREFIX + "state.json", state)
-                self.archive.save_json(PREFIX + "latest.json", result)
-            self.archive.save_json(PREFIX + "state.json", state)
-        result["remaining_eligible"] = len(state["pending"])
-        result["daily_tokens_reserved"] = ledger["tokens_reserved"]
-        result["daily_documents_reserved"] = ledger["documents_reserved"]
-        self.archive.save_json(PREFIX + "latest.json", result)
+                checkpoint()
+            result["completed_at"] = datetime.now(UTC).isoformat()
+            checkpoint()
         return result

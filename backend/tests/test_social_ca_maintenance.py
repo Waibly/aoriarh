@@ -1,8 +1,11 @@
 import copy
+import hashlib
+import uuid
 from datetime import date
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
 
+import httpx
 import pytest
 
 from app.services.judilibre_service import JudilibreService
@@ -86,7 +89,10 @@ async def test_incomplete_or_duplicate_inventory_never_admits(response):
     with pytest.raises(ValueError):
         await service.sync(db, today=date(2026, 10, 8))
     db.add.assert_not_called()
-    assert not memory
+    assert PREFIX + "state.json" not in memory
+    report = memory[PREFIX + "latest.json"]
+    assert report["errors"] and report["completed_at"]
+    assert memory[PREFIX + "runs/" + report["run_id"] + ".json"] == report
 
 
 @pytest.mark.asyncio
@@ -460,3 +466,131 @@ def test_codes_without_checked_publisher_mapping_remain_for_review(nac):
     result = classify_ca_scope(dict(META, nac=nac))
     assert result["status"] == "review"
     assert result["reason"] == "nac_not_confirmed_in_checked_publisher_catalogue"
+
+
+@pytest.mark.asyncio
+async def test_missing_source_keeps_pending_outside_later_inventory(monkeypatch):
+    error = httpx.HTTPStatusError(
+        "404 source unavailable",
+        request=httpx.Request("GET", "https://official.example/decision"),
+        response=httpx.Response(404),
+    )
+    service, memory = service_with_memory(
+        [
+            {"total": 1, "results": [META], "next_batch": None},
+            error,
+            {"total": 0, "results": [], "next_batch": None},
+            dict(META, text="Official source"),
+        ]
+    )
+    db = SimpleNamespace(
+        scalars=AsyncMock(return_value=Mock(all=Mock(return_value=[]))), rollback=AsyncMock()
+    )
+    failed = await service.sync(db, today=date(2026, 10, 8))
+    assert "HTTPStatusError" in failed["errors"][0] and "404" in failed["errors"][0]
+    assert A in memory[PREFIX + "state.json"]["pending"]
+    assert service.api._api_get.call_args.kwargs["strict"] is True
+
+    async def indexed(db, doc, *args, **kwargs):
+        doc.chunk_count = 1
+        return True
+
+    monkeypatch.setattr(service, "_index", indexed)
+    resumed = await service.sync(db, today=date(2026, 10, 12))
+    assert resumed["created"] == 1 and resumed["remaining_eligible"] == 0
+    assert not resumed["errors"]
+    assert memory[PREFIX + "runs/" + failed["run_id"] + ".json"]["errors"] == failed["errors"]
+
+
+@pytest.mark.asyncio
+async def test_indexing_failure_after_commit_resumes_archived_source_without_duplicate(monkeypatch):
+    body = b"Official decision source."
+    service, memory = service_with_memory(
+        [
+            {"total": 1, "results": [META], "next_batch": None},
+            dict(META, text=body.decode()),
+            {"total": 0, "results": [], "next_batch": None},
+        ]
+    )
+    docs = []
+    db = SimpleNamespace(
+        scalars=AsyncMock(side_effect=lambda *_: Mock(all=Mock(return_value=list(docs)))),
+        add=docs.append,
+        commit=AsyncMock(),
+        refresh=AsyncMock(),
+        rollback=AsyncMock(),
+    )
+    pipeline = Mock()
+    pipeline.jurisprudence_chunker.chunk.return_value = [body.decode()]
+    pipeline._build_jurisprudence_header.return_value = ""
+
+    async def ingest(*args, **kwargs):
+        if pipeline.ingest.await_count == 1:
+            docs[0].indexation_status = "error"
+            raise RuntimeError("technical embedding outage")
+        docs[0].indexation_status = "indexed"
+        docs[0].chunk_count = 1
+
+    pipeline.ingest = AsyncMock(side_effect=ingest)
+    monkeypatch.setattr("app.rag.ingestion.IngestionPipeline", lambda: pipeline)
+    service.archive.storage.get_file_bytes_bounded.return_value = body
+    failed = await service.sync(db, today=date(2026, 10, 8))
+    assert failed["errors"] and len(docs) == 1
+    assert A in memory[PREFIX + "state.json"]["pending"]
+    resumed = await service.sync(db, today=date(2026, 10, 9))
+    assert resumed["recovered"] == 1 and resumed["created"] == 0
+    assert resumed["remaining_eligible"] == 0 and not resumed["errors"]
+    assert len(docs) == 1 and pipeline.ingest.await_count == 2
+    assert service.api._api_get.await_count == 3  # recovery reads the archive, not the API
+    assert memory[PREFIX + "budgets/2026-10-09.json"]["documents_reserved"] == 1
+
+
+@pytest.mark.asyncio
+async def test_unrelated_failed_document_is_retained_without_automatic_overwrite():
+    service, memory = service_with_memory(
+        [
+            {"total": 1, "results": [META], "next_batch": None},
+        ]
+    )
+    doc = SimpleNamespace(
+        private_dossier_id=None,
+        private_conversation_id=None,
+        retired_at=None,
+        indexation_status="error",
+        id=uuid.uuid4(),
+    )
+    db = SimpleNamespace(scalars=AsyncMock(return_value=Mock(all=Mock(return_value=[doc]))))
+    result = await service.sync(db, today=date(2026, 10, 8))
+    assert result["review_pending"] == 1 and result["remaining_eligible"] == 1
+    assert A in memory[PREFIX + "state.json"]["pending"]
+    service.archive.storage.get_file_bytes_bounded.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_recovery_rejects_corrupt_archive_before_paid_call(monkeypatch):
+    service, memory = service_with_memory(
+        [
+            {"total": 1, "results": [META], "next_batch": None},
+        ]
+    )
+    sha = hashlib.sha256(b"original").hexdigest()
+    doc = SimpleNamespace(
+        private_dossier_id=None,
+        private_conversation_id=None,
+        retired_at=None,
+        indexation_status="error",
+        source_type="arret_cour_appel",
+        file_hash=sha,
+        id=uuid.uuid5(uuid.NAMESPACE_URL, "https://www.courdecassation.fr/decision/" + A),
+        storage_path=PREFIX + "published/" + A + "/" + sha + ".txt",
+    )
+    db = SimpleNamespace(
+        scalars=AsyncMock(return_value=Mock(all=Mock(return_value=[doc]))), rollback=AsyncMock()
+    )
+    service.archive.storage.get_file_bytes_bounded.return_value = b"corrupted"
+    index = AsyncMock()
+    monkeypatch.setattr(service, "_index", index)
+    result = await service.sync(db, today=date(2026, 10, 8))
+    assert "hash mismatch" in result["errors"][0]
+    assert result["remaining_eligible"] == 1 and result["daily_tokens_reserved"] == 0
+    index.assert_not_called()

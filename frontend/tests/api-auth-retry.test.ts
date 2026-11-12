@@ -46,3 +46,17 @@ it('keeps the user signed in when the refresh is only temporarily unavailable', 
   expect(signOut).not.toHaveBeenCalled();
   expect(reportIncident).not.toHaveBeenCalled();
 });
+
+it('reports a timed out operation with duration and a request ID available before headers', async () => {
+  (fetch as jest.Mock).mockImplementation((_url, init) => new Promise((_resolve, reject) => {
+    init.signal.addEventListener('abort', () => reject(init.signal.reason));
+  }));
+  await expect(apiFetch('/users/me', {token:'private-token', timeoutMs:5})).rejects.toThrow('expiré');
+  const headers = (fetch as jest.Mock).mock.calls[0][1].headers as Headers;
+  expect(headers.get('X-Aoria-Request-ID')).toMatch(/^[a-f0-9-]{36}$/);
+  expect(reportIncident).toHaveBeenCalledWith('request_timeout', expect.objectContaining({
+    request_id:headers.get('X-Aoria-Request-ID'), request_path:'/api/v1/users/me',
+    method:'GET',timeout_ms:5,elapsed_ms:expect.any(Number),token:'private-token',
+  }));
+  expect(signOut).not.toHaveBeenCalled();
+});

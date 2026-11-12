@@ -22,7 +22,8 @@ type Incident = {
   state: string;
   attempts: number;
   last_error: string | null;
-  payload: Record<string, string | number>;
+  payload: Record<string, string | number | boolean>;
+  user?: { name: string; email: string } | null;
 };
 type Result = {
   configured: boolean;
@@ -159,6 +160,15 @@ export default function IncidentsPage() {
                   <p className="text-muted-foreground text-xs">
                     Source : {item.payload.source || "non renseignée"}
                   </p>
+                  <p className="text-muted-foreground text-xs">
+                    Compte : {item.user ? `${item.user.name} (${item.user.email})` : "non identifié"}
+                  </p>
+                  {typeof item.payload.occurred_at === "number" && (
+                    <p className="text-muted-foreground text-xs">
+                      Signalé par le navigateur le {new Date(item.payload.occurred_at).toLocaleString("fr-FR")}
+                      {" · "}Reçu le {new Date(item.created * 1000).toLocaleString("fr-FR")}
+                    </p>
+                  )}
                 </CardHeader>
                 <CardContent>
                   <details className="text-sm">
@@ -176,7 +186,7 @@ export default function IncidentsPage() {
                         <div key={key}>
                           <dt className="text-muted-foreground">{key}</dt>
                           <dd className="mt-1 break-words whitespace-pre-wrap">
-                            {value}
+                            {String(value)}
                           </dd>
                         </div>
                       ))}

@@ -36,6 +36,13 @@ FIELDS = {
     "release",
     "visitor_id",
     "method",
+    "occurred_at",
+    "elapsed_ms",
+    "timeout_ms",
+    "online",
+    "visibility",
+    "operation",
+    "identity_status",
 }
 SAFE = re.compile(r"^[a-zA-Z0-9_./:{}@\[\]()-]{1,180}$")
 

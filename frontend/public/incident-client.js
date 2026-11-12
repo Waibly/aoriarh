@@ -1,4 +1,4 @@
-/* AORIA technical incidents. No text, query string, request body or credentials. */
+/* Technical metadata only. No user text, original request body or credentials persisted. */
 (function () {
   'use strict';
   if (window.aoriaReportIncident) return;
@@ -10,6 +10,8 @@
   var storageKey = 'aoria-technical-incidents-v1';
   var queue = [];
   var flushing = false;
+  // Credentials live only in memory for the event that supplied them.
+  var eventTokens = new Map();
   var visitor = crypto.randomUUID();
   try {
     visitor = sessionStorage.getItem('aoria-incident-visitor') || visitor;
@@ -32,7 +34,17 @@
   function report(code, options) {
     options = options || {};
     var event = { id: options.id || crypto.randomUUID(), source: source, code: code,
-      location: safeLocation(), visitor_id: visitor };
+      location: safeLocation(), visitor_id: visitor, occurred_at: Date.now(),
+      online: navigator.onLine === true,
+      visibility: document.visibilityState === 'hidden' ? 'hidden' : 'visible' };
+    var operation = requestOperation(options.request_path);
+    if (operation) event.operation = operation;
+    if (['GET','POST','PUT','PATCH','DELETE','OPTIONS','HEAD'].indexOf(options.method) >= 0) event.method = options.method;
+    ['elapsed_ms','timeout_ms'].forEach(function (key) {
+      if (Number.isFinite(options[key]) && options[key] >= 0 && options[key] <= 86400000) {
+        event[key] = Math.round(options[key]);
+      }
+    });
     if (['provider_quota_exhausted','provider_rate_limited','server_error',
       'resource_next_script','resource_next_stylesheet','resource_turnstile',
       'resource_analytics','resource_image','resource_stylesheet','resource_script',
@@ -48,6 +60,7 @@
     }
     if (!queue.some(function (x) { return x.event.id === event.id; })) {
       queue.push({event:event,at:Date.now(),tries:0});
+      if (typeof options.token === 'string' && options.token) eventTokens.set(event.id, options.token);
       persist();
     }
     void flush();
@@ -62,17 +75,42 @@
         item.tries++;
         persist();
         try {
+          var headers = {'Content-Type':'application/json'};
+          if (eventTokens.has(item.event.id)) headers.Authorization = 'Bearer ' + eventTokens.get(item.event.id);
           var response = await nativeFetch(endpoint, {method:'POST', credentials:'omit',
-            headers:{'Content-Type':'application/json'}, body:JSON.stringify(item.event),
+            headers:headers, body:JSON.stringify(item.event),
             keepalive:true, signal:AbortSignal.timeout(8000)});
           if (response.status !== 202) break;
           queue.splice(queue.indexOf(item), 1);
+          eventTokens.delete(item.event.id);
           persist();
         } catch (_) { break; }
       }
     } finally { flushing = false; }
   }
   window.aoriaReportIncident = report;
+  function requestOperation(path) {
+    // Closed technical categories; no path parameter, query or arbitrary URL is stored.
+    if (typeof path !== 'string') return null;
+    var routes = [
+      [/^\/api\/v1\/users\/me\/?$/, 'users.me'],
+      [/^\/api\/v1\/billing\/quota\/?$/, 'billing.quota'],
+      [/^\/api\/v1\/organisations\/?$/, 'organisations.list'],
+      [/^\/api\/v1\/conventions\/organisations\/[^/]+\/?$/, 'conventions.organisation'],
+      [/^\/api\/v1\/conversations\/?$/, 'conversations.list'],
+      [/^\/api\/v1\/conversations\/[^/]+\/messages\/?$/, 'conversations.messages'],
+      [/^\/api\/v1\/conversations\/[^/]+\/?$/, 'conversations.read'],
+      [/^\/api\/v1\/dossiers\/?$/, 'dossiers.list'],
+      [/^\/api\/auth\/session\/?$/, 'auth.session'],
+      [/^\/api\/v1\/auth\//, 'auth'],
+      [/^\/api\/v1\/documents(?:\/|$)/, 'documents'],
+      [/^\/api\/v1\/billing(?:\/|$)/, 'billing'],
+      [/^\/api\/v1\/admin(?:\/|$)/, 'admin'],
+      [/^\/api\/v1\//, 'api.other']
+    ];
+    for (var i=0; i<routes.length; i++) if (routes[i][0].test(path)) return routes[i][1];
+    return 'frontend.other';
+  }
   function resourceReason(target) {
     // Classify locally. Never transmit URLs, query strings, filenames, or DOM text.
     var tag = String(target.tagName || '').toLowerCase();
@@ -107,17 +145,24 @@
     // Observe product requests only; no advertising/analytics traffic.
     var owned = url.origin === location.origin || url.origin === 'https://api.aoriarh.fr';
     if (!owned || url.pathname === '/api/v1/telemetry/incidents') return nativeFetch(input, init);
+    var started = performance.now();
+    var requestHeaders = new Headers((init && init.headers) || (typeof input === 'object' && input.headers) || {});
+    var metadata = {request_path:url.pathname, method:String((init && init.method) || (typeof input === 'object' && input.method) || 'GET').toUpperCase(),
+      request_id:requestHeaders.get('X-Aoria-Request-ID')};
+    var authorization = requestHeaders.get('Authorization');
+    if (url.origin === 'https://api.aoriarh.fr' && authorization && /^Bearer /i.test(authorization)) metadata.token = authorization.slice(7);
     try {
       var response = await nativeFetch(input, init);
-      var requestHeaders = new Headers((init && init.headers) || (typeof input === 'object' && input.headers) || {});
+      metadata.elapsed_ms = Math.round(performance.now() - started);
       var managed401 = response.status === 401 && requestHeaders.get('X-Aoria-Auth-Retry') === 'managed';
-      if (!response.ok && !managed401) report('http_error', {status:response.status, request_id:response.headers.get('X-Request-ID')});
+      if (!response.ok && !managed401) report('http_error', Object.assign({}, metadata, {status:response.status, request_id:response.headers.get('X-Request-ID') || metadata.request_id}));
       return response;
     } catch (error) {
       var signal = (init && init.signal) || (typeof input === 'object' && input.signal);
       // Explicit cancellation is not an application failure. Timeout remains an error.
       if (!(signal && signal.aborted && signal.reason && signal.reason.name === 'AbortError')) {
-        report(error && error.name === 'TimeoutError' ? 'request_timeout' : 'network_error');
+        metadata.elapsed_ms = Math.round(performance.now() - started);
+        report(error && error.name === 'TimeoutError' ? 'request_timeout' : 'network_error', metadata);
       }
       throw error;
     }

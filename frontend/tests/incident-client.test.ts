@@ -10,9 +10,9 @@ function runtime(fetcher: jest.Mock) {
   const sandbox: any = {window:win,document:{addEventListener:jest.fn()},location:{hostname:"app.aoriarh.fr",origin:"https://app.aoriarh.fr",href:"https://app.aoriarh.fr/demo?q=RH_SECRET",pathname:"/demo"},
     navigator:{onLine:true},crypto:{randomUUID},URL,Headers,AbortSignal,
     sessionStorage:{getItem:(key:string) => saved.get(key),setItem:(key:string,value:string) => saved.set(key,value)},
-    setTimeout,clearTimeout,Date,JSON};
+    setTimeout,clearTimeout,Date,JSON,performance};
   vm.runInNewContext(fs.readFileSync("public/incident-client.js","utf8"),sandbox);
-  return {win,handlers,sandbox};
+  return {win,handlers,sandbox,saved};
 }
 
 it("reports errors without request body, query, error text or credentials", async () => {
@@ -90,4 +90,36 @@ it("defers only the managed first 401 and still reports final or server failures
   await new Promise(resolve => setTimeout(resolve,0));
   const reports = fetcher.mock.calls.filter(args => String(args[0]).includes('/telemetry/'));
   expect(reports.map(args => JSON.parse(args[1].body).status)).toEqual([401,500]);
+});
+
+it('persists timeout diagnostics while keeping authentication only in HTTP headers', async () => {
+  const fetcher = jest.fn(async (_url:string,_options?:any)=>({status:202,ok:true}));
+  const {win,saved,sandbox} = runtime(fetcher);
+  sandbox.document.visibilityState = 'hidden';
+  win.aoriaReportIncident('request_timeout', {
+    request_path:'/api/v1/conversations/PRIVATE_ID/messages', method:'POST',
+    request_id:randomUUID(), elapsed_ms:30012,timeout_ms:30000,token:'PRIVATE_TOKEN',
+  });
+  const call = fetcher.mock.calls[0];
+  const report = JSON.parse(call[1].body);
+  expect(report).toMatchObject({code:'request_timeout',operation:'conversations.messages',
+    elapsed_ms:30012,timeout_ms:30000,method:'POST',visibility:'hidden',online:true,
+    occurred_at:expect.any(Number)});
+  expect(call[1].headers.Authorization).toBe('Bearer PRIVATE_TOKEN');
+  expect(JSON.stringify(report)).not.toContain('PRIVATE');
+  expect([...saved.values()].join('')).not.toContain('PRIVATE');
+  await new Promise(resolve => setTimeout(resolve,0));
+});
+
+it('retains the original occurrence time across delayed delivery', async () => {
+  const fetcher = jest.fn(async (_url:string,_options?:any)=>({status:202,ok:true}));
+  const {win,sandbox,saved,handlers} = runtime(fetcher);
+  sandbox.navigator.onLine = false;
+  win.aoriaReportIncident('request_timeout',{request_path:'/api/v1/users/me'});
+  expect(fetcher).not.toHaveBeenCalled();
+  const queued = JSON.parse(saved.get('aoria-technical-incidents-v1')!)[0];
+  expect(queued.event.online).toBe(false);
+  sandbox.navigator.onLine = true;
+  await handlers.online();
+  expect(JSON.parse(fetcher.mock.calls[0][1].body).occurred_at).toBe(queued.event.occurred_at);
 });

@@ -21,12 +21,23 @@ async function fetchWithTimeout(
   timeoutMs: number = DEFAULT_TIMEOUT_MS,
 ): Promise<Response> {
   const controller = new AbortController();
+  const started = performance.now();
+  const headers = new Headers(init.headers);
+  const requestId = globalThis.crypto?.randomUUID?.();
+  if (requestId) headers.set("X-Aoria-Request-ID", requestId);
   const id = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    return await fetch(input, { ...init, signal: controller.signal });
+    return await fetch(input, { ...init, headers, signal: controller.signal });
   } catch (e) {
     if ((e as Error)?.name === "AbortError") {
-      reportIncident("request_timeout");
+      reportIncident("request_timeout", {
+        request_id: requestId,
+        request_path: new URL(String(input)).pathname,
+        method: init.method || "GET",
+        elapsed_ms: Math.round(performance.now() - started),
+        timeout_ms: timeoutMs,
+        token: headers.get("Authorization")?.replace(/^Bearer /i, ""),
+      });
       throw new Error(
         "La requête a expiré. Votre connexion est peut-être instable, réessayez.",
       );

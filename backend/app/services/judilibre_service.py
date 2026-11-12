@@ -1087,6 +1087,8 @@ class JudilibreService:
         client: httpx.AsyncClient,
         path: str,
         params: dict | None = None,
+        *,
+        strict: bool = False,
     ) -> dict | None:
         """Make a GET request to the Judilibre API with OAuth2 Bearer auth."""
         url = f"{self.base_url}{path}"
@@ -1122,6 +1124,8 @@ class JudilibreService:
                     continue
 
                 if response.status_code == 404:
+                    if strict:
+                        response.raise_for_status()
                     return None
 
                 # Judilibre returns 416 (Range Not Satisfiable) when the
@@ -1130,6 +1134,8 @@ class JudilibreService:
                 # rather than a real error : the data already collected is
                 # valid, only the next page is unavailable.
                 if response.status_code == 416:
+                    if strict:
+                        response.raise_for_status()
                     logger.info(
                         "Judilibre 416 — pagination cap reached at %s, stopping",
                         params.get("batch") if params else "?",
@@ -1145,6 +1151,8 @@ class JudilibreService:
                 if attempt < _MAX_RETRIES - 1:
                     await asyncio.sleep(_RETRY_DELAY)
                     continue
+                if strict:
+                    raise
                 logger.error("Judilibre API timeout for %s", path)
                 return None
 

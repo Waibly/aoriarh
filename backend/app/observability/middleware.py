@@ -17,7 +17,11 @@ class IncidentMiddleware:
             "/api/v1/telemetry/health",
         }:
             return await self.app(scope, receive, send)
-        request_id = str(uuid.uuid4())
+        headers = dict(scope.get("headers", []))
+        try:
+            request_id = str(uuid.UUID(headers.get(b"x-aoria-request-id", b"").decode("ascii")))
+        except (ValueError, UnicodeDecodeError):
+            request_id = str(uuid.uuid4())
         fields = {
             "request_id": request_id,
             "incident_key": "request:" + request_id,

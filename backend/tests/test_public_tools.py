@@ -80,6 +80,20 @@ def test_hcr_scope_is_accepted_and_labelled() -> None:
     assert "HCR (IDCC 1979)" in rendered
 
 
+@pytest.mark.parametrize(
+    "idcc", ["1090", "1501", "3248", "0016", "0573", "1527", "0029", "1596", "1597"]
+)
+def test_new_simulator_agreements_are_accepted_and_labelled(idcc):
+    summary = DismissalToolSummary.model_validate_json(
+        json.dumps({**_valid_payload(), "agreement_scope": "ccn_" + idcc})
+    )
+    assert "IDCC " + idcc in _email_html(summary)
+    with pytest.raises(ValidationError):
+        DismissalToolSummary.model_validate_json(
+            json.dumps({**_valid_payload(), "agreement_scope": "ccn_9999"})
+        )
+
+
 def _valid_mutual_termination_payload() -> dict:
     return {
         "usage_id": "7c9e6a8d-75e1-4998-bc7e-45a794706ceb",

@@ -152,3 +152,40 @@ async def test_api_get_retries_transient_server_errors(monkeypatch):
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
         data = await instance._api_get(client, "/search", {"query": "x"})
     assert data == {"results": []}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("status", [404, 416])
+async def test_strict_source_fetch_keeps_the_original_http_failure(monkeypatch, status):
+    import httpx
+
+    monkeypatch.setattr("app.services.judilibre_service.asyncio.sleep", AsyncMock())
+    instance = service()
+    instance._get_access_token = AsyncMock(return_value="t")
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(lambda _: httpx.Response(status))
+    ) as client:
+        with pytest.raises(httpx.HTTPStatusError) as caught:
+            await instance._api_get(client, "/decision", {"id": "a" * 24}, strict=True)
+        assert caught.value.response.status_code == status
+        assert await instance._api_get(client, "/decision", {"id": "a" * 24}) is None
+
+
+@pytest.mark.asyncio
+async def test_strict_source_timeout_remains_a_timeout_after_bounded_retries(monkeypatch):
+    import httpx
+
+    monkeypatch.setattr("app.services.judilibre_service.asyncio.sleep", AsyncMock())
+    instance = service()
+    instance._get_access_token = AsyncMock(return_value="t")
+    calls = 0
+
+    def timeout(request):
+        nonlocal calls
+        calls += 1
+        raise httpx.ReadTimeout("transport timeout", request=request)
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(timeout)) as client:
+        with pytest.raises(httpx.ReadTimeout):
+            await instance._api_get(client, "/decision", {"id": "a" * 24}, strict=True)
+    assert calls == 3

@@ -283,7 +283,7 @@ app.add_middleware(
     allow_origins=settings.cors_origins,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allow_headers=["Content-Type", "Authorization", "X-Aoria-Auth-Retry"],
+    allow_headers=["Content-Type", "Authorization", "X-Aoria-Auth-Retry", "X-Aoria-Request-ID"],
     expose_headers=["Content-Disposition", "X-Request-ID", "X-Fiche-Id", "X-Fiche-Truncated"],
     max_age=3600,
 )
@@ -309,8 +309,18 @@ async def log_requests(request: Request, call_next) -> Response:
         return await call_next(request)
 
     start = time.perf_counter()
+    if request.headers.get("x-aoria-request-id"):
+        logger.info(
+            "http_request_started",
+            method=request.method,
+            path=request.url.path,
+            request_id=getattr(request.state, "request_id", None),
+        )
     response = await call_next(request)
     duration_ms = round((time.perf_counter() - start) * 1000, 1)
+    from app.observability.store import context
+
+    incident_context = context.get() or {}
 
     logger.info(
         "http_request",
@@ -318,6 +328,8 @@ async def log_requests(request: Request, call_next) -> Response:
         path=request.url.path,
         status=response.status_code,
         duration_ms=duration_ms,
+        request_id=getattr(request.state, "request_id", None),
+        user_id=incident_context.get("user_id"),
         client_ip=request.client.host if request.client else None,
     )
     return response

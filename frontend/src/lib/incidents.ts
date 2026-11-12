@@ -2,7 +2,18 @@
 
 type IncidentCode = "http_error" | "ui_error" | "react_error" | "stream_error" | "stream_incomplete" | "stream_parse_error" | "turnstile_error" | "turnstile_timeout" | "request_timeout";
 export type IncidentReason = "provider_quota_exhausted" | "provider_rate_limited" | "server_error";
-export type IncidentOptions = { status?: number; request_id?: string | null; id?: string; reason?: IncidentReason };
+export type IncidentOptions = {
+  status?: number;
+  request_id?: string | null;
+  id?: string;
+  reason?: IncidentReason;
+  request_path?: string;
+  method?: string;
+  elapsed_ms?: number;
+  timeout_ms?: number;
+  /** HTTP authentication only; never persisted or included in incident metadata. */
+  token?: string;
+};
 
 /** Protocol codes only: no error messages or generated text enter telemetry. */
 export function incidentReason(value: unknown): IncidentReason | undefined {

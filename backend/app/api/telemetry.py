@@ -1,5 +1,6 @@
 """Public, bounded metadata collector. No free text or user-supplied identity."""
 
+import asyncio
 import json
 import time
 import uuid
@@ -8,8 +9,13 @@ from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from sqlalchemy import select
+from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.dependencies import require_role
+from app.core.database import get_db
+from app.core.dependencies import get_current_user, require_role, security_scheme
+from app.models.user import User
 from app.observability.store import capture, connection, enabled, get_state
 
 router = APIRouter()
@@ -63,6 +69,32 @@ class IncidentInput(BaseModel):
     request_id: uuid.UUID | None = None
     visitor_id: uuid.UUID | None = None
     status: int | None = Field(default=None, ge=400, le=599)
+    occurred_at: int | None = Field(default=None, ge=0, le=4_102_444_800_000)
+    elapsed_ms: int | None = Field(default=None, ge=0, le=86_400_000)
+    timeout_ms: int | None = Field(default=None, ge=0, le=86_400_000)
+    online: bool | None = None
+    visibility: Literal["visible", "hidden"] | None = None
+    method: Literal["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"] | None = None
+    operation: (
+        Literal[
+            "users.me",
+            "billing.quota",
+            "organisations.list",
+            "conventions.organisation",
+            "conversations.list",
+            "conversations.read",
+            "conversations.messages",
+            "dossiers.list",
+            "auth.session",
+            "auth",
+            "documents",
+            "billing",
+            "admin",
+            "api.other",
+            "frontend.other",
+        ]
+        | None
+    ) = None
 
 
 def allow_client(ip):
@@ -78,7 +110,11 @@ def allow_client(ip):
 
 
 @router.post("/incidents", status_code=202)
-async def receive_incident(request: Request):
+async def receive_incident(
+    request: Request,
+    credentials=Depends(security_scheme),
+    db: AsyncSession = Depends(get_db),
+):
     if request.headers.get("origin") not in ORIGINS:
         raise HTTPException(403, "Origin not allowed")
     # Acknowledge cached marketing clients without recording or retrying their events.
@@ -102,6 +138,18 @@ async def receive_incident(request: Request):
     if not enabled():
         raise HTTPException(503, "Incident collector not configured")
     data = incident.model_dump(mode="json", exclude_none=True)
+    if credentials is not None:
+        # Identity comes exclusively from a valid live session. Invalid/expired
+        # authentication or a DB outage must not prevent storing the incident.
+        try:
+            async with asyncio.timeout(1):
+                user = await get_current_user(credentials=credentials, db=db)
+            data["user_id"] = str(user.id)
+            data["identity_status"] = "authenticated"
+        except HTTPException:
+            data["identity_status"] = "unverified"
+        except (SQLAlchemyError, TimeoutError):
+            data["identity_status"] = "unavailable"
     key = (
         "request:" + str(incident.request_id)
         if incident.request_id
@@ -121,12 +169,13 @@ async def list_incidents(
     state: Literal["pending", "failed", "delivered"] | None = None,
     offset: int = Query(default=0, ge=0),
     _user=Depends(require_role(["admin"])),
+    db: AsyncSession = Depends(get_db),
 ):
     if not enabled():
         return {"configured": False, "items": [], "counts": {}}
-    with connection() as db:
+    with connection() as incident_db:
         where, args = (" AND state=?", [state]) if state else ("", [])
-        rows = db.execute(
+        rows = incident_db.execute(
             "SELECT * FROM incidents WHERE "
             + APP_ONLY
             + where
@@ -135,15 +184,30 @@ async def list_incidents(
         ).fetchall()
         counts = {
             r[0]: r[1]
-            for r in db.execute(
+            for r in incident_db.execute(
                 "SELECT state,count(*) FROM incidents WHERE " + APP_ONLY + " GROUP BY state"
             )
         }
+    items = [{**dict(r), "payload": json.loads(r["payload"])} for r in rows]
+    user_ids = set()
+    for item in items:
+        try:
+            user_ids.add(uuid.UUID(item["payload"].get("user_id", "")))
+        except ValueError:
+            pass
+    users = {}
+    if user_ids:
+        result = await db.execute(
+            select(User.id, User.full_name, User.email).where(User.id.in_(user_ids))
+        )
+        users = {str(row.id): {"name": row.full_name, "email": row.email} for row in result}
+    for item in items:
+        item["user"] = users.get(item["payload"].get("user_id"))
     return {
         "configured": True,
         "counts": counts,
         "last_delivery": get_state("slack_last_result"),
-        "items": [{**dict(r), "payload": json.loads(r["payload"])} for r in rows],
+        "items": items,
     }
 
 

@@ -48,7 +48,21 @@ class DismissalToolSummary(BaseModel):
     tool_id: Literal["dismissal_indemnity"]
     turnstile_token: str = Field(min_length=1, max_length=2_048)
     agreement_scope: Literal[
-        "ccn_0413", "ccn_1486", "ccn_1979", "other_ccn", "unknown_ccn", "no_ccn"
+        "ccn_0413",
+        "ccn_1486",
+        "ccn_1979",
+        "ccn_1090",
+        "ccn_1501",
+        "ccn_3248",
+        "ccn_0016",
+        "ccn_0573",
+        "ccn_1527",
+        "ccn_0029",
+        "ccn_1596",
+        "ccn_1597",
+        "other_ccn",
+        "unknown_ccn",
+        "no_ccn",
     ]
     professional_category: Literal[
         "non_cadre", "cadre", "cadre_direction", "etam", "engineer_cadre", "not_applicable"
@@ -214,6 +228,15 @@ _LABELS = {
     "ccn_0413": "CCN 66 (IDCC 0413)",
     "ccn_1486": "Syntec (IDCC 1486)",
     "ccn_1979": "HCR (IDCC 1979)",
+    "ccn_1090": "Services de l’automobile (IDCC 1090)",
+    "ccn_1501": "Restauration rapide (IDCC 1501)",
+    "ccn_3248": "Métallurgie (IDCC 3248)",
+    "ccn_0016": "Transports routiers (IDCC 0016)",
+    "ccn_0573": "Commerces de gros (IDCC 0573)",
+    "ccn_1527": "Immobilier (IDCC 1527)",
+    "ccn_0029": "FEHAP (IDCC 0029)",
+    "ccn_1596": "Bâtiment — ouvriers, jusqu’à 10 salariés (IDCC 1596)",
+    "ccn_1597": "Bâtiment — ouvriers, plus de 10 salariés (IDCC 1597)",
     "other_ccn": "Autre CCN",
     "unknown_ccn": "CCN inconnue",
     "no_ccn": "Sans CCN",
@@ -351,7 +374,22 @@ async def notify_dismissal_tool_usage(request: Request) -> dict[str, str]:
             raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE)
     try:
         summary = DismissalToolSummary.model_validate_json(bytes(body))
-    except (ValidationError, json.JSONDecodeError):
+    except (ValidationError, json.JSONDecodeError) as exc:
+        # Field/type contracts only: never log submitted values or the anti-bot token.
+        errors = exc.errors() if isinstance(exc, ValidationError) else []
+        invalid_fields = sorted(
+            {
+                str(e["loc"][0])
+                if e["loc"] and e["loc"][0] in DismissalToolSummary.model_fields
+                else "unknown_field"
+                for e in errors
+            }
+        )
+        logger.warning(
+            "dismissal_summary_validation_failed fields=%s types=%s",
+            invalid_fields,
+            sorted({e["type"] for e in errors}),
+        )
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="Résumé d'utilisation invalide.",

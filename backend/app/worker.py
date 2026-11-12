@@ -1819,6 +1819,7 @@ async def run_social_ca_sync(ctx: dict) -> dict:
                 deferred=bool(pending),
                 items_fetched=result["inventoried"],
                 items_created=result["created"],
+                items_updated=result["recovered"],
                 items_skipped=result["existing"],
                 errors=len(result["errors"]),
                 error_message=message[:500] or None,
