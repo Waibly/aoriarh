@@ -1586,18 +1586,50 @@ async def run_data_retention_purge(ctx: dict) -> None:
     )
 
 
-async def run_ccn_blue_green_cleanup(ctx: dict, old_doc_ids: list[str]) -> None:
-    """Clean up old CCN documents after blue-green sync (new doc is indexed)."""
+async def run_ccn_blue_green_cleanup(ctx: dict, old_doc_ids: list[str], attempt: int = 0) -> None:
+    """Remove superseded public documents once their replacement is indexed.
+
+    A replacement still being indexed keeps the old document; the job then
+    checks again later (every 5 min, for up to 6 h) instead of giving up and
+    leaving both versions in the corpus."""
     logger.info("Worker: blue-green cleanup for %d old doc(s): %s", len(old_doc_ids), old_doc_ids)
     session_factory = ctx["session_factory"]
     try:
+        from app.models.document import Document
         from app.services.kali_service import KaliService
 
         async with session_factory() as db:
             cleaned = await KaliService._cleanup_old_ccn_docs(db, old_doc_ids)
-        logger.info("Worker: blue-green cleanup completed — %d doc(s) removed", cleaned)
+            remaining = [
+                doc_id
+                for doc_id in old_doc_ids
+                if await db.get(Document, uuid.UUID(doc_id)) is not None
+            ]
+        logger.info(
+            "Worker: blue-green cleanup — %d doc(s) removed, %d waiting", cleaned, len(remaining)
+        )
+        if remaining and attempt < _CLEANUP_MAX_ATTEMPTS:
+            from app.rag.tasks import get_arq_pool
+
+            pool = await get_arq_pool()
+            await pool.enqueue_job(
+                "run_ccn_blue_green_cleanup",
+                remaining,
+                attempt + 1,
+                _job_id=f"ccn_cleanup_{'_'.join(remaining[:3])}_{attempt + 1}",
+                _defer_by=_CLEANUP_RETRY_SECONDS,
+            )
+        elif remaining:
+            logger.error(
+                "Worker: blue-green cleanup gave up, old doc(s) kept: %s (replacement not ready)",
+                remaining,
+            )
     except Exception:
         logger.exception("Worker: blue-green cleanup failed for docs %s", old_doc_ids)
+
+
+_CLEANUP_RETRY_SECONDS = 300
+_CLEANUP_MAX_ATTEMPTS = 72
 
 
 async def run_daily_bocc_check(ctx: dict) -> None:

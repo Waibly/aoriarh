@@ -157,3 +157,15 @@ def test_preparation_territory_reaches_threaded_searches(corpus):
 
     ctx = contextvars.copy_context()
     assert ctx.run(asyncio.run, scenario()) == {"ccn-national", "code"}
+
+
+def test_agreement_published_alone_is_read_from_its_document_name():
+    from app.services.territoire import document_territoires
+
+    assert document_territoires(
+        "Accord du 12 mars 2025 relatif à la prime de vie chère (Martinique) (IDCC 0413)"
+        " — BOCC 2025-14",
+        "Convention collective nationale des établissements pour personnes inadaptées",
+    ) == ["martinique"]
+    # A generated KALI snapshot is tagged text by text, never by its name.
+    assert document_territoires("CCN Banques (Guadeloupe) (IDCC 2704)", None) == []

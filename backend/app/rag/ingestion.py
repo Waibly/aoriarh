@@ -18,6 +18,7 @@ from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
+from app.models.ccn import CcnReference
 from app.models.document import Document
 from app.rag.article_chunker import ArticleChunker, ChunkWithMeta
 from app.rag.chunker import LegalChunker
@@ -30,7 +31,7 @@ from app.rag.text_cleaner import clean_text
 from app.rag.text_extractor import TextExtractor
 from app.services.cost_tracker import cost_tracker
 from app.services.storage_service import StorageService
-from app.services.territoire import instrument_territoires
+from app.services.territoire import document_territoires, instrument_territoires
 
 # Source types that use article-aware chunking (Codes, CCN and JORF acts)
 ARTICLE_AWARE_SOURCE_TYPES = {
@@ -495,6 +496,14 @@ class IngestionPipeline:
 
             # 8. Build Qdrant points with metadata
             org_id_str = str(doc.organisation_id) if doc.organisation_id else "common"
+            # Accord publié seul (BOCC) propre à un territoire : son nom le dit.
+            doc_territoires: list[str] = []
+            if doc.source_type in ("convention_collective_nationale", "accord_branche"):
+                idcc_match = re.search(r"IDCC\s+(\d{4})", doc.name)
+                convention = await db.get(CcnReference, idcc_match.group(1)) if idcc_match else None
+                doc_territoires = document_territoires(
+                    doc.name, convention.titre if convention else None
+                )
             new_point_ids: list[str] = []
             points = []
             for i, (chunk_text, dense_emb, sparse_vec) in enumerate(
@@ -561,6 +570,9 @@ class IngestionPipeline:
                             payload["effective_to"] = meta.effective_to
                         if meta.instrument_status:
                             payload["instrument_status"] = meta.instrument_status
+
+                if doc_territoires and "territoires" not in payload:
+                    payload["territoires"] = doc_territoires
 
                 # Propagate jurisprudence metadata into Qdrant payload
                 if doc.source_type in JURISPRUDENCE_SOURCE_TYPES:

@@ -181,3 +181,16 @@ def instrument_territoires(instrument_title: str | None, convention_name: str | 
     if territoires_from_title(convention_name):
         return []
     return territoires_from_title(instrument_title)
+
+
+_GENERATED_KALI_PREFIXES = ("CCN ", "Accords de branche — ")
+
+
+def document_territoires(doc_name: str | None, convention_title: str | None) -> list[str]:
+    """Territoires d'un accord publié seul (BOCC), d'après le nom du document.
+
+    Les instantanés KALI (« CCN … », « Accords de branche — … ») sont étiquetés
+    texte par texte : leur nom, celui de la convention, n'est pas un signal."""
+    if not doc_name or doc_name.startswith(_GENERATED_KALI_PREFIXES):
+        return []
+    return instrument_territoires(doc_name, convention_title)
