@@ -1,16 +1,51 @@
 """One access policy for semantic searches and identifier/parent lookups."""
 
-from qdrant_client.models import FieldCondition, Filter, MatchAny, MatchValue
+from contextvars import ContextVar
+
+from qdrant_client.models import (
+    FieldCondition,
+    Filter,
+    IsEmptyCondition,
+    MatchAny,
+    MatchValue,
+    PayloadField,
+)
+
+from app.services.territoire import parse_territoire
+
+# Lieu d'implantation de l'organisation pour la préparation en cours. Fixé une
+# fois par RAGAgent.prepare_context : les nombreuses recherches et lectures de la
+# préparation (y compris celles lancées via asyncio.to_thread, qui copient le
+# contexte) appliquent ainsi la même règle sans relayer le territoire partout.
+# None = territoire inconnu → aucun accord régional n'est écarté.
+current_territoire: ContextVar[str | None] = ContextVar("current_territoire", default=None)
+
+
+def set_current_territoire(value: str | None) -> None:
+    """Code ou libellé de territoire (contexte d'organisation) ; None = inconnu."""
+    current_territoire.set(parse_territoire(value).value if value else None)
+
+
+def _territory_condition(territoire: str) -> Filter:
+    """Textes sans territoire propre, ou propres au territoire de l'organisation."""
+    return Filter(
+        should=[
+            IsEmptyCondition(is_empty=PayloadField(key="territoires")),
+            FieldCondition(key="territoires", match=MatchAny(any=[territoire])),
+        ]
+    )
 
 
 def build_org_access_filter(
     organisation_id: str | None,
     org_idcc_list: list[str] | None = None,
     authorized_private_document_ids: list[str] | None = None,
+    territoire: str | None = None,
 ) -> Filter | None:
     # Only explicit administrative callers may omit the organisation.
     if not organisation_id:
         return None
+    territoire = territoire or current_territoire.get()
     ccn_types = ["convention_collective_nationale", "accord_branche"]
     should = [
         FieldCondition(key="organisation_id", match=MatchValue(value=organisation_id)),
@@ -21,15 +56,16 @@ def build_org_access_filter(
     ]
     if org_idcc_list:
         for source_type in ccn_types:
-            should.append(
-                Filter(
-                    must=[
-                        FieldCondition(key="organisation_id", match=MatchValue(value="common")),
-                        FieldCondition(key="source_type", match=MatchValue(value=source_type)),
-                        FieldCondition(key="idcc", match=MatchAny(any=org_idcc_list)),
-                    ]
-                )
-            )
+            must = [
+                FieldCondition(key="organisation_id", match=MatchValue(value="common")),
+                FieldCondition(key="source_type", match=MatchValue(value=source_type)),
+                FieldCondition(key="idcc", match=MatchAny(any=org_idcc_list)),
+            ]
+            # Accord régional d'une convention nationale (valeur du point en
+            # Martinique…) : seulement pour une entreprise de ce territoire.
+            if territoire:
+                must.append(_territory_condition(territoire))
+            should.append(Filter(must=must))
     private_exclusion = Filter(
         must_not=[FieldCondition(key="private", match=MatchValue(value=True))]
     )

@@ -14,7 +14,7 @@ from openai import AsyncOpenAI
 
 import app.rag.config as rag_config
 from app.core.config import settings
-from app.rag.access_filter import build_org_access_filter
+from app.rag.access_filter import build_org_access_filter, set_current_territoire
 from app.rag.chronology import ChronologyRequest
 from app.rag.config import (
     CCN_FLOOR_TOP,
@@ -758,6 +758,8 @@ class RAGAgent:
     ) -> tuple[list[SearchResult], str, RagTrace]:
         """Run steps 0-5 (non-streaming) and return results + reformulated query + trace."""
         self._org_id = organisation_id
+        # Accords régionaux de CCN filtrés selon le lieu d'implantation.
+        set_current_territoire(org_context.get("territoire") if org_context else None)
         self._user_id = user_id
         self._conversation_id = conversation_id
         self._is_replay = is_replay

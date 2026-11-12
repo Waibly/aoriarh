@@ -127,12 +127,15 @@ async def refresh_ccn_reference(
     user: User = Depends(require_role(["admin"])),
     db: AsyncSession = Depends(get_db),
 ) -> dict:
-    """Refresh the CCN reference table from the KALI API (admin only)."""
-    from app.services.kali_service import KaliService
+    """Queue a refresh of the CCN reference table from KALI (admin only).
 
-    service = KaliService()
-    count = await service.refresh_ccn_reference(db)
-    return {"refreshed": count}
+    About a thousand KALI calls (~10 min): runs in the worker, result in the
+    sync logs (type « ccn_reference »)."""
+    from app.rag.tasks import get_arq_pool
+
+    pool = await get_arq_pool()
+    await pool.enqueue_job("run_ccn_reference_refresh", _job_id="ccn_reference_refresh")
+    return {"queued": True}
 
 
 @router.post("/admin/seed-reference", status_code=status.HTTP_200_OK)

@@ -752,6 +752,54 @@ async def run_legislation_sync(ctx: dict) -> None:
     logger.info("Worker: legislation sync completed")
 
 
+async def run_ccn_reference_refresh(ctx: dict) -> None:
+    """Liste des conventions proposées aux utilisateurs, relue depuis KALI.
+
+    Conventions en vigueur étendues ET non étendues, seulement celles qui ont
+    au moins un texte en vigueur (installables). Mensuel + bouton admin."""
+    import time as _time
+
+    session_factory = ctx["session_factory"]
+    sync_log_id = await _create_sync_log(session_factory, "ccn_reference")
+    t0 = _time.perf_counter()
+    try:
+        from app.services.kali_service import KaliService
+
+        async with session_factory() as db:
+            result = await KaliService().refresh_ccn_reference(db)
+        logger.info(
+            "Worker: CCN reference refresh — %d créées (%s), %d mises à jour, "
+            "%d non installables, %d erreurs",
+            result.created,
+            ", ".join(result.created_idcc[:50]),
+            result.updated,
+            result.not_installable,
+            result.errors,
+        )
+        await _finish_sync_log(
+            session_factory,
+            sync_log_id,
+            success=result.errors == 0,
+            items_fetched=result.containers,
+            items_created=result.created,
+            items_updated=result.updated,
+            items_skipped=result.not_installable,
+            errors=result.errors,
+            error_message="; ".join(result.error_messages[:5]) or None,
+            duration_ms=int((_time.perf_counter() - t0) * 1000),
+        )
+    except Exception as exc:
+        logger.exception("Worker: CCN reference refresh failed")
+        await _finish_sync_log(
+            session_factory,
+            sync_log_id,
+            success=False,
+            errors=1,
+            error_message=str(exc)[:500],
+            duration_ms=int((_time.perf_counter() - t0) * 1000),
+        )
+
+
 async def run_ani_sync(ctx: dict) -> None:
     """Cron mensuel — ANI (accords nationaux interprofessionnels) en vigueur depuis 2010.
 
@@ -1863,6 +1911,7 @@ class WorkerSettings:
         run_jorf_sync,
         run_legislation_sync,
         run_ani_sync,
+        run_ccn_reference_refresh,
         run_boss_sync,
         run_scheduled_boss_sync,
         run_scheduled_sync,
@@ -1903,6 +1952,9 @@ class WorkerSettings:
         # Idempotent (dédup sur l'id KALITEXT) : le 1er passage fait le backfill
         # 2010→aujourd'hui, les suivants n'ajoutent que le nouvel ANI (~1-3/an).
         cron(run_ani_sync, day=1, hour=4, minute=0),
+        # Liste des conventions proposées (nouvelles CCN, statut d'extension) :
+        # 1er du mois 4h30 UTC, ~1 000 appels KALI étalés sur ~10 min.
+        cron(run_ccn_reference_refresh, day=1, hour=4, minute=30),
         # Daily BOSS discovery: new/changed versions require documentary admission.
         cron(run_scheduled_boss_sync, hour=5, minute=0),
         # Billing lifecycle: every day at 9:00 AM UTC (trial reminders + expirations)

@@ -6,6 +6,7 @@ transmis au moteur comme la CCN pour que la recherche et la rédaction en
 tiennent compte sans que l'utilisateur ait à le rappeler.
 """
 
+import re
 from enum import StrEnum
 
 
@@ -126,3 +127,57 @@ def territoire_instruction(value: str | None) -> str | None:
             "comme point de comparaison, en le précisant."
         )
     return None
+
+
+# --- Textes conventionnels propres à un territoire ---------------------------
+#
+# Une convention nationale embarque parfois des accords régionaux (« Martinique
+# Accord … relatif à la valeur du point », « prime de vie chère (Guadeloupe) »).
+# Ils ne valent que pour leur territoire : une entreprise de métropole ne doit
+# pas les recevoir, une entreprise de ce territoire doit les garder. Le titre du
+# texte est le seul signal fiable fourni par KALI.
+
+_DOM = sorted(t.value for t in _OUTRE_MER_CODE_TRAVAIL)
+
+_TITLE_PATTERNS: list[tuple[re.Pattern[str], list[str]]] = [
+    (re.compile(r"\bMartinique\b", re.I), [Territoire.MARTINIQUE.value]),
+    (re.compile(r"\bGuadeloupe\b", re.I), [Territoire.GUADELOUPE.value]),
+    (re.compile(r"\bGuyane\b", re.I), [Territoire.GUYANE.value]),
+    (re.compile(r"\bMayotte\b", re.I), [Territoire.MAYOTTE.value]),
+    # « réunion » minuscule désigne presque toujours une réunion paritaire :
+    # seule l'île, écrite avec une majuscule après « la » ou entre parenthèses.
+    (re.compile(r"(?:\b[Ll]a\s+|\()R[ée]union\b(?!s)"), [Territoire.LA_REUNION.value]),
+    (
+        re.compile(r"\bSaint-Pierre-et-Miquelon\b|\bMiquelon\b", re.I),
+        [Territoire.SAINT_PIERRE_MIQUELON.value],
+    ),
+    (re.compile(r"\bSaint-Barth[ée]lemy\b", re.I), [Territoire.SAINT_BARTHELEMY.value]),
+    (re.compile(r"\bSaint-Martin\b(?!-)", re.I), [Territoire.SAINT_MARTIN.value]),
+    (re.compile(r"\bAntilles\b", re.I), [Territoire.GUADELOUPE.value, Territoire.MARTINIQUE.value]),
+    (re.compile(r"\bNouvelle-Cal[ée]donie\b", re.I), [Territoire.NOUVELLE_CALEDONIE.value]),
+    (re.compile(r"\bPolyn[ée]sie\b", re.I), [Territoire.POLYNESIE.value]),
+    (re.compile(r"\bWallis\b", re.I), [Territoire.WALLIS_FUTUNA.value]),
+    (re.compile(r"\bD\.?R?\.?O\.?M\b"), _DOM),
+    (re.compile(r"d[ée]partements?\s+(?:et\s+r[ée]gions?\s+)?d'outre-mer", re.I), _DOM),
+]
+
+
+def territoires_from_title(title: str | None) -> list[str]:
+    """Codes des territoires nommés dans le titre d'un texte (vide = aucun)."""
+    if not title:
+        return []
+    found: list[str] = []
+    for pattern, codes in _TITLE_PATTERNS:
+        if pattern.search(title):
+            found.extend(c for c in codes if c not in found)
+    return sorted(found)
+
+
+def instrument_territoires(instrument_title: str | None, convention_name: str | None) -> list[str]:
+    """Territoires d'un texte rattaché à une convention, s'il lui est propre.
+
+    Une convention elle-même territoriale (banques de la Guadeloupe…) a été
+    choisie par l'entreprise : ses textes ne sont jamais restreints."""
+    if territoires_from_title(convention_name):
+        return []
+    return territoires_from_title(instrument_title)

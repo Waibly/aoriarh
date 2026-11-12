@@ -30,6 +30,7 @@ from app.rag.text_cleaner import clean_text
 from app.rag.text_extractor import TextExtractor
 from app.services.cost_tracker import cost_tracker
 from app.services.storage_service import StorageService
+from app.services.territoire import instrument_territoires
 
 # Source types that use article-aware chunking (Codes, CCN and JORF acts)
 ARTICLE_AWARE_SOURCE_TYPES = {
@@ -546,6 +547,11 @@ class IngestionPipeline:
                             payload["instrument_id"] = meta.instrument_id
                         if meta.instrument_title:
                             payload["instrument_title"] = meta.instrument_title
+                            # Accord régional d'une convention nationale : réservé
+                            # aux entreprises de ce territoire (access_filter).
+                            territoires = instrument_territoires(meta.instrument_title, doc.name)
+                            if territoires:
+                                payload["territoires"] = territoires
                         if meta.effective_from:
                             payload["effective_from"] = meta.effective_from
                             # A reliable parent date is preferable to a date

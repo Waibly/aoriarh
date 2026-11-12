@@ -32,6 +32,7 @@ _RETRY_DELAY = 2.0
 _MAX_RETRIES = 3
 _TOKEN_REFRESH_MARGIN = 300
 _API_THROTTLE = 0.2  # 5 req/s max
+_LIST_PAGE_SIZE = 1000  # /list/conventions accepts 1000 texts per page
 
 
 @dataclass
@@ -67,6 +68,20 @@ class KaliBulkSyncResult:
     skipped_identical: int = 0
     errors: int = 0
     details: list[KaliSyncResult] = field(default_factory=list)
+
+
+@dataclass
+class CcnReferenceRefreshResult:
+    """Result of a CCN reference refresh from KALI."""
+
+    listed_texts: int = 0
+    containers: int = 0
+    created: int = 0
+    updated: int = 0
+    not_installable: int = 0
+    errors: int = 0
+    error_messages: list[str] = field(default_factory=list)
+    created_idcc: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -166,83 +181,156 @@ class KaliService:
         logger.info("CCN reference seeded: %d conventions from static data", count)
         return count
 
-    async def refresh_ccn_reference(self, db: AsyncSession) -> int:
-        """Refresh the local CCN reference table from the KALI API.
+    async def refresh_ccn_reference(self, db: AsyncSession) -> CcnReferenceRefreshResult:
+        """Refresh the CCN reference table from KALI (all conventions in force).
 
-        Falls back to static seed data if the API is unavailable.
-        Returns the number of CCN updated/inserted.
+        KALI's /list/conventions lists TEXTS (base, avenants, accords), each
+        carrying its IDCC and container id; pages start at 1. Every container
+        is then read to get the convention's own title and status and to check
+        that it holds at least one text in force — the same condition as
+        installation, so no empty convention is offered to users.
+
+        Extended and non-extended conventions are both kept. Existing rows are
+        updated (title, KALI id, status) but their curated short title is
+        preserved; a convention absent from KALI is left untouched. Any listing
+        failure aborts before writing anything.
         """
         if not self._client_id or not self._client_secret:
-            logger.warning("No Légifrance credentials, falling back to static seed")
-            return await self.seed_ccn_reference(db)
+            raise RuntimeError("Identifiants Légifrance absents")
 
-        all_conventions: list[dict] = []
-        page = 0
-        page_size = 100
+        result = CcnReferenceRefreshResult()
+        containers: dict[str, set[str]] = {}
+        page = 1
+        page_size = _LIST_PAGE_SIZE
 
-        try:
-            async with httpx.AsyncClient(timeout=_REQUEST_TIMEOUT) as client:
-                while True:
-                    data = await self._api_post(
-                        client,
-                        "/list/conventions",
-                        json_body={
-                            "pageNumber": page,
-                            "pageSize": page_size,
-                            "legalStatus": ["VIGUEUR_ETEN", "VIGUEUR_NON_ETEN", "VIGUEUR"],
-                        },
-                    )
-                    if data is None:
-                        break
-
-                    results = data.get("results", [])
-                    all_conventions.extend(results)
-
-                    total = data.get("totalResultNumber", 0)
-                    if (page + 1) * page_size >= total or not results:
-                        break
-                    page += 1
-                    await asyncio.sleep(_API_THROTTLE)
-        except Exception as exc:
-            logger.warning("KALI /list/conventions failed (%s), falling back to seed", exc)
-
-        # Fallback to seed if API returned nothing
-        if not all_conventions:
-            logger.info("API returned no results, using static seed data")
-            return await self.seed_ccn_reference(db)
-
-        count = 0
-        for conv in all_conventions:
-            idcc = self._extract_idcc(conv)
-            if not idcc:
-                continue
-
-            titre = conv.get("title", conv.get("titre", ""))
-            kali_id = conv.get("id", conv.get("cid", ""))
-            etat = conv.get("etat", "")
-
-            existing = await db.get(CcnReference, idcc)
-            if existing:
-                existing.titre = titre
-                existing.kali_id = kali_id
-                existing.etat = etat
-                existing.last_api_check = datetime.now(UTC)
-            else:
-                db.add(
-                    CcnReference(
-                        idcc=idcc,
-                        titre=titre,
-                        titre_court=self._make_titre_court(titre),
-                        kali_id=kali_id,
-                        etat=etat,
-                        last_api_check=datetime.now(UTC),
-                    )
+        async with httpx.AsyncClient(timeout=_REQUEST_TIMEOUT) as client:
+            while True:
+                data = await self._api_post(
+                    client,
+                    "/list/conventions",
+                    json_body={
+                        "pageNumber": page,
+                        "pageSize": page_size,
+                        "legalStatus": ["VIGUEUR", "VIGUEUR_ETEN", "VIGUEUR_NON_ETEN"],
+                    },
                 )
-            count += 1
+                if data is None:
+                    raise RuntimeError(f"KALI /list/conventions page {page} introuvable")
+                texts = data.get("results") or []
+                result.listed_texts += len(texts)
+                for text in texts:
+                    idcc = str(text.get("idcc") or "").strip()
+                    container_id = text.get("cidConteneur") or ""
+                    if idcc.isdigit() and len(idcc) <= 4 and container_id.startswith("KALICONT"):
+                        containers.setdefault(idcc.zfill(4), set()).add(container_id)
+                total = data.get("totalResultNumber") or 0
+                if not texts or page * page_size >= total:
+                    break
+                page += 1
+                await asyncio.sleep(_API_THROTTLE)
+
+            if not containers:
+                raise RuntimeError("KALI n'a renvoyé aucune convention")
+            logger.info(
+                "CCN reference refresh: %d texts listed, %d IDCC",
+                result.listed_texts,
+                len(containers),
+            )
+
+            now = datetime.now(UTC)
+            for idcc, container_ids in sorted(containers.items()):
+                existing = await db.get(CcnReference, idcc)
+                best: tuple[int, str, str, str] | None = None  # (texts, id, titre, etat)
+                for container_id in sorted(container_ids):
+                    await asyncio.sleep(_API_THROTTLE)
+                    result.containers += 1
+                    try:
+                        container = await self._api_post(
+                            client, "/consult/kaliCont", json_body={"id": container_id}
+                        )
+                    except Exception as exc:
+                        result.errors += 1
+                        result.error_messages.append(f"IDCC {idcc} ({container_id}) : {exc}")
+                        continue
+                    if container is None:
+                        continue
+                    in_force, etat = self._container_in_force(container)
+                    if not in_force:
+                        continue
+                    # The convention already chosen by users wins a tie-break.
+                    chosen = existing is not None and existing.kali_id == container_id
+                    rank = in_force + (10**6 if chosen else 0)
+                    if best is None or rank > best[0]:
+                        titre = re.sub(r"\s+", " ", container.get("titre") or "").strip()
+                        best = (rank, container_id, titre, etat)
+                if best is None:
+                    result.not_installable += 1
+                    continue
+                _, container_id, titre, etat = best
+                if existing:
+                    changed = (existing.titre, existing.kali_id, existing.etat) != (
+                        titre or existing.titre,
+                        container_id,
+                        etat,
+                    )
+                    existing.titre = titre or existing.titre
+                    existing.kali_id = container_id
+                    existing.etat = etat
+                    existing.last_api_check = now
+                    if not existing.titre_court:
+                        existing.titre_court = self._make_titre_court(existing.titre)
+                    if changed:
+                        result.updated += 1
+                else:
+                    db.add(
+                        CcnReference(
+                            idcc=idcc,
+                            titre=titre,
+                            titre_court=self._make_titre_court(titre),
+                            kali_id=container_id,
+                            etat=etat,
+                            last_api_check=now,
+                        )
+                    )
+                    result.created += 1
+                    result.created_idcc.append(idcc)
 
         await db.commit()
-        logger.info("CCN reference refreshed from API: %d conventions", count)
-        return count
+        logger.info(
+            "CCN reference refreshed: %d created, %d updated, %d not installable, %d errors",
+            result.created,
+            result.updated,
+            result.not_installable,
+            result.errors,
+        )
+        return result
+
+    @staticmethod
+    def _container_in_force(container: dict) -> tuple[int, str]:
+        """Count a container's texts in force and read the convention's status.
+
+        The status is the base text's (VIGUEUR_ETEN / VIGUEUR_NON_ETEN) when it
+        is in force, else plain VIGUEUR."""
+        count = 0
+        base_etat = ""
+
+        def walk(items: list[dict]) -> None:
+            nonlocal count
+            for item in items:
+                if (item.get("id") or "").startswith("KALITEXT") and (
+                    item.get("etat") or ""
+                ).startswith("VIGUEUR"):
+                    count += 1
+                walk(item.get("sections") or [])
+
+        sections = container.get("sections") or []
+        for section in sections:
+            title = (section.get("title") or section.get("titre") or "").lower()
+            etat = section.get("etat") or ""
+            if title.startswith("texte de base") and etat.startswith("VIGUEUR"):
+                base_etat = base_etat or etat
+        walk(sections)
+        return count, base_etat or "VIGUEUR"
 
     async def install_convention(
         self,
@@ -1528,23 +1616,6 @@ class KaliService:
         await db.commit()
         await db.refresh(doc)
         return doc
-
-    @staticmethod
-    def _extract_idcc(conv: dict) -> str | None:
-        """Extract IDCC code from a convention listing result."""
-        # Try direct field
-        idcc = conv.get("idcc", conv.get("num", ""))
-        if idcc:
-            return str(idcc).zfill(4)
-
-        # Try to extract from title
-        title = conv.get("title", conv.get("titre", ""))
-        match = re.search(r"IDCC\s*[:\s]?\s*(\d{1,4})", title, re.IGNORECASE)
-        if match:
-            return match.group(1).zfill(4)
-
-        # Try id field (KALICONT...) — not the IDCC itself
-        return None
 
     @staticmethod
     def _make_titre_court(titre: str) -> str | None:

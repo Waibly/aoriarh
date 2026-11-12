@@ -120,6 +120,8 @@ def ensure_collection(client: QdrantClient) -> None:
     # Without an index Qdrant reads each candidate's on-disk payload: measured in
     # prod (Nov. 2026) 0.375 s per dense query, 0.041 s without that clause.
     _ensure_payload_index(client, "private", PayloadSchemaType.BOOL)
+    # Accords régionaux d'une CCN nationale, filtrés selon le lieu d'implantation.
+    _ensure_payload_index(client, "territoires", PayloadSchemaType.KEYWORD)
 
 
 def _ensure_payload_index(
