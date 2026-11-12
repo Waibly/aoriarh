@@ -203,56 +203,33 @@ class KaliService:
         containers: dict[str, set[str]] = {}
         seen_texts: set[str] = set()
 
+        def collect(texts: list[dict]) -> None:
+            for text in texts:
+                seen_texts.add(text.get("id") or "")
+                idcc = str(text.get("idcc") or "").strip()
+                container_id = text.get("cidConteneur") or ""
+                if idcc.isdigit() and len(idcc) <= 4 and container_id.startswith("KALICONT"):
+                    containers.setdefault(idcc.zfill(4), set()).add(container_id)
+
         async with httpx.AsyncClient(timeout=_REQUEST_TIMEOUT) as client:
-            # KALI serves at most _LIST_WINDOW results per query: beyond, every
-            # page repeats the last one. Each status is read separately, and a
-            # larger one from both ends of the publication-date order.
+            # KALI paging is lossy on large result sets (at most _LIST_WINDOW
+            # results, and pages overlap). A broad sweep only DISCOVERS the IDCC;
+            # each IDCC is then listed on its own — a small, complete answer —
+            # to find all its containers.
             for status_ in ("VIGUEUR", "VIGUEUR_ETEN", "VIGUEUR_NON_ETEN"):
-                total = None
-                for sort in ("DATE_PUBLI_ASC", "DATE_PUBLI_DESC"):
-                    page = 1
-                    while True:
-                        data = await self._api_post(
-                            client,
-                            "/list/conventions",
-                            json_body={
-                                "pageNumber": page,
-                                "pageSize": _LIST_PAGE_SIZE,
-                                "legalStatus": [status_],
-                                "sort": sort,
-                            },
-                        )
-                        if data is None:
-                            raise RuntimeError(
-                                f"KALI /list/conventions {status_} page {page} introuvable"
-                            )
-                        texts = data.get("results") or []
-                        for text in texts:
-                            text_id = text.get("id") or ""
-                            if text_id in seen_texts:
-                                continue
-                            seen_texts.add(text_id)
-                            idcc = str(text.get("idcc") or "").strip()
-                            container_id = text.get("cidConteneur") or ""
-                            if (
-                                idcc.isdigit()
-                                and len(idcc) <= 4
-                                and container_id.startswith("KALICONT")
-                            ):
-                                containers.setdefault(idcc.zfill(4), set()).add(container_id)
-                        total = data.get("totalResultNumber") or 0
-                        read = page * _LIST_PAGE_SIZE
-                        if not texts or read >= total or read >= _LIST_WINDOW:
-                            break
-                        page += 1
-                        await asyncio.sleep(_API_THROTTLE)
-                    if (total or 0) <= _LIST_WINDOW:
-                        break  # one order covered everything
-                if (total or 0) > 2 * _LIST_WINDOW:
-                    result.errors += 1
-                    result.error_messages.append(
-                        f"{status_} : {total} textes, seuls {2 * _LIST_WINDOW} lisibles"
+                collect(await self._list_texts(client, {"legalStatus": [status_]}))
+            discovered = set(containers)
+            known = set((await db.execute(select(CcnReference.idcc))).scalars())
+            for idcc in sorted(discovered | known):
+                collect(
+                    await self._list_texts(
+                        client,
+                        {
+                            "idcc": idcc.lstrip("0") or "0",
+                            "legalStatus": ["VIGUEUR", "VIGUEUR_ETEN", "VIGUEUR_NON_ETEN"],
+                        },
                     )
+                )
             result.listed_texts = len(seen_texts)
 
             if not containers:
@@ -330,6 +307,41 @@ class KaliService:
             result.errors,
         )
         return result
+
+    async def _list_texts(self, client: httpx.AsyncClient, criteria: dict) -> list[dict]:
+        """Every text KALI /list/conventions returns for these criteria.
+
+        Pages start at 1. Beyond _LIST_WINDOW results later pages repeat the
+        last one, and pages of a large set overlap: when one order does not
+        fit in a single page, the reverse order is read too."""
+        texts: list[dict] = []
+        for sort in ("DATE_PUBLI_ASC", "DATE_PUBLI_DESC"):
+            page = 1
+            total = 0
+            while True:
+                await asyncio.sleep(_API_THROTTLE)
+                data = await self._api_post(
+                    client,
+                    "/list/conventions",
+                    json_body={
+                        **criteria,
+                        "pageNumber": page,
+                        "pageSize": _LIST_PAGE_SIZE,
+                        "sort": sort,
+                    },
+                )
+                if data is None:
+                    raise RuntimeError(f"KALI /list/conventions {criteria} page {page}")
+                batch = data.get("results") or []
+                texts.extend(batch)
+                total = data.get("totalResultNumber") or 0
+                read = page * _LIST_PAGE_SIZE
+                if not batch or read >= total or read >= _LIST_WINDOW:
+                    break
+                page += 1
+            if total <= _LIST_PAGE_SIZE:
+                break
+        return texts
 
     @staticmethod
     def _container_in_force(container: dict) -> tuple[int, str]:

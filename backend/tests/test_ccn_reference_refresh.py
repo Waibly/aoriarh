@@ -54,8 +54,12 @@ TEXTS = {
     "VIGUEUR_ETEN": [
         _text("2704", "KALICONT2704"),
         {**_text("2704", "KALICONT2704"), "id": "KALITEXT2704b"},
-        _text("9002", "KALICONT9002"),
+        # Beyond the window from both ends: only the per-IDCC listing sees
+        # this second container of a known convention.
+        {**_text("2704", "KALICONT2704X"), "id": "KALITEXT2704x"},
+        {**_text("2704", "KALICONT2704"), "id": "KALITEXT2704c"},
         _text("", "KALICONT0000"),
+        _text("9002", "KALICONT9002"),
     ],
     "VIGUEUR_NON_ETEN": [_text("9001", "KALICONT9001")],
     "VIGUEUR": [],
@@ -70,6 +74,14 @@ def fake_kali(monkeypatch):
     async def api_post(self, client, path, json_body):
         calls.append((path, json_body))
         if path == "/list/conventions":
+            if "idcc" in json_body:  # one IDCC: small, complete answer
+                texts = [
+                    t
+                    for status in json_body["legalStatus"]
+                    for t in TEXTS[status]
+                    if t["idcc"] == json_body["idcc"]
+                ]
+                return {"totalResultNumber": len(texts), "results": texts}
             (status,) = json_body["legalStatus"]
             texts = TEXTS[status]
             if json_body["sort"] == "DATE_PUBLI_DESC":
@@ -123,7 +135,10 @@ async def test_refresh_adds_non_extended_conventions_and_fixes_status(fake_kali)
     ]
     assert ("VIGUEUR_ETEN", "DATE_PUBLI_DESC", 2) in listed
     assert all(page in (1, 2) for _, _, page in listed)
-    assert result.listed_texts == 5
+    assert result.listed_texts == 7
+    assert any(
+        path == "/consult/kaliCont" and body["id"] == "KALICONT2704X" for path, body in calls
+    )
     assert banks.etat == "VIGUEUR_NON_ETEN"
     assert banks.titre == "Convention collective du personnel des banques de la Guadeloupe"
     assert banks.titre_court == "Banque : personnel des banques (Guadeloupe)"
