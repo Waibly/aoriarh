@@ -89,6 +89,11 @@ def corpus() -> QdrantClient:
         ),
         ("ccn-other-idcc", {"source_type": CCN, "idcc": "9999"}),
         ("code", {"source_type": "code_travail"}),
+        # Copie de CCN propre à l'organisation (ancienne installation).
+        (
+            "own-ccn-martinique",
+            {"source_type": CCN, "idcc": "1408", "territoires": ["martinique"], "org": ORG},
+        ),
     ]
     client.upsert(
         "t",
@@ -96,7 +101,11 @@ def corpus() -> QdrantClient:
             PointStruct(
                 id=i,
                 vector=[1.0, 0.0],
-                payload={"name": name, "organisation_id": "common", **payload},
+                payload={
+                    "name": name,
+                    "organisation_id": payload.pop("org", "common"),
+                    **payload,
+                },
             )
             for i, (name, payload) in enumerate(points, start=1)
         ],
@@ -121,6 +130,7 @@ def test_overseas_organisation_keeps_its_own_agreements_only(corpus):
         "ccn-martinique",
         "ccn-antilles",
         "code",
+        "own-ccn-martinique",
     }
     assert _visible(corpus, territoire="guadeloupe") == {"ccn-national", "ccn-antilles", "code"}
     assert _visible(corpus, territoire="la_reunion") == {"ccn-national", "code"}
@@ -134,6 +144,7 @@ def test_unknown_territory_keeps_previous_behaviour(corpus):
         "ccn-martinique",
         "ccn-antilles",
         "code",
+        "own-ccn-martinique",
     }
 
 

@@ -33,6 +33,7 @@ _MAX_RETRIES = 3
 _TOKEN_REFRESH_MARGIN = 300
 _API_THROTTLE = 0.2  # 5 req/s max
 _LIST_PAGE_SIZE = 1000  # /list/conventions accepts 1000 texts per page
+_LIST_WINDOW = 10_000  # results reachable per query (later pages repeat)
 
 
 @dataclass
@@ -200,34 +201,59 @@ class KaliService:
 
         result = CcnReferenceRefreshResult()
         containers: dict[str, set[str]] = {}
-        page = 1
-        page_size = _LIST_PAGE_SIZE
+        seen_texts: set[str] = set()
 
         async with httpx.AsyncClient(timeout=_REQUEST_TIMEOUT) as client:
-            while True:
-                data = await self._api_post(
-                    client,
-                    "/list/conventions",
-                    json_body={
-                        "pageNumber": page,
-                        "pageSize": page_size,
-                        "legalStatus": ["VIGUEUR", "VIGUEUR_ETEN", "VIGUEUR_NON_ETEN"],
-                    },
-                )
-                if data is None:
-                    raise RuntimeError(f"KALI /list/conventions page {page} introuvable")
-                texts = data.get("results") or []
-                result.listed_texts += len(texts)
-                for text in texts:
-                    idcc = str(text.get("idcc") or "").strip()
-                    container_id = text.get("cidConteneur") or ""
-                    if idcc.isdigit() and len(idcc) <= 4 and container_id.startswith("KALICONT"):
-                        containers.setdefault(idcc.zfill(4), set()).add(container_id)
-                total = data.get("totalResultNumber") or 0
-                if not texts or page * page_size >= total:
-                    break
-                page += 1
-                await asyncio.sleep(_API_THROTTLE)
+            # KALI serves at most _LIST_WINDOW results per query: beyond, every
+            # page repeats the last one. Each status is read separately, and a
+            # larger one from both ends of the publication-date order.
+            for status_ in ("VIGUEUR", "VIGUEUR_ETEN", "VIGUEUR_NON_ETEN"):
+                total = None
+                for sort in ("DATE_PUBLI_ASC", "DATE_PUBLI_DESC"):
+                    page = 1
+                    while True:
+                        data = await self._api_post(
+                            client,
+                            "/list/conventions",
+                            json_body={
+                                "pageNumber": page,
+                                "pageSize": _LIST_PAGE_SIZE,
+                                "legalStatus": [status_],
+                                "sort": sort,
+                            },
+                        )
+                        if data is None:
+                            raise RuntimeError(
+                                f"KALI /list/conventions {status_} page {page} introuvable"
+                            )
+                        texts = data.get("results") or []
+                        for text in texts:
+                            text_id = text.get("id") or ""
+                            if text_id in seen_texts:
+                                continue
+                            seen_texts.add(text_id)
+                            idcc = str(text.get("idcc") or "").strip()
+                            container_id = text.get("cidConteneur") or ""
+                            if (
+                                idcc.isdigit()
+                                and len(idcc) <= 4
+                                and container_id.startswith("KALICONT")
+                            ):
+                                containers.setdefault(idcc.zfill(4), set()).add(container_id)
+                        total = data.get("totalResultNumber") or 0
+                        read = page * _LIST_PAGE_SIZE
+                        if not texts or read >= total or read >= _LIST_WINDOW:
+                            break
+                        page += 1
+                        await asyncio.sleep(_API_THROTTLE)
+                    if (total or 0) <= _LIST_WINDOW:
+                        break  # one order covered everything
+                if (total or 0) > 2 * _LIST_WINDOW:
+                    result.errors += 1
+                    result.error_messages.append(
+                        f"{status_} : {total} textes, seuls {2 * _LIST_WINDOW} lisibles"
+                    )
+            result.listed_texts = len(seen_texts)
 
             if not containers:
                 raise RuntimeError("KALI n'a renvoyé aucune convention")

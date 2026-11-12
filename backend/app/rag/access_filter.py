@@ -61,10 +61,6 @@ def build_org_access_filter(
                 FieldCondition(key="source_type", match=MatchValue(value=source_type)),
                 FieldCondition(key="idcc", match=MatchAny(any=org_idcc_list)),
             ]
-            # Accord régional d'une convention nationale (valeur du point en
-            # Martinique…) : seulement pour une entreprise de ce territoire.
-            if territoire:
-                must.append(_territory_condition(territoire))
             should.append(Filter(must=must))
     private_exclusion = Filter(
         must_not=[FieldCondition(key="private", match=MatchValue(value=True))]
@@ -78,4 +74,11 @@ def build_org_access_filter(
                 ),
             ]
         )
-    return Filter(must=[Filter(should=should), private_exclusion])
+    must: list = [Filter(should=should), private_exclusion]
+    # Accord régional d'une convention nationale (valeur du point en
+    # Martinique…) : seulement pour une entreprise de ce territoire. Vaut aussi
+    # pour les copies de CCN propres à une organisation ; seuls ces accords
+    # portent `territoires`, tout le reste passe.
+    if territoire:
+        must.append(_territory_condition(territoire))
+    return Filter(must=must)

@@ -48,23 +48,45 @@ CONTAINERS = {
 }
 
 
+# Texts by status, in publication order. KALI serves only the first
+# _LIST_WINDOW results of a query: later pages repeat the last one.
+TEXTS = {
+    "VIGUEUR_ETEN": [
+        _text("2704", "KALICONT2704"),
+        {**_text("2704", "KALICONT2704"), "id": "KALITEXT2704b"},
+        _text("9002", "KALICONT9002"),
+        _text("", "KALICONT0000"),
+    ],
+    "VIGUEUR_NON_ETEN": [_text("9001", "KALICONT9001")],
+    "VIGUEUR": [],
+}
+
+
 @pytest.fixture
 def fake_kali(monkeypatch):
     calls: list[tuple[str, dict]] = []
+    page_size, window = 1, 2
 
     async def api_post(self, client, path, json_body):
         calls.append((path, json_body))
         if path == "/list/conventions":
-            pages = {
-                1: [_text("2704", "KALICONT2704"), _text("9001", "KALICONT9001")],
-                2: [_text("9002", "KALICONT9002"), _text("", "KALICONT0000")],
+            (status,) = json_body["legalStatus"]
+            texts = TEXTS[status]
+            if json_body["sort"] == "DATE_PUBLI_DESC":
+                texts = texts[::-1]
+            texts = texts[:window]
+            page = min(json_body["pageNumber"], max(1, window // page_size))
+            start = (page - 1) * page_size
+            return {
+                "totalResultNumber": len(TEXTS[status]),
+                "results": texts[start : start + page_size],
             }
-            return {"totalResultNumber": 4, "results": pages.get(json_body["pageNumber"], [])}
         return CONTAINERS.get(json_body["id"])
 
     monkeypatch.setattr(KaliService, "_api_post", api_post)
     monkeypatch.setattr(kali_module, "_API_THROTTLE", 0)
-    monkeypatch.setattr(kali_module, "_LIST_PAGE_SIZE", 2)
+    monkeypatch.setattr(kali_module, "_LIST_PAGE_SIZE", page_size)
+    monkeypatch.setattr(kali_module, "_LIST_WINDOW", window)
     service = KaliService()
     service._client_id = service._client_secret = "x"
     return service, calls
@@ -92,8 +114,16 @@ async def test_refresh_adds_non_extended_conventions_and_fixes_status(fake_kali)
         reunion = await db.get(CcnReference, "9001")
         empty = await db.get(CcnReference, "9002")
 
-    list_pages = [body["pageNumber"] for path, body in calls if path == "/list/conventions"]
-    assert list_pages == [1, 2]
+    # Every page from 1; the 4 extended texts exceed the window of 2 and are
+    # read from both ends.
+    listed = [
+        (body["legalStatus"][0], body["sort"], body["pageNumber"])
+        for path, body in calls
+        if path == "/list/conventions"
+    ]
+    assert ("VIGUEUR_ETEN", "DATE_PUBLI_DESC", 2) in listed
+    assert all(page in (1, 2) for _, _, page in listed)
+    assert result.listed_texts == 5
     assert banks.etat == "VIGUEUR_NON_ETEN"
     assert banks.titre == "Convention collective du personnel des banques de la Guadeloupe"
     assert banks.titre_court == "Banque : personnel des banques (Guadeloupe)"
