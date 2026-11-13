@@ -135,5 +135,5 @@ async def test_boss_finds_the_admitted_source_after_its_storage_path_changes():
             result,
         )
         assert result.docs_unchanged == 1
-        assert result.docs_pending == result.docs_created == result.docs_updated == 0
+        assert result.docs_created == result.docs_updated == 0
         storage.put_file_bytes.assert_not_called()

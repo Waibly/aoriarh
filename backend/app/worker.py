@@ -657,8 +657,8 @@ async def run_jorf_sync(ctx: dict, user_id: str) -> None:
 async def run_boss_sync(ctx: dict, user_id: str) -> None:
     """Tâche de synchronisation du BOSS (Bulletin Officiel de la Sécurité Sociale).
 
-    Crawle les 8 rubriques de boss.gouv.fr et archive les versions modifiées
-    pour revue documentaire, sans indexation automatique.
+    Crawle les 8 rubriques de boss.gouv.fr ; les pages nouvelles ou modifiées
+    sont indexées avec leurs notes de version (et archivées).
     """
     import time as _time
 
@@ -675,14 +675,13 @@ async def run_boss_sync(ctx: dict, user_id: str) -> None:
         logger.info(
             (
                 "Worker: BOSS sync completed — %d pages, %d créées, %d maj, %d "
-                "inchangées, %d erreurs, %d à qualifier"
+                "inchangées, %d erreurs"
             ),
             result.pages_crawled,
             result.docs_created,
             result.docs_updated,
             result.docs_unchanged,
             result.errors,
-            result.docs_pending,
         )
         await _finish_sync_log(
             session_factory,
@@ -709,7 +708,7 @@ async def run_boss_sync(ctx: dict, user_id: str) -> None:
 
 
 async def run_scheduled_boss_sync(ctx: dict) -> None:
-    """Veille quotidienne BOSS sans indexation automatique."""
+    """Veille quotidienne BOSS : les pages modifiées sont réindexées."""
     from app.models.user import User
 
     session_factory = ctx["session_factory"]
@@ -1997,7 +1996,7 @@ class WorkerSettings:
         # Liste des conventions proposées (nouvelles CCN, statut d'extension) :
         # 1er du mois 4h30 UTC, ~1 000 appels KALI étalés sur ~10 min.
         cron(run_ccn_reference_refresh, day=1, hour=4, minute=30),
-        # Daily BOSS discovery: new/changed versions require documentary admission.
+        # Daily BOSS sync: new/changed pages are indexed with their version notes.
         cron(run_scheduled_boss_sync, hour=5, minute=0),
         # Billing lifecycle: every day at 9:00 AM UTC (trial reminders + expirations)
         cron(run_billing_lifecycle, hour=9, minute=0),

@@ -1,8 +1,13 @@
-"""BOSS discovery and documentary review, without automatic admission.
+"""BOSS synchronisation: new and changed pages enter the corpus automatically.
 
-A newly published page may describe a draft or future rules. Preserve the
-indexed version and archive changed/new pages with their source HTML for review.
+Each page is indexed with the publication notes the BOSS links to it (« notes
+de version »), which state when a change applies: a page announcing a future
+rule therefore carries its own application date for the answer. Every observed
+version is also archived with its source HTML (``common/boss_review/``).
 Identical bodies only refresh technical source metadata; no embedding is queued.
+
+Until Nov. 2026 changed pages were only archived for a human review that had
+no tool, so the indexed doctrine stayed frozen at July 2026.
 """
 
 import asyncio
@@ -21,6 +26,8 @@ from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.document import Document
+from app.rag.norme_hierarchy import DOCUMENT_TYPE_HIERARCHY
+from app.rag.tasks import enqueue_ingestion
 from app.services.html_to_markdown import html_to_markdown
 
 logger = logging.getLogger(__name__)
@@ -30,6 +37,7 @@ _REQUEST_TIMEOUT = 60.0
 _MAX_PAGES = 600  # garde-fou anti-boucle (l'arbre réel fait ~150-250 pages)
 _MIN_CONTENT_CHARS = 400  # en-dessous : page de navigation, pas de doctrine
 _CRAWL_DELAY = 0.4  # politesse entre requêtes (s)
+_MAX_VERSION_NOTES = 20  # garde-fou : au-delà, la page est signalée en erreur
 
 # En-têtes navigateur : le WAF de boss.gouv.fr rejette les requêtes « robot ».
 _HEADERS = {
@@ -78,17 +86,16 @@ class BossSyncResult:
     docs_created: int = 0
     docs_updated: int = 0
     docs_unchanged: int = 0
-    docs_pending: int = 0
     review_candidates: list[dict] = field(default_factory=list)
     errors: int = 0
     error_messages: list[str] = field(default_factory=list)
 
 
 class BossService:
-    """Inventorie les versions BOSS et conserve les modifications pour revue."""
+    """Synchronise la doctrine BOSS et archive chaque version observée."""
 
     async def sync(self, db: AsyncSession, user_id: uuid.UUID) -> BossSyncResult:
-        """Crawle les 8 rubriques sans modifier le contenu du corpus indexé."""
+        """Crawle les 8 rubriques et indexe les pages nouvelles ou modifiées."""
         from app.services.storage_service import StorageService
 
         result = BossSyncResult()
@@ -124,7 +131,7 @@ class BossService:
                     if child not in visited:
                         queue.append(child)
 
-                # Archive le corps publié avec ses notes avant admission documentaire.
+                # Indexe le corps publié avec ses notes de version (et l'archive).
                 article_html = self._slice_article(html)
                 if not article_html:
                     continue
@@ -147,7 +154,7 @@ class BossService:
                 except Exception as exc:
                     result.errors += 1
                     result.error_messages.append(f"{path}: {str(exc)[:120]}")
-                    logger.warning("BOSS: échec archivage %s: %s", path, exc)
+                    logger.warning("BOSS: échec synchronisation %s: %s", path, exc)
                     await db.rollback()
 
                 await asyncio.sleep(_CRAWL_DELAY)
@@ -161,10 +168,11 @@ class BossService:
                 {
                     "captured_at": datetime.now(UTC).isoformat(),
                     "pages_crawled": result.pages_crawled,
-                    "pending": result.docs_pending,
+                    "created": result.docs_created,
+                    "updated": result.docs_updated,
                     "errors": result.error_messages,
                     "candidates": result.review_candidates,
-                    "automatic_ingestion": False,
+                    "automatic_ingestion": True,
                 },
                 ensure_ascii=False,
             ).encode(),
@@ -218,8 +226,8 @@ class BossService:
                     and parsed.path not in paths
                 ):
                     paths.append(parsed.path)
-        if len(paths) > 5:
-            raise ValueError("Too many BOSS version notes: review evidence incomplete")
+        if len(paths) > _MAX_VERSION_NOTES:
+            raise ValueError("Too many BOSS version notes: page left unchanged")
         return [
             {"url": BOSS_BASE_URL + path, "source_html": await self._fetch(client, path)}
             for path in paths
@@ -321,7 +329,34 @@ class BossService:
         rel = re.sub(r"[^a-zA-Z0-9/_-]", "_", rel)
         return f"common/boss/{rel}.md"
 
-    def _format_markdown(self, title: str, rubrique: str, page_path: str, body: str) -> str:
+    def _version_notes_markdown(self, version_notes: list[dict] | None) -> str:
+        """Publication notes linked to the page, as written by the BOSS."""
+        sections = []
+        for note in version_notes or []:
+            note_html = note.get("source_html") or ""
+            article = self._slice_article(note_html) or note_html
+            text = self._article_to_markdown(article)
+            if not text:
+                continue
+            title = self._page_title(note_html)
+            heading = f"### {title}" if title else "### Note de version"
+            sections.append(f"{heading}\n\nSource : {note['url']}\n\n{text}")
+        if not sections:
+            return ""
+        return (
+            "\n\n## Notes de version publiées par le BOSS\n\n"
+            "Les notes ci-dessous accompagnent cette page et précisent la date "
+            "d'application des modifications.\n\n" + "\n\n".join(sections)
+        )
+
+    def _format_markdown(
+        self,
+        title: str,
+        rubrique: str,
+        page_path: str,
+        body: str,
+        version_notes: list[dict] | None = None,
+    ) -> str:
         body = body.lstrip()
         # Évite le doublon de titre : l'article porte déjà son propre <h1>.
         if body.startswith("# "):
@@ -335,7 +370,7 @@ class BossService:
             "---",
             "",
         ]
-        return "\n".join(header) + body
+        return "\n".join(header) + body + self._version_notes_markdown(version_notes)
 
     async def _upsert_document(
         self,
@@ -350,9 +385,11 @@ class BossService:
         *,
         version_notes: list[dict] | None = None,
     ) -> None:
-        """Conserve les corps modifiés pour revue, sans écraser la version admise."""
+        """Crée ou met à jour la page (réindexée) si son contenu a changé."""
         title = self._page_title(html)
-        full_md = self._format_markdown(title, rubrique, page_path, markdown_body)
+        full_md = self._format_markdown(
+            title, rubrique, page_path, markdown_body, version_notes=version_notes
+        )
         md_bytes = full_md.encode("utf-8")
         file_hash = hashlib.sha256(md_bytes).hexdigest()
         storage_path = self._build_storage_path(page_path)
@@ -394,7 +431,7 @@ class BossService:
             "current_sha256": doc.file_hash if doc else None,
             "candidate_sha256": file_hash,
             "source_updated_date": content_date.isoformat() if content_date else None,
-            "status": "review_pending",
+            "status": "admitted",
             "review_path": review_path,
         }
         payload = {
@@ -403,7 +440,7 @@ class BossService:
             "candidate_markdown": full_md,
             "source_html": html,
             "version_notes": version_notes or [],
-            "automatic_ingestion": False,
+            "automatic_ingestion": True,
         }
         raw = json.dumps(payload, ensure_ascii=False).encode()
         # Keep each observed body revision, as well as the latest review pointer.
@@ -416,5 +453,44 @@ class BossService:
         version_path = f"common/boss_review/versions/{source_id}/{file_hash}/{evidence_hash}.json"
         storage.put_file_bytes(version_path, raw, content_type="application/json")
         storage.put_file_bytes(review_path, raw, content_type="application/json")
-        result.docs_pending += 1
+
+        # Admission: the page text replaces the previous one. Ingestion swaps the
+        # chunks only once the new ones are stored, so a failed indexing keeps
+        # the previous version searchable; an in-flight job on the old version
+        # stops on the hash change.
+        storage.put_file_bytes(storage_path, md_bytes, content_type="text/plain")
+        if doc is None:
+            hierarchy = DOCUMENT_TYPE_HIERARCHY["boss"]
+            doc = Document(
+                organisation_id=None,
+                name=name[:500],
+                source_type="boss",
+                norme_niveau=hierarchy["niveau"],
+                norme_poids=hierarchy["poids"],
+                storage_path=storage_path,
+                indexation_status="pending",
+                uploaded_by=user_id,
+                file_size=len(md_bytes),
+                file_format="md",
+                file_hash=file_hash,
+                date_decision=content_date,
+                source_updated_date=content_date,
+                source_url=source_url,
+            )
+            db.add(doc)
+            result.docs_created += 1
+        else:
+            doc.name = name[:500]
+            doc.storage_path = storage_path
+            doc.file_size = len(md_bytes)
+            doc.file_hash = file_hash
+            doc.date_decision = content_date
+            doc.source_updated_date = content_date
+            doc.source_url = source_url
+            doc.indexation_status = "pending"
+            doc.indexation_error = None
+            result.docs_updated += 1
+        await db.commit()
+        await db.refresh(doc)
+        await enqueue_ingestion(str(doc.id), expected_source=doc.storage_path)
         result.review_candidates.append(candidate)

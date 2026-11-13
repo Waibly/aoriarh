@@ -8,28 +8,38 @@ import pytest
 
 from app.services.boss_service import BossService, BossSyncResult
 
+NOTE_HTML = (
+    "<h1>Montant net social : nouvelles règles</h1>"
+    '<article id="article"><p>Applicable à compter du 1er janvier 2027.</p></article>'
+)
+
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("existing", [True, False])
-async def test_changed_or_new_body_only_archived(existing):
+async def test_changed_or_new_page_is_indexed_with_its_version_notes(existing, monkeypatch):
+    from app.services import boss_service as boss_module
+
+    enqueue = AsyncMock()
+    monkeypatch.setattr(boss_module, "enqueue_ingestion", enqueue)
     doc = SimpleNamespace(
-        id=uuid.uuid4(), file_hash="old", source_url="old", source_updated_date=None
+        id=uuid.uuid4(),
+        file_hash="old",
+        source_url="old",
+        source_updated_date=None,
+        storage_path="common/boss/bulletin-de-paie/montant-net-social.md",
     )
+    added = []
     db = SimpleNamespace(
         execute=AsyncMock(
             return_value=Mock(scalar_one_or_none=Mock(return_value=doc if existing else None))
         ),
         commit=AsyncMock(),
-        add=Mock(),
+        refresh=AsyncMock(),
+        add=Mock(side_effect=added.append),
     )
     storage = Mock()
     result = BossSyncResult()
-    notes = [
-        {
-            "url": "https://boss.gouv.fr/notice",
-            "source_html": "Projet applicable au 1er janvier 2027",
-        }
-    ]
+    notes = [{"url": "https://boss.gouv.fr/notice", "source_html": NOTE_HTML}]
     await BossService()._upsert_document(
         db,
         storage,
@@ -41,20 +51,25 @@ async def test_changed_or_new_body_only_archived(existing):
         result,
         version_notes=notes,
     )
-    assert doc.file_hash == "old"
-    assert doc.source_url == "old"
-    db.commit.assert_not_awaited()
-    db.add.assert_not_called()
-    assert result.docs_pending == 1
-    assert result.docs_created == result.docs_updated == 0
-    assert storage.put_file_bytes.call_count == 2
-    for call in storage.put_file_bytes.call_args_list:
-        assert call.args[0].startswith("common/boss_review/")
-        payload = json.loads(call.args[1])
+    indexed = doc if existing else added[0]
+    assert indexed.indexation_status == "pending"
+    assert indexed.source_updated_date == date(2026, 10, 2)
+    assert indexed.source_url.endswith("montant-net-social.html")
+    assert (result.docs_updated, result.docs_created) == ((1, 0) if existing else (0, 1))
+    enqueue.assert_awaited_once_with(str(indexed.id), expected_source=indexed.storage_path)
+
+    writes = {call.args[0]: call.args[1] for call in storage.put_file_bytes.call_args_list}
+    text = writes[indexed.storage_path].decode()
+    # The page body and the BOSS note stating when the change applies.
+    assert "New source body" in text
+    assert "Notes de version publiées par le BOSS" in text
+    assert "Applicable à compter du 1er janvier 2027" in text
+    archives = [key for key in writes if key.startswith("common/boss_review/")]
+    assert len(archives) == 2
+    for key in archives:
+        payload = json.loads(writes[key])
         assert payload["version_notes"] == notes
-        assert payload["source_updated_date"] == "2026-10-02"
-        assert payload["automatic_ingestion"] is False
-        assert "New source body" in payload["candidate_markdown"]
+        assert payload["automatic_ingestion"] is True
 
 
 @pytest.mark.asyncio

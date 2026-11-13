@@ -200,7 +200,7 @@ async def read_boss_review(
     source_id: uuid.UUID | None = Query(None),
     user: User = Depends(require_role(["admin"])),
 ) -> dict:
-    """Read the latest BOSS inventory or a candidate; never admit content."""
+    """Read the latest BOSS sync inventory or the archive of one page version."""
     import asyncio
     import json
 
