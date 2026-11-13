@@ -613,4 +613,7 @@ async def expand_to_parents(
             diagnostics=diagnostics,
             candidate_roots=results,
         )
+        from app.rag.sanction_links import extend_sanction_context
+
+        expanded = await extend_sanction_context(expanded, qdrant, diagnostics=diagnostics)
     return expanded
