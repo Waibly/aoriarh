@@ -72,6 +72,8 @@ _ROOT_STEMS = frozenset(_STEM_TO_LABEL)
 
 _HREF_RE = re.compile(r'href="([^"#?]+\.html)"', re.IGNORECASE)
 _ARTICLE_OPEN_RE = re.compile(r'<article\b[^>]*\bid="article"[^>]*>', re.IGNORECASE)
+# Pages « Actualités » (notes de version) : le contenu est dans <article class="bloc_actu">.
+_NOTE_OPEN_RE = re.compile(r'<article\b[^>]*\bclass="[^"]*\bbloc_actu\b[^"]*"[^>]*>', re.IGNORECASE)
 _ARTICLE_TAG_RE = re.compile(r"<article\b[^>]*>|</article>", re.IGNORECASE)
 _TITLE_RE = re.compile(r"<h1[^>]*>(.*?)</h1>", re.IGNORECASE | re.DOTALL)
 _A_JOUR_RE = re.compile(r"jour\s+(?:au|le)\s+(\d{2})/(\d{2})/(\d{4})", re.IGNORECASE)
@@ -274,13 +276,13 @@ class BossService:
         return stem in _ROOT_STEMS
 
     @staticmethod
-    def _slice_article(html: str) -> str | None:
+    def _slice_article(html: str, opening: re.Pattern = _ARTICLE_OPEN_RE) -> str | None:
         """Extrait le bloc ``<article id="article">…</article>`` (version en vigueur).
 
         Scan avec comptage de profondeur pour gérer d'éventuels ``<article>``
         imbriqués sans casser sur le premier ``</article>``.
         """
-        m = _ARTICLE_OPEN_RE.search(html)
+        m = opening.search(html)
         if not m:
             return None
         start = m.start()
@@ -334,13 +336,17 @@ class BossService:
         sections = []
         for note in version_notes or []:
             note_html = note.get("source_html") or ""
-            article = self._slice_article(note_html) or note_html
-            text = self._article_to_markdown(article)
-            if not text:
-                continue
+            # Only the note itself: a page without the expected block is kept
+            # as a link, never as the whole page with its menus.
+            article = self._slice_article(note_html, _NOTE_OPEN_RE) or self._slice_article(
+                note_html
+            )
+            text = self._article_to_markdown(article) if article else ""
             title = self._page_title(note_html)
             heading = f"### {title}" if title else "### Note de version"
-            sections.append(f"{heading}\n\nSource : {note['url']}\n\n{text}")
+            sections.append(
+                f"{heading}\n\nSource : {note['url']}" + (f"\n\n{text}" if text else "")
+            )
         if not sections:
             return ""
         return (

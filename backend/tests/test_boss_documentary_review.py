@@ -9,8 +9,11 @@ import pytest
 from app.services.boss_service import BossService, BossSyncResult
 
 NOTE_HTML = (
+    "<nav><ul><li>Aller au contenu</li><li>Bulletin de paie</li></ul></nav>"
+    '<main id="contenu"><article class="bloc_actu">'
     "<h1>Montant net social : nouvelles règles</h1>"
-    '<article id="article"><p>Applicable à compter du 1er janvier 2027.</p></article>'
+    "<p>Applicable à compter du 1er janvier 2027.</p></article></main>"
+    "<footer>Plan du site</footer>"
 )
 
 
@@ -64,6 +67,8 @@ async def test_changed_or_new_page_is_indexed_with_its_version_notes(existing, m
     assert "New source body" in text
     assert "Notes de version publiées par le BOSS" in text
     assert "Applicable à compter du 1er janvier 2027" in text
+    # Only the note block, not the BOSS menus around it.
+    assert "Aller au contenu" not in text and "Plan du site" not in text
     archives = [key for key in writes if key.startswith("common/boss_review/")]
     assert len(archives) == 2
     for key in archives:
