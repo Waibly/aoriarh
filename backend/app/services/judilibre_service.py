@@ -388,12 +388,15 @@ class JudilibreService:
                 data = await self._api_get(client, "/export", params=api_params)
                 if data is None:
                     # _api_get returns None for 404 / 416 / exhausted retries.
-                    # If we've already received at least one batch, treat it
-                    # as end of pagination (no error). If batch_num == 0, the
-                    # source is genuinely unreachable → report it.
-                    if batch_num == 0:
-                        result.errors += 1
-                        result.error_messages.append(f"Erreur API batch {batch_num}")
+                    # The normal end is next_batch being empty (checked below).
+                    # A later batch announced by next_batch that cannot be read
+                    # is a truncated synchronisation, not the end of the list.
+                    result.errors += 1
+                    result.error_messages.append(
+                        f"Erreur API batch {batch_num} : liste incomplète"
+                        if batch_num
+                        else f"Erreur API batch {batch_num}"
+                    )
                     break
 
                 total = data.get("total", 0)
@@ -436,6 +439,10 @@ class JudilibreService:
                         decision = self._parse_decision(raw)
                         if decision is None:
                             result.errors += 1
+                            result.error_messages.append(
+                                f"Décision {raw.get('number', raw.get('id', '?'))} "
+                                "sans date ou sans texte : ignorée"
+                            )
                             continue
 
                         # Skip decisions without an identifier — they can't be
@@ -485,6 +492,9 @@ class JudilibreService:
                         existing_keys.update(keys)
                         result.already_exists += 1
                     except Exception as exc:
+                        # Reset the session: after a failed commit every following
+                        # decision (and the caller's sync log) would fail too.
+                        await db.rollback()
                         result.errors += 1
                         pourvoi = raw.get("number", raw.get("id", "?"))
                         msg = f"Erreur décision {pourvoi}: {exc}"
@@ -523,6 +533,13 @@ class JudilibreService:
         a total cap: collection is paced by the background worker and resumes.
         """
         from app.services.judilibre_ca_sync import schedule_scan
+
+        if not settings.judilibre_ca_collection_enabled:
+            # Collection paused (CA decisions come from the social CA sync):
+            # scheduling a scan would leave a sync log « running » for hours
+            # and block the manual trigger.
+            logger.info("Judilibre CA collection disabled: no scan scheduled")
+            return SyncResult()
 
         end = date_end or date.today()
         start = date_start or (end - timedelta(days=365))
@@ -881,7 +898,9 @@ class JudilibreService:
         try:
             decision_date = datetime.strptime(date_str, "%Y-%m-%d").date()
         except (ValueError, TypeError):
-            decision_date = date.today()
+            # Never invent a date: today's date would mislabel the decision
+            # (name, header, filters) and defeat the (date, number) dedup.
+            return None
 
         # Map publication codes
         pub_str = judilibre_publication_label(raw.get("publication", []))

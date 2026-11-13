@@ -801,10 +801,10 @@ async def run_ccn_reference_refresh(ctx: dict) -> None:
 
 
 async def run_ani_sync(ctx: dict) -> None:
-    """Cron mensuel — ANI (accords nationaux interprofessionnels) en vigueur depuis 2010.
+    """Cron mensuel — ANI (accords nationaux interprofessionnels) encore applicables.
 
-    Idempotent : ne (re)crée que les textes non encore ingérés (base + avenants).
-    Sert aussi de backfill au tout premier passage. Volume faible (~1-3/an).
+    Ajoute les nouveaux textes (base + avenants), réingère ceux modifiés dans
+    KALI et retire ceux abrogés, périmés ou dénoncés.
     """
     import time as _time
 
@@ -837,9 +837,12 @@ async def run_ani_sync(ctx: dict) -> None:
             result = await KaliService().sync_ani(db, admin.id)
 
         logger.info(
-            "Worker: ANI sync completed — %d listés, %d créés, %d sautés, %d erreurs",
+            "Worker: ANI sync completed — %d listés, %d créés, %d maj, %d retirés, "
+            "%d inchangés, %d erreurs",
             result.fetched,
             result.created,
+            result.updated,
+            result.removed,
             result.skipped,
             result.errors,
         )
@@ -849,6 +852,7 @@ async def run_ani_sync(ctx: dict) -> None:
             success=result.errors == 0,
             items_fetched=result.fetched,
             items_created=result.created,
+            items_updated=result.updated + result.removed,
             items_skipped=result.skipped,
             errors=result.errors,
             error_message="; ".join(result.error_messages[:5]) or None,
@@ -953,6 +957,9 @@ async def _run_jurisprudence_passes(
                 duration / 1000,
             )
         except Exception as exc:
+            # A failed commit leaves the session unusable: reset it so this log
+            # is closed and the remaining passes still run.
+            await db.rollback()
             sync_log.status = "error"
             sync_log.errors = 1
             # Persist the actual exception so it surfaces in the UI and
@@ -1015,6 +1022,7 @@ async def _run_jurisprudence_passes(
             duration / 1000,
         )
     except Exception as exc:
+        await db.rollback()
         cc_log.status = "error"
         cc_log.errors = 1
         cc_log.error_message = f"{type(exc).__name__}: {str(exc)[:300]}"
@@ -1187,6 +1195,9 @@ async def run_custom_jurisprudence_sync(
                 duration / 1000,
             )
         except Exception as exc:
+            # A failed commit leaves the session unusable: reset it so this log
+            # is closed and the remaining passes still run.
+            await db.rollback()
             sync_log.status = "error"
             sync_log.errors = 1
             sync_log.error_message = (

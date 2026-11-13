@@ -16,7 +16,7 @@ import logging
 import time
 import uuid
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import UTC, date, datetime
 
 import httpx
 from sqlalchemy import select
@@ -348,7 +348,9 @@ class ConseilConstitService:
                     # Parse meta
                     nature = (raw.get("nature") or "").lower()
                     nor = raw.get("nor")
-                    decision_date = self._parse_date_from_title(title)
+                    decision_date = self._official_date(text_obj) or self._parse_date_from_title(
+                        title
+                    )
 
                     decision = CcDecision(
                         cid=cid,
@@ -381,6 +383,48 @@ class ConseilConstitService:
     # ---- Helpers ----
 
     @staticmethod
+    def display_name(title: str, nature: str, decision_date: date | None) -> str:
+        """Cons. const., DD/MM/YYYY, n° 2025-1175 QPC.
+
+        Robust to missing date / missing number — never produces double commas
+        or trailing 'n°' fragments. Falls back to the raw PISTE title.
+        """
+        import re
+
+        num_match = re.search(r"(\d{4}-\d{1,4})\s*(QPC|DC|LP|FNR|L|I|D)?", title)
+        num_str = ""
+        if num_match:
+            num_part = num_match.group(1)
+            type_part = num_match.group(2) or (nature or "").upper()
+            num_str = f"{num_part} {type_part}".strip()
+
+        parts = ["Cons. const."]
+        if decision_date:
+            parts.append(decision_date.strftime("%d/%m/%Y"))
+        if num_str:
+            parts.append(f"n° {num_str}")
+        name = ", ".join(parts)
+        if name == "Cons. const." and title:
+            name = title[:200]
+        return name
+
+    @staticmethod
+    def _official_date(text_obj: dict) -> date | None:
+        """Decision date from Légifrance metadata (``dateTexte``, epoch ms)."""
+        value = text_obj.get("dateTexte")
+        if isinstance(value, (int, float)) and not isinstance(value, bool) and value:
+            try:
+                return datetime.fromtimestamp(value / 1000, UTC).date()
+            except (ValueError, OSError, OverflowError):
+                return None
+        if isinstance(value, str) and value:
+            try:
+                return date.fromisoformat(value[:10])
+            except ValueError:
+                return None
+        return None
+
+    @staticmethod
     def _parse_date_from_title(title: str) -> date | None:
         "Extract decision date from a title like 'Décision 2025-1175 QPC - 05 décembre 2025 - …'."
         import re
@@ -400,7 +444,8 @@ class ConseilConstitService:
             "novembre": 11,
             "décembre": 12,
         }
-        m = re.search(r"(\d{1,2})\s+(\w+)\s+(\d{4})", title)
+        # « 1er octobre 2026 » : the ordinal suffix must not hide the date.
+        m = re.search(r"(\d{1,2})(?:er)?\s+(\w+)\s+(\d{4})", title)
         if m:
             day, month_str, year = m.groups()
             month = months.get(month_str.lower())
@@ -432,27 +477,7 @@ class ConseilConstitService:
         source_type = "decision_conseil_constitutionnel"
         hierarchy = DOCUMENT_TYPE_HIERARCHY[source_type]
 
-        # Build display name : Cons. const., DD/MM/YYYY, n° 2025-1175 QPC
-        # Robust to missing date / missing number — never produces double commas
-        # or trailing 'n°' fragments. Falls back to the raw PISTE title.
-        import re
-
-        num_match = re.search(r"(\d{4}-\d{1,4})\s*(QPC|DC|LP|FNR|L|I|D)?", decision.title)
-        num_str = ""
-        if num_match:
-            num_part = num_match.group(1)
-            type_part = num_match.group(2) or decision.nature.upper()
-            num_str = f"{num_part} {type_part}".strip()
-
-        parts = ["Cons. const."]
-        if decision.decision_date:
-            parts.append(decision.decision_date.strftime("%d/%m/%Y"))
-        if num_str:
-            parts.append(f"n° {num_str}")
-        name = ", ".join(parts)
-        # If we have only the prefix (no date AND no num), fall back to raw title
-        if name == "Cons. const." and decision.title:
-            name = decision.title[:200]
+        name = self.display_name(decision.title, decision.nature, decision.decision_date)
 
         file_id = uuid.uuid4()
         safe_cid = decision.cid.replace(" ", "_")

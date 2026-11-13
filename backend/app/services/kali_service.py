@@ -89,7 +89,9 @@ class AniSyncResult:
 
     fetched: int = 0  # textes ANI listés dans KALI
     created: int = 0  # nouveaux documents ingérés
-    skipped: int = 0  # déjà ingérés / hors périmètre / sans contenu
+    updated: int = 0  # textes modifiés dans KALI, nouvelle version ingérée
+    removed: int = 0  # textes abrogés / périmés / dénoncés retirés du corpus
+    skipped: int = 0  # déjà à jour / hors périmètre / sans contenu
     errors: int = 0
     error_messages: list[str] = field(default_factory=list)
     titles_created: list[str] = field(default_factory=list)
@@ -718,38 +720,58 @@ class KaliService:
         "decembre": 12,
     }
 
-    async def sync_ani(
-        self,
-        db: AsyncSession,
-        user_id: uuid.UUID,
-        *,
-        since_year: int = 2010,
-    ) -> AniSyncResult:
-        """Ingère les ANI (base + avenants) en vigueur depuis `since_year`.
+    # Encore applicable : en vigueur (étendu ou non) ou abrogation différée.
+    _ANI_APPLICABLE_PREFIXES = ("VIGUEUR", "ABROGE_DIFF")
 
-        Idempotent : saute les textes déjà ingérés (dédup sur l'id KALITEXT
-        stocké dans ``numero_pourvoi``). Sert de backfill au 1er passage puis
-        de scan incrémental mensuel.
+    async def sync_ani(self, db: AsyncSession, user_id: uuid.UUID) -> AniSyncResult:
+        """Tient à jour les ANI (base + avenants) encore applicables.
+
+        - Tous les textes en vigueur, quelle que soit leur date (l'ANI de 1969
+          sur la sécurité de l'emploi ou celui de 2008 sur le stress au travail
+          s'appliquent toujours).
+        - Un texte modifié dans KALI (avenant intégré, article abrogé) est
+          réingéré ; l'ancienne version est retirée une fois la nouvelle indexée.
+        - Un texte abrogé, périmé ou dénoncé est retiré du corpus, seulement si
+          la liste KALI a été lue en entier.
+        Clé : l'id KALITEXT, stocké dans ``numero_pourvoi``.
         """
+        from app.services.document_service import DocumentService
         from app.services.storage_service import StorageService
 
         result = AniSyncResult()
-        existing = await self._get_existing_ani_ids(db)
+        existing = await self._get_existing_ani_docs(db)
         storage = StorageService()
 
         async with httpx.AsyncClient(timeout=_REQUEST_TIMEOUT) as client:
-            candidates = await self._search_ani(client)
+            candidates, complete = await self._search_ani(client)
             result.fetched = len(candidates)
+            if not complete:
+                result.errors += 1
+                result.error_messages.append(
+                    "Liste des ANI incomplète (KALI) : aucun texte retiré ce mois-ci"
+                )
 
             for cand in candidates:
                 if not cand["id"]:
                     continue
-                if cand["year"] < since_year:
-                    continue
-                if not cand["etat"].startswith("VIGUEUR"):
-                    continue  # abrogé / périmé : on ne nourrit pas le RAG
-                if cand["id"] in existing:
-                    result.skipped += 1
+                docs = existing.get(cand["id"], [])
+                if not cand["etat"].startswith(self._ANI_APPLICABLE_PREFIXES):
+                    # Abrogé / périmé / dénoncé : ne doit plus nourrir les réponses.
+                    if docs and complete:
+                        try:
+                            for doc in docs:
+                                # Vectors first, strictly: a row deleted while its
+                                # vectors survive would stay searchable forever.
+                                self._delete_document_vectors(doc.id)
+                                await DocumentService(db).delete_common_document(doc.id)
+                        except Exception as exc:  # noqa: BLE001
+                            await db.rollback()
+                            result.errors += 1
+                            result.error_messages.append(f"{cand['id']} non retiré : {exc}")
+                            logger.exception("ANI removal failed for %s", cand["id"])
+                            continue
+                        result.removed += 1
+                        logger.info("ANI retiré (%s): %s", cand["etat"], cand["title"][:80])
                     continue
 
                 try:
@@ -768,6 +790,24 @@ class KaliService:
                         continue
 
                     text_content = self._format_ani_as_markdown(articles, cand["title"])
+                    new_hash = hashlib.sha256(text_content.encode("utf-8")).hexdigest()
+                    current = next(
+                        (
+                            d
+                            for d in docs
+                            if d.file_hash == new_hash and d.indexation_status != "error"
+                        ),
+                        None,
+                    )
+                    if current is not None:
+                        result.skipped += 1
+                        stale = [str(d.id) for d in docs if d.id != current.id]
+                        if stale:
+                            await self._enqueue_old_docs_cleanup(
+                                stale, replacement_ids=[str(current.id)]
+                            )
+                        continue
+
                     doc = await self._create_ani_document(
                         db,
                         cand,
@@ -776,35 +816,46 @@ class KaliService:
                         storage=storage,
                     )
                     await enqueue_ingestion(str(doc.id))
-                    existing.add(cand["id"])
-                    result.created += 1
+                    if docs:
+                        await self._enqueue_old_docs_cleanup(
+                            [str(d.id) for d in docs], replacement_ids=[str(doc.id)]
+                        )
+                        result.updated += 1
+                        logger.info("ANI mis à jour: %s (%s)", cand["title"][:80], cand["id"])
+                    else:
+                        result.created += 1
+                        logger.info("ANI ingéré: %s (%s)", cand["title"][:80], cand["id"])
                     result.titles_created.append(cand["title"])
-                    logger.info("ANI ingéré: %s (%s)", cand["title"][:80], cand["id"])
                 except Exception as exc:  # noqa: BLE001
+                    await db.rollback()
                     result.errors += 1
                     result.error_messages.append(f"{cand['id']}: {exc}")
                     logger.exception("ANI ingest failed for %s", cand["id"])
 
         logger.info(
-            "ANI sync: %d listés, %d créés, %d sautés, %d erreurs",
+            "ANI sync: %d listés, %d créés, %d mis à jour, %d retirés, %d inchangés, %d erreurs",
             result.fetched,
             result.created,
+            result.updated,
+            result.removed,
             result.skipped,
             result.errors,
         )
         return result
 
-    async def _search_ani(self, client: httpx.AsyncClient) -> list[dict]:
+    async def _search_ani(self, client: httpx.AsyncClient) -> tuple[list[dict], bool]:
         """Liste tous les textes ANI de KALI (base + avenants) via /search.
 
-        Retourne des dicts {id, title, etat, year, signature_date}.
+        Retourne ([{id, title, etat, year, signature_date}], liste_complète).
+        Une page illisible rend la liste incomplète : rien ne doit alors être
+        retiré du corpus sur la foi de son absence ou de son état.
         """
         rows: list[dict] = []
         page = 1
         while True:
             data = await self._api_post(client, "/search", json_body=self._ani_search_payload(page))
             if not data:
-                break
+                return rows, False
             results = data.get("results", [])
             if not results:
                 break
@@ -827,7 +878,7 @@ class KaliService:
                 break
             page += 1
             await asyncio.sleep(_API_THROTTLE)
-        return rows
+        return rows, True
 
     @classmethod
     def _ani_search_payload(cls, page: int) -> dict:
@@ -877,16 +928,38 @@ class KaliService:
         return int(m.group(0)) if m else 0
 
     @staticmethod
-    async def _get_existing_ani_ids(db: AsyncSession) -> set[str]:
-        """Ids KALITEXT d'ANI déjà ingérés (stockés dans numero_pourvoi)."""
+    def _delete_document_vectors(doc_id: uuid.UUID) -> None:
+        """Delete a document's Qdrant points; raises on failure."""
+        from qdrant_client.models import FieldCondition, Filter, FilterSelector, MatchValue
+
+        from app.rag.qdrant_store import COLLECTION_NAME, get_qdrant_client
+
+        get_qdrant_client().delete(
+            collection_name=COLLECTION_NAME,
+            points_selector=FilterSelector(
+                filter=Filter(
+                    must=[FieldCondition(key="document_id", match=MatchValue(value=str(doc_id)))]
+                )
+            ),
+        )
+
+    @staticmethod
+    async def _get_existing_ani_docs(db: AsyncSession) -> dict[str, list[Document]]:
+        """Documents ANI déjà ingérés, par id KALITEXT (stocké dans numero_pourvoi)."""
         result = await db.execute(
-            select(Document.numero_pourvoi).where(
+            select(Document)
+            .where(
                 Document.source_type == "accord_national_interprofessionnel",
                 Document.organisation_id.is_(None),
+                Document.retired_at.is_(None),
                 Document.numero_pourvoi.isnot(None),
             )
+            .order_by(Document.created_at.desc())
         )
-        return {row[0] for row in result.all()}
+        docs: dict[str, list[Document]] = {}
+        for doc in result.scalars():
+            docs.setdefault(doc.numero_pourvoi, []).append(doc)
+        return docs
 
     async def _create_ani_document(
         self,
