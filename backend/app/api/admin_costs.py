@@ -110,7 +110,7 @@ def _period_trunc(granularity: str):
 async def get_cost_dashboard(
     date_from: date | None = Query(None),
     date_to: date | None = Query(None),
-    granularity: str = Query("day", regex="^(day|week|month|year)$"),
+    granularity: str = Query("day", pattern="^(day|week|month|year)$"),
     organisation_id: str | None = Query(None),
     _user: User = Depends(require_role(["admin"])),
     db: AsyncSession = Depends(get_db),
