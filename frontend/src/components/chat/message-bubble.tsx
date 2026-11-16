@@ -251,19 +251,78 @@ export function MessageBubble({ message, onFeedback }: MessageBubbleProps) {
               {message.content}
             </p>
           </div>
-          <p className="text-muted-foreground mt-1 text-right text-xs opacity-0 transition-opacity group-hover/message:opacity-100">
-            {formatTime(message.created_at)}
-          </p>
+          {/* Visible au survol sur ordinateur, toujours visible sur mobile
+              (pas de survol au doigt). */}
+          <div className="text-muted-foreground mt-1 flex items-center justify-end gap-1 text-xs transition-opacity group-focus-within/message:opacity-100 group-hover/message:opacity-100 md:opacity-0">
+            <span>{formatTime(message.created_at)}</span>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  onClick={() => handleCopy("markdown")}
+                  aria-label={copied ? "Copié" : "Copier la question"}
+                >
+                  {copied ? (
+                    <Check className="size-4" />
+                  ) : (
+                    <Copy className="size-4" />
+                  )}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                {copied ? "Copié" : "Copier la question"}
+              </TooltipContent>
+            </Tooltip>
+          </div>
         </div>
       </div>
     );
   }
+
+  // Même menu de copie en haut et en bas de la réponse : une réponse longue
+  // se copie sans avoir à défiler jusqu'en bas.
+  const renderCopyMenu = (align: "start" | "end") => (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          className="text-primary/70 hover:text-primary"
+          aria-label={copied ? "Copié" : "Copier la réponse"}
+        >
+          {copied ? <Check className="size-4" /> : <Copy className="size-4" />}
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align={align} className="w-72">
+        <DropdownMenuItem
+          onSelect={() => handleCopy("text")}
+          className="flex-col items-start gap-0.5"
+        >
+          <span className="font-medium">Texte simple</span>
+          <span className="text-muted-foreground text-xs">
+            Sans symboles de mise en forme — idéal pour un e-mail ou Word
+          </span>
+        </DropdownMenuItem>
+        <DropdownMenuItem
+          onSelect={() => handleCopy("markdown")}
+          className="flex-col items-start gap-0.5"
+        >
+          <span className="font-medium">Texte mis en forme</span>
+          <span className="text-muted-foreground text-xs">
+            Conserve titres, listes et gras — pour Notion, Obsidian… (Markdown)
+          </span>
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
 
   return (
     <div className="group/message flex w-full min-w-0 flex-col items-start">
       <SourceViewerProvider sources={messageSources}>
         <div className="w-full min-w-0">
           <SearchDetailsPanel details={message.search_details} />
+          <div className="mb-1 flex justify-end">{renderCopyMenu("end")}</div>
           <div
             ref={proseRef}
             className="prose prose-sm dark:prose-invert text-foreground [&_h1]:text-foreground [&_h2]:text-foreground [&_h3]:text-foreground [&_a]:text-primary [&_strong]:text-foreground [&_li::marker]:text-foreground/70 max-w-none text-[0.9375rem] leading-7 break-words [&_a]:underline-offset-2 [&_h1]:mt-6 [&_h1]:mb-3 [&_h1]:text-lg [&_h1]:font-bold [&_h2]:mt-6 [&_h2]:mb-3 [&_h2]:text-[1.0625rem] [&_h2]:font-bold [&_h3]:mt-5 [&_h3]:mb-2 [&_h3]:text-base [&_h3]:font-bold [&_li]:my-0.5 [&_li]:leading-7 [&_ol]:my-3 [&_ol]:list-decimal [&_ol]:pl-5 [&_p]:my-3 [&_p]:leading-7 [&_pre]:overflow-x-auto [&_strong]:font-semibold [&_ul]:my-3 [&_ul]:list-disc [&_ul]:pl-5 [&>*:first-child]:mt-0 [&>*:last-child]:mb-0"
@@ -277,96 +336,61 @@ export function MessageBubble({ message, onFeedback }: MessageBubbleProps) {
             </ReactMarkdown>
           </div>
           <MessageSources sources={messageSources} />
-          {!isTemp && (
-            <div className="my-8 space-y-2">
-              <div className="border-primary/15 bg-primary/5 flex flex-wrap items-center gap-1.5 rounded-xl border px-2.5 py-2">
-                {/* Copier la réponse — choix du format */}
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button
-                      variant="ghost"
-                      size="icon-sm"
-                      className="text-primary/70 hover:text-primary"
-                      aria-label={copied ? "Copié" : "Copier la réponse"}
-                    >
-                      {copied ? (
-                        <Check className="size-4" />
-                      ) : (
-                        <Copy className="size-4" />
-                      )}
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="start" className="w-72">
-                    <DropdownMenuItem
-                      onSelect={() => handleCopy("text")}
-                      className="flex-col items-start gap-0.5"
-                    >
-                      <span className="font-medium">Texte simple</span>
-                      <span className="text-muted-foreground text-xs">
-                        Sans symboles de mise en forme — idéal pour un e-mail ou
-                        Word
-                      </span>
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                      onSelect={() => handleCopy("markdown")}
-                      className="flex-col items-start gap-0.5"
-                    >
-                      <span className="font-medium">Texte mis en forme</span>
-                      <span className="text-muted-foreground text-xs">
-                        Conserve titres, listes et gras — pour Notion, Obsidian…
-                        (Markdown)
-                      </span>
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
+          {/* La copie reste possible même sur une réponse interrompue. */}
+          <div className="my-8 space-y-2">
+            <div className="border-primary/15 bg-primary/5 flex flex-wrap items-center gap-1.5 rounded-xl border px-2.5 py-2">
+              {/* Copier la réponse — choix du format */}
+              {renderCopyMenu("start")}
 
-                {/* Notation de la réponse */}
-                {onFeedback && (
-                  <>
-                    <span className="text-foreground ml-1 hidden text-xs sm:inline">
-                      Est-ce que la réponse vous convient&nbsp;?
-                    </span>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button
-                          variant="ghost"
-                          size="icon-sm"
-                          className={cn(
-                            "text-primary/70 hover:text-primary",
-                            message.feedback === "up" &&
-                              "bg-primary/10 text-primary hover:text-primary"
-                          )}
-                          onClick={() => handleFeedback("up")}
-                          aria-label="Bonne réponse"
-                        >
-                          <ThumbsUp className="size-4" />
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent>Bonne réponse</TooltipContent>
-                    </Tooltip>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button
-                          variant="ghost"
-                          size="icon-sm"
-                          className={cn(
-                            "text-primary/70 hover:text-destructive",
-                            message.feedback === "down" &&
-                              "bg-destructive/10 text-destructive hover:text-destructive"
-                          )}
-                          onClick={() => handleFeedback("down")}
-                          aria-label="Réponse à améliorer"
-                        >
-                          <ThumbsDown className="size-4" />
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent>Réponse à améliorer</TooltipContent>
-                    </Tooltip>
-                  </>
-                )}
+              {/* Notation de la réponse */}
+              {onFeedback && !isTemp && (
+                <>
+                  <span className="text-foreground ml-1 hidden text-xs sm:inline">
+                    Est-ce que la réponse vous convient&nbsp;?
+                  </span>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        className={cn(
+                          "text-primary/70 hover:text-primary",
+                          message.feedback === "up" &&
+                            "bg-primary/10 text-primary hover:text-primary"
+                        )}
+                        onClick={() => handleFeedback("up")}
+                        aria-label="Bonne réponse"
+                      >
+                        <ThumbsUp className="size-4" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>Bonne réponse</TooltipContent>
+                  </Tooltip>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        className={cn(
+                          "text-primary/70 hover:text-destructive",
+                          message.feedback === "down" &&
+                            "bg-destructive/10 text-destructive hover:text-destructive"
+                        )}
+                        onClick={() => handleFeedback("down")}
+                        aria-label="Réponse à améliorer"
+                      >
+                        <ThumbsDown className="size-4" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>Réponse à améliorer</TooltipContent>
+                  </Tooltip>
+                </>
+              )}
 
-                {/* Une réponse de sécurité ne doit jamais devenir un document. */}
-                {message.fiche_eligible !== false && ficheId === null && (
+              {/* Une réponse de sécurité ne doit jamais devenir un document. */}
+              {!isTemp &&
+                message.fiche_eligible !== false &&
+                ficheId === null && (
                   <Button
                     variant="outline"
                     size="sm"
@@ -379,12 +403,16 @@ export function MessageBubble({ message, onFeedback }: MessageBubbleProps) {
                     ) : (
                       <ClipboardList className="size-4" />
                     )}
-                    {ficheLoading ? "Mise en forme…" : "Créer une fiche pratique"}
+                    {ficheLoading
+                      ? "Mise en forme…"
+                      : "Créer une fiche pratique"}
                   </Button>
                 )}
-                {/* Fiche déjà créée : téléchargement immédiat, sans nouvel
+              {/* Fiche déjà créée : téléchargement immédiat, sans nouvel
                     appel LLM ; la régénération reste un choix explicite. */}
-                {message.fiche_eligible !== false && ficheId !== null && (
+              {!isTemp &&
+                message.fiche_eligible !== false &&
+                ficheId !== null && (
                   <div className="ml-auto flex items-center gap-1">
                     <Tooltip>
                       <TooltipTrigger asChild>
@@ -426,58 +454,57 @@ export function MessageBubble({ message, onFeedback }: MessageBubbleProps) {
                     </Button>
                   </div>
                 )}
-              </div>
-
-              {isAdmin && message.fiche_eligible !== false && (
-                <div
-                  className="border-primary/15 bg-primary/5 flex w-full flex-wrap items-center justify-end gap-2 rounded-xl border px-2.5 py-2"
-                  role="group"
-                  aria-label="Outils de publication administrateur"
-                >
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setLinkedinOpen(true)}
-                    disabled={!session?.access_token}
-                    className="border-primary/40 text-primary hover:bg-primary/10 hover:text-primary dark:border-primary/40 dark:bg-card dark:text-primary dark:hover:bg-primary/15 gap-1.5 bg-white"
-                  >
-                    <LinkedInFilledIcon className="size-4" />
-                    Post LinkedIn
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setXPostOpen(true)}
-                    disabled={!session?.access_token}
-                    className="border-primary/40 text-primary hover:bg-primary/10 hover:text-primary dark:border-primary/40 dark:bg-card dark:text-primary dark:hover:bg-primary/15 gap-1.5 bg-white"
-                  >
-                    <XFilledIcon className="size-4" />
-                    Publication X
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setSocialMediaOpen(true)}
-                    disabled={!session?.access_token}
-                    className="border-primary/40 text-primary hover:bg-primary/10 hover:text-primary dark:border-primary/40 dark:bg-card dark:text-primary dark:hover:bg-primary/15 gap-1.5 bg-white"
-                  >
-                    <Images className="size-4" />
-                    Média
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setLinkedinCarouselOpen(true)}
-                    disabled={!session?.access_token}
-                    className="border-primary/40 text-primary hover:bg-primary/10 hover:text-primary dark:border-primary/40 dark:bg-card dark:text-primary dark:hover:bg-primary/15 gap-1.5 bg-white"
-                  >
-                    <Images className="size-4" />
-                    Post + carrousel LinkedIn
-                  </Button>
-                </div>
-              )}
             </div>
-          )}
+
+            {isAdmin && !isTemp && message.fiche_eligible !== false && (
+              <div
+                className="border-primary/15 bg-primary/5 flex w-full flex-wrap items-center justify-end gap-2 rounded-xl border px-2.5 py-2"
+                role="group"
+                aria-label="Outils de publication administrateur"
+              >
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setLinkedinOpen(true)}
+                  disabled={!session?.access_token}
+                  className="border-primary/40 text-primary hover:bg-primary/10 hover:text-primary dark:border-primary/40 dark:bg-card dark:text-primary dark:hover:bg-primary/15 gap-1.5 bg-white"
+                >
+                  <LinkedInFilledIcon className="size-4" />
+                  Post LinkedIn
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setXPostOpen(true)}
+                  disabled={!session?.access_token}
+                  className="border-primary/40 text-primary hover:bg-primary/10 hover:text-primary dark:border-primary/40 dark:bg-card dark:text-primary dark:hover:bg-primary/15 gap-1.5 bg-white"
+                >
+                  <XFilledIcon className="size-4" />
+                  Publication X
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setSocialMediaOpen(true)}
+                  disabled={!session?.access_token}
+                  className="border-primary/40 text-primary hover:bg-primary/10 hover:text-primary dark:border-primary/40 dark:bg-card dark:text-primary dark:hover:bg-primary/15 gap-1.5 bg-white"
+                >
+                  <Images className="size-4" />
+                  Média
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setLinkedinCarouselOpen(true)}
+                  disabled={!session?.access_token}
+                  className="border-primary/40 text-primary hover:bg-primary/10 hover:text-primary dark:border-primary/40 dark:bg-card dark:text-primary dark:hover:bg-primary/15 gap-1.5 bg-white"
+                >
+                  <Images className="size-4" />
+                  Post + carrousel LinkedIn
+                </Button>
+              </div>
+            )}
+          </div>
           {isAdmin && !isTemp && message.fiche_eligible !== false && (
             <>
               <LinkedInPostDialog
