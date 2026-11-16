@@ -23,6 +23,7 @@ from app.models.ccn import CcnReference, OrganisationConvention
 from app.models.document import Document
 from app.rag.norme_hierarchy import DOCUMENT_TYPE_HIERARCHY
 from app.rag.tasks import enqueue_ingestion
+from app.services.ccn_hors_legifrance import hors_legifrance_articles, is_hors_legifrance
 
 logger = logging.getLogger(__name__)
 
@@ -391,7 +392,7 @@ class KaliService:
 
         try:
             ccn_ref = await db.get(CcnReference, org_conv.idcc)
-            if not ccn_ref or not ccn_ref.kali_id:
+            if not ccn_ref or not (ccn_ref.kali_id or is_hors_legifrance(ccn_ref.idcc)):
                 raise ValueError(f"IDCC {org_conv.idcc} introuvable dans le référentiel")
 
             # Check if common docs already exist for this IDCC
@@ -602,7 +603,7 @@ class KaliService:
         ones are removed once their replacement is ready."""
         sync_result = KaliSyncResult(idcc=idcc)
         ccn_ref = await db.get(CcnReference, idcc)
-        if not ccn_ref or not ccn_ref.kali_id:
+        if not ccn_ref or not (ccn_ref.kali_id or is_hors_legifrance(idcc)):
             sync_result.error = f"IDCC {idcc} introuvable dans le référentiel"
             return sync_result
 
@@ -1033,6 +1034,11 @@ class KaliService:
         Returns (articles, error_messages, most_recent_source_date).
         Articles include a 'category' field: 'base', 'annexe', or 'salaire'.
         """
+        if is_hors_legifrance(ccn_ref.idcc):
+            # Texte absent de Légifrance : lu depuis les fichiers de l'application.
+            articles, source_date = hors_legifrance_articles(ccn_ref.idcc)
+            return articles, [], source_date
+
         errors: list[str] = []
         most_recent_date: str | None = None
 
