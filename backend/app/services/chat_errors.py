@@ -2,6 +2,22 @@
 
 from openai import RateLimitError
 
+SEARCH_TECHNICAL_ERRORS = frozenset(
+    {
+        "search_planner_error",
+        "search_retrieval_error",
+        "search_reranking_error",
+        "search_context_error",
+    }
+)
+# Seul texte montré à l'utilisateur quand la recherche échoue : le code
+# technique reste dans l'événement et dans les logs.
+SEARCH_FAILURE_MESSAGE = (
+    "Je n’ai pas réussi à terminer la recherche pour cette question. "
+    "Votre question est conservée : réessayez dans quelques instants ou reformulez-la. "
+    "Si le problème revient, signalez-le-nous."
+)
+
 
 def stream_error_payload(error: Exception) -> dict[str, str]:
     if isinstance(error, RateLimitError):

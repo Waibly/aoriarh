@@ -41,6 +41,9 @@ class RetrievalError(RuntimeError):
 # Max chunks fetched per parent group (cap on Qdrant scroll cost).
 MAX_CHUNKS_PER_GROUP = 30
 # Max characters per group. Whole passages only; no text slicing.
+# Neighbours are added only within this budget. A single ranked passage longer
+# than it (a long article or table) is still kept whole, alone: dropping it
+# would lose the text, and cutting it would alter it.
 MAX_CHARS_PER_GROUP = 9000
 # A decision longer than this is read in a focused way (header, ranked
 # passages with neighbours, final passage). Cassation rulings usually fit.
@@ -113,8 +116,9 @@ def reference_source_types(query: str) -> dict[str, list[str]]:
             # A bare number ("article 12") is never a Code article, which are
             # always L/R/D-prefixed. Unscoped, it matched the same number in
             # every law, ANI and agreement of the corpus (30 arbitrary chunks).
-            if re.search(r"\b(?:ccn|conventions?\s+collectives?|accords?\s+de\s+branche)\b",
-                         query, re.I):
+            if re.search(
+                r"\b(?:ccn|conventions?\s+collectives?|accords?\s+de\s+branche)\b", query, re.I
+            ):
                 result[article] = list(_NUMBERED_AGREEMENT_TYPES["ccn"])
             elif re.search(r"\baccords?\s+(?:collectifs?\s+)?d['’]entreprise\b", query, re.I):
                 result[article] = list(_NUMBERED_AGREEMENT_TYPES["entreprise"])
@@ -456,8 +460,6 @@ def _merge_group(chunks, best_score, seeds=None, *, complete_document: bool = Fa
     by_index = {r.chunk_index: r for r in chunks}
     # Original ranked passages win over the secondary fetch.
     by_index.update({r.chunk_index: r for r in reversed(ranked_seeds)})
-    if len(best.text) > MAX_CHARS_PER_GROUP and not complete_document:
-        raise ParentExpansionError("selected_passage_exceeds_context_budget")
     if complete_document:
         # Jurisprudence is indexed as one document parent. A short decision is
         # kept whole. A long one (typically a cour d'appel ruling on several
@@ -493,10 +495,11 @@ def _merge_group(chunks, best_score, seeds=None, *, complete_document: bool = Fa
         (i for i in by_index if i not in priorities),
         key=lambda i: (abs(i - best.chunk_index), i),
     )
-    selected = []
-    chars = 0
-    for i in priorities:
-        cost = len(by_index[i].text) + (2 if selected else 0)
+    # The best ranked passage is always kept whole, even beyond the budget.
+    selected = [best.chunk_index]
+    chars = len(best.text)
+    for i in priorities[1:]:
+        cost = len(by_index[i].text) + 2
         if chars + cost <= MAX_CHARS_PER_GROUP:
             selected.append(i)
             chars += cost

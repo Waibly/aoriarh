@@ -160,8 +160,15 @@ def test_budget_preserves_original_passages_without_reconstructing_content():
     merged = _merge_group([other], seed.score, [seed])
     assert merged.text == seed.text
     assert merged.context_chunk_indices == [5]
-    with pytest.raises(ParentExpansionError, match="exceeds_context_budget"):
-        _merge_group([], 0.9, [result(text="x" * (MAX_CHARS_PER_GROUP + 1))])
+
+
+def test_long_ranked_passage_is_kept_whole_and_alone():
+    long_text = "x" * (MAX_CHARS_PER_GROUP * 3)
+    seed = result(index=5, text=long_text)
+    neighbour = result(index=4, text="voisin")
+    merged = _merge_group([neighbour], seed.score, [seed])
+    assert merged.text == long_text
+    assert merged.context_chunk_indices == [5]
 
 
 def test_versions_are_not_combined(index):

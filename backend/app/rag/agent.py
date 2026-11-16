@@ -1011,6 +1011,7 @@ class RAGAgent:
                 status="error",
                 reason=("reranker_timeout" if isinstance(exc, TimeoutError) else str(exc)),
             )
+            logger.warning("Search reranking failed: %s", selection["reason"])
             return [], reformulated, trace
         trace.perf_ms["rerank"] = (time.perf_counter() - t2) * 1000
         trace.rerank_results = _serialize_chunks(results, limit=len(results))
@@ -1044,6 +1045,7 @@ class RAGAgent:
                 status="error",
                 reason=("parent_timeout" if isinstance(exc, TimeoutError) else str(exc)),
             )
+            logger.warning("Search context assembly failed: %s", selection["reason"])
             return [], reformulated, trace
         results = self._append_instrument_links(results, instrument_links, selection["groups"])
         trace.perf_ms["parent_expansion"] = (time.perf_counter() - t_exp) * 1000

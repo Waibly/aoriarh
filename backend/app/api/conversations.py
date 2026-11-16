@@ -51,10 +51,28 @@ from app.schemas.conversation import (
 )
 from app.schemas.dossier import ConversationRename
 from app.services.billing_service import BillingService
+from app.services.chat_errors import SEARCH_FAILURE_MESSAGE, SEARCH_TECHNICAL_ERRORS
 from app.services.conversation_service import ConversationService
 from app.services.security_alert_service import send_security_alert_bg
 
 logger = logging.getLogger(__name__)
+
+
+def _search_error_detail(trace) -> str:
+    """Résumé technique pour les logs : jamais le texte des sources."""
+    validation = getattr(trace, "search_plan_validation", None) or {}
+    selection = validation.get("selection") or {}
+    parts = [
+        f"{key}={value}"
+        for key, value in (
+            ("reason", selection.get("reason")),
+            ("technical_error", validation.get("technical_error")),
+            ("chronology_error", validation.get("chronology_error")),
+        )
+        if value
+    ]
+    return ", ".join(parts) or "no detail"
+
 
 router = APIRouter()
 
@@ -1747,9 +1765,7 @@ async def chat_stream(
                 # A dossier write failed and was rolled back: reload expired instances.
                 from app.services.conversation_orchestrator import reload_after_rollback
 
-                await reload_after_rollback(
-                    db, conversation, user_message, account, user, dossier
-                )
+                await reload_after_rollback(db, conversation, user_message, account, user, dossier)
             documents = prepared_context.documents
             references = [
                 {
@@ -1828,59 +1844,20 @@ async def chat_stream(
                         "version": case_application.get("version"),
                     },
                 )
-            if rag_trace.error in {"search_reranking_error", "search_context_error"}:
-                yield _sse_event(
-                    "chat_error",
-                    {
-                        "error": rag_trace.error,
-                        "message": (
-                            "Le classement des documents a échoué. "
-                            "Aucun classement de secours n’a été utilisé."
-                            if rag_trace.error == "search_reranking_error"
-                            else "Le contexte documentaire n’a pas pu être préparé. "
-                            "Aucune réponse n’a été générée."
-                        ),
-                    },
+            if rag_trace.error in SEARCH_TECHNICAL_ERRORS:
+                # Le code technique reste dans les logs et l'événement ;
+                # l'utilisateur ne voit qu'un message compréhensible.
+                logger.warning(
+                    "Search failed for conversation %s: %s (%s)",
+                    conversation_id,
+                    rag_trace.error,
+                    _search_error_detail(rag_trace),
                 )
-                return
-            if rag_trace.error == "search_retrieval_error":
-                yield _sse_event(
-                    "chat_error",
-                    {
-                        "error": "search_retrieval_error",
-                        "message": (
-                            "Une recherche documentaire a échoué. Aucune réponse n’a été "
-                            "générée à partir des résultats incomplets."
-                        ),
-                    },
-                )
-                return
-            if rag_trace.error == "search_planner_error":
-                if (
-                    rag_trace.search_plan_validation.get("technical_error")
-                    == "planner_json_contains_nul"
-                ):
-                    yield _sse_event(
-                        "chat_error",
-                        {
-                            "error": "search_planner_error",
-                            "technical_error": "planner_json_contains_nul",
-                            "message": "Le plan reçu contient un caractère incompatible avec "
-                            "l’enregistrement. Il n’a pas été exécuté. Sa sortie originale "
-                            "est consultable dans le dossier.",
-                        },
-                    )
-                    return
-                yield _sse_event(
-                    "chat_error",
-                    {
-                        "error": "search_planner_error",
-                        "message": (
-                            "Le plan de recherche n’a pas pu être exécuté. "
-                            "Aucune recherche de secours n’a été lancée."
-                        ),
-                    },
-                )
+                payload = {"error": rag_trace.error, "message": SEARCH_FAILURE_MESSAGE}
+                technical_error = rag_trace.search_plan_validation.get("technical_error")
+                if technical_error:
+                    payload["technical_error"] = technical_error
+                yield _sse_event("chat_error", payload)
                 return
             if not results and not prepared_context.generate_without_sources:
                 yield _sse_event(

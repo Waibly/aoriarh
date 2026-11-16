@@ -63,7 +63,11 @@ from app.rag.config import (
 from app.rag.intent_router import classify_intent
 from app.rag.pipeline import prepare_rag_context
 from app.rag.search_feedback import search_feedback
-from app.services.chat_errors import stream_error_payload
+from app.services.chat_errors import (
+    SEARCH_FAILURE_MESSAGE,
+    SEARCH_TECHNICAL_ERRORS,
+    stream_error_payload,
+)
 from app.services.conversation_service import ConversationService
 from app.services.demo_observability import observe_demo_stream
 from app.services.security_alert_service import send_security_alert_bg
@@ -415,47 +419,11 @@ async def public_ask(
 
                 rag_trace.router_raw_response = intent_result.raw_response
                 yield _sse_event("chat_search_details", search_feedback(rag_trace))
-                if rag_trace.error in {"search_reranking_error", "search_context_error"}:
+                if rag_trace.error in SEARCH_TECHNICAL_ERRORS:
+                    logger.warning("Demo search failed: %s", rag_trace.error)
                     yield _sse_event(
                         "chat_error",
-                        {
-                            "error": rag_trace.error,
-                            "message": (
-                                (
-                                    "Le classement des documents a échoué. Aucun clas"
-                                    "sement de secours n’a été utilisé."  # noqa: E501 -- Preserve literal text.
-                                )
-                                if rag_trace.error == "search_reranking_error"
-                                else (
-                                    "Le contexte documentaire n’a pas pu être préparé"
-                                    ". Aucune réponse n’a été générée."  # noqa: E501 -- Preserve literal text.
-                                )
-                            ),
-                        },
-                    )
-                    return
-                if rag_trace.error == "search_retrieval_error":
-                    yield _sse_event(
-                        "chat_error",
-                        {
-                            "error": "search_retrieval_error",
-                            "message": (
-                                "Une recherche documentaire a échoué. Aucune réponse n’a été "
-                                "générée à partir des résultats incomplets."
-                            ),
-                        },
-                    )
-                    return
-                if rag_trace.error == "search_planner_error":
-                    yield _sse_event(
-                        "chat_error",
-                        {
-                            "error": "search_planner_error",
-                            "message": (
-                                "Le plan de recherche n’a pas pu être exécuté. Aucune recherche de"
-                                " secours n’a été lancée."
-                            ),
-                        },
+                        {"error": rag_trace.error, "message": SEARCH_FAILURE_MESSAGE},
                     )
                     return
                 if not results and not rag_trace.search_plan_validation.get("chronology"):

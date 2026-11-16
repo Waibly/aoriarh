@@ -27,6 +27,7 @@ from sqlalchemy import select
 from app.models.conversation import Message
 from app.rag.agent import RagTrace
 from app.rag.search import SearchResult
+from app.services.chat_errors import SEARCH_FAILURE_MESSAGE
 from app.services.conversation_orchestrator import PreparedConversation
 from tests.conftest import auth_header
 from tests.conftest import test_session_factory as session_factory
@@ -161,6 +162,8 @@ async def test_search_failure_emits_raw_details_before_technical_error(
     assert details_index < error_index
     assert events[details_index][1]["raw_response"] == raw
     assert events[error_index][1]["error"] == error
+    # Le code reste dans l’événement ; l’utilisateur ne lit qu’un message simple.
+    assert events[error_index][1]["message"] == SEARCH_FAILURE_MESSAGE
     assert all(name != "chat_delta" for name, _ in events)
     async with session_factory() as db:
         messages = list(
