@@ -58,7 +58,12 @@ class IncidentMiddleware:
                     and headers.get(b"x-aoria-auth-retry") == b"managed"
                     and scope["path"].startswith("/api/v1/")
                 )
-                if message["status"] >= 400 and not (unmatched_probe or auth_retry):
+                # A route may flag an expected failure, e.g. a session that
+                # reached its normal end of life on refresh.
+                expected = message["status"] == 401 and bool(
+                    scope.get("state", {}).get("expected_auth_failure")
+                )
+                if message["status"] >= 400 and not (unmatched_probe or auth_retry or expected):
                     # Existing unauthenticated contract probe expects this exact 403.
                     probe = headers.get(b"user-agent", b"").startswith(b"Aoria-Technical-Monitor/")
                     if not (

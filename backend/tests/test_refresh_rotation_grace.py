@@ -108,3 +108,55 @@ def test_per_visitor_gives_internal_calls_a_wider_budget() -> None:
     provider = per_visitor("10/minute")
     assert provider("203.0.113.7") == "10/minute"
     assert provider(INTERNAL_KEY) == "600/minute"
+
+
+@pytest.fixture
+def incident_spool(tmp_path, monkeypatch):
+    from app.observability import store
+
+    monkeypatch.setenv("INCIDENT_DB", str(tmp_path / "incidents.sqlite3"))
+    token = store.context.set(None)
+    yield lambda: _incident_statuses(store)
+    store.context.reset(token)
+
+
+def _incident_statuses(store) -> list[tuple[str, int]]:
+    import json
+
+    with store.connection() as db:
+        rows = db.execute("SELECT * FROM incidents").fetchall()
+    return [(dict(r).get("location") or "", json.loads(dict(r)["payload"])["status"]) for r in rows]
+
+
+@pytest.mark.asyncio
+async def test_expired_session_logout_is_not_an_incident(
+    client: AsyncClient, incident_spool
+) -> None:
+    """Incident 2026-11-16: a tab left open past the 3-day session limit was
+    reported as a production incident although the logout was expected."""
+    token = (await _signup(client, "expired@example.com"))["refresh_token"]
+    async with test_session_factory() as db:
+        await db.execute(
+            update(AuthSession).values(expires_at=datetime.now(UTC) - timedelta(minutes=1))
+        )
+        await db.commit()
+
+    response = await _refresh(client, token)
+
+    assert response.status_code == 401
+    assert response.json()["detail"] == "Session expirée, veuillez vous reconnecter"
+    assert incident_spool() == []
+
+
+@pytest.mark.asyncio
+async def test_unknown_or_reused_refresh_token_is_still_an_incident(
+    client: AsyncClient, incident_spool
+) -> None:
+    original = (await _signup(client, "reuse@example.com"))["refresh_token"]
+    assert (await _refresh(client, original)).status_code == 200
+    await _age_rotations(600)  # past the concurrent-refresh grace window
+
+    assert (await _refresh(client, original)).status_code == 401  # reuse
+    assert (await _refresh(client, "not-a-real-token")).status_code == 401  # unknown
+
+    assert [status for _, status in incident_spool()] == [401, 401]

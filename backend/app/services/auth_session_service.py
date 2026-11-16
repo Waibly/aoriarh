@@ -15,6 +15,10 @@ from app.models.user import User
 logger = logging.getLogger(__name__)
 
 
+class RefreshSessionExpiredError(Exception):
+    """The session reached its normal end of life: an expected logout, not an anomaly."""
+
+
 def _hash_refresh_token(token: str) -> str:
     return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
@@ -80,7 +84,7 @@ async def rotate_auth_session(
     if expires_at <= now:
         current.revoked = True
         await db.commit()
-        return None
+        raise RefreshSessionExpiredError
 
     if current.revoked:
         if await _is_concurrent_rotation(db, current, now):

@@ -15,7 +15,11 @@ from app.schemas.auth import (
     TokenResponse,
 )
 from app.services.auth_service import AuthService
-from app.services.auth_session_service import revoke_auth_session, rotate_auth_session
+from app.services.auth_session_service import (
+    RefreshSessionExpiredError,
+    revoke_auth_session,
+    rotate_auth_session,
+)
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -61,7 +65,16 @@ async def google_auth(
 async def refresh(
     request: Request, data: RefreshRequest, db: AsyncSession = Depends(get_db)
 ) -> TokenResponse:
-    rotated = await rotate_auth_session(db, data.refresh_token)
+    try:
+        rotated = await rotate_auth_session(db, data.refresh_token)
+    except RefreshSessionExpiredError:
+        # Normal end of the session lifetime: the user simply logs in again.
+        # Unknown or reused tokens below remain reported as incidents.
+        request.state.expected_auth_failure = True
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Session expirée, veuillez vous reconnecter",
+        ) from None
     if rotated is None:
         logger.warning(
             "Refresh token rejected from %s",
