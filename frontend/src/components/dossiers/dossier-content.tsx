@@ -61,6 +61,7 @@ export function DossierContent({
   const [label, setLabel] = useState("");
   const [value, setValue] = useState("");
   const [uploadOpen, setUploadOpen] = useState(false);
+  const [progress, setProgress] = useState("");
   const [library, setLibrary] = useState(false);
   const [query, setQuery] = useState("");
   const [items, setItems] = useState<{ document_id: string; name: string }[]>(
@@ -126,20 +127,51 @@ export function DossierContent({
       if (mounted.current) setBusy(false);
     }
   }
-  async function upload(file: File) {
-    if (file.size > 10 * 1024 * 1024) {
-      setError("Maximum 10 Mo par fichier");
+  async function upload(list: FileList | File[]) {
+    const files = Array.from(list);
+    if (!files.length || working.current) return;
+    if (replacement && files.length > 1) {
+      setError("Pour remplacer une pièce, choisissez un seul fichier.");
       return;
     }
-    if (
-      await run(() =>
-        uploadDossierDocument(
-          d.id,
-          token,
-          file,
-          replacement?.id,
-          d.case_file.version
-        ).catch(async (error) => {
+    // Files are checked first so one bad file never blocks the others.
+    const failures: string[] = [];
+    const accepted = files.filter((file) => {
+      const reason = !/\.(pdf|docx|txt)$/i.test(file.name)
+        ? "format non accepté (PDF, DOCX ou TXT)"
+        : file.size > 10 * 1024 * 1024
+          ? "plus de 10 Mo"
+          : "";
+      if (reason) failures.push(`${file.name} : ${reason}`);
+      return !reason;
+    });
+    let added = 0;
+    working.current = true;
+    setBusy(true);
+    setError("");
+    try {
+      // One after the other: each import updates the dossier version.
+      for (const [index, file] of accepted.entries()) {
+        if (!mounted.current) return;
+        setProgress(
+          accepted.length > 1
+            ? `Import ${index + 1} sur ${accepted.length} : ${file.name}…`
+            : ""
+        );
+        try {
+          const next = await uploadDossierDocument(
+            d.id,
+            token,
+            file,
+            replacement?.id,
+            d.case_file.version
+          );
+          added += 1;
+          if (mounted.current) onChange(next);
+        } catch (e) {
+          failures.push(
+            `${file.name} : ${e instanceof Error ? e.message : "import impossible"}`
+          );
           // A failed preparation can still have saved the original file.
           try {
             const latest = await getDossier(d.id, token);
@@ -147,11 +179,28 @@ export function DossierContent({
           } catch {
             /* Preserve the original upload error and the current editor. */
           }
-          throw error;
-        })
-      )
-    )
+        }
+      }
+    } finally {
+      working.current = false;
+      if (mounted.current) {
+        setBusy(false);
+        setProgress("");
+      }
+    }
+    if (!mounted.current) return;
+    if (!failures.length) {
       setUploadOpen(false);
+      if (added > 1) toast(`${added} documents ajoutés au dossier`);
+      return;
+    }
+    setError(
+      (added
+        ? `${added} document${added > 1 ? "s" : ""} ajouté${added > 1 ? "s" : ""}. `
+        : "") +
+        `Non ajouté${failures.length > 1 ? "s" : ""} :\n` +
+        failures.join("\n")
+    );
   }
   async function search(offset = 0) {
     await run(async () => {
@@ -212,7 +261,7 @@ export function DossierContent({
       {error && (
         <p
           role="alert"
-          className="border-destructive/30 text-destructive rounded-lg border p-3 text-sm"
+          className="border-destructive/30 text-destructive rounded-lg border p-3 text-sm break-words whitespace-pre-line"
         >
           {error}
         </p>
@@ -656,28 +705,35 @@ export function DossierContent({
             onDragOver={(e) => e.preventDefault()}
             onDrop={(e) => {
               e.preventDefault();
-              if (!busy && e.dataTransfer.files[0])
-                void upload(e.dataTransfer.files[0]);
+              if (!busy) void upload(e.dataTransfer.files);
             }}
           >
             <Upload className="text-muted-foreground mx-auto mb-3 size-6" />
-            <p className="text-sm">Glissez un fichier ici</p>
+            <p className="text-sm">
+              {replacement
+                ? "Glissez le fichier ici"
+                : "Glissez un ou plusieurs fichiers ici"}
+            </p>
             <Button
               className="mt-3"
               variant="outline"
               disabled={busy}
               onClick={() => input.current?.click()}
             >
-              Importer un fichier
+              {replacement ? "Importer un fichier" : "Importer des fichiers"}
             </Button>
             <input
               type="file"
               hidden
               ref={input}
+              data-testid="dossier-file-input"
+              multiple={!replacement}
               accept=".pdf,.docx,.txt"
               onChange={(e) => {
-                if (e.target.files?.[0]) void upload(e.target.files[0]);
+                // Copy before clearing: the FileList is live.
+                const files = Array.from(e.target.files ?? []);
                 e.target.value = "";
+                void upload(files);
               }}
             />
           </div>
@@ -767,9 +823,16 @@ export function DossierContent({
               </div>
             </div>
           )}
-          {busy && <p role="status">Préparation du document…</p>}
+          {busy && (
+            <p role="status" className="break-words">
+              {progress || "Préparation du document…"}
+            </p>
+          )}
           {error && (
-            <p role="alert" className="text-destructive text-sm">
+            <p
+              role="alert"
+              className="text-destructive text-sm break-words whitespace-pre-line"
+            >
               {error}
             </p>
           )}
