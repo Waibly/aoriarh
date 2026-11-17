@@ -196,6 +196,12 @@ def find_or_create_price(product_id: str, price_cfg: dict):
 
     existing = _search_price(aoria_code)
     if existing is not None:
+        if existing["tax_behavior"] == "unspecified":
+            existing = stripe.Price.modify(existing["id"], tax_behavior="exclusive")
+        elif existing["tax_behavior"] != "exclusive":
+            raise ValueError(
+                f"Le prix {aoria_code} est TTC. Créez un tarif HT avant de le réutiliser."
+            )
         if existing["unit_amount"] != amount:
             print(
                 f"  ! Price {aoria_code} exists on Stripe with a different amount "

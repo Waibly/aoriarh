@@ -17,6 +17,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { BillingProfileForm } from "@/components/billing-profile-form";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   fetchQuota,
@@ -108,6 +109,14 @@ export default function BillingPage() {
   const [canManageBilling, setCanManageBilling] = useState(false);
   const [cycle, setCycle] = useState<BillingCycle>("monthly");
   const [busy, setBusy] = useState(false);
+  const [billingProfileReady, setBillingProfileReady] = useState(false);
+
+  const requireBillingProfile = () => {
+    if (billingProfileReady) return true;
+    toast.error("Enregistrez les coordonnées de facturation de votre entreprise avant de continuer.");
+    document.getElementById("billing-coordinates")?.scrollIntoView({ behavior: "smooth" });
+    return false;
+  };
 
   // Change-plan confirmation dialog (with prorata preview)
   const [changePlanTarget, setChangePlanTarget] = useState<{
@@ -165,6 +174,7 @@ export default function BillingPage() {
 
   const handleCheckout = async (plan: PlanCode) => {
     if (!token) return;
+    if (!requireBillingProfile()) return;
     if (hasCommercialSub) {
       // Open the confirmation dialog and fetch the prorata preview so the
       // user sees the exact amount before confirming the change.
@@ -304,6 +314,7 @@ export default function BillingPage() {
 
   const handleAddAddon = async (addon_type: AddonType) => {
     if (!token) return;
+    if (!requireBillingProfile()) return;
     setBusy(true);
     try {
       await addAddon(token, addon_type);
@@ -333,6 +344,7 @@ export default function BillingPage() {
 
   const handleBooster = async () => {
     if (!token) return;
+    if (!requireBillingProfile()) return;
     setBusy(true);
     try {
       const { checkout_url } = await startBoosterCheckout(token);
@@ -382,6 +394,9 @@ export default function BillingPage() {
       </div>
 
       {/* Current plan + quota */}
+      {canManageBilling && token && (
+        <BillingProfileForm token={token} onReady={setBillingProfileReady} />
+      )}
       {quota && (
         <Card>
           <CardHeader>
@@ -705,12 +720,14 @@ export default function BillingPage() {
           <CardContent>
             <div className="divide-y">
               {invoices.map((inv) => {
-                const amount = ((inv.status === "paid" ? inv.amount_paid_cents : inv.amount_due_cents) / 100).toLocaleString("fr-FR", {
+                const amount = ((inv.total_cents ?? (inv.status === "paid" ? inv.amount_paid_cents : inv.amount_due_cents)) / 100).toLocaleString("fr-FR", {
                   minimumFractionDigits: 2,
                   maximumFractionDigits: 2,
                 });
                 const currency = (inv.currency || "eur").toUpperCase();
-                const statusBadge = inv.status === "paid" ? (
+                const statusBadge = (inv.credited_cents ?? 0) > 0 ? (
+                  <Badge variant="secondary">Avoir émis</Badge>
+                ) : inv.status === "paid" ? (
                   <Badge variant="default">Payée</Badge>
                 ) : inv.status === "open" ? (
                   <Badge variant="outline">En attente</Badge>

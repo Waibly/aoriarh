@@ -44,6 +44,19 @@ async def test_invited_member_cannot_manage_billing(client, manager_user, monkey
     monkeypatch.setattr("app.api.billing.StripeService", service)
     monkeypatch.setattr("app.api.billing.stripe.Invoice.list", invoices)
     for method, path, payload in [
+        ("GET", "/profile", None),
+        (
+            "PUT",
+            "/profile",
+            {
+                "business_name": "Test",
+                "line1": "1 rue du Test",
+                "postal_code": "75001",
+                "city": "Paris",
+                "country": "FR",
+                "professional": True,
+            },
+        ),
         ("POST", "/checkout", {"plan": "solo", "cycle": "monthly"}),
         ("POST", "/booster/checkout", None),
         ("POST", "/change-plan", {"plan": "solo", "cycle": "monthly"}),

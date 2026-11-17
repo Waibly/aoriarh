@@ -7,6 +7,7 @@ from sqlalchemy import select
 from app.core.config import settings
 from app.models.account import Account
 from tests.conftest import auth_header, test_session_factory
+from tests.test_billing_tax import stripe_customer
 
 
 @pytest.mark.parametrize(
@@ -32,6 +33,7 @@ async def test_checkout_uses_dashboard_payment_methods(
         await db.commit()
 
     monkeypatch.setattr(stripe.Subscription, "list", lambda **kw: {"data": []})
+    monkeypatch.setattr(stripe.Customer, "retrieve", lambda *a, **kw: stripe_customer())
     calls = []
 
     def create_session(**params):
@@ -68,7 +70,7 @@ async def test_checkout_uses_dashboard_payment_methods(
         assert params["line_items"] == [{"price": expected_price, "quantity": 1}]
     if mode != "setup":
         assert params["automatic_tax"] == {"enabled": True}
-        assert params["billing_address_collection"] == "required"
+        assert params["billing_address_collection"] == "auto"
     else:
         assert params["currency"] == "eur"
         assert params["setup_intent_data"]["metadata"]["purpose"] == "update_default_payment_method"

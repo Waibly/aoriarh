@@ -40,6 +40,26 @@ export type PortalResponse = {
   portal_url: string;
 };
 
+export type BillingProfile = {
+  business_name: string;
+  line1: string;
+  line2: string;
+  postal_code: string;
+  city: string;
+  country: string;
+  professional: boolean;
+};
+
+export function fetchBillingProfile(token: string): Promise<BillingProfile | null> {
+  return apiFetch("/billing/profile", { token });
+}
+
+export function saveBillingProfile(token: string, profile: BillingProfile): Promise<BillingProfile> {
+  return apiFetch("/billing/profile", {
+    token, method: "PUT", body: JSON.stringify(profile),
+  });
+}
+
 export async function fetchQuota(token: string): Promise<QuotaInfo> {
   return apiFetch<QuotaInfo>("/billing/quota", { token });
 }
@@ -190,6 +210,8 @@ export type InvoiceRow = {
   status: string | null;
   amount_paid_cents: number;
   amount_due_cents: number;
+  total_cents?: number;
+  credited_cents?: number;
   currency: string;
   created: number | null;
   hosted_invoice_url: string | null;

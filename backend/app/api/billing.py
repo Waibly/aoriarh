@@ -26,6 +26,7 @@ from app.models.subscription import Subscription
 from app.models.subscription_addon import SubscriptionAddon
 from app.models.user import User
 from app.schemas.stripe_billing import (
+    BillingProfile,
     BoosterCheckoutResponse,
     CheckoutRequest,
     CheckoutResponse,
@@ -43,6 +44,25 @@ router = APIRouter()
 # ---------------------------------------------------------------------------
 # Checkout
 # ---------------------------------------------------------------------------
+
+
+@router.get("/profile", response_model=BillingProfile | None)
+async def get_billing_profile(
+    owner_data: tuple[User, Account] = Depends(require_account_owner),
+    db: AsyncSession = Depends(get_db),
+) -> BillingProfile | None:
+    _, account = owner_data
+    return await StripeService(db).get_billing_profile(account)
+
+
+@router.put("/profile", response_model=BillingProfile)
+async def save_billing_profile(
+    payload: BillingProfile,
+    owner_data: tuple[User, Account] = Depends(require_account_owner),
+    db: AsyncSession = Depends(get_db),
+) -> BillingProfile:
+    user, account = owner_data
+    return await StripeService(db).save_billing_profile(account, user.email, payload)
 
 
 @router.post("/checkout", response_model=CheckoutResponse)
@@ -375,6 +395,12 @@ async def list_invoices(
                 "status": _get(inv, "status"),
                 "amount_paid_cents": int(_get(inv, "amount_paid") or 0),
                 "amount_due_cents": int(_get(inv, "amount_due") or 0),
+                "total_cents": int(
+                    _get(inv, "total")
+                    if _get(inv, "total") is not None
+                    else max(_get(inv, "amount_paid") or 0, _get(inv, "amount_due") or 0)
+                ),
+                "credited_cents": int(_get(inv, "post_payment_credit_notes_amount") or 0),
                 "currency": _get(inv, "currency") or "eur",
                 "created": _get(inv, "created"),
                 "hosted_invoice_url": _get(inv, "hosted_invoice_url"),

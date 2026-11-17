@@ -11,7 +11,13 @@ import stripe
 
 from app.core.config import settings
 from tests.conftest import auth_header
+from tests.test_billing_tax import stripe_customer
 from tests.test_stripe_lifecycle import SUB_ID, _paid_account
+
+
+@pytest.fixture(autouse=True)
+def _billing_coordinates(monkeypatch):
+    monkeypatch.setattr(stripe.Customer, "retrieve", lambda *a, **kw: stripe_customer())
 
 
 def _obj(data: dict, cls=stripe.StripeObject):
@@ -58,6 +64,8 @@ async def test_invoice_list_reads_sdk_objects(client, regular_user, monkeypatch)
             "status": "paid",
             "amount_paid_cents": 7900,
             "amount_due_cents": 7900,
+            "total_cents": 7900,
+            "credited_cents": 0,
             "currency": "eur",
             "created": 1794313778,
             "hosted_invoice_url": "https://invoice.stripe.com/i/1",
@@ -118,6 +126,16 @@ def test_invoice_tax_falls_back_on_legacy_field():
 
 
 async def test_stripe_refusal_returns_502_not_500(client, regular_user, monkeypatch):
+    from sqlalchemy import select
+
+    from app.models.account import Account
+    from tests.conftest import test_session_factory
+
+    async with test_session_factory() as db:
+        account = (await db.scalars(select(Account))).one()
+        account.stripe_customer_id = "cus_tax"
+        await db.commit()
+    monkeypatch.setattr(stripe.Subscription, "list", lambda **kw: {"data": []})
     monkeypatch.setattr(settings, "stripe_secret_key", "sk_test_fake")
     monkeypatch.setattr(settings, "stripe_price_solo_monthly", "price_monthly")
     monkeypatch.setattr(

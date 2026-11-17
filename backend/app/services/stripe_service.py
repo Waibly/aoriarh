@@ -29,6 +29,14 @@ from app.models.booster_purchase import BoosterPurchase
 from app.models.stripe_webhook_event import StripeWebhookEvent
 from app.models.subscription import Subscription
 from app.models.subscription_addon import SubscriptionAddon
+from app.schemas.stripe_billing import BillingProfile
+from app.services.billing_tax import billing_tax_policy
+from app.services.stripe_tax_service import (
+    checkout_tax_params,
+    profile_from_customer,
+    require_profile,
+    subscription_tax_params,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -235,6 +243,82 @@ class StripeService:
     # Checkout sessions
     # ------------------------------------------------------------------
 
+    async def get_billing_profile(self, account: Account) -> BillingProfile | None:
+        self._ensure_configured()
+        if not account.stripe_customer_id:
+            return None
+        customer = stripe.Customer.retrieve(account.stripe_customer_id)
+        return profile_from_customer(customer)
+
+    async def save_billing_profile(
+        self, account: Account, owner_email: str, profile: BillingProfile
+    ) -> BillingProfile:
+        self._ensure_configured()
+        if not profile.professional:
+            raise HTTPException(
+                status_code=422, detail="Les offres sont réservées aux professionnels."
+            )
+        policy = billing_tax_policy(profile.country, profile.postal_code)
+        customer_id = await self.get_or_create_customer(account, owner_email)
+        address = profile.model_dump(include={"line1", "line2", "postal_code", "city", "country"})
+        # Use the territory's ISO code even when the initial address said FR.
+        address["country"] = policy.territory
+        customer = stripe.Customer.modify(
+            customer_id,
+            name=profile.business_name,
+            address=address,
+            metadata={"aoria_professional": "true", "aoria_billing_territory": policy.territory},
+            invoice_settings={"footer": self._tax_invoice_footer(policy)},
+            **({"tax_exempt": "none"} if policy.mode != "automatic" else {}),
+        )
+        # Address changes apply to renewals without an immediate invoice or debit.
+        for sub in stripe.Subscription.list(
+            customer=customer_id, status="all", limit=100
+        ).auto_paging_iter():
+            if _get(sub, "status") in _LIVE_SUB_STATUSES:
+                self._sync_subscription_tax(sub, policy)
+        await self.db.commit()
+        return profile_from_customer(customer)
+
+    @staticmethod
+    def _tax_invoice_footer(policy) -> str:
+        return INVOICE_FOOTER + (" " + policy.invoice_mention if policy.invoice_mention else "")
+
+    @staticmethod
+    def _sync_subscription_tax(sub, policy) -> None:
+        params = subscription_tax_params(policy)
+        items = [
+            {"id": item["id"], "tax_rates": []}
+            for item in _get(_get(sub, "items"), "data") or []
+            if _get(item, "tax_rates")
+        ]
+        current_rates = [_as_id(rate) for rate in _get(sub, "default_tax_rates") or []]
+        if (
+            not items
+            and bool(_get(_get(sub, "automatic_tax"), "enabled"))
+            == params["automatic_tax"]["enabled"]
+            and current_rates == params["default_tax_rates"]
+            and _get(_get(sub, "metadata"), "aoria_billing_territory") == policy.territory
+        ):
+            return
+        stripe.Subscription.modify(
+            sub["id"],
+            **params,
+            **({"items": items} if items else {}),
+            proration_behavior="none",
+            metadata={"aoria_billing_territory": policy.territory, "aoria_tax_mode": policy.mode},
+        )
+
+    def _billing_policy(self, account: Account):
+        if not account.stripe_customer_id:
+            raise HTTPException(
+                status_code=409,
+                detail="Complétez les coordonnées de votre entreprise avant le paiement.",
+            )
+        customer = stripe.Customer.retrieve(account.stripe_customer_id)
+        _, policy = require_profile(customer)
+        return policy
+
     async def create_subscription_checkout(
         self,
         account: Account,
@@ -246,7 +330,10 @@ class StripeService:
         self._ensure_configured()
         price_id = self.get_price_id(plan, cycle)
         await self._ensure_no_live_subscription(account)
+        policy = self._billing_policy(account)
         customer_id = await self.get_or_create_customer(account, owner_email)
+        tax_params = checkout_tax_params(policy)
+        tax_rates = tax_params.pop("tax_rates", [])
 
         session = stripe.checkout.Session.create(
             mode="subscription",
@@ -262,23 +349,27 @@ class StripeService:
             # "first 12 months", on monthly it means "1 month". Restricting
             # to monthly keeps the discount scoped as intended.
             allow_promotion_codes=(cycle == "monthly"),
-            # Stripe Tax: automatic VAT calculation. Requires a billing
-            # address (below) and at least one tax registration (FR).
-            automatic_tax={"enabled": True},
-            billing_address_collection="required",
-            # Allow Stripe to update the existing customer's address/name
-            # after the client enters them at checkout.
-            customer_update={"address": "auto", "name": "auto"},
+            # Automatic tax where supported; explicit recurring VAT for DOM.
+            **tax_params,
+            # The verified billing address is collected in our form before
+            # creating Checkout. Don't offer a second editable address here.
+            billing_address_collection="auto",
+            # Stripe may update the business name, but the fiscal address
+            # stays the one used above to select the tax route.
+            customer_update={"name": "auto"},
             # Let B2B customers enter their VAT number (reverse-charge when
             # they are in another EU country).
             tax_id_collection={"enabled": True},
             # The invoice must name the client company, not the card holder.
             name_collection={"business": {"enabled": True, "optional": False}},
             subscription_data={
+                **({"default_tax_rates": tax_rates} if tax_rates else {}),
                 "metadata": {
                     "account_id": str(account.id),
                     "plan": plan,
                     "cycle": cycle,
+                    "aoria_billing_territory": policy.territory,
+                    "aoria_tax_mode": policy.mode,
                 },
                 **self._subscription_invoice_settings(),
             },
@@ -330,22 +421,35 @@ class StripeService:
                 status_code=status.HTTP_501_NOT_IMPLEMENTED,
                 detail="Pack booster non configuré (STRIPE_PRICE_BOOSTER manquant).",
             )
+        policy = self._billing_policy(account)
         customer_id = await self.get_or_create_customer(account, owner_email)
+        tax_params = checkout_tax_params(policy)
+        tax_rates = tax_params.pop("tax_rates", [])
 
         session = stripe.checkout.Session.create(
             mode="payment",
             locale="fr",
             customer=customer_id,
-            line_items=[{"price": settings.stripe_price_booster, "quantity": 1}],
+            line_items=[
+                {
+                    "price": settings.stripe_price_booster,
+                    "quantity": 1,
+                    **({"tax_rates": tax_rates} if tax_rates else {}),
+                }
+            ],
             success_url=self._success_url(),
             cancel_url=self._cancel_url(),
             # Payment methods are managed in the Stripe Dashboard.
             # Same tax settings as the subscription flow so the VAT is
             # calculated consistently for the booster purchase.
-            automatic_tax={"enabled": True},
-            billing_address_collection="required",
-            customer_update={"address": "auto", "name": "auto"},
+            **tax_params,
+            billing_address_collection="auto",
+            customer_update={"name": "auto"},
             tax_id_collection={"enabled": True},
+            invoice_creation={
+                "enabled": True,
+                "invoice_data": {"footer": self._tax_invoice_footer(policy)},
+            },
             metadata={
                 "account_id": str(account.id),
                 "product": "booster",
@@ -418,6 +522,7 @@ class StripeService:
                 detail="Ce plan et ce cycle sont déjà actifs.",
             )
 
+        policy = self._billing_policy(account)
         new_price_id = self.get_price_id(new_plan, new_cycle)
 
         # Block downgrades that would leave the account in overflow.
@@ -469,6 +574,7 @@ class StripeService:
 
         stripe.Subscription.modify(
             sub.stripe_subscription_id,
+            **subscription_tax_params(policy),
             items=[{"id": plan_item_id, "price": new_price_id}],
             proration_behavior="create_prorations",
         )
@@ -509,6 +615,7 @@ class StripeService:
                 detail="Ce plan et ce cycle sont déjà actifs.",
             )
 
+        policy = self._billing_policy(account)
         new_price_id = self.get_price_id(new_plan, new_cycle)
 
         addon_rows = await self.db.execute(
@@ -539,7 +646,9 @@ class StripeService:
             upcoming = stripe.Invoice.create_preview(
                 customer=account.stripe_customer_id,
                 subscription=sub.stripe_subscription_id,
+                automatic_tax={"enabled": policy.mode == "automatic"},
                 subscription_details={
+                    "default_tax_rates": subscription_tax_params(policy)["default_tax_rates"],
                     "items": [{"id": plan_item_id, "price": new_price_id}],
                     "proration_behavior": "create_prorations",
                 },
@@ -769,7 +878,9 @@ class StripeService:
         )
         existing = result.scalar_one_or_none()
 
-        stripe.Subscription.retrieve(sub.stripe_subscription_id)
+        policy = self._billing_policy(account)
+        remote_sub = stripe.Subscription.retrieve(sub.stripe_subscription_id)
+        self._sync_subscription_tax(remote_sub, policy)
 
         if existing and existing.stripe_subscription_item_id:
             # Bump quantity on the Stripe side and mirror locally.
@@ -917,6 +1028,8 @@ class StripeService:
             "customer.subscription.updated": self._on_subscription_updated,
             "customer.subscription.deleted": self._on_subscription_deleted,
             "invoice.paid": self._on_invoice_paid,
+            "invoice.created": self._on_invoice_created,
+            "customer.updated": self._on_billing_customer_updated,
             "invoice.payment_failed": self._on_invoice_payment_failed,
             "charge.refunded": self._on_charge_refunded,
             "customer.tax_id.created": self._on_tax_id_changed,
@@ -946,6 +1059,61 @@ class StripeService:
     # ------------------------------------------------------------------
     # Webhook handlers
     # ------------------------------------------------------------------
+
+    async def _on_billing_customer_updated(self, customer: dict) -> None:
+        if _get(_get(customer, "metadata"), "aoria_professional") != "true":
+            return
+        result = await self.db.execute(
+            select(Account).where(Account.stripe_customer_id == customer["id"])
+        )
+        if result.scalar_one_or_none() is None:
+            return
+        try:
+            _, policy = require_profile(customer)
+        except HTTPException:
+            # The invoice.created guard keeps subsequent invoices in draft.
+            logger.warning(
+                "Unsupported or incomplete billing address for customer %s", customer["id"]
+            )
+            return
+        footer = self._tax_invoice_footer(policy)
+        updates = {}
+        if _get(_get(customer, "invoice_settings"), "footer") != footer:
+            updates["invoice_settings"] = {"footer": footer}
+        if policy.mode != "automatic" and _get(customer, "tax_exempt") != "none":
+            updates["tax_exempt"] = "none"
+        if updates:
+            stripe.Customer.modify(customer["id"], **updates)
+        for sub in stripe.Subscription.list(
+            customer=customer["id"], status="all", limit=100
+        ).auto_paging_iter():
+            if _get(sub, "status") in _LIVE_SUB_STATUSES:
+                self._sync_subscription_tax(sub, policy)
+
+    async def _on_invoice_created(self, invoice: dict) -> None:
+        if not _invoice_subscription_id(invoice) or _get(invoice, "status") != "draft":
+            return
+        customer_id = _as_id(_get(invoice, "customer"))
+        if not customer_id:
+            return
+        result = await self.db.execute(
+            select(Account).where(Account.stripe_customer_id == customer_id)
+        )
+        if result.scalar_one_or_none() is None:
+            return
+        customer = stripe.Customer.retrieve(customer_id)
+        if _get(_get(customer, "metadata"), "aoria_professional") != "true":
+            return
+        try:
+            _, policy = require_profile(customer)
+        except HTTPException:
+            stripe.Invoice.modify(invoice["id"], auto_advance=False)
+            logger.warning(
+                "Invoice %s held in draft: billing address requires review", invoice["id"]
+            )
+            return
+        params = subscription_tax_params(policy)
+        stripe.Invoice.modify(invoice["id"], **params, footer=self._tax_invoice_footer(policy))
 
     async def _on_checkout_completed(self, session: dict) -> None:
         """Checkout complete: flip the account to the new plan, persist Subscription or Booster."""

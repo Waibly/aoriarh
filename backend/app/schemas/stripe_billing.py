@@ -1,6 +1,29 @@
 from enum import StrEnum
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+
+
+class BillingProfile(BaseModel):
+    business_name: str = Field(min_length=1, max_length=255)
+    line1: str = Field(min_length=1, max_length=255)
+    line2: str = Field(default="", max_length=255)
+    postal_code: str = Field(min_length=1, max_length=20)
+    city: str = Field(min_length=1, max_length=255)
+    country: str = Field(min_length=2, max_length=2, pattern=r"^[A-Za-z]{2}$")
+    professional: bool = False
+
+    @field_validator("business_name", "line1", "postal_code", "city")
+    @classmethod
+    def non_blank(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("Ce champ est obligatoire.")
+        return value
+
+    @field_validator("country")
+    @classmethod
+    def uppercase_country(cls, value: str) -> str:
+        return value.upper()
 
 
 class CommercialPlanCode(StrEnum):

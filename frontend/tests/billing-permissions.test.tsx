@@ -107,3 +107,15 @@ it("keeps the account deletion dialog open and shows the Stripe failure without 
   expect(signOut).not.toHaveBeenCalled();
   expect(screen.getByRole("button", { name: "Supprimer définitivement" })).toBeEnabled();
 });
+
+it("shows the corrected invoice total when it was settled entirely using a credit note", async () => {
+  (apiFetch as jest.Mock).mockResolvedValue({ is_workspace_owner: true });
+  jest.mocked(billing.fetchInvoices).mockResolvedValue([{
+    id: "in_corrected", number: "CORRECTED-0003", status: "paid", currency: "eur",
+    amount_paid_cents: 0, amount_due_cents: 0, total_cents: 7900, credited_cents: 0,
+    created: 1794313778, hosted_invoice_url: null, invoice_pdf: null,
+  }]);
+  render(<BillingPage />);
+  expect(await screen.findByText("CORRECTED-0003")).toBeInTheDocument();
+  expect(screen.getByText(/79,00/)).toBeInTheDocument();
+});
