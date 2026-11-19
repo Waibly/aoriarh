@@ -59,37 +59,172 @@ monitoring.aoriarh.fr {
 	reverse_proxy grafana:3000
 }
 
-# Calendoria — application privée, non indexable.
-calendoria.tosika.fr {
+# Le conteneur Caddy doit être connecté au réseau externe calendoria_edge.
+
+# Configuration CIBLE, à intégrer seulement après préparation DNS/HTTPS,
+# des callbacks fournisseurs et des environnements. Voir MIGRATION_KOWIZO.md.
+# Remplace les trois blocs Calendoria existants ; ne pas les charger en double.
+# Caddy reste le seul service partagé sur calendoria_edge.
+
+(kowizo_meta_notifications) {
+	@meta_notification {
+		method POST
+		path /api/integrations/instagram/deauthorize /api/integrations/instagram/data-deletion /api/integrations/facebook/deauthorize /api/integrations/facebook/data-deletion
+	}
+	handle @meta_notification {
+		header X-Robots-Tag "noindex, nofollow"
+		header Cache-Control "no-store"
+		reverse_proxy calendoria-web:3000 {
+			# Pendant une livraison Kowizo, réessaie au lieu de renvoyer une 502.
+			lb_try_duration 30s
+			lb_try_interval 500ms
+		}
+	}
+}
+
+(kowizo_legacy_application) {
+	@legacy_navigation method GET HEAD
+	handle @legacy_navigation {
+		header X-Robots-Tag "noindex, nofollow"
+		header Cache-Control "no-store"
+		# Préserve code/state et les jetons des anciens liens de réinitialisation.
+		redir https://app.kowizo.com{uri} 307
+	}
+	handle {
+		# Les anciens onglets doivent recharger sur le nouveau domaine.
+		# Ne pas retransmettre leurs mutations avec une origine devenue incorrecte.
+		header Cache-Control "no-store"
+		respond "L’application a changé d’adresse. Rechargez https://app.kowizo.com avant de réessayer." 409
+	}
+}
+
+kowizo.com {
+	encode zstd gzip
+	request_body {
+		max_size 16KB
+	}
+	header Strict-Transport-Security "max-age=31536000"
+	import kowizo_meta_notifications
+	@application path /login /signup /forgot-password /reset-password /accounts /brands /publications /settings /statistics /admin /admin/* /legal /privacy /terms /data-deletion /api/integrations/* /api/health
+	handle @application {
+		header X-Robots-Tag "noindex, nofollow"
+		header Cache-Control "no-store"
+		redir https://app.kowizo.com{uri} 307
+	}
+	handle {
+		reverse_proxy calendoria-site-web:3000 {
+			# Pendant une livraison Kowizo, réessaie au lieu de renvoyer une 502.
+			lb_try_duration 30s
+			lb_try_interval 500ms
+		}
+	}
+}
+
+www.kowizo.com {
+	header Strict-Transport-Security "max-age=31536000"
+	redir https://kowizo.com{uri} 308
+}
+
+app.kowizo.com {
 	encode zstd gzip
 	request_body {
 		max_size 16MB
 	}
 	header {
-		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		Strict-Transport-Security "max-age=31536000"
 		X-Content-Type-Options "nosniff"
 		X-Frame-Options "DENY"
 		Referrer-Policy "strict-origin-when-cross-origin"
 		Permissions-Policy "camera=(), microphone=(), geolocation=()"
 		X-Robots-Tag "noindex, nofollow, noarchive, nosnippet, noimageindex, noai, noimageai"
 	}
-	reverse_proxy calendoria-web:3000
+	reverse_proxy calendoria-web:3000 {
+		# Pendant une livraison Kowizo, réessaie au lieu de renvoyer une 502.
+		lb_try_duration 30s
+		lb_try_interval 500ms
+	}
 }
 
-# Origine publique dédiée aux URL temporaires signées utilisées par Meta.
-media.calendoria.tosika.fr {
+# Serveur MCP des assistants IA (Kowizo). Seule l’adresse MCP est exposée.
+mcp.kowizo.com {
+	request_body {
+		max_size 16MB
+	}
 	header {
-		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		X-Robots-Tag "noindex, nofollow"
+		Cache-Control "no-store"
+		-Server
+	}
+	@mcp path / /mcp
+	handle @mcp {
+		rewrite * /api/mcp
+		reverse_proxy calendoria-web:3000 {
+			# Pendant une livraison Kowizo, réessaie au lieu de renvoyer une 502.
+			lb_try_duration 30s
+			lb_try_interval 500ms
+		}
+	}
+	# OAuth (ChatGPT, claude.ai) : découverte, enregistrement, jetons, révocation.
+	@oauth path /.well-known/oauth-protected-resource /.well-known/oauth-protected-resource/* /.well-known/oauth-authorization-server /.well-known/oauth-authorization-server/* /.well-known/openid-configuration /api/oauth/metadata /api/oauth/protected-resource /api/oauth/register /api/oauth/token /api/oauth/revoke
+	handle @oauth {
+		reverse_proxy calendoria-web:3000 {
+			# Pendant une livraison Kowizo, réessaie au lieu de renvoyer une 502.
+			lb_try_duration 30s
+			lb_try_interval 500ms
+		}
+	}
+	handle {
+		respond 404
+	}
+}
+
+calendoria.tosika.fr {
+	encode zstd gzip
+	request_body {
+		max_size 16KB
+	}
+	header Strict-Transport-Security "max-age=31536000; includeSubDomains"
+	import kowizo_meta_notifications
+	@application path /login /signup /forgot-password /reset-password /accounts /brands /publications /settings /statistics /admin /admin/* /legal /privacy /terms /data-deletion /api/*
+	handle @application {
+		import kowizo_legacy_application
+	}
+	@navigation method GET HEAD
+	handle @navigation {
+		# Une seule redirection, avec conservation du chemin et des paramètres.
+		redir https://kowizo.com{uri} 301
+	}
+	handle {
+		respond "Le site a changé d’adresse : https://kowizo.com" 409
+	}
+}
+
+app.calendoria.tosika.fr {
+	request_body {
+		max_size 16MB
+	}
+	header Strict-Transport-Security "max-age=31536000; includeSubDomains"
+	import kowizo_meta_notifications
+	import kowizo_legacy_application
+}
+
+# Les deux hôtes servent directement le même bucket privé. Aucun redirect,
+# aucune réécriture de Host ou de query : la signature S3 dépend de ces valeurs.
+media.kowizo.com, media.calendoria.tosika.fr {
+	header {
+		Strict-Transport-Security "max-age=31536000"
 		X-Content-Type-Options "nosniff"
 		Referrer-Policy "no-referrer"
 		X-Robots-Tag "noindex, nofollow, noarchive, nosnippet, noimageindex, noai, noimageai"
 	}
 	@media path /calendoria-media/*
-	@media_read {
+	@media_signed {
 		path /calendoria-media/*
-		method GET HEAD
+		method GET HEAD PUT OPTIONS
 	}
-	handle @media_read {
+	handle @media_signed {
 		reverse_proxy calendoria-minio:9000
 	}
 	handle @media {
