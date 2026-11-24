@@ -32,6 +32,7 @@ from app.rag.instrument_references import (
     read_section_neighbours,
     resolve_instrument_references,
 )
+from app.rag.hr_reflexes import extend_reflex_context
 from app.rag.norme_hierarchy import DOCUMENT_TYPE_HIERARCHY
 from app.rag.parent_expansion import (
     ParentExpansionError,
@@ -1049,6 +1050,16 @@ class RAGAgent:
             logger.warning("Search context assembly failed: %s", selection["reason"])
             return [], reformulated, trace
         results = self._append_instrument_links(results, instrument_links, selection["groups"])
+        if results:
+            results = await extend_reflex_context(
+                results,
+                self.search_engine.qdrant,
+                texts=[
+                    trace.query_original,
+                    search_plan.standalone_question if search_plan else query,
+                ],
+                diagnostics=selection["groups"],
+            )
         trace.perf_ms["parent_expansion"] = (time.perf_counter() - t_exp) * 1000
         trace.parent_groups = _serialize_chunks(results, limit=len(results), text_chars=400)
         selection["status"] = "complete"

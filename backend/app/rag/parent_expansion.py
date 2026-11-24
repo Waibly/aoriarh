@@ -606,8 +606,10 @@ async def expand_to_parents(
         )
         expanded.append(merged)
     if follow_references:
+        from app.rag.exception_links import extend_exception_context
         from app.rag.legal_references import extend_reference_context
 
+        primary = list(expanded)
         expanded = await extend_reference_context(
             expanded,
             qdrant,
@@ -619,4 +621,8 @@ async def expand_to_parents(
         from app.rag.sanction_links import extend_sanction_context
 
         expanded = await extend_sanction_context(expanded, qdrant, diagnostics=diagnostics)
+        # Exceptions of the ranked articles only, not of the added references.
+        expanded = await extend_exception_context(
+            expanded, qdrant, seeds=primary, diagnostics=diagnostics
+        )
     return expanded
