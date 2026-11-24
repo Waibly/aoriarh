@@ -29,6 +29,8 @@ from app.models.membership import Membership
 from app.models.monthly_question_usage import MonthlyQuestionUsage
 from app.models.organisation import Organisation
 from app.models.plan_invitation import PlanInvitation, PlanInvitationRedemption
+from app.models.platform_setting import PlatformSetting
+from app.models.quality_review import QualityFinding, QualityReview
 from app.models.storage_operation import StorageOperation
 from app.models.stripe_webhook_event import StripeWebhookEvent
 from app.models.subscription import Subscription
@@ -78,6 +80,9 @@ __all__ = [
     "OrganisationConvention",
     "PlanInvitation",
     "PlanInvitationRedemption",
+    "PlatformSetting",
+    "QualityFinding",
+    "QualityReview",
     "Subscription",
     "TrialFeedback",
     "StripeWebhookEvent",

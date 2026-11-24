@@ -66,6 +66,8 @@ class Settings(BaseSettings):
     # LLM — modèle de génération de la réponse finale
     llm_model: str = "gpt-5.6-terra"
     llm_reasoning_effort: str = "medium"
+    # Coupure d'urgence du contrôle qualité automatisé, quel que soit le réglage admin.
+    quality_review_force_off: bool = False
 
     # Reporting des coûts — les fournisseurs (OpenAI, Voyage) facturent en USD.
     # Le cockpit business convertit ces coûts en EUR pour les rapprocher du MRR.

@@ -1803,6 +1803,16 @@ def _parse_redis_settings() -> RedisSettings:
     )
 
 
+async def run_quality_review(ctx: dict, message_id: str) -> dict:
+    """Automated quality review of one answer (shadow mode: recorded, nobody alerted)."""
+    from app.core.database import async_session_factory
+    from app.services.quality_review.service import run_quality_review as review_answer
+
+    async with async_session_factory() as session:
+        review = await review_answer(session, uuid.UUID(message_id))
+        return {"status": review.status if review else "not_reviewed"}
+
+
 async def run_emailing_campaigns(ctx: dict) -> None:
     """Hourly job: process active email campaigns and send pending emails."""
     from app.core.database import async_session_factory
@@ -1974,6 +1984,8 @@ class WorkerSettings:
         run_curated_sources_sync,
         run_social_ca_sync,
         run_emailing_campaigns,
+        # One try: a failed review is recorded as failed, never retried in a loop.
+        func(run_quality_review, keep_result=0, max_tries=1, timeout=600),
     ]
     cron_jobs = [
         cron(run_judilibre_ca_collection, minute=set(range(60)), second=20),

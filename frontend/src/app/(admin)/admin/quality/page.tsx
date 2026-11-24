@@ -43,6 +43,7 @@ import { AdminLoadError } from "@/components/admin/page-header";
 import { InfoTooltip } from "@/components/admin/info-tooltip";
 import { ConversationInspector } from "./ConversationInspector";
 import { SandboxRunner } from "./SandboxRunner";
+import { AutoReviewPanel } from "./AutoReviewPanel";
 
 // ----------------- Types -----------------
 
@@ -465,6 +466,7 @@ function QualityPageContent() {
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
           <TabsList>
             <TabsTrigger value="conversations">Conversations</TabsTrigger>
+            <TabsTrigger value="auto-review">Contrôle automatique</TabsTrigger>
             {activeTab === "sandbox" && (
               <TabsTrigger value="sandbox">
                 Test manuel de la question
@@ -657,6 +659,10 @@ function QualityPageContent() {
               </div>
             </div>
           )}
+        </TabsContent>
+
+        <TabsContent value="auto-review">
+          <AutoReviewPanel onOpenAnswer={setSelectedMessageId} />
         </TabsContent>
 
         <TabsContent value="sandbox">

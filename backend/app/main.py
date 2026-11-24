@@ -32,6 +32,7 @@ from app.api import (
     admin_plan_invitations,
     admin_qdrant,
     admin_quality,
+    admin_quality_review,
     admin_syncs,
     admin_users,
     admin_workspaces,
@@ -359,6 +360,11 @@ app.include_router(
 app.include_router(admin_business.router, prefix="/api/v1/admin/business", tags=["admin-business"])
 app.include_router(admin_costs.router, prefix="/api/v1/admin/costs", tags=["admin-costs"])
 app.include_router(admin_quality.router, prefix="/api/v1/admin/quality", tags=["admin-quality"])
+app.include_router(
+    admin_quality_review.router,
+    prefix="/api/v1/admin/quality/review",
+    tags=["admin-quality-review"],
+)
 app.include_router(admin_corpus.router, prefix="/api/v1/admin/corpus", tags=["admin-corpus"])
 app.include_router(conventions.router, prefix="/api/v1/conventions", tags=["conventions"])
 app.include_router(invitations.router, prefix="/api/v1", tags=["invitations"])

@@ -2199,6 +2199,13 @@ async def chat_stream(
                     title = title.rsplit(" ", 1)[0] + "…"
                 await service.update_title(conversation_id, title)
 
+            # Automated quality review: handed to the worker in the background, so the
+            # answer is never delayed. Nothing is scheduled when the admin setting is off.
+            if not stream_dead and not generation_interrupted:
+                from app.services.quality_review.tasks import schedule_quality_review
+
+                schedule_quality_review(assistant_message_id)
+
             t_db = time.perf_counter()
             completion_timings = {
                 "request_to_done_ms": (t_db - t_total) * 1000,
