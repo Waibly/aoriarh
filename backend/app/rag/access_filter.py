@@ -5,13 +5,11 @@ from contextvars import ContextVar
 from qdrant_client.models import (
     FieldCondition,
     Filter,
-    IsEmptyCondition,
     MatchAny,
     MatchValue,
-    PayloadField,
 )
 
-from app.services.territoire import parse_territoire
+from app.services.territoire import Territoire, parse_territoire
 
 # Lieu d'implantation de l'organisation pour la préparation en cours. Fixé une
 # fois par RAGAgent.prepare_context : les nombreuses recherches et lectures de la
@@ -26,12 +24,25 @@ def set_current_territoire(value: str | None) -> None:
     current_territoire.set(parse_territoire(value).value if value else None)
 
 
+_ALL_TERRITOIRES = [t.value for t in Territoire]
+
+
 def _territory_condition(territoire: str) -> Filter:
-    """Textes sans territoire propre, ou propres au territoire de l'organisation."""
+    """Textes sans territoire propre, ou propres au territoire de l'organisation.
+
+    Écrit « exclure ce qui porte un territoire mais pas celui-ci » plutôt que
+    « territoires vide OU celui-ci » : Qdrant ne peut pas servir is_empty par
+    l'index et relit alors chaque candidat. Mesuré en prod le 24/11/2026 : même
+    ensemble de passages pour les 13 territoires, recherche 300 ms → 45 ms.
+    Suppose que le payload ne contient que des codes Territoire, ce que garantit
+    territoires_from_title.
+    """
     return Filter(
-        should=[
-            IsEmptyCondition(is_empty=PayloadField(key="territoires")),
-            FieldCondition(key="territoires", match=MatchAny(any=[territoire])),
+        must_not=[
+            Filter(
+                must=[FieldCondition(key="territoires", match=MatchAny(any=_ALL_TERRITOIRES))],
+                must_not=[FieldCondition(key="territoires", match=MatchAny(any=[territoire]))],
+            )
         ]
     )
 

@@ -169,3 +169,11 @@ def test_agreement_published_alone_is_read_from_its_document_name():
     ) == ["martinique"]
     # A generated KALI snapshot is tagged text by text, never by its name.
     assert document_territoires("CCN Banques (Guadeloupe) (IDCC 2704)", None) == []
+
+
+def test_payload_territory_codes_are_all_known_territories():
+    """_territory_condition traite tout code inconnu comme « sans territoire »."""
+    from app.services.territoire import _TITLE_PATTERNS, Territoire
+
+    known = {t.value for t in Territoire}
+    assert {code for _, codes in _TITLE_PATTERNS for code in codes} <= known
