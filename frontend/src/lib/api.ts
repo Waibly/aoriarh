@@ -108,6 +108,12 @@ function initialAuthHeaders(headers: HeadersInit): Headers {
   return result;
 }
 
+/** Réponse de Caddy pendant une livraison (voir aoria_maintenance_api). */
+function isMaintenance(data: unknown): data is { code: "maintenance"; detail: string } {
+  const body = data as { code?: unknown; detail?: unknown } | null;
+  return body?.code === "maintenance" && typeof body.detail === "string";
+}
+
 export async function apiFetch<T>(
   path: string,
   options: FetchOptions = {}
@@ -131,6 +137,7 @@ export async function apiFetch<T>(
       if (!retryResponse.ok) {
         const errorData = await retryResponse.json().catch(() => null);
         const detail = errorData?.detail;
+        if (isMaintenance(errorData)) throw new Error(detail);
         if (retryResponse.status >= 500) {
           // eslint-disable-next-line no-console
           console.error("[api] server error after retry", retryResponse.status, detail);
@@ -150,6 +157,8 @@ export async function apiFetch<T>(
   if (!response.ok) {
     const errorData = await response.json().catch(() => null);
     const detail = errorData?.detail;
+    // Livraison en cours : Caddy répond à la place de l'API indisponible.
+    if (isMaintenance(errorData)) throw new Error(detail);
     // Erreurs serveur (5xx) : le détail est souvent une stacktrace ou un
     // message Stripe/SQLAlchemy non destiné à l'utilisateur final.
     // On log côté console pour le debug et on affiche un message générique.
