@@ -4,8 +4,12 @@ import threading
 from qdrant_client import QdrantClient
 from qdrant_client.models import (
     Distance,
+    HnswConfigDiff,
     Modifier,
     PayloadSchemaType,
+    ScalarQuantization,
+    ScalarQuantizationConfig,
+    ScalarType,
     SparseIndexParams,
     SparseVectorParams,
     VectorParams,
@@ -81,6 +85,19 @@ def ensure_collection(client: QdrantClient) -> None:
                 )
                 for name in {"sparse-bm25", lexical_profile().vector_name}
             },
+            # Vecteurs complets sur disque, mais copie int8 (4x plus petite) et
+            # graphe HNSW en RAM : sinon chaque recherche « à froid » relit le
+            # disque (mesuré en prod le 24/11/2026 : 10 s pour 6 requêtes
+            # parallèles, 0,2 s une fois en cache). Les meilleurs candidats sont
+            # ensuite re-notés avec les vecteurs complets.
+            quantization_config=ScalarQuantization(
+                scalar=ScalarQuantizationConfig(
+                    type=ScalarType.INT8,
+                    quantile=0.99,
+                    always_ram=True,
+                ),
+            ),
+            hnsw_config=HnswConfigDiff(on_disk=False),
         )
         # Create payload indexes for efficient filtering
         client.create_payload_index(
