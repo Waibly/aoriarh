@@ -431,6 +431,9 @@ class JorfService:
             date_start = date_end - timedelta(days=30)
 
         existing_cids = await self._get_existing_cids(db)
+        # A text already in base is skipped below: retry those left in error,
+        # otherwise nothing ever picks them up again.
+        await self._requeue_failed(db)
 
         from app.services.storage_service import StorageService
 
@@ -722,6 +725,23 @@ class JorfService:
             )
         )
         return {row[0] for row in result.all()}
+
+    async def _requeue_failed(self, db: AsyncSession) -> int:
+        """Relance l'ingestion des textes JORF communs restés en erreur."""
+        result = await db.execute(
+            select(Document.id).where(
+                Document.source_type.in_(tuple(_NATURE_TO_SOURCE_TYPE.values())),
+                Document.organisation_id.is_(None),
+                Document.numero_pourvoi.isnot(None),
+                Document.indexation_status == "error",
+            )
+        )
+        doc_ids = [row[0] for row in result.all()]
+        for doc_id in doc_ids:
+            await enqueue_ingestion(str(doc_id))
+        if doc_ids:
+            logger.info("JORF: %d texte(s) en erreur relancé(s)", len(doc_ids))
+        return len(doc_ids)
 
     async def _create_document(
         self,

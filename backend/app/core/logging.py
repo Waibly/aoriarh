@@ -39,6 +39,9 @@ def setup_logging(json_output: bool = True) -> None:
     formatter = structlog.stdlib.ProcessorFormatter(
         processors=[
             structlog.stdlib.ProcessorFormatter.remove_processors_meta,
+            # Turn exc_info into a readable "exception" field (the JSON renderer
+            # otherwise prints "<traceback object at ...>").
+            structlog.processors.format_exc_info,
             renderer,
         ],
     )

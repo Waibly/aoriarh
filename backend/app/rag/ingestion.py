@@ -106,24 +106,39 @@ async def _get_embeddings_batch(
     user_id: str | None = None,
     input_type: str | None = None,
 ) -> list[list[float]]:
-    """Get dense embeddings for a single batch (max 128 texts) with retry on 429."""
+    """Get dense embeddings for a single batch (max 128 texts).
+
+    Retried on rate limit (429), Voyage server error (5xx) and network failure:
+    a single connection drop must not leave a document in error
+    (décret 2026-1048, 21/11/2026 : ConnectError, jamais repris).
+    """
     url = "https://api.voyageai.com/v1/embeddings"
     headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
 
     for attempt in range(MAX_RETRIES):
-        response = await client.post(
-            url,
-            headers=headers,
-            json={
-                "input": texts,
-                "model": EMBEDDING_MODEL,
-                **({"input_type": input_type} if input_type else {}),
-            },
-            timeout=60.0,
-        )
-        if response.status_code == 429 and attempt < MAX_RETRIES - 1:
-            delay = RETRY_BASE_DELAY * (2**attempt)
-            logger.warning("Voyage AI rate limit, retrying in %.1fs...", delay)
+        last_attempt = attempt == MAX_RETRIES - 1
+        delay = RETRY_BASE_DELAY * (2**attempt)
+        try:
+            response = await client.post(
+                url,
+                headers=headers,
+                json={
+                    "input": texts,
+                    "model": EMBEDDING_MODEL,
+                    **({"input_type": input_type} if input_type else {}),
+                },
+                timeout=60.0,
+            )
+        except httpx.TransportError as exc:
+            if last_attempt:
+                raise
+            logger.warning(
+                "Voyage AI unreachable (%s), retrying in %.1fs...", type(exc).__name__, delay
+            )
+            await asyncio.sleep(delay)
+            continue
+        if (response.status_code == 429 or response.status_code >= 500) and not last_attempt:
+            logger.warning("Voyage AI status %d, retrying in %.1fs...", response.status_code, delay)
             await asyncio.sleep(delay)
             continue
         if response.status_code != 200:
@@ -637,7 +652,8 @@ class IngestionPipeline:
                     db,
                     indexation_status="error",
                     indexation_duration_ms=duration_ms,
-                    indexation_error=str(exc)[:500],
+                    # Some exceptions (httpx.ConnectError) have an empty message.
+                    indexation_error=(str(exc) or type(exc).__name__)[:500],
                     indexation_progress=None,
                 )
             except StaleDocumentIngestion:

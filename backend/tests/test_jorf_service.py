@@ -305,6 +305,7 @@ async def test_sync_archives_unadmitted_sources_without_indexing(monkeypatch):
     service._client_id = "test"
     service._client_secret = "test"
     monkeypatch.setattr(service, "_get_existing_cids", AsyncMock(return_value=set()))
+    monkeypatch.setattr(service, "_requeue_failed", AsyncMock(return_value=0))
     monkeypatch.setattr(
         service,
         "_search_all",
