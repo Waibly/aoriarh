@@ -389,9 +389,10 @@ export default function AdminHomePage() {
           subValue={`${stats.error_documents} erreur · ${stats.pending_documents} en attente`}
           help={
             <>
-              Nombre de documents communs indexés et interrogeables par le RAG
-              (codes, conventions collectives, jurisprudence). Le détail indique
-              les documents en erreur et en attente.
+              Nombre total de documents indexés et interrogeables par le RAG :
+              textes communs (codes, conventions collectives, jurisprudence) et
+              documents ajoutés par les clients. Le détail indique les documents
+              en erreur et en attente.
             </>
           }
         />
@@ -400,12 +401,13 @@ export default function AdminHomePage() {
           title="Activité (7j)"
           icon={<Activity className="h-4 w-4" />}
           value={stats.questions_7d.toLocaleString("fr-FR")}
-          subValue={`${stats.questions_today} aujourd'hui · ${stats.active_users}/${stats.total_users} utilisateurs actifs`}
+          subValue={`${stats.questions_today} aujourd'hui · ${stats.active_users}/${stats.total_users} utilisateurs actifs (30 j)`}
           help={
             <>
-              Nombre de questions posées dans le chat sur 7 jours, hors tests
-              admin. <strong>Utilisateurs actifs</strong> = comptes ayant posé
-              au moins 1 question récemment.
+              Nombre de questions posées dans le chat sur 7 jours, hors bac à
+              sable admin. <strong>Utilisateurs actifs</strong> = personnes
+              ayant posé au moins 1 question sur les 30 derniers jours, sur le
+              total des utilisateurs inscrits.
             </>
           }
         />

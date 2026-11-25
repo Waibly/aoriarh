@@ -45,7 +45,7 @@ type AtRiskAccount = {
   account_name: string | null;
   owner_email: string | null;
   plan: string;
-  reason: "trial_expiring" | "past_due" | "inactive";
+  reason: "trial_expiring" | "past_due" | "cancel_scheduled" | "inactive";
   detail: string | null;
 };
 
@@ -61,8 +61,11 @@ type Overview = {
   new_customers_30d: number;
   trial_active: number;
   trial_to_paid_rate_30d: number | null;
+  trials_finished_30d: number;
+  trials_converted_30d: number;
   promo_activations_30d: number;
-  monthly_churn_pct: number;
+  monthly_churn_pct: number | null;
+  subscriptions_ended_30d: number;
   accounts_past_due: number;
   at_risk: AtRiskAccount[];
   questions_30d: number;
@@ -75,6 +78,7 @@ type Overview = {
 const REASON_LABELS: Record<AtRiskAccount["reason"], string> = {
   trial_expiring: "Essai bientôt expiré",
   past_due: "Paiement en retard",
+  cancel_scheduled: "Résiliation programmée",
   inactive: "Client dormant",
 };
 
@@ -84,6 +88,7 @@ const REASON_VARIANTS: Record<
 > = {
   trial_expiring: "secondary",
   past_due: "destructive",
+  cancel_scheduled: "destructive",
   inactive: "outline",
 };
 
@@ -214,11 +219,13 @@ export default function AdminPilotagePage() {
         ? "warn"
         : "good";
   const churnTone =
-    data.monthly_churn_pct > 5
-      ? "bad"
-      : data.monthly_churn_pct > 2
-        ? "warn"
-        : "good";
+    data.monthly_churn_pct === null
+      ? "neutral"
+      : data.monthly_churn_pct > 5
+        ? "bad"
+        : data.monthly_churn_pct > 2
+          ? "warn"
+          : "good";
   const satisfactionTone =
     data.satisfaction_rate === null
       ? "neutral"
@@ -260,8 +267,9 @@ export default function AdminPilotagePage() {
             </span>
             <InfoTooltip>
               Comptes nécessitant une action : essai expirant dans moins de 14
-              jours, paiement en retard, ou client payant sans aucune question
-              posée sur les 30 derniers jours (dormant).
+              jours, paiement en retard, résiliation demandée (le client paie
+              encore jusqu&apos;à la fin de sa période), ou client payant sans
+              aucune question posée sur les 30 derniers jours (dormant).
             </InfoTooltip>
           </CardTitle>
         </CardHeader>
@@ -334,10 +342,13 @@ export default function AdminPilotagePage() {
           icon={TrendingUp}
           info={
             <>
-              <b>Revenu mensuel récurrent</b> (Monthly Recurring Revenue) :
-              somme des abonnements payants actifs, ramenée au mois (un
-              abonnement annuel compte pour 1/12). L&apos;ARR est simplement le
-              MRR × 12.
+              <b>Revenu mensuel récurrent</b> (Monthly Recurring Revenue), hors
+              taxes : somme des abonnements payants actifs ramenée au mois (un
+              abonnement annuel compte pour 1/12), options mensuelles comprises
+              (utilisateurs, organisations, documents supplémentaires). Les
+              remises ponctuelles, comme un code promo sur le premier mois, ne
+              sont pas déduites car elles ne se répètent pas. L&apos;ARR est
+              simplement le MRR × 12.
             </>
           }
         />
@@ -419,7 +430,7 @@ export default function AdminPilotagePage() {
               title="Nouveaux clients (30 j)"
               value={String(data.new_customers_30d)}
               icon={TrendingUp}
-              info="Nombre d'abonnements payants souscrits durant les 30 derniers jours."
+              info="Comptes ayant souscrit leur premier abonnement payant durant les 30 derniers jours. Un client qui se réabonne après une résiliation n'est pas recompté."
             />
             <KpiCard
               title="Essais actifs"
@@ -430,14 +441,14 @@ export default function AdminPilotagePage() {
             <KpiCard
               title="Conversion essai → payant"
               value={fmtPct(data.trial_to_paid_rate_30d)}
-              sub="Approximation sur 30 jours"
+              sub={`${data.trials_converted_30d} sur ${data.trials_finished_30d} essai${data.trials_finished_30d > 1 ? "s" : ""} terminé${data.trials_finished_30d > 1 ? "s" : ""} (30 j)`}
               icon={Percent}
               info={
                 <>
-                  Estimation : nouveaux clients payants (30 j) rapportés au
-                  total « nouveaux payants + essais en cours ». Indique
-                  grossièrement l&apos;efficacité du tunnel d&apos;essai. À
-                  affiner par cohorte plus tard.
+                  Parmi les comptes dont l&apos;essai de 14 jours s&apos;est
+                  terminé durant les 30 derniers jours, part de ceux qui ont
+                  souscrit un abonnement payant. Les comptes ouverts par un lien
+                  promo et les comptes de l&apos;équipe sont exclus.
                 </>
               }
             />
@@ -454,14 +465,22 @@ export default function AdminPilotagePage() {
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <KpiCard
               title="Taux de résiliation (30 j)"
-              value={`${data.monthly_churn_pct} %`}
+              value={
+                data.monthly_churn_pct === null
+                  ? "—"
+                  : `${data.monthly_churn_pct} %`
+              }
+              sub={`${data.subscriptions_ended_30d} abonnement${data.subscriptions_ended_30d > 1 ? "s" : ""} terminé${data.subscriptions_ended_30d > 1 ? "s" : ""}`}
               icon={AlertTriangle}
               tone={churnTone}
               info={
                 <>
-                  <b>Taux d&apos;attrition.</b> Résiliations sur les 30 derniers
-                  jours rapportées au nombre d&apos;abonnements actifs. Vert
-                  &lt; 2 %, orange 2–5 %, rouge &gt; 5 %.
+                  <b>Taux d&apos;attrition.</b> Abonnements réellement terminés
+                  sur les 30 derniers jours, rapportés aux abonnements actifs il
+                  y a 30 jours. Une résiliation demandée pour la fin de période
+                  compte à la date où l&apos;abonnement s&apos;arrête (en
+                  attendant, elle apparaît dans « À traiter »). Vert &lt; 2 %,
+                  orange 2–5 %, rouge &gt; 5 %.
                 </>
               }
             />
@@ -485,9 +504,9 @@ export default function AdminPilotagePage() {
               info={
                 <>
                   Part d&apos;avis positifs (👍) parmi les réponses notées par
-                  les utilisateurs sur 30 jours. Les réponses non notées sont
-                  exclues du calcul. Vert ≥ 80 %, orange 60–80 %, rouge &lt; 60
-                  %.
+                  les clients sur 30 jours. Les réponses non notées sont exclues
+                  du calcul, comme l&apos;activité de l&apos;équipe et de la
+                  démo publique. Vert ≥ 80 %, orange 60–80 %, rouge &lt; 60 %.
                 </>
               }
             />
@@ -500,7 +519,7 @@ export default function AdminPilotagePage() {
                   : `${data.questions_trend_pct > 0 ? "+" : ""}${data.questions_trend_pct} % vs 30 j préc.`
               }
               icon={MessageSquare}
-              info="Nombre de questions posées sur 30 jours (signal d'usage), avec l'évolution par rapport aux 30 jours précédents."
+              info="Nombre de réponses données aux clients sur 30 jours (signal d'usage), avec l'évolution par rapport aux 30 jours précédents. L'équipe et la démo publique sont exclues."
             />
             <KpiCard
               title="Avis négatifs"
@@ -513,7 +532,7 @@ export default function AdminPilotagePage() {
                     ? "warn"
                     : "good"
               }
-              info="Part de réponses notées 👎 parmi toutes les réponses des 30 derniers jours. Vert < 5 %, orange 5–15 %, rouge > 15 %."
+              info="Part de réponses notées 👎 parmi toutes les réponses données aux clients sur 30 jours (équipe et démo exclues). Vert < 5 %, orange 5–15 %, rouge > 15 %."
             />
             <KpiCard
               title="Questions sans source retrouvée"
@@ -532,7 +551,7 @@ export default function AdminPilotagePage() {
               }
               icon={AlertTriangle}
               tone={data.no_sources_rate > 0.05 ? "warn" : "good"}
-              info="Part de questions dans le périmètre pour lesquelles le RAG n'a trouvé aucune source (hors refus « hors sujet »). Ne permet pas de conclure sur le contenu de la réponse générée."
+              info="Part de questions clients dans le périmètre pour lesquelles le RAG n'a trouvé aucune source (hors refus « hors sujet », équipe et démo exclues). Ne permet pas de conclure sur le contenu de la réponse générée."
             />
           </div>
         </div>

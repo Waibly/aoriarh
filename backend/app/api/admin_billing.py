@@ -25,10 +25,18 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.core.database import get_db
 from app.core.dependencies import require_role
-from app.core.plans import PRICE_MONTHLY_CENTS, PRICE_YEARLY_CENTS
 from app.models.account import Account
 from app.models.subscription import Subscription
 from app.models.user import User
+from app.services.business_metrics import (
+    LIVE_SUB_STATUSES,
+    addons_by_subscription,
+    addons_mrr_cents,
+    churn_30d,
+    new_customers,
+    plan_mrr_cents,
+    revenue_snapshot,
+)
 from app.services.data_retention_service import DataRetentionService
 from app.services.stripe_service import _get as _stripe_get
 
@@ -53,21 +61,11 @@ async def get_billing_metrics(
     figure is comparable across mixes of billing cycles.
     """
     now = datetime.now(UTC)
-    active_statuses = ("active", "trialing", "past_due")
 
-    subs_result = await db.execute(
-        select(Subscription).where(Subscription.status.in_(active_statuses))
-    )
-    active_subs = list(subs_result.scalars())
-
-    mrr_cents = 0
-    by_plan: dict[str, int] = {"solo": 0, "equipe": 0, "groupe": 0}
-    for sub in active_subs:
-        by_plan[sub.plan] = by_plan.get(sub.plan, 0) + 1
-        if sub.billing_cycle == "monthly":
-            mrr_cents += PRICE_MONTHLY_CENTS.get(sub.plan, 0)
-        else:
-            mrr_cents += PRICE_YEARLY_CENTS.get(sub.plan, 0) // 12
+    revenue = await revenue_snapshot(db)
+    active_subs = revenue.live_subs
+    mrr_cents = revenue.mrr_cents
+    by_plan = revenue.by_plan
 
     # Trial pool (plan='gratuit' + status='trialing')
     trial_count = int(
@@ -99,39 +97,12 @@ async def get_billing_metrics(
         or 0
     )
 
-    # New subscriptions over the last 30 days (signal of acquisition)
-    thirty_days_ago = now - timedelta(days=30)
-    new_subs_30d = int(
-        (
-            await db.execute(
-                select(func.count())
-                .select_from(Subscription)
-                .where(Subscription.created_at >= thirty_days_ago)
-            )
-        ).scalar()
-        or 0
-    )
+    # New customers over the last 30 days (first paid subscription only)
+    new_subs_30d = await new_customers(db, now - timedelta(days=30))
 
-    # Cancellations over the last 30 days (signal of churn)
-    canceled_30d = int(
-        (
-            await db.execute(
-                select(func.count())
-                .select_from(Subscription)
-                .where(
-                    Subscription.status == "canceled",
-                    Subscription.canceled_at.isnot(None),
-                    Subscription.canceled_at >= thirty_days_ago,
-                )
-            )
-        ).scalar()
-        or 0
-    )
-
-    # Monthly churn rate = cancellations / avg active base. We use the current
-    # active count as the denominator (good enough at this scale).
-    denominator = max(1, len(active_subs))
-    monthly_churn_pct = round(100 * canceled_30d / denominator, 1)
+    # Churn: subscriptions that actually ended in the last 30 days, over the
+    # subscriptions live at the start of the window (shared formula).
+    churn = await churn_30d(db, now)
 
     return {
         "mrr_cents": mrr_cents,
@@ -144,8 +115,8 @@ async def get_billing_metrics(
         "accounts_suspended": suspended_count,
         "accounts_canceled": canceled_count,
         "new_subscriptions_30d": new_subs_30d,
-        "cancellations_30d": canceled_30d,
-        "monthly_churn_pct": monthly_churn_pct,
+        "cancellations_30d": churn.ended,
+        "monthly_churn_pct": churn.pct,
     }
 
 
@@ -179,15 +150,17 @@ async def list_subscriptions(
 
     result = await db.execute(stmt)
     subs = list(result.scalars())
+    addons = await addons_by_subscription(db, [s.id for s in subs])
 
     rows: list[dict[str, Any]] = []
     for sub in subs:
         account = await db.get(Account, sub.account_id)
         owner = await db.get(User, account.owner_id) if account else None
+        # A subscription that has ended no longer brings revenue.
         mrr_contribution = (
-            PRICE_MONTHLY_CENTS.get(sub.plan, 0)
-            if sub.billing_cycle == "monthly"
-            else PRICE_YEARLY_CENTS.get(sub.plan, 0) // 12
+            plan_mrr_cents(sub.plan, sub.billing_cycle) + addons_mrr_cents(addons.get(sub.id, []))
+            if sub.status in LIVE_SUB_STATUSES
+            else 0
         )
         rows.append(
             {

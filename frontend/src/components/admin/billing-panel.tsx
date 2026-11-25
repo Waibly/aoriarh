@@ -7,7 +7,7 @@ import {
   AdminLoadError,
   AdminPageHeader,
 } from "@/components/admin/page-header";
-import { ACCOUNT_STATUS_LABELS } from "@/lib/admin-labels";
+import { ACCOUNT_STATUS_LABELS, formatAdminEur } from "@/lib/admin-labels";
 import { Trash2, Download, XCircle } from "lucide-react";
 import { toast } from "@/lib/toast";
 import { apiFetch } from "@/lib/api";
@@ -414,7 +414,7 @@ export function BillingPanel({
                             : "—"}
                         </TableCell>
                         <TableCell className="text-right tabular-nums">
-                          {(s.mrr_contribution_cents / 100).toFixed(0)} €
+                          {formatAdminEur(s.mrr_contribution_cents / 100)}
                         </TableCell>
                         <TableCell className="text-right">
                           <div className="flex items-center justify-end gap-2">

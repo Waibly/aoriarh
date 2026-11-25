@@ -1,8 +1,8 @@
 import uuid
-from datetime import datetime
+from datetime import UTC, datetime
 
 from sqlalchemy import Boolean, DateTime, ForeignKey, String
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.orm import Mapped, mapped_column, relationship, validates
 
 from app.models.base import Base, TimestampMixin, generate_uuid
 
@@ -45,7 +45,12 @@ class Subscription(TimestampMixin, Base):
     cancel_at_period_end: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default="false"
     )
+    # Date of the cancellation *request* (Stripe semantics). For a cancellation
+    # at period end, the subscription keeps running until ``ended_at``.
     canceled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Effective end of the subscription, set automatically when the status
+    # becomes "canceled". Used by the churn metric.
+    ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     # Relations
     account: Mapped["Account"] = relationship(  # noqa: F821
@@ -54,3 +59,9 @@ class Subscription(TimestampMixin, Base):
     addons: Mapped[list["SubscriptionAddon"]] = relationship(  # noqa: F821
         "SubscriptionAddon", back_populates="subscription", cascade="all, delete-orphan"
     )
+
+    @validates("status")
+    def _stamp_end(self, _key: str, value: str) -> str:
+        if value == "canceled" and self.ended_at is None:
+            self.ended_at = datetime.now(UTC)
+        return value

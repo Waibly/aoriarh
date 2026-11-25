@@ -13,19 +13,19 @@ stored in USD are converted to EUR via ``settings.usd_eur_rate``.
 """
 
 import logging
+import math
 from datetime import UTC, datetime, timedelta
 from typing import Any, Literal
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
-from sqlalchemy import distinct, func, select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.database import get_db
 from app.core.dependencies import require_role
-from app.core.plans import PRICE_MONTHLY_CENTS, PRICE_YEARLY_CENTS
 from app.models.account import Account
 from app.models.api_usage import ApiUsageLog
 from app.models.conversation import Conversation, Message
@@ -33,23 +33,21 @@ from app.models.organisation import Organisation
 from app.models.plan_invitation import PlanInvitationRedemption
 from app.models.subscription import Subscription
 from app.models.user import User
+from app.services.business_metrics import (
+    churn_30d,
+    customer_conversation_filter,
+    new_customers,
+    revenue_snapshot,
+    trial_conversion_30d,
+)
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-_ACTIVE_SUB_STATUSES = ("active", "trialing", "past_due")
-
 
 def _usd_to_eur(usd: float) -> float:
     return round(usd * settings.usd_eur_rate, 2)
-
-
-def _mrr_contribution_cents(plan: str, billing_cycle: str) -> int:
-    """MRR contribution of a single subscription, normalised to monthly."""
-    if billing_cycle == "monthly":
-        return PRICE_MONTHLY_CENTS.get(plan, 0)
-    return PRICE_YEARLY_CENTS.get(plan, 0) // 12
 
 
 # ---------------------------------------------------------------------------
@@ -62,7 +60,7 @@ class AtRiskAccount(BaseModel):
     account_name: str | None
     owner_email: str | None
     plan: str
-    reason: Literal["trial_expiring", "past_due", "inactive"]
+    reason: Literal["trial_expiring", "past_due", "cancel_scheduled", "inactive"]
     detail: str | None = None
 
 
@@ -81,10 +79,13 @@ class BusinessOverview(BaseModel):
     new_customers_30d: int
     trial_active: int
     trial_to_paid_rate_30d: float | None
+    trials_finished_30d: int
+    trials_converted_30d: int
     promo_activations_30d: int
 
     # Risk
-    monthly_churn_pct: float
+    monthly_churn_pct: float | None
+    subscriptions_ended_30d: int
     accounts_past_due: int
     at_risk: list[AtRiskAccount]
 
@@ -206,16 +207,8 @@ async def _usage_by_account(db: AsyncSession, since: datetime) -> dict[Any, dict
 
 
 async def _mrr_by_account(db: AsyncSession) -> dict[Any, int]:
-    """Per-account MRR contribution (cents) from active subscriptions."""
-    subs = (
-        await db.execute(select(Subscription).where(Subscription.status.in_(_ACTIVE_SUB_STATUSES)))
-    ).scalars()
-    out: dict[Any, int] = {}
-    for sub in subs:
-        out[sub.account_id] = out.get(sub.account_id, 0) + _mrr_contribution_cents(
-            sub.plan, sub.billing_cycle
-        )
-    return out
+    """Per-account MRR contribution (cents) from live subscriptions + add-ons."""
+    return (await revenue_snapshot(db)).by_account_cents
 
 
 # ---------------------------------------------------------------------------
@@ -233,20 +226,11 @@ async def get_business_overview(
     d30 = now - timedelta(days=30)
     d60 = now - timedelta(days=60)
 
-    # --- Revenue (reuses admin_billing logic) ---
-    active_subs = list(
-        (
-            await db.execute(
-                select(Subscription).where(Subscription.status.in_(_ACTIVE_SUB_STATUSES))
-            )
-        ).scalars()
-    )
-    mrr_cents = 0
-    by_plan: dict[str, int] = {"solo": 0, "equipe": 0, "groupe": 0}
-    for sub in active_subs:
-        by_plan[sub.plan] = by_plan.get(sub.plan, 0) + 1
-        mrr_cents += _mrr_contribution_cents(sub.plan, sub.billing_cycle)
-    mrr_eur = round(mrr_cents / 100, 2)
+    # --- Revenue (shared with admin_billing) ---
+    revenue = await revenue_snapshot(db)
+    active_subs = revenue.live_subs
+    by_plan = revenue.by_plan
+    mrr_eur = round(revenue.mrr_cents / 100, 2)
 
     # --- Infra cost over 30d (USD → EUR) ---
     cost_usd_30d = float(
@@ -266,14 +250,7 @@ async def get_business_overview(
     arpu_eur = round(mrr_eur / len(active_subs), 2) if active_subs else None
 
     # --- Growth ---
-    new_customers_30d = int(
-        (
-            await db.execute(
-                select(func.count()).select_from(Subscription).where(Subscription.created_at >= d30)
-            )
-        ).scalar()
-        or 0
-    )
+    new_customers_30d = await new_customers(db, d30)
     trial_active = int(
         (
             await db.execute(
@@ -284,9 +261,7 @@ async def get_business_overview(
         ).scalar()
         or 0
     )
-    # Rough funnel snapshot: new paying customers over the open trial pool.
-    denom = new_customers_30d + trial_active
-    trial_to_paid_rate = round(new_customers_30d / denom, 4) if denom > 0 else None
+    conversion = await trial_conversion_30d(db, now)
     promo_activations_30d = int(
         (
             await db.execute(
@@ -299,21 +274,7 @@ async def get_business_overview(
     )
 
     # --- Risk ---
-    canceled_30d = int(
-        (
-            await db.execute(
-                select(func.count())
-                .select_from(Subscription)
-                .where(
-                    Subscription.status == "canceled",
-                    Subscription.canceled_at.isnot(None),
-                    Subscription.canceled_at >= d30,
-                )
-            )
-        ).scalar()
-        or 0
-    )
-    monthly_churn_pct = round(100 * canceled_30d / max(1, len(active_subs)), 1)
+    churn = await churn_30d(db, now)
     accounts_past_due = sum(1 for s in active_subs if s.status == "past_due")
     at_risk = await _build_at_risk(db, now)
 
@@ -331,9 +292,12 @@ async def get_business_overview(
         active_subscriptions=len(active_subs),
         new_customers_30d=new_customers_30d,
         trial_active=trial_active,
-        trial_to_paid_rate_30d=trial_to_paid_rate,
+        trial_to_paid_rate_30d=conversion.rate,
+        trials_finished_30d=conversion.finished_trials,
+        trials_converted_30d=conversion.converted,
         promo_activations_30d=promo_activations_30d,
-        monthly_churn_pct=monthly_churn_pct,
+        monthly_churn_pct=churn.pct,
+        subscriptions_ended_30d=churn.ended,
         accounts_past_due=accounts_past_due,
         at_risk=at_risk,
         **qv,
@@ -359,7 +323,10 @@ async def _build_at_risk(db: AsyncSession, now: datetime) -> list[AtRiskAccount]
     ).scalars()
     for acc in expiring:
         owner = await db.get(User, acc.owner_id)
-        days_left = (acc.plan_expires_at - now).days
+        expires = acc.plan_expires_at
+        if expires.tzinfo is None:
+            expires = expires.replace(tzinfo=UTC)
+        days_left = max(1, math.ceil((expires - now).total_seconds() / 86400))
         out.append(
             AtRiskAccount(
                 account_id=str(acc.id),
@@ -367,7 +334,7 @@ async def _build_at_risk(db: AsyncSession, now: datetime) -> list[AtRiskAccount]
                 owner_email=owner.email if owner else None,
                 plan=acc.plan,
                 reason="trial_expiring",
-                detail=f"Expire dans {days_left} j",
+                detail=f"Expire dans {days_left} j" if days_left > 1 else "Expire sous 24 h",
             )
         )
 
@@ -386,6 +353,30 @@ async def _build_at_risk(db: AsyncSession, now: datetime) -> list[AtRiskAccount]
                 plan=sub.plan,
                 reason="past_due",
                 detail="Paiement en retard",
+            )
+        )
+
+    # Cancellation scheduled at period end: still paying, but leaving
+    scheduled = (
+        await db.execute(
+            select(Subscription).where(
+                Subscription.status.in_(("active", "trialing", "past_due")),
+                Subscription.cancel_at_period_end.is_(True),
+            )
+        )
+    ).scalars()
+    for sub in scheduled:
+        acc = await db.get(Account, sub.account_id)
+        owner = await db.get(User, acc.owner_id) if acc else None
+        end = sub.current_period_end
+        out.append(
+            AtRiskAccount(
+                account_id=str(sub.account_id),
+                account_name=acc.name if acc else None,
+                owner_email=owner.email if owner else None,
+                plan=sub.plan,
+                reason="cancel_scheduled",
+                detail=f"Fin le {end.strftime('%d/%m/%Y')}" if end else "Résiliation demandée",
             )
         )
 
@@ -421,18 +412,24 @@ async def _product_value(
     """Satisfaction, negative/no-source rates and question volume + trend.
 
     Mirrors the predicates in ``admin_quality`` so the cockpit and the quality
-    page agree.
+    page agree. Only customer activity counts: staff accounts and the public
+    demo are excluded. Questions = persisted answers, the same source as the
+    Clients table.
     """
     from app.rag.agent import _OUT_OF_SCOPE_ANSWER
 
     oos_prefix = _OUT_OF_SCOPE_ANSWER[:60]
+    customer_only = customer_conversation_filter()
 
     rows = (
         (
             await db.execute(
-                select(Message).where(
+                select(Message)
+                .join(Conversation, Conversation.id == Message.conversation_id)
+                .where(
                     Message.role == "assistant",
                     Message.created_at >= d30,
+                    *customer_only,
                 )
             )
         )
@@ -458,18 +455,20 @@ async def _product_value(
         return int(
             (
                 await db.execute(
-                    select(func.count(distinct(ApiUsageLog.context_id))).where(
-                        ApiUsageLog.context_type == "question",
-                        ApiUsageLog.is_replay.is_(False),
-                        ApiUsageLog.created_at >= start,
-                        ApiUsageLog.created_at < end,
+                    select(func.count(Message.id))
+                    .join(Conversation, Conversation.id == Message.conversation_id)
+                    .where(
+                        Message.role == "assistant",
+                        Message.created_at >= start,
+                        Message.created_at < end,
+                        *customer_only,
                     )
                 )
             ).scalar()
             or 0
         )
 
-    q_cur = await _questions(d30, now)
+    q_cur = total
     q_prev = await _questions(d60, d30)
     trend = round(100 * (q_cur - q_prev) / q_prev, 1) if q_prev > 0 else None
 
@@ -568,8 +567,13 @@ async def get_signups_by_source(
     now = datetime.now(UTC)
     since = now - timedelta(days=days)
 
+    # Only people who created their own account count as a signup: team
+    # members invited into an existing account are not acquisition.
+    account_owners = select(Account.owner_id)
     total = (
-        await db.execute(select(func.count(User.id)).where(User.created_at >= since))
+        await db.execute(
+            select(func.count(User.id)).where(User.created_at >= since, User.id.in_(account_owners))
+        )
     ).scalar() or 0
 
     grouped = await db.execute(
@@ -580,7 +584,11 @@ async def get_signups_by_source(
             func.count(User.id),
             func.count(User.gclid),
         )
-        .where(User.created_at >= since, User.attributed_at.isnot(None))
+        .where(
+            User.created_at >= since,
+            User.attributed_at.isnot(None),
+            User.id.in_(account_owners),
+        )
         .group_by(User.utm_source, User.utm_medium, User.utm_campaign)
         .order_by(func.count(User.id).desc())
     )

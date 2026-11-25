@@ -2,6 +2,7 @@
 
 import logging
 from datetime import UTC, datetime, timedelta
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
@@ -11,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
 from app.core.dependencies import require_role
 from app.models.api_usage import ApiUsageLog
-from app.models.conversation import Message
+from app.models.conversation import Conversation, Message
 from app.models.document import Document
 from app.models.organisation import Organisation
 from app.models.sync_log import SyncLog
@@ -20,6 +21,8 @@ from app.models.user import User
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+_PARIS = ZoneInfo("Europe/Paris")
 
 
 class Incident(BaseModel):
@@ -93,19 +96,27 @@ async def get_dashboard(
 ) -> DashboardStats:
     """Single endpoint returning all admin dashboard metrics."""
     now = datetime.now(UTC)
-    today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    # "Today" and the daily timeline follow Paris days, not UTC days.
+    now_paris = now.astimezone(_PARIS)
+    today_start = now_paris.replace(hour=0, minute=0, second=0, microsecond=0)
+    timeline_start = (now_paris - timedelta(days=29)).replace(
+        hour=0, minute=0, second=0, microsecond=0
+    )
     seven_days_ago = now - timedelta(days=7)
     thirty_days_ago = now - timedelta(days=30)
     twenty_four_hours_ago = now - timedelta(hours=24)
 
     # --- Users & orgs ---
-    users_q = await db.execute(
-        select(
-            func.count().label("total"),
-            func.count().filter(User.is_active.is_(True)).label("active"),
-        ).select_from(User)
-    )
-    users_row = users_q.one()
+    total_users = (await db.execute(select(func.count()).select_from(User))).scalar() or 0
+    # Active = asked at least one question in the last 30 days.
+    active_users = (
+        await db.execute(
+            select(func.count(func.distinct(Conversation.user_id)))
+            .select_from(Message)
+            .join(Conversation, Conversation.id == Message.conversation_id)
+            .where(Message.role == "user", Message.created_at >= thirty_days_ago)
+        )
+    ).scalar() or 0
 
     orgs_count = await db.execute(select(func.count()).select_from(Organisation))
     total_orgs = orgs_count.scalar() or 0
@@ -340,7 +351,7 @@ async def get_dashboard(
                 detail=(
                     "Les 5% de questions les plus lentes mettent plus de "
                     f"{quality_health.latency_p95_ms_7d / 1000:.0f} secondes à "
-                    "obtenir une réponse. Cible normale : moins de 20s. "
+                    "obtenir une réponse. Seuil d'alerte : 25 s. "
                     "Vérifie les dernières questions pour identifier celles "
                     "qui ralentissent le système."
                 ),
@@ -352,28 +363,34 @@ async def get_dashboard(
     severity_order = {"critical": 0, "warning": 1, "info": 2}
     incidents.sort(key=lambda i: severity_order.get(i.severity, 99))
 
-    # --- Questions timeline (30 days) ---
-    timeline_q = await db.execute(
-        select(
-            func.date_trunc("day", ApiUsageLog.created_at).label("day"),
-            func.count(func.distinct(ApiUsageLog.context_id)).label("count"),
-        )
+    # --- Questions timeline (30 Paris days, today included) ---
+    # Each question is placed on the Paris day of its first API call. Days
+    # without any question are returned with 0 so the chart keeps a continuous
+    # axis instead of silently dropping them.
+    first_call = (
+        select(func.min(ApiUsageLog.created_at))
         .where(
-            ApiUsageLog.created_at >= thirty_days_ago,
+            ApiUsageLog.created_at >= timeline_start,
             ApiUsageLog.context_type == "question",
             ApiUsageLog.is_replay.is_(False),
+            ApiUsageLog.context_id.isnot(None),
         )
-        .group_by("day")
-        .order_by("day")
+        .group_by(ApiUsageLog.context_id)
     )
-    timeline = [
-        TimeseriesPoint(date=row.day.date().isoformat(), questions=int(row.count))
-        for row in timeline_q.all()
-    ]
+    counts_by_day: dict[str, int] = {}
+    for (first_at,) in (await db.execute(first_call)).all():
+        if first_at.tzinfo is None:
+            first_at = first_at.replace(tzinfo=UTC)
+        day = first_at.astimezone(_PARIS).date().isoformat()
+        counts_by_day[day] = counts_by_day.get(day, 0) + 1
+    timeline = []
+    for offset in range(30):
+        day = (timeline_start.date() + timedelta(days=offset)).isoformat()
+        timeline.append(TimeseriesPoint(date=day, questions=counts_by_day.get(day, 0)))
 
     return DashboardStats(
-        total_users=users_row.total,
-        active_users=users_row.active,
+        total_users=total_users,
+        active_users=active_users,
         total_organisations=total_orgs,
         total_documents=docs_row.total,
         indexed_documents=docs_row.indexed,
