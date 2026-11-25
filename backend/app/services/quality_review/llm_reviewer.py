@@ -15,7 +15,7 @@ from decimal import Decimal
 
 from app.services.cost_tracker import compute_cost
 
-KINDS = ["montant", "date", "article", "contradiction", "conclusion"]
+KINDS = ["montant", "date", "article", "jurisprudence", "contradiction", "conclusion"]
 
 _MAX_SOURCE_CHARS = 15_000
 _MAX_TOTAL_SOURCE_CHARS = 80_000
@@ -32,6 +32,11 @@ un calcul faux ;
 - date : une date ou une échéance mal calculée à partir de la règle de la source et des \
 faits (refais le décompte mois par mois ou jour par jour) ;
 - article : un article cité pour une règle que son texte fourni ne pose pas ;
+- jurisprudence : une décision de justice citée pour ce qu'elle n'a pas jugé : la réponse \
+lui prête une solution, un principe ou un motif décisif que son texte ne contient pas \
+(la cour a tranché pour une autre raison, sur un autre point, ou dans l'autre sens). \
+source_quote reprend alors le passage de la décision qui montre ce qu'elle a réellement \
+jugé et pourquoi ;
 - contradiction : une affirmation contredite par le texte d'une source ;
 - conclusion : un verdict (oui/non, droit/pas de droit, obligatoire/facultatif) contraire \
 à la règle des sources.
@@ -56,7 +61,8 @@ Tu es un second contrôleur, chargé de RÉFUTER un constat d'erreur porté sur 
 juridique. Cherche toute raison pour laquelle la réponse n'est pas fausse : passage mal \
 lu ou sorti de son contexte, hypothèse explicitement annoncée, règle venant d'une autre \
 source ou d'un autre texte applicable, simple imprécision, correction apportée ailleurs \
-dans la réponse, décompte du contrôleur lui-même faux.
+dans la réponse, décompte du contrôleur lui-même faux. Pour une décision de justice : \
+le résumé de la réponse reste-t-il fidèle à ce que la cour a jugé et à sa raison décisive ?
 
 Réponds confirmed uniquement si la réponse est certainement fausse sur ce point au regard \
 de la source citée. Sinon réponds refuted. Donne la raison en deux phrases au plus."""

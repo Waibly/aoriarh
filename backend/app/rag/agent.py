@@ -23,7 +23,7 @@ from app.rag.config import (
     RAG_TIMEOUT_PER_STEP,
     TOP_K,
 )
-from app.rag.date_facts import date_facts_block
+from app.rag.date_facts import date_facts_block, expired_reminder
 from app.rag.document_generation import document_generation_instructions, document_task_block
 from app.rag.hr_reflexes import extend_reflex_context
 from app.rag.instrument_references import (
@@ -491,7 +491,7 @@ Choisis le format AVANT d'écrire, selon ce que la question appelle :
 - **Donnée décisive manquante** (ancienneté, effectif, date d'embauche, motif…) : ne bloque pas et n'improvise pas — donne la réponse par cas (tableau si plusieurs cas), puis pose LA question qui permet de trancher.
 - **Calcul chiffré** (indemnité, plafond, prorata) : utilise uniquement une formule et une assiette établies par les sources applicables. Rappelle la formule, nomme chaque donnée avec son unité, sa période et sa base, puis applique-la étape par étape avec les chiffres du cas. Vérifie l'opération et l'ordre de grandeur avant de conclure. Ne décide jamais sans fondement que des taux s'additionnent, se composent ou s'appliquent successivement : si l'ordre ou l'assiette n'est pas établi, présente les scénarios séparément sans en choisir un arbitrairement. Si une valeur manque, calcule sur une hypothèse explicitement signalée comme telle. Si une valeur nécessaire est introuvable dans les sources, ne bloque pas en silence et ne noie pas l'absence de résultat dans un exposé : dis EN TÊTE que tu ne peux pas chiffrer et ce qu'il manque, donne quand même la formule et la méthode complète, puis pose la question qui débloque le calcul. Une méthode utile vaut mieux qu'un cours qui contourne la question. Écris les calculs en texte simple (2 850 € × 1/3 × 9,5 = 9 025 €), jamais en notation mathématique ou LaTeX : l'interface ne l'affiche pas.
 - **Échéance calculée à partir d'une date** (« avant le premier jour du sixième mois suivant la clôture », « dans les 2 mois », « au plus tard le dernier jour du 5e mois ») : écris le point de départ, compte les mois un par un, puis donne la date exacte. Le 1er mois suivant est celui qui suit immédiatement le point de départ : clôture au 30 juin → 1er mois suivant = juillet, 5e = novembre, 6e = décembre. « Avant le premier jour du 6e mois » se traduit par « au plus tard le dernier jour du 5e mois » (ici le 30 novembre), jamais par « au plus tard le 1er » du mois. Compare ensuite cette date à la date du jour : si l'échéance est passée ou tombe dans le mois qui vient, dis-le EN TÊTE avec la conséquence prévue par le texte (intérêts de retard, forclusion…).
-- **Durées entre deux dates (ancienneté, présence, temps écoulé)** : si un bloc « Repères de calendrier calculés par le système » est fourni, toute durée ou date que tu écris en est tirée, jamais recomptée de tête. Pour choisir un palier (délai de prévenance de l'essai, préavis, seuil de 8 mois, 1 an…), prends la durée du bloc à la date pertinente, y compris dans un raisonnement hypothétique : « 2 mois et 24 jours » relève du palier « plus d'un mois et moins de 3 mois », pas de « plus de 3 mois ».
+- **Durées entre deux dates (ancienneté, présence, temps écoulé)** : si un bloc « Repères de calendrier calculés par le système » est fourni, toute durée ou date que tu écris en est tirée, jamais recomptée de tête. Pour choisir un palier (délai de prévenance de l'essai, préavis, seuil de 8 mois, 1 an…), prends la durée du bloc à la date pertinente, y compris dans un raisonnement hypothétique : « 2 mois et 24 jours » relève du palier « plus d'un mois et moins de 3 mois », pas de « plus de 3 mois ». Pour une échéance (prescription, délai de rétractation, délai pour agir à compter d'un fait), lis la date d'expiration dans la liste « Délais courant à compter du… » au lieu de la calculer, applique ensuite le report éventuel prévu par le texte (samedi, dimanche, jour férié) et dis si elle est passée. Pour une question « est-il encore temps / peut-on encore / est-il dans les délais », ta réponse COMMENCE par l'échéance, pas par Oui ou Non : « Le délai de 2 mois a expiré le mardi 10 novembre 2026 : la procédure ne peut plus être engagée. » Le verdict suit la date, dans la même phrase.
 
 ## STYLE
 
@@ -2706,6 +2706,9 @@ class RAGAgent:
                     "n'ajoute aucune section vide."
                 )
         parts.append(f"Question : {query}")
+        reminder = expired_reminder([query, condensed_query])
+        if reminder:
+            parts.append(reminder)
         # Alignement retrieval/génération : les sources ont été cherchées avec
         # la question condensée (relance replacée dans son contexte). On la
         # fournit pour que la génération réponde à la même interprétation,

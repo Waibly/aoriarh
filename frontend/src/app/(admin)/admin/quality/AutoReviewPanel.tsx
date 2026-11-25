@@ -76,6 +76,7 @@ const KIND_LABELS: Record<string, string> = {
   date: "Date / échéance",
   article: "Article mal cité",
   contradiction: "Contredit la source",
+  jurisprudence: "Arrêt mal résumé",
   conclusion: "Conclusion inversée",
   citation_introuvable: "Article introuvable",
 };
