@@ -95,11 +95,16 @@ async def test_actual_stream_receives_executed_action_without_extra_call(action)
     assert chunks == ["  réponse originale\n"]
     assert agent.llm.chat.completions.create.await_count == 1
     messages = agent.llm.chat.completions.create.await_args.kwargs["messages"]
-    assert "Contrat de rédaction avec pièces jointes" in messages[0]["content"]
-    assert ("SANS recherche juridique" in messages[0]["content"]) == (action == "documents")
-    assert "SÉCURITÉ, TRANSPARENCE ET FRONTIÈRES DE CONFIANCE" in messages[0]["content"]
-    assert "Tu es l'expert juridique RH intégré" not in messages[0]["content"]
-    assert ("FIABILITÉ JURIDIQUE COMMUNE" in messages[0]["content"]) == (
+    system = messages[0]["content"][0]["text"]
+    assert messages[0]["content"][0]["prompt_cache_breakpoint"] == {"mode": "explicit"}
+    assert agent.llm.chat.completions.create.await_args.kwargs["extra_body"] == {
+        "prompt_cache_options": {"mode": "explicit"}
+    }
+    assert "Contrat de rédaction avec pièces jointes" in system
+    assert ("SANS recherche juridique" in system) == (action == "documents")
+    assert "SÉCURITÉ, TRANSPARENCE ET FRONTIÈRES DE CONFIANCE" in system
+    assert "Tu es l'expert juridique RH intégré" not in system
+    assert ("FIABILITÉ JURIDIQUE COMMUNE" in system) == (
         action == "documents_and_law"
     )
     assert f'"action": "{action}"' in messages[1]["content"]

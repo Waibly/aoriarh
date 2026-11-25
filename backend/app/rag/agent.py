@@ -1215,16 +1215,19 @@ class RAGAgent:
                 }
             )
 
+        from app.rag.prompt_cache import prompt_cache_kwargs, system_message
+
         response = await self.llm.chat.completions.create(
             model=gen_model,
             messages=[
-                {"role": "system", "content": system_prompt},
+                system_message(system_prompt, gen_model),
                 {"role": "user", "content": user_content},
             ],
             max_completion_tokens=max_completion_tokens,
             reasoning_effort=rag_config.LLM_REASONING_EFFORT,
             stream=True,
             stream_options={"include_usage": True},
+            **prompt_cache_kwargs(gen_model),
         )
         logger.info(
             "[PERF] Step 6 — LLM stream opened %.0fms",

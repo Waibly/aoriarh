@@ -20,6 +20,7 @@ from sqlalchemy.exc import SQLAlchemyError
 
 import app.rag.config as rag_config
 from app.rag.agent import RagTrace
+from app.rag.prompt_cache import message_text_length, prompt_cache_kwargs, system_message
 from app.rag.search import SearchResult
 from app.rag.search_plan import (
     SourceRequirement,
@@ -365,7 +366,7 @@ async def plan_conversation(
     search_context.pop("query_original", None)
     search_context.pop("question", None)
     messages = [
-        {"role": "system", "content": REQUEST_PROMPT},
+        system_message(REQUEST_PROMPT, model),
         {
             "role": "user",
             "content": json.dumps(
@@ -400,7 +401,7 @@ async def plan_conversation(
             ),
         },
     ]
-    if sum(len(message["content"]) for message in messages) > 250_000:
+    if sum(message_text_length(message) for message in messages) > 250_000:
         trace.error = "case_context_budget_exceeded"
         return PlannedConversation(None, base, trace, None)
     # Non-streamed planning has no progress signal. Allow five minutes of
@@ -418,13 +419,14 @@ async def plan_conversation(
         },
         max_completion_tokens=8000,
         reasoning_effort=rag_config.CONVERSATION_PLANNER_REASONING_EFFORT,
+        **prompt_cache_kwargs(model),
     )
     raw = response.choices[0].message.content or response.choices[0].message.refusal
     trace.router_raw_response = raw
     trace.perf_ms["planner_call"] = (time.perf_counter() - planner_started) * 1000
     trace.search_plan_usage = {
         "contract": "requests_v3",
-        "prompt_chars": sum(len(message["content"]) for message in messages),
+        "prompt_chars": sum(message_text_length(message) for message in messages),
         "schema_chars": len(json.dumps(schema)),
         "output_chars": len(raw or ""),
         "finish_reason": getattr(response.choices[0], "finish_reason", None),

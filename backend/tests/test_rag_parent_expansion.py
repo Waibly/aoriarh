@@ -334,3 +334,47 @@ class TestFetchByIdentifiers:
         assert len(out) == 1
         assert out[0].text == "arrêt content"
         assert qdrant.scroll.called
+
+
+# --- decision title repeated on every passage ----------------------------------
+
+
+def _passage(index: int, text: str):
+    from types import SimpleNamespace
+
+    return SimpleNamespace(chunk_index=index, text=text)
+
+
+class TestJoinDecisionPassages:
+    TITLE = "Cour d'appel de Paris Pôle 5 - Chambre 16, 01/04/2025, n° 24/00774"
+
+    def test_keeps_the_title_once(self):
+        from app.rag.parent_expansion import _join_decision_passages
+
+        joined = _join_decision_passages(
+            [
+                _passage(0, f"{self.TITLE}\n\nDébut des motifs."),
+                _passage(1, f"{self.TITLE}\n\nSuite des motifs."),
+                _passage(4, f"{self.TITLE}\n\nDispositif."),
+            ]
+        )
+        assert joined == f"{self.TITLE}\n\nDébut des motifs.\n\nSuite des motifs.\n\nDispositif."
+
+    def test_keeps_passages_without_the_same_title(self):
+        from app.rag.parent_expansion import _join_decision_passages
+
+        first = f"{self.TITLE}\n\nMotifs."
+        second = "Autre en-tête\n\nTexte."
+        third = "Texte sans en-tête."
+        assert _join_decision_passages(
+            [_passage(0, first), _passage(1, second), _passage(2, third)]
+        ) == "\n\n".join([first, second, third])
+
+    def test_never_drops_a_passage_reduced_to_its_title(self):
+        from app.rag.parent_expansion import _join_decision_passages
+
+        first = f"{self.TITLE}\n\nMotifs."
+        second = f"{self.TITLE}\n\n"
+        assert _join_decision_passages([_passage(0, first), _passage(1, second)]) == (
+            f"{first}\n\n{second}"
+        )

@@ -451,6 +451,26 @@ def _fetch_siblings(qdrant, key: tuple, access_filter=None):
             return found, {"pages": page, "fetch_limited": True}
 
 
+# Every indexed passage of a decision starts with the same title line (court,
+# date, number). When passages are joined, that line is kept once.
+_MAX_DECISION_TITLE_CHARS = 300
+
+
+def _join_decision_passages(ordered) -> str:
+    """Join a decision's passages in document order without repeating its title."""
+    parts: list[str] = []
+    previous_title = None
+    for passage in ordered:
+        text = passage.text
+        title, separator, body = text.partition("\n\n")
+        is_title = bool(separator) and len(title) <= _MAX_DECISION_TITLE_CHARS
+        if is_title and title == previous_title and body.strip():
+            text = body
+        previous_title = title if is_title else None
+        parts.append(text)
+    return "\n\n".join(parts)
+
+
 def _merge_group(chunks, best_score, seeds=None, *, complete_document: bool = False):
     """Assemble whole indexed passages; never reconstruct a legal conclusion."""
     ranked_seeds = sorted(seeds or chunks, key=lambda r: r.score, reverse=True)
@@ -483,7 +503,7 @@ def _merge_group(chunks, best_score, seeds=None, *, complete_document: bool = Fa
         articles = list(dict.fromkeys(a for r in ordered for a in (r.article_nums or [])))
         return replace(
             best,
-            text="\n\n".join(r.text for r in ordered),
+            text=_join_decision_passages(ordered),
             score=best_score,
             seed_text=best.text,
             article_nums=articles or best.article_nums,

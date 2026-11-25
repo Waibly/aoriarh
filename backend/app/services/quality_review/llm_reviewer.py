@@ -13,6 +13,7 @@ import unicodedata
 from dataclasses import dataclass, field
 from decimal import Decimal
 
+from app.rag.prompt_cache import prompt_cache_kwargs, system_message
 from app.services.cost_tracker import compute_cost
 
 KINDS = ["montant", "date", "article", "jurisprudence", "contradiction", "conclusion"]
@@ -225,13 +226,14 @@ class LlmReviewer:
     async def _call(self, system: str, user: str, schema: dict, name: str) -> tuple[dict, dict]:
         response = await self.client.chat.completions.create(
             model=self.model,
-            messages=[{"role": "system", "content": system}, {"role": "user", "content": user}],
+            messages=[system_message(system, self.model), {"role": "user", "content": user}],
             response_format={
                 "type": "json_schema",
                 "json_schema": {"name": name, "strict": True, "schema": schema},
             },
             max_completion_tokens=16_000,
             reasoning_effort=self.reasoning_effort,
+            **prompt_cache_kwargs(self.model),
         )
         usage = response.usage
         call = {
