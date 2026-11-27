@@ -414,7 +414,7 @@ class StripeService:
                 raise conflict
 
     async def create_booster_checkout(self, account: Account, owner_email: str) -> dict[str, str]:
-        """One-shot payment for a +500 questions booster pack."""
+        """One-shot payment for a +200 questions booster pack."""
         self._ensure_configured()
         if not settings.stripe_price_booster:
             raise HTTPException(

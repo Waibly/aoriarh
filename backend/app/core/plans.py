@@ -178,8 +178,8 @@ ADDON_PRICES_CENTS: dict[str, int] = {
     "extra_docs": 1000,  # +500 documents / month
 }
 
-BOOSTER_PRICE_CENTS: int = 2500  # one-shot purchase
-BOOSTER_QUESTIONS: int = 500  # questions granted per booster
+BOOSTER_PRICE_CENTS: int = 3900  # one-shot purchase, 39 € HT
+BOOSTER_QUESTIONS: int = 200  # questions granted per booster
 
 
 # --- Trial and lifecycle ---------------------------------------------------

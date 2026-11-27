@@ -501,7 +501,7 @@ export default function BillingPage() {
             {canManageBilling && <div className="flex justify-end">
               <Button className="h-auto min-h-9 w-full whitespace-normal sm:w-auto" onClick={handleBooster} disabled={busy}>
                 {busy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Zap className="mr-2 h-4 w-4" />}
-                Acheter un pack booster (+500 questions, 25 € HT)
+                Acheter un pack booster (+200 questions, 39 € HT)
               </Button>
             </div>}
           </CardContent>
@@ -586,7 +586,7 @@ export default function BillingPage() {
                 className="border-2 border-primary"
               >
                 <Zap className="mr-2 h-4 w-4" />
-                Pack booster · +500 questions · 25 € HT
+                Pack booster · +200 questions · 39 € HT
               </Button>
             </div>
             <p className="text-xs text-muted-foreground">

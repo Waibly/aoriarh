@@ -8,10 +8,10 @@ from app.models.base import Base, TimestampMixin, generate_uuid
 
 
 class BoosterPurchase(TimestampMixin, Base):
-    """One-shot purchase of +500 questions (the "booster" pack).
+    """One-shot purchase of +200 questions (the "booster" pack).
 
-    Boosters are consumed after the regular monthly quota is exhausted,
-    and expire at the end of the current billing cycle (expires_at).
+    Boosters are consumed after the regular monthly quota is exhausted
+    and stay available until fully consumed (expires_at is unused).
     """
 
     __tablename__ = "booster_purchases"
@@ -21,8 +21,8 @@ class BoosterPurchase(TimestampMixin, Base):
         ForeignKey("accounts.id", ondelete="CASCADE"), nullable=False, index=True
     )
 
-    questions_purchased: Mapped[int] = mapped_column(Integer, nullable=False, default=500)
-    questions_remaining: Mapped[int] = mapped_column(Integer, nullable=False, default=500)
+    questions_purchased: Mapped[int] = mapped_column(Integer, nullable=False, default=200)
+    questions_remaining: Mapped[int] = mapped_column(Integer, nullable=False, default=200)
     price_cents: Mapped[int] = mapped_column(Integer, nullable=False)
 
     stripe_payment_intent_id: Mapped[str | None] = mapped_column(

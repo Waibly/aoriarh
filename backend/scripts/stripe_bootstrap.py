@@ -5,7 +5,7 @@ of products and recurring/one-shot prices used by the commercial offer:
 
   - 3 subscription plans × 2 billing cycles  = 6 recurring prices
   - 3 monthly add-on prices (extra_user, extra_org, extra_docs)
-  - 1 one-shot price (booster +500 questions)
+  - 1 one-shot price (booster +200 questions)
 
 The script is idempotent: it uses metadata.aoria_code to match existing
 products/prices and syncs product descriptions. It never archives or
@@ -142,11 +142,15 @@ PRODUCTS: list[dict] = [
     },
     {
         "aoria_code": "booster",
-        "name": "AORIA RH — Pack booster +500 questions",
-        "description": "Pack ponctuel de +500 questions. Valable jusqu'à la fin du cycle en cours.",
+        "name": "AORIA RH — Pack booster +200 questions",
+        "description": (
+            "Pack ponctuel de +200 questions, sans expiration. "
+            "Consommé après épuisement du quota mensuel."
+        ),
         "prices": [
             {
-                "aoria_code": "booster_oneshot",
+                # Nouveau code : l'ancien prix booster_oneshot (25 € / 500 q) est archivé.
+                "aoria_code": "booster_200_oneshot",
                 "amount": BOOSTER_PRICE_CENTS,
                 "interval": None,  # one-shot payment
                 "env_var": "STRIPE_PRICE_BOOSTER",
@@ -174,9 +178,9 @@ def _search_price(aoria_code: str):
 def find_or_create_product(aoria_code: str, name: str, description: str):
     existing = _search_product(aoria_code)
     if existing is not None:
-        if existing["description"] != description:
-            existing = stripe.Product.modify(existing["id"], description=description)
-            print(f"  ✓ Product description updated: {name} ({existing['id']})")
+        if existing["description"] != description or existing["name"] != name:
+            existing = stripe.Product.modify(existing["id"], name=name, description=description)
+            print(f"  ✓ Product name/description updated: {name} ({existing['id']})")
             return existing
         print(f"  ✓ Product exists: {name} ({existing['id']})")
         return existing

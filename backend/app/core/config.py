@@ -123,7 +123,7 @@ class Settings(BaseSettings):
     stripe_price_addon_org: str = ""
     stripe_price_addon_docs: str = ""
 
-    # Booster (one-shot, +500 questions)
+    # Booster (one-shot, +200 questions)
     stripe_price_booster: str = ""
 
     # Redirect URLs after Stripe checkout / portal

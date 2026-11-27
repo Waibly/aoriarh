@@ -400,7 +400,7 @@ QUOTA_HARD_WARNING_CONTENT = """\
 <p style="color:#3f3f46; line-height:1.6;">Deux options pour continuer sereinement&nbsp;:</p>
 <ul style="color:#3f3f46; line-height:1.8; padding-left:20px;">
   <li><strong>Passer à l'offre supérieure</strong> &mdash; plus de questions, pas de limite à surveiller chaque mois.</li>
-  <li><strong>Acheter un pack booster</strong> &mdash; +500 questions pour 25&nbsp;€, valables jusqu'à consommation complète.</li>
+  <li><strong>Acheter un pack booster</strong> &mdash; +200 questions pour 39&nbsp;€&nbsp;HT, valables jusqu'à consommation complète.</li>
 </ul>
 <p style="text-align:center; margin:32px 0;">
   <a href="{upgrade_url}" style="display:inline-block; background-color:#652BB0; color:#ffffff; padding:14px 32px; border-radius:8px; text-decoration:none; font-weight:600; font-size:15px;">
